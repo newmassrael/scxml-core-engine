@@ -277,7 +277,7 @@ fn lints_are_off_by_default() {
 /// statement about the document, not design advice. The distinction is
 /// visible in the parser: the attribute's SHAPE is already refused
 /// unconditionally — a wildcard, a repeat, an empty value all reject with
-/// `validation/invalid-attribute` and no flag involved — while its TRUTH
+/// `validation/attribute-rule-violated` and no flag involved — while its TRUTH
 /// used to be judged only under `--lint`. One attribute, two regimes, and
 /// the half that could rot silently was the half that says something.
 ///

@@ -1921,7 +1921,7 @@ pub struct SCXMLModel {
     ///
     /// Schema invariant enforced by the parser: present-but-malformed
     /// (non-numeric, zero, or u32-overflow) surfaces
-    /// `validation/invalid-attribute` — no silent coercion.
+    /// `validation/attribute-rule-violated` — no silent coercion.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub event_queue_capacity: Option<u32>,
 

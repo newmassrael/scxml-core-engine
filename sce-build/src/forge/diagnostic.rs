@@ -538,6 +538,12 @@ pub enum DiagnosticCode {
     ValidationMissingAttribute,
     #[serde(rename = "validation/invalid-attribute")]
     ValidationInvalidAttribute,
+    /// A known attribute whose value breaks a rule no list of values can
+    /// state — a positive integer, a non-empty name. Distinct from
+    /// `invalid-attribute`, whose legal values form a closed set that
+    /// rides `fix`: here the rule rides `expected` and there is no fix.
+    #[serde(rename = "validation/attribute-rule-violated")]
+    ValidationAttributeRuleViolated,
     /// An SCE-namespace attribute the parser does not read. Distinct from
     /// `invalid-attribute`, which is a known name carrying a value outside
     /// its set: here the NAME is the thing nothing knows, so a consumer
@@ -736,8 +742,8 @@ pub enum DiagnosticCode {
     //    accepted type set). Attribute-shape rules (capacity required on a
     //    bytes buffer / forbidden on a scalar, returns-max-size required on a
     //    bytes return, capacity == returns-max-size) reuse the generic
-    //    `validation/missing-attribute` / `validation/invalid-attribute`
-    //    codes. ───────────────────────────────────────────────────────────
+    //    `validation/missing-attribute` / `validation/invalid-attribute` /
+    //    `validation/attribute-rule-violated` codes. ──────────────────────
     #[serde(rename = "algorithm/append-target-not-buffer")]
     AlgorithmAppendTargetNotBuffer,
     #[serde(rename = "algorithm/append-type-mismatch")]
@@ -1189,9 +1195,9 @@ pub enum DiagnosticCode {
     //    codec so the streaming decoder has already consumed it by
     //    the time this field's predicate is evaluated. A forward
     //    reference (predicate target declared after the consumer) is
-    //    rejected here; an unknown predicate target reuses the
-    //    generic `validation/invalid-attribute` code (typos in the
-    //    flag-name half land there too). Stage = Validation. ──
+    //    rejected here; an unknown predicate input or flag reuses the
+    //    generic `validation/invalid-attribute` code with the declared
+    //    names as candidates. Stage = Validation. ──
     #[serde(rename = "codec/present-if-refs-later-field")]
     CodecPresentIfRefsLaterField,
 
@@ -1202,7 +1208,7 @@ pub enum DiagnosticCode {
     //    the repeat loop reads N. A forward reference (count field
     //    declared after the repeat) is rejected here; non-integer
     //    count target and shape mismatches reuse the generic
-    //    `validation/invalid-attribute` code. Stage = Validation. ──
+    //    `validation/attribute-rule-violated` code. Stage = Validation. ──
     #[serde(rename = "codec/repeat-count-refs-later-field")]
     CodecRepeatCountRefsLaterField,
 
@@ -2994,6 +3000,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationMissingElement,
         ValidationMissingAttribute,
         ValidationInvalidAttribute,
+        ValidationAttributeRuleViolated,
         ValidationUnknownSceAttribute,
         ValidationDefaultCoversUnknownVariant,
         ValidationDefaultCoversTestedVariant,
@@ -4093,6 +4100,7 @@ impl DiagnosticCode {
             | ValidationMissingElement
             | ValidationMissingAttribute
             | ValidationInvalidAttribute
+            | ValidationAttributeRuleViolated
             | ValidationDuplicateId
             | ValidationDuplicateContextObject
             | ValidationReservedContextId
@@ -4288,6 +4296,7 @@ impl DiagnosticCode {
             ValidationMissingElement => "validation/missing-element",
             ValidationMissingAttribute => "validation/missing-attribute",
             ValidationInvalidAttribute => "validation/invalid-attribute",
+            ValidationAttributeRuleViolated => "validation/attribute-rule-violated",
             ValidationUnknownSceAttribute => "validation/unknown-sce-attribute",
             ValidationDefaultCoversUnknownVariant => "validation/default-covers-unknown-variant",
             ValidationDefaultCoversTestedVariant => "validation/default-covers-tested-variant",
@@ -5374,7 +5383,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             element,
             attr,
             value,
-            expected,
+            allowed,
         } => DiagnosticPayload {
             code: DiagnosticCode::ValidationInvalidAttribute,
             stage: Stage::Validation,
@@ -5384,8 +5393,24 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             expected: None,
             actual: Some(value.clone()),
             fix: Some(Fix::ReplaceOneOf {
-                candidates: split_expected(expected),
+                candidates: allowed.clone(),
             }),
+            key_fragments: vec![element.clone(), attr.clone(), value.clone()],
+        },
+        // The rule is what the position accepts, stated; it is not a
+        // value to put there, so it rides `expected` and nothing rides
+        // `fix` — §3's spelling for a rejection no local edit names.
+        ValidationError::AttributeRuleViolated {
+            element,
+            attr,
+            value,
+            rule,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationAttributeRuleViolated,
+            stage: Stage::Validation,
+            expected: Some(vec![rule.clone()]),
+            actual: Some(value.clone()),
+            fix: None,
             key_fragments: vec![element.clone(), attr.clone(), value.clone()],
         },
         ValidationError::UnsupportedKind(value) => DiagnosticPayload {
@@ -5687,7 +5712,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             expected: None,
             actual: Some(name.clone()),
             fix: Some(Fix::ReplaceOneOf {
-                candidates: split_expected(available),
+                candidates: available.clone(),
             }),
             key_fragments: vec![kind.to_string(), what.clone(), name.clone()],
         },
@@ -9022,16 +9047,11 @@ fn scxml_semantic_fields(e: &crate::scxml_semantic::ScxmlSemanticError) -> Diagn
 }
 
 // ── Helpers ────────────────────────────────────────────────────
-
-/// Split a human-readable "expected" list ("foo, bar | baz") into a
-/// vector of individual tokens. Several validation errors carry this
-/// as free text for the Display impl; consumers need it structured.
-fn split_expected(s: &str) -> Vec<String> {
-    s.split([',', '|'])
-        .map(|part| part.trim().to_string())
-        .filter(|part| !part.is_empty())
-        .collect()
-}
+//
+// ⚠ There is no longer a helper that splits a joined "expected" string
+// back into candidates. The errors that offer a closed set carry it as a
+// list, because a split cannot tell a list from a sentence: ~100 rule
+// descriptions came out of it as candidate values (measured 2026-09-21).
 
 /// Content-addressed id over *semantic* fields only.
 ///
@@ -9197,7 +9217,7 @@ mod tests {
             element: "sce:field".into(),
             attr: "sce:type".into(),
             value: "blob".into(),
-            expected: "u8, u16, u32".into(),
+            allowed: vec!["u8".into(), "u16".into(), "u32".into()],
         }
         .into();
         let d = single(&err);
@@ -9216,13 +9236,35 @@ mod tests {
         }
     }
 
+    /// A rule is metadata about the position, never a value for it: a
+    /// comma inside it must not turn into candidates.
+    #[test]
+    fn attribute_rule_rides_expected_whole_and_carries_no_fix() {
+        let err: ForgeError = ValidationError::AttributeRuleViolated {
+            element: "field 'speed'".into(),
+            attr: "sce:scale".into(),
+            value: "0".into(),
+            rule: "rational literal: integer, decimal, or `num/denom`".into(),
+        }
+        .into();
+        let d = single(&err);
+        assert_eq!(d.actual.as_deref(), Some("0"));
+        assert_eq!(
+            d.expected,
+            Some(vec![
+                "rational literal: integer, decimal, or `num/denom`".to_string()
+            ])
+        );
+        assert!(d.fix.is_none(), "a rule names no replacement: {:?}", d.fix);
+    }
+
     #[test]
     fn invalid_reference_emits_replace_one_of_fix() {
         let err: ForgeError = ValidationError::InvalidReference {
             kind: ForgeKind::Statechart,
             what: "transition target".into(),
             name: "missing".into(),
-            available: "armed, disarmed".into(),
+            available: vec!["armed".into(), "disarmed".into()],
         }
         .into();
         let d = single(&err);
@@ -9364,10 +9406,26 @@ mod tests {
                     element: "sce:field".into(),
                     attr: "sce:type".into(),
                     value: "blob".into(),
-                    expected: "u8, u16, u32".into(),
+                    allowed: vec!["u8".into(), "u16".into(), "u32".into()],
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:dd04a37de468ffb4","code":"validation/invalid-attribute","stage":"validation","message":"sce:field: unknown sce:type value 'blob' (expected: u8, u16, u32)","actual":"blob","fix":{"kind":"replace_one_of","candidates":["u8","u16","u32"]}}"#,
+            ),
+            (
+                // A rule, not a set: the rule rides `expected` whole and
+                // nothing rides `fix`. Before the split this was
+                // `invalid-attribute`, and its commas cut "rational
+                // literal: integer, decimal, or `num/denom`" into three
+                // "candidates" a consumer could apply.
+                "forge/attribute-rule-violated",
+                ValidationError::AttributeRuleViolated {
+                    element: "Filter output".into(),
+                    attr: "sce:window".into(),
+                    value: "0".into(),
+                    rule: "positive integer".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:2ec9170bf68dc459","code":"validation/attribute-rule-violated","stage":"validation","message":"Filter output: invalid sce:window value '0' (expected: positive integer)","expected":["positive integer"],"actual":"0"}"#,
             ),
             (
                 // A misspelling, which is the likely cause: the NAME is
@@ -9459,7 +9517,7 @@ mod tests {
                     kind: ForgeKind::Statechart,
                     what: "transition target".into(),
                     name: "missing".into(),
-                    available: "armed, disarmed".into(),
+                    available: vec!["armed".into(), "disarmed".into()],
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:2e4c02e2b0e7e383","code":"validation/invalid-reference","stage":"validation","message":"statechart: missing does not match any transition target (available: armed, disarmed)","actual":"missing","fix":{"kind":"replace_one_of","candidates":["armed","disarmed"]}}"#,
@@ -14151,6 +14209,10 @@ mod tests {
             // and the grammar rides `expected` as metadata.
             | ValidationMalformedIdentifier
             | ValidationEventNameGrammar
+            // The rule a legal value satisfies — "positive integer" —
+            // describes the position and names no replacement, which is
+            // exactly why it left `invalid-attribute`'s candidate list.
+            | ValidationAttributeRuleViolated
             | AlgorithmAppendTypeMismatch => ExpectedIsMetadata,
 
             // ── Deterministic fix or no fix; expected=None ────
@@ -14849,14 +14911,14 @@ mod tests {
                 element: "sce:field".into(),
                 attr: "sce:type".into(),
                 value: "blob".into(),
-                expected: "u8, u16, u32".into(),
+                allowed: vec!["u8".into(), "u16".into(), "u32".into()],
             }
             .into(),
             ValidationError::InvalidReference {
                 kind: ForgeKind::Statechart,
                 what: "transition target".into(),
                 name: "missing".into(),
-                available: "armed, disarmed".into(),
+                available: vec!["armed".into(), "disarmed".into()],
             }
             .into(),
             ValidationError::RequireEither {
@@ -15054,6 +15116,7 @@ mod tests {
                 | XmlPreprocessorNotRun
                 | ValidationMissingElement
                 | ValidationMissingAttribute | ValidationInvalidAttribute
+                | ValidationAttributeRuleViolated
                 | ValidationUnknownSceAttribute
                 | ValidationDefaultCoversUnknownVariant
                 | ValidationDefaultCoversTestedVariant
@@ -15384,9 +15447,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            372,
+            373,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 372 distinct variants to match the DiagnosticCode \
+             expected 373 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -15967,6 +16030,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationMissingElement
             | ValidationMissingAttribute
             | ValidationInvalidAttribute
+            | ValidationAttributeRuleViolated
             // Same bucket and the same reason as the sweep described
             // below: the unknown-attribute check runs over the
             // roxmltree tree so it can name the attribute's own

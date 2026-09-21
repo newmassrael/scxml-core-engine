@@ -493,6 +493,37 @@ pub enum SceType {
 }
 
 impl SceType {
+    /// Every scalar `sce:type` value, in declaration order — the closed
+    /// set a refusal of an unknown type offers as its candidates.
+    ///
+    /// `enum:<alias>` is legal too, but it is a form whose alias the
+    /// document chooses, not a value that can be listed. ⚠ The refusal
+    /// sites used to type this list out by hand, and two of them had lost
+    /// `uint64` and `int64` (measured 2026-09-21).
+    /// `sce_type_scalar_attr_names_round_trip` pins it against
+    /// [`Self::from_attr`] and [`Self::as_attr`].
+    pub const SCALAR_ATTR_NAMES: &'static [&'static str] = &[
+        "uint8", "uint16", "uint32", "uint64", "int8", "int16", "int32", "int64", "float32",
+        "float64", "bool", "string", "bytes",
+    ];
+
+    /// [`Self::SCALAR_ATTR_NAMES`] as owned strings, for a candidate list.
+    pub fn scalar_attr_names() -> Vec<String> {
+        Self::scalar_attr_names_where(|_| true)
+    }
+
+    /// The scalar `sce:type` values whose type satisfies `keep` — the
+    /// candidates for a position that admits only some of them (a flags
+    /// carrier's unsigned types, say). Derived from the one list, so a
+    /// position's set cannot name a type the language lacks.
+    pub fn scalar_attr_names_where(keep: impl Fn(&SceType) -> bool) -> Vec<String> {
+        Self::SCALAR_ATTR_NAMES
+            .iter()
+            .filter(|name| Self::from_attr(name).is_some_and(|ty| keep(&ty)))
+            .map(|s| (*s).to_string())
+            .collect()
+    }
+
     pub fn from_attr(s: &str) -> Option<Self> {
         // `sce:type="enum:<alias>"` parses to
         // `SceType::Enum(EnumRef { alias })`. The alias must be
@@ -751,7 +782,7 @@ pub struct CycleStep {
 /// exactly the silent gap this tree refuses elsewhere. An initial value
 /// with no retention is meaningless: an ordinary field is computed
 /// afresh every cycle, so nothing ever reads it. Both orphans are
-/// refused, reusing `validation/invalid-attribute` rather than minting a
+/// refused, reusing `validation/attribute-rule-violated` rather than minting a
 /// code, which is what `parse_quantity_attrs` does for the same shape.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
@@ -1639,6 +1670,25 @@ pub enum BitSize {
     /// (decl_keyexpr, decl_subscriber, decl_queryable, decl_token)
     /// embed `codec_zenoh_wireexpr` after a VLE id field.
     Embed,
+}
+
+impl BitSize {
+    /// How the document states this size, for a diagnostic that quotes it
+    /// back: the `sce:bit-size` value where one was written (`tail`,
+    /// `length-ref`, `vle`, a bit count), and the element that implies the
+    /// size where none was (`<sce:repeat>`, `<sce:tlv-chain>`,
+    /// `<sce:embed>`).
+    pub fn as_attr(&self) -> String {
+        match self {
+            Self::Fixed { bits } => bits.to_string(),
+            Self::Tail => "tail".into(),
+            Self::LengthRef => "length-ref".into(),
+            Self::Vle { .. } => "vle".into(),
+            Self::Repeat { .. } => "<sce:repeat>".into(),
+            Self::TlvChain { .. } => "<sce:tlv-chain>".into(),
+            Self::Embed => "<sce:embed>".into(),
+        }
+    }
 }
 
 /// Canonical Zenoh ZInt byte cap for a `width_bits`-wide VLE field: the
@@ -2659,6 +2709,11 @@ pub enum FilterType {
 }
 
 impl FilterType {
+    /// Every legal `sce:filter` value, in declaration order — the set a
+    /// refusal offers. `closed_attr_sets_round_trip` pins it against
+    /// [`Self::from_attr`].
+    pub const ALL_NAMES: &'static [&'static str] = &["moving-average", "low-pass", "debounce"];
+
     pub fn from_attr(s: &str) -> Option<Self> {
         match s {
             "moving-average" => Some(Self::MovingAverage),
@@ -2712,6 +2767,9 @@ pub enum InterpolationMethod {
 }
 
 impl InterpolationMethod {
+    /// Every legal `sce:interpolation` value, in declaration order.
+    pub const ALL_NAMES: &'static [&'static str] = &["linear", "bilinear"];
+
     pub fn from_attr(s: &str) -> Option<Self> {
         match s {
             "linear" => Some(Self::Linear),
@@ -2734,6 +2792,9 @@ pub enum OutOfBounds {
 }
 
 impl OutOfBounds {
+    /// Every legal `sce:out-of-bounds` value, in declaration order.
+    pub const ALL_NAMES: &'static [&'static str] = &["clamp", "extrapolate", "error"];
+
     pub fn from_attr(s: &str) -> Option<Self> {
         match s {
             "clamp" => Some(Self::Clamp),
@@ -3098,8 +3159,9 @@ impl AlgorithmConstType {
     /// spellings; the alias map mirrors RFC §synth-5-F's example which uses
     /// `array<u16, 256>` while the rest of the schema uses the
     /// long-form spelling. Returns `None` on any other input — caller
-    /// raises a `ValidationError::InvalidAttribute` that names both
-    /// forms in the `expected:` field.
+    /// raises a `ValidationError::AttributeRuleViolated` whose rule names
+    /// both forms (the array form is a pattern, so no list of values can
+    /// stand in for it).
     pub fn from_attr(s: &str) -> Option<Self> {
         let s = s.trim();
         if let Some(rest) = s.strip_prefix("array<").and_then(|t| t.strip_suffix('>')) {
@@ -3538,6 +3600,9 @@ pub enum BackpressurePolicy {
 }
 
 impl BackpressurePolicy {
+    /// Every legal `<sce:backpressure>` value, in declaration order.
+    pub const ALL_NAMES: &'static [&'static str] = &["drop", "block", "signal-event"];
+
     pub fn from_attr(s: &str) -> Option<Self> {
         match s {
             "drop" => Some(Self::Drop),
@@ -4465,6 +4530,69 @@ mod tests {
             assert!(seen.insert(kind.as_attr()), "`{name}` is named twice");
         }
         assert_eq!(seen.len(), ForgeKind::ALL_ATTR_NAMES.len());
+    }
+
+    /// Every closed attribute set a refusal offers parses back, member by
+    /// member, through the `from_attr` it describes. A set that names a
+    /// value the parser refuses would offer the author a repair that is
+    /// itself refused.
+    #[test]
+    fn closed_attr_sets_round_trip() {
+        fn all_parse<T>(set: &[&str], from_attr: fn(&str) -> Option<T>) {
+            let mut seen = BTreeSet::new();
+            for name in set {
+                assert!(
+                    from_attr(name).is_some(),
+                    "`{name}` is listed and does not parse"
+                );
+                assert!(seen.insert(*name), "`{name}` is listed twice");
+            }
+        }
+        all_parse(FilterType::ALL_NAMES, FilterType::from_attr);
+        all_parse(
+            InterpolationMethod::ALL_NAMES,
+            InterpolationMethod::from_attr,
+        );
+        all_parse(OutOfBounds::ALL_NAMES, OutOfBounds::from_attr);
+        all_parse(LinkClass::ALL_NAMES, LinkClass::from_attr);
+        all_parse(CachePolicy::ALL_NAMES, CachePolicy::from_attr);
+        all_parse(BackpressurePolicy::ALL_NAMES, BackpressurePolicy::from_attr);
+        // Each list is also the whole set: every enum variant is named.
+        assert_eq!(FilterType::ALL_NAMES.len(), 3);
+        assert_eq!(InterpolationMethod::ALL_NAMES.len(), 2);
+        assert_eq!(OutOfBounds::ALL_NAMES.len(), 3);
+    }
+
+    #[test]
+    fn sce_type_scalar_attr_names_round_trip() {
+        let mut seen: BTreeSet<String> = BTreeSet::new();
+        for name in SceType::SCALAR_ATTR_NAMES {
+            let ty = SceType::from_attr(name)
+                .unwrap_or_else(|| panic!("`{name}` is listed and does not parse"));
+            assert_eq!(ty.as_attr(), *name);
+            assert!(seen.insert(ty.as_attr()), "`{name}` is listed twice");
+        }
+        // Every variant but the enum form is listed: the match fails to
+        // compile when a variant is added, and the assertion names it.
+        for ty in seen.iter().filter_map(|n| SceType::from_attr(n)) {
+            match ty {
+                SceType::Uint8
+                | SceType::Uint16
+                | SceType::Uint32
+                | SceType::Uint64
+                | SceType::Int8
+                | SceType::Int16
+                | SceType::Int32
+                | SceType::Int64
+                | SceType::Float32
+                | SceType::Float64
+                | SceType::Bool
+                | SceType::String
+                | SceType::Bytes => {}
+                SceType::Enum(_) => panic!("the enum form is not a listable value"),
+            }
+        }
+        assert_eq!(seen.len(), 13, "a scalar sce:type was added or dropped");
     }
 
     #[test]

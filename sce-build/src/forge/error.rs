@@ -390,14 +390,35 @@ pub enum ValidationError {
     #[error("{element} must have an '{attr}' attribute")]
     MissingAttribute { element: String, attr: String },
 
-    /// An attribute has a value that is not in the valid set.
-    /// e.g. "Unknown sce:type 'blob' on field 'data'"
-    #[error("{element}: unknown {attr} value '{value}' (expected: {expected})")]
+    /// An attribute has a value outside a CLOSED set of legal values —
+    /// `sce:type="blob"`, `sce:filter="median"`. `allowed` is that set,
+    /// and it rides the wire as the fix's candidates.
+    ///
+    /// ⚠ Only a set belongs here. A value that breaks a RULE — a positive
+    /// integer, a non-empty name, a factor that must not be zero — is
+    /// [`ValidationError::AttributeRuleViolated`]. This variant used to
+    /// carry both as one comma-joined string, which the wire split on
+    /// commas into "candidates": a consumer applying the fix for a zero
+    /// `sce:scale` was offered `decimal` and `or \`num/denom\`` as values
+    /// (measured 2026-09-21: ~100 of 134 sites carried a rule).
+    #[error("{element}: unknown {attr} value '{value}' (expected: {})", .allowed.join(", "))]
     InvalidAttribute {
         element: String,
         attr: String,
         value: String,
-        expected: String,
+        allowed: Vec<String>,
+    },
+
+    /// An attribute's value breaks a rule no list of values can state —
+    /// `sce:window="0"` where a positive integer is required. `rule` says
+    /// what a legal value satisfies, and rides the wire as `expected`
+    /// with no fix: the producer knows the rule, not the value meant.
+    #[error("{element}: invalid {attr} value '{value}' (expected: {rule})")]
+    AttributeRuleViolated {
+        element: String,
+        attr: String,
+        value: String,
+        rule: String,
     },
 
     /// An attribute in the SCE namespace that nothing in the parser
@@ -597,12 +618,16 @@ pub enum ValidationError {
 
     /// A reference (target, initial state, …) doesn't resolve.
     /// e.g. "Initial state 'armed' does not match any state"
-    #[error("{kind}: {name} does not match any {what} (available: {available})")]
+    ///
+    /// `available` is the list itself, not a joined string: the wire
+    /// offers it as candidates, and splitting a joined list back apart is
+    /// how a candidate containing the separator would come out as two.
+    #[error("{kind}: {name} does not match any {what} (available: {})", .available.join(", "))]
     InvalidReference {
         kind: ForgeKind,
         name: String,
         what: String,
-        available: String,
+        available: Vec<String>,
     },
 
     /// A direction value is invalid for the context.

@@ -50,6 +50,7 @@
         "validation/missing-element",
         "validation/missing-attribute",
         "validation/invalid-attribute",
+        "validation/attribute-rule-violated",
         "validation/unknown-sce-attribute",
         "validation/default-covers-unknown-variant",
         "validation/default-covers-tested-variant",

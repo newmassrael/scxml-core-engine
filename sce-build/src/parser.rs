@@ -1238,14 +1238,14 @@ fn parse_sce_unhandled(
     use crate::forge::model::SCE_NAMESPACE;
 
     let pos_of = || node.document().text_pos_at(node.range().start);
-    let reject = |attr: &str, value: String, expected: String| {
+    let reject = |attr: &str, value: String, rule: String| {
         let pos = pos_of();
         Located::new(
-            ValidationError::InvalidAttribute {
+            ValidationError::AttributeRuleViolated {
                 element: element_label_fn(),
                 attr: attr.to_string(),
                 value,
-                expected,
+                rule,
             }
             .into(),
             source_name,
@@ -1712,7 +1712,7 @@ impl SCXMLParser {
         // per-document event-queue capacity. Two-pass extraction:
         // (1) read the namespaced attribute via the SCE_NAMESPACE
         // URI; (2) if present, parse as u32 and reject zero / non-
-        // numeric values with `validation/invalid-attribute`. Absent
+        // numeric values with `validation/attribute-rule-violated`. Absent
         // ⇒ `None`, deploy.yaml `default_event_queue_capacity`
         // fallback applies later in the toolchain (populator hook
         // mirrors the `cache_platform` precedent in
@@ -1726,11 +1726,11 @@ impl SCXMLParser {
                     Ok(n) if n > 0 => Some(n),
                     _ => {
                         return Err(crate::forge::error::Located::new(
-                            crate::forge::error::ValidationError::InvalidAttribute {
+                            crate::forge::error::ValidationError::AttributeRuleViolated {
                                 element: "scxml".to_string(),
                                 attr: "sce:capacity".to_string(),
                                 value: raw.to_string(),
-                                expected: "positive u32".to_string(),
+                                rule: "positive u32".to_string(),
                             }
                             .into(),
                             diag_label,
@@ -2315,8 +2315,7 @@ impl SCXMLParser {
                         element: format!("inline transform '{id}' <data>"),
                         attr: "sce:type".to_string(),
                         value: type_str.clone(),
-                        expected: "uint8|uint16|uint32|uint64|int8|int16|int32|int64|float32|float64|bool|string|bytes"
-                            .to_string(),
+                        allowed: SceType::scalar_attr_names(),
                     })
                 })?;
 
@@ -4572,7 +4571,7 @@ impl SCXMLParser {
     /// declaration is captured in document order with its source
     /// position so codegen can `#include` the resolved path into the
     /// C11 `*_sm.c` and so a missing `href` surfaces
-    /// `validation/invalid-attribute` (via [`ValidationError::
+    /// `validation/missing-attribute` (via [`ValidationError::
     /// MissingAttribute`]) before downstream stages.
     ///
     /// `href` resolution against `deploy.yaml`'s `platform.driver_root`

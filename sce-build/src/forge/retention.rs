@@ -83,13 +83,17 @@ pub fn check(
             continue;
         };
         let value = retain.initial.as_str();
-        let refuse = |expected: String| {
+        let element = format!("field '{}'", field.id);
+        // A closed set where the type has one — an enum's variants, a
+        // bool's two literals — so the record offers them as candidates;
+        // an integer's range is a rule no list states.
+        let not_one_of = |allowed: Vec<String>| {
             Err(Located::new(
                 ValidationError::InvalidAttribute {
-                    element: format!("field '{}'", field.id),
+                    element: element.clone(),
                     attr: "sce:initial".into(),
                     value: value.to_string(),
-                    expected,
+                    allowed,
                 }
                 .into(),
                 document,
@@ -104,16 +108,12 @@ pub fn check(
                     continue;
                 };
                 if !variants.iter().any(|v| v == value) {
-                    return refuse(format!(
-                        "one of the variants {} declares: {}",
-                        eref.alias,
-                        variants.join(", ")
-                    ));
+                    return not_one_of(variants);
                 }
             }
             SceType::Bool => {
                 if value != "true" && value != "false" {
-                    return refuse("true or false".to_string());
+                    return not_one_of(vec!["true".into(), "false".into()]);
                 }
             }
             ty if ty.int_value_range().is_some() => {
@@ -123,7 +123,20 @@ pub fn check(
                 let (lo, hi) = ty.int_value_range().expect("the guard just asked");
                 match value.parse::<i128>() {
                     Ok(n) if n >= lo && n <= hi => {}
-                    _ => return refuse(format!("an integer in {lo}..={hi} ({})", ty.as_attr())),
+                    _ => {
+                        return Err(Located::new(
+                            ValidationError::AttributeRuleViolated {
+                                element,
+                                attr: "sce:initial".into(),
+                                value: value.to_string(),
+                                rule: format!("an integer in {lo}..={hi} ({})", ty.as_attr()),
+                            }
+                            .into(),
+                            document,
+                            None,
+                            None,
+                        ))
+                    }
                 }
             }
             // Float, string and bytes: every literal an author can write

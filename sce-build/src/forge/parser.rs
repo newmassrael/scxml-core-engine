@@ -951,7 +951,7 @@ fn parse_lookup(
                     element: "Lookup".into(),
                     attr: "sce:on-miss".into(),
                     value: oms.value,
-                    expected: "default, error".into(),
+                    allowed: vec!["default".into(), "error".into()],
                 },
             ));
         }
@@ -1250,7 +1250,7 @@ fn parse_enum(
                     element: "<scxml sce:kind=\"enum\">".into(),
                     attr: "sce:strict-variants".into(),
                     value: other.to_string(),
-                    expected: "\"true\" or \"false\"".into(),
+                    allowed: vec!["true".into(), "false".into()],
                 },
             ));
         }
@@ -1485,8 +1485,10 @@ fn parse_codec(
     // references and unknown Local carriers split into distinct
     // diagnostics (`codec/present-if-refs-later-field` for the
     // ordering case so the author gets a precise repair hint;
-    // `validation/invalid-attribute` for missing carrier or missing
-    // flag, since both reduce to "fix the attribute text").
+    // `validation/invalid-attribute` with the declared names as
+    // candidates for a missing input or flag, and
+    // `validation/attribute-rule-violated` for a carrier of the wrong
+    // shape, since no candidate repairs that).
     validate_codec_present_if_predicates(&fields, &flag_inputs, label, &datamodel)?;
 
     // RFC §synth-5-B B2 repeat validation — every <sce:repeat sce:count="X"/>
@@ -1494,7 +1496,7 @@ fn parse_codec(
     // streaming decoder has already decoded N before reading N
     // elements). Forward / unknown count target → typed
     // `codec/repeat-count-refs-later-field`; non-integer count target
-    // reuses the generic `validation/invalid-attribute`.
+    // reuses the generic `validation/attribute-rule-violated`.
     validate_codec_repeat_count_refs(&fields, label, &datamodel)?;
 
     // RFC §synth-5-B — co-gating constraint for
@@ -1506,7 +1508,7 @@ fn parse_codec(
     // are absent from the wire too — co-gating is the only authoring
     // shape where the streaming decoder can safely read the count
     // before emitting the repeat block. Folded into
-    // `validation/invalid-attribute` so the repair (align both
+    // `validation/attribute-rule-violated` so the repair (align both
     // attribute texts) reads off the diagnostic.
     validate_codec_repeat_present_if_co_gating(&fields, label, &datamodel)?;
 
@@ -1541,7 +1543,7 @@ fn parse_codec(
     // whose decoded value is an integer (so the inner cursor scope
     // can be sized before invoking the embedded codec). Forward /
     // unknown / non-integer references fold into
-    // `validation/invalid-attribute`.
+    // `validation/attribute-rule-violated`.
     validate_codec_embed_length_from(&fields, label, &datamodel)?;
 
     // RFC §synth-5-B variant primitive (item B1): optional <sce:variant> suffix
@@ -1609,11 +1611,11 @@ fn parse_flag_inputs(
             return Err(located(
                 &child,
                 doc_name,
-                ValidationError::InvalidAttribute {
+                ValidationError::AttributeRuleViolated {
                     element: "<sce:flag-inputs>".into(),
                     attr: "child element".into(),
                     value: format!("<{}>", child.tag_name().name()),
-                    expected: "only <sce:flag-input name=\"X\" width=\"N\"/> \
+                    rule: "only <sce:flag-input name=\"X\" width=\"N\"/> \
                                children are accepted"
                         .into(),
                 },
@@ -1627,11 +1629,11 @@ fn parse_flag_inputs(
             return Err(located(
                 &child,
                 doc_name,
-                ValidationError::InvalidAttribute {
+                ValidationError::AttributeRuleViolated {
                     element: "<sce:flag-input>".into(),
                     attr: "name".into(),
                     value: String::new(),
-                    expected: "non-empty logical input name (referenced by \
+                    rule: "non-empty logical input name (referenced by \
                                <sce:flag-bind input=\"<name>\"/> at parent's \
                                import site and by sce:present-if=\"<name>\" \
                                in this codec's body)"
@@ -1646,11 +1648,11 @@ fn parse_flag_inputs(
             located(
                 &child,
                 doc_name,
-                ValidationError::InvalidAttribute {
+                ValidationError::AttributeRuleViolated {
                     element: format!("<sce:flag-input name=\"{}\">", name),
                     attr: "width".into(),
                     value: width_str.clone(),
-                    expected: "positive integer bit-width (v1 lock-in: width=1; \
+                    rule: "positive integer bit-width (v1 lock-in: width=1; \
                                wider inputs defer to a reachable consumer)"
                         .into(),
                 },
@@ -1660,11 +1662,11 @@ fn parse_flag_inputs(
             return Err(located(
                 &child,
                 doc_name,
-                ValidationError::InvalidAttribute {
+                ValidationError::AttributeRuleViolated {
                     element: format!("<sce:flag-input name=\"{}\">", name),
                     attr: "width".into(),
                     value: width_str,
-                    expected: "v1 fixes flag-input width at 1 (single-bit). \
+                    rule: "v1 fixes flag-input width at 1 (single-bit). \
                                Multi-bit dispatch inputs defer to a reachable \
                                consumer"
                         .into(),
@@ -1675,11 +1677,11 @@ fn parse_flag_inputs(
             return Err(located(
                 &child,
                 doc_name,
-                ValidationError::InvalidAttribute {
+                ValidationError::AttributeRuleViolated {
                     element: "<sce:flag-inputs>".into(),
                     attr: "name".into(),
                     value: name.clone(),
-                    expected: "unique flag-input name within the <sce:flag-inputs> \
+                    rule: "unique flag-input name within the <sce:flag-inputs> \
                                block"
                         .into(),
                 },
@@ -1691,11 +1693,11 @@ fn parse_flag_inputs(
         return Err(located(
             &block,
             doc_name,
-            ValidationError::InvalidAttribute {
+            ValidationError::AttributeRuleViolated {
                 element: "<sce:flag-inputs>".into(),
                 attr: "child elements".into(),
                 value: String::new(),
-                expected: "at least one <sce:flag-input name=\"X\" width=\"N\"/> \
+                rule: "at least one <sce:flag-input name=\"X\" width=\"N\"/> \
                            child (an empty flag-inputs block has no purpose)"
                     .into(),
             },
@@ -1741,11 +1743,11 @@ fn parse_flag_binds(
             return Err(located(
                 &child,
                 doc_name,
-                ValidationError::InvalidAttribute {
+                ValidationError::AttributeRuleViolated {
                     element: "<sce:flag-bind>".into(),
                     attr: "input".into(),
                     value: String::new(),
-                    expected: "non-empty leaf-side flag-input name (must match a \
+                    rule: "non-empty leaf-side flag-input name (must match a \
                                <sce:flag-input name=\"X\"/> declared on the \
                                imported codec)"
                         .into(),
@@ -1760,35 +1762,23 @@ fn parse_flag_binds(
             return Err(located(
                 &child,
                 doc_name,
-                ValidationError::InvalidAttribute {
+                ValidationError::AttributeRuleViolated {
                     element: format!("<sce:flag-bind input=\"{}\">", input),
                     attr: "source".into(),
                     value: String::new(),
-                    expected: "non-empty source — either <carrier>.<flag> (local \
+                    rule: "non-empty source — either <carrier>.<flag> (local \
                                flags-carrier flag) or bare <input> (this codec's \
                                own flag-input, for chain-forwarder pattern)"
                         .into(),
                 },
             ));
         }
-        // Duplicate-input check is parent-local. This parse site
-        // reuses ValidationError::InvalidAttribute; the typed
-        // `ValidationError::CodecFlagBindDuplicateInput` variant backs
-        // the `codec/flag-bind-duplicate-input` wire code.
-        if binds.iter().any(|b| b.input == input) {
-            return Err(located(
-                &child,
-                doc_name,
-                ValidationError::InvalidAttribute {
-                    element: "<sce:flag-bind>".into(),
-                    attr: "input".into(),
-                    value: input.clone(),
-                    expected: "each leaf-side input must be bound at most once \
-                               per <sce:import> site"
-                        .into(),
-                },
-            ));
-        }
+        // ⚠ A second bind of the same input is NOT refused here. It is
+        // `codec/flag-bind-duplicate-input`, whose record names the parent
+        // codec — a name this parse does not have — so
+        // `validate_cross_codec_flag_bind` raises it beside its sibling
+        // flag-bind codes. This site used to refuse it with the generic
+        // attribute code while the typed variant was raised nowhere.
         // Resolve source shape via the dotted-form rule.
         let source_kind = if let Some((carrier, flag)) = source.split_once('.') {
             let carrier = carrier.trim();
@@ -1797,11 +1787,11 @@ fn parse_flag_binds(
                 return Err(located(
                     &child,
                     doc_name,
-                    ValidationError::InvalidAttribute {
+                    ValidationError::AttributeRuleViolated {
                         element: format!("<sce:flag-bind input=\"{}\">", input),
                         attr: "source".into(),
                         value: source.clone(),
-                        expected: "dotted form requires both sides non-empty: \
+                        rule: "dotted form requires both sides non-empty: \
                                    <carrier>.<flag>"
                             .into(),
                     },
@@ -1827,11 +1817,11 @@ fn parse_flag_binds(
                 return Err(located(
                     &child,
                     doc_name,
-                    ValidationError::InvalidAttribute {
+                    ValidationError::AttributeRuleViolated {
                         element: format!("<sce:flag-bind input=\"{}\">", input),
                         attr: "source".into(),
                         value: source.clone(),
-                        expected: "bare-name form must be a valid identifier \
+                        rule: "bare-name form must be a valid identifier \
                                    (alphanumeric + underscore, no leading digit)"
                             .into(),
                     },
@@ -1867,9 +1857,10 @@ fn parse_flag_binds(
 /// can read the flag bit before reaching the gated field). Forward
 /// references — predicate target declared after the consumer, or
 /// not declared at all — emit
-/// `codec/present-if-refs-later-field`. Carrier-shape and flag-name
-/// mismatches reuse the generic `validation/invalid-attribute`
-/// because the repair is still "fix the attribute text".
+/// `codec/present-if-refs-later-field`. A name nothing declares is
+/// `validation/invalid-attribute` with the declared names as candidates;
+/// a carrier of the wrong shape is `validation/attribute-rule-violated`,
+/// because no name repairs it.
 fn validate_codec_present_if_predicates(
     fields: &[CodecField],
     flag_inputs: &[crate::forge::model::FlagInput],
@@ -1896,7 +1887,8 @@ fn validate_codec_present_if_predicates(
                 // codec actually declared an input with the given
                 // name.
                 if !flag_inputs.iter().any(|fi| fi.name == predicate.flag_name) {
-                    let known: Vec<&str> = flag_inputs.iter().map(|fi| fi.name.as_str()).collect();
+                    // A bare name reads one of this codec's declared
+                    // `<sce:flag-input>`s, so those names are the set.
                     return Err(located(
                         datamodel,
                         label.diagnostic_label,
@@ -1907,12 +1899,7 @@ fn validate_codec_present_if_predicates(
                             ),
                             attr: "sce:present-if".into(),
                             value: predicate.flag_name.clone(),
-                            expected: format!(
-                                "bare-name predicate must reference a declared \
-                                 <sce:flag-input name=\"...\">: known inputs \
-                                 = [{}]",
-                                known.join(", ")
-                            ),
+                            allowed: flag_inputs.iter().map(|fi| fi.name.clone()).collect(),
                         },
                     ));
                 }
@@ -1934,7 +1921,7 @@ fn validate_codec_present_if_predicates(
                             return Err(located(
                                 datamodel,
                                 label.diagnostic_label,
-                                ValidationError::InvalidAttribute {
+                                ValidationError::AttributeRuleViolated {
                                     element: format!(
                                         "field '{}' in codec '{}'",
                                         field.id, label.identifier
@@ -1944,7 +1931,7 @@ fn validate_codec_present_if_predicates(
                                         "{}.{}",
                                         predicate.field_id, predicate.flag_name
                                     ),
-                                    expected: format!(
+                                    rule: format!(
                                         "predicate LHS must reference a flags-bearing \
                                          carrier (declared via <sce:flags>); '{}' is \
                                          a plain field",
@@ -1954,8 +1941,9 @@ fn validate_codec_present_if_predicates(
                             ));
                         }
                         if !carrier.flags.iter().any(|f| f.name == predicate.flag_name) {
-                            let known: Vec<&str> =
-                                carrier.flags.iter().map(|f| f.name.as_str()).collect();
+                            // The carrier's declared flags are the set,
+                            // spelled as the whole reference so a
+                            // candidate replaces the value as written.
                             return Err(located(
                                 datamodel,
                                 label.diagnostic_label,
@@ -1969,12 +1957,11 @@ fn validate_codec_present_if_predicates(
                                         "{}.{}",
                                         predicate.field_id, predicate.flag_name
                                     ),
-                                    expected: format!(
-                                        "flag name must be declared on carrier \
-                                         '{}': known flags = [{}]",
-                                        predicate.field_id,
-                                        known.join(", ")
-                                    ),
+                                    allowed: carrier
+                                        .flags
+                                        .iter()
+                                        .map(|f| format!("{}.{}", predicate.field_id, f.name))
+                                        .collect(),
                                 },
                             ));
                         }
@@ -2048,11 +2035,11 @@ fn parse_peek_byte_from_variant_node(
         return Err(located(
             &node,
             label.diagnostic_label,
-            ValidationError::InvalidAttribute {
+            ValidationError::AttributeRuleViolated {
                 element: "<sce:peek-byte>".into(),
                 attr: "id".into(),
                 value: String::new(),
-                expected: "non-empty identifier".into(),
+                rule: "non-empty identifier".into(),
             },
         ));
     }
@@ -2076,14 +2063,13 @@ fn parse_peek_byte_from_variant_node(
         return Err(located(
             &node,
             label.diagnostic_label,
+            // A peek reads one byte; a wider peek is a separate
+            // `<sce:peek-bytes>` primitive, not a wider type here.
             ValidationError::InvalidAttribute {
                 element: format!("<sce:peek-byte id='{id}'>"),
                 attr: "sce:type".into(),
                 value: ty.to_string(),
-                expected: "uint8 (v1 supports single-byte peek only; \
-                           multi-byte peek is a separate <sce:peek-bytes> \
-                           primitive when a reachable consumer surfaces)"
-                    .into(),
+                allowed: vec!["uint8".into()],
             },
         ));
     }
@@ -2100,11 +2086,11 @@ fn parse_peek_byte_from_variant_node(
             return Err(located(
                 &child,
                 label.diagnostic_label,
-                ValidationError::InvalidAttribute {
+                ValidationError::AttributeRuleViolated {
                     element: format!("<sce:peek-byte id='{id}'>"),
                     attr: "child element".into(),
                     value: child.tag_name().name().to_string(),
-                    expected: "<sce:flag>".into(),
+                    rule: "only <sce:flag> children".into(),
                 },
             ));
         }
@@ -2125,11 +2111,11 @@ fn parse_peek_byte_from_variant_node(
             return Err(located(
                 &child,
                 label.diagnostic_label,
-                ValidationError::InvalidAttribute {
+                ValidationError::AttributeRuleViolated {
                     element: format!("<sce:flag> in <sce:peek-byte id='{id}'>"),
                     attr: "name".into(),
                     value: name.clone(),
-                    expected: "unique within parent <sce:peek-byte>".into(),
+                    rule: "unique within parent <sce:peek-byte>".into(),
                 },
             ));
         }
@@ -2174,11 +2160,11 @@ fn parse_peek_byte_from_variant_node(
             return Err(located(
                 &child,
                 label.diagnostic_label,
-                ValidationError::InvalidAttribute {
+                ValidationError::AttributeRuleViolated {
                     element: format!("<sce:flag name='{name}'>"),
                     attr: "width".into(),
                     value: width.to_string(),
-                    expected: "1..=8".into(),
+                    rule: "1..=8".into(),
                 },
             ));
         }
@@ -2186,11 +2172,11 @@ fn parse_peek_byte_from_variant_node(
             return Err(located(
                 &child,
                 label.diagnostic_label,
-                ValidationError::InvalidAttribute {
+                ValidationError::AttributeRuleViolated {
                     element: format!("<sce:flag name='{name}'>"),
                     attr: "bit".into(),
                     value: bit.to_string(),
-                    expected: "0..8 (peek-byte is uint8)".into(),
+                    rule: "0..8 (peek-byte is uint8)".into(),
                 },
             ));
         }
@@ -2198,11 +2184,11 @@ fn parse_peek_byte_from_variant_node(
             return Err(located(
                 &child,
                 label.diagnostic_label,
-                ValidationError::InvalidAttribute {
+                ValidationError::AttributeRuleViolated {
                     element: format!("<sce:flag name='{name}'>"),
                     attr: "width".into(),
                     value: width.to_string(),
-                    expected: format!("bit({bit}) + width <= 8 (peek-byte is uint8)"),
+                    rule: format!("bit({bit}) + width <= 8 (peek-byte is uint8)"),
                 },
             ));
         }
@@ -2211,11 +2197,11 @@ fn parse_peek_byte_from_variant_node(
             return Err(located(
                 &child,
                 label.diagnostic_label,
-                ValidationError::InvalidAttribute {
+                ValidationError::AttributeRuleViolated {
                     element: format!("<sce:flag name='{name}'>"),
                     attr: "bit".into(),
                     value: format!("{bit}..{}", bit + width),
-                    expected: "bit-range disjoint from siblings in same <sce:peek-byte>".into(),
+                    rule: "bit-range disjoint from siblings in same <sce:peek-byte>".into(),
                 },
             ));
         }
@@ -2307,11 +2293,11 @@ fn parse_codec_variant(
                     return Err(located(
                         &variant_node,
                         label.diagnostic_label,
-                        ValidationError::InvalidAttribute {
+                        ValidationError::AttributeRuleViolated {
                             element: "<sce:variant>".into(),
                             attr: "tag".into(),
                             value: raw.to_string(),
-                            expected: "either a bare field id (e.g. 'msg_id') for whole-field \
+                            rule: "either a bare field id (e.g. 'msg_id') for whole-field \
                                        dispatch, or a '<carrier>.<flag>' dotted path (e.g. \
                                        'header.mid') for multi-bit-flag dispatch — both halves \
                                        must be non-empty"
@@ -2349,11 +2335,11 @@ fn parse_codec_variant(
         return Err(located(
             &variant_node,
             label.diagnostic_label,
-            ValidationError::InvalidAttribute {
+            ValidationError::AttributeRuleViolated {
                 element: "<sce:variant>".into(),
                 attr: "tag".into(),
                 value: "<absent>".into(),
-                expected: "β caller-tag form (no `tag=` attribute) is mutually \
+                rule: "β caller-tag form (no `tag=` attribute) is mutually \
                                exclusive with <sce:peek-byte> mode — either drop the \
                                peek-byte child or add a `tag=\"<peek_id>.<flag>\"` \
                                attribute"
@@ -2371,17 +2357,16 @@ fn parse_codec_variant(
                     return Err(located(
                         &variant_node,
                         label.diagnostic_label,
-                        ValidationError::InvalidAttribute {
+                        ValidationError::AttributeRuleViolated {
                             element: "<sce:variant>".into(),
                             attr: "tag".into(),
                             value: raw_tag.clone().unwrap_or_default(),
-                            expected:
-                                "peek-byte mode requires a dotted-path tag '<peek_id>.<flag>' — \
+                            rule: "peek-byte mode requires a dotted-path tag '<peek_id>.<flag>' — \
                          the carrier half names the <sce:peek-byte id='...'> slot, the \
                          flag half names one of its <sce:flag> children. Bare tag is \
                          reserved for own-field whole-field dispatch (when no \
                          <sce:peek-byte> child is declared on this <sce:variant>)."
-                                    .to_string(),
+                                .to_string(),
                         },
                     ));
                 }
@@ -2389,11 +2374,11 @@ fn parse_codec_variant(
                     return Err(located(
                         &variant_node,
                         label.diagnostic_label,
-                        ValidationError::InvalidAttribute {
+                        ValidationError::AttributeRuleViolated {
                             element: "<sce:variant>".into(),
                             attr: "tag".into(),
                             value: raw_tag.clone().unwrap_or_default(),
-                            expected: format!(
+                            rule: format!(
                         "peek-byte mode tag carrier must equal the <sce:peek-byte id='{}'> \
                          slot's id; got '{}'",
                         peek.id, tag_field_name
@@ -2405,8 +2390,8 @@ fn parse_codec_variant(
                 match peek.flags.iter().find(|f| f.name == *flag_name) {
                     Some(flag_def) => (SceType::Uint8, Some(flag_def.width.max(1))),
                     None => {
-                        let available: Vec<String> =
-                            peek.flags.iter().map(|f| f.name.clone()).collect();
+                        // The peek slot's declared flags, spelled as the
+                        // whole tag so a candidate replaces it as written.
                         return Err(located(
                             &variant_node,
                             label.diagnostic_label,
@@ -2414,12 +2399,11 @@ fn parse_codec_variant(
                                 element: "<sce:variant>".into(),
                                 attr: "tag".into(),
                                 value: raw_tag.clone().unwrap_or_default(),
-                                expected: format!(
-                            "flag '{flag_name}' is not declared on <sce:peek-byte id='{}'> — \
-                             available flags: {}",
-                            peek.id,
-                            available.join(", ")
-                        ),
+                                allowed: peek
+                                    .flags
+                                    .iter()
+                                    .map(|f| format!("{}.{}", peek.id, f.name))
+                                    .collect(),
                             },
                         ));
                     }
@@ -2441,11 +2425,11 @@ fn parse_codec_variant(
                         return Err(located(
                     &variant_node,
                     label.diagnostic_label,
-                    ValidationError::InvalidAttribute {
+                    ValidationError::AttributeRuleViolated {
                         element: "<sce:variant>".into(),
                         attr: "sce:tag".into(),
                         value: tag_field_name.clone(),
-                        expected: format!(
+                        rule: format!(
                             "tag field must be unsigned-int (uint8/uint16/uint32/uint64); '{tag_field_name}' is {:?}",
                             f.sce_type
                         ),
@@ -2461,7 +2445,7 @@ fn parse_codec_variant(
                                 kind: ForgeKind::Codec,
                                 name: tag_field_name.clone(),
                                 what: "field".into(),
-                                available: available.join(", "),
+                                available,
                             },
                         ));
                     }
@@ -2471,20 +2455,21 @@ fn parse_codec_variant(
                 // If the tag uses dotted form, the carrier must carry flags
                 // and the named flag must exist. Width of the named flag determines
                 // both the dispatch domain (1<<width) and the result-type used by
-                // arm value literals downstream. Failures stay on
-                // `validation/invalid-attribute` because the repair is still
-                // attribute-text-level (mirrors present-if's choice).
+                // arm value literals downstream. A flag the carrier does not
+                // declare is `validation/invalid-attribute` with the declared
+                // flags as candidates; a carrier with no flags at all breaks
+                // a rule no candidate repairs (mirrors present-if's split).
                 let tag_flag_width: Option<u32> = match &tag_flag {
                     Some(flag_name) => {
                         if tag_field_ref.flags.is_empty() {
                             return Err(located(
                                 &variant_node,
                                 label.diagnostic_label,
-                                ValidationError::InvalidAttribute {
+                                ValidationError::AttributeRuleViolated {
                                     element: "<sce:variant>".into(),
                                     attr: "tag".into(),
                                     value: format!("{tag_field_name}.{flag_name}"),
-                                    expected: format!(
+                                    rule: format!(
                                 "carrier '{tag_field_name}' must be authored as <sce:flags> with \
                                  <sce:flag> children for the dotted-path form; '{tag_field_name}' \
                                  is a plain field — either author it as <sce:flags> or use \
@@ -2496,8 +2481,8 @@ fn parse_codec_variant(
                         match tag_field_ref.flags.iter().find(|f| f.name == *flag_name) {
                             Some(flag_def) => Some(flag_def.width.max(1)),
                             None => {
-                                let available: Vec<String> =
-                                    tag_field_ref.flags.iter().map(|f| f.name.clone()).collect();
+                                // The carrier's declared flags, spelled as
+                                // the whole tag the candidate replaces.
                                 return Err(located(
                                     &variant_node,
                                     label.diagnostic_label,
@@ -2505,11 +2490,11 @@ fn parse_codec_variant(
                                         element: "<sce:variant>".into(),
                                         attr: "tag".into(),
                                         value: format!("{tag_field_name}.{flag_name}"),
-                                        expected: format!(
-                                            "flag '{flag_name}' is not declared on carrier \
-                                     '{tag_field_name}' — available flags: {}",
-                                            available.join(", ")
-                                        ),
+                                        allowed: tag_field_ref
+                                            .flags
+                                            .iter()
+                                            .map(|f| format!("{tag_field_name}.{}", f.name))
+                                            .collect(),
                                     },
                                 ));
                             }
@@ -2608,7 +2593,7 @@ fn parse_codec_variant(
                                 element: format!("<sce:arm value=\"{value_str}\">"),
                                 attr: "default".into(),
                                 value: other.to_string(),
-                                expected: "\"true\" or \"false\" (or omit the attribute)".into(),
+                                allowed: vec!["true".into(), "false".into()],
                             },
                         ));
                     }
@@ -2676,11 +2661,11 @@ fn parse_codec_variant(
                 return Err(located(
                     &child,
                     label.diagnostic_label,
-                    ValidationError::InvalidAttribute {
+                    ValidationError::AttributeRuleViolated {
                         element: "<sce:variant>".into(),
                         attr: "child element".into(),
                         value: local.to_string(),
-                        expected: "<sce:arm>, <sce:default>, or <sce:peek-byte>".into(),
+                        rule: "only <sce:arm>, <sce:default> or <sce:peek-byte> children".into(),
                     },
                 ));
             }
@@ -2797,7 +2782,7 @@ pub fn parse_codec_field_from_node(
                 element: format!("field '{id}'"),
                 attr: "sce:type".into(),
                 value: sce_type_str.clone(),
-                expected: "uint8, uint16, uint32, int8, int16, int32, float32, float64, bool, string, bytes".into(),
+                allowed: SceType::scalar_attr_names(),
             },
         )
     })?;
@@ -2853,11 +2838,11 @@ pub fn parse_codec_field_from_node(
                         return Err(located(
                             node,
                             doc_name,
-                            ValidationError::InvalidAttribute {
+                            ValidationError::AttributeRuleViolated {
                                 element: format!("field '{id}'"),
                                 attr: "sce:bit-size".into(),
                                 value: "vle".into(),
-                                expected: "vle requires sce:type ∈ {uint16, uint32, uint64}".into(),
+                                rule: "vle requires sce:type ∈ {uint16, uint32, uint64}".into(),
                             },
                         ));
                     }
@@ -2903,13 +2888,13 @@ pub fn parse_codec_field_from_node(
                     return Err(located(
                         node,
                         doc_name,
+                        // The offset is limited to ±1; a wider one waits
+                        // for a consumer that needs it.
                         ValidationError::InvalidAttribute {
                             element: format!("Codec field '{id}'"),
                             attr: "sce:length-arith".into(),
                             value: raw.clone(),
-                            expected: "+1 or -1 (v1 limits arithmetic offset to ±1; \
-                                       widening defers to a reachable consumer)"
-                                .into(),
+                            allowed: vec!["+1".into(), "-1".into()],
                         },
                     ));
                 }
@@ -2918,11 +2903,11 @@ pub fn parse_codec_field_from_node(
                 return Err(located(
                     node,
                     doc_name,
-                    ValidationError::InvalidAttribute {
+                    ValidationError::AttributeRuleViolated {
                         element: format!("Codec field '{id}'"),
                         attr: "sce:length-arith".into(),
                         value: raw.clone(),
-                        expected: "sce:length-arith requires sce:length-field \
+                        rule: "sce:length-arith requires sce:length-field \
                                    (the offset has no source to apply to)"
                             .into(),
                     },
@@ -2932,11 +2917,11 @@ pub fn parse_codec_field_from_node(
                 return Err(located(
                     node,
                     doc_name,
-                    ValidationError::InvalidAttribute {
+                    ValidationError::AttributeRuleViolated {
                         element: format!("Codec field '{id}'"),
                         attr: "sce:length-arith".into(),
                         value: raw.clone(),
-                        expected: "sce:length-arith requires sce:bit-size=\"length-ref\" \
+                        rule: "sce:length-arith requires sce:bit-size=\"length-ref\" \
                                    (the offset adjusts the byte count read from the \
                                    referenced sibling)"
                             .into(),
@@ -2988,11 +2973,11 @@ pub fn parse_codec_field_from_node(
                 return Err(located(
                     node,
                     doc_name,
-                    ValidationError::InvalidAttribute {
+                    ValidationError::AttributeRuleViolated {
                         element: format!("Codec field '{id}'"),
                         attr: "sce:dma-burst-align".into(),
                         value: raw.clone(),
-                        expected: "positive power-of-2 integer (e.g. 16, 32, 64)".into(),
+                        rule: "positive power-of-2 integer (e.g. 16, 32, 64)".into(),
                     },
                 ));
             }
@@ -3018,19 +3003,11 @@ pub fn parse_codec_field_from_node(
         return Err(located(
             node,
             doc_name,
-            ValidationError::InvalidAttribute {
+            ValidationError::AttributeRuleViolated {
                 element: format!("Codec field '{id}'"),
                 attr: "sce:bit-size".into(),
-                value: match &bit_size {
-                    BitSize::Tail => "tail".into(),
-                    BitSize::Fixed { bits } => format!("{bits}"),
-                    BitSize::Vle { .. } => "vle".into(),
-                    BitSize::Repeat { .. } => "<repeat>".into(),
-                    BitSize::TlvChain { .. } => "<tlv-chain>".into(),
-                    BitSize::Embed => "<embed>".into(),
-                    BitSize::LengthRef => unreachable!("guarded by outer match"),
-                },
-                expected: "sce:type=\"string\" requires sce:bit-size=\"length-ref\" \
+                value: bit_size.as_attr(),
+                rule: "sce:type=\"string\" requires sce:bit-size=\"length-ref\" \
                            (UTF-8 text is length-prefixed; tail / fixed-bit / vle \
                            shapes defer until a consumer surfaces)"
                     .into(),
@@ -3117,11 +3094,11 @@ fn parse_present_if_predicate(
         located(
             node,
             doc_name,
-            ValidationError::InvalidAttribute {
+            ValidationError::AttributeRuleViolated {
                 element: format!("field '{field_id}'"),
                 attr: "sce:present-if".into(),
                 value: raw.to_string(),
-                expected: "one of '<field_id>.<flag_name>' / \
+                rule: "one of '<field_id>.<flag_name>' / \
                            '!<field_id>.<flag_name>' / 'parent.<flag_name>' / \
                            '!parent.<flag_name>' / disjunction \
                            '<clause> || <clause> [|| ...]' where each \
@@ -3238,8 +3215,8 @@ fn parse_codec_flags_from_node(
             ValidationError::InvalidAttribute {
                 element: format!("<sce:flags id='{}'>", field.id),
                 attr: "sce:type".into(),
-                value: format!("{:?}", field.sce_type).to_lowercase(),
-                expected: "uint8 / uint16 / uint32 / uint64".into(),
+                value: field.sce_type.as_attr(),
+                allowed: SceType::scalar_attr_names_where(SceType::is_unsigned),
             },
         ));
     }
@@ -3253,11 +3230,11 @@ fn parse_codec_flags_from_node(
         return Err(located(
             node,
             doc_name,
-            ValidationError::InvalidAttribute {
+            ValidationError::AttributeRuleViolated {
                 element: format!("<sce:flags id='{}'>", field.id),
                 attr: "sce:present-if".into(),
                 value: "<predicate>".into(),
-                expected: "<sce:flags> carriers cannot themselves be \
+                rule: "<sce:flags> carriers cannot themselves be \
                            gated by present-if (the bit they carry would \
                            be unreadable when the carrier is absent)"
                     .into(),
@@ -3279,11 +3256,11 @@ fn parse_codec_flags_from_node(
             return Err(located(
                 &child,
                 doc_name,
-                ValidationError::InvalidAttribute {
+                ValidationError::AttributeRuleViolated {
                     element: format!("<sce:flags id='{}'>", field.id),
                     attr: "child element".into(),
                     value: child.tag_name().name().to_string(),
-                    expected: "<sce:flag>".into(),
+                    rule: "only <sce:flag> children".into(),
                 },
             ));
         }
@@ -3304,11 +3281,11 @@ fn parse_codec_flags_from_node(
             return Err(located(
                 &child,
                 doc_name,
-                ValidationError::InvalidAttribute {
+                ValidationError::AttributeRuleViolated {
                     element: format!("<sce:flag> in <sce:flags id='{}'>", field.id),
                     attr: "name".into(),
                     value: name.clone(),
-                    expected: "unique within parent <sce:flags>".into(),
+                    rule: "unique within parent <sce:flags>".into(),
                 },
             ));
         }
@@ -3357,11 +3334,11 @@ fn parse_codec_flags_from_node(
             return Err(located(
                 &child,
                 doc_name,
-                ValidationError::InvalidAttribute {
+                ValidationError::AttributeRuleViolated {
                     element: format!("<sce:flag name='{name}'>"),
                     attr: "width".into(),
                     value: width.to_string(),
-                    expected: "1..=carrier_bit_width".into(),
+                    rule: format!("1..={bit_width} (carrier is {bit_width}-bit)"),
                 },
             ));
         }
@@ -3369,11 +3346,11 @@ fn parse_codec_flags_from_node(
             return Err(located(
                 &child,
                 doc_name,
-                ValidationError::InvalidAttribute {
+                ValidationError::AttributeRuleViolated {
                     element: format!("<sce:flag name='{name}'>"),
                     attr: "bit".into(),
                     value: bit.to_string(),
-                    expected: format!("0..{bit_width} (carrier is {bit_width}-bit)"),
+                    rule: format!("0..{bit_width} (carrier is {bit_width}-bit)"),
                 },
             ));
         }
@@ -3381,13 +3358,11 @@ fn parse_codec_flags_from_node(
             return Err(located(
                 &child,
                 doc_name,
-                ValidationError::InvalidAttribute {
+                ValidationError::AttributeRuleViolated {
                     element: format!("<sce:flag name='{name}'>"),
                     attr: "width".into(),
                     value: width.to_string(),
-                    expected: format!(
-                        "bit({bit}) + width <= {bit_width} (carrier is {bit_width}-bit)"
-                    ),
+                    rule: format!("bit({bit}) + width <= {bit_width} (carrier is {bit_width}-bit)"),
                 },
             ));
         }
@@ -3398,11 +3373,11 @@ fn parse_codec_flags_from_node(
             return Err(located(
                 &child,
                 doc_name,
-                ValidationError::InvalidAttribute {
+                ValidationError::AttributeRuleViolated {
                     element: format!("<sce:flag name='{name}'>"),
                     attr: "bit".into(),
                     value: format!("{bit}..{}", bit + width),
-                    expected: "bit-range disjoint from siblings in same <sce:flags>".into(),
+                    rule: "bit-range disjoint from siblings in same <sce:flags>".into(),
                 },
             ));
         }
@@ -3443,11 +3418,11 @@ fn parse_codec_flags_from_node(
                     return Err(located(
                         &child,
                         doc_name,
-                        ValidationError::InvalidAttribute {
+                        ValidationError::AttributeRuleViolated {
                             element: format!("<sce:flag name='{name}'>"),
                             attr: "value".into(),
                             value: s.to_string(),
-                            expected: format!(
+                            rule: format!(
                                 "value must fit the declared bit-range \
                                  (width={width}; max={domain_mask:#x})"
                             ),
@@ -3586,7 +3561,7 @@ fn parse_codec_repeat_from_node(
                     element: format!("<sce:repeat id='{id}'>"),
                     attr: "sce:until-eof".into(),
                     value: other.to_string(),
-                    expected: "\"true\" or \"false\"".into(),
+                    allowed: vec!["true".into(), "false".into()],
                 },
             ));
         }
@@ -3598,11 +3573,11 @@ fn parse_codec_repeat_from_node(
             return Err(located(
                 node,
                 doc_name,
-                ValidationError::InvalidAttribute {
+                ValidationError::AttributeRuleViolated {
                     element: format!("<sce:repeat id='{id}'>"),
                     attr: "sce:count / sce:until-eof".into(),
                     value: "<both or neither>".into(),
-                    expected: "exactly one of sce:count=\"<sibling_field_id>\" \
+                    rule: "exactly one of sce:count=\"<sibling_field_id>\" \
                                or sce:until-eof=\"true\""
                         .into(),
                 },
@@ -3756,11 +3731,11 @@ fn parse_codec_tlv_chain_from_node(
         return Err(located(
             node,
             doc_name,
-            ValidationError::InvalidAttribute {
+            ValidationError::AttributeRuleViolated {
                 element: format!("<sce:tlv-chain id='{id}'>"),
                 attr: "max-depth".into(),
                 value: max_depth_raw.to_string(),
-                expected: "positive integer (max-depth=\"0\" decodes nothing)".into(),
+                rule: "positive integer (max-depth=\"0\" decodes nothing)".into(),
             },
         ));
     }
@@ -3772,14 +3747,13 @@ fn parse_codec_tlv_chain_from_node(
             return Err(located(
                 node,
                 doc_name,
+                // `diagnostic-event` waits on the runtime that would carry
+                // it; until then the set is the two policies that exist.
                 ValidationError::InvalidAttribute {
                     element: format!("<sce:tlv-chain id='{id}'>"),
                     attr: "on-overflow".into(),
                     value: "diagnostic-event".into(),
-                    expected:
-                        "\"reject\" or \"truncate\" — \"diagnostic-event\" defers to a later \
-                         B-stage when §5.A diagnostic-event runtime infrastructure ships"
-                            .into(),
+                    allowed: vec!["reject".into(), "truncate".into()],
                 },
             ));
         }
@@ -3791,7 +3765,7 @@ fn parse_codec_tlv_chain_from_node(
                     element: format!("<sce:tlv-chain id='{id}'>"),
                     attr: "on-overflow".into(),
                     value: other.to_string(),
-                    expected: "\"reject\" or \"truncate\"".into(),
+                    allowed: vec!["reject".into(), "truncate".into()],
                 },
             ));
         }
@@ -3828,9 +3802,9 @@ fn parse_codec_tlv_chain_from_node(
                 doc_name,
                 ValidationError::InvalidAttribute {
                     element: format!("<sce:tlv-chain id='{id}'>"),
-                    attr: "sce:terminate-on".into(),
+                    attr: "terminate-on".into(),
                     value: other.to_string(),
-                    expected: "\"exhaust-or-depth\" or \"entry-flag\"".into(),
+                    allowed: vec!["exhaust-or-depth".into(), "entry-flag".into()],
                 },
             ));
         }
@@ -4053,7 +4027,7 @@ fn parse_codec_embed_from_node(
 /// those widths. Sub-bit length sources route through the dotted
 /// form instead.
 ///
-/// All failure modes fold into `validation/invalid-attribute` —
+/// All failure modes fold into `validation/attribute-rule-violated` —
 /// the repair is attribute-text-level (pick a different sibling,
 /// declare it earlier, widen/narrow the bit-size, switch to
 /// dotted form). No new diagnostic.
@@ -4080,11 +4054,11 @@ fn validate_codec_tail_is_last(
             return Err(located(
                 datamodel,
                 label.diagnostic_label,
-                ValidationError::InvalidAttribute {
+                ValidationError::AttributeRuleViolated {
                     element: format!("field '{}' in codec '{}'", field.id, label.identifier),
                     attr: "sce:bit-size".into(),
                     value: "tail".into(),
-                    expected: format!(
+                    rule: format!(
                         "a tail field consumes the rest of the frame, so it must be the \
                          last field in the codec; '{}' is declared after it. Use \
                          sce:bit-size=\"length-ref\" if the payload has a bounded length \
@@ -4141,11 +4115,11 @@ fn validate_codec_bytes_is_variable(
         return Err(located(
             datamodel,
             label.diagnostic_label,
-            ValidationError::InvalidAttribute {
+            ValidationError::AttributeRuleViolated {
                 element: format!("field '{}' in codec '{}'", field.id, label.identifier),
                 attr: "sce:bit-size".into(),
-                value: format!("{:?}", field.bit_size),
-                expected: "a bytes field is a RUN of bytes, so its size is a length and not \
+                value: field.bit_size.as_attr(),
+                rule: "a bytes field is a RUN of bytes, so its size is a length and not \
                            a bit count: use sce:bit-size=\"length-ref\" with \
                            sce:length-field=\"<sibling>\", or \"tail\" when it runs to the \
                            end of the frame. A fixed bit-size makes the decoder assemble an \
@@ -4166,15 +4140,15 @@ fn validate_codec_length_field_refs(
     let mut by_id_so_far: BTreeMap<&str, &CodecField> = BTreeMap::new();
     for field in fields {
         if let Some(raw) = field.length_field.as_deref() {
-            let invalid = |expected: String| {
+            let invalid = |rule: String| {
                 located(
                     datamodel,
                     label.diagnostic_label,
-                    ValidationError::InvalidAttribute {
+                    ValidationError::AttributeRuleViolated {
                         element: format!("field '{}' in codec '{}'", field.id, label.identifier),
                         attr: "sce:length-field".into(),
                         value: raw.to_string(),
-                        expected,
+                        rule,
                     },
                 )
             };
@@ -4295,8 +4269,8 @@ fn validate_codec_length_field_refs(
 /// codec (forward references are rejected so the streaming decoder
 /// reads the length value before reaching the embed payload) AND its
 /// host-language type must be integer (so the value drives an inner
-/// cursor scope size). Folds into `validation/invalid-attribute` —
-/// the repair text names the offending sibling so the author can
+/// cursor scope size). Folds into `validation/attribute-rule-violated` —
+/// the rule text names the offending sibling so the author can
 /// reorder or retype directly.
 fn validate_codec_embed_length_from(
     fields: &[CodecField],
@@ -4307,18 +4281,18 @@ fn validate_codec_embed_length_from(
     let mut by_id_so_far: BTreeMap<&str, &CodecField> = BTreeMap::new();
     for field in fields {
         if let Some(target) = field.embed_length_from.as_deref() {
-            let invalid = |expected: String| {
+            let invalid = |rule: String| {
                 located(
                     datamodel,
                     label.diagnostic_label,
-                    ValidationError::InvalidAttribute {
+                    ValidationError::AttributeRuleViolated {
                         element: format!(
                             "<sce:embed id='{}'> in codec '{}'",
                             field.id, label.identifier
                         ),
                         attr: "sce:length-from".into(),
                         value: target.to_string(),
-                        expected,
+                        rule,
                     },
                 )
             };
@@ -4350,7 +4324,7 @@ fn validate_codec_embed_length_from(
 /// Forward / unknown count target → typed
 /// `codec/repeat-count-refs-later-field` (the repair is structural —
 /// reorder the count to come before the repeat). Non-integer count
-/// target reuses the generic `validation/invalid-attribute` (the
+/// target reuses the generic `validation/attribute-rule-violated` (the
 /// repair is "fix the attribute text" — pick a different field or
 /// retype the existing one).
 ///
@@ -4386,17 +4360,18 @@ fn validate_codec_repeat_count_refs(
                         return Err(located(
                             datamodel,
                             label.diagnostic_label,
-                            ValidationError::InvalidAttribute {
+                            ValidationError::AttributeRuleViolated {
                                 element: format!(
                                     "<sce:repeat id='{}'> in codec '{}'",
                                     field.id, label.identifier
                                 ),
                                 attr: "sce:count".into(),
                                 value: target.clone(),
-                                expected: format!(
+                                rule: format!(
                                     "count target must be an integer field; \
-                                     '{}' is {:?}",
-                                    target, carrier.sce_type
+                                     '{}' is {}",
+                                    target,
+                                    carrier.sce_type.as_attr()
                                 ),
                             },
                         ));
@@ -4430,7 +4405,7 @@ fn validate_codec_repeat_count_refs(
 /// `CountRef::UntilEof` skips this check (no count target). Predicate
 /// identity compares all four fields of `PresentIfPredicate` (scope,
 /// field_id, flag_name, negate); any drift folds into `validation/
-/// invalid-attribute` with a precise repair hint naming both fields.
+/// attribute-rule-violated` with a rule naming both fields.
 fn validate_codec_repeat_present_if_co_gating(
     fields: &[CodecField],
     label: DocumentLabel<'_>,
@@ -4484,18 +4459,18 @@ fn validate_codec_repeat_present_if_co_gating(
                 ),
             )),
         };
-        if let Some((value, expected)) = reject {
+        if let Some((value, rule)) = reject {
             return Err(located(
                 datamodel,
                 label.diagnostic_label,
-                ValidationError::InvalidAttribute {
+                ValidationError::AttributeRuleViolated {
                     element: format!(
                         "<sce:repeat id='{}'> in codec '{}'",
                         field.id, label.identifier
                     ),
                     attr: "sce:present-if".into(),
                     value,
-                    expected,
+                    rule,
                 },
             ));
         }
@@ -4614,7 +4589,7 @@ fn validate_codec_dma_alignment(
 // resolve to a `CodecField` declared in the same codec; the
 // value form (`value=` / `hex=` / `string=`) must match that
 // field's `SceType` (parser rejects mismatches via
-// `validation/invalid-attribute`). Variant / TLV-chain / parent-
+// `validation/attribute-rule-violated`). Variant / TLV-chain / parent-
 // flags codecs reject downstream at the per-language sidecar
 // emitter so the parser surface stays uniform.
 
@@ -4654,11 +4629,11 @@ fn parse_one_codec_test_vector(
         located(
             node,
             label.diagnostic_label,
-            ValidationError::InvalidAttribute {
+            ValidationError::AttributeRuleViolated {
                 element: "sce:test-vector".into(),
                 attr: "hex".into(),
                 value: hex_attr.to_string(),
-                expected: reason,
+                rule: reason,
             },
         )
     })?;
@@ -4676,11 +4651,11 @@ fn parse_one_codec_test_vector(
                 return Err(located(
                     &child,
                     label.diagnostic_label,
-                    ValidationError::InvalidAttribute {
+                    ValidationError::AttributeRuleViolated {
                         element: "sce:test-vector".into(),
                         attr: "<child element>".into(),
                         value: format!("sce:{other}"),
-                        expected: "test vectors only accept <sce:decoded field=\"...\" \
+                        rule: "test vectors only accept <sce:decoded field=\"...\" \
                                    value|hex|string=\"...\"/> children; \
                                    <sce:decoded-variant>/<sce:decoded-chain>/<sce:decoded-entry> \
                                    are not supported"
@@ -4728,19 +4703,12 @@ fn parse_one_decoded_field(
         located(
             node,
             label.diagnostic_label,
+            // The codec's own fields are the set a row may name.
             ValidationError::InvalidAttribute {
                 element: "sce:decoded".into(),
                 attr: "field".into(),
                 value: name.to_string(),
-                expected: format!(
-                    "field name must resolve to a <sce:field>/<sce:flags> declared in this \
-                     codec; available: {}",
-                    fields
-                        .iter()
-                        .map(|f| f.id.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                ),
+                allowed: fields.iter().map(|f| f.id.clone()).collect(),
             },
         )
     })?;
@@ -4755,13 +4723,12 @@ fn parse_one_decoded_field(
         return Err(located(
             node,
             label.diagnostic_label,
-            ValidationError::InvalidAttribute {
+            ValidationError::AttributeRuleViolated {
                 element: "sce:decoded".into(),
                 attr: "value|hex|string".into(),
                 value: format!("{n_set} of value/hex/string attributes set"),
-                expected:
-                    "exactly one of value=, hex=, or string= must be set per <sce:decoded> row"
-                        .into(),
+                rule: "exactly one of value=, hex=, or string= must be set per <sce:decoded> row"
+                    .into(),
             },
         ));
     }
@@ -4772,12 +4739,12 @@ fn parse_one_decoded_field(
                 located(
                     node,
                     label.diagnostic_label,
-                    ValidationError::InvalidAttribute {
+                    ValidationError::AttributeRuleViolated {
                         element: "sce:decoded".into(),
                         attr: "value-form".into(),
                         value: "value= or string=".into(),
-                        expected: format!(
-                            "field '{}' has SceType::Bytes — must use hex=\"...\" form",
+                        rule: format!(
+                            "field '{}' is declared bytes — must use hex=\"...\" form",
                             codec_field.id
                         ),
                     },
@@ -4787,11 +4754,11 @@ fn parse_one_decoded_field(
                 located(
                     node,
                     label.diagnostic_label,
-                    ValidationError::InvalidAttribute {
+                    ValidationError::AttributeRuleViolated {
                         element: "sce:decoded".into(),
                         attr: "hex".into(),
                         value: raw.to_string(),
-                        expected: reason,
+                        rule: reason,
                     },
                 )
             })?;
@@ -4802,12 +4769,12 @@ fn parse_one_decoded_field(
                 located(
                     node,
                     label.diagnostic_label,
-                    ValidationError::InvalidAttribute {
+                    ValidationError::AttributeRuleViolated {
                         element: "sce:decoded".into(),
                         attr: "value-form".into(),
                         value: "value= or hex=".into(),
-                        expected: format!(
-                            "field '{}' has SceType::String — must use string=\"...\" form",
+                        rule: format!(
+                            "field '{}' is declared string — must use string=\"...\" form",
                             codec_field.id
                         ),
                     },
@@ -4820,12 +4787,12 @@ fn parse_one_decoded_field(
                 located(
                     node,
                     label.diagnostic_label,
-                    ValidationError::InvalidAttribute {
+                    ValidationError::AttributeRuleViolated {
                         element: "sce:decoded".into(),
                         attr: "value-form".into(),
                         value: "hex= or string=".into(),
-                        expected: format!(
-                            "field '{}' has SceType::Bool — must use value=\"true|false\"",
+                        rule: format!(
+                            "field '{}' is declared bool — must use value=\"true|false\"",
                             codec_field.id
                         ),
                     },
@@ -4842,7 +4809,7 @@ fn parse_one_decoded_field(
                             element: "sce:decoded".into(),
                             attr: "value".into(),
                             value: v.to_string(),
-                            expected: "boolean literal 'true' or 'false'".into(),
+                            allowed: vec!["true".into(), "false".into()],
                         },
                     ));
                 }
@@ -4853,12 +4820,12 @@ fn parse_one_decoded_field(
                 located(
                     node,
                     label.diagnostic_label,
-                    ValidationError::InvalidAttribute {
+                    ValidationError::AttributeRuleViolated {
                         element: "sce:decoded".into(),
                         attr: "value-form".into(),
                         value: "hex= or string=".into(),
-                        expected: format!(
-                            "field '{}' has integer SceType — must use value=\"...\" form",
+                        rule: format!(
+                            "field '{}' is declared an integer type — must use value=\"...\" form",
                             codec_field.id
                         ),
                     },
@@ -4868,11 +4835,11 @@ fn parse_one_decoded_field(
                 located(
                     node,
                     label.diagnostic_label,
-                    ValidationError::InvalidAttribute {
+                    ValidationError::AttributeRuleViolated {
                         element: "sce:decoded".into(),
                         attr: "value".into(),
                         value: v.to_string(),
-                        expected: reason,
+                        rule: reason,
                     },
                 )
             })?
@@ -4881,15 +4848,16 @@ fn parse_one_decoded_field(
             return Err(located(
                 node,
                 label.diagnostic_label,
-                ValidationError::InvalidAttribute {
+                ValidationError::AttributeRuleViolated {
                     element: "sce:decoded".into(),
                     attr: "field".into(),
                     value: name.to_string(),
-                    expected: format!(
-                        "field '{}' has SceType {other:?} which is not supported in \
-                         test vectors (Bool/integer/Bytes/String only); float closures defer to \
+                    rule: format!(
+                        "field '{}' is declared {}, which is not supported in \
+                         test vectors (bool/integer/bytes/string only); float closures defer to \
                          the first float-bearing codec consumer",
-                        codec_field.id
+                        codec_field.id,
+                        other.as_attr()
                     ),
                 },
             ));
@@ -5226,7 +5194,7 @@ fn parse_procedure(
                 kind: ForgeKind::Procedure,
                 name: initial.clone(),
                 what: "state".into(),
-                available: state_ids.iter().cloned().collect::<Vec<_>>().join(", "),
+                available: state_ids.iter().cloned().collect(),
             },
         ));
     }
@@ -5258,7 +5226,7 @@ fn parse_procedure(
                         kind: ForgeKind::Procedure,
                         name: format!("transition target '{}' in state '{}'", tr.target, state.id),
                         what: "state".into(),
-                        available: state_ids.iter().cloned().collect::<Vec<_>>().join(", "),
+                        available: state_ids.iter().cloned().collect(),
                     },
                 ));
             }
@@ -5366,13 +5334,12 @@ fn parse_procedure_helper(
         return Err(located(
             node,
             doc_name,
-            ValidationError::InvalidAttribute {
+            ValidationError::AttributeRuleViolated {
                 element: "<sce:helper>".into(),
                 attr: "name".into(),
                 value: helper_name,
-                expected:
-                    "[A-Za-z_][A-Za-z0-9_]* (valid identifier for 5-language generated source)"
-                        .into(),
+                rule: "[A-Za-z_][A-Za-z0-9_]* (valid identifier for 5-language generated source)"
+                    .into(),
             },
         ));
     }
@@ -5391,7 +5358,7 @@ fn parse_procedure_helper(
                     element: format!("<sce:helper name=\"{helper_name}\">"),
                     attr: "args".into(),
                     value: part.to_string(),
-                    expected: "valid sce:type".into(),
+                    allowed: SceType::scalar_attr_names(),
                 },
             )
         })?;
@@ -5415,7 +5382,7 @@ fn parse_procedure_helper(
                 element: format!("<sce:helper name=\"{helper_name}\">"),
                 attr: "returns".into(),
                 value: returns_raw.to_string(),
-                expected: "valid sce:type".into(),
+                allowed: SceType::scalar_attr_names(),
             },
         )
     })?;
@@ -5726,7 +5693,7 @@ fn parse_filter(
                             element: "Filter output".into(),
                             attr: "sce:filter".into(),
                             value: ft_str.clone(),
-                            expected: "moving-average, low-pass, debounce".into(),
+                            allowed: FilterType::ALL_NAMES.iter().map(|s| (*s).into()).collect(),
                         },
                     )
                 })?);
@@ -5888,7 +5855,10 @@ fn parse_interpolation(
                             element: "Interpolation output".into(),
                             attr: "sce:interpolation".into(),
                             value: method_str.clone(),
-                            expected: "linear, bilinear".into(),
+                            allowed: InterpolationMethod::ALL_NAMES
+                                .iter()
+                                .map(|s| (*s).into())
+                                .collect(),
                         },
                     )
                 })?);
@@ -5902,7 +5872,10 @@ fn parse_interpolation(
                                 element: "Interpolation output".into(),
                                 attr: "sce:out-of-bounds".into(),
                                 value: oob_str.clone(),
-                                expected: "clamp, extrapolate, error".into(),
+                                allowed: OutOfBounds::ALL_NAMES
+                                    .iter()
+                                    .map(|s| (*s).into())
+                                    .collect(),
                             },
                         )
                     })?;
@@ -6248,7 +6221,7 @@ fn parse_observer(
                         element: "Observer monitor".into(),
                         attr: "sce:monitor".into(),
                         value: monitor_type,
-                        expected: "threshold".into(),
+                        allowed: vec!["threshold".into()],
                     },
                 ));
             }
@@ -6444,7 +6417,7 @@ fn parse_algorithm(
 // return; multi-field codec test vectors defer to B5. Both attributes
 // are required; hex must be even-length hex-only; value must be a
 // numeric or boolean literal compatible with the algorithm's declared
-// return type (mismatches reuse `validation/invalid-attribute` —
+// return type (mismatches reuse `validation/attribute-rule-violated` —
 // repair stays attribute-text-level).
 
 fn parse_test_vectors(
@@ -6494,11 +6467,11 @@ fn parse_one_test_vector(
         located(
             node,
             diagnostic_label,
-            ValidationError::InvalidAttribute {
+            ValidationError::AttributeRuleViolated {
                 element: "sce:test-vector".into(),
                 attr: "hex".into(),
                 value: hex_attr.to_string(),
-                expected: reason,
+                rule: reason,
             },
         )
     })?;
@@ -6507,11 +6480,11 @@ fn parse_one_test_vector(
         located(
             node,
             diagnostic_label,
-            ValidationError::InvalidAttribute {
+            ValidationError::AttributeRuleViolated {
                 element: "sce:test-vector".into(),
                 attr: "value".into(),
                 value: value_attr.to_string(),
-                expected: "<sce:test-vector> requires a non-void return type on the algorithm signature; declare <sce:return type=\"...\"/> before adding test vectors".into(),
+                rule: "<sce:test-vector> requires a non-void return type on the algorithm signature; declare <sce:return type=\"...\"/> before adding test vectors".into(),
             },
         )
     })?;
@@ -6520,11 +6493,11 @@ fn parse_one_test_vector(
         located(
             node,
             diagnostic_label,
-            ValidationError::InvalidAttribute {
+            ValidationError::AttributeRuleViolated {
                 element: "sce:test-vector".into(),
                 attr: "value".into(),
                 value: value_attr.to_string(),
-                expected: reason,
+                rule: reason,
             },
         )
     })?;
@@ -6681,7 +6654,7 @@ fn parse_algorithm_signature(
                             element: format!("<sce:param name=\"{name}\">"),
                             attr: "type".into(),
                             value: type_str.into(),
-                            expected: "uint8, uint16, uint32, uint64, int8, int16, int32, int64, float32, float64, bool, string, bytes".into(),
+                            allowed: SceType::scalar_attr_names(),
                         },
                     )
                 })?;
@@ -6709,7 +6682,7 @@ fn parse_algorithm_signature(
                                 element: "<sce:return>".into(),
                                 attr: "type".into(),
                                 value: type_str.into(),
-                                expected: "uint8..uint64, int8..int64, float32, float64, bool, string, bytes".into(),
+                                allowed: SceType::scalar_attr_names(),
                             },
                         )
                     })?;
@@ -6763,11 +6736,11 @@ fn parse_algorithm_const(
         located(
             node,
             doc_name,
-            ValidationError::InvalidAttribute {
+            ValidationError::AttributeRuleViolated {
                 element: format!("<sce:const name=\"{name}\">"),
                 attr: "type".into(),
                 value: type_str.into(),
-                expected: "scalar (uint8..uint64, int8..int64, float32, float64, bool, string) \
+                rule: "scalar (uint8..uint64, int8..int64, float32, float64, bool, string) \
                            or array<elem, len> (RFC §5.F)"
                     .into(),
             },
@@ -6790,7 +6763,7 @@ fn parse_algorithm_const(
                     element: format!("<sce:const name=\"{name}\">"),
                     attr: "sce:compute-at".into(),
                     value: other.into(),
-                    expected: "build (RFC §5.F build-time const-fold)".into(),
+                    allowed: vec!["build".into()],
                 },
             ));
         }
@@ -7020,11 +6993,11 @@ fn parse_fold_range(
         located(
             node,
             doc_name,
-            ValidationError::InvalidAttribute {
+            ValidationError::AttributeRuleViolated {
                 element: "<sce:fold>".into(),
                 attr: "range".into(),
                 value: s.into(),
-                expected: "START..END (exclusive upper bound, RFC §5.F)".into(),
+                rule: "START..END (exclusive upper bound, RFC §5.F)".into(),
             },
         )
     })?;
@@ -7032,11 +7005,11 @@ fn parse_fold_range(
         located(
             node,
             doc_name,
-            ValidationError::InvalidAttribute {
+            ValidationError::AttributeRuleViolated {
                 element: "<sce:fold>".into(),
                 attr: "range".into(),
                 value: s.into(),
-                expected: "START..END with non-negative u32 endpoints".into(),
+                rule: "START..END with non-negative u32 endpoints".into(),
             },
         )
     })?;
@@ -7044,11 +7017,11 @@ fn parse_fold_range(
         located(
             node,
             doc_name,
-            ValidationError::InvalidAttribute {
+            ValidationError::AttributeRuleViolated {
                 element: "<sce:fold>".into(),
                 attr: "range".into(),
                 value: s.into(),
-                expected: "START..END with non-negative u32 endpoints".into(),
+                rule: "START..END with non-negative u32 endpoints".into(),
             },
         )
     })?;
@@ -7056,11 +7029,11 @@ fn parse_fold_range(
         return Err(located(
             node,
             doc_name,
-            ValidationError::InvalidAttribute {
+            ValidationError::AttributeRuleViolated {
                 element: "<sce:fold>".into(),
                 attr: "range".into(),
                 value: s.into(),
-                expected: "START..END with END >= START".into(),
+                rule: "START..END with END >= START".into(),
             },
         ));
     }
@@ -7085,8 +7058,7 @@ fn parse_scetype_with_aliases_or_err(
                     element: "<sce:fold>".into(),
                     attr: "elem-type".into(),
                     value: s.into(),
-                    expected: "scalar SceType (uint8..uint64, int8..int64, float32, float64)"
-                        .into(),
+                    allowed: SceType::scalar_attr_names(),
                 },
             )
         })
@@ -7123,9 +7095,7 @@ fn parse_algorithm_stmt(
                         element: format!("<sce:var name=\"{name}\">"),
                         attr: "type".into(),
                         value: type_str.clone(),
-                        expected:
-                            "uint8..uint64, int8..int64, float32, float64, bool, string, bytes"
-                                .into(),
+                        allowed: SceType::scalar_attr_names(),
                     },
                 )
             })?;
@@ -7140,11 +7110,11 @@ fn parse_algorithm_stmt(
                     return Err(located(
                         node,
                         doc_name,
-                        ValidationError::InvalidAttribute {
+                        ValidationError::AttributeRuleViolated {
                             element: format!("<sce:var name=\"{name}\">"),
                             attr: "init".into(),
                             value: stray.into(),
-                            expected:
+                            rule:
                                 "no init — a bytes buffer starts empty and is filled via <sce:append>"
                                     .into(),
                         },
@@ -7328,11 +7298,11 @@ fn validate_byte_buffer_build(
         return Err(located(
             body_node,
             doc_name,
-            ValidationError::InvalidAttribute {
+            ValidationError::AttributeRuleViolated {
                 element: format!("<sce:var name=\"{name}\">"),
                 attr: "capacity".into(),
                 value: "(present)".into(),
-                expected: "omitted — capacity is only valid on a type=\"bytes\" buffer".into(),
+                rule: "omitted — capacity is only valid on a type=\"bytes\" buffer".into(),
             },
         ));
     }
@@ -7418,7 +7388,8 @@ fn validate_byte_buffer_build(
                 element: format!("<sce:var name=\"{buf_name}\" type=\"bytes\">"),
                 attr: "capacity".into(),
                 value: buf_cap.to_string(),
-                expected: format!("to equal the signature's returns-max-size ({rms})"),
+                // The signature's returns-max-size is the one legal value.
+                allowed: vec![rms.to_string()],
             },
         ));
     }
@@ -7557,7 +7528,10 @@ fn parse_link(
                 element: "<sce:backpressure>".into(),
                 attr: "body text".into(),
                 value: backpressure_text,
-                expected: "drop, block, signal-event".into(),
+                allowed: BackpressurePolicy::ALL_NAMES
+                    .iter()
+                    .map(|s| (*s).into())
+                    .collect(),
             },
         )
     })?;
@@ -7681,11 +7655,11 @@ fn parse_buffer_pool(
             return Err(located(
                 &node,
                 label.diagnostic_label,
-                ValidationError::InvalidAttribute {
+                ValidationError::AttributeRuleViolated {
                     element: format!("<sce:{name}>"),
                     attr: "body text".into(),
                     value: "0".into(),
-                    expected: "positive integer".into(),
+                    rule: "positive integer".into(),
                 },
             ));
         }
@@ -7767,11 +7741,11 @@ fn parse_buffer_pool(
         return Err(located(
             &section_node,
             label.diagnostic_label,
-            ValidationError::InvalidAttribute {
+            ValidationError::AttributeRuleViolated {
                 element: "<sce:section>".into(),
                 attr: "body text".into(),
                 value: "".into(),
-                expected: "non-empty SRAM region name".into(),
+                rule: "non-empty SRAM region name".into(),
             },
         ));
     }
@@ -7805,7 +7779,7 @@ fn parse_buffer_pool(
                 element: "<sce:cache-policy>".into(),
                 attr: "body text".into(),
                 value: cache_text,
-                expected: "maintain, non-cacheable, none".into(),
+                allowed: CachePolicy::ALL_NAMES.iter().map(|s| (*s).into()).collect(),
             },
         )
     })?;
@@ -7893,7 +7867,7 @@ fn parse_buffer_pool_variant(
                     element: "<sce:variant>".into(),
                     attr: "body text".into(),
                     value: variant_text,
-                    expected: "default, reassembly".into(),
+                    allowed: vec!["default".into(), "reassembly".into()],
                 },
             ));
         }
@@ -7918,13 +7892,12 @@ fn parse_buffer_pool_variant(
                 return Err(located(
                     n,
                     label.diagnostic_label,
-                    ValidationError::InvalidAttribute {
+                    ValidationError::AttributeRuleViolated {
                         element: format!("<sce:{name}>"),
                         attr: "context".into(),
                         value: "buffer-pool without <sce:variant>reassembly</sce:variant>".into(),
-                        expected:
-                            "only allowed when <sce:variant>reassembly</sce:variant> is declared"
-                                .into(),
+                        rule: "only allowed when <sce:variant>reassembly</sce:variant> is declared"
+                            .into(),
                     },
                 ));
             }
@@ -8003,11 +7976,11 @@ fn reject_zero_field(
         return Err(located(
             &node,
             label.diagnostic_label,
-            ValidationError::InvalidAttribute {
+            ValidationError::AttributeRuleViolated {
                 element: format!("<sce:{name}>"),
                 attr: "body text".into(),
                 value: "0".into(),
-                expected: "positive integer".into(),
+                rule: "positive integer".into(),
             },
         ));
     }
@@ -8115,11 +8088,11 @@ fn parse_worker(
         return Err(located(
             &link_rx_node,
             label.diagnostic_label,
-            ValidationError::InvalidAttribute {
+            ValidationError::AttributeRuleViolated {
                 element: "<sce:link-rx>".into(),
                 attr: "ref".into(),
                 value: link_rx,
-                expected: "non-empty link kind name".into(),
+                rule: "non-empty link kind name".into(),
             },
         ));
     }
@@ -8145,11 +8118,11 @@ fn parse_worker(
         located(
             &inbox_node,
             label.diagnostic_label,
-            ValidationError::InvalidAttribute {
+            ValidationError::AttributeRuleViolated {
                 element: "<sce:inbox>".into(),
                 attr: "depth".into(),
                 value: depth_str.clone(),
-                expected: "positive u32 integer".into(),
+                rule: "positive u32 integer".into(),
             },
         )
     })?;
@@ -8157,11 +8130,11 @@ fn parse_worker(
         return Err(located(
             &inbox_node,
             label.diagnostic_label,
-            ValidationError::InvalidAttribute {
+            ValidationError::AttributeRuleViolated {
                 element: "<sce:inbox>".into(),
                 attr: "depth".into(),
                 value: depth_str,
-                expected: "positive integer (depth > 0)".into(),
+                rule: "positive integer (depth > 0)".into(),
             },
         ));
     }
@@ -8186,7 +8159,7 @@ fn parse_worker(
                     element: "<sce:inbox>".into(),
                     attr: "ordering".into(),
                     value: other.to_string(),
-                    expected: "acq_rel or relaxed".into(),
+                    allowed: vec!["acq_rel".into(), "relaxed".into()],
                 },
             ));
         }
@@ -8305,11 +8278,11 @@ fn require_u32_body(
         located(
             &node,
             label.diagnostic_label,
-            ValidationError::InvalidAttribute {
+            ValidationError::AttributeRuleViolated {
                 element: format!("<sce:{element}>"),
                 attr: "body text".into(),
                 value: text,
-                expected: "u32 integer".into(),
+                rule: "u32 integer".into(),
             },
         )
     })
@@ -8362,11 +8335,11 @@ fn parse_bounded_collection(
         return Err(located(
             &element_type_node,
             label.diagnostic_label,
-            ValidationError::InvalidAttribute {
+            ValidationError::AttributeRuleViolated {
                 element: "<sce:element-type>".into(),
                 attr: "<body>".into(),
                 value: String::new(),
-                expected: "non-empty kind name (codec or procedure)".into(),
+                rule: "non-empty kind name (codec or procedure)".into(),
             },
         ));
     }
@@ -8394,11 +8367,11 @@ fn parse_bounded_collection(
                 return Err(located(
                     &capacity_node,
                     label.diagnostic_label,
-                    ValidationError::InvalidAttribute {
+                    ValidationError::AttributeRuleViolated {
                         element: "<sce:capacity>".into(),
                         attr: "key".into(),
                         value: String::new(),
-                        expected: "non-empty dotted key path (e.g. \"machines.X.limits.Y\")".into(),
+                        rule: "non-empty dotted key path (e.g. \"machines.X.limits.Y\")".into(),
                     },
                 ));
             }
@@ -8410,11 +8383,11 @@ fn parse_bounded_collection(
                 located(
                     &capacity_node,
                     label.diagnostic_label,
-                    ValidationError::InvalidAttribute {
+                    ValidationError::AttributeRuleViolated {
                         element: "<sce:capacity>".into(),
                         attr: "const".into(),
                         value: c.to_string(),
-                        expected: "positive u32 (build-time slot count)".into(),
+                        rule: "positive u32 (build-time slot count)".into(),
                     },
                 )
             })?;
@@ -8422,11 +8395,11 @@ fn parse_bounded_collection(
                 return Err(located(
                     &capacity_node,
                     label.diagnostic_label,
-                    ValidationError::InvalidAttribute {
+                    ValidationError::AttributeRuleViolated {
                         element: "<sce:capacity>".into(),
                         attr: "const".into(),
                         value: c.to_string(),
-                        expected: "positive non-zero u32".into(),
+                        rule: "positive non-zero u32".into(),
                     },
                 ));
             }
@@ -8436,12 +8409,11 @@ fn parse_bounded_collection(
             return Err(located(
                 &capacity_node,
                 label.diagnostic_label,
-                ValidationError::InvalidAttribute {
+                ValidationError::AttributeRuleViolated {
                     element: "<sce:capacity>".into(),
                     attr: "(source|key|const)".into(),
                     value: String::new(),
-                    expected: r#"exactly one of `source="deploy" key="..."` or `const="..."`"#
-                        .into(),
+                    rule: r#"exactly one of `source="deploy" key="..."` or `const="..."`"#.into(),
                 },
             ));
         }
@@ -8456,11 +8428,11 @@ fn parse_bounded_collection(
                     Err(located(
                         &n,
                         label.diagnostic_label,
-                        ValidationError::InvalidAttribute {
+                        ValidationError::AttributeRuleViolated {
                             element: "<sce:index-by>".into(),
                             attr: "field".into(),
                             value: String::new(),
-                            expected: "non-empty field name from element-type struct".into(),
+                            rule: "non-empty field name from element-type struct".into(),
                         },
                     ))
                 } else {
@@ -8485,7 +8457,11 @@ fn parse_bounded_collection(
                         element: "<sce:on-overflow>".into(),
                         attr: "<body>".into(),
                         value: other.to_string(),
-                        expected: "diagnostic-event | reject | oldest-wins".into(),
+                        allowed: vec![
+                            "diagnostic-event".into(),
+                            "reject".into(),
+                            "oldest-wins".into(),
+                        ],
                     },
                 ));
             }
@@ -8511,7 +8487,7 @@ fn parse_bounded_collection(
                             element: "<sce:ordering>".into(),
                             attr: "<body>".into(),
                             value: other.to_string(),
-                            expected: "insertion | sorted-by(index-by)".into(),
+                            allowed: vec!["insertion".into(), "sorted-by(index-by)".into()],
                         },
                     ));
                 }
@@ -8533,7 +8509,7 @@ fn parse_bounded_collection(
                         element: "<sce:concurrency>".into(),
                         attr: "<body>".into(),
                         value: other.to_string(),
-                        expected: "single-writer | multi-writer".into(),
+                        allowed: vec!["single-writer".into(), "multi-writer".into()],
                     },
                 ));
             }
@@ -8681,14 +8657,13 @@ fn parse_event_schema(
             return Err(located(
                 &data,
                 label.diagnostic_label,
+                // An event schema's fields are the receive-side payload
+                // view; `out` and `internal` mean nothing on it.
                 ValidationError::InvalidAttribute {
                     element: format!("EventSchema field '{}'", field.id),
                     attr: "sce:direction".into(),
                     value,
-                    expected: "in (event schema fields are the receive-side payload view; \
-                               author-authored `out` / `internal` have no meaning on a \
-                               schema declaration)"
-                        .into(),
+                    allowed: vec!["in".into()],
                 },
             ));
         }
@@ -8878,11 +8853,11 @@ pub fn parse_imports(
                 return Err(located(
                     &grandchild,
                     doc_name,
-                    ValidationError::InvalidAttribute {
+                    ValidationError::AttributeRuleViolated {
                         element: "<sce:variant-dispatch>".into(),
                         attr: "(element)".into(),
                         value: String::new(),
-                        expected: "at most one <sce:variant-dispatch> per <sce:import> — multiple \
+                        rule: "at most one <sce:variant-dispatch> per <sce:import> — multiple \
                              dispatch sources for a single imported variant codec are \
                              structurally meaningless"
                             .into(),
@@ -8911,11 +8886,11 @@ pub fn parse_imports(
                 return Err(located(
                     &grandchild,
                     doc_name,
-                    ValidationError::InvalidAttribute {
+                    ValidationError::AttributeRuleViolated {
                         element: "<sce:variant-dispatch>".into(),
                         attr: "flag".into(),
                         value: flag_source.clone(),
-                        expected: "dotted `<carrier>.<flag>` form (e.g. \"header.M\") naming a \
+                        rule: "dotted `<carrier>.<flag>` form (e.g. \"header.M\") naming a \
                              carrier field and one of its declared flags in this codec"
                             .into(),
                     },
@@ -9288,7 +9263,7 @@ fn parse_forge_field(
                 element: format!("field '{id}'"),
                 attr: "sce:type".into(),
                 value: type_str.clone(),
-                expected: "uint8, uint16, uint32, int8, int16, int32, float32, float64, bool, string, bytes".into(),
+                allowed: SceType::scalar_attr_names(),
             },
         )
     })?;
@@ -9311,7 +9286,7 @@ fn parse_forge_field(
                 element: format!("field '{id}'"),
                 attr: "sce:direction".into(),
                 value: dir_str.clone(),
-                expected: "in, out, internal".into(),
+                allowed: vec!["in".into(), "out".into(), "internal".into()],
             },
         )
     })?;
@@ -9360,9 +9335,9 @@ fn parse_forge_field(
 /// computed afresh every cycle. Neither is a state an author means to
 /// be in, and both are silent if accepted.
 ///
-/// ⚠⚠ Reuses `validation/invalid-attribute` rather than minting codes,
-/// exactly as [`parse_quantity_attrs`] does for the same orphan shape
-/// one screen below. The refusal names the missing partner, which is
+/// ⚠⚠ Reuses `validation/attribute-rule-violated` rather than minting
+/// codes, exactly as [`parse_quantity_attrs`] does for the same orphan
+/// shape one screen below. The rule names the missing partner, which is
 /// the whole repair.
 ///
 /// The SCOPE is not validated here or anywhere: it is an opaque label
@@ -9377,15 +9352,15 @@ fn parse_retention_attrs(
 ) -> Result<Option<crate::forge::model::Retention>, Located<ForgeError>> {
     let scope = sce_attr(node, "retain");
     let initial = sce_attr(node, "initial");
-    let orphan = |attr: &str, value: String, expected: &str| {
+    let orphan = |attr: &str, value: String, rule: &str| {
         Err(located(
             node,
             doc_name,
-            ValidationError::InvalidAttribute {
+            ValidationError::AttributeRuleViolated {
                 element: owner_label.to_string(),
                 attr: attr.into(),
                 value,
-                expected: expected.into(),
+                rule: rule.into(),
             },
         ))
     };
@@ -9460,11 +9435,11 @@ fn parse_quantity_attrs(
             return Err(located(
                 node,
                 doc_name,
-                ValidationError::InvalidAttribute {
+                ValidationError::AttributeRuleViolated {
                     element: owner_label.to_string(),
                     attr: orphan.into(),
                     value: scale_attr.or(offset_attr).unwrap_or_default(),
-                    expected: "physical-quantity conversion factor requires `sce:quantity=\"<unit>\"` on the same element"
+                    rule: "physical-quantity conversion factor requires `sce:quantity=\"<unit>\"` on the same element"
                         .into(),
                 },
             ));
@@ -9474,11 +9449,11 @@ fn parse_quantity_attrs(
         return Err(located(
             node,
             doc_name,
-            ValidationError::InvalidAttribute {
+            ValidationError::AttributeRuleViolated {
                 element: owner_label.to_string(),
                 attr: "sce:quantity".into(),
                 value: unit_str,
-                expected: "non-empty unit name (e.g. `celsius`, `s`, `m/s^2`)".into(),
+                rule: "non-empty unit name (e.g. `celsius`, `s`, `m/s^2`)".into(),
             },
         ));
     }
@@ -9489,11 +9464,11 @@ fn parse_quantity_attrs(
                 located(
                     node,
                     doc_name,
-                    ValidationError::InvalidAttribute {
+                    ValidationError::AttributeRuleViolated {
                         element: owner_label.to_string(),
                         attr: "sce:scale".into(),
                         value: s.clone(),
-                        expected: "rational literal: integer, decimal, or `num/denom`".into(),
+                        rule: "rational literal: integer, decimal, or `num/denom`".into(),
                     },
                 )
             })?;
@@ -9501,11 +9476,11 @@ fn parse_quantity_attrs(
                 return Err(located(
                     node,
                     doc_name,
-                    ValidationError::InvalidAttribute {
+                    ValidationError::AttributeRuleViolated {
                         element: owner_label.to_string(),
                         attr: "sce:scale".into(),
                         value: s,
-                        expected: "non-zero rational — raw value would never influence the physical reading"
+                        rule: "non-zero rational — raw value would never influence the physical reading"
                             .into(),
                     },
                 ));
@@ -9520,11 +9495,11 @@ fn parse_quantity_attrs(
             located(
                 node,
                 doc_name,
-                ValidationError::InvalidAttribute {
+                ValidationError::AttributeRuleViolated {
                     element: owner_label.to_string(),
                     attr: "sce:offset".into(),
                     value: s.clone(),
-                    expected: "rational literal: integer, decimal, or `num/denom`".into(),
+                    rule: "rational literal: integer, decimal, or `num/denom`".into(),
                 },
             )
         })?,

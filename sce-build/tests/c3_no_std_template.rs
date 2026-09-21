@@ -82,7 +82,7 @@ fn missing_sce_capacity_attribute_leaves_model_field_none() {
 }
 
 #[test]
-fn malformed_sce_capacity_attribute_emits_invalid_attribute() {
+fn malformed_sce_capacity_attribute_is_refused_by_its_rule() {
     let malformed = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -94,9 +94,11 @@ fn malformed_sce_capacity_attribute_emits_invalid_attribute() {
     let err = parser
         .parse_string(malformed, "bad_cap")
         .expect_err("non-numeric sce:capacity must reject");
+    // "A positive u32" is a rule, not a set of values, so the refusal
+    // carries it as the rule and offers no candidates.
     match err.error {
         ForgeError::Validation(boxed) => match *boxed {
-            ValidationError::InvalidAttribute {
+            ValidationError::AttributeRuleViolated {
                 element,
                 attr,
                 value,
@@ -106,9 +108,9 @@ fn malformed_sce_capacity_attribute_emits_invalid_attribute() {
                 assert_eq!(attr, "sce:capacity");
                 assert_eq!(value, "not-a-number");
             }
-            other => panic!("expected InvalidAttribute, got: {other:?}"),
+            other => panic!("expected AttributeRuleViolated, got: {other:?}"),
         },
-        other => panic!("expected InvalidAttribute, got: {other:?}"),
+        other => panic!("expected AttributeRuleViolated, got: {other:?}"),
     }
 }
 
@@ -131,7 +133,7 @@ fn zero_sce_capacity_attribute_rejects() {
         .expect_err("zero sce:capacity must reject");
     assert!(matches!(
         err.error,
-        ForgeError::Validation(ref boxed) if matches!(**boxed, ValidationError::InvalidAttribute { .. })
+        ForgeError::Validation(ref boxed) if matches!(**boxed, ValidationError::AttributeRuleViolated { .. })
     ));
 }
 

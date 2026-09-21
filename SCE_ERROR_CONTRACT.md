@@ -553,6 +553,15 @@ Concretely:
 - `mesh/external-ambiguous-event-group` populates `expected` with the
   required cardinality (e.g. `["1"]`) and leaves `fix` absent — the
   number is a rule description, not a replacement value for `actual`.
+- `validation/attribute-rule-violated` populates `expected` with the
+  rule a legal value satisfies (e.g. `["positive integer"]`) and leaves
+  `fix` absent. It is `invalid-attribute`'s other half: a value outside a
+  closed set is `invalid-attribute` with the set as candidates, and a
+  value that breaks a rule no list states is this code. ⚠ The two used
+  to be one code carrying one comma-joined string, and the wire split
+  the string on commas into candidates — so a rule such as "rational
+  literal: integer, decimal, or `num/denom`" reached consumers as three
+  replacement values (measured 2026-09-21: ~100 of 134 sites).
 
 Consumers that want "the closed set of legal values" should always read
 `fix`. Consumers that want "what the producer was grammatically expecting
@@ -800,6 +809,7 @@ references against a real document and drift silently.
 | `traceability/sourcemap-source-hash-mismatch` | `generate` | no | SCE Protocol-Synthesis RFC §5.O |
 | `traceability/state-id-collision` | `generate` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.O |
 | `traceability/symbol-name-exceeds-c-identifier-limit` | `generate` | no | SCE Protocol-Synthesis RFC §5.O |
+| `validation/attribute-rule-violated` | `validation` | no |  |
 | `validation/bytes-comparison-not-equality` | `validation` | no |  |
 | `validation/bytes-max-size-violation` | `validation` | no |  |
 | `validation/count-mismatch` | `validation` | no |  |

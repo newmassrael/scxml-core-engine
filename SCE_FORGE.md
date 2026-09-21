@@ -1232,7 +1232,8 @@ Rust imports `SceBytes` / `CapacityExceeded` from the shared `backends/rust/port
 | Code | Stage | Condition |
 |------|-------|-----------|
 | `validation/missing-attribute` | Validation | bytes buffer without `capacity`; bytes return without `returns-max-size` |
-| `validation/invalid-attribute` | Validation | `capacity` on a scalar local; `capacity != returns-max-size` |
+| `validation/invalid-attribute` | Validation | `capacity != returns-max-size` (the one legal value is the candidate) |
+| `validation/attribute-rule-violated` | Validation | `capacity` on a scalar local |
 | `validation/incompatible-attributes` | Validation | more than one bytes buffer; bytes buffer with a non-`bytes` return |
 | `algorithm/append-target-not-buffer` | Validation | `<sce:append target>` is not a declared bytes buffer |
 | `algorithm/append-type-mismatch` | Validation | `<sce:append expr>` is neither `uint8` nor `bytes` |

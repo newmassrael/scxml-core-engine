@@ -256,12 +256,14 @@ fn default_variant_with_reassembly_sibling_rejects() {
 </scxml>"##;
     let err = parse(xml, "rx_pool_sram1")
         .expect_err("reassembly sibling without <sce:variant>reassembly</sce:variant> rejects");
+    // A sibling in the wrong context breaks a rule; no value of it is
+    // the repair, so it is not a closed-set refusal.
     let element = match err.error {
         ForgeError::Validation(boxed) => match *boxed {
-            ValidationError::InvalidAttribute { element, .. } => element,
-            other => panic!("expected InvalidAttribute for misapplied sibling, got {other:?}"),
+            ValidationError::AttributeRuleViolated { element, .. } => element,
+            other => panic!("expected AttributeRuleViolated for misapplied sibling, got {other:?}"),
         },
-        other => panic!("expected InvalidAttribute for misapplied sibling, got {other:?}"),
+        other => panic!("expected AttributeRuleViolated for misapplied sibling, got {other:?}"),
     };
     assert!(
         element.contains("max-fragments-per-message"),
@@ -288,23 +290,24 @@ fn variant_unknown_body_text_rejects() {
   <sce:variant>tx_only</sce:variant>
 </scxml>"##;
     let err = parse(xml, "rx_pool_sram1").expect_err("unknown <sce:variant> body text rejects");
-    let (element, value, expected) = match err.error {
+    let (element, value, allowed) = match err.error {
         ForgeError::Validation(boxed) => match *boxed {
             ValidationError::InvalidAttribute {
                 element,
                 value,
-                expected,
+                allowed,
                 ..
-            } => (element, value, expected),
+            } => (element, value, allowed),
             other => panic!("expected InvalidAttribute, got {other:?}"),
         },
         other => panic!("expected InvalidAttribute, got {other:?}"),
     };
     assert_eq!(element, "<sce:variant>");
     assert_eq!(value, "tx_only");
-    assert!(
-        expected.contains("default") && expected.contains("reassembly"),
-        "expected hint must enumerate the closed set, got {expected:?}"
+    assert_eq!(
+        allowed,
+        ["default", "reassembly"],
+        "the refusal must offer the closed set as its candidates"
     );
 }
 

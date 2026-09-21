@@ -24,7 +24,7 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use crate::forge::error::{ForgeError, Located, ValidationError};
-use crate::forge::model::{ForgeDocument, ParsedForge};
+use crate::forge::model::{ForgeDocument, ForgeKind, ParsedForge};
 
 /// The variants an `enum:<alias>` import declares, or `None` when the
 /// import names no readable enum.
@@ -59,15 +59,10 @@ pub fn check(
     document: &str,
 ) -> Result<(), Located<ForgeError>> {
     for cycle in &parsed.cycles {
-        let refuse = |attr: &str, value: String, expected: String| {
+        let element = format!("<sce:cycle id=\"{}\">", cycle.id);
+        let refuse = |error: ValidationError| {
             Err(Located::new(
-                ValidationError::InvalidAttribute {
-                    element: format!("<sce:cycle id=\"{}\">", cycle.id),
-                    attr: attr.into(),
-                    value,
-                    expected,
-                }
-                .into(),
+                error.into(),
                 document,
                 // ⚠ The cycle's own line, captured at parse time. This was
                 // `None`, so the record named a file and nothing else --
@@ -79,33 +74,41 @@ pub fn check(
         };
 
         let Some(variants) = variants_of(parsed, base_dir, &cycle.of) else {
-            let known: Vec<&str> = parsed.imports.iter().map(|i| i.alias.as_str()).collect();
-            return refuse(
-                "of",
-                cycle.of.clone(),
-                if known.is_empty() {
-                    "an `<sce:import kind=\"enum\">` alias — this document imports none".to_string()
-                } else {
-                    format!(
-                        "an alias this document imports as an enum: {}",
-                        known.join(", ")
-                    )
-                },
-            );
+            // Only an enum import can be cycled over, so the enum aliases
+            // are the set — not every import, which is what this listed.
+            let enum_aliases: Vec<String> = parsed
+                .imports
+                .iter()
+                .filter(|i| i.kind == ForgeKind::Enum)
+                .map(|i| i.alias.clone())
+                .collect();
+            return refuse(if enum_aliases.is_empty() {
+                ValidationError::AttributeRuleViolated {
+                    element,
+                    attr: "of".into(),
+                    value: cycle.of.clone(),
+                    rule: "an `<sce:import kind=\"enum\">` alias — this document imports none"
+                        .into(),
+                }
+            } else {
+                ValidationError::InvalidAttribute {
+                    element,
+                    attr: "of".into(),
+                    value: cycle.of.clone(),
+                    allowed: enum_aliases,
+                }
+            });
         };
 
         let declared: BTreeSet<&str> = variants.iter().map(String::as_str).collect();
         for step in &cycle.steps {
             if !declared.contains(step.name.as_str()) {
-                return refuse(
-                    "step name",
-                    step.name.clone(),
-                    format!(
-                        "one of the values {} declares: {}",
-                        cycle.of,
-                        variants.join(", ")
-                    ),
-                );
+                return refuse(ValidationError::InvalidAttribute {
+                    element,
+                    attr: "step name".into(),
+                    value: step.name.clone(),
+                    allowed: variants,
+                });
             }
         }
     }

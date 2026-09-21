@@ -75,11 +75,11 @@ pub fn validate_payload_is_bytes(
             if matches!(field.sce_type, SceType::Bytes) {
                 continue;
             }
-            return Err(Box::new(ValidationError::InvalidAttribute {
+            return Err(Box::new(ValidationError::AttributeRuleViolated {
                 element: format!("<send sce:service=\"{}\">", send.service),
                 attr: "sce:payload".into(),
-                value: format!("{name} (declared {:?})", field.sce_type),
-                expected: "bytes — a codec's encode_to_vec(), or a bytes field. \
+                value: format!("{name} (declared {})", field.sce_type.as_attr()),
+                rule: "bytes — a codec's encode_to_vec(), or a bytes field. \
                            A scalar has no payload meaning without an endianness \
                            and a width, which is the decision a codec makes"
                     .into(),

@@ -832,25 +832,11 @@ mod tests {
     /// from inference as itself.
     #[test]
     fn declared_spelling_inverts_from_sce_type_for_every_scalar() {
-        for ty in [
-            SceType::Uint8,
-            SceType::Uint16,
-            SceType::Uint32,
-            SceType::Uint64,
-            SceType::Int8,
-            SceType::Int16,
-            SceType::Int32,
-            SceType::Int64,
-            SceType::Float32,
-            SceType::Float64,
-            SceType::Bool,
-            SceType::String,
-            SceType::Bytes,
-        ] {
+        for name in SceType::SCALAR_ATTR_NAMES {
+            let ty = SceType::from_attr(name).expect("a listed scalar parses");
             assert_eq!(
                 InferredType::from_sce_type(&ty).declared_spelling(),
-                Some(ty.as_attr().as_str()),
-                "{ty:?}"
+                Some(*name),
             );
         }
         assert_eq!(InferredType::Unknown.declared_spelling(), None);

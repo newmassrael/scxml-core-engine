@@ -815,7 +815,7 @@ mod tests {
             kind: ForgeKind::Statechart,
             what: "transition target".into(),
             name: "ghost".into(),
-            available: "active, idle".into(),
+            available: vec!["active".into(), "idle".into()],
         }
         .into();
 

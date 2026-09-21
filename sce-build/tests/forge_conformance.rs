@@ -3130,7 +3130,7 @@ fn forge_codec_string_with_tail_bit_size_rejects() {
     let err = match result {
         Ok(_) => panic!(
             "sce:type=\"string\" + bit-size=\"tail\" must reject \
-             with validation/invalid-attribute"
+             with validation/attribute-rule-violated"
         ),
         Err(e) => e,
     };
@@ -3138,9 +3138,9 @@ fn forge_codec_string_with_tail_bit_size_rejects() {
         matches!(
             &err.error,
             ForgeError::Validation(boxed)
-                if matches!(boxed.as_ref(), ValidationError::InvalidAttribute { attr, .. } if attr == "sce:bit-size")
+                if matches!(boxed.as_ref(), ValidationError::AttributeRuleViolated { attr, .. } if attr == "sce:bit-size")
         ),
-        "must surface ValidationError::InvalidAttribute on sce:bit-size; got: {:?}",
+        "must surface ValidationError::AttributeRuleViolated on sce:bit-size; got: {:?}",
         err.error
     );
 }
@@ -3663,7 +3663,7 @@ fn forge_codec_dma_non_power_of_two_rejects() {
     let err = match result {
         Ok(_) => panic!(
             "sce:dma-burst-align=\"3\" must reject with \
-             validation/invalid-attribute"
+             validation/attribute-rule-violated"
         ),
         Err(e) => e,
     };
@@ -3673,11 +3673,11 @@ fn forge_codec_dma_non_power_of_two_rejects() {
             ForgeError::Validation(boxed)
                 if matches!(
                     boxed.as_ref(),
-                    ValidationError::InvalidAttribute { attr, value, .. }
+                    ValidationError::AttributeRuleViolated { attr, value, .. }
                         if attr == "sce:dma-burst-align" && value == "3"
                 )
         ),
-        "must surface ValidationError::InvalidAttribute naming dma-burst-align + 3; got: {:?}",
+        "must surface ValidationError::AttributeRuleViolated naming dma-burst-align + 3; got: {:?}",
         err.error
     );
 }
@@ -3813,9 +3813,9 @@ fn forge_codec_repeat_present_if_count_predicate_mismatch_rejects() {
         matches!(
             err.error,
             ForgeError::Validation(ref boxed)
-                if matches!(**boxed, ValidationError::InvalidAttribute { ref attr, .. } if attr == "sce:present-if")
+                if matches!(**boxed, ValidationError::AttributeRuleViolated { ref attr, .. } if attr == "sce:present-if")
         ),
-        "must surface as InvalidAttribute on sce:present-if; got: {:?}",
+        "must surface as AttributeRuleViolated on sce:present-if; got: {:?}",
         err.error
     );
 }
@@ -3857,9 +3857,9 @@ fn forge_codec_repeat_unconditional_with_gated_count_rejects() {
         matches!(
             err.error,
             ForgeError::Validation(ref boxed)
-                if matches!(**boxed, ValidationError::InvalidAttribute { ref attr, .. } if attr == "sce:present-if")
+                if matches!(**boxed, ValidationError::AttributeRuleViolated { ref attr, .. } if attr == "sce:present-if")
         ),
-        "must surface as InvalidAttribute on sce:present-if; got: {:?}",
+        "must surface as AttributeRuleViolated on sce:present-if; got: {:?}",
         err.error
     );
 }
@@ -3869,7 +3869,7 @@ fn forge_codec_repeat_unconditional_with_gated_count_rejects() {
 // Mirrors present-if's reject coverage (forward-reference,
 // non-flags-bearing carrier, missing flag, single-bit flag rejected
 // for length-source semantics). Every failure folds into the
-// generic `validation/invalid-attribute` (no new diagnostic).
+// generic `validation/attribute-rule-violated` (no new diagnostic).
 
 /// Forward-reference: carrier declared AFTER the length-ref payload.
 /// Streaming decoder cannot read the carrier byte before reaching the
@@ -3898,7 +3898,7 @@ fn forge_codec_length_field_dotted_forward_ref_rejects() {
     );
     let err = match result {
         Ok(_) => panic!(
-            "forward-reference of dotted-path length-field must reject with validation/invalid-attribute"
+            "forward-reference of dotted-path length-field must reject with validation/attribute-rule-violated"
         ),
         Err(e) => e,
     };
@@ -3908,10 +3908,10 @@ fn forge_codec_length_field_dotted_forward_ref_rejects() {
             ForgeError::Validation(boxed)
                 if matches!(
                     boxed.as_ref(),
-                    ValidationError::InvalidAttribute { attr, .. } if attr == "sce:length-field"
+                    ValidationError::AttributeRuleViolated { attr, .. } if attr == "sce:length-field"
                 )
         ),
-        "must surface as InvalidAttribute on sce:length-field; got: {:?}",
+        "must surface as AttributeRuleViolated on sce:length-field; got: {:?}",
         err.error
     );
 }
@@ -3954,8 +3954,8 @@ fn forge_codec_length_field_dotted_single_bit_rejects() {
             ForgeError::Validation(boxed)
                 if matches!(
                     boxed.as_ref(),
-                    ValidationError::InvalidAttribute { attr, expected, .. }
-                        if attr == "sce:length-field" && expected.contains("multi-bit")
+                    ValidationError::AttributeRuleViolated { attr, rule, .. }
+                        if attr == "sce:length-field" && rule.contains("multi-bit")
                 )
         ),
         "must mention multi-bit requirement; got: {:?}",
@@ -3995,8 +3995,8 @@ fn forge_codec_length_field_dotted_non_flags_carrier_rejects() {
             ForgeError::Validation(boxed)
                 if matches!(
                     boxed.as_ref(),
-                    ValidationError::InvalidAttribute { attr, expected, .. }
-                        if attr == "sce:length-field" && expected.contains("flags-bearing")
+                    ValidationError::AttributeRuleViolated { attr, rule, .. }
+                        if attr == "sce:length-field" && rule.contains("flags-bearing")
                 )
         ),
         "must mention flags-bearing requirement; got: {:?}",
@@ -4239,7 +4239,7 @@ fn forge_test_vector_on_filter_rejects() {
 }
 
 /// Negative: malformed `hex` (odd-length) reuses the generic
-/// `validation/invalid-attribute` slot — the repair stays
+/// `validation/attribute-rule-violated` slot — the repair stays
 /// attribute-text-level (fix the hex string), no new diagnostic
 /// variant warranted.
 #[test]
@@ -4268,16 +4268,16 @@ fn forge_test_vector_invalid_hex_rejects() {
         matches!(
             err.error,
             ForgeError::Validation(ref boxed)
-                if matches!(**boxed, ValidationError::InvalidAttribute { ref attr, .. } if attr == "hex")
+                if matches!(**boxed, ValidationError::AttributeRuleViolated { ref attr, .. } if attr == "hex")
         ),
-        "odd-length hex must surface as InvalidAttribute on attr='hex'; got: {:?}",
+        "odd-length hex must surface as AttributeRuleViolated on attr='hex'; got: {:?}",
         err.error
     );
 }
 
 /// Negative: malformed `value` literal (non-numeric on integer return
-/// type) reuses `validation/invalid-attribute`. Same rationale as the
-/// hex case — repair stays attribute-text-level.
+/// type) reuses `validation/attribute-rule-violated`. Same rationale as
+/// the hex case — repair stays attribute-text-level.
 #[test]
 fn forge_test_vector_invalid_value_rejects() {
     use sce_build::forge::error::{ForgeError, ValidationError};
@@ -4304,9 +4304,9 @@ fn forge_test_vector_invalid_value_rejects() {
         matches!(
             err.error,
             ForgeError::Validation(ref boxed)
-                if matches!(**boxed, ValidationError::InvalidAttribute { ref attr, .. } if attr == "value")
+                if matches!(**boxed, ValidationError::AttributeRuleViolated { ref attr, .. } if attr == "value")
         ),
-        "non-numeric value must surface as InvalidAttribute on attr='value'; got: {:?}",
+        "non-numeric value must surface as AttributeRuleViolated on attr='value'; got: {:?}",
         err.error
     );
 }
@@ -4781,10 +4781,10 @@ fn forge_codec_flag_value_out_of_range_rejects() {
             ForgeError::Validation(boxed)
                 if matches!(
                     boxed.as_ref(),
-                    ValidationError::InvalidAttribute { attr, .. } if attr == "value"
+                    ValidationError::AttributeRuleViolated { attr, .. } if attr == "value"
                 )
         ),
-        "must surface as ValidationError::InvalidAttribute on the value attribute; got: {inner:?}"
+        "must surface as ValidationError::AttributeRuleViolated on the value attribute; got: {inner:?}"
     );
 }
 
@@ -5342,7 +5342,7 @@ fn forge_codec_variant_dotted_tag_carrier_not_flags_rejects() {
     );
     let err = match result {
         Ok(_) => panic!(
-            "dotted-form variant tag with non-flags carrier must reject with validation/invalid-attribute"
+            "dotted-form variant tag with non-flags carrier must reject with validation/attribute-rule-violated"
         ),
         Err(e) => e,
     };
@@ -5350,9 +5350,9 @@ fn forge_codec_variant_dotted_tag_carrier_not_flags_rejects() {
         matches!(
             err.error,
             ForgeError::Validation(ref boxed)
-                if matches!(**boxed, ValidationError::InvalidAttribute { ref attr, .. } if attr == "tag")
+                if matches!(**boxed, ValidationError::AttributeRuleViolated { ref attr, .. } if attr == "tag")
         ),
-        "must surface as ValidationError::InvalidAttribute on the variant's tag attribute; got: {:?}",
+        "must surface as ValidationError::AttributeRuleViolated on the variant's tag attribute; got: {:?}",
         err.error
     );
 }
@@ -5400,11 +5400,13 @@ fn forge_codec_variant_dotted_tag_unknown_flag_rejects() {
             ForgeError::Validation(ref boxed)
                 if matches!(
                     **boxed,
-                    ValidationError::InvalidAttribute { ref attr, ref expected, .. }
-                        if attr == "tag" && expected.contains("mid") && expected.contains("z")
+                    ValidationError::InvalidAttribute { ref attr, ref allowed, .. }
+                        if attr == "tag"
+                            && allowed.iter().any(|c| c.ends_with(".mid"))
+                            && allowed.iter().any(|c| c.ends_with(".z"))
                 )
         ),
-        "must surface as ValidationError::InvalidAttribute naming the available flags; got: {:?}",
+        "must surface as ValidationError::InvalidAttribute offering the declared flags; got: {:?}",
         err.error
     );
 }
@@ -9645,9 +9647,9 @@ fn forge_codec_length_arith_without_length_field_rejects() {
         matches!(
             err.error,
             ForgeError::Validation(ref boxed)
-                if matches!(**boxed, ValidationError::InvalidAttribute { ref attr, .. } if attr == "sce:length-arith")
+                if matches!(**boxed, ValidationError::AttributeRuleViolated { ref attr, .. } if attr == "sce:length-arith")
         ),
-        "must surface as InvalidAttribute on sce:length-arith; got: {:?}",
+        "must surface as AttributeRuleViolated on sce:length-arith; got: {:?}",
         err.error
     );
 }
@@ -13556,26 +13558,28 @@ fn assert_length_field_rejects(scxml: &str, name: &str, substring: &str) {
     );
     let err = match result {
         Ok(_) => {
-            panic!("{name}: must reject with validation/invalid-attribute on sce:length-field")
+            panic!(
+                "{name}: must reject with validation/attribute-rule-violated on sce:length-field"
+            )
         }
         Err(e) => e,
     };
     match &err.error {
         ForgeError::Validation(boxed) => match boxed.as_ref() {
-            ValidationError::InvalidAttribute { attr, expected, .. }
+            ValidationError::AttributeRuleViolated { attr, rule, .. }
                 if attr == "sce:length-field" =>
             {
                 assert!(
-                    expected.contains(substring),
-                    "{name}: expected message to mention {substring:?}, got: {expected}"
+                    rule.contains(substring),
+                    "{name}: expected the rule to mention {substring:?}, got: {rule}"
                 );
             }
             other => panic!(
-                "{name}: must surface ValidationError::InvalidAttribute on sce:length-field; got: {other:?}"
+                "{name}: must surface ValidationError::AttributeRuleViolated on sce:length-field; got: {other:?}"
             ),
         },
         other => panic!(
-            "{name}: must surface ValidationError::InvalidAttribute on sce:length-field; got: {other:?}"
+            "{name}: must surface ValidationError::AttributeRuleViolated on sce:length-field; got: {other:?}"
         ),
     }
 }

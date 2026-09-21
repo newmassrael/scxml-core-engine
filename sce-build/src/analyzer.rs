@@ -1490,7 +1490,7 @@ mod tests {
             kind: ForgeKind::Statechart,
             what: "transition target".into(),
             name: "nope".into(),
-            available: "a, b".into(),
+            available: vec!["a".into(), "b".into()],
         }
         .into();
         let forge_diags = forge_err.to_diagnostics();

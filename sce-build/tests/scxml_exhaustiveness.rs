@@ -35,7 +35,7 @@
 //!   directions in which a declaration can stop being true.
 //! - **Negative (`attribute_shape_rejections`)** — the withdrawn
 //!   `sce:exhaustive` and the malformed `sce:unhandled` token forms,
-//!   all via `validation/invalid-attribute`.
+//!   all via `validation/attribute-rule-violated`.
 
 use std::fs;
 use std::path::Path;
@@ -592,7 +592,7 @@ fn the_report_still_skips_a_compound_with_no_common_ground() {
     compile_positive(dir.path(), "undeclared_disjoint.scxml");
 }
 
-/// Attribute-shape rejections, all `validation/invalid-attribute`.
+/// Attribute-shape rejections, all `validation/attribute-rule-violated`.
 ///
 /// The withdrawn `sce:exhaustive` is in this table for a reason that
 /// is not tidiness: an unrecognised `sce:` attribute on a statechart
@@ -664,8 +664,10 @@ fn attribute_shape_rejections() {
             err.error.to_diagnostics()
         };
         let code_str = serde_json::to_string(&diags[0].code).unwrap();
+        // Each case breaks a rule — a withdrawn opt-out, a pattern where a
+        // literal is required — and none has a list of legal values.
         assert_eq!(
-            code_str, "\"validation/invalid-attribute\"",
+            code_str, "\"validation/attribute-rule-violated\"",
             "{stem} rejected under the wrong code"
         );
         assert_eq!(

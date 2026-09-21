@@ -657,7 +657,7 @@ a label means, and whether that store exists, is the deployment's
 business.
 
 ⚠⚠⚠ **Each attribute requires the other**, and both orphans are refused
-as `validation/invalid-attribute` with the missing partner named. A
+as `validation/attribute-rule-violated` with the missing partner named. A
 retained field with no initial value is undefined on its first run; an
 initial value on a field that is not retained is read by nothing,
 because an ordinary field is computed afresh every cycle. No new
@@ -709,9 +709,11 @@ passed availability in as a bitmask, which made the author write bit
 positions by hand — positions meaningful only relative to a list
 declared elsewhere.
 
-Refused, all as `validation/invalid-attribute` or the existing
-cardinality codes: a step naming no value, an `of` that is not an
-imported enum alias, fewer than two stops (nothing to navigate), and a
+Refused, as `validation/invalid-attribute` with the legal names as
+candidates or as the existing cardinality codes: a step naming no
+value, an `of` that is not an imported enum alias (a document that
+imports no enum has no candidate, and breaks the rule instead:
+`validation/attribute-rule-violated`), fewer than two stops (nothing to navigate), and a
 repeated name (one value in two positions makes `next` ambiguous). One
 value space may carry several cycles, and one alternative may be a stop
 on more than one of them.
@@ -2310,7 +2312,7 @@ opt-out (`sce:exhaustive="false"`) existed in an earlier revision
 and was withdrawn — it silenced every gap under the parent,
 including gaps introduced after it was written, so a sibling added
 later inherited an exemption nobody had judged. A document still
-carrying `sce:exhaustive` rejects via `validation/invalid-attribute`
+carrying `sce:exhaustive` rejects via `validation/attribute-rule-violated`
 rather than being ignored, because an unrecognised `sce:` attribute
 is accepted and ignored and the exemption would otherwise be lost
 silently.
@@ -2446,7 +2448,7 @@ The conversion is **codegen-effective** (not documentation-only):
 fractions (`0.5`, `-40.25`), and explicit `<num>/<denom>` ratios
 (`1/100`). Scientific notation, hexadecimal, leading `+`, and zero
 denominator are rejected at parse time with
-`validation/invalid-attribute`. `sce:scale="0"` is also rejected —
+`validation/attribute-rule-violated`. `sce:scale="0"` is also rejected —
 a zero scale means the raw value never influences the physical
 reading, which makes the annotation observably equivalent to
 deleting both the scale and the unit.
@@ -2713,6 +2715,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/missing-element` | Validation |
 | `validation/missing-attribute` | Validation |
 | `validation/invalid-attribute` | Validation |
+| `validation/attribute-rule-violated` | Validation |
 | `validation/unknown-sce-attribute` | Validation |
 | `validation/default-covers-unknown-variant` | Validation |
 | `validation/default-covers-tested-variant` | Validation |

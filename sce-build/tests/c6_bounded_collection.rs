@@ -174,10 +174,10 @@ fn capacity_zero_rejects() {
     let err = parse(xml, "local_sub_table").expect_err("zero capacity rejects");
     match err.error {
         ForgeError::Validation(boxed) => match *boxed {
-            ValidationError::InvalidAttribute { .. } => {}
-            other => panic!("expected InvalidAttribute for capacity=0, got {other:?}"),
+            ValidationError::AttributeRuleViolated { .. } => {}
+            other => panic!("expected AttributeRuleViolated for capacity=0, got {other:?}"),
         },
-        other => panic!("expected InvalidAttribute for capacity=0, got {other:?}"),
+        other => panic!("expected AttributeRuleViolated for capacity=0, got {other:?}"),
     }
 }
 
@@ -195,10 +195,10 @@ fn capacity_no_source_rejects() {
     let err = parse(xml, "local_sub_table").expect_err("empty capacity rejects");
     match err.error {
         ForgeError::Validation(boxed) => match *boxed {
-            ValidationError::InvalidAttribute { .. } => {}
-            other => panic!("expected InvalidAttribute for empty capacity, got {other:?}"),
+            ValidationError::AttributeRuleViolated { .. } => {}
+            other => panic!("expected AttributeRuleViolated for empty capacity, got {other:?}"),
         },
-        other => panic!("expected InvalidAttribute for empty capacity, got {other:?}"),
+        other => panic!("expected AttributeRuleViolated for empty capacity, got {other:?}"),
     }
 }
 

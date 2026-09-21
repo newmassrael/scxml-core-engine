@@ -6102,6 +6102,20 @@ fn validate_cross_codec_flag_bind(
         if leaf_inputs.is_empty() && binds.is_empty() {
             continue;
         }
+        // Check 0: each leaf-side input is bound at most once. Two binds
+        // of one input would drive the same flag from two sources.
+        let mut seen_inputs: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+        for bind in binds {
+            if !seen_inputs.insert(bind.input.as_str()) {
+                return Err(ForgeError::Validation(Box::new(
+                    ValidationError::CodecFlagBindDuplicateInput {
+                        parent_codec: parent.name.clone(),
+                        embedded_alias: imp.alias.clone(),
+                        input: bind.input.clone(),
+                    },
+                )));
+            }
+        }
         // Check 1a: every bind targets a declared leaf input.
         let leaf_input_names: std::collections::BTreeSet<&str> =
             leaf_inputs.iter().map(|fi| fi.name.as_str()).collect();
@@ -13168,7 +13182,7 @@ struct ResolvedValidator {
 }
 
 fn resolve_validator(m: &ValidatorModel) -> Result<ResolvedValidator, ForgeError> {
-    let available_ids: Vec<&str> = m.inputs.iter().map(|f| f.id.as_str()).collect();
+    let available_ids: Vec<String> = m.inputs.iter().map(|f| f.id.clone()).collect();
 
     let mut ranges = Vec::new();
     for r in &m.rules.ranges {
@@ -13178,7 +13192,7 @@ fn resolve_validator(m: &ValidatorModel) -> Result<ResolvedValidator, ForgeError
                     kind: crate::forge::model::ForgeKind::Validator,
                     name: r.id.clone(),
                     what: "input field for range rule".into(),
-                    available: available_ids.join(", "),
+                    available: available_ids.clone(),
                 },
             ))
         })?;
@@ -13198,7 +13212,7 @@ fn resolve_validator(m: &ValidatorModel) -> Result<ResolvedValidator, ForgeError
                     kind: crate::forge::model::ForgeKind::Validator,
                     name: roc.id.clone(),
                     what: "input field for rate-of-change rule".into(),
-                    available: available_ids.join(", "),
+                    available: available_ids.clone(),
                 },
             ))
         })?;

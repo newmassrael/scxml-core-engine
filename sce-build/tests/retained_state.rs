@@ -144,9 +144,11 @@ fn each_half_of_the_pair_requires_the_other() {
             Some(0),
             "{label}: an orphan half generated cleanly:\n{log}"
         );
+        // A missing partner is a rule the pair breaks, not a value
+        // outside a set, so no candidate list rides the refusal.
         assert!(
-            log.contains("validation/invalid-attribute"),
-            "{label}: refused, but not as validation/invalid-attribute:\n{log}"
+            log.contains("validation/attribute-rule-violated"),
+            "{label}: refused, but not as validation/attribute-rule-violated:\n{log}"
         );
         assert!(
             log.contains(missing),
@@ -211,9 +213,10 @@ fn an_out_of_range_integer_initial_is_refused() {
         Some(0),
         "300 was accepted as a uint8 initial value:\n{log}"
     );
+    // An integer range is a rule no list of values can state.
     assert!(
-        log.contains("validation/invalid-attribute"),
-        "refused, but not as validation/invalid-attribute:\n{log}"
+        log.contains("validation/attribute-rule-violated"),
+        "refused, but not as validation/attribute-rule-violated:\n{log}"
     );
     assert!(
         log.contains("255"),

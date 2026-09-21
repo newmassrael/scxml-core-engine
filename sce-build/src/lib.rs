@@ -501,7 +501,7 @@ fn lint_statechart_impl(model: &model::SCXMLModel, source: &str) -> Result<(), C
 ///
 /// The inconsistency this closes was visible in one place: the attribute's
 /// SHAPE is already judged unconditionally (`parse_sce_unhandled` refuses a
-/// wildcard, a repeat, an empty value — `validation/invalid-attribute`, no
+/// wildcard, a repeat, an empty value — `validation/attribute-rule-violated`, no
 /// flag involved) while its TRUTH was judged only under `--lint`. One
 /// attribute, two regimes, and the half that could rot silently was the half
 /// that says something.
