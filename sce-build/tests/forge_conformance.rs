@@ -1591,8 +1591,8 @@ fn forge_const_yield_type_mismatch_rejects_float_into_uint() {
                 if matches!(
                     **boxed,
                     GenerateError::ConstYieldTypeMismatch {
-                        expected: SceType::Uint16, ref actual, ..
-                    } if actual == "float"
+                        expected: SceType::Uint16, ref produced, ..
+                    } if produced == "float"
                 )
         ),
         "float-yield must surface as typed ConstYieldTypeMismatch with expected=Uint16; got: {err:?}"

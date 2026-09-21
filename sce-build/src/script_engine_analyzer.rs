@@ -623,20 +623,24 @@ fn push_child_invoke_cause(common: &InvokeSessionCommon, out: &mut Vec<NeedsScri
     }
 }
 
-// `<donedata>` is not a located model element of its own, so its causes
-// anchor on the `<final>` state that owns it — the finest anchor available.
+// Each cause anchors on the element that raises it — the first `<param>`,
+// the `<content>` — and on the `<final>` that owns the `<donedata>` only
+// when that element has no recorded row (a model built from pseudocode).
 fn collect_donedata_causes(
     state_id: &str,
     state: &State,
     dd: &DoneData,
     out: &mut Vec<NeedsScriptEngineCause>,
 ) {
-    if !dd.params.is_empty() {
+    if let Some(first) = dd.params.first() {
         out.push(NeedsScriptEngineCause::new(
             ScriptEngineCauseKind::DonedataParam {
                 state_id: state_id.to_string(),
             },
-            state.source_location.as_ref(),
+            first
+                .source_location
+                .as_ref()
+                .or(state.source_location.as_ref()),
         ));
     }
     // `<content expr="...">` forces a script engine, and so does inline
@@ -654,7 +658,9 @@ fn collect_donedata_causes(
             ScriptEngineCauseKind::DonedataContent {
                 state_id: state_id.to_string(),
             },
-            state.source_location.as_ref(),
+            dd.content_location
+                .as_ref()
+                .or(state.source_location.as_ref()),
         ));
     }
 }

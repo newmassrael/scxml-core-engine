@@ -8620,7 +8620,12 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
                 code: DiagnosticCode::CodegenMcuClassKindOnNonMcuLanguage,
                 stage: Stage::Generate,
                 expected: None,
-                actual: Some(language.clone()),
+                // The value rejected is the target language, which the
+                // invocation names and the document does not, so there is
+                // no document token to report (SCE_ERROR_CONTRACT §2.1).
+                // `kind` cannot stand in: some producers fill it with a
+                // phrase, not a name the document spells.
+                actual: None,
                 fix: None,
                 key_fragments: vec![kind.clone(), language.clone()],
             }
@@ -8744,7 +8749,7 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             algorithm,
             const_name,
             expected,
-            actual,
+            produced,
         } => DiagnosticPayload {
             code: DiagnosticCode::AlgorithmConstYieldTypeMismatch,
             stage: Stage::Generate,
@@ -8755,13 +8760,17 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             // type-coercion failures sit in the `NeutralOrDeterministic`
             // bucket alongside `validation/numeric-parse`.
             expected: None,
-            actual: Some(actual.clone()),
+            // The const's name, as its two sibling fold codes report: the
+            // record sits on the `<sce:const>` row, which spells the name
+            // and neither the produced domain nor the declared type
+            // (SCE_ERROR_CONTRACT §3.1.1).
+            actual: Some(const_name.clone()),
             fix: None,
             key_fragments: vec![
                 algorithm.clone(),
                 const_name.clone(),
-                format!("{expected:?}"),
-                actual.clone(),
+                expected.as_attr(),
+                produced.clone(),
             ],
         },
     }
@@ -11259,7 +11268,7 @@ mod tests {
                     language: "kotlin".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:0e78c9c56b3c4d51","code":"codegen/mcu-class-kind-on-non-mcu-language","stage":"generate","message":"MCU-class kind 'link' cannot be lowered to language 'kotlin': only rust and c11 have MCU substrate (SCE Protocol-Synthesis RFC §5.J.4)","actual":"kotlin"}"#,
+                r#"{"v":1,"id":"fnv1a:0e78c9c56b3c4d51","code":"codegen/mcu-class-kind-on-non-mcu-language","stage":"generate","message":"MCU-class kind 'link' cannot be lowered to language 'kotlin': only rust and c11 have MCU substrate (SCE Protocol-Synthesis RFC §5.J.4)"}"#,
             ),
             (
                 "forge/codegen-generic-kind-backend-emit-missing",
@@ -11450,10 +11459,10 @@ mod tests {
                     algorithm: "crc16".into(),
                     const_name: "table".into(),
                     expected: crate::forge::model::SceType::Uint16,
-                    actual: "float".into(),
+                    produced: "float".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:5d993dd11e2f6ddb","code":"algorithm/const-yield-type-mismatch","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.F","message":"algorithm 'crc16': <sce:const name=\"table\">: const-yield-type-mismatch: cannot coerce float to Uint16","actual":"float"}"#,
+                r#"{"v":1,"id":"fnv1a:78909bc65a6cad7b","code":"algorithm/const-yield-type-mismatch","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.F","message":"algorithm 'crc16': <sce:const name=\"table\">: const-yield-type-mismatch: cannot coerce float to uint16","actual":"table"}"#,
             ),
             // ── §synth-5-B variant primitive (SCE Protocol-Synthesis RFC §synth-5-B, item B1) ─
             (

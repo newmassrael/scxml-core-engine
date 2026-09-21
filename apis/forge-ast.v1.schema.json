@@ -1458,6 +1458,17 @@
         "content": {
           "$ref": "#/definitions/DoneDataContent"
         },
+        "content_location": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SourceLocation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The `<content>` element's own position, for the reason [`DoneDataParam::source_location`] gives. `None` when there is no `<content>` child."
+        },
         "params": {
           "items": {
             "$ref": "#/definitions/DoneDataParam"
@@ -1560,6 +1571,17 @@
         },
         "name": {
           "type": "string"
+        },
+        "source_location": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SourceLocation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The `<param>` element's own position, as [`Param::source_location`] records it for `<send>`: a refusal of this param's `expr` or `location` has to name the param's row, and the enclosing `<final>`'s row does not contain the rejected value (W3C test 343 is the fixture)."
         }
       },
       "required": [

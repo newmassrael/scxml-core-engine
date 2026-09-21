@@ -1635,13 +1635,16 @@ impl SCXMLParser {
         // this is defense-in-depth and documents the invariant in
         // code at the model-construction boundary.
         if root.tag_name().name() != "scxml" || !is_scxml_ns(&root) {
+            // The record's `actual` is the root's own name, so the root's
+            // row is where a consumer finds it (SCE_ERROR_CONTRACT §3.1.1).
+            let pos = doc.text_pos_at(root.range().start);
             return Err(Located::new(
                 ForgeError::Xml(XmlError::WrongRootElement {
                     found: root.tag_name().name().to_string(),
                 }),
                 diag_label,
-                None,
-                None,
+                Some(pos.row),
+                Some(pos.col),
             ));
         }
 
@@ -2623,7 +2626,7 @@ impl SCXMLParser {
 
             // Parse donedata
             if let Some(dd_elem) = scxml_child(&child, "donedata") {
-                state.donedata = Some(self.parse_donedata(&dd_elem, model.datamodel));
+                state.donedata = Some(self.parse_donedata(&dd_elem, model.datamodel, source_name));
             }
 
             model.states.insert(final_id, state);
@@ -3965,7 +3968,12 @@ impl SCXMLParser {
         })
     }
 
-    fn parse_donedata(&mut self, elem: &roxmltree::Node, datamodel: Datamodel) -> DoneData {
+    fn parse_donedata(
+        &mut self,
+        elem: &roxmltree::Node,
+        datamodel: Datamodel,
+        source_name: &str,
+    ) -> DoneData {
         let mut dd = DoneData::default();
 
         // §scxml-5.7: Parse <param> elements.
@@ -3976,6 +3984,7 @@ impl SCXMLParser {
                 name: child.attribute("name").unwrap_or("").to_string(),
                 expr: child.attribute("expr").map(|s| s.to_string()),
                 location: child.attribute("location").map(|s| s.to_string()),
+                source_location: source_location_of(&child, source_name),
             });
         }
 
@@ -3997,6 +4006,7 @@ impl SCXMLParser {
         //     path for native-only (`cpp:` / `kt:`) state machines.
         //   - Omitted → None.
         if let Some(content_elem) = scxml_child(elem, "content") {
+            dd.content_location = source_location_of(&content_elem, source_name);
             if let Some(expr) = content_elem.attribute("expr") {
                 dd.content = crate::model::DoneDataContent::Expression(expr.to_string());
             } else if let Some(text) = content_elem.text() {

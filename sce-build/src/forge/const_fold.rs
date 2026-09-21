@@ -62,9 +62,9 @@ enum ConstFoldKind {
     /// (not the remaining count), so the message can quote the policy
     /// the operator is hitting verbatim.
     BudgetExceeded { budget: u64 },
-    /// Coercion to the declared scalar / element type rejected. Mirrors
-    /// the established slug payload (`actual → expected`).
-    YieldTypeMismatch { expected: SceType, actual: String },
+    /// Coercion to the declared scalar / element type rejected:
+    /// `produced` is the value's domain, `expected` the declared type.
+    YieldTypeMismatch { expected: SceType, produced: String },
 }
 
 impl ConstFoldKind {
@@ -87,12 +87,14 @@ impl ConstFoldKind {
                 const_name: Some(site.const_name.to_string()),
                 budget,
             },
-            Self::YieldTypeMismatch { expected, actual } => GenerateError::ConstYieldTypeMismatch {
-                algorithm: site.algorithm.to_string(),
-                const_name: site.const_name.to_string(),
-                expected,
-                actual,
-            },
+            Self::YieldTypeMismatch { expected, produced } => {
+                GenerateError::ConstYieldTypeMismatch {
+                    algorithm: site.algorithm.to_string(),
+                    const_name: site.const_name.to_string(),
+                    expected,
+                    produced,
+                }
+            }
         }
     }
 }
@@ -883,7 +885,7 @@ fn coerce_to_const(value: EvalValue, ty: &SceType) -> Result<ConstValue, ConstFo
         (EvalValue::Int(i), Bool) => Ok(ConstValue::Bool(i != 0)),
         (EvalValue::Bool(_), _) => Err(ConstFoldKind::YieldTypeMismatch {
             expected: ty.clone(),
-            actual: "bool".to_string(),
+            produced: "bool".to_string(),
         }),
 
         (EvalValue::Float(f), Float32) => Ok(ConstValue::F32(f as f32)),
@@ -893,7 +895,7 @@ fn coerce_to_const(value: EvalValue, ty: &SceType) -> Result<ConstValue, ConstFo
 
         (EvalValue::Float(_), _) => Err(ConstFoldKind::YieldTypeMismatch {
             expected: ty.clone(),
-            actual: "float".to_string(),
+            produced: "float".to_string(),
         }),
 
         (EvalValue::Int(i), Uint8) => Ok(ConstValue::U8((i as u128 & 0xFF) as u8)),
@@ -913,7 +915,7 @@ fn coerce_to_const(value: EvalValue, ty: &SceType) -> Result<ConstValue, ConstFo
         // closes the typed-coercion match exhaustively.
         (_, String | Bytes) => Err(ConstFoldKind::YieldTypeMismatch {
             expected: ty.clone(),
-            actual: "scalar fold yield".to_string(),
+            produced: "scalar fold yield".to_string(),
         }),
         // Enum-typed array elements would
         // require resolving the imported enum's variants — out of
@@ -922,7 +924,7 @@ fn coerce_to_const(value: EvalValue, ty: &SceType) -> Result<ConstValue, ConstFo
         // explicit error keeps the match exhaustive.
         (_, Enum(_)) => Err(ConstFoldKind::YieldTypeMismatch {
             expected: ty.clone(),
-            actual: "scalar fold yield".to_string(),
+            produced: "scalar fold yield".to_string(),
         }),
     }
 }

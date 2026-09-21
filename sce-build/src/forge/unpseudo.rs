@@ -2465,6 +2465,7 @@ fn parse_scxml_donedata(kids: &[&Line<'_>]) -> Result<crate::model::DoneData, Pa
     let mut d = crate::model::DoneData {
         params: Vec::new(),
         content: crate::model::DoneDataContent::None,
+        content_location: None,
     };
     for (k, sub) in group(kids) {
         if let Some(rest) = k.text.strip_prefix("param ") {
@@ -2773,6 +2774,7 @@ fn parse_donedata_param(
         name: String::new(),
         expr: None,
         location: None,
+        source_location: None,
     };
     if let Some(head) = s.strip_suffix(':') {
         p.name = undo(head, line)?;

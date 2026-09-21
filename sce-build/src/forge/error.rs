@@ -4566,19 +4566,20 @@ pub enum GenerateError {
     /// RFC §synth-5-F: the value yielded by a `<sce:fold>` body (or the init
     /// expression of a scalar `<sce:const>`) cannot be coerced to the
     /// declared element / scalar type. `expected` is the declared slot
-    /// type; `actual` is a short tag describing the produced value's
-    /// domain (e.g. `"bool"`, `"float"`) — substring `"bool→Uint16"` /
-    /// `"float→Int32"` patterns the prior slug shape emitted, preserved for
-    /// consumers dispatching on the message text.
+    /// type; `produced` is a short tag describing the produced value's
+    /// domain (e.g. `"bool"`, `"float"`). Neither is a token the document
+    /// spells at the `<sce:const>`, so the wire's `actual` is the const's
+    /// name, as it is for the two sibling fold codes.
     #[error(
         "algorithm '{algorithm}': <sce:const name=\"{const_name}\">: \
-         const-yield-type-mismatch: cannot coerce {actual} to {expected:?}"
+         const-yield-type-mismatch: cannot coerce {produced} to {}",
+        expected.as_attr()
     )]
     ConstYieldTypeMismatch {
         algorithm: String,
         const_name: String,
         expected: SceType,
-        actual: String,
+        produced: String,
     },
 }
 

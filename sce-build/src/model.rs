@@ -780,6 +780,11 @@ pub struct DoneData {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub params: Vec<DoneDataParam>,
     pub content: DoneDataContent,
+    /// The `<content>` element's own position, for the reason
+    /// [`DoneDataParam::source_location`] gives. `None` when there is no
+    /// `<content>` child.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_location: Option<SourceLocation>,
 }
 
 /// §scxml-5.5: `<content>` body semantics.
@@ -841,6 +846,13 @@ pub struct DoneDataParam {
     pub name: String,
     pub expr: Option<String>,
     pub location: Option<String>,
+    /// The `<param>` element's own position, as [`Param::source_location`]
+    /// records it for `<send>`: a refusal of this param's `expr` or
+    /// `location` has to name the param's row, and the enclosing
+    /// `<final>`'s row does not contain the rejected value (W3C test 343
+    /// is the fixture).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
 }
 
 /// Named Context object declaration

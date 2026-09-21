@@ -312,12 +312,17 @@ fn check_state(state: &State, into: &mut Collector) {
     }
     if let Some(donedata) = &state.donedata {
         for param in &donedata.params {
+            // The param's own row, as [`check_params`] reads it for `<send>`.
+            let at = param
+                .source_location
+                .as_ref()
+                .or(state.source_location.as_ref());
             if let Some(expr) = &param.expr {
                 check(
                     ExpressionRole::Value,
                     "<donedata><param expr>",
                     expr,
-                    state.source_location.as_ref(),
+                    at,
                     into,
                 );
             }
@@ -328,7 +333,7 @@ fn check_state(state: &State, into: &mut Collector) {
                     ExpressionRole::Value,
                     "<donedata><param location>",
                     location,
-                    state.source_location.as_ref(),
+                    at,
                     into,
                 );
             }
@@ -345,7 +350,10 @@ fn check_state(state: &State, into: &mut Collector) {
                 ExpressionRole::Value,
                 "<donedata><content expr>",
                 text,
-                state.source_location.as_ref(),
+                donedata
+                    .content_location
+                    .as_ref()
+                    .or(state.source_location.as_ref()),
                 into,
             );
         }
