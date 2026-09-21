@@ -126,8 +126,21 @@ pub enum XIncludeError {
     /// runtime does not implement. Accepting these at codegen
     /// time would produce state machines that differ from
     /// runtime parse — we reject them at the earliest stage.
+    ///
+    /// `feature` describes what was asked for; `observed` is what the
+    /// author wrote for it on the `<xi:include>` itself — the `parse`
+    /// mode, the `xpointer` expression — and is what the wire reports
+    /// as `actual` (SCE_ERROR_CONTRACT §3.1.1). `None` when nothing on
+    /// that row spells it: an `<xi:fallback>` child sits on a row of
+    /// its own, an empty attribute value spells nothing, and a refusal
+    /// re-attributed to an outer include names a row the inner token
+    /// is not on.
     #[error("<xi:include href=\"{href}\">: unsupported feature: {feature}")]
-    Unsupported { href: String, feature: String },
+    Unsupported {
+        href: String,
+        feature: String,
+        observed: Option<String>,
+    },
 }
 
 /// Location of an `<xi:include>` inside the source string —
@@ -456,16 +469,18 @@ fn reject_unsupported(
                     // any document this branch rejected other than the
                     // one the literal happened to describe.
                     feature: format!("parse=\"{mode}\" (only parse=\"xml\" is supported)"),
+                    observed: spelled(mode),
                 },
                 *loc,
             ));
         }
     }
-    if node.attribute("xpointer").is_some() {
+    if let Some(expression) = node.attribute("xpointer") {
         return Err((
             XIncludeError::Unsupported {
                 href: node.attribute("href").unwrap_or("").to_string(),
                 feature: "xpointer selection is not implemented".to_string(),
+                observed: spelled(expression),
             },
             *loc,
         ));
@@ -480,12 +495,21 @@ fn reject_unsupported(
                 XIncludeError::Unsupported {
                     href: node.attribute("href").unwrap_or("").to_string(),
                     feature: "<xi:fallback> alternative content is not implemented".to_string(),
+                    // The child is on a row of its own, and the record
+                    // names the include's.
+                    observed: None,
                 },
                 *loc,
             ));
         }
     }
     Ok(())
+}
+
+/// An attribute value as the token a consumer searches for, or `None`
+/// when it is empty and so spells nothing to find.
+fn spelled(value: &str) -> Option<String> {
+    (!value.is_empty()).then(|| value.to_string())
 }
 
 /// Render the children of the included document's root element
@@ -557,9 +581,12 @@ fn remap_nested(err: XIncludeError, outer_href: &str) -> XIncludeError {
             href: outer_href.to_string(),
             detail,
         },
+        // The record now names the outer include's row, and the token
+        // the inner include was refused for is not on it.
         XIncludeError::Unsupported { feature, .. } => XIncludeError::Unsupported {
             href: outer_href.to_string(),
             feature,
+            observed: None,
         },
     }
 }

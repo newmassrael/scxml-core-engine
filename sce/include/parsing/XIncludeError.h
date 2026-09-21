@@ -305,18 +305,24 @@ private:
 // runtime does not implement: `parse="text"`, `xpointer=...`, or a
 // `<xi:fallback>` alternative-content child. Mirrors
 // `sce-build/src/xinclude.rs::XIncludeError::Unsupported` (fields
-// `href`, `feature`) and maps 1:1 to the Rust
+// `href`, `feature`, `observed`) and maps 1:1 to the Rust
 // `xml/xinclude-unsupported` `DiagnosticCode`. The C++ expander
 // preserves this rejection set so the AOT and Interpreter pipelines agree on
 // which inputs are accepted.
 //
-// `actual` carries the feature rather than the href, matching the
-// Rust payload: the href is not what the consumer would act on here.
+// `actual` carries what the author wrote for the feature on the
+// `<xi:include>` itself — the `parse` mode, the `xpointer` expression —
+// rather than the href or the description, matching the Rust payload's
+// `observed`: a consumer searches the include's row for it
+// (SCE_ERROR_CONTRACT.md §3.1.1). Absent when nothing on that row spells
+// it: an `<xi:fallback>` child sits on a row of its own, an empty value
+// spells nothing, and a re-attributed rejection names an outer row. The
+// description stays in the key fragments, so the id is unchanged.
 class XIncludeUnsupported : public XIncludeExpansionError {
 public:
-    XIncludeUnsupported(std::string href, std::string feature)
+    XIncludeUnsupported(std::string href, std::string feature, std::optional<std::string> observed)
         : XIncludeExpansionError("<xi:include href=\"" + href + "\">: unsupported feature: " + feature, {href, feature},
-                                 feature),
+                                 std::move(observed)),
           feature_(std::move(feature)) {}
 
     std::string_view code() const noexcept override {
@@ -327,8 +333,10 @@ public:
         return std::make_unique<XIncludeUnsupported>(*this);
     }
 
+    // The inner include's token is not on the outer include's row, so the
+    // re-attributed rejection carries none. Mirrors Rust `remap_nested`.
     [[noreturn]] void rethrowAttributedTo(const std::string &outerHref) const override {
-        throw XIncludeUnsupported(outerHref, feature_);
+        throw XIncludeUnsupported(outerHref, feature_, std::nullopt);
     }
 
 private:

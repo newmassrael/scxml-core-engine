@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <system_error>
@@ -205,6 +206,15 @@ SourcePos offsetPosition(std::string_view content, const std::filesystem::path &
     return PositionMap::identity(contentFile, content).lookup(offset);
 }
 
+// An attribute value as the token a consumer searches for, or none when
+// it is empty and so spells nothing to find. Mirrors Rust `spelled`.
+std::optional<std::string> spelled(const std::string &value) {
+    if (value.empty()) {
+        return std::nullopt;
+    }
+    return value;
+}
+
 // Reject XInclude features the pugixml runtime does not implement.
 // Mirrors Rust `reject_unsupported`: `parse="text"`, `xpointer=`,
 // and `<xi:fallback>` children. The C++ expander preserves the
@@ -220,11 +230,13 @@ void rejectUnsupportedFeatures(const pugi::xml_node &node, std::string_view href
         // this rejection set.
         const std::string mode = parseAttr.value();
         if (mode != "xml") {
-            throw XIncludeUnsupported(std::string(href), "parse=\"" + mode + "\" (only parse=\"xml\" is supported)");
+            throw XIncludeUnsupported(std::string(href), "parse=\"" + mode + "\" (only parse=\"xml\" is supported)",
+                                      spelled(mode));
         }
     }
-    if (node.attribute("xpointer")) {
-        throw XIncludeUnsupported(std::string(href), "xpointer selection is not implemented");
+    if (const auto xpointer = node.attribute("xpointer")) {
+        throw XIncludeUnsupported(std::string(href), "xpointer selection is not implemented",
+                                  spelled(xpointer.value()));
     }
     for (const auto &child : node.children()) {
         if (child.type() != pugi::node_element) {
@@ -232,7 +244,10 @@ void rejectUnsupportedFeatures(const pugi::xml_node &node, std::string_view href
         }
         const std::string n = child.name();
         if (n == "fallback" || n == "xi:fallback") {
-            throw XIncludeUnsupported(std::string(href), "<xi:fallback> alternative content is not implemented");
+            // The child is on a row of its own, and the record names the
+            // include's.
+            throw XIncludeUnsupported(std::string(href), "<xi:fallback> alternative content is not implemented",
+                                      std::nullopt);
         }
     }
 }

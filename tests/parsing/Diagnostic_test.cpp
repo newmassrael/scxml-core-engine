@@ -394,10 +394,30 @@ TEST(XIncludeErrorWire, MalformedConformsToV1Schema) {
 }
 
 TEST(XIncludeErrorWire, UnsupportedConformsToV1Schema) {
-    const XIncludeUnsupported err("frag.xml", "parse=\"text\" (only parse=\"xml\" is supported)");
+    const XIncludeUnsupported err("frag.xml", "parse=\"text\" (only parse=\"xml\" is supported)", "text");
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/xinclude-unsupported");
     conformance::assertNoUnexpectedKeys(j);
+}
+
+TEST(XIncludeErrorWire, UnsupportedReportsTheSpellingOnlyWhereTheRowHoldsIt) {
+    // `actual` is what the author wrote on the include's row — the mode,
+    // not the description of it — matching Rust's `observed`.
+    const XIncludeUnsupported spelled("frag.xml", "parse=\"text\" (only parse=\"xml\" is supported)", "text");
+    EXPECT_EQ(spelled.to_json().at("actual"), "text");
+
+    // Re-attributed to an outer include, the record names a row the inner
+    // token is not on, so it carries none (Rust `remap_nested`).
+    try {
+        spelled.rethrowAttributedTo("outer.xml");
+        FAIL() << "rethrowAttributedTo returned";
+    } catch (const XIncludeUnsupported &outer) {
+        const auto j = outer.to_json();
+        EXPECT_FALSE(j.contains("actual")) << j.dump();
+        // The description still names the feature, and it is what the
+        // id is derived from.
+        EXPECT_EQ(outer.keyFragments(), (std::vector<std::string>{"outer.xml", spelled.keyFragments()[1]}));
+    }
 }
 
 TEST(XIncludeErrorWire, IdDiffersAcrossSubtypesWithTheSameKeyFragments) {

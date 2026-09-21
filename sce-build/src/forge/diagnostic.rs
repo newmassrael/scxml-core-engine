@@ -5202,11 +5202,18 @@ fn xml_fields(e: &XmlError) -> DiagnosticPayload {
             // consumer dedups on.
             key_fragments: vec![href.clone()],
         },
-        XmlError::XInclude(XIncludeError::Unsupported { href, feature }) => DiagnosticPayload {
+        XmlError::XInclude(XIncludeError::Unsupported {
+            href,
+            feature,
+            observed,
+        }) => DiagnosticPayload {
             code: DiagnosticCode::XmlXIncludeUnsupported,
             stage: Stage::Xml,
             expected: None,
-            actual: Some(feature.clone()),
+            // What the author wrote on the include's row, not the
+            // description of it. The description stays in the key, which
+            // the C++ producer derives the same id from.
+            actual: observed.clone(),
             fix: None,
             key_fragments: vec![href.clone(), feature.clone()],
         },
@@ -11178,9 +11185,10 @@ mod tests {
                 XmlError::XInclude(crate::xinclude::XIncludeError::Unsupported {
                     href: "frag.xml".into(),
                     feature: "parse=\"text\" (only parse=\"xml\" is supported)".to_string(),
+                    observed: Some("text".into()),
                 })
                 .into(),
-                r#"{"v":1,"id":"fnv1a:76b67406e28c984e","code":"xml/xinclude-unsupported","stage":"xml","message":"<xi:include href=\"frag.xml\">: unsupported feature: parse=\"text\" (only parse=\"xml\" is supported)","actual":"parse=\"text\" (only parse=\"xml\" is supported)"}"#,
+                r#"{"v":1,"id":"fnv1a:76b67406e28c984e","code":"xml/xinclude-unsupported","stage":"xml","message":"<xi:include href=\"frag.xml\">: unsupported feature: parse=\"text\" (only parse=\"xml\" is supported)","actual":"text"}"#,
             ),
             // sce:template preprocessing variants. Each distinct
             // repair shape (missing-param → add_attribute, cycle /
