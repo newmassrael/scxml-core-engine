@@ -6121,14 +6121,13 @@ fn validate_cross_codec_flag_bind(
             leaf_inputs.iter().map(|fi| fi.name.as_str()).collect();
         for bind in binds {
             if !leaf_input_names.contains(bind.input.as_str()) {
-                let available: Vec<&str> = leaf_inputs.iter().map(|fi| fi.name.as_str()).collect();
                 return Err(ForgeError::Validation(Box::new(
                     ValidationError::CodecFlagBindInputNotDeclared {
                         parent_codec: parent.name.clone(),
                         embedded_alias: imp.alias.clone(),
                         embedded_codec: imp.alias.clone(),
                         input: bind.input.clone(),
-                        available_inputs: available.join(", "),
+                        available_inputs: leaf_inputs.iter().map(|fi| fi.name.clone()).collect(),
                     },
                 )));
             }

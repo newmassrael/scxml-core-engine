@@ -1194,14 +1194,15 @@ pub enum ValidationError {
     /// the bind's `input=` attribute with the leaf's
     /// `<sce:flag-input name="...">`.
     #[error(
-        "codec '{parent_codec}': <sce:flag-bind input=\"{input}\"/> on <sce:import as=\"{embedded_alias}\"> targets a leaf-side input that '{embedded_codec}' does not declare. Available inputs on the imported leaf: [{available_inputs}]. Align the bind's input= attribute with a declared <sce:flag-input name=\"…\">, or remove the bind if the leaf no longer needs that input."
+        "codec '{parent_codec}': <sce:flag-bind input=\"{input}\"/> on <sce:import as=\"{embedded_alias}\"> targets a leaf-side input that '{embedded_codec}' does not declare. Available inputs on the imported leaf: [{}]. Align the bind's input= attribute with a declared <sce:flag-input name=\"…\">, or remove the bind if the leaf no longer needs that input.",
+        .available_inputs.join(", ")
     )]
     CodecFlagBindInputNotDeclared {
         parent_codec: String,
         embedded_alias: String,
         embedded_codec: String,
         input: String,
-        available_inputs: String,
+        available_inputs: Vec<String>,
     },
 
     /// Parent-side flag-bind rule: parent's `<sce:flag-bind source="...">`
@@ -2159,8 +2160,9 @@ pub enum ValidationError {
 
     /// SCE Protocol-Synthesis RFC §synth-5-I `<sce:extern abi="...">` mismatch
     /// (spec line 1848): the authored ABI does not match the
-    /// registry entry's canonical ABI. Closed two-element repair set
-    /// `[c, rust]` rides `Fix::ReplaceOneOf`.
+    /// registry entry's canonical ABI, which rides `Fix::ReplaceWith`: the
+    /// registry names one ABI, so the vocabulary `[c, rust]` is not the
+    /// repair — half of it is the value just refused.
     #[error(
         "<sce:extern name=\"{name}\" abi=\"{actual}\"> uses a non-canonical ABI; the registry entry requires `abi=\"{expected}\"`. The accepted set is [\"c\", \"rust\"]."
     )]

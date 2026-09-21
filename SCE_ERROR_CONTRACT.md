@@ -679,7 +679,7 @@ references against a real document and drift silently.
 | `codec/flag-bind-input-not-declared` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.B |
 | `codec/flag-bind-source-not-resolved` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
 | `codec/flag-bind-width-mismatch` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
-| `codec/flag-input-unbound` | `validation` | `add_attribute` | SCE Protocol-Synthesis RFC §5.B |
+| `codec/flag-input-unbound` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
 | `codec/peek-byte-flag-layout-mismatch` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
 | `codec/present-if-refs-later-field` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
 | `codec/repeat-count-refs-later-field` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
@@ -726,7 +726,7 @@ references against a real document and drift silently.
 | `expression/unknown-identifier` | `expression` | `replace_one_of` / no | W3C SCXML §B.2 |
 | `expression/unsupported-builtin` | `expression` | `replace_one_of` | W3C SCXML §B.2 |
 | `expression/unsupported-construct` | `expression` | no | SCE Forge §3.4 |
-| `extern/abi-mismatch` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.I |
+| `extern/abi-mismatch` | `validation` | `replace_with` | SCE Protocol-Synthesis RFC §5.I |
 | `extern/ordering-unspecified` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.I |
 | `extern/signature-mismatch` | `validation` | `replace_with` | SCE Protocol-Synthesis RFC §5.I |
 | `extern/symbol-not-in-whitelist` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.I |

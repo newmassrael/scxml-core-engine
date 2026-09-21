@@ -3629,15 +3629,20 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 link_name,
                 driver,
                 declared_class,
-                expected_class,
+                expected_class: _,
                 driver_candidates,
                 driver_candidates_list: _,
             } = payload.as_ref();
+            // The candidates are DRIVERS of the class the link needs, so
+            // what they replace — `actual` — is the driver. It used to be
+            // the declared class, with the needed class in `expected`: a
+            // consumer applying the fix wrote a driver name into the class
+            // slot, and §3.2 forbids `expected` beside a candidate fix.
             DiagnosticPayload {
                 code: DiagnosticCode::MeshDeployLinkDriverClassMismatch,
                 stage: Stage::MeshDeploy,
-                actual: Some(declared_class.clone()),
-                expected: Some(vec![expected_class.clone()]),
+                actual: Some(driver.clone()),
+                expected: None,
                 fix: Some(Fix::ReplaceOneOf {
                     candidates: driver_candidates.clone(),
                 }),

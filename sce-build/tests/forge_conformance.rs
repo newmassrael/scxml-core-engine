@@ -13867,8 +13867,8 @@ fn flag_inversion_bind_input_not_declared_rejects() {
                 assert_eq!(embedded_alias, "codec_axis1_undeclared_leaf");
                 assert_eq!(input, "is_admin");
                 assert!(
-                    available_inputs.contains("has_suffix"),
-                    "available_inputs must list the leaf's declared 'has_suffix' input; got: {available_inputs}"
+                    available_inputs.iter().any(|i| i == "has_suffix"),
+                    "available_inputs must list the leaf's declared 'has_suffix' input; got: {available_inputs:?}"
                 );
             }
             other => panic!("expected CodecFlagBindInputNotDeclared, got: {other:?}"),

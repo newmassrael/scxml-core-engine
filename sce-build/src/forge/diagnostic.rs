@@ -6186,8 +6186,14 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             // tooling can offer them as a typed pick list. Empty list
             // when the codec has no variant at all — in that case the
             // candidate set degenerates to "remove the overlay entry".
-            expected: Some(vec![format!("{overlay_arm_value:#x}")]),
-            actual: Some(codec.clone()),
+            //
+            // ⚠ `actual` is the overlay's arm value, spelled as the
+            // candidates are, because that value is what the candidates
+            // replace. It used to be the codec's name, with the arm value
+            // in `expected` — so the fix proposed putting an arm value
+            // where the codec's name stands.
+            expected: None,
+            actual: Some(format!("{overlay_arm_value:#x}")),
             fix: if declared_arms.is_empty() {
                 None
             } else {
@@ -6206,8 +6212,10 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
         } => DiagnosticPayload {
             code: DiagnosticCode::CodecVariantDispatchFlagNotResolved,
             stage: Stage::Validation,
-            expected: Some(vec![flag_source.clone()]),
-            actual: Some(parent_codec.clone()),
+            // `actual` is the reference the author wrote, which is what
+            // the candidates replace — not the codec that holds it.
+            expected: None,
+            actual: Some(flag_source.clone()),
             fix: if candidates.is_empty() {
                 None
             } else {
@@ -6309,30 +6317,25 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 flag.clone(),
             ],
         },
+        // ⚠ `actual` is the `input=` the bind names — the text the
+        // candidates replace. It used to be a sentence ("declared on X:
+        // [a, b]") that occurs nowhere in the document, with the bad
+        // input in `expected`, and the candidates came from splitting a
+        // joined string back apart.
         ValidationError::CodecFlagBindInputNotDeclared {
             parent_codec,
             embedded_alias,
-            embedded_codec,
+            embedded_codec: _,
             input,
             available_inputs,
         } => DiagnosticPayload {
             code: DiagnosticCode::CodecFlagBindInputNotDeclared,
             stage: Stage::Validation,
-            expected: Some(vec![input.clone()]),
-            actual: Some(format!(
-                "declared on {embedded_codec}: [{available_inputs}]"
-            )),
-            fix: if available_inputs.is_empty() {
-                None
-            } else {
-                Some(Fix::ReplaceOneOf {
-                    candidates: available_inputs
-                        .split(", ")
-                        .filter(|s| !s.is_empty())
-                        .map(|s| s.to_string())
-                        .collect(),
-                })
-            },
+            expected: None,
+            actual: Some(input.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: available_inputs.clone(),
+            }),
             key_fragments: vec![parent_codec.clone(), embedded_alias.clone(), input.clone()],
         },
         ValidationError::CodecFlagBindSourceNotResolved {
@@ -6344,8 +6347,10 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
         } => DiagnosticPayload {
             code: DiagnosticCode::CodecFlagBindSourceNotResolved,
             stage: Stage::Validation,
-            expected: Some(vec![bind_source.clone()]),
-            actual: Some(parent_codec.clone()),
+            // The `source=` the bind names is what failed to resolve, so
+            // it is `actual`; the codec holding it used to stand there.
+            expected: None,
+            actual: Some(bind_source.clone()),
             fix: None,
             key_fragments: vec![
                 parent_codec.clone(),
@@ -6382,16 +6387,20 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
         } => DiagnosticPayload {
             code: DiagnosticCode::CodecFlagInputUnbound,
             stage: Stage::Validation,
+            // The element the import needs is metadata about the
+            // position; `actual` is the input left unbound.
+            //
+            // ⚠ No `fix`. The repair is a CHILD ELEMENT, and this used to
+            // ride `Fix::AddAttribute` with the element's text in `attr` —
+            // an attribute named `<sce:flag-bind …/>` — while `expected`
+            // carried the same text, breaking the §3.2 non-overlap rule.
+            // No `Fix` variant adds a child, and inventing one here would
+            // be a wire change of its own.
             expected: Some(vec![format!(
-                "<sce:flag-bind input=\"{input}\" source=\"...\"/>"
+                "<sce:flag-bind input=\"{input}\" source=\"...\"/> in <sce:import as=\"{embedded_alias}\"> (the input '{embedded_codec}' declares)"
             )]),
-            actual: Some(format!(
-                "{embedded_codec} declares <sce:flag-input name=\"{input}\"/>"
-            )),
-            fix: Some(Fix::AddAttribute {
-                element: format!("<sce:import as=\"{embedded_alias}\">"),
-                attr: format!("<sce:flag-bind input=\"{input}\" source=\"...\"/>"),
-            }),
+            actual: Some(input.clone()),
+            fix: None,
             key_fragments: vec![parent_codec.clone(), embedded_alias.clone(), input.clone()],
         },
         ValidationError::CodecFlagBindDuplicateInput {
@@ -6402,7 +6411,9 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             code: DiagnosticCode::CodecFlagBindDuplicateInput,
             stage: Stage::Validation,
             expected: None,
-            actual: Some(format!("{embedded_alias}.{input}")),
+            // The `input=` value written twice — text the document holds,
+            // where `<alias>.<input>` is a spelling it never uses.
+            actual: Some(input.clone()),
             fix: None,
             key_fragments: vec![parent_codec.clone(), embedded_alias.clone(), input.clone()],
         },
@@ -7832,15 +7843,18 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
         } => DiagnosticPayload {
             code: DiagnosticCode::ExternAbiMismatch,
             stage: Stage::Validation,
-            // `expected` carries the registry's canonical ABI; the
-            // closed two-element repair set rides `Fix::ReplaceOneOf`
-            // so consumers picking via the wire format see both
-            // legal values (`["c", "rust"]`) regardless of which one
-            // the registry entry expected.
-            expected: Some(vec![expected.clone()]),
+            // The registry names the one ABI this symbol takes, so the
+            // repair is that value — deterministic, as for a signature.
+            //
+            // ⚠ This offered the whole vocabulary `["c", "rust"]` as a
+            // choice while `expected` named the registry's ABI. One of the
+            // two is always the value just refused, so a consumer picking
+            // from the list could re-emit the record it was repairing
+            // (§3.1.1: an applied fix must clear the record's id).
+            expected: None,
             actual: Some(actual.clone()),
-            fix: Some(Fix::ReplaceOneOf {
-                candidates: vec!["c".to_string(), "rust".to_string()],
+            fix: Some(Fix::ReplaceWith {
+                to: expected.clone(),
             }),
             key_fragments: vec![name.clone(), actual.clone()],
         },
@@ -7853,8 +7867,9 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             stage: Stage::Validation,
             // Deterministic fix — the registry holds the canonical
             // sig; `Fix::ReplaceWith` carries it verbatim.
-            // NeutralOrDeterministic non_overlap_class.
-            expected: Some(vec![expected.clone()]),
+            // NeutralOrDeterministic non_overlap_class, so `expected`
+            // stays absent: it carried the same sig the fix does.
+            expected: None,
             actual: Some(actual.clone()),
             fix: Some(Fix::ReplaceWith {
                 to: expected.clone(),
@@ -8825,10 +8840,10 @@ fn scxml_semantic_fields(e: &crate::scxml_semantic::ScxmlSemanticError) -> Diagn
         } => DiagnosticPayload {
             code: DiagnosticCode::ScxmlUnsupportedDatamodel,
             stage: Stage::Validation,
-            // `expected` is the closed vocabulary, `actual` what the
-            // document wrote — the pair a consumer needs to render
-            // "did you mean" without re-deriving SCE's support matrix.
-            expected: Some(supported.clone()),
+            // The closed vocabulary rides `fix` alone; `actual` is what
+            // the document wrote. It also rode `expected`, which §3.2
+            // forbids — the same list in both fields.
+            expected: None,
             actual: Some(declared.clone()),
             fix: Some(Fix::ReplaceOneOf {
                 candidates: supported.clone(),
@@ -9864,7 +9879,7 @@ mod tests {
                     supported: vec!["null".into(), "ecmascript".into()],
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:975893e56914aa49","code":"scxml/unsupported-datamodel","stage":"validation","spec":"W3C SCXML §3.2","message":"datamodel=\"xpath\" is a W3C SCXML data model that SCE does not implement","expected":["null","ecmascript"],"actual":"xpath","fix":{"kind":"replace_one_of","candidates":["null","ecmascript"]}}"#,
+                r#"{"v":1,"id":"fnv1a:975893e56914aa49","code":"scxml/unsupported-datamodel","stage":"validation","spec":"W3C SCXML §3.2","message":"datamodel=\"xpath\" is a W3C SCXML data model that SCE does not implement","actual":"xpath","fix":{"kind":"replace_one_of","candidates":["null","ecmascript"]}}"#,
             ),
             (
                 // §scxml-B-1 — a construct whose language the declared
@@ -10685,7 +10700,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:c41d4f3a5258039c","code":"extern/abi-mismatch","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.I","message":"<sce:extern name=\"sce_atomic_load_acquire_u32\" abi=\"rust\"> uses a non-canonical ABI; the registry entry requires `abi=\"c\"`. The accepted set is [\"c\", \"rust\"].","expected":["c"],"actual":"rust","fix":{"kind":"replace_one_of","candidates":["c","rust"]}}"#,
+                r#"{"v":1,"id":"fnv1a:c41d4f3a5258039c","code":"extern/abi-mismatch","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.I","message":"<sce:extern name=\"sce_atomic_load_acquire_u32\" abi=\"rust\"> uses a non-canonical ABI; the registry entry requires `abi=\"c\"`. The accepted set is [\"c\", \"rust\"].","actual":"rust","fix":{"kind":"replace_with","to":"c"}}"#,
             ),
             (
                 // RFC §synth-5-I line 1849: signature mismatch — `Fix::ReplaceWith`
@@ -10698,7 +10713,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:36a8a1a0fbe59da6","code":"extern/signature-mismatch","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.I","message":"<sce:extern name=\"sce_atomic_load_acquire_u32\" sig=\"(*const u32) -> u64\"> declares a signature that does not match the registry entry. Replace with `sig=\"(*const u32) -> u32\"`.","expected":["(*const u32) -> u32"],"actual":"(*const u32) -> u64","fix":{"kind":"replace_with","to":"(*const u32) -> u32"}}"#,
+                r#"{"v":1,"id":"fnv1a:36a8a1a0fbe59da6","code":"extern/signature-mismatch","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.I","message":"<sce:extern name=\"sce_atomic_load_acquire_u32\" sig=\"(*const u32) -> u64\"> declares a signature that does not match the registry entry. Replace with `sig=\"(*const u32) -> u32\"`.","actual":"(*const u32) -> u64","fix":{"kind":"replace_with","to":"(*const u32) -> u32"}}"#,
             ),
             (
                 // RFC §synth-5-I line 1850: atomic-family base without ordering
@@ -11446,7 +11461,7 @@ mod tests {
                     declared_arms: vec![0x01, 0x02, 0x03],
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:eeb51f3d4f6560b6","code":"codec/variant-default-overlay-arm-not-declared","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'session_envelope': deploy.yaml variant_defaults names arm value 0xff, but the codec declares no matching <sce:arm value=...> — declared arms: [0x1, 0x2, 0x3]; align the overlay entry with one of the declared values or remove it from variant_defaults","expected":["0xff"],"actual":"session_envelope","fix":{"kind":"replace_one_of","candidates":["0x1","0x2","0x3"]}}"#,
+                r#"{"v":1,"id":"fnv1a:eeb51f3d4f6560b6","code":"codec/variant-default-overlay-arm-not-declared","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'session_envelope': deploy.yaml variant_defaults names arm value 0xff, but the codec declares no matching <sce:arm value=...> — declared arms: [0x1, 0x2, 0x3]; align the overlay entry with one of the declared values or remove it from variant_defaults","actual":"0xff","fix":{"kind":"replace_one_of","candidates":["0x1","0x2","0x3"]}}"#,
             ),
             // ── Parent-tag dispatch — parent-side variant-dispatch (5 codes) ─
             (
@@ -11459,7 +11474,7 @@ mod tests {
                     candidates: vec!["header.M".into(), "header.N".into()],
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:70575bd712ca76c4","code":"codec/variant-dispatch-flag-not-resolved","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"parent codec 'codec_zenoh_push': <sce:variant-dispatch flag=\"header.X\"/> on import 'key' does not resolve — flag 'X' is not declared on carrier 'header'. Correct the dotted reference to one of: [header.M, header.N].","expected":["header.X"],"actual":"codec_zenoh_push","fix":{"kind":"replace_one_of","candidates":["header.M","header.N"]}}"#,
+                r#"{"v":1,"id":"fnv1a:70575bd712ca76c4","code":"codec/variant-dispatch-flag-not-resolved","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"parent codec 'codec_zenoh_push': <sce:variant-dispatch flag=\"header.X\"/> on import 'key' does not resolve — flag 'X' is not declared on carrier 'header'. Correct the dotted reference to one of: [header.M, header.N].","actual":"header.X","fix":{"kind":"replace_one_of","candidates":["header.M","header.N"]}}"#,
             ),
             (
                 "forge/codec-variant-dispatch-bit-width-mismatch",
@@ -11520,10 +11535,10 @@ mod tests {
                     embedded_alias: "key".into(),
                     embedded_codec: "codec_zenoh_wireexpr".into(),
                     input: "is_admin".into(),
-                    available_inputs: "has_suffix".into(),
+                    available_inputs: vec!["has_suffix".into()],
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:218d5e66e1cbff7a","code":"codec/flag-bind-input-not-declared","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'codec_zenoh_request': <sce:flag-bind input=\"is_admin\"/> on <sce:import as=\"key\"> targets a leaf-side input that 'codec_zenoh_wireexpr' does not declare. Available inputs on the imported leaf: [has_suffix]. Align the bind's input= attribute with a declared <sce:flag-input name=\"…\">, or remove the bind if the leaf no longer needs that input.","expected":["is_admin"],"actual":"declared on codec_zenoh_wireexpr: [has_suffix]","fix":{"kind":"replace_one_of","candidates":["has_suffix"]}}"#,
+                r#"{"v":1,"id":"fnv1a:218d5e66e1cbff7a","code":"codec/flag-bind-input-not-declared","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'codec_zenoh_request': <sce:flag-bind input=\"is_admin\"/> on <sce:import as=\"key\"> targets a leaf-side input that 'codec_zenoh_wireexpr' does not declare. Available inputs on the imported leaf: [has_suffix]. Align the bind's input= attribute with a declared <sce:flag-input name=\"…\">, or remove the bind if the leaf no longer needs that input.","actual":"is_admin","fix":{"kind":"replace_one_of","candidates":["has_suffix"]}}"#,
             ),
             (
                 "forge/codec-flag-bind-source-not-resolved",
@@ -11535,7 +11550,7 @@ mod tests {
                     detail: "flag 'K' is not declared on local carrier 'header'".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:52e7c2d46ebfffe6","code":"codec/flag-bind-source-not-resolved","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'codec_zenoh_request': <sce:flag-bind input=\"has_suffix\" source=\"header.K\"/> on <sce:import as=\"key\"> cannot be resolved against this codec's namespace. flag 'K' is not declared on local carrier 'header'. Use <carrier>.<flag> form to reference a local flags-carrier flag, or the bare input name to forward one of this codec's own <sce:flag-input> declarations.","expected":["header.K"],"actual":"codec_zenoh_request"}"#,
+                r#"{"v":1,"id":"fnv1a:52e7c2d46ebfffe6","code":"codec/flag-bind-source-not-resolved","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'codec_zenoh_request': <sce:flag-bind input=\"has_suffix\" source=\"header.K\"/> on <sce:import as=\"key\"> cannot be resolved against this codec's namespace. flag 'K' is not declared on local carrier 'header'. Use <carrier>.<flag> form to reference a local flags-carrier flag, or the bare input name to forward one of this codec's own <sce:flag-input> declarations.","actual":"header.K"}"#,
             ),
             (
                 "forge/codec-flag-bind-width-mismatch",
@@ -11559,7 +11574,7 @@ mod tests {
                     input: "has_suffix".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:6f64a9b2f3e7bfd3","code":"codec/flag-input-unbound","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'codec_zenoh_request': <sce:import as=\"key\"> imports 'codec_zenoh_wireexpr' which declares <sce:flag-input name=\"has_suffix\"/> but no matching <sce:flag-bind input=\"has_suffix\"/> is supplied. Bind the input to one of this codec's local flags-carrier flags (<sce:flag-bind input=\"has_suffix\" source=\"carrier.flag\"/>) or to one of this codec's own <sce:flag-input> declarations (<sce:flag-bind input=\"has_suffix\" source=\"local_input\"/>).","expected":["<sce:flag-bind input=\"has_suffix\" source=\"...\"/>"],"actual":"codec_zenoh_wireexpr declares <sce:flag-input name=\"has_suffix\"/>","fix":{"kind":"add_attribute","element":"<sce:import as=\"key\">","attr":"<sce:flag-bind input=\"has_suffix\" source=\"...\"/>"}}"#,
+                r#"{"v":1,"id":"fnv1a:6f64a9b2f3e7bfd3","code":"codec/flag-input-unbound","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'codec_zenoh_request': <sce:import as=\"key\"> imports 'codec_zenoh_wireexpr' which declares <sce:flag-input name=\"has_suffix\"/> but no matching <sce:flag-bind input=\"has_suffix\"/> is supplied. Bind the input to one of this codec's local flags-carrier flags (<sce:flag-bind input=\"has_suffix\" source=\"carrier.flag\"/>) or to one of this codec's own <sce:flag-input> declarations (<sce:flag-bind input=\"has_suffix\" source=\"local_input\"/>).","expected":["<sce:flag-bind input=\"has_suffix\" source=\"...\"/> in <sce:import as=\"key\"> (the input 'codec_zenoh_wireexpr' declares)"],"actual":"has_suffix"}"#,
             ),
             (
                 "forge/codec-flag-bind-duplicate-input",
@@ -11569,7 +11584,7 @@ mod tests {
                     input: "has_suffix".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:171f17f551b318d7","code":"codec/flag-bind-duplicate-input","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'codec_zenoh_request': <sce:import as=\"key\"> has duplicate <sce:flag-bind input=\"has_suffix\"/> declarations. Each leaf-side input may be bound at most once per import site.","actual":"key.has_suffix"}"#,
+                r#"{"v":1,"id":"fnv1a:171f17f551b318d7","code":"codec/flag-bind-duplicate-input","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'codec_zenoh_request': <sce:import as=\"key\"> has duplicate <sce:flag-bind input=\"has_suffix\"/> declarations. Each leaf-side input may be bound at most once per import site.","actual":"has_suffix"}"#,
             ),
             (
                 "forge/codec-flag-bind-carrier-after-embed",
@@ -12879,7 +12894,7 @@ mod tests {
                     },
                 ))
                 .into(),
-                r#"{"v":1,"id":"fnv1a:4ac5fbe980bb4938","code":"deploy/link-driver-class-mismatch","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': link 'ws_control' declares forge `<sce:link-class>websocket</sce:link-class>` but deploy.yaml binds `driver: lwip_tcp` which implements class 'tcp'. SCE Protocol-Synthesis RFC §5.C lines 765-771 + §8 Q8 line 3747 (`deploy/link-driver-class-mismatch`) — each core driver implements exactly one protocol class. Repair: change `driver:` to the entry matching the declared class, or change `<sce:link-class>` to match the bound driver.","expected":["tcp"],"actual":"websocket","fix":{"kind":"replace_one_of","candidates":["websocket_tcp"]}}"#,
+                r#"{"v":1,"id":"fnv1a:4ac5fbe980bb4938","code":"deploy/link-driver-class-mismatch","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': link 'ws_control' declares forge `<sce:link-class>websocket</sce:link-class>` but deploy.yaml binds `driver: lwip_tcp` which implements class 'tcp'. SCE Protocol-Synthesis RFC §5.C lines 765-771 + §8 Q8 line 3747 (`deploy/link-driver-class-mismatch`) — each core driver implements exactly one protocol class. Repair: change `driver:` to the entry matching the declared class, or change `<sce:link-class>` to match the bound driver.","actual":"lwip_tcp","fix":{"kind":"replace_one_of","candidates":["websocket_tcp"]}}"#,
             ),
             (
                 "deploy/link-expected-p99-exceeds-mtu",
@@ -13931,17 +13946,22 @@ mod tests {
     //
     //   Layer 2 (runtime): `fix_carries_candidates_emitters_obey_non_overlap`
     //     and `expected_is_metadata_emitters_obey_non_overlap` construct
-    //     one sample per code in the non-trivial buckets and verify
-    //     that actual emission agrees with classification.
+    //     samples in the non-trivial buckets and verify that actual
+    //     emission agrees with classification.
     //
-    // Together these guarantee: every diagnostic ever emitted satisfies
-    // the invariant, and any new variant forces an explicit decision.
+    //   Layer 3 (runtime, total): `every_golden_obeys_its_non_overlap_class`
+    //     holds EVERY code's golden record to its bucket.
+    //
+    // ⚠ This header used to say layers 1 and 2 together guaranteed every
+    // diagnostic. Layer 2 checks the samples it names, a few per bucket,
+    // and four codes emitted `expected` from a bucket that forbids it
+    // (measured 2026-09-21). Layer 3 is what makes the claim true.
 
     /// Bucket for the non-overlap rule. Distinct from the `Fix?` column
     /// in the contract's code catalog — the classes track invariant
     /// shape, not which fix variant is used.
     #[derive(Debug, PartialEq)]
-    enum NonOverlapClass {
+    pub(super) enum NonOverlapClass {
         /// Emits `fix` as `ReplaceOneOf` / `AddOneOf`. `expected` must
         /// be absent; the candidate list rides `fix` alone.
         FixCarriesCandidates,
@@ -13956,7 +13976,7 @@ mod tests {
         NeutralOrDeterministic,
     }
 
-    fn non_overlap_class(code: DiagnosticCode) -> NonOverlapClass {
+    pub(super) fn non_overlap_class(code: DiagnosticCode) -> NonOverlapClass {
         use DiagnosticCode::*;
         use NonOverlapClass::*;
         // Exhaustive match — adding a new DiagnosticCode fails the
@@ -14020,15 +14040,19 @@ mod tests {
             | MeshCodegenUnsupportedTransport
             | CliUnknownLanguage
             | CliInvalidFormatOption
-            // `<sce:extern>` whitelist rejection: 3 of the 4 codes
+            // `<sce:extern>` whitelist rejection: 2 of the 4 codes
             // ride `Fix::ReplaceOneOf` (NotInWhitelist closest names,
-            // AbiMismatch closed `[c, rust]` set, OrderingUnspecified
-            // suffix-bearing completions). SignatureMismatch sits in
-            // NeutralOrDeterministic below — it carries the canonical
-            // sig as a single `Fix::Replace` value, not a candidate list.
+            // OrderingUnspecified suffix-bearing completions).
+            // SignatureMismatch and AbiMismatch sit in
+            // NeutralOrDeterministic below — the registry names one
+            // value for each, carried by `Fix::ReplaceWith`.
             | ExternSymbolNotInWhitelist
-            | ExternAbiMismatch
             | ExternOrderingUnspecified
+            // Both offer a closed set — the powers of two a D-cache line
+            // can be, the languages a CLI accepts — and were filed as
+            // neutral until every golden was held to its bucket.
+            | MemDcacheLineSizeNotPowerOfTwo
+            | CliUnsupportedLanguage
             // C5 cache-policy on no-dcache core: closed candidate
             // list = `["none"]` (the only legal policy on a core
             // without D-cache). `Fix::ReplaceOneOf` carries the
@@ -14213,13 +14237,55 @@ mod tests {
             // describes the position and names no replacement, which is
             // exactly why it left `invalid-attribute`'s candidate list.
             | ValidationAttributeRuleViolated
+            // The `<sce:flag-bind>` the import lacks is a child element,
+            // which no `Fix` variant adds; it rides `expected` as what the
+            // position requires. It used to ride `Fix::AddAttribute` with
+            // the element's text as the attribute name.
+            | CodecFlagInputUnbound
+            // ⚠ The codes below were filed as NeutralOrDeterministic while
+            // every one of them emits a bound, a threshold or a required
+            // shape in `expected` and proposes no fix — exactly this
+            // bucket. Nothing held a record to its bucket until
+            // `every_golden_obeys_its_non_overlap_class` (2026-09-21).
+            // Their repairs are author judgment (raise a limit, reorder,
+            // rebalance), which is why none carries a fix.
+            | XmlWrongRootElement
+            | ValidationCrossKindTypeMismatch
+            | ValidationEnumVariantValueOverflowsUnderlying
+            | ValidationBytesComparisonNotEquality
+            | ScxmlNullDatamodelForbidsConstruct
+            | TimerPeriodBelowTickRate
+            | TimerSlotOverflow
+            | MemReassemblySlotSizeBelowDeclaredMtu
+            | ReassemblyMaxFragmentsInsufficientForMtu
+            | ReassemblyExpectedFragmentationRateHigh
+            | ReassemblyStageCopyWcetExceedsSlotBudget
+            | PoolStageCopyPolicyError
+            | CodecVariantArmMidMismatch
+            | CodecVariantArmInnerMidUndeclared
+            | CodecVariantArmBodyCallerTagUnsupported
+            | CodecVariantDispatchBitWidthMismatch
+            | CodecVariantDispatchArmsNotDistinguishableWithoutDefault
+            | CodecVariantDispatchCarrierAfterEmbed
+            | CodecFlagBindWidthMismatch
+            | CodecFlagBindCarrierAfterEmbed
+            | LinkConcurrentCountExceedsSchedulerSlots
+            | LinkPerLinkBudgetExceedsTickPeriod
+            | MeshPartitionWire21CustomTcpUnimplemented
+            | MeshDeploySchedulerIncompatibleWithWorkerCount
+            | MeshDeployLinkMtuBelowDriverFloor
+            | MeshDeployLinkExpectedP99ExceedsMtu
+            | MeshDeployLinkBurstAbsorptionInsufficient
+            | MeshDeployLinkRxDispatchWorkerTickOnHighBurst
+            | MeshDeployStatelessAcceptKeyRotationShorterThanLifetime
+            | MeshDeploySessionArmingQuotaVsPeerTableInvariantViolated
+            | MeshEventSchemaMismatch
             | AlgorithmAppendTypeMismatch => ExpectedIsMetadata,
 
             // ── Deterministic fix or no fix; expected=None ────
             XmlParse
             | XmlSchemaValidation
             | XmlFileNotFound
-            | XmlWrongRootElement
             | XmlXIncludeMissingHref
             | XmlXIncludeNotFound
             | XmlXIncludeReadError
@@ -14275,7 +14341,6 @@ mod tests {
             //   - cache-pre-arm-invalidate-missing-on-speculative-core:
             //     codegen-invariant violation, no author repair
             | MemCacheLineAlignment
-            | MemDcacheLineSizeNotPowerOfTwo
             | PoolCacheMaintenanceMisplaced
             | PoolSpeculativePrefetchFlagMissing
             | PoolCachePreArmInvalidateMissingOnSpeculativeCore
@@ -14348,12 +14413,8 @@ mod tests {
             // binding entirely" is equally valid per spec line 2973-2975,
             // so the two-path repair shape lives in
             // NeutralOrDeterministic alongside its siblings.
-            | MemReassemblySlotSizeBelowDeclaredMtu
-            | ReassemblyMaxFragmentsInsufficientForMtu
-            | ReassemblyExpectedFragmentationRateHigh
             | ReassemblyUntrustedLinkBinding
             | ReassemblyTrustClassMissingOnFragmentingLink
-            | ReassemblyStageCopyWcetExceedsSlotBudget
             // Reassembly codegen self-check (RFC §synth-5-M lines 2976-2981). Pure
             // template-regression guard with no author-domain repair —
             // "report the bug upstream" is the only path forward.
@@ -14383,8 +14444,6 @@ mod tests {
             //   `inbound-event-queue-unsized`: add SCXML
             //   `sce:capacity="N"` per-instance OR
             //   `default_event_queue_capacity` per-machine.
-            | LinkConcurrentCountExceedsSchedulerSlots
-            | LinkPerLinkBudgetExceedsTickPeriod
             | LinkInboundEventQueueUnsized
             // Bounded-collection multi-writer without atomic imports: the item C4 baseline
             // atomic family spans 100+ symbols (load/store/cas/fetch ×
@@ -14393,16 +14452,11 @@ mod tests {
             // author chooses width + ordering + op based on their use
             // case. `fix: None` ⇒ NeutralOrDeterministic.
             | CollectionMultiWriterWithoutAtomics
-            // C1 Timer kind diagnostics (RFC §synth-5-D lines 909-910).
-            // Both are author-judgment repairs: raise the period
-            // above the tick rate, or rebalance the timer count
-            // against the wheel depth. No closed candidate set.
-            | TimerPeriodBelowTickRate
-            | TimerSlotOverflow
-            // `<sce:extern>` signature mismatch: deterministic
-            // `Fix::Replace` with the canonical sig. The other three
+            // `<sce:extern>` signature and ABI mismatch: deterministic
+            // `Fix::ReplaceWith` with the registry's value. The other two
             // codes sit in FixCarriesCandidates above.
             | ExternSignatureMismatch
+            | ExternAbiMismatch
             // `<sce:extern>` target-plugin baseline-shadowing (spec
             // line 1852): plugin author must rename the conflicting
             // entry; SCE cannot synthesize a candidate name. `fix: None`
@@ -14440,7 +14494,6 @@ mod tests {
             // actually uses, or drop the construct. Neither is the
             // author's obvious intent from the code alone, so no single
             // `Fix` is offered.
-            | ScxmlNullDatamodelForbidsConstruct
             | ScxmlOnSampleInvalidParent
             | ScxmlOnSampleLinkDuplicateInState
             | ScxmlOnSampleEventNameConflict
@@ -14512,14 +14565,8 @@ mod tests {
             | AlgorithmConstYieldTypeMismatch
             | CodecVariantArmUnreachable
             | CodecVariantDuplicateDefaultArm
-            | CodecVariantArmMidMismatch
-            | CodecVariantArmInnerMidUndeclared
-            | CodecVariantArmBodyCallerTagUnsupported
             | CodecVariantNoDefaultArm
-            | CodecVariantDispatchBitWidthMismatch
-            | CodecVariantDispatchArmsNotDistinguishableWithoutDefault
             | CodecVariantDispatchFlagHasStaticValue
-            | CodecVariantDispatchCarrierAfterEmbed
             | CodecPresentIfRefsLaterField
             | CodecRepeatCountRefsLaterField
             | AlgorithmTestVectorUnsupportedKind
@@ -14531,7 +14578,6 @@ mod tests {
             | LinkBackpressureUndeclared
             | LinkPoolSlotSmallerThanFramerMax
             | IoFilesystem
-            | CliUnsupportedLanguage
             | CliReadInput
             | CliWriteOutput
             | CliCreateOutputDir
@@ -14623,7 +14669,6 @@ mod tests {
             | MeshPartitionParallelRootNotInMachines
             | MeshPartitionParallelRootNonHost
             | MeshPartitionBarrierTimeoutWithoutRoot
-            | MeshPartitionWire21CustomTcpUnimplemented
             | MeshDistributabilityR1SharedWrite
             | MeshDistributabilityR2CrossRegionTransition
             | MeshDeployPlatformClassOsMismatch
@@ -14634,7 +14679,6 @@ mod tests {
             // candidate list, so `fix: None` ⇒ NeutralOrDeterministic.
             | MeshDeploySchedulerCooperativeMissingSlotBudget
             | MeshDeploySchedulerCooperativeMissingKeepaliveJitterBudget
-            | MeshDeploySchedulerIncompatibleWithWorkerCount
             // §synth-5-K `links:` block parse-level + multi-axis repairs
             // (RFC §synth-5-K lines 2440-2503). 6 of the 9 `links:` block codes
             // carry author-domain or multi-axis repairs with no closed
@@ -14646,16 +14690,7 @@ mod tests {
             // dispatch), etc. The other 3 link codes carry closed
             // candidate sets and sit in FixCarriesCandidates above.
             | MeshDeployLinkMtuMissingOnFragmentingLink
-            | MeshDeployLinkMtuBelowDriverFloor
-            | MeshDeployLinkExpectedP99ExceedsMtu
             | MeshDeployLinkBurstPpsMissingOnIsrDispatch
-            // Cross-doc RX-pool burst invariants. Both ride
-            // NeutralOrDeterministic — repair is multi-axis per spec
-            // (raise slot_count, lower tick_period_us, switch rx_dispatch
-            // mode); author chooses the axis fitting the deployment
-            // budget. No closed candidate set.
-            | MeshDeployLinkBurstAbsorptionInsufficient
-            | MeshDeployLinkRxDispatchWorkerTickOnHighBurst
             // Stage-copy promotion + opt-out rejection. Both
             // ride NeutralOrDeterministic:
             //   - pool/stage-copy-policy-error: multi-axis repair
@@ -14667,7 +14702,6 @@ mod tests {
             //     repair would collapse to Fix::ReplaceWith but the
             //     two-path repair surface keeps it in
             //     NeutralOrDeterministic.
-            | PoolStageCopyPolicyError
             | PoolStageCopyAcceptRejectedUnderForbid
             // Anti-flood + stateless_accept. All five ride
             // NeutralOrDeterministic — author-domain numeric values
@@ -14680,14 +14714,6 @@ mod tests {
             | MeshDeployAcceptRateConfigMissing
             | MeshDeploySessionArmingFieldsOnNonArmingLink
             | MeshDeployStatelessAcceptRequiredOnUntrustedSource
-            | MeshDeployStatelessAcceptKeyRotationShorterThanLifetime
-            // Peer-table invariant. NeutralOrDeterministic
-            // — three-axis repair (raise peer_table.capacity, lower
-            // session_arming_quota, or lower max_handshake_time_s).
-            // The wire payload's `expected` carries the bound
-            // (peer_table.capacity); no closed candidate set exists
-            // because the repair axes are independent author choices.
-            | MeshDeploySessionArmingQuotaVsPeerTableInvariantViolated
             | MeshExternalRead
             | MeshExternalParse
             | MeshExternalUnresolvedNames
@@ -14776,19 +14802,13 @@ mod tests {
             //   - `flag-bind-width-mismatch`: invariant repair (v1
             //     fixes width=1); deterministic single repair, no
             //     candidate list.
-            //   - `flag-input-unbound`: deterministic `Fix::AddAttribute`
-            //     with the canonical `<sce:flag-bind input="X"
-            //     source="..."/>` repair shape — no candidate list.
             //   - `flag-bind-duplicate-input`: deterministic "delete
             //     one of the duplicates"; no candidate list.
             //   - `flag-bind-carrier-after-embed`: deterministic
             //     reorder repair (move carrier before embed); no
             //     candidate list. ──
             | CodecFlagBindSourceNotResolved
-            | CodecFlagBindWidthMismatch
-            | CodecFlagInputUnbound
             | CodecFlagBindDuplicateInput
-            | CodecFlagBindCarrierAfterEmbed
             // NL→IR Mapping Roadmap Item 1 — duplicate sce:req id.
             // Deterministic repair (drop the second occurrence); no
             // closed candidate set, opaque token by design.
@@ -14813,7 +14833,6 @@ mod tests {
             // edge from the cycle (named in `cycle` but the choice of
             // which edge is author-domain). Neither carries a closed
             // candidate set on the diagnostic wire.
-            | ValidationCrossKindTypeMismatch
             | ValidationCrossKindCircularDependency
             // Same shape: breaking an output cycle means deleting one
             // dependency edge, and which edge is the author's call.
@@ -14862,7 +14881,6 @@ mod tests {
             | ValidationEnumNoVariants
             | ValidationEnumVariantDuplicateName
             | ValidationEnumVariantDuplicateValue
-            | ValidationEnumVariantValueOverflowsUnderlying
             | ValidationEnumUnsupportedUnderlyingType
             // NL→IR Item C1 Path A: EventSchema built-in-
             // event schema rejection — repair is author-domain
@@ -14875,22 +14893,13 @@ mod tests {
             // operator on a bytes payload. Repair is author-domain
             // (switch to `===`/`!==`, or compare a different field) —
             // deterministic, no closed candidate set the validator can
-            // predict, so NeutralOrDeterministic.
-            | ValidationBytesComparisonNotEquality
             // The two `sce:default-covers` claims whose repair is a
             // REMOVAL — one name out of the list, or the attribute
             // itself. `Fix::RemoveFields` names exactly what goes, so
             // both are deterministic; neither offers candidates, which
             // is what separates them from their sibling above.
             | ValidationDefaultCoversTestedVariant
-            | ValidationDefaultCoversNotAValueSpace
-            // NL→IR Item C1 Path A: mesh cross-machine
-            // EventSchema mismatch — repair is two-axis (realign
-            // sender ↔ receiver schemas by editing one side's field
-            // declarations, or declare a schema on the side that is
-            // missing it). Neither axis names a closed candidate set
-            // the validator can predict — author-domain choice.
-            | MeshEventSchemaMismatch => NeutralOrDeterministic,
+            | ValidationDefaultCoversNotAValueSpace => NeutralOrDeterministic,
         }
     }
 
@@ -16408,7 +16417,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
 #[cfg(test)]
 mod anchor_contract_tests {
     use super::tests::{
-        cli_golden_entries, forge_golden_entries, mesh_golden_entries, single, xsd_golden_entries,
+        cli_golden_entries, forge_golden_entries, mesh_golden_entries, non_overlap_class, single,
+        xsd_golden_entries, NonOverlapClass,
     };
     use super::*;
 
@@ -18720,6 +18730,56 @@ mod anchor_contract_tests {
             Err(errors) => errors.map(|e| e.to_string()).collect(),
         };
         msgs
+    }
+
+    /// Every code's golden record obeys the non-overlap bucket its code
+    /// declares — the §3.2 rule held over every code, not over samples.
+    ///
+    /// Coverage is total for the reason the schema check below gives:
+    /// [`every_code_has_a_golden`] proves the tables reach every code.
+    #[test]
+    fn every_golden_obeys_its_non_overlap_class() {
+        let mut violations: Vec<String> = Vec::new();
+        for (label, json) in all_golden_json() {
+            let record: serde_json::Value =
+                serde_json::from_str(&json).expect("golden record is JSON");
+            let code_str = record["code"].as_str().expect("record carries a code");
+            let code = *ALL_DIAGNOSTIC_CODES
+                .iter()
+                .find(|c| c.as_str() == code_str)
+                .unwrap_or_else(|| panic!("{label}: unknown code {code_str}"));
+            let has_expected = record.get("expected").is_some();
+            let fix_kind = record.get("fix").and_then(|f| f["kind"].as_str());
+            let is_choice = matches!(fix_kind, Some("replace_one_of") | Some("add_one_of"));
+            let broken = match non_overlap_class(code) {
+                NonOverlapClass::FixCarriesCandidates => {
+                    (has_expected, "expected present beside a candidate fix")
+                }
+                NonOverlapClass::ExpectedIsMetadata => {
+                    (fix_kind.is_some(), "a fix beside metadata in expected")
+                }
+                NonOverlapClass::NeutralOrDeterministic => {
+                    if has_expected {
+                        (true, "expected present in the neutral bucket")
+                    } else {
+                        (is_choice, "a choice fix in the neutral bucket")
+                    }
+                }
+            };
+            if broken.0 {
+                violations.push(format!(
+                    "{label} ({code_str}): {} [expected={} fix={}]",
+                    broken.1,
+                    record.get("expected").map_or("-".into(), |e| e.to_string()),
+                    record.get("fix").map_or("-".into(), |f| f.to_string()),
+                ));
+            }
+        }
+        assert!(
+            violations.is_empty(),
+            "records that break their declared non-overlap bucket:\n{}",
+            violations.join("\n")
+        );
     }
 
     /// Every diagnostic this crate can emit validates against the
