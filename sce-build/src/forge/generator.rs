@@ -7,7 +7,7 @@
 // language. Type mappings live here (not in the model) to preserve SRP.
 
 use crate::filters;
-use crate::forge::error::{ForgeError, GenerateError};
+use crate::forge::error::{ForgeError, GenerateError, RelatedRole};
 // `select_native_typed_guards` (+ its `NativeTypedGuard`) live in
 // `event_schema_check` next to the `guard_is_native_lowerable` eligibility
 // predicate, so the language-neutral analyzer derives
@@ -36,6 +36,11 @@ pub struct ImportContext {
     /// slot with the alias, so a message read "import 'x' (codec 'x')"
     /// whatever codec `x` named.
     pub document_name: String,
+    /// 1-based row of the `<sce:import>` element, so a refusal of the
+    /// import as a whole — an input it leaves unbound — names its row.
+    /// Not template context.
+    #[serde(skip)]
+    pub line: Option<u32>,
     /// Kind name (e.g., "codec", "transform").
     pub kind: String,
     /// PascalCase type name for the imported struct/class (stateful kinds).
@@ -578,6 +583,7 @@ fn resolve_single_import(
     ImportContext {
         alias: imp.alias.clone(),
         document_name: stem.clone(),
+        line: imp.line,
         kind: imp.kind.to_string(),
         include_stmt: id.include_stmt,
         type_name: id.type_name,
@@ -5861,13 +5867,16 @@ fn validate_cross_codec_variant_dispatch(
                 // without a default arm ⇒ decode cannot pick an arm.
                 if let Some(arm_count) = imported_variant_arm_count {
                     if arm_count > 0 && !imported_has_default_arm {
+                        // On the embedding field, whose `type=` names the
+                        // import that needs a dispatch.
                         return Err(ForgeError::Validation(Box::new(
                             ValidationError::CodecVariantDispatchArmsNotDistinguishableWithoutDefault {
                                 parent_codec: parent.name.clone(),
                                 embedded_alias: embed_alias.clone(),
                                 embedded_codec: imp.document_name.clone(),
                             },
-                        )));
+                        ))
+                        .at_line(field.line));
                     }
                 }
             }
@@ -5905,7 +5914,8 @@ fn validate_cross_codec_variant_dispatch(
                                 ),
                                 candidates: available,
                             },
-                        )));
+                        ))
+                        .at_line(dispatch.line));
                     }
                 };
 
@@ -5928,7 +5938,8 @@ fn validate_cross_codec_variant_dispatch(
                                 ),
                                 candidates: available,
                             },
-                        )));
+                        ))
+                        .at_line(dispatch.line));
                     }
                 };
 
@@ -5941,8 +5952,10 @@ fn validate_cross_codec_variant_dispatch(
                             carrier: carrier_name.clone(),
                             flag: flag_name.clone(),
                             static_value,
+                            value_text: flag_def.value_text.clone(),
                         },
-                    )));
+                    ))
+                    .at_line(flag_def.line));
                 }
 
                 // (4) Flag width must encode the arm count.
@@ -5965,7 +5978,8 @@ fn validate_cross_codec_variant_dispatch(
                                 max_values,
                                 arm_count,
                             },
-                        )));
+                        ))
+                        .at_line(flag_def.line));
                     }
                 }
 
@@ -5981,7 +5995,13 @@ fn validate_cross_codec_variant_dispatch(
                             carrier_index,
                             embedded_index,
                         },
-                    )));
+                    ))
+                    .at_line(carrier_field.line)
+                    .related_row(
+                        RelatedRole::MustFollow,
+                        field.line,
+                        Some(field.id.clone()),
+                    ));
                 }
             }
         }
@@ -6043,32 +6063,35 @@ fn validate_cross_codec_variant_arm_not_caller_tag(
         Some(v) => v,
         None => return Ok(()),
     };
-    let check_arm = |body_alias: &str, arm_value: Option<u64>| -> Result<(), ForgeError> {
-        let imp = match imports.iter().find(|i| i.alias == body_alias) {
-            Some(i) => i,
-            None => return Ok(()),
+    let check_arm =
+        |arm: &crate::forge::model::VariantArm, arm_value: Option<u64>| -> Result<(), ForgeError> {
+            let imp = match imports.iter().find(|i| i.alias == arm.body_alias) {
+                Some(i) => i,
+                None => return Ok(()),
+            };
+            if imp.codec_variant_is_caller_tag {
+                // On the arm, whose `type=` names the import.
+                return Err(ForgeError::Validation(Box::new(
+                    ValidationError::CodecVariantArmBodyCallerTagUnsupported {
+                        parent_codec: parent.name.clone(),
+                        arm_value,
+                        embedded_alias: arm.body_alias.clone(),
+                        embedded_codec: imp.document_name.clone(),
+                    },
+                ))
+                .at_line(arm.line));
+            }
+            Ok(())
         };
-        if imp.codec_variant_is_caller_tag {
-            return Err(ForgeError::Validation(Box::new(
-                ValidationError::CodecVariantArmBodyCallerTagUnsupported {
-                    parent_codec: parent.name.clone(),
-                    arm_value,
-                    embedded_alias: body_alias.to_string(),
-                    embedded_codec: imp.document_name.clone(),
-                },
-            )));
-        }
-        Ok(())
-    };
     for arm in &variant.arms {
-        check_arm(&arm.body_alias, Some(arm.value))?;
+        check_arm(arm, Some(arm.value))?;
     }
     if let Some(default_arm) = variant.default_arm.as_ref() {
         // The `<sce:default>` catch-all has no specific arm value;
         // pass `None` so the diagnostic surfaces "<default>" rather
         // than a sentinel 0x00 that would collide with a real
         // enumerated arm value=0x00 in the message.
-        check_arm(&default_arm.body_alias, None)?;
+        check_arm(default_arm, None)?;
     }
     Ok(())
 }
@@ -6114,17 +6137,26 @@ fn validate_cross_codec_flag_bind(
         }
         // Check 0: each leaf-side input is bound at most once. Two binds
         // of one input would drive the same flag from two sources.
-        let mut seen_inputs: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+        let mut first_binds: std::collections::BTreeMap<&str, Option<u32>> =
+            std::collections::BTreeMap::new();
         for bind in binds {
-            if !seen_inputs.insert(bind.input.as_str()) {
+            if let Some(first_line) = first_binds.get(bind.input.as_str()) {
+                // On the second bind; the first rides `related`.
                 return Err(ForgeError::Validation(Box::new(
                     ValidationError::CodecFlagBindDuplicateInput {
                         parent_codec: parent.name.clone(),
                         embedded_alias: imp.alias.clone(),
                         input: bind.input.clone(),
                     },
-                )));
+                ))
+                .at_line(bind.line)
+                .related_row(
+                    RelatedRole::ConflictingUse,
+                    *first_line,
+                    Some(bind.input.clone()),
+                ));
             }
+            first_binds.insert(bind.input.as_str(), bind.line);
         }
         // Check 1a: every bind targets a declared leaf input.
         let leaf_input_names: std::collections::BTreeSet<&str> =
@@ -6139,7 +6171,8 @@ fn validate_cross_codec_flag_bind(
                         input: bind.input.clone(),
                         available_inputs: leaf_inputs.iter().map(|fi| fi.name.clone()).collect(),
                     },
-                )));
+                ))
+                .at_line(bind.line));
             }
         }
         // Check 1b: every leaf input has a matching bind.
@@ -6154,7 +6187,9 @@ fn validate_cross_codec_flag_bind(
                         embedded_codec: imp.document_name.clone(),
                         input: input.name.clone(),
                     },
-                )));
+                ))
+                // On the import the bind is missing from.
+                .at_line(imp.line));
             }
         }
         // Check 2-4: per-bind source resolution + width + ordering.
@@ -6183,7 +6218,8 @@ fn validate_cross_codec_flag_bind(
                                          declared as a plain field rather than a <sce:flags> container"
                                     ),
                                 },
-                            )));
+                            ))
+                            .at_line(bind.line));
                         }
                     };
                     let flag_def = match carrier_field.flags.iter().find(|f| f.name == *flag) {
@@ -6199,7 +6235,8 @@ fn validate_cross_codec_flag_bind(
                                         "flag '{flag}' is not declared on local carrier '{carrier}'"
                                     ),
                                 },
-                            )));
+                            ))
+                            .at_line(bind.line));
                         }
                     };
                     if flag_def.width != input_width {
@@ -6212,16 +6249,18 @@ fn validate_cross_codec_flag_bind(
                                 source_width: flag_def.width,
                                 input_width,
                             },
-                        )));
+                        ))
+                        .at_line(bind.line));
                     }
                     if let Some(embed_idx) = embed_index {
                         if carrier_index >= embed_idx {
                             // Find a stable name for the consumer field
                             // for the diagnostic message.
-                            let embedded_field = parent
-                                .fields
-                                .get(embed_idx)
-                                .map_or_else(|| imp.alias.clone(), |f| f.id.clone());
+                            let consumer = parent.fields.get(embed_idx);
+                            let embedded_field =
+                                consumer.map_or_else(|| imp.alias.clone(), |f| f.id.clone());
+                            // On the carrier; the field it must precede
+                            // rides `related`.
                             return Err(ForgeError::Validation(Box::new(
                                 ValidationError::CodecFlagBindCarrierAfterEmbed {
                                     parent_codec: parent.name.clone(),
@@ -6233,7 +6272,13 @@ fn validate_cross_codec_flag_bind(
                                     carrier_index,
                                     embedded_index: embed_idx,
                                 },
-                            )));
+                            ))
+                            .at_line(carrier_field.line)
+                            .related_row(
+                                RelatedRole::MustFollow,
+                                consumer.and_then(|f| f.line),
+                                consumer.map(|f| f.id.clone()),
+                            ));
                         }
                     }
                 }
@@ -6254,7 +6299,8 @@ fn validate_cross_codec_flag_bind(
                                          flag-inputs"
                                     ),
                                 },
-                            )));
+                            ))
+                            .at_line(bind.line));
                         }
                     };
                     if parent_width != input_width {
@@ -6267,7 +6313,8 @@ fn validate_cross_codec_flag_bind(
                                 source_width: parent_width,
                                 input_width,
                             },
-                        )));
+                        ))
+                        .at_line(bind.line));
                     }
                     // Bare-name forwarding has no carrier-ordering
                     // constraint — flag-inputs are positional decode/
@@ -23241,6 +23288,7 @@ mod tests {
         ImportContext {
             alias: alias.to_string(),
             document_name: alias.to_string(),
+            line: None,
             kind: "enum".to_string(),
             include_stmt: String::new(),
             type_name: String::new(),
@@ -23866,6 +23914,7 @@ mod tests {
             ImportContext {
                 alias: "t".to_string(),
                 document_name: "t".to_string(),
+                line: None,
                 kind: "transform".to_string(),
                 is_stateful: false,
                 include_stmt: String::new(),
@@ -23899,6 +23948,7 @@ mod tests {
             ImportContext {
                 alias: "c".to_string(),
                 document_name: "c".to_string(),
+                line: None,
                 kind: "codec".to_string(),
                 is_stateful: true,
                 include_stmt: String::new(),

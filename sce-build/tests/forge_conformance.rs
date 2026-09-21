@@ -10633,6 +10633,23 @@ fn forge_parent_tag_inversion_dispatch_carrier_after_embed_rejects() {
         "got: {:?}",
         err.error
     );
+    // On the carrier's row, which names it; the embed it must precede
+    // rides `related` on its own row — a relation between two fields,
+    // reported with both coordinates rather than as two indices in prose.
+    assert_eq!(err.location.line, Some(10), "{err:?}");
+    let related: Vec<_> = err
+        .related()
+        .iter()
+        .map(|site| (site.role, site.location.line, site.actual.as_deref()))
+        .collect();
+    assert_eq!(
+        related,
+        [(
+            sce_build::forge::error::RelatedRole::MustFollow,
+            Some(9),
+            Some("key")
+        )]
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 

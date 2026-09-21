@@ -501,6 +501,7 @@ involves is an entry of `related`:
 |---|---|
 | `conflicting-use` | another use of the same name whose shape the record's contradicts — the use that fixed the shape first |
 | `also-refused` | another site the same rule refuses, reported with this record rather than as one of its own because one repair covers them all |
+| `must-follow` | a site that must come after the record's own in the document and does not — the field a flags carrier has to be declared before |
 
 `related` is not part of `id`: which other sites a relation reaches is
 a fact about the document around the error, not about the error.

@@ -1870,6 +1870,11 @@ pub struct FlagDef {
     /// is the author's spelling, not a fact a consumer computes with.
     #[serde(skip, default)]
     pub value_text: String,
+    /// 1-based row of the `<sce:flag>` element, so a refusal of this flag
+    /// names the row it is declared on. Skipped from serialization, as
+    /// every `line` on this model is.
+    #[serde(skip)]
+    pub line: Option<u32>,
 }
 
 /// RFC §synth-5-B present-if predicate scope —
@@ -2016,6 +2021,11 @@ pub struct FlagBind {
     pub input: String,
     /// Parent-side source kind, resolved at parse time.
     pub source: FlagBindSource,
+    /// 1-based row of the `<sce:flag-bind>` element, so a refusal of this
+    /// bind names the row it is written on. Skipped from serialization, as
+    /// every `line` on this model is.
+    #[serde(skip)]
+    pub line: Option<u32>,
 }
 
 /// Resolved flag-bind source. Two variants per the
@@ -2035,6 +2045,12 @@ pub enum FlagBindSource {
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct CodecField {
     pub id: String,
+    /// 1-based row of the element that declares the field, so a refusal
+    /// about the field — its place in the declaration order, say — names
+    /// the row it is declared on. Skipped from serialization, as every
+    /// `line` on this model is.
+    #[serde(skip)]
+    pub line: Option<u32>,
     pub sce_type: SceType,
     /// Byte offset within the frame.
     pub byte_offset: u32,
@@ -2277,6 +2293,11 @@ pub struct VariantArm {
     /// goldens that predate the attribute byte-identical.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub is_default: bool,
+    /// 1-based row of the `<sce:arm>` / `<sce:default>` element, so a
+    /// refusal of the arm names the row that holds its `type=`. Skipped
+    /// from serialization, as every `line` on this model is.
+    #[serde(skip)]
+    pub line: Option<u32>,
 }
 
 /// RFC §synth-5-B peek-byte — peek-byte dispatch shape on a

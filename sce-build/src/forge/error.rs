@@ -129,13 +129,19 @@ pub enum RelatedRole {
     /// than as a record of its own — every state a naming rule catches,
     /// say, when one declaration elsewhere repairs them all.
     AlsoRefused,
+    /// A site that must come after the record's own in the document and
+    /// does not — the field a flags carrier has to be declared before.
+    MustFollow,
 }
 
 impl RelatedRole {
     /// Every role, so the schema's list of them can be checked against
     /// what the producer can send.
-    pub const ALL: &'static [RelatedRole] =
-        &[RelatedRole::ConflictingUse, RelatedRole::AlsoRefused];
+    pub const ALL: &'static [RelatedRole] = &[
+        RelatedRole::ConflictingUse,
+        RelatedRole::AlsoRefused,
+        RelatedRole::MustFollow,
+    ];
 }
 
 impl<E> Located<E> {
@@ -283,7 +289,10 @@ pub enum ForgeError {
     /// when the token occurs twice, as `telemetry` did in the fixture
     /// that exercises it (measured 2026-09-21).
     #[error("{error}")]
-    Positioned { line: u32, error: Box<ForgeError> },
+    Positioned {
+        at: Box<Placement>,
+        error: Box<ForgeError>,
+    },
 
     /// SCXML semantic-validation failures — distinct from forge
     /// `ValidationError` because the rules come from §scxml-3
@@ -1279,6 +1288,11 @@ pub enum ValidationError {
         carrier: String,
         flag: String,
         static_value: u64,
+        /// `value=` as the author wrote it on the `<sce:flag>` — what the
+        /// wire reports as `actual`, since the flag's row spells that and
+        /// not the number's re-rendering. Empty when no document spelled
+        /// it (a model built from pseudocode).
+        value_text: String,
     },
 
     /// Parent-side variant-dispatch rule: a parent codec declares a field
@@ -4750,35 +4764,92 @@ impl ForgeError {
     /// model recorded none.
     pub fn at_line(self, line: Option<u32>) -> Self {
         match line {
-            Some(line) => ForgeError::Positioned {
-                line,
-                error: Box::new(self),
-            },
+            Some(line) => self.placed(Placement {
+                line: Some(line),
+                related: Vec::new(),
+            }),
             None => self,
         }
     }
 
-    /// Split a [`ForgeError::Positioned`] into the error it wraps and its
-    /// row. The innermost row wins: the element nearest the failure is the
-    /// one the author edits.
-    pub fn into_positioned(self) -> (Self, Option<u32>) {
+    /// Record another row the rejection involves, beside the one it is
+    /// placed at (SCE_ERROR_CONTRACT §2.4).
+    pub fn related_row(self, role: RelatedRole, line: Option<u32>, actual: Option<String>) -> Self {
+        self.placed(Placement {
+            line: None,
+            related: vec![RelatedRow { role, line, actual }],
+        })
+    }
+
+    fn placed(self, at: Placement) -> Self {
+        ForgeError::Positioned {
+            at: Box::new(at),
+            error: Box::new(self),
+        }
+    }
+
+    /// Split a [`ForgeError::Positioned`] into the error it wraps and where
+    /// it sits. The innermost row wins: the element nearest the failure is
+    /// the one the author edits. Related rows gather from every layer.
+    pub fn into_positioned(self) -> (Self, Placement) {
         match self {
-            ForgeError::Positioned { line, error } => {
+            ForgeError::Positioned { at, error } => {
                 let (inner, nearer) = error.into_positioned();
-                (inner, nearer.or(Some(line)))
+                let mut related = nearer.related;
+                related.extend(at.related);
+                (
+                    inner,
+                    Placement {
+                        line: nearer.line.or(at.line),
+                        related,
+                    },
+                )
             }
-            other => (other, None),
+            other => (other, Placement::default()),
         }
     }
 }
 
+/// Where a code-generation error sits in the document it was raised on —
+/// the row of the element being handled, and any other rows the rejection
+/// involves. Rows only: the compile boundary names the file.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Placement {
+    pub line: Option<u32>,
+    pub related: Vec<RelatedRow>,
+}
+
+/// A related site as code generation knows it: a row of the document the
+/// error is raised on.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RelatedRow {
+    pub role: RelatedRole,
+    pub line: Option<u32>,
+    pub actual: Option<String>,
+}
+
 impl Located<ForgeError> {
-    /// A code-generation error located in `file`: at the row it carries
-    /// when [`ForgeError::Positioned`] wraps it, with no row otherwise.
-    /// Every compile boundary that receives a generation error builds its
-    /// record through here, so the wrapper never reaches a consumer.
+    /// A code-generation error located in `file`: at the row and with the
+    /// related rows [`ForgeError::Positioned`] carries, with no row
+    /// otherwise. Every compile boundary that receives a generation error
+    /// builds its record through here, so the wrapper never reaches a
+    /// consumer.
     pub fn in_file(error: ForgeError, file: impl Into<String>) -> Self {
-        let (error, line) = error.into_positioned();
-        Located::new(error, file, line, None)
+        let file = file.into();
+        let (error, at) = error.into_positioned();
+        at.related.into_iter().fold(
+            Located::new(error, file.clone(), at.line, None),
+            |located, row| {
+                located.related_to(RelatedSite {
+                    role: row.role,
+                    location: SourceLocation {
+                        file: file.clone(),
+                        line: row.line,
+                        col: None,
+                    },
+                    actual: row.actual,
+                })
+            },
+        )
     }
 }

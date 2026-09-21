@@ -6338,16 +6338,20 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             embedded_codec,
             carrier,
             flag,
-            flag_width,
-            max_values,
             arm_count,
+            ..
         } => DiagnosticPayload {
             code: DiagnosticCode::CodecVariantDispatchBitWidthMismatch,
             stage: Stage::Validation,
-            expected: Some(vec![format!("flag width ≥ ceil(log2({arm_count}))")]),
-            actual: Some(format!(
-                "width={flag_width} (max {max_values} values) vs {arm_count} arms"
-            )),
+            // The width the arms need, computed: the limit the declared
+            // one falls short of. `actual` is the flag, which its row
+            // names; the declared width and the arm count are the
+            // message's.
+            expected: Some(vec![format!(
+                "width ≥ {}",
+                (usize::BITS - arm_count.saturating_sub(1).leading_zeros()).max(1)
+            )]),
+            actual: Some(flag.clone()),
             fix: None,
             key_fragments: vec![
                 parent_codec.clone(),
@@ -6367,7 +6371,9 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             expected: Some(vec!["<sce:variant-dispatch flag=\"...\"/> on the import \
                  OR <sce:arm default=\"true\"/> in the imported codec"
                 .into()]),
-            actual: Some(embedded_codec.clone()),
+            // The alias, which the embedding field spells; the codec's own
+            // name is the message's — this document never writes it.
+            actual: Some(embedded_alias.clone()),
             fix: None,
             key_fragments: vec![
                 parent_codec.clone(),
@@ -6380,12 +6386,15 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             embedded_alias,
             carrier,
             flag,
-            static_value,
+            value_text,
+            ..
         } => DiagnosticPayload {
             code: DiagnosticCode::CodecVariantDispatchFlagHasStaticValue,
             stage: Stage::Validation,
             expected: None,
-            actual: Some(format!("{parent_codec}.{carrier}.{flag}={static_value:#x}")),
+            // The `value=` the flag's row spells; the dotted path and the
+            // number are the message's.
+            actual: (!value_text.is_empty()).then(|| value_text.clone()),
             fix: None,
             key_fragments: vec![
                 parent_codec.clone(),
@@ -6400,17 +6409,17 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             embedded_field,
             carrier,
             flag,
-            carrier_index,
-            embedded_index,
+            ..
         } => DiagnosticPayload {
             code: DiagnosticCode::CodecVariantDispatchCarrierAfterEmbed,
             stage: Stage::Validation,
             expected: Some(vec![format!(
                 "carrier '{carrier}' before field '{embedded_field}'"
             )]),
-            actual: Some(format!(
-                "carrier at index {carrier_index}, embed at index {embedded_index}"
-            )),
+            // The carrier, on its own row; the field it must precede rides
+            // `related` as `must-follow`, and the two indices are the
+            // message's.
+            actual: Some(carrier.clone()),
             fix: None,
             key_fragments: vec![
                 parent_codec.clone(),
@@ -6467,13 +6476,15 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             embedded_alias,
             input,
             bind_source,
-            source_width,
             input_width,
+            ..
         } => DiagnosticPayload {
             code: DiagnosticCode::CodecFlagBindWidthMismatch,
             stage: Stage::Validation,
             expected: Some(vec![format!("input width {input_width}")]),
-            actual: Some(format!("source width {source_width}")),
+            // The `source=` the bind's row spells; the source's width is
+            // the message's.
+            actual: Some(bind_source.clone()),
             fix: None,
             key_fragments: vec![
                 parent_codec.clone(),
@@ -6491,7 +6502,10 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             code: DiagnosticCode::CodecFlagInputUnbound,
             stage: Stage::Validation,
             // The element the import needs is metadata about the
-            // position; `actual` is the input left unbound.
+            // position. No `actual`: the input left unbound is declared by
+            // the imported codec, and the document this record names — the
+            // one holding the `<sce:import>` — never spells it. It is in
+            // `expected` and the message.
             //
             // ⚠ No `fix`. The repair is a CHILD ELEMENT, and this used to
             // ride `Fix::AddAttribute` with the element's text in `attr` —
@@ -6502,7 +6516,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             expected: Some(vec![format!(
                 "<sce:flag-bind input=\"{input}\" source=\"...\"/> in <sce:import as=\"{embedded_alias}\"> (the input '{embedded_codec}' declares)"
             )]),
-            actual: Some(input.clone()),
+            actual: None,
             fix: None,
             key_fragments: vec![parent_codec.clone(), embedded_alias.clone(), input.clone()],
         },
@@ -6527,17 +6541,16 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             input,
             carrier,
             flag,
-            carrier_index,
-            embedded_index,
+            ..
         } => DiagnosticPayload {
             code: DiagnosticCode::CodecFlagBindCarrierAfterEmbed,
             stage: Stage::Validation,
             expected: Some(vec![format!(
                 "carrier '{carrier}' before field '{embedded_field}'"
             )]),
-            actual: Some(format!(
-                "carrier at index {carrier_index}, embed at index {embedded_index}"
-            )),
+            // The carrier, on its own row; the field it must precede rides
+            // `related` as `must-follow`.
+            actual: Some(carrier.clone()),
             fix: None,
             key_fragments: vec![
                 parent_codec.clone(),
@@ -6595,7 +6608,9 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             expected: Some(vec![arm_value
                 .map(|v| format!("{v:#x}"))
                 .unwrap_or_else(|| "<default>".to_string())]),
-            actual: Some(embedded_codec.clone()),
+            // The alias the arm's `type=` spells; the codec's own name is
+            // the message's — this document never writes it.
+            actual: Some(embedded_alias.clone()),
             fix: None,
             key_fragments: vec![
                 parent_codec.clone(),
@@ -11656,7 +11671,7 @@ mod tests {
                     arm_count: 4,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:e63d7bb728560215","code":"codec/variant-dispatch-bit-width-mismatch","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"parent codec 'codec_zenoh_push': <sce:variant-dispatch flag=\"header.M\"/> on import 'key' (codec 'codec_zenoh_keyexpr') — flag width 1 can encode at most 2 dispatch values, but the imported codec declares 4 arms. Widen the flag or reduce the arm count.","expected":["flag width ≥ ceil(log2(4))"],"actual":"width=1 (max 2 values) vs 4 arms"}"#,
+                r#"{"v":1,"id":"fnv1a:e63d7bb728560215","code":"codec/variant-dispatch-bit-width-mismatch","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"parent codec 'codec_zenoh_push': <sce:variant-dispatch flag=\"header.M\"/> on import 'key' (codec 'codec_zenoh_keyexpr') — flag width 1 can encode at most 2 dispatch values, but the imported codec declares 4 arms. Widen the flag or reduce the arm count.","expected":["width ≥ 2"],"actual":"M"}"#,
             ),
             (
                 "forge/codec-variant-dispatch-arms-not-distinguishable-without-default",
@@ -11666,7 +11681,7 @@ mod tests {
                     embedded_codec: "codec_zenoh_keyexpr".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:bbab0d15f3268277","code":"codec/variant-dispatch-arms-not-distinguishable-without-default","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"parent codec 'codec_zenoh_decl_kexpr': import 'key' (codec 'codec_zenoh_keyexpr') is a variant codec but the import declares no <sce:variant-dispatch> and the imported codec has no <sce:arm default=\"true\"/> marker. Add <sce:variant-dispatch flag=\"...\"/> to the import, or mark one arm in 'codec_zenoh_keyexpr' as default=\"true\".","expected":["<sce:variant-dispatch flag=\"...\"/> on the import OR <sce:arm default=\"true\"/> in the imported codec"],"actual":"codec_zenoh_keyexpr"}"#,
+                r#"{"v":1,"id":"fnv1a:bbab0d15f3268277","code":"codec/variant-dispatch-arms-not-distinguishable-without-default","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"parent codec 'codec_zenoh_decl_kexpr': import 'key' (codec 'codec_zenoh_keyexpr') is a variant codec but the import declares no <sce:variant-dispatch> and the imported codec has no <sce:arm default=\"true\"/> marker. Add <sce:variant-dispatch flag=\"...\"/> to the import, or mark one arm in 'codec_zenoh_keyexpr' as default=\"true\".","expected":["<sce:variant-dispatch flag=\"...\"/> on the import OR <sce:arm default=\"true\"/> in the imported codec"],"actual":"key"}"#,
             ),
             (
                 "forge/codec-variant-dispatch-flag-has-static-value",
@@ -11676,9 +11691,10 @@ mod tests {
                     carrier: "header".into(),
                     flag: "M".into(),
                     static_value: 1,
+                    value_text: "0x1".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:1fdcd474ff7c7fc7","code":"codec/variant-dispatch-flag-has-static-value","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"parent codec 'codec_zenoh_push': flag 'header.M' has static <sce:flag value=0x1/>, but <sce:variant-dispatch flag=\"header.M\"/> on import 'key' would derive the same bit from the variant's arm choice — static and derived cannot coexist. Remove the value= constant or move the dispatch to a different flag.","actual":"codec_zenoh_push.header.M=0x1"}"#,
+                r#"{"v":1,"id":"fnv1a:1fdcd474ff7c7fc7","code":"codec/variant-dispatch-flag-has-static-value","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"parent codec 'codec_zenoh_push': flag 'header.M' has static <sce:flag value=0x1/>, but <sce:variant-dispatch flag=\"header.M\"/> on import 'key' would derive the same bit from the variant's arm choice — static and derived cannot coexist. Remove the value= constant or move the dispatch to a different flag.","actual":"0x1"}"#,
             ),
             (
                 "forge/codec-variant-dispatch-carrier-after-embed",
@@ -11692,7 +11708,7 @@ mod tests {
                     embedded_index: 0,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:ca182b36796032f0","code":"codec/variant-dispatch-carrier-after-embed","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"parent codec 'codec_zenoh_push': field 'key' (import 'key') has <sce:variant-dispatch flag=\"header.M\"/>, but carrier 'header' is declared at field index 1 which is AFTER the embed field at index 0. Reorder fields so 'header' precedes 'key'.","expected":["carrier 'header' before field 'key'"],"actual":"carrier at index 1, embed at index 0"}"#,
+                r#"{"v":1,"id":"fnv1a:ca182b36796032f0","code":"codec/variant-dispatch-carrier-after-embed","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"parent codec 'codec_zenoh_push': field 'key' (import 'key') has <sce:variant-dispatch flag=\"header.M\"/>, but carrier 'header' is declared at field index 1 which is AFTER the embed field at index 0. Reorder fields so 'header' precedes 'key'.","expected":["carrier 'header' before field 'key'"],"actual":"header"}"#,
             ),
             // ── Flag inversion — parent-side flag-bind validators ─
             (
@@ -11730,7 +11746,7 @@ mod tests {
                     input_width: 1,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:29ec86e6e42266e2","code":"codec/flag-bind-width-mismatch","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'codec_zenoh_request': <sce:flag-bind input=\"has_suffix\" source=\"header.priority\"/> on <sce:import as=\"key\"> has source width 3 but leaf-side input 'has_suffix' declares width 1. v1 lock-in fixes flag-input width at 1; multi-bit inputs defer to a reachable consumer.","expected":["input width 1"],"actual":"source width 3"}"#,
+                r#"{"v":1,"id":"fnv1a:29ec86e6e42266e2","code":"codec/flag-bind-width-mismatch","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'codec_zenoh_request': <sce:flag-bind input=\"has_suffix\" source=\"header.priority\"/> on <sce:import as=\"key\"> has source width 3 but leaf-side input 'has_suffix' declares width 1. v1 lock-in fixes flag-input width at 1; multi-bit inputs defer to a reachable consumer.","expected":["input width 1"],"actual":"header.priority"}"#,
             ),
             (
                 "forge/codec-flag-input-unbound",
@@ -11741,7 +11757,7 @@ mod tests {
                     input: "has_suffix".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:6f64a9b2f3e7bfd3","code":"codec/flag-input-unbound","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'codec_zenoh_request': <sce:import as=\"key\"> imports 'codec_zenoh_wireexpr' which declares <sce:flag-input name=\"has_suffix\"/> but no matching <sce:flag-bind input=\"has_suffix\"/> is supplied. Bind the input to one of this codec's local flags-carrier flags (<sce:flag-bind input=\"has_suffix\" source=\"carrier.flag\"/>) or to one of this codec's own <sce:flag-input> declarations (<sce:flag-bind input=\"has_suffix\" source=\"local_input\"/>).","expected":["<sce:flag-bind input=\"has_suffix\" source=\"...\"/> in <sce:import as=\"key\"> (the input 'codec_zenoh_wireexpr' declares)"],"actual":"has_suffix"}"#,
+                r#"{"v":1,"id":"fnv1a:6f64a9b2f3e7bfd3","code":"codec/flag-input-unbound","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'codec_zenoh_request': <sce:import as=\"key\"> imports 'codec_zenoh_wireexpr' which declares <sce:flag-input name=\"has_suffix\"/> but no matching <sce:flag-bind input=\"has_suffix\"/> is supplied. Bind the input to one of this codec's local flags-carrier flags (<sce:flag-bind input=\"has_suffix\" source=\"carrier.flag\"/>) or to one of this codec's own <sce:flag-input> declarations (<sce:flag-bind input=\"has_suffix\" source=\"local_input\"/>).","expected":["<sce:flag-bind input=\"has_suffix\" source=\"...\"/> in <sce:import as=\"key\"> (the input 'codec_zenoh_wireexpr' declares)"]}"#,
             ),
             (
                 "forge/codec-flag-bind-duplicate-input",
@@ -11766,7 +11782,7 @@ mod tests {
                     embedded_index: 0,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:3bb9387760da5afb","code":"codec/flag-bind-carrier-after-embed","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'codec_zenoh_request': <sce:flag-bind input=\"has_suffix\" source=\"header.N\"/> on <sce:import as=\"key\"> references a carrier 'header' declared at field-index 1 but the embed 'key' (which consumes the bound input) is at field-index 0. Streaming decode requires carrier to precede consumer — reorder the fields so 'header' is declared before 'key'.","expected":["carrier 'header' before field 'key'"],"actual":"carrier at index 1, embed at index 0"}"#,
+                r#"{"v":1,"id":"fnv1a:3bb9387760da5afb","code":"codec/flag-bind-carrier-after-embed","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'codec_zenoh_request': <sce:flag-bind input=\"has_suffix\" source=\"header.N\"/> on <sce:import as=\"key\"> references a carrier 'header' declared at field-index 1 but the embed 'key' (which consumes the bound input) is at field-index 0. Streaming decode requires carrier to precede consumer — reorder the fields so 'header' is declared before 'key'.","expected":["carrier 'header' before field 'key'"],"actual":"header"}"#,
             ),
             // ── §synth-5-B present-if primitive (SCE Protocol-Synthesis RFC §synth-5-B, item B1) ─
             (

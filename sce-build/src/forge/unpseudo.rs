@@ -1776,6 +1776,8 @@ fn parse_flag_def(w: &[&str], line: usize) -> Result<FlagDef, ParseError> {
             Some("value") => undo(w.get(7).copied().unwrap_or(""), line)?,
             _ => String::new(),
         },
+        // A pseudocode line is not a row of the SCXML document.
+        line: None,
     })
 }
 
@@ -1973,6 +1975,8 @@ fn parse_codec_field(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<CodecField, 
 
     let mut f = CodecField {
         id: undo(id, line.number)?,
+        // A pseudocode line is not a row of the SCXML document.
+        line: None,
         sce_type: SceType::from_attr(type_word).ok_or_else(|| ParseError {
             line: line.number,
             why: format!("`{type_word}` is not an sce:type"),
@@ -2096,6 +2100,8 @@ fn parse_codec_variant(
                     value_text: spelling,
                     body_alias: undo(alias, k.number)?,
                     is_default,
+                    // A pseudocode line is not a row of the SCXML document.
+                    line: None,
                 };
                 if kw[0] == "arm" {
                     v.arms.push(arm);

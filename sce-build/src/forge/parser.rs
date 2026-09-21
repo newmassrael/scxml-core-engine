@@ -1889,6 +1889,7 @@ fn parse_flag_binds(
         binds.push(FlagBind {
             input,
             source: source_kind,
+            line: Some(row_of(&child)),
         });
     }
     Ok(binds)
@@ -2271,6 +2272,7 @@ fn parse_peek_byte_from_variant_node(
             // A peek-byte flag declares layout and carries no value,
             // so there is no spelling to keep.
             value_text: String::new(),
+            line: Some(row_of(&child)),
         });
     }
 
@@ -2656,6 +2658,7 @@ fn parse_codec_variant(
                     value_text: value_str.to_string(),
                     body_alias,
                     is_default,
+                    line: Some(row_of(&child)),
                 });
             }
             "default" => {
@@ -2704,6 +2707,7 @@ fn parse_codec_variant(
                     value_text: String::new(),
                     body_alias,
                     is_default: false,
+                    line: Some(row_of(&child)),
                 });
             }
             // Peek-byte was already parsed
@@ -3069,6 +3073,7 @@ pub fn parse_codec_field_from_node(
 
     Ok(CodecField {
         id,
+        line: Some(row_of(node)),
         sce_type,
         byte_offset,
         bit_offset,
@@ -3482,6 +3487,7 @@ fn parse_codec_flags_from_node(
                 .attribute("value")
                 .map(str::to_string)
                 .unwrap_or_default(),
+            line: Some(row_of(&child)),
         });
     }
 
@@ -3641,6 +3647,7 @@ fn parse_codec_repeat_from_node(
 
     Ok(CodecField {
         id,
+        line: Some(row_of(node)),
         // Wire-shape sentinel — the host-language type is derived
         // from `repeat_body_alias` at codegen time. Bytes is the
         // closest primitive (the encoded form is a byte sequence
@@ -3887,6 +3894,7 @@ fn parse_codec_tlv_chain_from_node(
 
     Ok(CodecField {
         id,
+        line: Some(row_of(node)),
         sce_type: SceType::Bytes,
         byte_offset,
         bit_offset: None,
@@ -4021,6 +4029,7 @@ fn parse_codec_embed_from_node(
 
     Ok(CodecField {
         id,
+        line: Some(row_of(node)),
         // Wire-shape sentinel — host type is derived from
         // embed_body_alias at codegen time.
         sce_type: SceType::Bytes,

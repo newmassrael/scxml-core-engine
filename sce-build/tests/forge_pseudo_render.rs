@@ -803,6 +803,7 @@ fn each_signal_kind_renders_every_field_it_can_carry() {
 fn a_codec_renders_every_field_it_can_carry() {
     let f = CodecField {
         id: "payload".to_string(),
+        line: None,
         sce_type: SceType::Bytes,
         byte_offset: 4,
         bit_offset: Some(2),
@@ -822,6 +823,7 @@ fn a_codec_renders_every_field_it_can_carry() {
             width: 1,
             value: Some(1),
             value_text: "0x1".to_string(),
+            line: None,
         }],
         present_if: Some(PresentIfPredicate {
             scope: PresentIfScope::Input,
@@ -863,6 +865,7 @@ fn a_codec_renders_every_field_it_can_carry() {
                 value_text: "0x01".to_string(),
                 body_alias: "one".to_string(),
                 is_default: false,
+                line: None,
             }],
             default_arm: Some(VariantArm {
                 value: 0,
@@ -871,6 +874,7 @@ fn a_codec_renders_every_field_it_can_carry() {
                 value_text: String::new(),
                 body_alias: "zero".to_string(),
                 is_default: true,
+                line: None,
             }),
             peek_byte: Some(PeekByteSpec {
                 id: "pk".to_string(),
@@ -880,6 +884,7 @@ fn a_codec_renders_every_field_it_can_carry() {
                     width: 2,
                     value: None,
                     value_text: String::new(),
+                    line: None,
                 }],
             }),
         }),
