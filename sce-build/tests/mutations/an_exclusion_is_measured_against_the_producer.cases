@@ -114,11 +114,18 @@ PY
 # ── The table stops answering for one backend ───────────────────────
 #
 # Python is the backend §2.13 records as not evaluating the expression at
-# all. A table that quietly drops the row that disagrees reads as consensus,
-# which is the state the document was in before this round.
+# all. A section that quietly drops the backend that disagrees reads as
+# consensus, which is the state the document was in before this round.
+#
+# ⚠ The anchor was a table row until §2.13 was rewritten to state the
+# divergence in prose. It is re-aimed at the SUBJECT — the sentence that
+# names Python — rather than at the shape the subject happened to take,
+# because the shape is what moved and the claim is what the oracle reads
+# (`the_retracted_rows_send_the_reader_to_what_replaced_them` requires
+# §2.13 to name all six backends).
 
 mutation_case "section 2.13 drops the backend that diverges" <<'PY'
 edit("docs/SCE_ACCEPTED_SUBSET.md",
-     """| **Python** | **No** — nothing evaluates it, so a failing expression raises nothing | The build-time stub |""",
-     """| **Pythen** | **No** — nothing evaluates it, so a failing expression raises nothing | The build-time stub |""")
+     """**Python** evaluated nothing at all""",
+     """**Pythen** evaluated nothing at all""")
 PY

@@ -90,10 +90,18 @@ edit("sce-build/src/parser.rs",
      "if false {")
 PY
 
+# ⚠ The anchor carries the REFUSAL below it, not the `if` alone. A bare
+# `if out.is_empty() {` matches two collectors in this file — this one and
+# `sce:candidates` — so it would silently mutate whichever comes first,
+# and which one that is changes with an edit anywhere above.
 mutation_case "a present-but-empty declaration is accepted" <<'PY'
 edit("sce-build/src/parser.rs",
-     "if out.is_empty() {",
-     "if false {")
+     '''if out.is_empty() {
+        return Err(reject(
+            "sce:unhandled",''',
+     '''if false {
+        return Err(reject(
+            "sce:unhandled",''')
 PY
 
 # ── Every element that can carry a declaration must read it ────────
