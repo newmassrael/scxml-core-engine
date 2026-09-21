@@ -4144,9 +4144,15 @@ pub enum ExprError {
     /// the engine underneath is too.
     #[error("{what} is not a function")]
     LiteralNotCallable {
-        /// The literal as the record names it: `the number literal`,
+        /// The literal as the message names it: `the number literal`,
         /// `the literal null or undefined`.
         what: String,
+        /// The literal as the author wrote it, which the wire reports as
+        /// `actual` (SCE_ERROR_CONTRACT §3.1.1): a number in its source
+        /// spelling, `true` or `false`. `None` where the AST does not keep
+        /// the spelling — a string's escapes are decoded, `null` and
+        /// `undefined` are one node — or no single token is the literal.
+        observed: Option<String>,
     },
 
     /// A free identifier nothing declares — `conut + 1` where the

@@ -413,8 +413,9 @@ fn a_namespace_written_as_a_call_is_reported_with_the_members_that_may_stand_the
     assert_eq!(record["stage"], "expression");
     assert_eq!(record["spec"], "W3C SCXML §B.2");
     assert_eq!(
-        record["actual"], "Object()",
-        "the namespace reached for rides `actual`: {record}"
+        record["actual"], "Object",
+        "the namespace reached for rides `actual`, bare — the call's \
+         arguments are not part of the name: {record}"
     );
     let expected: Vec<String> = record["expected"]
         .as_array()
@@ -577,7 +578,9 @@ fn a_literal_written_as_a_call_is_reported_with_neither_a_choice_nor_a_fix() {
     );
     let record = &diagnostics[0];
     assert_eq!(record["code"], "expression/literal-not-callable");
-    assert_eq!(record["actual"], "the number literal");
+    // The literal as written — `1()` in the document — not the message's
+    // description of it.
+    assert_eq!(record["actual"], "1");
     // Both fields absent is this record's whole shape: the producer
     // knows what was written and nothing about what belongs instead.
     assert!(record["fix"].is_null(), "fix must stay absent: {record}");

@@ -471,7 +471,10 @@ fn call(callee: &Expr, args: &[Expr]) -> Result<String, ExprError> {
     // `true()` are Lua syntax errors, so the chunk carrying them failed
     // to load rather than failing to run.
     if let Some(what) = literal_description(callee) {
-        return Err(ExprError::LiteralNotCallable { what });
+        return Err(ExprError::LiteralNotCallable {
+            what,
+            observed: literal_spelling(callee),
+        });
     }
 
     // A call on a name that holds a value. The receiver is not consulted
@@ -1059,6 +1062,19 @@ fn lua_number(text: &str) -> Result<String, ExprError> {
 /// carries two spellings that this AST does not tell apart — the parser
 /// folds `undefined` into the same node — so the phrase says both rather
 /// than picking one and reading as a claim about which was written.
+/// A literal as its author wrote it, where the AST still holds that
+/// spelling: a number keeps its source form and a boolean has one. A
+/// string's escapes are decoded and `null`/`undefined` share a node, so
+/// neither can be spelled back, and an array or object literal is no
+/// single token.
+fn literal_spelling(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Number(text) => Some(text.clone()),
+        Expr::Bool(value) => Some(value.to_string()),
+        _ => None,
+    }
+}
+
 fn literal_description(expr: &Expr) -> Option<String> {
     match expr {
         Expr::Nullish => Some("the literal null or undefined".to_string()),

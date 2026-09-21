@@ -8426,30 +8426,33 @@ fn expression_fields(e: &ExprError) -> DiagnosticPayload {
         // the call is not the repair here — `Math` alone is refused too —
         // and naming a member without its arguments would be an edit the
         // consumer cannot apply, so the producer states the position and
-        // stops there.
+        // stops there. The bare name, not `Math()`: the call may carry
+        // arguments, and then `Math()` is text the document does not hold.
         ExprError::NamespaceNotCallable { namespace, members } => DiagnosticPayload {
             code: DiagnosticCode::ExpressionNamespaceNotCallable,
             stage: Stage::Expression,
             expected: Some(members.clone()),
-            actual: Some(format!("{namespace}()")),
+            actual: Some(namespace.clone()),
             fix: None,
             key_fragments: vec![namespace.clone()],
+        },
+        // No `expected` and no `fix`: the producer knows what was
+        // written and nothing about what should have been. The record's
+        // work is the location and the sentence. `actual` is the literal
+        // as written where the AST keeps its spelling, and absent where it
+        // does not; the description is the message's.
+        ExprError::LiteralNotCallable { what, observed } => DiagnosticPayload {
+            code: DiagnosticCode::ExpressionLiteralNotCallable,
+            stage: Stage::Expression,
+            expected: None,
+            actual: observed.clone(),
+            fix: None,
+            key_fragments: vec![what.clone()],
         },
         // `actual` is the bare name this time, because the bare name is
         // what the consumer edits: there are no parentheses beside it to
         // remove, and what has to appear is a member the document has
         // not written yet.
-        // No `expected` and no `fix`: the producer knows what was
-        // written and nothing about what should have been. The record's
-        // work is the location and the sentence.
-        ExprError::LiteralNotCallable { what } => DiagnosticPayload {
-            code: DiagnosticCode::ExpressionLiteralNotCallable,
-            stage: Stage::Expression,
-            expected: None,
-            actual: Some(what.clone()),
-            fix: None,
-            key_fragments: vec![what.clone()],
-        },
         ExprError::NamespaceNotAValue { namespace, members } => DiagnosticPayload {
             code: DiagnosticCode::ExpressionNamespaceNotAValue,
             stage: Stage::Expression,
@@ -11008,12 +11011,12 @@ mod tests {
                     members: vec!["JSON.parse".into(), "JSON.stringify".into()],
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:dbf47c756e89d56b","code":"expression/namespace-not-callable","stage":"expression","spec":"W3C SCXML §B.2","message":"JSON is a namespace, not a function. Call one of its members: JSON.parse, JSON.stringify","expected":["JSON.parse","JSON.stringify"],"actual":"JSON()"}"#,
+                r#"{"v":1,"id":"fnv1a:dbf47c756e89d56b","code":"expression/namespace-not-callable","stage":"expression","spec":"W3C SCXML §B.2","message":"JSON is a namespace, not a function. Call one of its members: JSON.parse, JSON.stringify","expected":["JSON.parse","JSON.stringify"],"actual":"JSON"}"#,
             ),
             (
-                // The read half. `actual` is the bare name and the
-                // members carry both halves of the vocabulary, which is
-                // what separates this record from the one above.
+                // The read half. The members carry both halves of the
+                // vocabulary, which is what separates this record from the
+                // one above.
                 "forge/expression-namespace-not-a-value",
                 ExprError::NamespaceNotAValue {
                     namespace: "Math".into(),
@@ -11028,9 +11031,10 @@ mod tests {
                 "forge/expression-literal-not-callable",
                 ExprError::LiteralNotCallable {
                     what: "the number literal".into(),
+                    observed: Some("1".into()),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:9dd8d2ff05d2b95e","code":"expression/literal-not-callable","stage":"expression","spec":"W3C SCXML §B.2","message":"the number literal is not a function","actual":"the number literal"}"#,
+                r#"{"v":1,"id":"fnv1a:9dd8d2ff05d2b95e","code":"expression/literal-not-callable","stage":"expression","spec":"W3C SCXML §B.2","message":"the number literal is not a function","actual":"1"}"#,
             ),
             (
                 "forge/expression-parse-mismatch",

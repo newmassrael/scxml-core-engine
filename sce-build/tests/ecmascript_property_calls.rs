@@ -515,10 +515,19 @@ fn every_literal_is_refused_where_the_call_is() {
     );
     for source in SPELLINGS.iter().copied() {
         match refusal(source) {
-            ExprError::LiteralNotCallable { what } => assert!(
-                what.starts_with("the "),
-                "{source} was refused as {what}, which does not read as a phrase"
-            ),
+            ExprError::LiteralNotCallable { what, observed } => {
+                assert!(
+                    what.starts_with("the "),
+                    "{source} was refused as {what}, which does not read as a phrase"
+                );
+                // A spelling, when one is reported, is text the source holds.
+                if let Some(spelling) = &observed {
+                    assert!(
+                        source.contains(spelling.as_str()),
+                        "{source} was reported as written `{spelling}`"
+                    );
+                }
+            }
             other => panic!("{source} was refused as {other:?} rather than a literal call"),
         }
     }
@@ -528,15 +537,19 @@ fn every_literal_is_refused_where_the_call_is() {
 ///
 /// `null` and `undefined` are one node, so a record naming only `null`
 /// would be a claim about which the author wrote — and it would be wrong
-/// half the time.
+/// half the time. For the same reason no spelling rides `actual`: the
+/// AST cannot say which of the two the document holds.
 #[test]
 fn the_nullish_refusal_names_both_spellings() {
     for source in ["null()", "undefined()"] {
         match refusal(source) {
-            ExprError::LiteralNotCallable { what } => assert_eq!(
-                what, "the literal null or undefined",
-                "{source} was named as one spelling"
-            ),
+            ExprError::LiteralNotCallable { what, observed } => {
+                assert_eq!(
+                    what, "the literal null or undefined",
+                    "{source} was named as one spelling"
+                );
+                assert_eq!(observed, None, "{source} was given a spelling");
+            }
             other => panic!("{source} was refused as {other:?}"),
         }
     }
