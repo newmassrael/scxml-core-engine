@@ -2473,6 +2473,13 @@ pub fn compile_forge_from_parsed(
         label.diagnostic_label,
     )?;
 
+    // A name declared twice is refused before anything reads the
+    // document, so it is named as the duplicate it is — not as the cycle,
+    // shadowed import or rendering failure it would later become. See
+    // `forge::namespace` for the four shapes that each slipped past or
+    // were misnamed.
+    forge::namespace::check(parsed, label.diagnostic_label)?;
+
     let template_base = find_template_base();
     let mut import_ctx = forge::generator::resolve_imports(&parsed.imports, &language, options)
         .map_err(|e| Located::new(e, label.diagnostic_label, None, None))?;

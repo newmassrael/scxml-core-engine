@@ -144,6 +144,11 @@ fn a_resolving_field_passes_the_validator_and_the_unbound_alias_is_refused() {
 
 #[test]
 fn negative_field_not_found_emits_did_you_mean_candidates() {
+    // ⚠ This and the next fixture used to declare a `uint8` parameter
+    // named `frame` beside the import of that name. The namespace check
+    // refuses that as a duplicate before this validator runs, so the
+    // parameter is `x` and the refusal below is the validator's own.
+    //
     // Same shape as positive but with a typo: `msg_idd` instead of
     // `msg_id`. Validator emits `CrossKindFieldNotFound` with the
     // imported codec's full member surface (`msg_id`, `payload`) as
@@ -163,7 +168,7 @@ fn negative_field_not_found_emits_did_you_mean_candidates() {
        version="1.0">
   <sce:import src="frame_codec.scxml" kind="codec" as="frame"/>
   <sce:signature>
-    <sce:param name="frame" type="uint8"/>
+    <sce:param name="x" type="uint8"/>
     <sce:return type="bool"/>
   </sce:signature>
   <sce:body>
@@ -220,7 +225,7 @@ fn negative_type_mismatch_on_bare_return_expression() {
        version="1.0">
   <sce:import src="frame_codec.scxml" kind="codec" as="frame"/>
   <sce:signature>
-    <sce:param name="frame" type="uint8"/>
+    <sce:param name="x" type="uint8"/>
     <sce:return type="bool"/>
   </sce:signature>
   <sce:body>

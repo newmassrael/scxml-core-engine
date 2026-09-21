@@ -195,17 +195,25 @@ fn forge_frame_codec(bits: u32) -> String {
 /// The compiled document. Its `sce:kind` routes away from the statechart
 /// arm, and the two-level import chain below it is what gives the
 /// `<sce:import>` half of the contract something to be measured against.
+///
+/// ⚠ The body reads its own parameter, not the import. It used to declare
+/// a `uint8` parameter named `frame` beside the import of the same name and
+/// read `frame.msg_id` — a field of a byte, which generated and could not
+/// compile, and which the namespace check now refuses as the duplicate name
+/// it is. The chain stays observable without it: every reachable import's
+/// content is in the compiled document's `source-hash`, which is the change
+/// this probe measures.
 const FORGE_ALGORITHM: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="algorithm" name="route_msg" version="1.0">
   <sce:import src="frame_codec.scxml" kind="codec" as="frame"/>
   <sce:signature>
-    <sce:param name="frame" type="uint8"/>
+    <sce:param name="x" type="uint8"/>
     <sce:return type="bool"/>
   </sce:signature>
   <sce:body>
-    <sce:return expr="frame.msg_id === 1"/>
+    <sce:return expr="x === 1"/>
   </sce:body>
 </scxml>
 "#;

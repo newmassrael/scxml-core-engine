@@ -20299,70 +20299,6 @@ fn algorithm_format_param(l: &LangCtx, name: &str, ty: &SceType) -> String {
     l.place_param(name, &algorithm_param_type(l, ty))
 }
 
-/// Collect every (name, type) introduced inside an algorithm body —
-/// `<sce:var>` locals and `<sce:foreach item>` loop variables — so the
-/// caller can build a flat TypeCtx covering params + locals.
-///
-/// Errors when a name shadows a previously-collected one (parameters
-/// or earlier locals) via the typed RFC §synth-5-A
-/// `algorithm/local-shadows-param` diagnostic.
-fn collect_algorithm_local_types(
-    stmts: &[AlgorithmStmt],
-    out: &mut Vec<(String, SceType)>,
-    seen: &mut std::collections::BTreeSet<String>,
-) -> Result<(), ForgeError> {
-    for s in stmts {
-        match s {
-            AlgorithmStmt::Var { name, sce_type, .. } => {
-                if !seen.insert(name.clone()) {
-                    return Err(
-                        crate::forge::error::ValidationError::AlgorithmLocalShadowsParam {
-                            name: name.clone(),
-                            what: "another binding (param or earlier local)".into(),
-                        }
-                        .into(),
-                    );
-                }
-                out.push((name.clone(), sce_type.clone()));
-            }
-            // `<sce:append>` mutates an existing buffer; it declares no new
-            // local, so it contributes nothing to the type table here.
-            AlgorithmStmt::Append { .. } => {}
-            AlgorithmStmt::Foreach { item, body, .. } => {
-                if !seen.insert(item.clone()) {
-                    return Err(
-                        crate::forge::error::ValidationError::AlgorithmLocalShadowsParam {
-                            name: item.clone(),
-                            what: "another binding (param or earlier local)".into(),
-                        }
-                        .into(),
-                    );
-                }
-                // Foreach over `bytes` exposes the item as Uint8.
-                out.push((item.clone(), SceType::Uint8));
-                collect_algorithm_local_types(body, out, seen)?;
-            }
-            AlgorithmStmt::If {
-                then_body,
-                else_body,
-                ..
-            } => {
-                collect_algorithm_local_types(then_body, out, seen)?;
-                if let Some(eb) = else_body {
-                    collect_algorithm_local_types(eb, out, seen)?;
-                }
-            }
-            AlgorithmStmt::While { body, .. } => {
-                collect_algorithm_local_types(body, out, seen)?;
-            }
-            AlgorithmStmt::Assign { .. }
-            | AlgorithmStmt::Return { .. }
-            | AlgorithmStmt::Call { .. } => {}
-        }
-    }
-    Ok(())
-}
-
 /// RFC c7-wildcard W-project: collect `("<item>.<field>", SceType)` pairs
 /// for every `<sce:foreach item="entry" in="<bc-alias>">` whose source is
 /// a bounded-collection import with a resolved element-type schema. These
@@ -21713,19 +21649,28 @@ fn render_algorithm(
 
     // Build TypeCtx from params + collected local vars / foreach items.
     // Owned strings live in `env_pairs` for the lifetime of `type_ctx`.
-    let mut env_pairs: Vec<(String, SceType)> = Vec::new();
-    let mut seen = std::collections::BTreeSet::new();
-    for p in &m.signature.params {
-        if !seen.insert(p.name.clone()) {
-            return Err(GenerateError::InvalidConfig(format!(
-                "algorithm '{}': duplicate parameter '{}'",
-                m.name, p.name
-            ))
-            .into());
-        }
-        env_pairs.push((p.name.clone(), p.sce_type.clone()));
+    //
+    // ⚠ No duplicate check here. `forge::namespace::check` owns it and runs
+    // before any backend renders: a name declared twice is the DOCUMENT's
+    // fault. This renderer used to refuse a duplicate parameter itself, as
+    // `generate/invalid-config` — a rendering-stage code, so `check` filed
+    // it as six backend gaps and exited 0 (measured 2026-09-21).
+    let mut env_pairs: Vec<(String, SceType)> = m
+        .signature
+        .params
+        .iter()
+        .map(|p| (p.name.clone(), p.sce_type.clone()))
+        .collect();
+    for binding in m.body_bindings() {
+        let ty = match binding {
+            crate::forge::model::AlgorithmBinding::Local { sce_type, .. } => sce_type.clone(),
+            // A foreach over `bytes` exposes each item as a byte; an item
+            // over a bounded collection is typed through its element's
+            // fields (`member_field_pairs` below), not through this slot.
+            crate::forge::model::AlgorithmBinding::ForeachItem { .. } => SceType::Uint8,
+        };
+        env_pairs.push((binding.name().to_string(), ty));
     }
-    collect_algorithm_local_types(&m.body, &mut env_pairs, &mut seen)?;
 
     // RFC c7-wildcard W-project: register element fields of every
     // `<sce:foreach item in="<bc>">` as `"<item>.<field>"` so

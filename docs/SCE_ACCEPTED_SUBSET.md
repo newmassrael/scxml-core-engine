@@ -491,7 +491,17 @@ Structured data carriers used by codec / validator / filter / etc.
 kinds. Required attributes:
 
 - `id` — unique within the enclosing kind (duplicates are rejected as
-  `validation/duplicate-id`).
+  `validation/duplicate-id`). ⚠ Unique across the document's WHOLE
+  expression namespace, not only among `<data>`: fields, algorithm
+  parameters, consts and locals, procedure helpers, observer monitors,
+  codec flag inputs and every `<sce:import as="…">` alias share one scope,
+  because every backend lowers them into one. An algorithm local that
+  reuses an earlier name keeps its own code,
+  `algorithm/local-shadows-param`. Measured 2026-09-21 before this was
+  one check: two inputs named alike generated on all six backends, an
+  input and an output named alike were refused as a transform cycle,
+  a parameter shadowed an import alias silently, and a duplicate
+  parameter was refused by the renderer as one backend's gap.
 - `sce:type` — closed value set of fixed-width scalar tokens
   (source of truth: `SceType::from_attr` in
   `sce-build/src/forge/model.rs`): `uint8`, `uint16`, `uint32`,

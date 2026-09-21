@@ -3274,6 +3274,65 @@ pub enum AlgorithmStmt {
     Call { target: String, args: Vec<String> },
 }
 
+/// A name an algorithm body introduces.
+#[derive(Debug, Clone, Copy)]
+pub enum AlgorithmBinding<'a> {
+    /// `<sce:var name type init>` — a typed local.
+    Local {
+        name: &'a str,
+        sce_type: &'a SceType,
+    },
+    /// `<sce:foreach item>` — the loop variable, typed by what it iterates.
+    ForeachItem { name: &'a str },
+}
+
+impl<'a> AlgorithmBinding<'a> {
+    /// The introduced name, borrowed for as long as the model lives.
+    pub fn name(self) -> &'a str {
+        match self {
+            AlgorithmBinding::Local { name, .. } | AlgorithmBinding::ForeachItem { name } => name,
+        }
+    }
+}
+
+/// Every name `stmts` introduces, in source order, nested bodies included.
+///
+/// ⚠ ONE walk. The generator (building an algorithm's type context) and the
+/// namespace check (refusing a name declared twice) both need exactly this
+/// list, and a second copy of the traversal is how one of them would learn
+/// about a new statement kind and the other would not. The match is
+/// exhaustive on purpose: a statement added later must say whether it binds.
+fn collect_algorithm_bindings<'a>(stmts: &'a [AlgorithmStmt], out: &mut Vec<AlgorithmBinding<'a>>) {
+    for s in stmts {
+        match s {
+            AlgorithmStmt::Var { name, sce_type, .. } => {
+                out.push(AlgorithmBinding::Local { name, sce_type });
+            }
+            AlgorithmStmt::Foreach { item, body, .. } => {
+                out.push(AlgorithmBinding::ForeachItem { name: item });
+                collect_algorithm_bindings(body, out);
+            }
+            AlgorithmStmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_algorithm_bindings(then_body, out);
+                if let Some(eb) = else_body {
+                    collect_algorithm_bindings(eb, out);
+                }
+            }
+            AlgorithmStmt::While { body, .. } => collect_algorithm_bindings(body, out),
+            // `<sce:append>` mutates an existing buffer; `<sce:assign>`,
+            // `<sce:return>` and `<sce:call>` bind nothing.
+            AlgorithmStmt::Append { .. }
+            | AlgorithmStmt::Assign { .. }
+            | AlgorithmStmt::Return { .. }
+            | AlgorithmStmt::Call { .. } => {}
+        }
+    }
+}
+
 /// Algorithm document — pure synchronous function (RFC §synth-5-A).
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
@@ -3296,6 +3355,16 @@ pub struct AlgorithmModel {
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
+}
+
+impl AlgorithmModel {
+    /// Every name the body introduces — `<sce:var>` locals and
+    /// `<sce:foreach item>` loop variables — in source order.
+    pub fn body_bindings(&self) -> Vec<AlgorithmBinding<'_>> {
+        let mut out = Vec::new();
+        collect_algorithm_bindings(&self.body, &mut out);
+        out
+    }
 }
 
 /// RFC §synth-5-B test-vector value literal. v1 covers the scalar types an
