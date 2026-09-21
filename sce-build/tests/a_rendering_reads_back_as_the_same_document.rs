@@ -278,7 +278,7 @@ fn every_field_clause_survives_the_round_trip() {
         sce_type: SceType::String,
         direction: Direction::In,
         expr: Some("a + b  /* two spaces stay */".to_string()),
-        expr_line: None,
+        expr_spelling: None,
         quantity: Some(Quantity {
             scale: Rational::new(1, 10).expect("a legal rational"),
             offset: Rational::new(-5, 1).expect("a legal rational"),

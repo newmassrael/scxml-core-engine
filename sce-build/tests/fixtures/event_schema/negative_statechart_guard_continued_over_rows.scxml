@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A guard continued over the rows below its `<transition` start tag, whose
+  second row reads a field the imported schema does not declare. The
+  refusal names that read, so it belongs on the second row: the
+  `<transition` row does not contain the token, and a record placed there
+  sends a consumer to a row its fix cannot apply to.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="statechart_guard_continued_over_rows"
+       version="1.0"
+       initial="waiting"
+       datamodel="ecmascript">
+  <sce:import src="schema_signal_bytes.scxml" kind="event-schema" as="SignalBytesSchema"/>
+  <state id="waiting">
+    <transition event="signal.received"
+                cond="_event.data.raw === 'ack' &amp;&amp;
+                      _event.data.missing === 1"
+                target="done"/>
+  </state>
+  <state id="done"/>
+</scxml>

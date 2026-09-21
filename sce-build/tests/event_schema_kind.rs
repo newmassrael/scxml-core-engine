@@ -266,13 +266,65 @@ fn negative_bytes_ordering_rejects_with_typed_diagnostic() {
     let err = run(&[scxml_path.as_path()], &[schema_path.as_path()])
         .err()
         .expect("orchestrator should reject an ordering operator on a bytes field");
+    // On the operator itself — row 18 holds `&lt;` at column 63 and a `<`
+    // only as the `<transition` bracket, which is what a record naming the
+    // decoded `<` on that row used to send a consumer to.
+    assert_eq!(
+        (err.location.line, err.location.col),
+        (Some(18), Some(63)),
+        "{err:?}"
+    );
     match err.error {
         ForgeError::Validation(boxed) => match *boxed {
-            ValidationError::BytesComparisonNotEquality { field, op, .. } => {
+            ValidationError::BytesComparisonNotEquality {
+                field,
+                op,
+                observed,
+                ..
+            } => {
                 assert_eq!(field, "raw");
                 assert_eq!(op, "<");
+                assert_eq!(observed.as_deref(), Some("&lt;"));
             }
             other => panic!("expected BytesComparisonNotEquality, got {other:?}"),
+        },
+        other => panic!("expected Validation error, got {other:?}"),
+    }
+}
+
+// ─── Negative: a guard continued over several rows ───
+
+/// A refusal of a piece of a guard is placed on the row that piece sits
+/// on, which a guard continued past its `<transition` row does not share
+/// with the element — the record's `actual` and its `replace_one_of` fix
+/// are only applicable there.
+#[test]
+fn negative_guard_continued_over_rows_is_refused_on_the_offending_row() {
+    let dir = tempdir().expect("tempdir");
+    let staged = stage_fixtures(
+        dir.path(),
+        &[
+            "schema_signal_bytes.scxml",
+            "negative_statechart_guard_continued_over_rows.scxml",
+        ],
+    );
+    let err = run(&[staged[1].as_path()], &[staged[0].as_path()])
+        .err()
+        .expect("orchestrator should reject the undeclared field");
+    let source = fs::read_to_string(&staged[1]).expect("the staged fixture");
+    let line = err.location.line.expect("a row") as usize;
+    let col = err.location.col.expect("a column") as usize;
+    let row = source.lines().nth(line - 1).expect("the row exists");
+    assert!(
+        row[col - 1..].starts_with("_event.data.missing"),
+        "placed at {line}:{col}, which reads {row:?}"
+    );
+    match err.error {
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::CrossKindFieldNotFound { field, .. } => {
+                assert_eq!(field, "missing");
+            }
+            other => panic!("expected CrossKindFieldNotFound, got {other:?}"),
         },
         other => panic!("expected Validation error, got {other:?}"),
     }

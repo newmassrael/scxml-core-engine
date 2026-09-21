@@ -8271,6 +8271,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             importing_name,
             field,
             op,
+            observed,
         } => DiagnosticPayload {
             // RFC `rfc-eventschema-bytes-guard.md` §bytesguard-3 B3: an ordering
             // operator on a bytes payload. No `fix` candidate set —
@@ -8281,7 +8282,10 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             code: DiagnosticCode::ValidationBytesComparisonNotEquality,
             stage: Stage::Validation,
             expected: Some(vec!["=== or !==".to_string()]),
-            actual: Some(op.clone()),
+            // The operator as the document spells it. `op` is the parse's
+            // `<`, which a document cannot write bare: the row holds
+            // `&lt;`, and a `<` found there is some element's bracket.
+            actual: observed.clone(),
             // Statechart + offending field + operator form the
             // canonical identity — two distinct bad guards on the same
             // field with different operators stay distinct.
@@ -12284,9 +12288,10 @@ mod tests {
                     importing_name: "demo".into(),
                     field: "raw".into(),
                     op: "<".into(),
+                    observed: Some("&lt;".into()),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:dd6f31b5df3a391c","code":"validation/bytes-comparison-not-equality","stage":"validation","message":"statechart 'demo': operator '<' is not defined on the bytes payload '_event.data.raw' — only equality ('===' / '!==') is supported on bytes","expected":["=== or !=="],"actual":"<"}"#,
+                r#"{"v":1,"id":"fnv1a:dd6f31b5df3a391c","code":"validation/bytes-comparison-not-equality","stage":"validation","message":"statechart 'demo': operator '<' is not defined on the bytes payload '_event.data.raw' — only equality ('===' / '!==') is supported on bytes","expected":["=== or !=="],"actual":"&lt;"}"#,
             ),
         ]
     }

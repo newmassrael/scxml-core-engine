@@ -636,6 +636,11 @@ fn shape_name(kind: &ExprKind) -> &'static str {
 /// author wrote (SCE_ERROR_CONTRACT §3.1.1) rather than a description or
 /// a re-rendering of it. `None` for a node a rewrite synthesised, which
 /// no source text spells.
+///
+/// ⚠ That string is an attribute value as the XML reader DECODED it, not
+/// as the document spells it: `&lt;` is `<` there, and a value continued
+/// over several rows is one row. A range of it is put back where the
+/// author wrote it by [`crate::attribute_spelling::AttributeSpelling`].
 #[derive(Debug, Clone)]
 pub(crate) struct TypedExpr {
     pub kind: ExprKind,
@@ -659,12 +664,6 @@ impl TypedExpr {
             ty: InferredType::Unknown,
             span: None,
         }
-    }
-
-    /// The text this node was parsed from, given the string it was parsed
-    /// from. `None` for a synthesised node.
-    pub(crate) fn source<'s>(&self, parsed: &'s str) -> Option<&'s str> {
-        self.span.clone().and_then(|range| parsed.get(range))
     }
 }
 
@@ -5729,8 +5728,9 @@ mod tests {
     #[test]
     fn a_parsed_node_names_the_text_it_was_read_from() {
         let source = "  _event.data.raw === ('café') && -n.len() > 0x1F ";
+        let spelled = |node: &TypedExpr| node.span.clone().and_then(|range| source.get(range));
         let ast = parse_to_ast(source).unwrap();
-        assert_eq!(ast.source(source), Some(source.trim()));
+        assert_eq!(spelled(&ast), Some(source.trim()));
         let ExprKind::Binary { left, right, .. } = &ast.kind else {
             panic!("expected `&&` at the top: {ast:?}");
         };
@@ -5742,8 +5742,8 @@ mod tests {
         else {
             panic!("expected `===` on the left: {left:?}");
         };
-        assert_eq!(data.source(source), Some("_event.data.raw"));
-        assert_eq!(literal.source(source), Some("('café')"));
+        assert_eq!(spelled(data), Some("_event.data.raw"));
+        assert_eq!(spelled(literal), Some("('café')"));
         let ExprKind::Binary {
             left: negated,
             right: hex,
@@ -5752,8 +5752,8 @@ mod tests {
         else {
             panic!("expected `>` on the right: {right:?}");
         };
-        assert_eq!(negated.source(source), Some("-n.len()"));
-        assert_eq!(hex.source(source), Some("0x1F"));
+        assert_eq!(spelled(negated), Some("-n.len()"));
+        assert_eq!(spelled(hex), Some("0x1F"));
     }
 
     /// The lexer is total: it answers for any `&str`, including one holding

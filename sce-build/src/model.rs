@@ -51,6 +51,14 @@ pub struct Transition {
     pub event: String,
     pub target: String,
     pub cond: String,
+    /// The attribute `cond` was read from, as written and where — so a
+    /// refusal of a piece of the guard names it as the author spelled it,
+    /// on the row it sits on, rather than on the `<transition>` row a
+    /// continued guard does not share. `None` for a transition no document
+    /// produced. Not part of the IR: skipped from serialization, as
+    /// [`crate::forge::model::ForgeField::expr_spelling`] is.
+    #[serde(skip)]
+    pub cond_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     pub cond_cpp: String,
     pub cond_cpp_transformed: String,
     pub is_pure_in_predicate: bool,
@@ -718,6 +726,10 @@ impl Action {
 pub struct Param {
     pub name: String,
     pub expr: String,
+    /// The `expr` attribute as written and where, for the reason
+    /// [`Transition::cond_spelling`] gives.
+    #[serde(skip)]
+    pub expr_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub location: String,
     pub is_static_literal: bool,

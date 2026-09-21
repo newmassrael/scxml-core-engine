@@ -34,6 +34,10 @@ pub mod anchor_index;
 /// the acceptance report's own closure rather than a second derivation
 /// of it — NL→IR closure ledger row G2.
 pub mod annotation_overlay;
+/// An attribute value as the document spells it, beside the decoded value
+/// every check reads — so a refusal naming a piece of an expression
+/// reports it as written, on the row it sits on. See [`attribute_spelling`].
+pub mod attribute_spelling;
 pub mod cli_error;
 pub mod cli_language;
 /// Text placed inside a comment in generated source — the one encoding

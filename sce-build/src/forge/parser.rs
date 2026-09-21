@@ -6,6 +6,7 @@
 // Reads `sce:kind` on <scxml> root and dispatches to kind-specific parsing.
 // Also handles inline kinds on <data> elements within statechart documents.
 
+use crate::attribute_spelling::AttributeSpelling;
 use crate::forge::error::{
     ForgeError, Located, SourceLocation, ValidationError, WorkerSharedStateReason, XmlError,
 };
@@ -51,15 +52,6 @@ pub(crate) fn located<E: Into<ForgeError>>(
 /// `line`.
 fn row_of(node: &roxmltree::Node) -> u32 {
     node.document().text_pos_at(node.range().start).row
-}
-
-/// The 1-based row an attribute of `node` starts on, or `None` when `node`
-/// carries no such attribute. An element's attributes may span lines, so
-/// a value read from one is placed by this rather than by [`row_of`].
-fn attribute_row(node: &roxmltree::Node, namespace: Option<&str>, local: &str) -> Option<u32> {
-    node.attributes()
-        .find(|a| a.name() == local && a.namespace() == namespace)
-        .map(|a| node.document().text_pos_at(a.range().start).row)
 }
 
 /// The attribute of `node` that holds the value `err` reports as observed
@@ -1344,7 +1336,7 @@ fn parse_condition(
 
     let mut inputs = Vec::new();
     let mut expr = String::new();
-    let mut expr_line = None;
+    let mut expr_spelling = None;
     let mut out_field: Option<String> = None;
 
     for data in data_children(&datamodel) {
@@ -1383,7 +1375,7 @@ fn parse_condition(
                 out_field = Some(field.id.clone());
                 if let Some(e) = &field.expr {
                     expr = e.clone();
-                    expr_line = field.expr_line;
+                    expr_spelling = field.expr_spelling.clone();
                 } else {
                     return Err(located(
                         &data,
@@ -1434,7 +1426,7 @@ fn parse_condition(
         name: label.identifier.to_string(),
         inputs,
         expr,
-        expr_line,
+        expr_spelling,
         source_location: forge_source_location_of(root, label.diagnostic_label),
     })
 }
@@ -4984,7 +4976,7 @@ fn parse_validator(
     let mut ranges = Vec::new();
     let mut rate_of_changes = Vec::new();
     let mut plausibility: Option<String> = None;
-    let mut plausibility_line: Option<u32> = None;
+    let mut plausibility_spelling = None;
 
     for data in data_children(&datamodel) {
         let field = parse_forge_field(&data, label.diagnostic_label)?;
@@ -5089,7 +5081,8 @@ fn parse_validator(
                         ));
                     }
                     plausibility = Some(expr);
-                    plausibility_line = attribute_row(&data, Some(SCE_NAMESPACE), "plausibility");
+                    plausibility_spelling =
+                        AttributeSpelling::of(&data, Some(SCE_NAMESPACE), "plausibility");
                 }
             }
             Direction::Internal => {
@@ -5135,7 +5128,7 @@ fn parse_validator(
             ranges,
             rate_of_changes,
             plausibility,
-            plausibility_line,
+            plausibility_spelling,
         },
         source_location: forge_source_location_of(root, label.diagnostic_label),
     })
@@ -9639,7 +9632,7 @@ fn parse_forge_field(
     })?;
 
     let expr = data.attribute("expr").map(|s| s.to_string());
-    let expr_line = attribute_row(data, None, "expr");
+    let expr_spelling = AttributeSpelling::of(data, None, "expr");
     let quantity = parse_quantity_attrs(data, doc_name, &format!("field '{id}'"), &sce_type)?;
     // Bounded-bytes contract: optional cap
     // on bytes-typed slots. Parsed for every field; the validator
@@ -9667,7 +9660,7 @@ fn parse_forge_field(
         sce_type,
         direction,
         expr,
-        expr_line,
+        expr_spelling,
         quantity,
         max_size,
         default_covers,

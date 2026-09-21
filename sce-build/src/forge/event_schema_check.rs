@@ -50,8 +50,10 @@
 //     wire code).
 
 use std::collections::{BTreeMap, HashMap};
+use std::ops::Range;
 use std::path::Path;
 
+use crate::attribute_spelling::Written;
 use crate::forge::error::{ExprError, ForgeError, Located, SourceLocation, ValidationError};
 use crate::forge::expr::{
     decode_bytes_literal, parse_to_ast, references_event_data_lexically, transpile_typed, BinOp,
@@ -679,7 +681,14 @@ fn walk_for_event_data_refs(
                 // `_event.data.<property>` — resolve `<property>` against
                 // the schema. Field-not-found is the primary
                 // receive-side diagnostic.
-                resolve_field(schema, property, transition, statechart_name, diag_label)?;
+                resolve_field(
+                    schema,
+                    property,
+                    guard_piece(transition, expr.span.as_ref()),
+                    transition,
+                    statechart_name,
+                    diag_label,
+                )?;
             }
             // Recurse into the object (covers nested patterns such as
             // `_event.data.foo.bar` — the check treats the outer
@@ -715,6 +724,12 @@ fn walk_for_event_data_refs(
                 diag_label,
             )?;
             if is_comparison(*op) {
+                // The operator as the guard spells it — `&lt;`, where the
+                // parse saw `<` — for the refusal that names it.
+                let operator = guard_piece(
+                    transition,
+                    operator_range(guard_text(transition), left, right).as_ref(),
+                );
                 // Each operand is checked against the schema with the
                 // OTHER operand as its comparison partner. RFC §bytesguard-3 B2/B3
                 // (non-representable bytes form) surfaces before the
@@ -726,6 +741,7 @@ fn walk_for_event_data_refs(
                         reject_non_representable_bytes(
                             field,
                             *op,
+                            operator,
                             other,
                             transition,
                             statechart_name,
@@ -881,10 +897,12 @@ fn extract_event_data_field<'s>(
 
 /// Field-not-found check. Emits `validation/cross-kind-field-not-found`
 /// (existing variant, reused per Item 4 precedent) with did-you-mean
-/// candidates drawn from the schema's declared field names.
+/// candidates drawn from the schema's declared field names. `reference`
+/// is the `_event.data.<field>` access as the guard spells it.
 fn resolve_field(
     schema: &EventSchemaModel,
     field_name: &str,
+    reference: Option<Written<'_>>,
     transition: &Transition,
     statechart_name: &str,
     diag_label: &str,
@@ -897,6 +915,7 @@ fn resolve_field(
     candidates.dedup();
     Err(located_on_transition(
         transition,
+        reference,
         diag_label,
         ValidationError::CrossKindFieldNotFound {
             // The importing surface is the SCXML statechart consuming
@@ -940,12 +959,14 @@ fn check_comparison_type(
         Some(kind) => kind,
         None => return Ok(()),
     };
-    let observed = other_operand
-        .source(guard_text(transition))
+    let literal = guard_piece(transition, other_operand.span.as_ref());
+    let observed = literal
+        .and_then(|literal| literal.on_one_row())
         .map(str::to_string);
     if !literal_is_compatible_with(&field.sce_type, other_kind) {
         return Err(located_on_transition(
             transition,
+            literal,
             diag_label,
             ValidationError::CrossKindTypeMismatch {
                 importing_kind: ForgeKind::Statechart,
@@ -969,6 +990,7 @@ fn check_comparison_type(
     {
         return Err(located_on_transition(
             transition,
+            literal,
             diag_label,
             ValidationError::CrossKindTypeMismatch {
                 importing_kind: ForgeKind::Statechart,
@@ -992,6 +1014,7 @@ fn check_comparison_type(
     {
         return Err(located_on_transition(
             transition,
+            literal,
             diag_label,
             ValidationError::CrossKindTypeMismatch {
                 importing_kind: ForgeKind::Statechart,
@@ -1055,10 +1078,12 @@ fn classify_bytes_comparison(op: BinOp, other: &TypedExpr) -> BytesComparisonFor
 /// diagnostic (RFC §bytesguard-3 B2/B3). A no-op for a non-`bytes` field or a
 /// representable form — [`classify_bytes_comparison`] is the SSOT that
 /// decides; this only maps the verdict to a diagnostic. `op` and `other`
-/// are the comparison operator and the partner operand of `field`.
+/// are the comparison operator and the partner operand of `field`, and
+/// `operator` is that operator as the guard spells it.
 fn reject_non_representable_bytes(
     field: &ForgeField,
     op: BinOp,
+    operator: Option<Written<'_>>,
     other: &TypedExpr,
     transition: &Transition,
     statechart_name: &str,
@@ -1071,12 +1096,16 @@ fn reject_non_representable_bytes(
         BytesComparisonForm::Representable => Ok(()),
         BytesComparisonForm::OrderingOperator => Err(located_on_transition(
             transition,
+            operator,
             diag_label,
             ValidationError::BytesComparisonNotEquality {
                 importing_kind: ForgeKind::Statechart,
                 importing_name: statechart_name.to_string(),
                 field: field.id.clone(),
                 op: ordering_op_token(op).to_string(),
+                observed: operator
+                    .and_then(|operator| operator.on_one_row())
+                    .map(str::to_string),
             },
         )),
         BytesComparisonForm::NonAsciiLiteral => {
@@ -1086,8 +1115,10 @@ fn reject_non_representable_bytes(
             let ExprKind::StringLit { value, .. } = &other.kind else {
                 unreachable!("NonAsciiLiteral is produced only for a StringLit operand");
             };
+            let literal = guard_piece(transition, other.span.as_ref());
             Err(located_on_transition(
                 transition,
+                literal,
                 diag_label,
                 ValidationError::CrossKindTypeMismatch {
                     importing_kind: ForgeKind::Statechart,
@@ -1096,7 +1127,9 @@ fn reject_non_representable_bytes(
                     field: field.id.clone(),
                     found: format!("non-printable-ASCII bytes literal '{value}'"),
                     expected: field.sce_type.as_attr(),
-                    observed: other.source(guard_text(transition)).map(str::to_string),
+                    observed: literal
+                        .and_then(|literal| literal.on_one_row())
+                        .map(str::to_string),
                 },
             ))
         }
@@ -1424,37 +1457,70 @@ fn is_comparison(op: BinOp) -> bool {
     )
 }
 
-/// Anchor a [`ValidationError`] on a transition's recorded source
-/// location, falling back to the statechart's `diag_label` when the
-/// transition has no location (legacy fixture paths that predate the
-/// `<transition>` source-position capture).
+/// Where the piece of `transition`'s guard that a parsed node spans was
+/// written — `None` when the transition was not read from a document or
+/// the piece cannot be placed exactly. `span` indexes [`guard_text`].
+fn guard_piece<'t>(transition: &'t Transition, span: Option<&Range<usize>>) -> Option<Written<'t>> {
+    transition
+        .cond_spelling
+        .as_ref()?
+        .locate_trimmed(span?.clone())
+}
+
+/// The operator of a binary node, as a range of the `text` its operands'
+/// spans index: what lies between the two operands, less the whitespace
+/// around it.
+fn operator_range(text: &str, left: &TypedExpr, right: &TypedExpr) -> Option<Range<usize>> {
+    let (from, to) = (left.span.as_ref()?.end, right.span.as_ref()?.start);
+    let between = text.get(from..to)?;
+    let start = from + (between.len() - between.trim_start().len());
+    let end = from + between.trim_end().len();
+    (start < end).then_some(start..end)
+}
+
+/// Anchor a [`ValidationError`] on the piece of a transition's guard it
+/// names, where that piece was written — a guard continued over several
+/// rows does not share the `<transition>` row — else on the transition's
+/// recorded source location, else on the statechart's `diag_label` alone
+/// (legacy fixture paths that predate the `<transition>` source-position
+/// capture).
 fn located_on_transition(
     transition: &Transition,
+    piece: Option<Written<'_>>,
     diag_label: &str,
     err: ValidationError,
 ) -> Located<ForgeError> {
-    let (line, col) = match transition.source_location.as_ref() {
-        Some(loc) => (loc.line, loc.col),
-        None => (None, None),
+    let (line, col) = match (piece, transition.source_location.as_ref()) {
+        (Some(piece), _) => (Some(piece.row), Some(piece.col)),
+        (None, Some(loc)) => (loc.line, loc.col),
+        (None, None) => (None, None),
     };
     Located::new(ForgeError::Validation(Box::new(err)), diag_label, line, col)
 }
 
-/// Anchor an expression-stage rejection on the transition whose `cond`
-/// produced it. Sibling of [`located_on_transition`] for the
-/// `expression/*` half of the code catalog: a typed guard that does not
-/// parse as a Forge expression is rejected as the `ExprError` the lexer
-/// or parser actually raised, so the author gets the real cause
-/// (`expression/strict-equality` for `==`, carrying its
-/// `replace_with: "==="` fix) rather than a generic "unlowerable guard".
+/// Anchor an expression-stage rejection on the guard whose parse raised
+/// it. Sibling of [`located_on_transition`] for the `expression/*` half
+/// of the code catalog: a typed guard that does not parse as a Forge
+/// expression is rejected as the `ExprError` the lexer or parser actually
+/// raised, so the author gets the real cause (`expression/strict-equality`
+/// for `==`, carrying its `replace_with: "==="` fix) rather than a generic
+/// "unlowerable guard".
+///
+/// ⚠ An `ExprError` carries no position inside the guard, so this is the
+/// position the guard STARTS at — the offending token's own row for a
+/// guard written on one row, and not for a guard continued past its first.
 fn located_expr_on_transition(
     transition: &Transition,
     diag_label: &str,
     err: ExprError,
 ) -> Located<ForgeError> {
-    let (line, col) = match transition.source_location.as_ref() {
-        Some(loc) => (loc.line, loc.col),
-        None => (None, None),
+    let (line, col) = match (
+        transition.cond_spelling.as_ref(),
+        transition.source_location.as_ref(),
+    ) {
+        (Some(spelling), _) => (Some(spelling.row()), Some(spelling.col())),
+        (None, Some(loc)) => (loc.line, loc.col),
+        (None, None) => (None, None),
     };
     Located::new(ForgeError::Expression(err), diag_label, line, col)
 }
@@ -1660,6 +1726,7 @@ fn check_send_param(
         candidates.dedup();
         return Err(located_on_param(
             param,
+            None,
             action,
             diag_label,
             ValidationError::EventPayloadFieldUnknown {
@@ -1687,10 +1754,18 @@ fn check_send_param(
     let Some(literal_kind) = operand_literal_kind(&expr_ast) else {
         return Ok(());
     };
-    let observed = expr_ast.source(expr_text).map(str::to_string);
+    let literal = param
+        .expr_spelling
+        .as_ref()
+        .zip(expr_ast.span.clone())
+        .and_then(|(spelling, span)| spelling.locate_trimmed(span));
+    let observed = literal
+        .and_then(|literal| literal.on_one_row())
+        .map(str::to_string);
     if !literal_is_compatible_with(&field.sce_type, literal_kind) {
         return Err(located_on_param(
             param,
+            literal,
             action,
             diag_label,
             ValidationError::CrossKindTypeMismatch {
@@ -1707,6 +1782,7 @@ fn check_send_param(
     if let Some(overflow) = enum_underlying_overflow(&field.sce_type, &expr_ast, imported_enums) {
         return Err(located_on_param(
             param,
+            literal,
             action,
             diag_label,
             ValidationError::CrossKindTypeMismatch {
@@ -1730,6 +1806,7 @@ fn check_send_param(
     {
         return Err(located_on_param(
             param,
+            literal,
             action,
             diag_label,
             ValidationError::CrossKindTypeMismatch {
@@ -1756,15 +1833,28 @@ fn check_send_param(
 /// in `actual` is not on the line the record names, so the consumer
 /// either edits the wrong token or finds nothing to edit.
 ///
+/// When the rejection names a piece of the param's `expr`, `piece` is
+/// where that piece was written — an `expr` may sit on a row of its own —
+/// and the record goes there.
+///
 /// The action location remains the fallback for models built outside
 /// the parser (unit tests, in-memory construction), where the param
 /// never passed a node to record.
 fn located_on_param(
     param: &Param,
+    piece: Option<Written<'_>>,
     action: &Action,
     diag_label: &str,
     err: ValidationError,
 ) -> Located<ForgeError> {
+    if let Some(piece) = piece {
+        return Located::new(
+            ForgeError::Validation(Box::new(err)),
+            diag_label,
+            Some(piece.row),
+            Some(piece.col),
+        );
+    }
     located_at(
         param
             .source_location
@@ -1809,7 +1899,7 @@ mod tests {
             sce_type: ty,
             direction: Direction::In,
             expr: None,
-            expr_line: None,
+            expr_spelling: None,
             quantity: None,
             max_size: None,
             default_covers: Vec::new(),

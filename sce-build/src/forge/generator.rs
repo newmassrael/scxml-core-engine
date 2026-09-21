@@ -23105,7 +23105,7 @@ mod tests {
             sce_type,
             direction: Direction::In,
             expr: None,
-            expr_line: None,
+            expr_spelling: None,
             quantity: None,
             max_size,
             default_covers: Vec::new(),

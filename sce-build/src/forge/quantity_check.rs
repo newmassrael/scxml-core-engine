@@ -31,6 +31,7 @@
 // single-responsibility and removes the need to thread an
 // error-collection sink through the inference recursion.
 
+use crate::attribute_spelling::AttributeSpelling;
 use crate::forge::error::{Located, ValidationError};
 use crate::forge::expr::{infer_types, parse_to_ast, BinOp, ExprKind, TypedExpr};
 use crate::forge::model::{
@@ -84,7 +85,7 @@ fn check_transform(
         };
         let site = ExpressionSite {
             source: expr_src,
-            line: out.expr_line,
+            spelling: out.expr_spelling.as_ref(),
         };
         check_expression(site, &ctx, ForgeKind::Transform, &m.name, label)?;
     }
@@ -101,7 +102,7 @@ fn check_condition(
     if !m.expr.trim().is_empty() {
         let site = ExpressionSite {
             source: &m.expr,
-            line: m.expr_line,
+            spelling: m.expr_spelling.as_ref(),
         };
         check_expression(site, &ctx, ForgeKind::Condition, &m.name, label)?;
     }
@@ -118,7 +119,7 @@ fn check_validator(
         if !expr.trim().is_empty() {
             let site = ExpressionSite {
                 source: expr,
-                line: m.rules.plausibility_line,
+                spelling: m.rules.plausibility_spelling.as_ref(),
             };
             check_expression(site, &ctx, ForgeKind::Validator, &m.name, label)?;
         }
@@ -126,11 +127,12 @@ fn check_validator(
     Ok(())
 }
 
-/// An expression and the row of the attribute it was read from.
+/// An expression as the reader decoded it, and the attribute it was read
+/// from as written — `None` for a model no document produced.
 #[derive(Clone, Copy)]
 struct ExpressionSite<'a> {
     source: &'a str,
-    line: Option<u32>,
+    spelling: Option<&'a AttributeSpelling>,
 }
 
 /// Parse + infer the expression, then walk the typed AST looking for
@@ -157,6 +159,18 @@ fn check_expression(
     infer_types(&mut ast, ctx);
 
     if let Some(mismatch) = find_unit_mismatch(&ast) {
+        // The operation as the author wrote it, and the row it sits on —
+        // which, in an expression continued over several rows, is not the
+        // row the attribute starts on.
+        let written = site
+            .spelling
+            .zip(mismatch.span)
+            .and_then(|(spelling, span)| spelling.locate_trimmed(span));
+        let (line, col) = match (written, site.spelling) {
+            (Some(written), _) => (Some(written.row), Some(written.col)),
+            (None, Some(spelling)) => (Some(spelling.row()), Some(spelling.col())),
+            (None, None) => (None, None),
+        };
         let err = crate::forge::error::ForgeError::Validation(Box::new(
             ValidationError::QuantityUnitMismatch {
                 kind,
@@ -165,13 +179,12 @@ fn check_expression(
                 left_unit: mismatch.left_unit.to_owned(),
                 right_unit: mismatch.right_unit.to_owned(),
                 expr: trimmed.to_owned(),
-                observed: mismatch
-                    .span
-                    .and_then(|span| trimmed.get(span))
+                observed: written
+                    .and_then(|written| written.on_one_row())
                     .map(str::to_string),
             },
         ));
-        return Err(Located::new(err, label, site.line, None));
+        return Err(Located::new(err, label, line, col));
     }
     Ok(())
 }
@@ -339,14 +352,15 @@ mod tests {
         assert_eq!(m.op, "-");
     }
 
-    /// The refusal reports the operation the units meet in, as written —
-    /// the innermost one, not the whole expression and not a unit, which
-    /// the fields declare and the expression never spells.
-    #[test]
-    fn the_refusal_names_the_operation_as_written() {
+    /// Refuse the `expr` of `document`'s root element, returning where the
+    /// refusal is placed and the operation it names.
+    fn refuse_expr(document: &str) -> ((Option<u32>, Option<u32>), Option<String>) {
+        let document = roxmltree::Document::parse(document).expect("the fixture parses");
+        let node = document.root_element();
+        let spelling = AttributeSpelling::of(&node, None, "expr");
         let site = ExpressionSite {
-            source: "  (celsius - kelvin) + celsius ",
-            line: Some(16),
+            source: node.attribute("expr").expect("an expr"),
+            spelling: spelling.as_ref(),
         };
         let err = check_expression(
             site,
@@ -356,15 +370,63 @@ mod tests {
             "test.scxml",
         )
         .expect_err("the mismatch is refused");
-        assert_eq!(err.location.line, Some(16), "the attribute's row: {err:?}");
         let crate::forge::error::ForgeError::Validation(boxed) = &err.error else {
             panic!("a validation refusal: {err:?}");
         };
         let ValidationError::QuantityUnitMismatch { observed, .. } = boxed.as_ref() else {
             panic!("a unit mismatch: {boxed:?}");
         };
+        ((err.location.line, err.location.col), observed.clone())
+    }
+
+    /// The refusal reports the operation the units meet in, as written —
+    /// the innermost one, not the whole expression and not a unit, which
+    /// the fields declare and the expression never spells — on the row
+    /// that operation sits on, which a continued expression does not share
+    /// with its attribute.
+    #[test]
+    fn the_refusal_names_the_operation_as_written() {
+        let (at, observed) = refuse_expr("<data\n  expr=\"celsius +\n    (celsius - kelvin)\"/>");
         // Parentheses and all: the operand as the author wrote it.
         assert_eq!(observed.as_deref(), Some("(celsius - kelvin)"));
+        assert_eq!(at, (Some(3), Some(5)), "the operation's own row");
+    }
+
+    /// An operator the document had to escape is reported escaped: the
+    /// document holds `&lt;`, and `<` is not a token it contains there.
+    #[test]
+    fn an_escaped_operator_is_reported_as_the_document_spells_it() {
+        let (at, observed) = refuse_expr("<data expr=\"celsius &lt; kelvin\"/>");
+        assert_eq!(observed.as_deref(), Some("celsius &lt; kelvin"));
+        assert_eq!(at, (Some(1), Some(13)));
+    }
+
+    /// With no document behind the model there is nothing to place the
+    /// refusal on and no spelling to report; the refusal still stands.
+    #[test]
+    fn a_model_no_document_produced_is_refused_without_a_position() {
+        let err = check_expression(
+            ExpressionSite {
+                source: "celsius + kelvin",
+                spelling: None,
+            },
+            &celsius_ctx(),
+            ForgeKind::Transform,
+            "test_fn",
+            "test.scxml",
+        )
+        .expect_err("the mismatch is refused");
+        assert_eq!((err.location.line, err.location.col), (None, None));
+        let crate::forge::error::ForgeError::Validation(boxed) = &err.error else {
+            panic!("a validation refusal: {err:?}");
+        };
+        assert!(
+            matches!(
+                boxed.as_ref(),
+                ValidationError::QuantityUnitMismatch { observed: None, .. }
+            ),
+            "{boxed:?}"
+        );
     }
 
     #[test]
@@ -382,7 +444,7 @@ mod tests {
         let result = check_expression(
             ExpressionSite {
                 source: "((",
-                line: None,
+                spelling: None,
             },
             &celsius_ctx(),
             ForgeKind::Transform,

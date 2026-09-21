@@ -4,6 +4,7 @@
 // SCXML Parser — ports scxml_parser.py using roxmltree.
 // Parses W3C SCXML files into SCXMLModel for code generation.
 
+use crate::attribute_spelling::AttributeSpelling;
 use crate::model::*;
 use crate::scxml_semantic::{ScxmlSemanticError, UnsupportedDatamodelKind};
 use crate::DocumentLabel;
@@ -2823,6 +2824,9 @@ impl SCXMLParser {
             .or_else(|| elem.attribute("expr"))
             .unwrap_or("")
             .to_string();
+        // The same attribute, in the same order, as the value above.
+        let cond_spelling = AttributeSpelling::of(elem, None, "cond")
+            .or_else(|| AttributeSpelling::of(elem, None, "expr"));
 
         // One decision for every backend, shared with `<if>` / `<elseif>`
         // — see [`resolve_cond`] for why deciding it here alone was the
@@ -2833,6 +2837,7 @@ impl SCXMLParser {
             event: elem.attribute("event").unwrap_or("").to_string(),
             target: elem.attribute("target").unwrap_or("").to_string(),
             cond,
+            cond_spelling,
             cond_cpp: resolved.cond_cpp,
             cond_cpp_transformed: resolved.cond_cpp_transformed,
             is_pure_in_predicate: resolved.is_pure_in_predicate,
@@ -2997,6 +3002,7 @@ impl SCXMLParser {
             action.params.push(Param {
                 name: param_elem.attribute("name").unwrap_or("").to_string(),
                 expr: param_expr,
+                expr_spelling: AttributeSpelling::of(&param_elem, None, "expr"),
                 location: param_elem.attribute("location").unwrap_or("").to_string(),
                 is_static_literal,
                 static_value,
@@ -3147,6 +3153,7 @@ impl SCXMLParser {
             action.params.push(Param {
                 name: arg.attribute("name").unwrap_or("").to_string(),
                 expr,
+                expr_spelling: AttributeSpelling::of(&arg, None, "expr"),
                 location: String::new(),
                 is_static_literal: false,
                 static_value: String::new(),
@@ -3527,9 +3534,11 @@ impl SCXMLParser {
             let location = param.attribute("location").unwrap_or("").to_string();
             let is_sl = is_static_string_literal(&expr);
             let param_at = source_location_of(&param, source_name);
+            let expr_spelling = AttributeSpelling::of(&param, None, "expr");
             static_params.push(Param {
                 name: name.clone(),
                 expr: expr.clone(),
+                expr_spelling: expr_spelling.clone(),
                 location: location.clone(),
                 is_static_literal: is_sl,
                 static_value: if is_sl {
@@ -3542,6 +3551,7 @@ impl SCXMLParser {
             hybrid_params.push(Param {
                 name,
                 expr,
+                expr_spelling,
                 location,
                 source_location: param_at,
                 ..Default::default()
@@ -3971,6 +3981,7 @@ impl SCXMLParser {
                 payload_params.push(Param {
                     name,
                     expr: expr.clone(),
+                    expr_spelling: AttributeSpelling::of(&param, None, "expr"),
                     location,
                     is_static_literal: is_sl,
                     static_value: if is_sl {

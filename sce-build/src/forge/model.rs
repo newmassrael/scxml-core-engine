@@ -946,12 +946,13 @@ pub struct ForgeField {
     /// ECMAScript expression (for computed/output fields).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expr: Option<String>,
-    /// 1-based row of the `expr` attribute itself — not of the element,
-    /// whose attributes may span lines — so a refusal of the expression
-    /// names the row that holds it. Skipped from serialization, as every
-    /// `line` on this model is.
+    /// The `expr` attribute as written and where — not the element's row,
+    /// whose attributes may span lines — so a refusal names the row that
+    /// holds the expression, and a refusal of a piece of it names that
+    /// piece as the author spelled it. Skipped from serialization, as
+    /// every position on this model is. See [`crate::attribute_spelling`].
     #[serde(skip)]
-    pub expr_line: Option<u32>,
+    pub expr_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     /// Physical-quantity annotation (`sce:quantity`).
     /// `Some({ scale, offset, unit })` when the field carries a
     /// `sce:quantity="…"` attribute. Drives type checking (units that
@@ -1355,10 +1356,10 @@ pub struct ConditionModel {
     pub inputs: Vec<ForgeField>,
     /// ECMAScript expression that evaluates to boolean.
     pub expr: String,
-    /// 1-based row of the attribute `expr` was read from, for the reason
-    /// [`ForgeField::expr_line`] gives.
+    /// The attribute `expr` was read from, as written and where, for the
+    /// reason [`ForgeField::expr_spelling`] gives.
     #[serde(skip)]
-    pub expr_line: Option<u32>,
+    pub expr_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     /// SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source
     /// position of the `<scxml sce:kind="condition">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
@@ -1390,10 +1391,10 @@ pub struct ValidatorRules {
     pub ranges: Vec<RangeRule>,
     pub rate_of_changes: Vec<RateOfChangeRule>,
     pub plausibility: Option<String>,
-    /// 1-based row of the `sce:plausibility` attribute, for the reason
-    /// [`ForgeField::expr_line`] gives.
+    /// The `sce:plausibility` attribute as written and where, for the
+    /// reason [`ForgeField::expr_spelling`] gives.
     #[serde(skip)]
-    pub plausibility_line: Option<u32>,
+    pub plausibility_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
 }
 
 /// Range check: field value must be within [min, max].

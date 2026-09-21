@@ -36,7 +36,7 @@ fn field(id: &str, t: SceType, dir: Direction) -> ForgeField {
         sce_type: t,
         direction: dir,
         expr: None,
-        expr_line: None,
+        expr_spelling: None,
         quantity: None,
         max_size: None,
         default_covers: Vec::new(),
@@ -604,7 +604,7 @@ fn each_declarative_kind_renders_every_field_it_can_carry() {
         name: "hot".to_string(),
         inputs: vec![field("t", SceType::Float64, Direction::In)],
         expr: "t > 90".to_string(),
-        expr_line: None,
+        expr_spelling: None,
         source_location: None,
     };
     assert_eq!(
@@ -640,7 +640,7 @@ fn each_declarative_kind_renders_every_field_it_can_carry() {
                 sample_interval_ms: 100,
             }],
             plausibility: Some("v != 0".to_string()),
-            plausibility_line: None,
+            plausibility_spelling: None,
         },
         source_location: None,
     };

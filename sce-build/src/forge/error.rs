@@ -3973,6 +3973,11 @@ pub enum ValidationError {
         field: String,
         /// The rejected ordering operator token (`<`, `>`, `<=`, `>=`).
         op: String,
+        /// The operator as the guard spells it — `&lt;` where `op` is `<`,
+        /// since XML does not let a document write the character bare —
+        /// when the guard was read from a document and the operator lies
+        /// on one row. The record's `actual`.
+        observed: Option<String>,
     },
 }
 
