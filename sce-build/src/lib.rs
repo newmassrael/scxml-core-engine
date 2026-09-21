@@ -4122,7 +4122,7 @@ fn validate_and_enrich_imports(
             // qualified type name of imported `sce:kind="enum"`
             // documents so downstream renderers can resolve
             // `SceType::Enum(EnumRef { alias })` via
-            // `LangCtx::resolved_type` without re-implementing the
+            // `LangCtx::type_name` without re-implementing the
             // namespace / separator matrix at every emission site.
             // Mirrors the `ctx.bc_element_snake` enrichment pattern
             // for BoundedCollection imports above.

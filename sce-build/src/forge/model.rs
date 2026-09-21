@@ -165,7 +165,7 @@ pub enum ForgeKind {
     /// these raises `validation/event-schema-on-builtin-event`.
     /// Per-backend payload struct codegen emits a typed
     /// record per backend that references imported Enum kinds by
-    /// qualified name via `LangCtx::resolved_type`; the Enum kind owns
+    /// qualified name via `LangCtx::type_name`; the Enum kind owns
     /// its emitted type, so EventSchema never re-emits enum variants
     /// (the Enum document is the single source of truth).
     EventSchema,

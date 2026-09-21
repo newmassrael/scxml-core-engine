@@ -282,14 +282,14 @@ pub struct ImportContext {
     ///   * Python `<snake>.<Pascal>` — module-qualified
     ///   * C11   `<Pascal>_t` — flat scope, typedef-suffix discriminator
     ///
-    /// Resolved by [`LangCtx::qualified_enum_type`] and consumed by
-    /// [`LangCtx::resolved_type`]; together they let any render function
-    /// that walks `field.sce_type` map `SceType::Enum(EnumRef { alias })`
-    /// to the correct backend syntax without re-implementing the
+    /// Read once by [`LangCtx::new`] and answered by
+    /// [`LangCtx::type_name`], so any render function that walks
+    /// `field.sce_type` maps `SceType::Enum(EnumRef { alias })` to the
+    /// correct backend syntax without re-implementing the
     /// separator-per-backend matrix.
     ///
-    /// [`LangCtx::qualified_enum_type`]: super::generator::LangCtx::qualified_enum_type
-    /// [`LangCtx::resolved_type`]: super::generator::LangCtx::resolved_type
+    /// [`LangCtx::new`]: super::generator::LangCtx::new
+    /// [`LangCtx::type_name`]: super::generator::LangCtx::type_name
     #[serde(skip)]
     pub enum_qualified_type: String,
     /// Variant names of an imported `sce:kind="enum"` document, in
@@ -624,14 +624,14 @@ pub(crate) fn cpp_type(ty: &SceType) -> &'static str {
         // cannot be resolved without the surrounding `ImportContext`
         // (the qualified type name depends on the importing document's
         // `<sce:import>` alias). Callers that may encounter
-        // Enum-typed fields MUST use `LangCtx::resolved_type` instead
+        // Enum-typed fields MUST use `LangCtx::type_name` instead
         // of bare `cpp_type`. The panic surfaces routing bugs at
         // codegen time per `feedback_silently_broken_hooks` —
         // emitting a placeholder integer would silently produce wrong
         // generated code.
         SceType::Enum(_) => unreachable!(
-            "cpp_type called on SceType::Enum — use LangCtx::resolved_type \
-             which threads the ImportContext alias table"
+            "cpp_type called on SceType::Enum — use LangCtx::type_name \
+             from a context built with the document's imports"
         ),
     }
 }
@@ -675,10 +675,10 @@ pub(crate) fn c_type(ty: &SceType) -> &'static str {
         SceType::String => "const char *",
         SceType::Bytes => "const uint8_t *",
         // Enum kind: see `cpp_type` — use
-        // `LangCtx::resolved_type` for Enum-aware lookups.
+        // `LangCtx::type_name` for Enum-aware lookups.
         SceType::Enum(_) => unreachable!(
-            "c_type called on SceType::Enum — use LangCtx::resolved_type \
-             which threads the ImportContext alias table"
+            "c_type called on SceType::Enum — use LangCtx::type_name \
+             from a context built with the document's imports"
         ),
     }
 }
@@ -722,10 +722,10 @@ pub(crate) fn kotlin_type(ty: &SceType) -> &'static str {
         SceType::String => "String",
         SceType::Bytes => "ByteArray",
         // Enum kind: see `cpp_type` — use
-        // `LangCtx::resolved_type` for Enum-aware lookups.
+        // `LangCtx::type_name` for Enum-aware lookups.
         SceType::Enum(_) => unreachable!(
-            "kotlin_type called on SceType::Enum — use LangCtx::resolved_type \
-             which threads the ImportContext alias table"
+            "kotlin_type called on SceType::Enum — use LangCtx::type_name \
+             from a context built with the document's imports"
         ),
     }
 }
@@ -759,10 +759,10 @@ pub(crate) fn rust_type(ty: &SceType) -> &'static str {
         SceType::String => "String",
         SceType::Bytes => "Vec<u8>",
         // Enum kind: see `cpp_type` — use
-        // `LangCtx::resolved_type` for Enum-aware lookups.
+        // `LangCtx::type_name` for Enum-aware lookups.
         SceType::Enum(_) => unreachable!(
-            "rust_type called on SceType::Enum — use LangCtx::resolved_type \
-             which threads the ImportContext alias table"
+            "rust_type called on SceType::Enum — use LangCtx::type_name \
+             from a context built with the document's imports"
         ),
     }
 }
@@ -786,8 +786,12 @@ pub(crate) fn rust_param_type(ty: &SceType) -> String {
 /// per-language type table beside the six that exist. The one shape it cannot
 /// express is C11's `bytes`, which is a pointer plus a length — two parameters
 /// from one field — and `native_action::params_for` owns that expansion.
+///
+/// Primitive by construction: every `ty` here is a field of a
+/// payload-eligible EventSchema, and `schema_is_native_payload_eligible`
+/// refuses an enum-typed one before any signature is collected.
 pub(crate) fn host_param_type(lang: crate::generator::Language, ty: &SceType) -> String {
-    LangCtx::new(lang).param_type(ty)
+    LangCtx::primitive(lang).param_type(ty)
 }
 
 // ── Per-language literal formatters ───────────────────────────
@@ -1028,7 +1032,7 @@ pub fn generate_cpp_with_imports_and_externs(
         // EventSchema lowers to a
         // per-backend payload struct via `render_event_schema`. Each
         // field's type (including `SceType::Enum(EnumRef)`) resolves
-        // through `LangCtx::resolved_type`, so imported Enum types
+        // through `LangCtx::type_name`, so imported Enum types
         // emit qualified names without re-emitting variants (single
         // source of truth on the Enum kind itself).
         ForgeDocument::EventSchema(m) => {
@@ -1046,7 +1050,7 @@ pub fn generate_cpp_with_imports_and_externs(
     // harness contract verbatim).
     if let ForgeDocument::Algorithm(m) = doc {
         if let Some(sidecar) =
-            render_algorithm_test_vector_sidecar(&env, m, crate::generator::Language::Cpp)?
+            render_algorithm_test_vector_sidecar(&env, m, imports, crate::generator::Language::Cpp)?
         {
             files.push(sidecar);
         }
@@ -1087,14 +1091,14 @@ fn render_transform(
     lang: crate::generator::Language,
 ) -> Result<String, ForgeError> {
     use crate::generator::Language;
-    let l = LangCtx::new(lang);
+    let l = LangCtx::new(lang, imports);
 
     let go_renames = l.go_rename_pairs(m.inputs.iter().map(|f| f.id.as_str()));
 
     let type_ctx = crate::forge::type_ctx::transform(m, imports);
-    // ⚠ Resolved, not raw: an `enum:<alias>` input panics every
-    // per-language `*_type` helper by design. See `param_str_resolved`.
-    let params = l.param_str_resolved(&m.inputs, imports);
+    // An `enum:<alias>` input resolves through `l`, which carries this
+    // document's imports — see `LangCtx`.
+    let params = l.param_str(&m.inputs);
 
     // ── A sibling output is a CALL, not a bare name ───────────────
     //
@@ -1281,7 +1285,7 @@ fn render_lookup(
     lang: crate::generator::Language,
 ) -> Result<String, ForgeError> {
     use crate::generator::Language;
-    let l = LangCtx::new(lang);
+    let l = LangCtx::new(lang, imports);
 
     let enum_name = filters::to_pascal_case(m.output.id.clone());
     // W1 symbol-name SSOT: the bare call-base comes from forge_lookup_symbol
@@ -1475,7 +1479,7 @@ fn render_enum(
     lang: crate::generator::Language,
 ) -> Result<String, ForgeError> {
     use crate::generator::Language;
-    let l = LangCtx::new(lang);
+    let l = LangCtx::new(lang, imports);
 
     let enum_name = filters::to_pascal_case(m.name.clone());
     // ⚠ The SCREAMING_SNAKE form of the type name used to be computed
@@ -1565,7 +1569,7 @@ fn render_enum(
 // ── EventSchema rendering (unified across backends) ──
 //
 // Lowers an `EventSchemaModel` to a per-backend payload struct. Each
-// field's type is resolved through [`LangCtx::resolved_type`] so
+// field's type is resolved through [`LangCtx::type_name`] so
 // `SceType::Enum(EnumRef { alias })` reuses the imported Enum's
 // emitted type (the single source of truth — EventSchema never
 // re-emits enum variants). The 6 emission
@@ -1592,11 +1596,11 @@ fn render_event_schema(
     imports: &[ImportContext],
     _lang: crate::generator::Language,
 ) -> Result<String, ForgeError> {
-    let l = LangCtx::new(_lang);
+    let l = LangCtx::new(_lang, imports);
 
     let payload_struct_name = format!("{}Payload", filters::to_pascal_case(m.name.clone()));
 
-    // Per-field type + id presentation. `resolved_type` handles both
+    // Per-field type + id presentation. `type_name` handles both
     // primitives and enum aliases; the same string lands on the
     // backend-specific template key (`cpp_type` / `rs_type` / …)
     // because every backend's payload struct emits one field with the
@@ -1617,7 +1621,7 @@ fn render_event_schema(
         .fields
         .iter()
         .map(|f| {
-            let resolved = l.resolved_type(&f.sce_type, imports);
+            let resolved = l.type_name(&f.sce_type);
             let go_field_name = filters::to_pascal_case(f.id.clone());
             let rs_field_name = filters::to_snake_case(f.id.clone());
             serde_json::json!({
@@ -1856,11 +1860,12 @@ pub fn build_rust_event_payload(
     }
 
     // Emit one payload struct + one enum variant per payload event.
-    // Field types resolve through `LangCtx::resolved_type`; payload
+    // Field types resolve through `LangCtx::type_name`; payload
     // eligibility above guarantees every field is primitive, so this
     // never hits the enum-alias arm (which would need an out-of-scope
-    // `use`).
-    let l = LangCtx::new(crate::generator::Language::Rust);
+    // `use`). Primitive by construction: `schema_is_native_payload_eligible`
+    // refuses an enum-typed schema before any payload struct is built.
+    let l = LangCtx::primitive(crate::generator::Language::Rust);
     let mut structs = String::new();
     let mut variant_lines = String::new();
     let mut entry_fns = String::new();
@@ -1905,7 +1910,7 @@ self.raise_external_typed({machine_name}Event::{variant}, {enum_name}::{variant}
             //     target cannot resolve.
             // Both deref to `[u8]` / `str`, so `&ev.<field>` coerces to the
             // `&[u8]` / `&str` an `Actions` trait method takes. Every other
-            // primitive resolves through `LangCtx::resolved_type`; payload
+            // primitive resolves through `LangCtx::type_name`; payload
             // eligibility guarantees no enum-alias arm is hit.
             let ty = match &f.sce_type {
                 crate::forge::model::SceType::Bytes => {
@@ -1915,7 +1920,7 @@ self.raise_external_typed({machine_name}Event::{variant}, {enum_name}::{variant}
                     format!("::sce_rust_runtime::SceBytes<{cap}>")
                 }
                 crate::forge::model::SceType::String => "::sce_rust_runtime::SceString".to_string(),
-                _ => l.resolved_type(&f.sce_type, &[]),
+                _ => l.type_name(&f.sce_type).into_owned(),
             };
             field_lines.push_str(&format!("    pub {}: {ty},\n", f.id));
         }
@@ -2003,13 +2008,13 @@ fn c11_event_token(event: &str) -> String {
 /// struct by value, so the buffer is owned and survives the event queue;
 /// the native guard reads `<id>` and `<id>_len` (see the C bytes-equality
 /// lowering in [`crate::forge::expr`]). RFC §bytesguard-3 B4. Every other field type
-/// is a self-contained scalar via [`LangCtx::resolved_type`].
+/// is a self-contained scalar via [`LangCtx::type_name`].
 fn c11_payload_field_decl(l: &LangCtx, f: &ForgeField) -> String {
     if matches!(f.sce_type, SceType::Bytes) {
         let cap = crate::forge::limits::resolve_bytes_max(f.max_size);
         format!("    uint8_t {}[{cap}];\n    size_t {}_len;\n", f.id, f.id)
     } else {
-        let ty = l.resolved_type(&f.sce_type, &[]);
+        let ty = l.type_name(&f.sce_type).into_owned();
         format!("    {ty} {};\n", f.id)
     }
 }
@@ -2074,11 +2079,11 @@ pub fn build_c11_event_payload(
     }
 
     // Emit one payload struct + one union member per guarded event, plus
-    // the tag enum. Field types resolve through `LangCtx::resolved_type`;
+    // the tag enum. Field types resolve through `LangCtx::type_name`;
     // payload eligibility guarantees every field is primitive, so this
     // never reaches the Enum arm (which would need an out-of-scope
-    // include).
-    let l = LangCtx::new(crate::generator::Language::C11);
+    // include). Primitive by construction — see the Rust payload builder.
+    let l = LangCtx::primitive(crate::generator::Language::C11);
     let mut structs = String::new();
     let mut tag_lines = format!("    {name_upper}_PAYLOAD_NONE = 0,\n");
     let mut union_lines = String::new();
@@ -2243,10 +2248,11 @@ pub fn build_go_event_payload(
         return inactive();
     }
 
-    // Field types resolve through `LangCtx::resolved_type`; payload
+    // Field types resolve through `LangCtx::type_name`; payload
     // eligibility guarantees every field is primitive, so this never hits
     // the enum-alias arm (which would need an out-of-scope import).
-    let l = LangCtx::new(crate::generator::Language::Go);
+    // Primitive by construction — see the Rust payload builder.
+    let l = LangCtx::primitive(crate::generator::Language::Go);
     let mut structs = String::new();
     let mut raise_fns = String::new();
     let mut tag_consts = format!("\t{tag_none} {tag_type} = iota\n");
@@ -2271,7 +2277,7 @@ pub fn build_go_event_payload(
         let mut params = String::new();
         let mut struct_lits = String::new();
         for f in &schema.fields {
-            let ty = l.resolved_type(&f.sce_type, &[]);
+            let ty = l.type_name(&f.sce_type).into_owned();
             field_lines.push_str(&format!("\t{} {ty}\n", f.id));
             params.push_str(&format!(", {} {ty}", f.id));
             struct_lits.push_str(&format!("{}: {}, ", f.id, f.id));
@@ -2422,7 +2428,8 @@ pub fn build_cpp_event_payload(
         return inactive();
     }
 
-    let l = LangCtx::new(crate::generator::Language::Cpp);
+    // Primitive by construction — see the Rust payload builder.
+    let l = LangCtx::primitive(crate::generator::Language::Cpp);
     let mut structs = String::new();
     let mut tag_values = String::from("    None = 0,\n");
     // `mutable` mirrors the existing `pendingEvent*_` fields — the transition
@@ -2448,7 +2455,7 @@ pendingPayloadTag_ = {TAG}::None;\n",
         let mut params = String::new();
         let mut struct_inits = String::new();
         for f in &schema.fields {
-            let ty = l.resolved_type(&f.sce_type, &[]);
+            let ty = l.type_name(&f.sce_type).into_owned();
             field_lines.push_str(&format!("    {ty} {};\n", f.id));
             if !params.is_empty() {
                 params.push_str(", ");
@@ -2594,7 +2601,8 @@ pub fn build_kotlin_event_payload(
         return inactive();
     }
 
-    let l = LangCtx::new(crate::generator::Language::Kotlin);
+    // Primitive by construction — see the Rust payload builder.
+    let l = LangCtx::primitive(crate::generator::Language::Kotlin);
     let mut data_classes = String::new();
     let mut policy_fields = String::new();
     let mut inject = String::new();
@@ -2627,7 +2635,7 @@ pub fn build_kotlin_event_payload(
         let mut call_params = String::new();
         let mut call_args = String::new();
         for f in &schema.fields {
-            let ty = l.resolved_type(&f.sce_type, &[]);
+            let ty = l.type_name(&f.sce_type).into_owned();
             if !ctor_params.is_empty() {
                 ctor_params.push_str(", ");
             }
@@ -2768,7 +2776,8 @@ pub fn build_python_event_payload(
         return inactive();
     }
 
-    let l = LangCtx::new(crate::generator::Language::Python);
+    // Primitive by construction — see the Rust payload builder.
+    let l = LangCtx::primitive(crate::generator::Language::Python);
     let mut data_classes = String::new();
     let mut init = String::new();
     let mut inject = String::new();
@@ -2797,7 +2806,7 @@ pub fn build_python_event_payload(
         let mut params = String::new();
         let mut call_args = String::new();
         for f in &schema.fields {
-            let ty = l.resolved_type(&f.sce_type, &[]);
+            let ty = l.type_name(&f.sce_type).into_owned();
             field_lines.push_str(&format!("    {}: {ty}\n", f.id));
             params.push_str(&format!(", {}: {ty}", f.id));
             if !call_args.is_empty() {
@@ -2862,7 +2871,7 @@ fn render_condition(
     imports: &[ImportContext],
     lang: crate::generator::Language,
 ) -> Result<String, ForgeError> {
-    let l = LangCtx::new(lang);
+    let l = LangCtx::new(lang, imports);
 
     let go_renames = l.go_rename_pairs(m.inputs.iter().map(|f| f.id.as_str()));
     let renames = rename_map(&go_renames);
@@ -3439,7 +3448,7 @@ fn render_codec(
     // templates — see `body_parent_flags_arg` / `_arg_first` /
     // `_arg_encode` per-arm fragments produced lower in `render_codec`.
 
-    let l = LangCtx::new(lang);
+    let l = LangCtx::new(lang, imports);
     let type_key = l.codec_type_key();
 
     // RFC §synth-5-B variant primitive (closures complete): all six
@@ -12994,7 +13003,9 @@ fn generate_encode_exprs(
     default_endian: Endian,
     lang: crate::generator::Language,
 ) -> Vec<String> {
-    let l = LangCtx::new(lang);
+    // Asks this context only for identifier and byte-expression spelling,
+    // never for a type — so no import table is needed to answer it.
+    let l = LangCtx::primitive(lang);
     let mut exprs = Vec::new();
 
     let mut byte_groups: std::collections::BTreeMap<u32, Vec<&CodecField>> =
@@ -13063,7 +13074,9 @@ fn encode_single_field_unified(
     lang: crate::generator::Language,
 ) {
     use crate::generator::Language;
-    let l = LangCtx::new(lang);
+    // Identifier and byte-expression spelling only — see
+    // `generate_encode_exprs`.
+    let l = LangCtx::primitive(lang);
     let name = l.codec_field_id(&field.id);
     let field_ref = l.codec_field_ref(&name);
     let bit_off = field.bit_offset.unwrap_or(0);
@@ -13213,7 +13226,7 @@ fn render_validator(
     lang: crate::generator::Language,
 ) -> Result<String, ForgeError> {
     use crate::generator::Language;
-    let l = LangCtx::new(lang);
+    let l = LangCtx::new(lang, imports);
     let rv = resolve_validator(m)?;
 
     let params = l.param_str(&rv.inputs);
@@ -13226,12 +13239,12 @@ fn render_validator(
             let local = l.local_id(&roc.id);
             let ty_str = l.type_name(&roc.sce_type);
             let mut obj = serde_json::Map::new();
-            obj.insert("type".into(), ty_str.into());
+            obj.insert("type".into(), ty_str.clone().into());
             obj.insert("name".into(), l.prev_name(&roc.id).into());
             obj.insert("id".into(), local.into());
             obj.insert("is_float".into(), roc.sce_type.is_float().into());
             if matches!(lang, Language::Kotlin) {
-                obj.insert("default".into(), kotlin_default_value(ty_str).into());
+                obj.insert("default".into(), kotlin_default_value(&ty_str).into());
             }
             serde_json::Value::Object(obj)
         })
@@ -13601,9 +13614,12 @@ pub fn generate_kotlin_with_imports(
     // `jvmTest` source set wired in
     // `backends/kotlin/forge-runtime/build.gradle.kts`.
     if let ForgeDocument::Algorithm(m) = doc {
-        if let Some(sidecar) =
-            render_algorithm_test_vector_sidecar(&env, m, crate::generator::Language::Kotlin)?
-        {
+        if let Some(sidecar) = render_algorithm_test_vector_sidecar(
+            &env,
+            m,
+            imports,
+            crate::generator::Language::Kotlin,
+        )? {
             files.push(sidecar);
         }
     }
@@ -13769,9 +13785,12 @@ pub fn generate_rust_with_imports_and_externs(
     // `pub mod` scope so cargo test discovers each row as a
     // distinct `#[test]`.
     if let ForgeDocument::Algorithm(m) = doc {
-        if let Some(sidecar) =
-            render_algorithm_test_vector_sidecar(&env, m, crate::generator::Language::Rust)?
-        {
+        if let Some(sidecar) = render_algorithm_test_vector_sidecar(
+            &env,
+            m,
+            imports,
+            crate::generator::Language::Rust,
+        )? {
             files.push(sidecar);
         }
     }
@@ -15448,10 +15467,10 @@ pub(crate) fn go_type(ty: &SceType) -> &'static str {
         SceType::String => "string",
         SceType::Bytes => "[]byte",
         // Enum kind: see `cpp_type` — use
-        // `LangCtx::resolved_type` for Enum-aware lookups.
+        // `LangCtx::type_name` for Enum-aware lookups.
         SceType::Enum(_) => unreachable!(
-            "go_type called on SceType::Enum — use LangCtx::resolved_type \
-             which threads the ImportContext alias table"
+            "go_type called on SceType::Enum — use LangCtx::type_name \
+             from a context built with the document's imports"
         ),
     }
 }
@@ -15568,7 +15587,7 @@ pub fn generate_go_with_imports(
     // package tests without any harness scaffolding edits.
     if let ForgeDocument::Algorithm(m) = doc {
         if let Some(sidecar) =
-            render_algorithm_test_vector_sidecar(&env, m, crate::generator::Language::Go)?
+            render_algorithm_test_vector_sidecar(&env, m, imports, crate::generator::Language::Go)?
         {
             files.push(sidecar);
         }
@@ -15612,10 +15631,10 @@ pub(crate) fn python_type(ty: &SceType) -> &'static str {
         SceType::String => "str",
         SceType::Bytes => "bytes",
         // Enum kind: see `cpp_type` — use
-        // `LangCtx::resolved_type` for Enum-aware lookups.
+        // `LangCtx::type_name` for Enum-aware lookups.
         SceType::Enum(_) => unreachable!(
-            "python_type called on SceType::Enum — use LangCtx::resolved_type \
-             which threads the ImportContext alias table"
+            "python_type called on SceType::Enum — use LangCtx::type_name \
+             from a context built with the document's imports"
         ),
     }
 }
@@ -15727,9 +15746,12 @@ pub fn generate_python_with_imports(
     // in `tests/test_numerical_conformance.py` picks it up
     // alongside `TestNumericalConformance`.
     if let ForgeDocument::Algorithm(m) = doc {
-        if let Some(sidecar) =
-            render_algorithm_test_vector_sidecar(&env, m, crate::generator::Language::Python)?
-        {
+        if let Some(sidecar) = render_algorithm_test_vector_sidecar(
+            &env,
+            m,
+            imports,
+            crate::generator::Language::Python,
+        )? {
             files.push(sidecar);
         }
     }
@@ -15887,7 +15909,7 @@ pub fn generate_c11_with_imports_and_externs(
     // `test_<fixture>` accounting in the kind-fragment templates).
     if let ForgeDocument::Algorithm(m) = doc {
         if let Some(sidecar) =
-            render_algorithm_test_vector_sidecar(&env, m, crate::generator::Language::C11)?
+            render_algorithm_test_vector_sidecar(&env, m, imports, crate::generator::Language::C11)?
         {
             files.push(sidecar);
         }
@@ -15939,6 +15961,9 @@ fn render_procedure_cpp(
     m: &ProcedureModel,
     imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
+    // Every field and helper type below resolves through this context, so
+    // an `enum:<alias>` input or internal takes its imported type.
+    let l = LangCtx::new(crate::generator::Language::Cpp, imports);
     let pascal = filters::to_pascal_case(m.name.clone());
     let guard = format!("SCE_FORGE_{}_L2_H", to_upper_snake(&m.name));
     let policy_name = format!("{}Policy", pascal);
@@ -16009,8 +16034,8 @@ fn render_procedure_cpp(
         .map(|f| {
             serde_json::json!({
                 "id": f.id,
-                "cpp_type": cpp_type(&f.sce_type),
-                "cpp_param_type": cpp_param_type(&f.sce_type),
+                "cpp_type": l.type_name(&f.sce_type),
+                "cpp_param_type": l.param_type(&f.sce_type),
                 "setter_name": filters::to_pascal_case(f.id.clone()),
             })
         })
@@ -16028,8 +16053,8 @@ fn render_procedure_cpp(
         .iter()
         .map(|h| {
             let params_ty: Vec<String> =
-                h.args.iter().map(cpp_param_type).collect();
-            let ret_ty = cpp_type(&h.returns);
+                h.args.iter().map(|t| l.param_type(t)).collect();
+            let ret_ty = l.type_name(&h.returns);
             let function_type = format!(
                 "std::function<{}({})>",
                 ret_ty,
@@ -16046,7 +16071,7 @@ fn render_procedure_cpp(
             let lambda_params: Vec<String> = h
                 .args
                 .iter()
-                .map(cpp_param_type)
+                .map(|t| l.param_type(t))
                 .collect();
             let default_impl = format!(
                 "[]({}) -> {} {{ throw std::runtime_error(\"helper '{}' not set — call set{}() before runToCompletion()\"); }}",
@@ -16087,7 +16112,7 @@ fn render_procedure_cpp(
             });
             serde_json::json!({
                 "id": f.id,
-                "cpp_type": cpp_type(&f.sce_type),
+                "cpp_type": l.type_name(&f.sce_type),
                 "default_value": default_val,
             })
         })
@@ -16354,6 +16379,7 @@ fn render_procedure_c(
     m: &ProcedureModel,
     imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
+    let l = LangCtx::new(crate::generator::Language::C11, imports);
     let snake = filters::to_snake_case(m.name.clone());
     let upper = to_upper_snake(&m.name);
     let guard = format!("SCE_FORGE_{}_H", upper);
@@ -16372,31 +16398,21 @@ fn render_procedure_c(
         })
         .collect();
 
-    // Input parameters: snake_case ids in C, native types via c_param_type.
+    // Input parameters: snake_case ids in C, native types through `l`.
     let input_fields: Vec<serde_json::Value> = m
         .inputs
         .iter()
         .map(|f| {
             serde_json::json!({
                 "id": filters::to_snake_case(f.id.clone()),
-                "c_param_type": c_param_type(&f.sce_type),
+                "c_param_type": l.param_type(&f.sce_type),
             })
         })
         .collect();
     let params = if input_fields.is_empty() {
         "void".to_string()
     } else {
-        m.inputs
-            .iter()
-            .map(|f| {
-                format!(
-                    "{} {}",
-                    c_param_type(&f.sce_type),
-                    filters::to_snake_case(f.id.clone())
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(", ")
+        l.param_str(&m.inputs)
     };
 
     // Build identifier rename map: SCXML source ids → snake_case parameter
@@ -16509,6 +16525,7 @@ fn render_procedure_c_l2(
     m: &ProcedureModel,
     imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
+    let l = LangCtx::new(crate::generator::Language::C11, imports);
     let snake = filters::to_snake_case(m.name.clone());
     let upper = to_upper_snake(&m.name);
     let guard = format!("SCE_FORGE_{}_L2_H", upper);
@@ -16576,8 +16593,8 @@ fn render_procedure_c_l2(
         .map(|f| {
             serde_json::json!({
                 "id": filters::to_snake_case(f.id.clone()),
-                "c_type": c_l2_type(&f.sce_type),
-                "c_param_type": c_l2_param_type(&f.sce_type),
+                "c_type": c_l2_type(&l, &f.sce_type),
+                "c_param_type": c_l2_param_type(&l, &f.sce_type),
             })
         })
         .collect();
@@ -16601,7 +16618,7 @@ fn render_procedure_c_l2(
             });
             serde_json::json!({
                 "id": id_snake,
-                "c_type": c_l2_type(&f.sce_type),
+                "c_type": c_l2_type(&l, &f.sce_type),
                 "default_value": default,
             })
         })
@@ -16621,8 +16638,8 @@ fn render_procedure_c_l2(
         .helpers
         .iter()
         .map(|h| {
-            let ret = c_l2_type(&h.returns);
-            let params: Vec<String> = h.args.iter().map(c_l2_type).collect();
+            let ret = c_l2_type(&l, &h.returns);
+            let params: Vec<String> = h.args.iter().map(|t| c_l2_type(&l, t)).collect();
             serde_json::json!({
                 "id": filters::to_snake_case(h.name.clone()),
                 "return_type": ret,
@@ -16981,20 +16998,22 @@ fn render_procedure_c_l2(
 /// C type for an L2 datamodel field. `bytes` maps to the
 /// stack-bounded `sce_forge_bytes_t` from
 /// `backends/c/forge-runtime/include/sce/forge/procedure.h`. Other types
-/// reuse the existing C type mapping.
-fn c_l2_type(ty: &SceType) -> String {
+/// reuse the existing C type mapping — through `l`, so an `enum:<alias>`
+/// field takes its imported `<Pascal>_t` instead of panicking the bare
+/// `c_type` lookup.
+fn c_l2_type(l: &LangCtx, ty: &SceType) -> String {
     match ty {
         SceType::Bytes => "sce_forge_bytes_t".to_string(),
         SceType::String => "const char *".to_string(),
-        _ => c_type(ty).to_string(),
+        _ => l.type_name(ty).into_owned(),
     }
 }
 
-fn c_l2_param_type(ty: &SceType) -> String {
+fn c_l2_param_type(l: &LangCtx, ty: &SceType) -> String {
     match ty {
         SceType::Bytes => "sce_forge_bytes_t".to_string(),
         SceType::String => "const char *".to_string(),
-        _ => c_param_type(ty).to_string(),
+        _ => l.param_type(ty),
     }
 }
 
@@ -17726,6 +17745,7 @@ fn render_procedure_kotlin(
     m: &ProcedureModel,
     imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
+    let l = LangCtx::new(crate::generator::Language::Kotlin, imports);
     let pascal = filters::to_pascal_case(m.name.clone());
     let package = filters::to_snake_case(m.name.clone());
     // Bounded-bytes cap-check raise path: Kotlin
@@ -17741,7 +17761,7 @@ fn render_procedure_kotlin(
         .map(|f| {
             serde_json::json!({
                 "id": f.id,
-                "kt_type": kotlin_type(&f.sce_type),
+                "kt_type": l.type_name(&f.sce_type),
                 "setter_name": filters::to_pascal_case(f.id.clone()),
                 "default_value": kotlin_default(&f.sce_type),
             })
@@ -17759,9 +17779,9 @@ fn render_procedure_kotlin(
             let params_ty: Vec<String> = h
                 .args
                 .iter()
-                .map(|a| kotlin_type(a).to_string())
+                .map(|a| l.type_name(a).into_owned())
                 .collect();
-            let ret_ty = kotlin_type(&h.returns);
+            let ret_ty = l.type_name(&h.returns);
             let function_type = format!(
                 "({}) -> {}",
                 params_ty.join(", "),
@@ -17810,7 +17830,7 @@ fn render_procedure_kotlin(
             );
             serde_json::json!({
                 "id": f.id,
-                "kt_type": kotlin_type(&f.sce_type),
+                "kt_type": l.type_name(&f.sce_type),
                 "default_value": default_val,
             })
         })
@@ -17914,6 +17934,7 @@ fn render_procedure_rust(
     m: &ProcedureModel,
     imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
+    let l = LangCtx::new(crate::generator::Language::Rust, imports);
     let pascal = filters::to_pascal_case(m.name.clone());
     let snake = filters::to_snake_case(m.name.clone());
     // Bounded-bytes cap-check raise path: Rust
@@ -17988,11 +18009,11 @@ fn render_procedure_rust(
             let (setter_conv, rs_param_type) = match f.sce_type {
                 SceType::String => ("value.to_string()".to_string(), "&str".to_string()),
                 SceType::Bytes => ("value.to_vec()".to_string(), "&[u8]".to_string()),
-                _ => ("value".to_string(), rust_type(&f.sce_type).to_string()),
+                _ => ("value".to_string(), l.type_name(&f.sce_type).into_owned()),
             };
             serde_json::json!({
                 "id": snake_id,
-                "rs_type": rust_type(&f.sce_type),
+                "rs_type": l.type_name(&f.sce_type),
                 "rs_param_type": rs_param_type,
                 "setter_name": snake_id,
                 "setter_conv": setter_conv,
@@ -18019,8 +18040,8 @@ fn render_procedure_rust(
             let snake = filters::to_snake_case(h.name.clone());
             let setter_name = format!("set_{}", snake);
             let params_ty: Vec<String> =
-                h.args.iter().map(rust_param_type).collect();
-            let ret_ty = rust_type(&h.returns);
+                h.args.iter().map(|t| l.param_type(t)).collect();
+            let ret_ty = l.type_name(&h.returns);
             let closure_type = format!(
                 "Box<dyn Fn({}) -> {}>",
                 params_ty.join(", "),
@@ -18075,7 +18096,7 @@ fn render_procedure_rust(
             );
             serde_json::json!({
                 "id": snake_id,
-                "rs_type": rust_type(&f.sce_type),
+                "rs_type": l.type_name(&f.sce_type),
                 "default_value": default_val,
             })
         })
@@ -18195,6 +18216,7 @@ fn render_procedure_go(
     m: &ProcedureModel,
     imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
+    let l = LangCtx::new(crate::generator::Language::Go, imports);
     let pascal = filters::to_pascal_case(m.name.clone());
     let package = filters::to_snake_case(m.name.clone());
     // Bounded-bytes cap-check raise path: Go
@@ -18271,7 +18293,7 @@ fn render_procedure_go(
             serde_json::json!({
                 "id": go_id,
                 "raw_id": f.id,
-                "go_type": go_type(&f.sce_type),
+                "go_type": l.type_name(&f.sce_type),
                 "setter_name": filters::to_pascal_case(f.id.clone()),
                 "param_id": go_id,
             })
@@ -18290,8 +18312,8 @@ fn render_procedure_go(
         .map(|h| {
             let escaped_id = go_escape_builtin(&h.name);
             let params_ty: Vec<String> =
-                h.args.iter().map(|a| go_type(a).to_string()).collect();
-            let ret_ty = go_type(&h.returns);
+                h.args.iter().map(|a| l.type_name(a).into_owned()).collect();
+            let ret_ty = l.type_name(&h.returns);
             let function_type = format!(
                 "func({}) {}",
                 params_ty.join(", "),
@@ -18340,7 +18362,7 @@ fn render_procedure_go(
             });
             serde_json::json!({
                 "id": go_id,
-                "go_type": go_type(&f.sce_type),
+                "go_type": l.type_name(&f.sce_type),
                 "has_default": default_val.is_some(),
                 "default_value": default_val.unwrap_or_default(),
             })
@@ -18415,6 +18437,7 @@ fn render_procedure_python(
     m: &ProcedureModel,
     imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
+    let l = LangCtx::new(crate::generator::Language::Python, imports);
     let pascal = filters::to_pascal_case(m.name.clone());
     let snake = filters::to_snake_case(m.name.clone());
     // Bounded-bytes cap-check raise path: Python
@@ -18489,7 +18512,7 @@ fn render_procedure_python(
             let snake_id = filters::to_snake_case(f.id.clone());
             serde_json::json!({
                 "snake_id": snake_id,
-                "py_type": python_type(&f.sce_type),
+                "py_type": l.type_name(&f.sce_type),
                 "default_value": python_default(&f.sce_type),
             })
         })
@@ -18508,8 +18531,8 @@ fn render_procedure_python(
             let snake = filters::to_snake_case(h.name.clone());
             let setter_name = format!("set_{}", snake);
             let params_ty: Vec<String> =
-                h.args.iter().map(|a| python_type(a).to_string()).collect();
-            let ret_ty = python_type(&h.returns);
+                h.args.iter().map(|a| l.type_name(a).into_owned()).collect();
+            let ret_ty = l.type_name(&h.returns);
             let callable_type = format!("Callable[[{}], {}]", params_ty.join(", "), ret_ty,);
             let default_impl = format!("_unset_helper_raiser({:?}, {:?})", h.name, setter_name,);
             serde_json::json!({
@@ -18546,7 +18569,7 @@ fn render_procedure_python(
             );
             serde_json::json!({
                 "snake_id": snake_id,
-                "py_type": python_type(&f.sce_type),
+                "py_type": l.type_name(&f.sce_type),
                 "default_value": default_val,
             })
         })
@@ -18636,7 +18659,10 @@ pub fn render_inline_kinds(
     lang: crate::generator::Language,
     machine_name: &str,
 ) -> Result<InlineKindCode, ForgeError> {
-    let l = LangCtx::new(lang);
+    // A statechart hands its inline kinds no import table, so an inline
+    // kind's types are primitive by construction until one is threaded
+    // through; an `enum:<alias>` here panics naming this constructor.
+    let l = LangCtx::primitive(lang);
     let mut type_defs = Vec::new();
     let mut member_fns = Vec::new();
 
@@ -19491,34 +19517,132 @@ fn render_inline_codec_member(
 ///
 /// Centralises type mapping, identifier casing, parameter formatting, and
 /// template routing so that per-kind render functions are language-agnostic.
+///
+/// # ⚠ Why the import table lives in here
+///
+/// A field's type may be `enum:<alias>`, and an alias means nothing without
+/// the document's `<sce:import>` table. The per-language `*_type` helpers
+/// cannot see that table, so they answer an enum with `unreachable!` —
+/// by design, to surface a render that forgot to resolve.
+///
+/// That design put the obligation on every caller. It held in ONE of the
+/// eight places that meet a field type: a transform's inputs resolved,
+/// and a transform's outputs, a condition, a validator, an observer, a
+/// procedure, a codec and an interpolation all reached the bare helper
+/// and panicked the generator on a document the parser had accepted
+/// (measured 2026-09-21, one probe per kind). The rule was written down
+/// beside the function that honoured it and nowhere the others would
+/// read it.
+///
+/// So the table is carried rather than remembered: [`LangCtx::new`] takes
+/// it, and [`type_name`](Self::type_name) resolves an alias itself. A
+/// render that builds its context from a document's imports cannot ask
+/// for an unresolved field type, because there is no longer a method
+/// that returns one.
 struct LangCtx {
     lang: crate::generator::Language,
+    /// `(alias, qualified type)` for every enum this document imports, in
+    /// this language's spelling. Empty for [`LangCtx::primitive`].
+    enum_types: Vec<(String, String)>,
+    /// Which constructor built this context — named in the panic when an
+    /// enum reaches a context that was declared never to see one.
+    origin: &'static str,
 }
 
 impl LangCtx {
-    fn new(lang: crate::generator::Language) -> Self {
-        Self { lang }
+    /// A context for a render that meets a document's field types.
+    ///
+    /// Every enum import is resolved here, once, so every type question
+    /// asked of this context afterwards can answer an alias.
+    fn new(lang: crate::generator::Language, imports: &[ImportContext]) -> Self {
+        let enum_types = imports
+            .iter()
+            .filter(|imp| imp.kind == "enum")
+            .map(|imp| {
+                debug_assert!(
+                    !imp.enum_qualified_type.is_empty(),
+                    "enum import alias='{}' reached codegen with no qualified type — \
+                     validate_and_enrich_imports must populate it first",
+                    imp.alias,
+                );
+                (imp.alias.clone(), imp.enum_qualified_type.clone())
+            })
+            .collect();
+        Self {
+            lang,
+            enum_types,
+            origin: "LangCtx::new",
+        }
     }
 
-    fn type_name(&self, ty: &SceType) -> &'static str {
-        match self.lang {
+    /// A context for a render whose types are primitive BY CONSTRUCTION —
+    /// an enum's underlying integer, a statechart event payload (whose
+    /// eligibility filter excludes enum fields), an algorithm's numeric
+    /// signature.
+    ///
+    /// ⚠ The name is the claim. A caller choosing this over
+    /// [`new`](Self::new) states that no enum can reach it, and an enum
+    /// that does is a routing defect: it panics naming this constructor,
+    /// which is where the wrong claim was made.
+    fn primitive(lang: crate::generator::Language) -> Self {
+        Self {
+            lang,
+            enum_types: Vec::new(),
+            origin: "LangCtx::primitive",
+        }
+    }
+
+    /// This language's qualified type for an imported enum.
+    fn enum_type(&self, alias: &str) -> &str {
+        self.enum_types
+            .iter()
+            .find(|(a, _)| a == alias)
+            .map(|(_, qualified)| qualified.as_str())
+            .unwrap_or_else(|| {
+                // `cross_kind_check` and `validate_and_enrich_imports`
+                // refuse an `enum:<alias>` whose alias is not imported, so
+                // reaching here means either that gate fired wrong or this
+                // context was built without the document's imports.
+                panic!(
+                    "SceType::Enum(alias='{alias}') reached a context built by {} that \
+                     does not carry it — either the import gate let an unresolved alias \
+                     through, or this render built its context without the document's \
+                     imports",
+                    self.origin
+                )
+            })
+    }
+
+    /// The language-native type of `ty`, with an enum alias resolved
+    /// through this document's imports.
+    fn type_name(&self, ty: &SceType) -> std::borrow::Cow<'static, str> {
+        if let SceType::Enum(r) = ty {
+            return std::borrow::Cow::Owned(self.enum_type(&r.alias).to_string());
+        }
+        std::borrow::Cow::Borrowed(match self.lang {
             crate::generator::Language::Cpp => cpp_type(ty),
             crate::generator::Language::Kotlin => kotlin_type(ty),
             crate::generator::Language::Rust => rust_type(ty),
             crate::generator::Language::Go => go_type(ty),
             crate::generator::Language::Python => python_type(ty),
             crate::generator::Language::C11 => c_type(ty),
-        }
+        })
     }
 
     /// Parameter type for function signatures (uses references/borrows for
     /// heap-allocated types in C++ and Rust).
+    ///
+    /// An enum is integer-backed in every backend, so it is passed by
+    /// value like any other scalar — its parameter type is its type.
     fn param_type(&self, ty: &SceType) -> String {
+        if matches!(ty, SceType::Enum(_)) {
+            return self.type_name(ty).into_owned();
+        }
         match self.lang {
             crate::generator::Language::Cpp => cpp_param_type(ty),
             crate::generator::Language::Rust => rust_param_type(ty),
             crate::generator::Language::C11 => c_param_type(ty).to_string(),
-            _ => self.type_name(ty).to_string(),
+            _ => self.type_name(ty).into_owned(),
         }
     }
 
@@ -19531,44 +19655,28 @@ impl LangCtx {
             .join(", ")
     }
 
-    /// [`param_str`](Self::param_str) for a document whose inputs may be
-    /// `enum:<alias>`-typed.
+    /// Format a single parameter: handles language-specific id casing, type
+    /// placement order, and reference/borrow semantics.
     ///
-    /// ⚠ WHY THIS EXISTS. Every per-language `*_type` helper answers an
-    /// Enum with `unreachable!`, by design — the alias can only be
-    /// resolved through the import table, so the helpers refuse to guess.
-    /// `param_str` called them directly, so a document that declared
-    /// `sce:type="enum:Fuel"` on a transform input **panicked the
-    /// generator** instead of emitting the resolved type. Measured
-    /// 2026-09-18 against the first document this tree wrote that put a
-    /// value space on an input rather than flattening it to booleans.
-    ///
-    /// ⚠⚠ A panic, not a diagnostic: the combination was not reachable
-    /// from any committed fixture, so nothing exercised it. The enum kind
-    /// and the transform kind each had tests; the pair did not.
-    fn param_str_resolved(&self, fields: &[ForgeField], imports: &[ImportContext]) -> String {
-        fields
-            .iter()
-            .map(|f| match &f.sce_type {
-                SceType::Enum(_) => {
-                    self.format_param_typed(&f.id, &self.resolved_type(&f.sce_type, imports))
-                }
-                _ => self.format_param(&f.id, &f.sce_type),
-            })
-            .collect::<Vec<_>>()
-            .join(", ")
+    /// ⚠ One placement rule. There used to be a second copy for the enum
+    /// path, and the two had drifted: this one escaped a Go builtin name
+    /// (`len`, `cap`) and the copy did not, so an enum parameter named
+    /// `len` would have shadowed the builtin in the generated Go.
+    fn format_param(&self, id: &str, ty: &SceType) -> String {
+        self.place_param(id, &self.param_type(ty))
     }
 
-    /// Place an already-rendered type string next to a parameter name in
-    /// this language's order. Shares the placement rule with
-    /// [`format_param`](Self::format_param) rather than restating it —
-    /// two copies of "does the type come before or after the name" is
-    /// exactly the kind of duplication that drifts per backend.
-    fn format_param_typed(&self, id: &str, ty: &str) -> String {
+    /// Place an already-rendered parameter type next to its name, in this
+    /// language's order and identifier casing.
+    ///
+    /// Separate from [`format_param`](Self::format_param) only so a
+    /// signature that overrides one type (an algorithm's zero-copy `bytes`
+    /// view) still places it by the same rule — a second placement table
+    /// is how the Go builtin escape went missing from one of them.
+    fn place_param(&self, id: &str, ty: &str) -> String {
         match self.lang {
-            crate::generator::Language::Cpp | crate::generator::Language::Go => {
-                format!("{ty} {id}")
-            }
+            crate::generator::Language::Cpp => format!("{ty} {id}"),
+            crate::generator::Language::Go => format!("{} {ty}", go_escape_builtin(id)),
             crate::generator::Language::C11 => {
                 format!("{ty} {}", filters::to_snake_case(id.to_string()))
             }
@@ -19576,31 +19684,6 @@ impl LangCtx {
             crate::generator::Language::Rust | crate::generator::Language::Python => {
                 format!("{}: {ty}", filters::to_snake_case(id.to_string()))
             }
-        }
-    }
-
-    /// Format a single parameter: handles language-specific id casing, type
-    /// placement order, and reference/borrow semantics.
-    fn format_param(&self, id: &str, ty: &SceType) -> String {
-        match self.lang {
-            crate::generator::Language::Cpp => format!("{} {}", cpp_param_type(ty), id),
-            crate::generator::Language::Kotlin => format!("{}: {}", id, kotlin_type(ty)),
-            crate::generator::Language::Rust => format!(
-                "{}: {}",
-                filters::to_snake_case(id.to_string()),
-                rust_param_type(ty)
-            ),
-            crate::generator::Language::Go => format!("{} {}", go_escape_builtin(id), go_type(ty)),
-            crate::generator::Language::Python => format!(
-                "{}: {}",
-                filters::to_snake_case(id.to_string()),
-                python_type(ty)
-            ),
-            crate::generator::Language::C11 => format!(
-                "{} {}",
-                c_param_type(ty),
-                filters::to_snake_case(id.to_string())
-            ),
         }
     }
 
@@ -19735,77 +19818,6 @@ impl LangCtx {
         Ok(tmpl.render(value).map_err(generator::render_error)?)
     }
 
-    /// Enum kind: compose the per-language
-    /// qualified type name of an imported `sce:kind="enum"` document.
-    /// Reads directly from [`ImportContext::enum_qualified_type`],
-    /// which `validate_and_enrich_imports` populated at enrichment
-    /// time. Returning an empty string here is a programmer error —
-    /// either the enrichment pass was bypassed or a non-Enum import
-    /// got threaded through; both cases should panic loudly per
-    /// `feedback_silently_broken_hooks`.
-    ///
-    /// EventSchema payload struct codegen is the production
-    /// consumer — `render_event_schema` calls
-    /// [`Self::resolved_type`] which dispatches into this helper when
-    /// it encounters an `Enum`-typed field. The helper + its
-    /// `ImportContext::enum_qualified_type` slot together let the
-    /// EventSchema rendering site emit enum-typed payload fields
-    /// without re-implementing the separator-per-backend matrix.
-    fn qualified_enum_type(&self, import: &ImportContext) -> String {
-        debug_assert!(
-            !import.enum_qualified_type.is_empty(),
-            "LangCtx::qualified_enum_type called on import alias='{}' kind='{}' \
-             with empty enum_qualified_type — validate_and_enrich_imports must \
-             populate this field for `sce:kind=\"enum\"` imports before any \
-             render function consumes it",
-            import.alias,
-            import.kind,
-        );
-        import.enum_qualified_type.clone()
-    }
-
-    /// Enum kind: resolve a [`SceType`] to its
-    /// language-native type string, honoring imported-Enum alias
-    /// resolution. Delegates to [`Self::type_name`] for every primitive
-    /// type; for `SceType::Enum(EnumRef { alias })` it walks `imports`
-    /// to find the matching import context and returns its
-    /// `enum_qualified_type`.
-    ///
-    /// Any render function that may encounter Enum-typed fields MUST
-    /// call this helper instead of the bare `cpp_type` / `rust_type` /
-    /// etc. lookup functions — those panic on `SceType::Enum(_)` to
-    /// surface routing bugs at codegen time rather than silently
-    /// emitting an integer placeholder.
-    ///
-    /// EventSchema payload struct codegen is the production
-    /// consumer — `render_event_schema` calls this for every field's
-    /// `sce_type` so an `Enum(EnumRef)` field surfaces as the imported
-    /// Enum kind's qualified type name and a primitive surfaces as
-    /// its language-native scalar.
-    fn resolved_type(&self, ty: &SceType, imports: &[ImportContext]) -> String {
-        match ty {
-            SceType::Enum(r) => {
-                for imp in imports {
-                    if imp.alias == r.alias {
-                        return self.qualified_enum_type(imp);
-                    }
-                }
-                // Pre-codegen passes (`cross_kind_check::check`,
-                // `validate_and_enrich_imports`) reject any `enum:<alias>`
-                // reference whose alias does not appear in the document's
-                // `<sce:import>` table — reaching this branch means the
-                // gate fired wrong. Panic with the alias for diagnosis.
-                panic!(
-                    "SceType::Enum(alias='{}') not found in import context — \
-                     cross_kind_check or validate_and_enrich_imports must \
-                     reject unresolved enum aliases before codegen",
-                    r.alias
-                );
-            }
-            _ => self.type_name(ty).to_string(),
-        }
-    }
-
     /// Insert standard import fields into a context map.
     fn insert_imports(
         &self,
@@ -19927,7 +19939,7 @@ fn render_filter(
     imports: &[ImportContext],
     lang: crate::generator::Language,
 ) -> Result<String, ForgeError> {
-    let l = LangCtx::new(lang);
+    let l = LangCtx::new(lang, imports);
     let mut ctx = l.base_context(&m.name);
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
@@ -19981,7 +19993,7 @@ fn render_interpolation(
     imports: &[ImportContext],
     lang: crate::generator::Language,
 ) -> Result<String, ForgeError> {
-    let l = LangCtx::new(lang);
+    let l = LangCtx::new(lang, imports);
     let mut ctx = l.base_context(&m.name);
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
@@ -20069,7 +20081,7 @@ fn render_timer(
     imports: &[ImportContext],
     lang: crate::generator::Language,
 ) -> Result<String, ForgeError> {
-    let l = LangCtx::new(lang);
+    let l = LangCtx::new(lang, imports);
     let mut ctx = l.base_context(&m.name);
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
@@ -20152,7 +20164,7 @@ fn render_observer(
     imports: &[ImportContext],
     lang: crate::generator::Language,
 ) -> Result<String, ForgeError> {
-    let l = LangCtx::new(lang);
+    let l = LangCtx::new(lang, imports);
     let mut ctx = l.base_context(&m.name);
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
@@ -20288,12 +20300,12 @@ fn render_observer(
 /// Rust `&[u8]`, Go `[]byte`, …). A pure function reads its input, so it
 /// takes the view, never the owned 256-byte `sce_forge_bytes_t` copy
 /// (borrowed-by-default). Other types and languages reuse `param_type`.
-fn algorithm_param_type(lang: crate::generator::Language, ty: &SceType) -> String {
+fn algorithm_param_type(l: &LangCtx, ty: &SceType) -> String {
     use crate::generator::Language;
-    match (lang, ty) {
+    match (l.lang, ty) {
         (Language::Cpp, SceType::Bytes) => "std::span<const std::uint8_t>".to_string(),
         (Language::C11, SceType::Bytes) => "sce_forge_bytes_view_t".to_string(),
-        _ => LangCtx::new(lang).param_type(ty),
+        _ => l.param_type(ty),
     }
 }
 
@@ -20338,28 +20350,13 @@ fn algorithm_format_bc_import_param(
 }
 
 /// Format a single algorithm parameter per RFC §synth-5-J-5 emitter table.
-fn algorithm_format_param(lang: crate::generator::Language, name: &str, ty: &SceType) -> String {
-    use crate::generator::Language;
-    match lang {
-        Language::Cpp => format!("{} {}", algorithm_param_type(lang, ty), name),
-        Language::Kotlin => format!("{}: {}", name, kotlin_type(ty)),
-        Language::Rust => format!(
-            "{}: {}",
-            filters::to_snake_case(name.to_string()),
-            algorithm_param_type(lang, ty)
-        ),
-        Language::Go => format!("{} {}", go_escape_builtin(name), go_type(ty)),
-        Language::Python => format!(
-            "{}: {}",
-            filters::to_snake_case(name.to_string()),
-            python_type(ty)
-        ),
-        Language::C11 => format!(
-            "{} {}",
-            algorithm_param_type(lang, ty),
-            filters::to_snake_case(name.to_string())
-        ),
-    }
+///
+/// The placement is [`LangCtx::place_param`]'s; only the type differs, and
+/// only for `bytes`. This used to restate all six placements, and three of
+/// them called the bare per-language lookup, so an `enum:<alias>` parameter
+/// panicked in Kotlin, Go and Python and resolved in the other three.
+fn algorithm_format_param(l: &LangCtx, name: &str, ty: &SceType) -> String {
+    l.place_param(name, &algorithm_param_type(l, ty))
 }
 
 /// Collect every (name, type) introduced inside an algorithm body —
@@ -20566,7 +20563,7 @@ fn lower_algorithm_body(
 ) -> Result<String, ForgeError> {
     let mut out = String::new();
     let pad = "    ".repeat(indent);
-    let l = LangCtx::new(cfg.lang);
+    let l = LangCtx::new(cfg.lang, cfg.imports);
     // Pre-pass: collect every local that an `<sce:assign target>` targets
     // anywhere in the body so the Var arm can choose `let` vs `let mut`
     // on Rust without triggering `unused_mut` under workspace
@@ -21729,7 +21726,7 @@ fn render_algorithm(
     // backend (Rust + C11 + Kotlin + Cpp + Go + Python) now ships
     // the sidecar emitter. The previously-required `render_algorithm`
     // gate was deleted in the final (Python) closure.
-    let l = LangCtx::new(lang);
+    let l = LangCtx::new(lang, imports);
     let mut ctx = l.base_context(&m.name);
 
     // RFC §synth-5-F: lower every `<sce:const>` declaration into the target
@@ -21746,7 +21743,7 @@ fn render_algorithm(
         .const_fold_budget
         .unwrap_or(crate::forge::const_fold::Budget::DEFAULT_MAX_ITERS);
     let mut budget = crate::forge::const_fold::Budget::new(max_iters);
-    let consts_prelude = lower_algorithm_consts(&m.consts, lang, &mut budget, &m.name)?;
+    let consts_prelude = lower_algorithm_consts(&m.consts, imports, lang, &mut budget, &m.name)?;
     // C++ `inline constexpr std::array<...>` declarations need
     // `<array>`; gate the include so algorithms without array
     // consts keep their previous header surface byte-equivalent.
@@ -21879,7 +21876,7 @@ fn render_algorithm(
         .signature
         .params
         .iter()
-        .map(|p| algorithm_format_param(lang, &p.name, &p.sce_type))
+        .map(|p| algorithm_format_param(&l, &p.name, &p.sce_type))
         .collect();
     let bc_import_params: Vec<String> = imports
         .iter()
@@ -22179,6 +22176,7 @@ fn render_externs_sidecar(
 fn render_algorithm_test_vector_sidecar(
     env: &minijinja::Environment,
     m: &AlgorithmModel,
+    imports: &[ImportContext],
     lang: crate::generator::Language,
 ) -> Result<Option<(String, String)>, ForgeError> {
     use crate::generator::Language;
@@ -22213,7 +22211,7 @@ fn render_algorithm_test_vector_sidecar(
             name = m.name,
         )))
     })?;
-    let l = LangCtx::new(lang);
+    let l = LangCtx::new(lang, imports);
     let return_type_native = l.type_name(return_type).to_string();
     let snake = filters::to_snake_case(m.name.clone());
 
@@ -22719,7 +22717,8 @@ fn render_codec_test_vector_sidecar(
         );
     }
 
-    let l = LangCtx::new(lang);
+    // Only the template extension is asked of this context.
+    let l = LangCtx::primitive(lang);
     let template_name = format!("codec_test.{}.jinja2", l.template_ext());
     let template = env.get_template(&template_name).map_err(|e| {
         ForgeError::from(GenerateError::TemplateLoad(format!("{template_name}: {e}")))
@@ -22872,6 +22871,7 @@ fn lower_decoded_field_value(
 /// algorithms that don't declare any consts.
 fn lower_algorithm_consts(
     consts: &[crate::forge::model::AlgorithmConst],
+    imports: &[ImportContext],
     lang: crate::generator::Language,
     budget: &mut crate::forge::const_fold::Budget,
     algorithm_name: &str,
@@ -22883,7 +22883,7 @@ fn lower_algorithm_consts(
         return Ok(String::new());
     }
 
-    let l = LangCtx::new(lang);
+    let l = LangCtx::new(lang, imports);
     let mut out = String::new();
     for c in consts {
         let upper = to_upper_snake(&c.name);
@@ -23060,7 +23060,7 @@ mod tests {
     #[test]
     fn c11_payload_field_decl_bytes_uses_bounded_buffer() {
         use crate::forge::model::{Direction, ForgeField};
-        let l = LangCtx::new(crate::generator::Language::C11);
+        let l = LangCtx::primitive(crate::generator::Language::C11);
         let mk = |sce_type, max_size| ForgeField {
             id: "raw".to_string(),
             sce_type,
@@ -23234,7 +23234,7 @@ mod tests {
     // ── Enum panic + resolver ───
     //
     // The six type-mapping functions panic on `SceType::Enum(_)` so
-    // codegen routing bugs surface loudly. `LangCtx::resolved_type`
+    // codegen routing bugs surface loudly. `LangCtx::type_name`
     // is the sanctioned entry point — it delegates to `type_name` for
     // primitives and walks the `ImportContext` table for Enum aliases.
 
@@ -23315,12 +23315,21 @@ mod tests {
         let _ = python_type(&enum_ref("Result"));
     }
 
+    const ALL_LANGS: [crate::generator::Language; 6] = [
+        crate::generator::Language::Cpp,
+        crate::generator::Language::C11,
+        crate::generator::Language::Kotlin,
+        crate::generator::Language::Rust,
+        crate::generator::Language::Go,
+        crate::generator::Language::Python,
+    ];
+
     #[test]
-    fn resolved_type_passthrough_for_primitives() {
-        // For non-Enum SceTypes, resolved_type returns the same string as
-        // type_name. Verified across all six backends so a future refactor
-        // can't silently break the delegation.
-        let imports: Vec<ImportContext> = Vec::new();
+    fn type_name_is_the_bare_lookup_for_every_primitive() {
+        // Resolution only ever adds the enum arm: for every primitive the
+        // context answers exactly what the per-language table does, on
+        // all six backends, so moving the import table inside `LangCtx`
+        // changed no primitive's spelling.
         let cases = &[
             SceType::Uint8,
             SceType::Int32,
@@ -23329,32 +23338,33 @@ mod tests {
             SceType::String,
             SceType::Bytes,
         ];
-        for lang in [
-            crate::generator::Language::Cpp,
-            crate::generator::Language::C11,
-            crate::generator::Language::Kotlin,
-            crate::generator::Language::Rust,
-            crate::generator::Language::Go,
-            crate::generator::Language::Python,
-        ] {
-            let l = LangCtx::new(lang);
+        for lang in ALL_LANGS {
+            let l = LangCtx::new(lang, &[]);
             for ty in cases {
-                assert_eq!(
-                    l.resolved_type(ty, &imports),
-                    l.type_name(ty),
-                    "resolved_type drift from type_name for {:?}/{:?}",
-                    lang,
-                    ty,
-                );
+                let bare = match lang {
+                    crate::generator::Language::Cpp => cpp_type(ty),
+                    crate::generator::Language::C11 => c_type(ty),
+                    crate::generator::Language::Kotlin => kotlin_type(ty),
+                    crate::generator::Language::Rust => rust_type(ty),
+                    crate::generator::Language::Go => go_type(ty),
+                    crate::generator::Language::Python => python_type(ty),
+                };
+                assert_eq!(l.type_name(ty), bare, "{lang:?}/{ty:?}");
             }
         }
     }
 
     #[test]
-    fn resolved_type_returns_qualified_for_enum_alias() {
+    fn an_enum_alias_resolves_to_its_qualified_type_everywhere_a_type_is_asked() {
         // Each backend returns the qualified type name the import was
         // enriched with — the per-backend separator matrix lives in
-        // `validate_and_enrich_imports`'s Enum arm, not in this helper.
+        // `validate_and_enrich_imports`'s Enum arm, not here.
+        //
+        // ⚠ All three questions, not only `type_name`: the defect this
+        // context exists to prevent was a render asking for a PARAMETER
+        // type through a path that never resolved, while the plain type
+        // did. An enum is integer-backed, so it passes by value and its
+        // parameter type is its type.
         let cases = &[
             (
                 crate::generator::Language::Cpp,
@@ -23367,35 +23377,39 @@ mod tests {
             (crate::generator::Language::Python, "result.Result"),
         ];
         for (lang, qualified) in cases {
-            let l = LangCtx::new(*lang);
             let imports = vec![import_with_enum_qualified("Result", qualified)];
-            assert_eq!(
-                l.resolved_type(&enum_ref("Result"), &imports),
-                *qualified,
-                "resolved_type({:?}, enum:Result) drift",
-                lang,
+            let l = LangCtx::new(*lang, &imports);
+            let ty = enum_ref("Result");
+            assert_eq!(l.type_name(&ty), *qualified, "type_name {lang:?}");
+            assert_eq!(l.param_type(&ty), *qualified, "param_type {lang:?}");
+            assert!(
+                l.format_param("r", &ty).contains(qualified),
+                "format_param {lang:?}: {}",
+                l.format_param("r", &ty)
             );
         }
     }
 
     #[test]
-    #[should_panic(expected = "SceType::Enum(alias='Missing') not found in import context")]
-    fn resolved_type_panics_on_unresolved_enum_alias() {
+    #[should_panic(expected = "reached a context built by LangCtx::new that does not carry it")]
+    fn an_unimported_alias_panics_naming_the_context() {
         // Cross-kind binding (`cross_kind_check::check`) and
         // `validate_and_enrich_imports` reject unresolved enum aliases
         // before codegen runs, so this branch should be unreachable in
         // production. The panic surfaces the gate failure at the
         // codegen site rather than emitting wrong code.
-        let l = LangCtx::new(crate::generator::Language::Cpp);
-        let imports: Vec<ImportContext> = Vec::new();
-        let _ = l.resolved_type(&enum_ref("Missing"), &imports);
+        let l = LangCtx::new(crate::generator::Language::Cpp, &[]);
+        let _ = l.type_name(&enum_ref("Missing"));
     }
 
     #[test]
-    fn qualified_enum_type_returns_import_slot() {
-        let l = LangCtx::new(crate::generator::Language::Rust);
-        let imp = import_with_enum_qualified("Result", "result::Result");
-        assert_eq!(l.qualified_enum_type(&imp), "result::Result");
+    #[should_panic(expected = "reached a context built by LangCtx::primitive")]
+    fn an_enum_reaching_a_primitive_context_names_the_wrong_claim() {
+        // `primitive` is a claim that no enum can reach the render. When
+        // one does, the message has to point at the constructor that made
+        // the claim — that, not the lookup, is where the defect is.
+        let l = LangCtx::primitive(crate::generator::Language::Rust);
+        let _ = l.type_name(&enum_ref("Result"));
     }
 
     // ── go_escape_builtin ────────────────────────────────────
