@@ -1024,7 +1024,7 @@ fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out<'_>) {
             Some(e) => out.line(&format!("return {}", text(e))),
             None => out.line("return"),
         },
-        AlgorithmStmt::Call { target, args } => {
+        AlgorithmStmt::Call { target, args, .. } => {
             // One argument per line. Joined with `, ` they were several
             // free-text values on one line, and an argument containing
             // a comma-space would have decided where they split. ⚠ No

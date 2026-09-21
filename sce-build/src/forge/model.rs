@@ -3368,6 +3368,12 @@ pub struct AlgorithmConst {
     /// to be `false` otherwise. The parser enforces this invariant.
     #[serde(default, skip_serializing_if = "is_false")]
     pub compute_at_build: bool,
+    /// 1-based source line of the `<sce:const>` element, so a fold that
+    /// fails at code generation names the row it came from. Skipped from
+    /// serialization so the AST wire stays byte-stable, the way every
+    /// other `line` on this model is.
+    #[serde(skip)]
+    pub line: Option<u32>,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -3446,7 +3452,26 @@ pub enum AlgorithmStmt {
     /// algorithm kind imported via `<sce:import>`. v1 forbids
     /// recursion; the dedicated `algorithm/call-cycle` diagnostic is
     /// not implemented until a consumer needs it.
-    Call { target: String, args: Vec<String> },
+    Call {
+        target: String,
+        args: Vec<String>,
+        /// 1-based source line of the `<sce:call>`, so a target that
+        /// resolves at code generation to nothing names the row it is on.
+        /// Skipped from serialization, as every `line` on this model is.
+        #[serde(skip)]
+        line: Option<u32>,
+    },
+}
+
+impl AlgorithmStmt {
+    /// The source row the parser recorded for this statement, when it
+    /// recorded one — the row a failure while lowering it is placed at.
+    pub fn line(&self) -> Option<u32> {
+        match self {
+            AlgorithmStmt::Call { line, .. } => *line,
+            _ => None,
+        }
+    }
 }
 
 /// A name an algorithm body introduces.

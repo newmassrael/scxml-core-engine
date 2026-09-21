@@ -1101,6 +1101,7 @@ mod tests {
             &make_fold(AlgorithmStmt::Call {
                 target: "other".into(),
                 args: vec![],
+                line: None,
             }),
             &mut budget,
             TEST_SITE,

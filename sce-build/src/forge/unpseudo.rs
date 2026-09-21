@@ -1351,6 +1351,8 @@ fn parse_const(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<AlgorithmConst, Pa
             init: None,
             fold: Some(fold),
             compute_at_build: true,
+            // A pseudo line is not a row of any SCXML document.
+            line: None,
         });
     }
 
@@ -1365,6 +1367,7 @@ fn parse_const(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<AlgorithmConst, Pa
         init: Some(undo(value, line.number)?),
         fold: None,
         compute_at_build: false,
+        line: None,
     })
 }
 
@@ -1541,6 +1544,8 @@ fn parse_stmt(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<AlgorithmStmt, Pars
         return Ok(AlgorithmStmt::Call {
             target: undo(target, line.number)?,
             args,
+            // A pseudo line is not a row of any SCXML document.
+            line: None,
         });
     }
     if let Some((target, expr)) = t.split_once(" = ") {

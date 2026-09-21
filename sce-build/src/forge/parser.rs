@@ -47,6 +47,12 @@ pub(crate) fn located<E: Into<ForgeError>>(
     Located::new(err, name, Some(pos.row), Some(pos.col))
 }
 
+/// The 1-based row `node` starts on — what a model element records as its
+/// `line`.
+fn row_of(node: &roxmltree::Node) -> u32 {
+    node.document().text_pos_at(node.range().start).row
+}
+
 /// The attribute of `node` that holds the value `err` reports as observed
 /// — its value, else its qualified name, else the first value containing
 /// it — or `None` when no attribute does.
@@ -430,7 +436,7 @@ fn parse_cycles(
         // ⚠ Captured HERE because this is the last place the element is in
         // scope. `cycle_check` runs long after the document is closed, and
         // without the line its rejection can only name the file.
-        let line = child.document().text_pos_at(child.range().start).row;
+        let line = row_of(&child);
         cycles.push(Cycle {
             id,
             of,
@@ -649,7 +655,7 @@ fn parse_externs(
             },
         };
 
-        let line = Some(child.document().text_pos_at(child.range().start).row);
+        let line = Some(row_of(&child));
         declarations.push(ExternDeclaration {
             name,
             sig,
@@ -1254,7 +1260,7 @@ fn parse_enum(
                 ));
             }
 
-            let source_line = Some(child.document().text_pos_at(child.range().start).row);
+            let source_line = Some(row_of(&child));
             first_value_seen.insert(value, name.clone());
             variants.push(EnumVariant {
                 name,
@@ -5245,7 +5251,7 @@ fn parse_procedure(
             Vec::new()
         };
 
-        let line = Some(child.document().text_pos_at(child.range().start).row);
+        let line = Some(row_of(&child));
         states.push(ProcedureState {
             id,
             is_final,
@@ -5510,7 +5516,7 @@ fn parse_procedure_transitions(
         // Parse <assign> children within the transition (Level 2)
         let assigns = parse_procedure_assigns(&child, doc_name)?;
 
-        let line = Some(child.document().text_pos_at(child.range().start).row);
+        let line = Some(row_of(&child));
         transitions.push(ProcedureTransition {
             target,
             cond,
@@ -7060,6 +7066,7 @@ fn parse_algorithm_const(
                 init: Some(init),
                 fold: None,
                 compute_at_build: false,
+                line: Some(row_of(node)),
             })
         }
         (None, Some(fold_node), compute_at) => {
@@ -7099,6 +7106,7 @@ fn parse_algorithm_const(
                 init: None,
                 fold: Some(fold),
                 compute_at_build: true,
+                line: Some(row_of(node)),
             })
         }
     }
@@ -7442,7 +7450,11 @@ fn parse_algorithm_stmt(
                         .collect()
                 })
                 .unwrap_or_default();
-            Ok(AlgorithmStmt::Call { target, args })
+            Ok(AlgorithmStmt::Call {
+                target,
+                args,
+                line: Some(row_of(node)),
+            })
         }
         other => Err(located(
             node,
@@ -9056,7 +9068,7 @@ pub fn parse_imports(
             ));
         }
 
-        let line = Some(child.document().text_pos_at(child.range().start).row);
+        let line = Some(row_of(&child));
 
         // RFC §synth-5-B parent-side variant-dispatch — parse the
         // optional `<sce:variant-dispatch flag="X.Y"/>` child element.

@@ -5066,6 +5066,9 @@ fn forge_error_fields(err: &ForgeError) -> DiagnosticPayload {
         ForgeError::Import(e) => import_fields(e),
         ForgeError::Manifest(e) => manifest_fields(e),
         ForgeError::Generate(e) => generate_fields(e),
+        // The row is the location's business, taken at the compile
+        // boundary; the record is the wrapped error's.
+        ForgeError::Positioned { error, .. } => forge_error_fields(error),
         ForgeError::Scxml(e) => scxml_semantic_fields(e),
         // Delegate to `MeshError`'s `SingleDiagnostic` impl
         // (mesh/error.rs:3219) — it already covers every variant

@@ -70,6 +70,7 @@ fn an_algorithm_renders_every_form_it_can_carry() {
                 init: Some("0x1021".to_string()),
                 fold: None,
                 compute_at_build: false,
+                line: None,
             },
             AlgorithmConst {
                 name: "TABLE".to_string(),
@@ -92,6 +93,7 @@ fn an_algorithm_renders_every_form_it_can_carry() {
                     yield_expr: "acc".to_string(),
                 }),
                 compute_at_build: true,
+                line: None,
             },
         ],
         body: vec![
@@ -121,6 +123,7 @@ fn an_algorithm_renders_every_form_it_can_carry() {
                 body: vec![AlgorithmStmt::Call {
                     target: "step".to_string(),
                     args: vec!["crc".to_string(), "1".to_string()],
+                    line: None,
                 }],
                 max_iter: Some(16),
             },

@@ -387,6 +387,11 @@
           "file": "sce-build/src/forge/model.rs",
           "symbol": "record_fields",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "lower_algorithm_stmt_unplaced",
+          "kind": "implements"
         }
       ]
     },
@@ -4301,6 +4306,11 @@
         {
           "file": "sce-build/src/forge/model.rs",
           "symbol": "record_fields",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "lower_algorithm_stmt_unplaced",
           "kind": "implements"
         }
       ]

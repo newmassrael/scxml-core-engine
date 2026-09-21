@@ -198,6 +198,20 @@ pub enum ForgeError {
     #[error(transparent)]
     Generate(Box<GenerateError>),
 
+    /// An error raised while code generation handled a model element
+    /// whose row the model recorded — a `<sce:call>`, a `<sce:const>`.
+    /// Transparent to every reading; the compile boundary splits it off
+    /// with [`ForgeError::into_positioned`] into the record's
+    /// `location.line`, so no consumer sees this variant.
+    ///
+    /// ⚠ Code generation used to be located at the boundary with a file
+    /// and nothing else, so a generation-stage record's `actual` could
+    /// only be found by searching the whole document for it — ambiguous
+    /// when the token occurs twice, as `telemetry` did in the fixture
+    /// that exercises it (measured 2026-09-21).
+    #[error("{error}")]
+    Positioned { line: u32, error: Box<ForgeError> },
+
     /// SCXML semantic-validation failures — distinct from forge
     /// `ValidationError` because the rules come from §scxml-3
     /// reference resolution, not forge-document structure rules.
@@ -4622,6 +4636,44 @@ impl ForgeError {
             // mapping per its own taxonomy.
             ForgeError::Mesh(e) => e.exit_code(),
             ForgeError::Io { .. } => 8,
+            ForgeError::Positioned { error, .. } => error.exit_code(),
         }
+    }
+
+    /// Place `self` at `line` — the row the model recorded for the element
+    /// being handled when it was raised — or leave it as it is when the
+    /// model recorded none.
+    pub fn at_line(self, line: Option<u32>) -> Self {
+        match line {
+            Some(line) => ForgeError::Positioned {
+                line,
+                error: Box::new(self),
+            },
+            None => self,
+        }
+    }
+
+    /// Split a [`ForgeError::Positioned`] into the error it wraps and its
+    /// row. The innermost row wins: the element nearest the failure is the
+    /// one the author edits.
+    pub fn into_positioned(self) -> (Self, Option<u32>) {
+        match self {
+            ForgeError::Positioned { line, error } => {
+                let (inner, nearer) = error.into_positioned();
+                (inner, nearer.or(Some(line)))
+            }
+            other => (other, None),
+        }
+    }
+}
+
+impl Located<ForgeError> {
+    /// A code-generation error located in `file`: at the row it carries
+    /// when [`ForgeError::Positioned`] wraps it, with no row otherwise.
+    /// Every compile boundary that receives a generation error builds its
+    /// record through here, so the wrapper never reaches a consumer.
+    pub fn in_file(error: ForgeError, file: impl Into<String>) -> Self {
+        let (error, line) = error.into_positioned();
+        Located::new(error, file, line, None)
     }
 }

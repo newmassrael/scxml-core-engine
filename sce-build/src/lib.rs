@@ -1415,7 +1415,7 @@ pub fn compile_forge_from_string(
         generator::Language::Python => forge::generator::generate_python(&doc, &template_base),
         generator::Language::C11 => forge::generator::generate_c11(&doc, &template_base),
     }
-    .map_err(|e| Located::new(e, label.diagnostic_label, None, None))?;
+    .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
     Ok(output)
 }
 
@@ -2041,7 +2041,7 @@ pub fn compile_forge_with_deploy(
             &options,
         ),
     }
-    .map_err(|e| Located::new(e, label.diagnostic_label, None, None))?;
+    .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
 
     // C5 codegen-invariant guard: `pool/cache-pre-arm-invalidate-missing-on-speculative-core`
     // (spec line 1552). When the resolved platform has
@@ -2480,7 +2480,7 @@ pub fn compile_forge_from_parsed(
 
     let template_base = find_template_base();
     let mut import_ctx = forge::generator::resolve_imports(&parsed.imports, &language, options)
-        .map_err(|e| Located::new(e, label.diagnostic_label, None, None))?;
+        .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
 
     validate_and_enrich_imports(
         &mut import_ctx,
@@ -2653,7 +2653,7 @@ pub fn compile_forge_from_parsed(
             options,
         ),
     }
-    .map_err(|e| Located::new(e, label.diagnostic_label, None, None))?;
+    .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
     // The forge backends render from the AST and know nothing about the
     // filesystem, so the dependency slice is attached here, at the one
     // layer that resolved imports. `GeneratedOutput::deps` is documented

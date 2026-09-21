@@ -20598,7 +20598,22 @@ fn describe_inferred_type(ty: crate::forge::types::InferredType) -> String {
     }
 }
 
+/// Lower one statement, placing any failure at the statement's recorded
+/// row (see [`ForgeError::at_line`]); nested bodies recurse through here,
+/// so the innermost recorded row is the one a record names.
 fn lower_algorithm_stmt(
+    s: &AlgorithmStmt,
+    ctx: &AlgorithmLowerCtx<'_>,
+    pad: &str,
+    indent: usize,
+    out: &mut String,
+) -> Result<(), ForgeError> {
+    lower_algorithm_stmt_unplaced(s, ctx, pad, indent, out).map_err(|e| e.at_line(s.line()))
+}
+
+/// The lowering itself. Only [`lower_algorithm_stmt`] calls it, so no
+/// failure leaves without the statement's row.
+fn lower_algorithm_stmt_unplaced(
     s: &AlgorithmStmt,
     ctx: &AlgorithmLowerCtx<'_>,
     pad: &str,
@@ -21268,7 +21283,7 @@ fn lower_algorithm_stmt(
             };
             out.push_str(&line);
         }
-        AlgorithmStmt::Call { target, args } => {
+        AlgorithmStmt::Call { target, args, .. } => {
             let lowered_args: Vec<String> = args
                 .iter()
                 .map(|a| {
@@ -22832,9 +22847,6 @@ fn lower_algorithm_consts(
     budget: &mut crate::forge::const_fold::Budget,
     algorithm_name: &str,
 ) -> Result<String, ForgeError> {
-    use crate::forge::const_fold;
-    use crate::forge::model::AlgorithmConstType;
-
     if consts.is_empty() {
         return Ok(String::new());
     }
@@ -22842,48 +22854,62 @@ fn lower_algorithm_consts(
     let l = LangCtx::new(lang, imports);
     let mut out = String::new();
     for c in consts {
-        let upper = to_upper_snake(&c.name);
-        let site = const_fold::ConstSite {
-            algorithm: algorithm_name,
-            const_name: &c.name,
-        };
-        match (&c.sce_type, &c.fold, &c.init) {
-            (AlgorithmConstType::Array { elem, len }, Some(fold), None) => {
-                let values = const_fold::evaluate_fold(fold, budget, site)?;
-                if values.len() as u32 != *len {
-                    return Err(GenerateError::unsupported(format!(
-                        "algorithm '{algorithm_name}': <sce:const name=\"{}\">: \
-                         fold produced {actual} elements but array<{elem:?}, {len}> \
-                         declares {len}",
-                        c.name,
-                        actual = values.len(),
-                    ))
-                    .into());
-                }
-                let body = const_fold::serialize_array_literal_body(&values, lang);
-                out.push_str(&emit_array_const(lang, &l, &upper, elem, *len, &body));
-            }
-            (AlgorithmConstType::Scalar(ty), None, Some(init_expr)) => {
-                let value = const_fold::evaluate_scalar_init(init_expr, ty, site)?;
-                let lit =
-                    const_fold::serialize_array_literal_body(std::slice::from_ref(&value), lang);
-                out.push_str(&emit_scalar_const(lang, &l, &upper, ty, &lit));
-            }
-            // Parser invariants: scalar consts are paired with `init`
-            // and never carry a fold; fold-form consts always carry an
-            // array shape and never carry init. Anything else here
-            // would be an upstream model-shape bug.
-            _ => {
+        // A failure while folding a const is placed at the const's row.
+        let lowered = lower_algorithm_const(c, &l, lang, budget, algorithm_name)
+            .map_err(|e| e.at_line(c.line))?;
+        out.push_str(&lowered);
+    }
+    Ok(out)
+}
+
+/// One `<sce:const>` of [`lower_algorithm_consts`], as source.
+fn lower_algorithm_const(
+    c: &crate::forge::model::AlgorithmConst,
+    l: &LangCtx,
+    lang: crate::generator::Language,
+    budget: &mut crate::forge::const_fold::Budget,
+    algorithm_name: &str,
+) -> Result<String, ForgeError> {
+    use crate::forge::const_fold;
+    use crate::forge::model::AlgorithmConstType;
+
+    let upper = to_upper_snake(&c.name);
+    let site = const_fold::ConstSite {
+        algorithm: algorithm_name,
+        const_name: &c.name,
+    };
+    match (&c.sce_type, &c.fold, &c.init) {
+        (AlgorithmConstType::Array { elem, len }, Some(fold), None) => {
+            let values = const_fold::evaluate_fold(fold, budget, site)?;
+            if values.len() as u32 != *len {
                 return Err(GenerateError::unsupported(format!(
                     "algorithm '{algorithm_name}': <sce:const name=\"{}\">: \
-                     internal error — model carries inconsistent scalar/fold pairing",
-                    c.name
+                     fold produced {actual} elements but array<{elem:?}, {len}> \
+                     declares {len}",
+                    c.name,
+                    actual = values.len(),
                 ))
                 .into());
             }
+            let body = const_fold::serialize_array_literal_body(&values, lang);
+            Ok(emit_array_const(lang, l, &upper, elem, *len, &body))
         }
+        (AlgorithmConstType::Scalar(ty), None, Some(init_expr)) => {
+            let value = const_fold::evaluate_scalar_init(init_expr, ty, site)?;
+            let lit = const_fold::serialize_array_literal_body(std::slice::from_ref(&value), lang);
+            Ok(emit_scalar_const(lang, l, &upper, ty, &lit))
+        }
+        // Parser invariants: scalar consts are paired with `init`
+        // and never carry a fold; fold-form consts always carry an
+        // array shape and never carry init. Anything else here
+        // would be an upstream model-shape bug.
+        _ => Err(GenerateError::unsupported(format!(
+            "algorithm '{algorithm_name}': <sce:const name=\"{}\">: \
+             internal error — model carries inconsistent scalar/fold pairing",
+            c.name
+        ))
+        .into()),
     }
-    Ok(out)
 }
 
 /// Emit a per-language array-const declaration. Body is the
