@@ -139,7 +139,7 @@
 //!         id-into <loc> / <param> / req <id>
 //!         type (scxml|hybrid|mesh-rpc|<other>)
 //!         [autoforward] [src <s>] [namelist <n>] [finalize <t>]
-//!         [srcexpr <e>] [contentexpr <e>]
+//!         [srcexpr <e>] [contentexpr <e>] [candidates <p>...]
 //!         [mesh-target <t>] [mesh-transport <t>]
 //!         [target (src|srcexpr) <s>] [event <e>] [deadline <n>ms]
 //!         [host-served]
@@ -1795,6 +1795,20 @@ fn render_invoke(inv: &crate::model::Invoke, out: &mut Out<'_>) -> Result<(), Un
                 }
                 if !i.contentexpr.is_empty() {
                     out.line(&format!("contentexpr {}", text(&i.contentexpr)));
+                }
+                // The paths as `sce:candidates` spelled them, space
+                // separated, exactly as the attribute carries them. The
+                // stem beside each one is derived, so rendering it too
+                // would print a second spelling of one fact and let a
+                // reader hand this surface a pair that disagree.
+                if !i.candidates.is_empty() {
+                    let paths = i
+                        .candidates
+                        .iter()
+                        .map(|c| c.path.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    out.line(&format!("candidates {}", text(&paths)));
                 }
             }
             Invoke::MeshRpc(i) => {

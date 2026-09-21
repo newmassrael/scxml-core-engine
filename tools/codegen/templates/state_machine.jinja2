@@ -44,7 +44,14 @@
 {% endif %}
 {% endfor %}
 {% for invoke_info in model.invokes | hybrid %}
-{% if invoke_info.child_name %}
+{# §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: an invoke that declared
+   `sce:candidates` has one child per candidate rather than one stub, and
+   each is an ordinary generated machine with a header of its own. #}
+{% if invoke_info.candidates %}
+{% for candidate in invoke_info.candidates %}
+#include "{{ candidate.stem }}_sm.h"
+{% endfor %}
+{% elif invoke_info.child_name %}
 #include "{{ invoke_info.child_name }}_sm.h"
 {% endif %}
 {% endfor %}
@@ -508,7 +515,18 @@ struct {{ model.name }}Policy {
     mutable std::shared_ptr<::SCE::Generated::{{ cpp_ns_prefix }}{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>> child_{{ invoke_info.field_suffix }}_;
     {% endfor %}
     {% for invoke_info in model.invokes | hybrid %}
+    {% if invoke_info.candidates %}
+    // §scxml-6.4: one slot per declared candidate, at most one of them ever
+    // filled. A single polymorphic slot would need the generated children to
+    // share a base they do not have — they are concrete types parameterised
+    // by this parent — and every lifecycle site below is already null-guarded
+    // per slot, so the unchosen ones cost a null check and nothing else.
+    {% for candidate in invoke_info.candidates %}
+    mutable std::shared_ptr<::SCE::Generated::{{ cpp_ns_prefix }}{{ candidate.stem }}::{{ candidate.stem }}<SelfType>> child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_;
+    {% endfor %}
+    {% else %}
     mutable std::shared_ptr<::SCE::Generated::{{ cpp_ns_prefix }}{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>> child_{{ invoke_info.field_suffix }}_;
+    {% endif %}
     {% endfor %}
     {% endif %}
 

@@ -115,10 +115,21 @@
                 # an undeclared variable saw four backends raise and this
                 # one start the child as though nothing were wrong.
                 try:
-                    engine._script_engine.evaluate_expression(
+                    __sce_value = engine._script_engine.evaluate_expression(
                         self._session_id,
                         {{ (inv.srcexpr or inv.contentexpr) | to_lua_expr | py_string_literal }},
                     )
+{% if inv.candidates %}
+                    # ⚠ `string_val`, not `str(value)`: a ScriptValue is a
+                    # dataclass, so stringifying it yields its repr and the
+                    # stem below would be cut out of `ScriptValue(kind=...`.
+                    # Measured — the fixture reached `fail` on the first run.
+                    __sce_raw = getattr(__sce_value, "string_val", "") or ""
+                    __sce_tail = __sce_raw.replace("\\", "/").rsplit("/", 1)[-1]
+                    if __sce_tail == __sce_raw:
+                        __sce_tail = __sce_tail.removeprefix("file:")
+                    __sce_selected_{{ inv.invoke_id | to_python_const }} = __sce_tail.rsplit(".", 1)[0]
+{% endif %}
                 except _ScriptError:
                     self._raise_error_execution(
                         engine,
@@ -146,8 +157,28 @@
                 if not _namelist_ok:
                     continue
 {% endif %}
+{% if inv.candidates %}
+                # W3C SCXML 6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the evaluated
+                # value chooses among the declared candidates, matched on the
+                # document stem so `file:x.scxml` and `./x.scxml` name one
+                # child. A value naming none of them is the failure the
+                # Interpreter reports when a document will not load.
+                _child_module_{{ inv.invoke_id | to_python_const }} = {
+{% for candidate in inv.candidates %}
+                    {{ candidate.stem | py_string_literal }}: __import__({{ (candidate.stem ~ "_sm") | py_string_literal }}),
+{% endfor %}
+                }.get(__sce_selected_{{ inv.invoke_id | to_python_const }})
+                if _child_module_{{ inv.invoke_id | to_python_const }} is None:
+                    self._raise_error_execution(
+                        engine,
+                        "<invoke srcexpr='{{ inv.srcexpr }}'> evaluated to a document it did not declare",
+                    )
+                    continue
+                _child_policy = _child_module_{{ inv.invoke_id | to_python_const }}.Policy()
+{% else %}
                 import {{ inv.child_name }}_sm as _child_module_{{ inv.invoke_id | to_python_const }}
                 _child_policy = _child_module_{{ inv.invoke_id | to_python_const }}.Policy()
+{% endif %}
                 # Engine DI Parity RFC (Path B+): forward the parent's
                 # script engine so the child shares the same Lua VM /
                 # session manager, mirroring Rust + Kotlin invoke parity.

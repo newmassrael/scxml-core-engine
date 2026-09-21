@@ -388,6 +388,10 @@ fn each_invoke_shape_renders_once_and_whole() {
             common: common("i2"),
             srcexpr: "pick()".to_string(),
             contentexpr: "body()".to_string(),
+            candidates: ["a.scxml", "b.scxml"]
+                .iter()
+                .map(|p| sce_build::model::InvokeCandidate::from_path(p).unwrap())
+                .collect(),
         }),
         Invoke::MeshRpc(MeshRpcInvokeInfo {
             base: base("i3"),
@@ -436,6 +440,7 @@ machine m (datamodel: ecmascript, initial: s0)
       autoforward
       srcexpr pick()
       contentexpr body()
+      candidates a.scxml b.scxml
     invoke i3:
       id-into where
       param p = 1

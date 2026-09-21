@@ -1269,6 +1269,66 @@ pub struct HybridInvokeInfo {
     /// Runtime expression that produces inline SCXML content.
     /// Empty if `srcexpr` is used instead.
     pub contentexpr: String,
+    /// The documents `sce:candidates` declares this invoke may start, in
+    /// the order written. Empty when the author declared none, which is
+    /// the state every hybrid invoke was in before the attribute existed.
+    ///
+    /// ⚠ This is what lets an AOT target honour the VALUE a `srcexpr`
+    /// computes rather than only the fact that it computed
+    /// (docs/SCE_ACCEPTED_SUBSET.md §2.13). The build generates one child
+    /// per candidate and the runtime picks by the evaluated value; a value
+    /// naming none of them is `error.execution`, which is what the
+    /// Interpreter does when the document will not load.
+    ///
+    /// ⚠⚠ Matching is by document STEM, not by the spelling the author
+    /// wrote. An expression is free to compute `file:…`, an absolute path
+    /// or a relative one for the same document, so a comparison against
+    /// the declared text would answer differently for three ways of saying
+    /// one thing. The stem is also the name codegen already gives a child,
+    /// so the match and the generated symbol cannot disagree.
+    pub candidates: Vec<InvokeCandidate>,
+}
+
+/// One document a hybrid `<invoke>` may start, as `sce:candidates` named it.
+///
+/// `stem` is the identity: it is what the runtime compares the evaluated
+/// value against, and what codegen names the generated child by. `path` is
+/// kept because the build has to find the document, and because a refusal
+/// that says which entry was wrong needs the author's own spelling.
+#[derive(Debug, Clone, Serialize, Default)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct InvokeCandidate {
+    /// The path exactly as the author wrote it in `sce:candidates`.
+    pub path: String,
+    /// File stem of that path — the identity the runtime matches on.
+    pub stem: String,
+}
+
+impl InvokeCandidate {
+    /// Derive a candidate from one entry of `sce:candidates`.
+    ///
+    /// `None` when the entry names no document (`""`, `"."`, a bare
+    /// separator). The caller words the refusal, because what it can say
+    /// about a bad entry differs by where the entry came from.
+    ///
+    /// ⚠ Every producer of a candidate comes through here. The stem is an
+    /// identity two readers have to agree on — the parser reading
+    /// `sce:candidates`, and the pseudo-code reader rebuilding this model
+    /// from rendered text — and a second derivation is exactly how they
+    /// would come to disagree about which document a value names.
+    pub fn from_path(path: &str) -> Option<Self> {
+        let stem = std::path::Path::new(path)
+            .file_stem()?
+            .to_str()?
+            .to_string();
+        if stem.is_empty() {
+            return None;
+        }
+        Some(Self {
+            path: path.to_string(),
+            stem,
+        })
+    }
 }
 
 impl std::ops::Deref for ScxmlInvokeInfo {

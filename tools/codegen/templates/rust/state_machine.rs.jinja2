@@ -317,9 +317,18 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
     pending_done_invoke_{{ invoke_info.field_suffix }}: bool,
 {% endfor %}
 {% for invoke_info in model.invokes | hybrid %}
+{% if invoke_info.candidates %}
+    // W3C SCXML 6.4 + SCE_ACCEPTED_SUBSET.md §2.13: one slot per declared
+    // candidate for '{{ invoke_info.invoke_id }}', at most one ever filled.
+{% for candidate in invoke_info.candidates %}
+    child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}: Option<Box<sce_rust_runtime::Engine<super::{{ candidate.stem }}_sm::{{ candidate.stem | to_machine_name }}Policy>>>,
+{% endfor %}
+    pending_done_invoke_{{ invoke_info.field_suffix }}: bool,
+{% else %}
     // W3C SCXML 6.4: Hybrid invoke child '{{ invoke_info.invoke_id }}' ({{ invoke_info.child_name }})
     child_{{ invoke_info.field_suffix }}: Option<Box<sce_rust_runtime::Engine<super::{{ invoke_info.child_name }}_sm::{{ invoke_info.child_name | to_machine_name }}Policy>>>,
     pending_done_invoke_{{ invoke_info.field_suffix }}: bool,
+{% endif %}
 {% endfor %}
 {% if not no_std %}
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
@@ -451,8 +460,15 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
             pending_done_invoke_{{ invoke_info.field_suffix }}: false,
 {% endfor %}
 {% for invoke_info in model.invokes | hybrid %}
+{% if invoke_info.candidates %}
+{% for candidate in invoke_info.candidates %}
+            child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}: None,
+{% endfor %}
+            pending_done_invoke_{{ invoke_info.field_suffix }}: false,
+{% else %}
             child_{{ invoke_info.field_suffix }}: None,
             pending_done_invoke_{{ invoke_info.field_suffix }}: false,
+{% endif %}
 {% endfor %}
 {% if not no_std %}
             parent_external_queue: None,

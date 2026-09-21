@@ -18,6 +18,18 @@
 {% set _ns.any_child_parent_send = true %}
 {% endif %}
 {% endfor %}
+{# A declared candidate is an ordinary document the parent may start, and
+   announcing itself with `<send target="#_parent">` is how a selection
+   becomes observable at all — so the routing shim is owed here for the same
+   reason the static-invoke scan above owes it. Emitted for any candidate
+   set rather than per candidate's own content: the set is the unit the
+   parent commits to, and a shim that appeared only for some of them would
+   make the selection's observability depend on which document won. #}
+{% for invoke_info in model.invokes | hybrid %}
+{% if invoke_info.candidates %}
+{% set _ns.any_child_parent_send = true %}
+{% endif %}
+{% endfor %}
 
 {% if _ns.any_child_parent_send %}
 {# ── dispatch_external_by_name ───────────────────────────────────────
@@ -422,6 +434,9 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                by sce-build's `generate_hybrid_child_scxmls`. */
             {% if model.needs_script_engine %}
             {% if invoke_info.srcexpr %}
+{% if invoke_info.candidates %}
+            char __sce_selected_{{ invoke_info.field_suffix }}[SCE_MAX_ID_LEN] = {0};
+{% endif %}
             /* W3C SCXML 6.4.3: srcexpr eval-validation. */
             if (luaL_dostring(sm->L,
                 "return ({{ invoke_info.srcexpr | to_lua_expr | escape_c }})") != 0) {
@@ -431,6 +446,28 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                     "<invoke srcexpr='{{ invoke_info.srcexpr | escape_c }}'> could not be evaluated");
                 continue;
             }
+{% if invoke_info.candidates %}
+            /* §2.13: the stem of what the value named, which is what a
+               candidate is identified by. Directory and extension are cut so
+               `file:x.scxml`, `./x.scxml` and an absolute path agree. */
+            {
+                const char *__sce_v = lua_tostring(sm->L, -1);
+                if (__sce_v != NULL) {
+                    const char *__sce_base = strrchr(__sce_v, '/');
+                    __sce_base = __sce_base ? __sce_base + 1 : __sce_v;
+                    if (__sce_base == __sce_v && strncmp(__sce_base, "file:", 5) == 0) {
+                        __sce_base += 5;
+                    }
+                    const char *__sce_dot = strrchr(__sce_base, '.');
+                    size_t __sce_len = __sce_dot ? (size_t)(__sce_dot - __sce_base) : strlen(__sce_base);
+                    if (__sce_len >= sizeof(__sce_selected_{{ invoke_info.field_suffix }})) {
+                        __sce_len = sizeof(__sce_selected_{{ invoke_info.field_suffix }}) - 1;
+                    }
+                    memcpy(__sce_selected_{{ invoke_info.field_suffix }}, __sce_base, __sce_len);
+                    __sce_selected_{{ invoke_info.field_suffix }}[__sce_len] = '\0';
+                }
+            }
+{% endif %}
             lua_pop(sm->L, 1);
             {% elif invoke_info.contentexpr %}
             /* W3C SCXML 6.4.4: contentexpr eval-validation. */
@@ -445,6 +482,47 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
             lua_pop(sm->L, 1);
             {% endif %}
             {% endif %}
+{% if invoke_info.candidates %}
+            /* §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the evaluated value
+               chooses among the declared candidates, matched on the document
+               stem. A value naming none of them is the failure the
+               Interpreter reports when a document will not load. */
+{% for candidate in invoke_info.candidates %}
+            if (strcmp(__sce_selected_{{ invoke_info.field_suffix }}, "{{ candidate.stem | escape_c }}") == 0) {
+                /* Parent routing is stamped before the entry walk, for the
+                   reason the static-invoke site above states: a candidate
+                   that announces itself with `<onentry><send
+                   target="#_parent">` — which is how a selection becomes
+                   observable at all — would otherwise have that send
+                   dropped against a NULL dispatch. */
+                {{ csym_prefix }}{{ candidate.stem }}_init_with_parent(
+                    &sm->child_{{ invoke_info.field_suffix }}_{{ candidate.stem }},
+                    sm,
+                    {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name,
+                    p->invoke_id);
+                sm->child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_active = true;
+                sce_copy_bounded_id(sm->child_{{ invoke_info.field_suffix }}_invoke_id, p->invoke_id);
+{% if invoke_info.use_specific_event or 'done.invoke' in model.events %}
+                /* Only when the document listens for it: a machine that
+                   observes its child by what the child SENDS has no
+                   done-event in its enum, and naming one asks the compiler
+                   for a member the document never declared. */
+                if ({{ csym_prefix }}{{ candidate.stem }}_is_in_final_state(&sm->child_{{ invoke_info.field_suffix }}_{{ candidate.stem }})) {
+                    {{ csym_prefix }}{{ model.name }}_event_with_meta_t _done_evt;
+                    memset(&_done_evt, 0, sizeof(_done_evt));
+                    _done_evt.event = {% if invoke_info.use_specific_event %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE_{{ invoke_info.invoke_id | upper | replace('.', '_') | replace('-', '_') }}{% else %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE{% endif %};
+                    sce_copy_bounded_id(_done_evt.invoke_id, p->invoke_id);
+                    {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_done_evt);
+                }
+{% endif %}
+                continue;
+            }
+{% endfor %}
+            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                "<invoke srcexpr='{{ invoke_info.srcexpr | escape_c }}'> evaluated to a document it did not declare");
+            continue;
+{% else %}
             /* W3C SCXML 6.4: spawn pre-generated AOT stub child
                `{{ invoke_info.child_name }}` (initial=`<final>` so the
                child reaches its final state during `_init`'s entry
@@ -470,6 +548,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                 {% endif %}
                 {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_done_evt);
             }
+{% endif %}
             continue;
         }
         {% endfor %}
@@ -506,21 +585,28 @@ static void {{ csym_prefix }}{{ model.name }}_drive_active_children({{ csym_pref
        reason to drive them is defensive — a future stub that defers
        finalisation would land here. The trivial-stub fast path below
        no-ops gracefully. */
-    if (sm->child_{{ invoke_info.field_suffix }}_active
-        && !{{ csym_prefix }}{{ invoke_info.child_name }}_is_in_final_state(&sm->child_{{ invoke_info.field_suffix }})) {
-        {{ csym_prefix }}{{ invoke_info.child_name }}_step(&sm->child_{{ invoke_info.field_suffix }});
-        if ({{ csym_prefix }}{{ invoke_info.child_name }}_is_in_final_state(&sm->child_{{ invoke_info.field_suffix }})) {
+{% set tick_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': invoke_info.child_name}] %}
+{% for target in tick_targets %}
+{% set slot = ('child_' ~ invoke_info.field_suffix ~ '_' ~ target.stem) if invoke_info.candidates else ('child_' ~ invoke_info.field_suffix) %}
+    if (sm->{{ slot }}_active
+        && !{{ csym_prefix }}{{ target.stem }}_is_in_final_state(&sm->{{ slot }})) {
+        {{ csym_prefix }}{{ target.stem }}_step(&sm->{{ slot }});
+{% if invoke_info.use_specific_event or 'done.invoke' in model.events %}
+        /* Raised only when the document listens for it — see the spawn site. */
+        if ({{ csym_prefix }}{{ target.stem }}_is_in_final_state(&sm->{{ slot }})) {
             {{ csym_prefix }}{{ model.name }}_event_with_meta_t _done_evt;
             memset(&_done_evt, 0, sizeof(_done_evt));
             _done_evt.event = {% if invoke_info.use_specific_event %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE_{{ invoke_info.invoke_id | upper | replace('.', '_') | replace('-', '_') }}{% else %}{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE{% endif %};
             sce_copy_bounded_id(_done_evt.invoke_id, sm->child_{{ invoke_info.field_suffix }}_invoke_id);
             {% if invoke_info.child_needs_script_engine %}
             /* W3C SCXML 5.5 + 6.3.1: hybrid async-final donedata carry. */
-            {{ se.lua_marshal_child_donedata("sm->child_" ~ invoke_info.field_suffix ~ ".L", "_done_evt") }}
+            {{ se.lua_marshal_child_donedata("sm->" ~ slot ~ ".L", "_done_evt") }}
             {% endif %}
             {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_done_evt);
         }
+{% endif %}
     }
+{% endfor %}
     {% endfor %}
     {% for invoke_info in state.invokes | scxml %}
     if (sm->child_{{ invoke_info.field_suffix }}_active
@@ -584,10 +670,14 @@ static void {{ csym_prefix }}{{ model.name }}_destroy_active_children({{ csym_pr
     }
     {% endfor %}
     {% for invoke_info in state.invokes | hybrid %}
-    if (sm->child_{{ invoke_info.field_suffix }}_active) {
-        {{ csym_prefix }}{{ invoke_info.child_name }}_destroy(&sm->child_{{ invoke_info.field_suffix }});
-        sm->child_{{ invoke_info.field_suffix }}_active = false;
+{% set destroy_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': invoke_info.child_name}] %}
+{% for target in destroy_targets %}
+{% set slot = ('child_' ~ invoke_info.field_suffix ~ '_' ~ target.stem) if invoke_info.candidates else ('child_' ~ invoke_info.field_suffix) %}
+    if (sm->{{ slot }}_active) {
+        {{ csym_prefix }}{{ target.stem }}_destroy(&sm->{{ slot }});
+        sm->{{ slot }}_active = false;
     }
+{% endfor %}
     {% endfor %}
     {% endfor %}
 }

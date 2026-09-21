@@ -3094,10 +3094,14 @@ SCE_SM_FN static void execute_exit_actions({{ csym_prefix }}{{ model.name }}_t *
            NULL guard is unnecessary (test252-shape concerns do not
            arise for hybrid stubs). cpp `entry_exit_actions.jinja2:677`
            is the equivalent. */
-        if (sm->child_{{ invoke_info.field_suffix }}_active) {
-            {{ csym_prefix }}{{ invoke_info.child_name }}_destroy(&sm->child_{{ invoke_info.field_suffix }});
-            sm->child_{{ invoke_info.field_suffix }}_active = false;
+{% set cancel_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': invoke_info.child_name}] %}
+{% for target in cancel_targets %}
+{% set slot = ('child_' ~ invoke_info.field_suffix ~ '_' ~ target.stem) if invoke_info.candidates else ('child_' ~ invoke_info.field_suffix) %}
+        if (sm->{{ slot }}_active) {
+            {{ csym_prefix }}{{ target.stem }}_destroy(&sm->{{ slot }});
+            sm->{{ slot }}_active = false;
         }
+{% endfor %}
         {% endfor %}
         {% endif %}
         break;

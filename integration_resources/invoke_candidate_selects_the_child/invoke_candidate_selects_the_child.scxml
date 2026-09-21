@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- W3C SCXML 6.4.3: an `<invoke>` names its child through an expression, and
+     the value the expression computes is the child that runs.
+
+     ⚠ THE AXIS IS THE SELECTION, AND IT NEEDS TWO CHILDREN THAT DISAGREE.
+     Every other invoke fixture in this tree has one child, or children that
+     answer identically, so a machine that ran the WRONG one — or ran a stub
+     and ignored the value entirely — passes them all. That is not a
+     hypothetical: five AOT backends spawned an immediate-`<final>` stub for
+     every hybrid invoke, `done.invoke` arrived on time, and no oracle in the
+     tree could tell. SCE_ACCEPTED_SUBSET.md §2.13 records it.
+
+     So the two candidates announce themselves. `chosen` sends `from.chosen`
+     to its parent; `other` sends `from.other`. The parent passes only on the
+     first. A stub sends neither and the machine rests in `probe`; the wrong
+     pick reaches `fail`.
+
+     `sce:candidates` is what makes the selection possible on an AOT target:
+     it declares the finite set of documents this invoke may start, so the
+     build can generate each one and the runtime can choose by the evaluated
+     value. Without it the build has no way to know what the expression will
+     name, and the child is fixed at build time.
+
+     Matching is on the document STEM. The expression below computes a
+     `file:` URI on purpose — a real document is as likely to compute one of
+     those as a bare name, and all the spellings of one document have to name
+     one child or the declaration would be a trap.
+
+     Single-axis: the value is assigned once, before the invoke fires, and
+     nothing else in the document varies. A value naming NO candidate is a
+     different clause and is asserted where the emitted text can be read,
+     not here, so this fixture stays about the selection it is named for.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" datamodel="ecmascript" initial="probe"
+       name="invoke_candidate_selects_the_child">
+    <datamodel>
+        <data id="pick" expr="'file:chosen.scxml'"/>
+    </datamodel>
+    <state id="probe">
+        <invoke type="scxml" srcexpr="pick"
+                sce:candidates="chosen.scxml other.scxml"/>
+        <transition event="from.chosen" target="pass"/>
+        <transition event="from.other" target="wrongChild"/>
+        <transition event="error.execution" target="noChild"/>
+    </state>
+    <final id="pass"/>
+    <!-- ⚠ TWO failure states, not one. The first draft sent both here and
+         the distinction had to be recovered from a log: a run that reached
+         `fail` could mean the wrong document ran OR that none did, and those
+         are different defects with different owners. An oracle that cannot
+         tell them apart is the shape this fixture exists to refuse. -->
+    <final id="wrongChild"/>
+    <final id="noChild"/>
+</scxml>

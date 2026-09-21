@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The candidate the parent's expression names. It announces itself to the
+     parent so the selection is observable: a stub, or the other candidate,
+     sends a different event or none at all. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       initial="speak" name="chosen">
+    <state id="speak">
+        <onentry>
+            <send target="#_parent" event="from.chosen"/>
+        </onentry>
+        <transition target="done"/>
+    </state>
+    <final id="done"/>
+</scxml>

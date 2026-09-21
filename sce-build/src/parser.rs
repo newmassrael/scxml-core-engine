@@ -802,6 +802,96 @@ fn inherit_req(block_req: &[crate::provenance::RequirementId], block: &mut [crat
     }
 }
 
+/// Read the optional `sce:candidates="a.scxml b.scxml"` attribute on a
+/// hybrid `<invoke>` and return one entry per document, in the order the
+/// author wrote them.
+///
+/// Absent, the result is empty and the invoke keeps the build-time stub it
+/// has always had — the attribute is additive, so no document that compiles
+/// today stops compiling.
+///
+/// Three refusals, each for a thing the build could otherwise accept and
+/// then answer wrongly at run time:
+///
+/// * **Beside `contentexpr`.** That expression PRODUCES a document rather
+///   than naming one, so there is no finite set to choose from and nothing
+///   a candidate could be matched against. Accepting the pair would leave
+///   the author believing a selection was declared.
+/// * **Two candidates with one stem.** The stem is the identity the runtime
+///   matches on and the name codegen gives the generated child, so a
+///   collision is two documents claiming one answer.
+/// * **Present but empty.** An attribute written and left blank reads as a
+///   declaration; it declares nothing.
+fn collect_invoke_candidates(
+    node: &roxmltree::Node,
+    srcexpr: &str,
+    contentexpr: &str,
+    source_name: &str,
+) -> Result<
+    Vec<crate::model::InvokeCandidate>,
+    crate::forge::error::Located<crate::forge::error::ForgeError>,
+> {
+    use crate::forge::error::{Located, ValidationError};
+    use crate::forge::model::SCE_NAMESPACE;
+    use crate::model::InvokeCandidate;
+    use std::collections::HashSet;
+
+    let raw = match node.attribute((SCE_NAMESPACE, "candidates")) {
+        Some(s) => s,
+        None => return Ok(Vec::new()),
+    };
+
+    let pos = node.document().text_pos_at(node.range().start);
+    let at = |err: ValidationError| -> Located<crate::forge::error::ForgeError> {
+        Located::new(err.into(), source_name, Some(pos.row), Some(pos.col))
+    };
+
+    if !contentexpr.is_empty() || srcexpr.is_empty() {
+        return Err(at(ValidationError::IncompatibleAttributes {
+            element: "<invoke>".to_string(),
+            detail: "sce:candidates names the documents a `srcexpr` may select, so it \
+                     belongs only on an invoke that has one; a `contentexpr` produces a \
+                     document rather than naming one and has no set to choose from"
+                .to_string(),
+        }));
+    }
+
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut out: Vec<InvokeCandidate> = Vec::new();
+    for tok in raw.split_whitespace() {
+        let candidate = match InvokeCandidate::from_path(tok) {
+            Some(c) => c,
+            None => {
+                return Err(at(ValidationError::IncompatibleAttributes {
+                    element: "<invoke>".to_string(),
+                    detail: format!("sce:candidates entry '{tok}' names no document"),
+                }))
+            }
+        };
+        let stem = candidate.stem.clone();
+        if !seen.insert(stem.clone()) {
+            return Err(at(ValidationError::IncompatibleAttributes {
+                element: "<invoke>".to_string(),
+                detail: format!(
+                    "sce:candidates names '{stem}' twice; the stem is what the evaluated \
+                     value is matched against, so two entries sharing one is two documents \
+                     claiming the same answer"
+                ),
+            }));
+        }
+        out.push(candidate);
+    }
+
+    if out.is_empty() {
+        return Err(at(ValidationError::EmptyValue {
+            element: "<invoke>".to_string(),
+            attr: "sce:candidates".to_string(),
+        }));
+    }
+
+    Ok(out)
+}
+
 /// Read the optional `sce:req="ID1 ID2 ..."` attribute and return
 /// the whitespace-separated requirement IDs. Returns `Ok(vec![])`
 /// when the attribute is absent. Rejects the first duplicate token
@@ -3465,6 +3555,13 @@ impl SCXMLParser {
             // lifecycle resolves `srcexpr`/`contentexpr` at runtime.
             let idx = self.hybrid_invoke_counter;
             self.hybrid_invoke_counter += 1;
+
+            // §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: `sce:candidates`
+            // names the documents this invoke may start, which is what lets
+            // an AOT target honour the VALUE the expression computes instead
+            // of only the fact that it computed. Optional: without it the
+            // build-time stub stays, exactly as before the attribute existed.
+            let candidates = collect_invoke_candidates(elem, &srcexpr, &contentexpr, source_name)?;
             let (invoke_req, invoke_provenance) = collect_sce_traceability(
                 elem,
                 || format!("<invoke id=\"{invoke_id}\">"),
@@ -3490,6 +3587,7 @@ impl SCXMLParser {
                 },
                 srcexpr,
                 contentexpr,
+                candidates,
             })));
         }
 

@@ -180,6 +180,29 @@
                                 raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke srcexpr='{{ inv.srcexpr | escape_kotlin }}'> could not be evaluated")
                                 return@deferInvoke
                             }
+{% if inv.candidates %}
+                            // §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the value
+                            // chooses among the declared candidates, matched on the
+                            // document stem so `file:x.scxml` and `./x.scxml` name
+                            // one child. `startInvoke` takes a star-projected
+                            // machine, so only the construction differs here.
+                            val __sceSelected = filePath
+                                .substringAfterLast('/')
+                                .substringAfterLast('\\')
+                                .removePrefix("file:")
+                                .substringBeforeLast('.')
+                            val childSM = when (__sceSelected) {
+{% for candidate in inv.candidates %}
+                                "{{ candidate.stem | escape_kotlin }}" -> {{ candidate.stem | to_pascal_case }}StateMachine({% if inv.child_needs_script_engine %}scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"){% endif %})
+{% endfor %}
+                                else -> {
+                                    // The failure the Interpreter reports when a
+                                    // document will not load: nothing to create.
+                                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke srcexpr='{{ inv.srcexpr | escape_kotlin }}'> evaluated to a document it did not declare")
+                                    return@deferInvoke
+                                }
+                            }
+{% else %}
                             // §scxml-6.4: the child is the build-time stub, as on
                             // every other AOT backend. `filePath` is not consulted:
                             // the clause this arm answers is that the expression
@@ -187,6 +210,7 @@
                             // path does not honour (SCE_ACCEPTED_SUBSET.md §2.13).
                             @Suppress("UNUSED_VARIABLE") val _evaluated = filePath
                             val childSM = {{ inv.child_class }}StateMachine({% if inv.child_needs_script_engine %}scriptEngine ?: error("scriptEngine is required for invoke (codegen invariant: parent needs_script_engine == true)"){% endif %})
+{% endif %}
 {% elif inv.contentexpr %}
                             // W3C SCXML 6.4.4: Evaluate contentexpr → SCXML string → create child.
                             // Split for the reason the srcexpr arm above states.

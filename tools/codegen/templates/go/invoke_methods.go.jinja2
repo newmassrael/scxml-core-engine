@@ -1,5 +1,59 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+{% macro hybrid_child_start(invoke_info, child_stem, wrapper_type) %}
+			// W3C SCXML 6.5: Generate child session ID
+			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
+
+			childPolicy := New{{ child_stem | to_machine_name }}Policy()
+{% if invoke_info.child_needs_script_engine %}
+			childPolicy.ScriptEngine = p.ScriptEngine
+{% endif %}
+			parentQueue := make(chan sce.ParentEvent, 100)
+			childPolicy.ParentExternalQueue = parentQueue
+			childPolicy.InvokeID = pending.InvokeID
+			childPolicy.ChildSessionID = childSessionID
+			// W3C SCXML C.1: the child adopts the id its parent recorded for
+			// it. The parent mints `parentSession.invokeId` and keys
+			// `activeInvokes` on it, so an event from this child reaches the
+			// parent carrying that id as its origin; if the child also minted
+			// an id of its own, the location it publishes in `_ioprocessors`
+			// and the origin the parent sees would be two names for one
+			// session that can never be compared — which is exactly what C.1
+			// requires of them.
+			childPolicy.SessionID = childSessionID
+
+			p.activeInvokes["{{ invoke_info.invoke_id }}"] = &sce.ChildSession{
+				SessionID:       childSessionID,
+				InvokeID:        "{{ invoke_info.invoke_id }}",
+				ParentSessionID: p.SessionID,
+				Autoforward:     {{ 'true' if invoke_info.autoforward else 'false' }},
+				FinalizeScript:  "",
+			}
+
+			childEngine := sce.NewEngine[{{ child_stem | to_machine_name }}State, {{ child_stem | to_machine_name }}Event](&childPolicy)
+			// §scxml-6.4: the child's delayed sends are measured against the
+			// same clock as ours. A child reading its own would start its
+			// origin at construction time, so <send delay="100ms"> on either
+			// side of the boundary would mean two different absolute instants —
+			// and on a host-owned clock the child would not move at all,
+			// because the host advances the engine it holds, not the ones that
+			// engine invoked.
+			childEngine.SetClock(engine.Clock())
+			childEngine.SetCompletionCallback(func() {})
+			childEngine.Initialize()
+
+			wrapper := &{{ wrapper_type }}{engine: childEngine, policy: &childPolicy}
+			p.child{{ invoke_info.invoke_id | to_pascal_case }} = wrapper
+
+			sce.DrainAndRaiseChildEvents(wrapper, p.activeInvokes, "{{ invoke_info.invoke_id }}", engine)
+
+			if wrapper.IsInFinalState() {
+				p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} = true
+				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
+				// done.invoke.<id>._event.data.
+				sce.RaiseDoneInvoke("{{ invoke_info.invoke_id }}", wrapper.DonedataAtFinal(), engine)
+			}
+{% endmacro %}
 
 {#
     Invoke Methods Template (Go Jinja2)
@@ -237,16 +291,34 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 {% if state.invokes | hybrid %}
 {% for invoke_info in state.invokes | hybrid %}
 		if strings.Contains(pending.InvokeID, ".{{ invoke_info.invoke_id }}") {
+{% if invoke_info.candidates %}
+			// Which candidate the evaluated value names (§2.13: matched on the
+			// document stem, so `file:x.scxml` and `./x.scxml` are one child).
+			__sceSelected := ""
+{% endif %}
 {% if invoke_info.srcexpr %}
 			// W3C SCXML 6.4.3: Evaluate srcexpr at runtime
 			p.ensureScriptEngine()
 			{
 				se := p.ScriptEngine
-				if _, err := se.EvaluateExpression(p.SessionID, `{{ invoke_info.srcexpr | to_lua_expr }}`); err != nil {
+				if __sceValue, err := se.EvaluateExpression(p.SessionID, `{{ invoke_info.srcexpr | to_lua_expr }}`); err != nil {
 {% if 'error.execution' in model.events %}
 					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke srcexpr='{{ invoke_info.srcexpr }}'> could not be evaluated"))
 {% endif %}
 					continue
+{% if invoke_info.candidates %}
+				} else {
+					__sceRaw := fmt.Sprintf("%v", __sceValue)
+					if i := strings.LastIndexAny(__sceRaw, "/\\"); i >= 0 {
+						__sceRaw = __sceRaw[i+1:]
+					} else {
+						__sceRaw = strings.TrimPrefix(__sceRaw, "file:")
+					}
+					if d := strings.LastIndex(__sceRaw, "."); d >= 0 {
+						__sceRaw = __sceRaw[:d]
+					}
+					__sceSelected = __sceRaw
+{% endif %}
 				}
 			}
 {% elif invoke_info.contentexpr %}
@@ -263,59 +335,26 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			}
 {% endif %}
 
-			// W3C SCXML 6.5: Generate child session ID
-			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
-
-			childPolicy := New{{ invoke_info.child_name | to_machine_name }}Policy()
-{% if invoke_info.child_needs_script_engine %}
-			childPolicy.ScriptEngine = p.ScriptEngine
+{% if invoke_info.candidates %}
+			// §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the value chooses among
+			// the declared candidates. The slot is one `sce.ChildEngine`, so only
+			// the construction differs per candidate.
+{% for candidate in invoke_info.candidates %}
+			if __sceSelected == "{{ candidate.stem }}" {
+{{ hybrid_child_start(invoke_info, candidate.stem, 'childEngineWrapper' ~ (invoke_info.invoke_id | to_pascal_case) ~ (candidate.stem | to_pascal_case)) }}
+				continue
+			}
+{% endfor %}
+			// A value naming none of them is the failure the Interpreter reports
+			// when a document will not load: there is nothing to create.
+{% if 'error.execution' in model.events %}
+			engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke srcexpr='{{ invoke_info.srcexpr }}'> evaluated to a document it did not declare"))
 {% endif %}
-			parentQueue := make(chan sce.ParentEvent, 100)
-			childPolicy.ParentExternalQueue = parentQueue
-			childPolicy.InvokeID = pending.InvokeID
-			childPolicy.ChildSessionID = childSessionID
-			// W3C SCXML C.1: the child adopts the id its parent recorded for
-			// it. The parent mints `parentSession.invokeId` and keys
-			// `activeInvokes` on it, so an event from this child reaches the
-			// parent carrying that id as its origin; if the child also minted
-			// an id of its own, the location it publishes in `_ioprocessors`
-			// and the origin the parent sees would be two names for one
-			// session that can never be compared — which is exactly what C.1
-			// requires of them.
-			childPolicy.SessionID = childSessionID
-
-			p.activeInvokes["{{ invoke_info.invoke_id }}"] = &sce.ChildSession{
-				SessionID:       childSessionID,
-				InvokeID:        "{{ invoke_info.invoke_id }}",
-				ParentSessionID: p.SessionID,
-				Autoforward:     {{ 'true' if invoke_info.autoforward else 'false' }},
-				FinalizeScript:  "",
-			}
-
-			childEngine := sce.NewEngine[{{ invoke_info.child_name | to_machine_name }}State, {{ invoke_info.child_name | to_machine_name }}Event](&childPolicy)
-			// §scxml-6.4: the child's delayed sends are measured against the
-			// same clock as ours. A child reading its own would start its
-			// origin at construction time, so <send delay="100ms"> on either
-			// side of the boundary would mean two different absolute instants —
-			// and on a host-owned clock the child would not move at all,
-			// because the host advances the engine it holds, not the ones that
-			// engine invoked.
-			childEngine.SetClock(engine.Clock())
-			childEngine.SetCompletionCallback(func() {})
-			childEngine.Initialize()
-
-			wrapper := &childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}{engine: childEngine, policy: &childPolicy}
-			p.child{{ invoke_info.invoke_id | to_pascal_case }} = wrapper
-
-			sce.DrainAndRaiseChildEvents(wrapper, p.activeInvokes, "{{ invoke_info.invoke_id }}", engine)
-
-			if wrapper.IsInFinalState() {
-				p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} = true
-				// W3C SCXML 5.5 + 6.3.1: Lift the child's stashed donedata onto
-				// done.invoke.<id>._event.data.
-				sce.RaiseDoneInvoke("{{ invoke_info.invoke_id }}", wrapper.DonedataAtFinal(), engine)
-			}
 			continue
+{% else %}
+{{ hybrid_child_start(invoke_info, invoke_info.child_name, 'childEngineWrapper' ~ (invoke_info.invoke_id | to_pascal_case)) }}
+			continue
+{% endif %}
 		}
 {% endfor %}
 {% endif %}
@@ -474,18 +513,27 @@ func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) GetPare
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
 {% endfor %}
 {% for invoke_info in model.invokes | hybrid %}
-type childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }} struct {
-	engine *sce.Engine[{{ invoke_info.child_name | to_machine_name }}State, {{ invoke_info.child_name | to_machine_name }}Event]
-	policy *{{ invoke_info.child_name | to_machine_name }}Policy
+{#- §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: with candidates declared the
+    wrapper is per CANDIDATE, because it holds that document's concrete
+    engine and policy. The parent's slot stays one `sce.ChildEngine`, so
+    every lifecycle site below is untouched — Go type-erases its child where
+    C++ and Rust hold a concrete one and need a slot each. -#}
+{% set wrapper_targets = invoke_info.candidates if invoke_info.candidates else [{'stem': invoke_info.child_name}] %}
+{% for target in wrapper_targets %}
+{% set wrapper = 'childEngineWrapper' ~ (invoke_info.invoke_id | to_pascal_case) ~ ((target.stem | to_pascal_case) if invoke_info.candidates else '') %}
+type {{ wrapper }} struct {
+	engine *sce.Engine[{{ target.stem | to_machine_name }}State, {{ target.stem | to_machine_name }}Event]
+	policy *{{ target.stem | to_machine_name }}Policy
 }
-func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) Initialize() { w.engine.Initialize() }
-func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) Tick() { w.engine.Tick() }
-func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) IsInFinalState() bool { return w.engine.IsInFinalState() }
-func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
-func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
-func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
-func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) GetParentEventQueue() chan sce.ParentEvent { return w.policy.ParentExternalQueue }
-func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+func (w *{{ wrapper }}) Initialize() { w.engine.Initialize() }
+func (w *{{ wrapper }}) Tick() { w.engine.Tick() }
+func (w *{{ wrapper }}) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *{{ wrapper }}) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *{{ wrapper }}) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
+func (w *{{ wrapper }}) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *{{ wrapper }}) GetParentEventQueue() chan sce.ParentEvent { return w.policy.ParentExternalQueue }
+func (w *{{ wrapper }}) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
+{% endfor %}
 {% endfor %}
 
 {% else %}

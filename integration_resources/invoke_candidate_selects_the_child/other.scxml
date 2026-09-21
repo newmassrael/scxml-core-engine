@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The candidate the parent's expression does NOT name. It is declared and
+     generated like its sibling, and it says something different — which is
+     what makes "the right child ran" a thing a test can see rather than
+     assume. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       initial="speak" name="other">
+    <state id="speak">
+        <onentry>
+            <send target="#_parent" event="from.other"/>
+        </onentry>
+        <transition target="done"/>
+    </state>
+    <final id="done"/>
+</scxml>

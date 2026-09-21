@@ -376,6 +376,10 @@ pub fn compute_invoke_entries(model: &SCXMLModel) -> BTreeMap<String, Vec<serde_
                     "is_hybrid": true,
                     "srcexpr": hi.srcexpr.as_str(),
                     "contentexpr": hi.contentexpr.as_str(),
+                    // §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the documents
+                    // the value may choose between. Empty when none were
+                    // declared, which is the build-time stub as before.
+                    "candidates": hi.candidates,
                 }));
             }
         }

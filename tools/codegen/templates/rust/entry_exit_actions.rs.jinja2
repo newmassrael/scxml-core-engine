@@ -499,9 +499,19 @@
 {% endfor %}
 {% for invoke_info in state.invokes | hybrid %}
                 // W3C SCXML 6.4: Cleanup running hybrid child '{{ invoke_info.invoke_id }}'
+{% if invoke_info.candidates %}
+{# At most one candidate slot holds a child; clearing all of them is the
+   same guard the single-slot shape used, once per slot. #}
+{% for candidate in invoke_info.candidates %}
+                if self.child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}.is_some() {
+                    self.child_{{ invoke_info.field_suffix }}_{{ candidate.stem }} = None;
+                }
+{% endfor %}
+{% else %}
                 if self.child_{{ invoke_info.field_suffix }}.is_some() {
                     self.child_{{ invoke_info.field_suffix }} = None;
                 }
+{% endif %}
                 self.active_invokes.remove("{{ invoke_info.invoke_id }}");
                 self.pending_done_invoke_{{ invoke_info.field_suffix }} = false;
 {% endfor %}

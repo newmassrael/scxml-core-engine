@@ -1319,6 +1319,36 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     # evaluated at invoke-fire time, and a failure raises `error.execution`.
     # The stub child the parent spawns is declared because C11 #includes its
     # header from the parent translation unit.
+    # W3C SCXML 6.4.3: the evaluated value selects among declared candidates.
+    # C11 embeds each child by value, so both candidates are named here and
+    # each gets a slot the parent guards with its own `_active` flag.
+    sce_generate_static_integration_c_test(invoke_candidate_selects_the_child
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        HYBRID_INVOKE_CHILDREN chosen other)
+
+    add_executable(sce_c_integration_invoke_candidate_selects_the_child
+        integration/test_invoke_candidate_selects_the_child.c
+        ${INTEGRATION_C_TEST_invoke_candidate_selects_the_child_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_invoke_candidate_selects_the_child PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_invoke_candidate_selects_the_child PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_invoke_candidate_selects_the_child PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_invoke_candidate_selects_the_child
+        COMMAND sce_c_integration_invoke_candidate_selects_the_child
+    )
+    set_tests_properties(c11_integration_invoke_candidate_selects_the_child PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     sce_generate_static_integration_c_test(invoke_expression_failure_is_reported
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         HYBRID_INVOKE_CHILDREN invoke_expression_failure_is_reported_hybrid0)

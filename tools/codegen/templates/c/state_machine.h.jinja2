@@ -88,13 +88,19 @@
 {% endfor %}
 {% for invoke_info in model.invokes | hybrid %}
 /* W3C SCXML 6.4 (test216/530): child SM declarations for hybrid
-   `<invoke srcexpr=...>` / `<invoke><content expr=...>`. The child's
-   SCXML is a trivial immediate-final stub written by sce-build's
-   `generate_hybrid_child_scxmls`; the parent's runtime evaluation of
-   srcexpr/contentexpr is validation-only (cpp `test216_sm.inl:166`
-   pattern). The child header / struct embed shape is identical to the
-   static-scxml case. */
+   `<invoke srcexpr=...>` / `<invoke><content expr=...>`. Without a
+   declared candidate set the child's SCXML is a trivial immediate-final
+   stub written by sce-build's `generate_hybrid_child_scxmls` and the
+   runtime evaluation is validation-only; with one
+   (SCE_ACCEPTED_SUBSET.md §2.13) each candidate is a real document and
+   the evaluated value chooses between them. */
+{% if invoke_info.candidates %}
+{% for candidate in invoke_info.candidates %}
+#include "{{ candidate.stem }}_sm.h"
+{% endfor %}
+{% else %}
 #include "{{ invoke_info.child_name }}_sm.h"
+{% endif %}
 {% endfor %}
 {% endif %}
 
@@ -560,9 +566,21 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
        `execute_pending_invokes` (cpp `test216_sm.inl:166-176` mirror).
        The child SM is the trivial immediate-final stub that sce-build
        writes via `generate_hybrid_child_scxmls`. */
+{% if invoke_info.candidates %}
+    /* §2.13: one slot per declared candidate, at most one ever active. C11
+       has no interface to hold them behind, so the shape is the one the
+       cpp backend uses — a slot each, every lifecycle site guarded by its
+       own `_active` flag. */
+{% for candidate in invoke_info.candidates %}
+    {{ csym_prefix }}{{ candidate.stem }}_t child_{{ invoke_info.field_suffix }}_{{ candidate.stem }};
+    bool child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_active;
+{% endfor %}
+    char child_{{ invoke_info.field_suffix }}_invoke_id[SCE_MAX_ID_LEN];
+{% else %}
     {{ csym_prefix }}{{ invoke_info.child_name }}_t child_{{ invoke_info.field_suffix }};
     bool child_{{ invoke_info.field_suffix }}_active;
     char child_{{ invoke_info.field_suffix }}_invoke_id[SCE_MAX_ID_LEN];
+{% endif %}
     {% endfor %}
     {% endif %}
     {% if model.needs_script_engine %}

@@ -4035,6 +4035,13 @@
             "autoforward": {
               "type": "boolean"
             },
+            "candidates": {
+              "description": "The documents `sce:candidates` declares this invoke may start, in the order written. Empty when the author declared none, which is the state every hybrid invoke was in before the attribute existed.\n\n⚠ This is what lets an AOT target honour the VALUE a `srcexpr` computes rather than only the fact that it computed (docs/SCE_ACCEPTED_SUBSET.md §2.13). The build generates one child per candidate and the runtime picks by the evaluated value; a value naming none of them is `error.execution`, which is what the Interpreter does when the document will not load.\n\n⚠⚠ Matching is by document STEM, not by the spelling the author wrote. An expression is free to compute `file:…`, an absolute path or a relative one for the same document, so a comparison against the declared text would answer differently for three ways of saying one thing. The stem is also the name codegen already gives a child, so the match and the generated symbol cannot disagree.",
+              "items": {
+                "$ref": "#/definitions/InvokeCandidate"
+              },
+              "type": "array"
+            },
             "child_datamodel_vars": {
               "items": {
                 "type": "string"
@@ -4133,6 +4140,7 @@
           },
           "required": [
             "autoforward",
+            "candidates",
             "child_name",
             "child_needs_script_engine",
             "contentexpr",
@@ -4344,6 +4352,24 @@
           "type": "object"
         }
       ]
+    },
+    "InvokeCandidate": {
+      "description": "One document a hybrid `<invoke>` may start, as `sce:candidates` named it.\n\n`stem` is the identity: it is what the runtime compares the evaluated value against, and what codegen names the generated child by. `path` is kept because the build has to find the document, and because a refusal that says which entry was wrong needs the author's own spelling.",
+      "properties": {
+        "path": {
+          "description": "The path exactly as the author wrote it in `sce:candidates`.",
+          "type": "string"
+        },
+        "stem": {
+          "description": "File stem of that path — the identity the runtime matches on.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "stem"
+      ],
+      "type": "object"
     },
     "LinkClass": {
       "description": "`<sce:link-class>` enumeration — RFC §synth-5-C \"Link-class enumeration\" table. Five strings shipped today; OS-specific classes (e.g. `unix_socket`, `qnx_msg`) land additively when wired.",

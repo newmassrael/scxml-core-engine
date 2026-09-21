@@ -986,6 +986,8 @@ add_executable(integration_tests
     integration/InvokeUnsupportedTypeAotTest.cpp
     integration/InvokeExpressionFailureIsReportedTest.cpp
     integration/InvokeExpressionFailureIsReportedAotTest.cpp
+    integration/InvokeCandidateSelectsTheChildTest.cpp
+    integration/InvokeCandidateSelectsTheChildAotTest.cpp
     integration/LateTickHonoursCancelTest.cpp
     integration/LateTickHonoursCancelAotTest.cpp
     integration/NestedFinalNotTerminalTest.cpp
@@ -1553,6 +1555,16 @@ sce_generate_static_integration_test(invoke_unsupported_type ${STATIC_INTEGRATIO
 sce_generate_static_integration_test(invoke_expression_failure_is_reported
     ${STATIC_INTEGRATION_OUTPUT_DIR}
     HYBRID_INVOKE_CHILDREN invoke_expression_failure_is_reported_hybrid0)
+
+# W3C SCXML 6.4.3: the value a `srcexpr` computes selects the child, out of
+# the set `sce:candidates` declares. The two candidates announce themselves
+# differently, so a machine that ran the wrong one — or ran a stub and
+# ignored the value — reaches `fail` instead of `pass`. The children named
+# here are those candidates rather than a hybrid stub: with a set declared
+# there is no stub to generate.
+sce_generate_static_integration_test(invoke_candidate_selects_the_child
+    ${STATIC_INTEGRATION_OUTPUT_DIR}
+    HYBRID_INVOKE_CHILDREN chosen other)
 
 # W3C SCXML 5.5 + 6.3.1: donedata rides `done.invoke.<id>` wherever the child
 # reaches its final state, not only where it finalises during start-up. The

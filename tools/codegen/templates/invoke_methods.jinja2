@@ -1,6 +1,77 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
+{% macro hybrid_child_start(invoke_info, cpp_ns_prefix, child_type, slot) %}
+                        // W3C SCXML 6.4: Create pre-generated AOT child (pure AOT — no Interpreter dependency).
+                        // SCE_MESH §14 arch-debt #4 caveat: partition-naive
+                        // namespace ref — see the sibling create-child site
+                        // above for the lift path when a partitioned child
+                        // becomes a consumer.
+                        {{ slot }} = std::make_shared<::SCE::Generated::{{ cpp_ns_prefix }}{{ child_type }}::{{ child_type }}<SelfType>>(self_, pending.invokeId, childSessionId);
+
+                        // §scxml-6.4: the child's delayed sends are measured
+                        // against the same clock as ours. A child reading its
+                        // own would start its origin at construction time, so
+                        // `<send delay="100ms">` on either side of the boundary
+                        // would mean two different absolute instants — and on a
+                        // host-owned clock the child would not move at all,
+                        // because the host advances the engine it holds, not
+                        // the ones that engine invoked.
+                        {{ slot }}->setClock(engine.clock());
+
+                        // W3C SCXML B.1: Forward the build-configured script
+                        // engine to the child before initialize() — generated
+                        // Policy::getScriptEngine() throws when unset.
+                        {% if invoke_info.child_needs_script_engine %}
+                        {{ slot }}->setScriptEngine(::std::shared_ptr<::SCE::IScriptEngine>(
+                            &::SCE::ScriptEngineProvider::getScriptEngine(),
+                            [](::SCE::IScriptEngine*){}));
+                        {% endif %}
+
+                        // W3C SCXML 6.4.1: Track active invoke session
+                        // SCE_MESH.md §16.7 row 5 sub-atomic C — same shared-
+                        // access discipline as the scxml-local insert above.
+                        {
+                            std::lock_guard<std::mutex> __sce_active_invokes_lk(activeInvokesMutex_);
+                            activeInvokes_["{{ invoke_info.invoke_id }}"] = ChildSession{
+                                childSessionId,
+                                "{{ invoke_info.invoke_id }}",
+                                sessionId_.has_value() ? sessionId_.value() : "",
+                                {{ 'true' if invoke_info.autoforward else 'false' }},
+                                ""  // No finalize for hybrid invokes
+                            };
+                        }
+
+                        // W3C SCXML 6.4: Register completion callback BEFORE initialize.
+                        // ⚠ Only when the document listens for the done event.
+                        // A machine that observes its child another way — by
+                        // what the child sends it — has no `done.invoke` in
+                        // its Event enum, and naming one here asks the
+                        // compiler for a member the document never declared.
+{% if invoke_info.use_specific_event or 'done.invoke' in model.events %}
+                        {{ slot }}->setCompletionCallback([this]() {
+                            AOT_DEBUG("Hybrid child {{ invoke_info.invoke_id }} completed, sending done.invoke");
+                            pendingDoneInvoke_{{ invoke_info.invoke_id }}_ = true;
+                            // W3C SCXML 5.5 + 6.3.1: lift the hybrid child's donedata payload
+                            // onto `done.invoke.<id>._event.data`. Same single-source stash as
+                            // the scxml local path — `stashDonedataAtFinal` on
+                            // `StaticExecutionEngine` — so the hybrid consumer stays identical.
+                            self_->raiseExternal(::SCE::Common::EventMetadataHelper::createDoneInvokeEvent<
+                                typename SelfType::Event, typename SelfType::EventWithMetadata>(
+                                {% if invoke_info.use_specific_event %}Event::Done_invoke_{{ invoke_info.invoke_id }}{% else %}Event::Done_invoke{% endif %},
+                                "{{ invoke_info.invoke_id }}",
+                                {{ slot }}->donedataAtFinal(),
+                                {{ slot }}->typedDonedataAtFinal()
+                            ));
+                        });
+{% endif %}
+
+                        // W3C SCXML 6.4: Initialize child state machine
+                        {{ slot }}->initialize();
+
+                        AOT_DEBUG("Hybrid AOT child {{ invoke_info.invoke_id }} initialized and running");
+                        return;
+{% endmacro %}
 {#
     Invoke Methods Template (C++ Jinja2)
 
@@ -289,6 +360,12 @@
                     {% for invoke_info in state.invokes | hybrid %}
                     if (pending.invokeId.find(".{{ invoke_info.invoke_id }}") != std::string::npos) {
                         // W3C SCXML 6.4: Hybrid invoke — evaluate expression, then run pre-generated AOT child
+{% if invoke_info.candidates %}
+                        // Which candidate the evaluated value names. Declared
+                        // out here because the evaluation below has a scope of
+                        // its own and the dispatch is after it.
+                        std::string __sce_selected_{{ invoke_info.field_suffix }};
+{% endif %}
                         {% if invoke_info.srcexpr %}
                         // W3C SCXML 6.4.3: Evaluate srcexpr at runtime (validation only — child is pre-generated AOT)
                         {
@@ -308,6 +385,26 @@
                             // (`sce/include/scripting/ScriptResult.h:61` `template <typename T>
                             // T getValue() const`). Older gcc accepted the bare form silently.
                             AOT_DEBUG("Hybrid invoke: srcexpr evaluated to {}", pathResult.template getValue<std::string>());
+{% if invoke_info.candidates %}
+                            // §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the
+                            // document this invoke declared as candidates are
+                            // generated children, so the evaluated value can
+                            // choose between them. Matching is on the STEM: an
+                            // expression is free to compute `file:x.scxml`, a
+                            // relative path or an absolute one for the same
+                            // document, and all three name one child.
+                            __sce_selected_{{ invoke_info.field_suffix }} =
+                                [](std::string v) {
+                                    const auto slash = v.find_last_of("/\\");
+                                    if (slash != std::string::npos) {
+                                        v = v.substr(slash + 1);
+                                    } else if (v.rfind("file:", 0) == 0) {
+                                        v = v.substr(5);
+                                    }
+                                    const auto dot = v.find_last_of('.');
+                                    return dot == std::string::npos ? v : v.substr(0, dot);
+                                }(pathResult.template getValue<std::string>());
+{% endif %}
                         }
                         {% elif invoke_info.contentexpr %}
                         // W3C SCXML 6.4.4: Evaluate contentexpr at runtime (validation only — child is pre-generated AOT)
@@ -327,68 +424,26 @@
                         // W3C SCXML 6.5: Generate child session ID
                         std::string childSessionId = (sessionId_.has_value() ? sessionId_.value() : "") + "." + pending.invokeId;
 
-                        // W3C SCXML 6.4: Create pre-generated AOT child (pure AOT — no Interpreter dependency).
-                        // SCE_MESH §14 arch-debt #4 caveat: partition-naive
-                        // namespace ref — see the sibling create-child site
-                        // above for the lift path when a partitioned child
-                        // becomes a consumer.
-                        child_{{ invoke_info.field_suffix }}_ = std::make_shared<::SCE::Generated::{{ cpp_ns_prefix }}{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>>(self_, pending.invokeId, childSessionId);
-
-                        // §scxml-6.4: the child's delayed sends are measured
-                        // against the same clock as ours. A child reading its
-                        // own would start its origin at construction time, so
-                        // `<send delay="100ms">` on either side of the boundary
-                        // would mean two different absolute instants — and on a
-                        // host-owned clock the child would not move at all,
-                        // because the host advances the engine it holds, not
-                        // the ones that engine invoked.
-                        child_{{ invoke_info.field_suffix }}_->setClock(engine.clock());
-
-                        // W3C SCXML B.1: Forward the build-configured script
-                        // engine to the child before initialize() — generated
-                        // Policy::getScriptEngine() throws when unset.
-                        {% if invoke_info.child_needs_script_engine %}
-                        child_{{ invoke_info.field_suffix }}_->setScriptEngine(::std::shared_ptr<::SCE::IScriptEngine>(
-                            &::SCE::ScriptEngineProvider::getScriptEngine(),
-                            [](::SCE::IScriptEngine*){}));
-                        {% endif %}
-
-                        // W3C SCXML 6.4.1: Track active invoke session
-                        // SCE_MESH.md §16.7 row 5 sub-atomic C — same shared-
-                        // access discipline as the scxml-local insert above.
-                        {
-                            std::lock_guard<std::mutex> __sce_active_invokes_lk(activeInvokesMutex_);
-                            activeInvokes_["{{ invoke_info.invoke_id }}"] = ChildSession{
-                                childSessionId,
-                                "{{ invoke_info.invoke_id }}",
-                                sessionId_.has_value() ? sessionId_.value() : "",
-                                {{ 'true' if invoke_info.autoforward else 'false' }},
-                                ""  // No finalize for hybrid invokes
-                            };
+{% if invoke_info.candidates %}
+                        // §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the value
+                        // chooses among the declared candidates. Each has a
+                        // slot of its own and at most one is ever filled.
+{% for candidate in invoke_info.candidates %}
+                        if (__sce_selected_{{ invoke_info.field_suffix }} == "{{ candidate.stem | escape_cpp }}") {
+{{ hybrid_child_start(invoke_info, cpp_ns_prefix, candidate.stem, "child_" ~ invoke_info.field_suffix ~ "_" ~ candidate.stem ~ "_") }}
                         }
-
-                        // W3C SCXML 6.4: Register completion callback BEFORE initialize
-                        child_{{ invoke_info.field_suffix }}_->setCompletionCallback([this]() {
-                            AOT_DEBUG("Hybrid child {{ invoke_info.invoke_id }} completed, sending done.invoke");
-                            pendingDoneInvoke_{{ invoke_info.invoke_id }}_ = true;
-                            // W3C SCXML 5.5 + 6.3.1: lift the hybrid child's donedata payload
-                            // onto `done.invoke.<id>._event.data`. Same single-source stash as
-                            // the scxml local path — `stashDonedataAtFinal` on
-                            // `StaticExecutionEngine` — so the hybrid consumer stays identical.
-                            self_->raiseExternal(::SCE::Common::EventMetadataHelper::createDoneInvokeEvent<
-                                typename SelfType::Event, typename SelfType::EventWithMetadata>(
-                                {% if invoke_info.use_specific_event %}Event::Done_invoke_{{ invoke_info.invoke_id }}{% else %}Event::Done_invoke{% endif %},
-                                "{{ invoke_info.invoke_id }}",
-                                child_{{ invoke_info.field_suffix }}_->donedataAtFinal(),
-                                child_{{ invoke_info.field_suffix }}_->typedDonedataAtFinal()
-                            ));
-                        });
-
-                        // W3C SCXML 6.4: Initialize child state machine
-                        child_{{ invoke_info.field_suffix }}_->initialize();
-
-                        AOT_DEBUG("Hybrid AOT child {{ invoke_info.invoke_id }} initialized and running");
+{% endfor %}
+                        // A value naming none of them is the same failure the
+                        // Interpreter reports when the document will not load:
+                        // there is no service to create, and the author needs
+                        // to hear which name arrived.
+                        SCE_LOG_ERROR("Hybrid invoke: '{}' names no declared candidate", __sce_selected_{{ invoke_info.field_suffix }});
+                        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution,
+                            "<invoke srcexpr='{{ invoke_info.srcexpr | escape_cpp }}'> evaluated to a document it did not declare"));
                         return;
+{% else %}
+{{ hybrid_child_start(invoke_info, cpp_ns_prefix, invoke_info.child_name, "child_" ~ invoke_info.field_suffix ~ "_") }}
+{% endif %}
                     }
                     {% endfor %}
                 }
@@ -473,9 +528,19 @@
         {% endif %}
         {% if state.invokes | hybrid %}
         {% for invoke_info in state.invokes | hybrid %}
+        {% if invoke_info.candidates %}
+        {# §scxml-6.4: one slot per declared candidate; the null guard that
+           already stood here is what makes the unchosen ones free. #}
+        {% for candidate in invoke_info.candidates %}
+        if (child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_) {
+            child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_->tick();
+        }
+        {% endfor %}
+        {% else %}
         if (child_{{ invoke_info.field_suffix }}_) {
             child_{{ invoke_info.field_suffix }}_->tick();
         }
+        {% endif %}
         {% endfor %}
         {% endif %}
         {% endfor %}

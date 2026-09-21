@@ -477,6 +477,29 @@ Rust passed a generated-source assertion while still resting in `probe` at
 runtime, so the emit-site check and the runtime channel are not
 substitutes for one another.
 
+`invoke_candidate_selects_the_child` covers the other half of W3C §6.4.3:
+the value the expression computes is the child that runs. Its axis is the
+SELECTION, and it needs something no other invoke fixture in this tree has —
+**two children that answer differently**. Every existing one has a single
+child, or children whose answers are indistinguishable, so a machine that
+ran the wrong document, or ran a build-time stub and ignored the value
+entirely, passes all of them. That is measured, not hypothetical: five AOT
+backends did exactly that and nothing went red (SCE_ACCEPTED_SUBSET.md
+§2.13).
+
+So `chosen` sends `from.chosen` to its parent and `other` sends
+`from.other`. Right child reaches `pass`, wrong child reaches `fail`, stub
+reaches neither and parks in `probe` — three outcomes, three states.
+
+The expression computes a `file:` URI deliberately. Matching is on the
+document stem, and a declaration that only recognised one spelling of a
+path would be a trap rather than a contract.
+
+⚠ The fixture earned its keep on its first run: the Python channel reached
+`fail` because the stem was being cut out of a `ScriptValue`'s repr rather
+than its string. A fixture whose candidates answered alike would have gone
+green over it.
+
 `invoke_expression_failure_is_reported` covers W3C §6.4.3: an `<invoke>` that
 names its target through an expression must evaluate that expression when the
 element fires, and raise `error.execution` when it cannot. The axis is the

@@ -4694,7 +4694,14 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         // directory so CMake's post-processing script can find them next to the
         // parent. `process_static_invokes` extracts inline <scxml> content to
         // the *source* directory; the build system expects them in OUTPUT_DIR.
-        copy_static_invoke_children(&model, Path::new(scxml_path), out_path);
+        // ⚠ `drift_input_root`, not the document's own directory. A build
+        // that stages the parent into its output tree first — which the
+        // CMake integration flow does — would otherwise look for the
+        // candidates beside the STAGED copy, where nothing was ever put.
+        // `--input-root` is the caller naming where the source set lives,
+        // and a candidate is declared relative to the document the author
+        // wrote, not to wherever the build moved it.
+        copy_static_invoke_children(&model, Path::new(scxml_path), &drift_input_root, out_path);
         // §scxml-6.4 (test216/530): hybrid stub destination is backend-aware.
         // cpp's CMake harness drives child codegen from OUTPUT_DIR (its
         // `process_children_<N>.cmake` reads `<OUTPUT_DIR>/<child>.scxml`), so
@@ -4820,6 +4827,16 @@ fn collect_invoke_child_names(model: &SCXMLModel) -> Vec<String> {
         }
     }
     for invoke in model.iter_hybrid_invokes() {
+        // §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: a declared candidate set
+        // replaces the stub, so what the build has to generate is one child
+        // per candidate. Naming the stub here as well would ask the build for
+        // a machine the parent no longer references.
+        if !invoke.candidates.is_empty() {
+            for candidate in &invoke.candidates {
+                children.push(candidate.stem.clone());
+            }
+            continue;
+        }
         if !invoke.child_name.is_empty() {
             children.push(invoke.child_name.clone());
         }
@@ -4841,8 +4858,52 @@ fn collect_invoke_child_names(model: &SCXMLModel) -> Vec<String> {
 /// codegen emit, not by a parser write). They are skipped here — there is
 /// no source-side file to copy and downstream codegen reads them from the
 /// parent model directly.
-fn copy_static_invoke_children(model: &SCXMLModel, scxml_path: &Path, output_dir: &Path) {
+fn copy_static_invoke_children(
+    model: &SCXMLModel,
+    scxml_path: &Path,
+    input_root: &Path,
+    output_dir: &Path,
+) {
     let source_dir = scxml_path.parent().unwrap_or(Path::new("."));
+
+    // §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: a hybrid invoke that
+    // declared `sce:candidates` has one child per candidate, and they are
+    // ordinary documents beside the parent — the same shape a static `src`
+    // child has, which is why they are staged by the same pass rather than
+    // by a second one that would drift from it.
+    for invoke in model.iter_hybrid_invokes() {
+        for candidate in &invoke.candidates {
+            let child_scxml = format!("{}.scxml", candidate.stem);
+            let dest = output_dir.join(&child_scxml);
+            if dest.exists() {
+                continue;
+            }
+            // Beside the document as the author sees it first, then beside
+            // the one the build may have staged. Both, because a plain
+            // `generate` has only the second and a staged build has only
+            // the first.
+            let src = [
+                input_root.join(&candidate.path),
+                source_dir.join(&candidate.path),
+            ]
+            .into_iter()
+            .find(|p| p.exists());
+            match src {
+                Some(src) => {
+                    if let Err(e) = std::fs::copy(&src, &dest) {
+                        eprintln!(
+                            "Warning: Cannot copy invoke candidate {} to output: {e}",
+                            candidate.path
+                        );
+                    }
+                }
+                None => eprintln!(
+                    "Warning: invoke candidate {} is not beside the document or its input root",
+                    candidate.path
+                ),
+            }
+        }
+    }
 
     for invoke in model.iter_scxml_invokes() {
         if invoke.child_name.is_empty() || invoke.inline_child.is_some() {
@@ -4885,6 +4946,13 @@ fn copy_static_invoke_children(model: &SCXMLModel, scxml_path: &Path, output_dir
 fn generate_hybrid_child_scxmls(model: &SCXMLModel, output_dir: &Path) -> Vec<PathBuf> {
     let mut written = Vec::new();
     for invoke in model.iter_hybrid_invokes() {
+        // An invoke that declared `sce:candidates` has real children — the
+        // documents it may start — so the stub would be a seventh machine
+        // nobody can reach. The stub exists only for the case where the
+        // build has no way to know what the expression will name.
+        if !invoke.candidates.is_empty() {
+            continue;
+        }
         if invoke.child_name.is_empty() {
             continue;
         }

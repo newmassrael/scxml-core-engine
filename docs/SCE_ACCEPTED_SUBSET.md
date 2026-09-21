@@ -1973,13 +1973,37 @@ as many words,
 and a failure to evaluate raises `error.execution` under one wording on
 all six (`sce-build/tests/one_wording_for_an_invoke_expression_failure.rs`).
 
-⚠ The consequence for an author is one sentence: on the AOT path a
-child reached through `srcexpr` **does nothing**. A child that must run
-logic has to be named by `src=` or carried inline by `<content>`, both
-of which are resolved at build time and generated whole. `--deploy`
-changes none of this; it writes the same stub. The C++ Interpreter,
-which parses at run time, does honour the value and runs the document it
-names.
+⚠ The consequence for an author is one sentence, and it is now a
+choice rather than a limit: **declare `sce:candidates` and the value
+selects among them; declare none and the child is the stub.**
+
+```xml
+<invoke type="scxml" srcexpr="pick"
+        sce:candidates="chosen.scxml other.scxml"/>
+```
+
+With a set declared, the build generates one child per candidate and
+the runtime picks by the evaluated value, matched on the document STEM
+so `file:x.scxml`, `./x.scxml` and an absolute path all name one child.
+A value naming none of them raises `error.execution` — the same answer
+the Interpreter gives when a document will not load. Three refusals
+guard the declaration at build time: beside a `contentexpr` (which
+PRODUCES a document rather than naming one, so there is no finite set),
+two entries sharing a stem (two documents claiming one answer), and an
+attribute written and left empty.
+
+Without a set the residue stands: the child is fixed at build time and
+a child reached through `srcexpr` **does nothing**. That is the right
+default rather than a gap — a build cannot know what an expression will
+compute, and inventing a candidate set would be the generator guessing.
+`--deploy` changes none of this; it writes the same stub.
+
+The runtime witness is
+`integration_resources/invoke_candidate_selects_the_child/`, driven on
+all seven channels. Its two candidates announce themselves differently,
+so the right child, the wrong child, a failure to load and a stub each
+rest in a different state — the discriminator the note below says no
+fixture had.
 
 ⚠⚠ Two of the six did not hold that contract when it was written down,
 and both are recorded here rather than quietly repaired:
@@ -1993,14 +2017,14 @@ generated file carrying a hybrid invoke imported a symbol a consumer's
 runtime does not have and did not compile for them. It now spawns the
 same stub as the rest.
 
-⚠⚠⚠ What Kotlin lost is worth naming rather than filing as a tidy-up:
-it was the one AOT channel whose child was the document the expression
-named. Getting that back is not a Kotlin-shaped job. It needs the
-build to know a SET of candidate children and the runtime to choose
-among them by the evaluated value — with a document that declares no
-candidates refused rather than silently given a stub. Until that
-exists, this section's residue is the honest description of every AOT
-channel.
+⚠⚠⚠ What Kotlin lost when it moved onto the stub — it was the one AOT
+channel whose child was the document the expression named — is what
+`sce:candidates` gives back, and to all six rather than to Kotlin
+alone. The sequence was wrong, and saying so is the point: the
+capability was removed before its replacement existed, so the product
+did less for the length of that gap. The replacement is not a
+Kotlin-shaped patch; it is the build knowing a set and the runtime
+choosing from it, which is why every backend has it now.
 
 ⚠⚠ No fixture's oracle can currently tell a stub from the named
 document, which is why the divergence above could persist unremarked.

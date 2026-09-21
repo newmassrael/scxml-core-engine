@@ -2562,6 +2562,25 @@ fn parse_scxml_invoke(
             "mesh-transport" => scxml.remote_mesh_transport = Some(undo(value, k.number)?),
             "srcexpr" => hybrid.srcexpr = undo(value, k.number)?,
             "contentexpr" => hybrid.contentexpr = undo(value, k.number)?,
+            "candidates" => {
+                let written = undo(value, k.number)?;
+                hybrid.candidates = Vec::new();
+                for tok in written.split_whitespace() {
+                    // The stem comes from the same derivation the parser
+                    // uses, never from the rendered text: it is the
+                    // identity a value is matched against, so a model
+                    // rebuilt here must name the same document the one
+                    // read from XML would.
+                    hybrid.candidates.push(
+                        crate::model::InvokeCandidate::from_path(tok).ok_or_else(|| {
+                            ParseError {
+                                line: k.number,
+                                why: format!("candidate `{tok}` names no document"),
+                            }
+                        })?,
+                    );
+                }
+            }
             "target" => {
                 let (how, what) = value.split_once(' ').ok_or_else(|| ParseError {
                     line: k.number,
