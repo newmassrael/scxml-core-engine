@@ -5188,14 +5188,18 @@ fn collect_on_sample_blocks(parent: &roxmltree::Node, out: &mut Vec<crate::model
 /// The check is parser-internal (no deploy.yaml needed) so the
 /// diagnostic surfaces on any SCXML the build sees, regardless of
 /// whether the document participates in a deploy listener pair.
-/// `offending_ids` ride the diagnostic in document-order (the natural
-/// `BTreeMap::keys` iteration on `SCXMLModel.states`) so the message
-/// is deterministic across rebuilds.
+///
+/// One record for all the offending states, since one declaration
+/// repairs them all: it names the first in document order, on its row,
+/// and every other rides `related` as `also-refused`. `offending_ids`
+/// follow the same order. ⚠ They used to follow `SCXMLModel.states`'
+/// `BTreeMap` iteration, which a comment here called document order and
+/// which is alphabetical.
 fn validate_axis3_accept_side_state_naming(
     model: &crate::model::SCXMLModel,
     diag_label: &str,
 ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
-    use crate::forge::error::{Located, ValidationError};
+    use crate::forge::error::{Located, RelatedRole, RelatedSite, SourceLocation, ValidationError};
     use crate::model::SessionRoleKind;
     if model
         .declared_session_roles
@@ -5204,21 +5208,43 @@ fn validate_axis3_accept_side_state_naming(
         // Author claimed the role — naming is sanctioned.
         return Ok(());
     }
-    let offending_ids: Vec<String> = model
+    let mut offending: Vec<&crate::model::State> = model
         .states
-        .keys()
-        .filter(|id| *id == "Accepting" || id.starts_with("Accepting."))
-        .cloned()
+        .values()
+        .filter(|state| state.id == "Accepting" || state.id.starts_with("Accepting."))
         .collect();
-    if offending_ids.is_empty() {
+    offending.sort_by_key(|state| state.document_order);
+    let Some((first, others)) = offending.split_first() else {
         return Ok(());
-    }
-    Err(Located::new(
-        ValidationError::ScxmlAcceptSideStatesWithoutRoleDeclaration { offending_ids }.into(),
+    };
+    let row = |state: &crate::model::State| {
+        state
+            .source_location
+            .as_ref()
+            .map_or((None, None), |at| (at.line, at.col))
+    };
+    let (line, col) = row(first);
+    let refusal = Located::new(
+        ValidationError::ScxmlAcceptSideStatesWithoutRoleDeclaration {
+            offending_ids: offending.iter().map(|state| state.id.clone()).collect(),
+        }
+        .into(),
         diag_label,
-        None,
-        None,
-    ))
+        line,
+        col,
+    );
+    Err(others.iter().fold(refusal, |refusal, state| {
+        let (line, col) = row(state);
+        refusal.related_to(RelatedSite {
+            role: RelatedRole::AlsoRefused,
+            location: SourceLocation {
+                file: diag_label.to_string(),
+                line,
+                col,
+            },
+            actual: Some(state.id.clone()),
+        })
+    }))
 }
 
 /// SCE Protocol-Synthesis RFC §synth-5-E `<sce:on-sample>` placement validator.
@@ -6073,6 +6099,39 @@ fn remap_post_expansion(
 mod tests {
     use super::*;
     use std::collections::BTreeSet;
+
+    /// Every state the accept-side naming rule catches is reported, once:
+    /// the record names the first in document order on its row, and the
+    /// rest ride `related`, each on its own row — one declaration repairs
+    /// them all, so one record, but a consumer still has to find each.
+    #[test]
+    fn accept_side_states_are_refused_once_with_the_rest_related() {
+        use crate::forge::error::RelatedRole;
+        let err = SCXMLParser::new()
+            .parse_string(
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="Accepting">
+  <state id="Accepting" initial="Accepting.AwaitingInitSyn">
+    <state id="Accepting.AwaitingInitSyn"/>
+  </state>
+</scxml>"#,
+                "t.scxml",
+            )
+            .expect_err("accept-side state names without the role are refused");
+        assert_eq!(err.location.line, Some(2), "{err:?}");
+        let related: Vec<(RelatedRole, Option<u32>, Option<&str>)> = err
+            .related()
+            .iter()
+            .map(|site| (site.role, site.location.line, site.actual.as_deref()))
+            .collect();
+        assert_eq!(
+            related,
+            [(
+                RelatedRole::AlsoRefused,
+                Some(3),
+                Some("Accepting.AwaitingInitSyn")
+            )]
+        );
+    }
 
     // ── parse_delay_to_ms ────────────────────────────────────
 

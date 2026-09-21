@@ -125,12 +125,17 @@ pub enum RelatedRole {
     /// Another use of the same name whose shape this one contradicts —
     /// the call site that fixed the signature first.
     ConflictingUse,
+    /// Another site the same rule refuses, reported with this one rather
+    /// than as a record of its own — every state a naming rule catches,
+    /// say, when one declaration elsewhere repairs them all.
+    AlsoRefused,
 }
 
 impl RelatedRole {
     /// Every role, so the schema's list of them can be checked against
     /// what the producer can send.
-    pub const ALL: &'static [RelatedRole] = &[RelatedRole::ConflictingUse];
+    pub const ALL: &'static [RelatedRole] =
+        &[RelatedRole::ConflictingUse, RelatedRole::AlsoRefused];
 }
 
 impl<E> Located<E> {

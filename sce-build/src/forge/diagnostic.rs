@@ -5888,12 +5888,14 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
         ValidationError::DynamicFeatures { name, reason } => DiagnosticPayload {
             code: DiagnosticCode::ValidationDynamicFeatures,
             stage: Stage::Validation,
-            // `actual` carries the specific blocker so consumers route
-            // between Interpreter fallback (dynamic invoke) and
-            // document rewrite (missing initial); no closed candidate
-            // set exists for the repair, so `fix` stays `None`.
+            // No closed candidate set exists for the repair, so `fix`
+            // stays `None`. Nor is there an `actual`: the blocker is
+            // something the document does NOT hold (an initial state), and
+            // the sentence naming it is the message's, which carries it —
+            // a consumer searching the document for the sentence finds
+            // nothing (SCE_ERROR_CONTRACT §2.1).
             expected: None,
-            actual: Some(reason.clone()),
+            actual: None,
             fix: None,
             key_fragments: vec![name.clone(), reason.clone()],
         },
@@ -7242,15 +7244,14 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             DiagnosticPayload {
                 // Listener-role migration-helper. 2-axis
                 // repair (add role declaration OR rename states); no
-                // closed candidate set so `fix: None`. `actual`
-                // serializes the offending id list in document order
-                // — joined with comma so the wire format is a single
-                // string (per the DiagnosticPayload `actual: Option<
-                // String>` contract).
+                // closed candidate set so `fix: None`. `actual` is the
+                // first offending state's id, on the row the record names;
+                // the others ride `related` as `also-refused` — a
+                // comma-joined list is text no row of the document holds.
                 code: DiagnosticCode::ScxmlAcceptSideStatesWithoutRoleDeclaration,
                 stage: Stage::Validation,
                 expected: None,
-                actual: Some(offending_ids.join(",")),
+                actual: offending_ids.first().cloned(),
                 fix: None,
                 key_fragments: offending_ids.clone(),
             }
@@ -9934,7 +9935,7 @@ mod tests {
                     reason: "initial state attribute names a state that is not declared".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:aaaac1f1c1e4cf6e","code":"validation/dynamic-features","stage":"validation","message":"cannot generate static code for 'chart': initial state attribute names a state that is not declared","actual":"initial state attribute names a state that is not declared"}"#,
+                r#"{"v":1,"id":"fnv1a:aaaac1f1c1e4cf6e","code":"validation/dynamic-features","stage":"validation","message":"cannot generate static code for 'chart': initial state attribute names a state that is not declared"}"#,
             ),
             (
                 "forge/native-action-placement",
@@ -10282,7 +10283,7 @@ mod tests {
                     ],
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:9c490c868c1407cc","code":"scxml/accept-side-states-without-role-declaration","stage":"validation","message":"SCXML doc carries state ids matching the reserved `Accepting.*` prefix ([\"Accepting\", \"Accepting.AwaitingInitSyn\"]) but no top-level `<sce:session-role kind=\"accept-side\"/>` declaration. The canonical session-FSM accept-side state names are reserved for documents that claim the accept-side role. Repair: add `<sce:session-role kind=\"accept-side\"/>` to the SCXML root if the doc implements the session-FSM accept-side, OR rename the offending state ids to avoid the `Accepting.*` reservation.","actual":"Accepting,Accepting.AwaitingInitSyn"}"#,
+                r#"{"v":1,"id":"fnv1a:9c490c868c1407cc","code":"scxml/accept-side-states-without-role-declaration","stage":"validation","message":"SCXML doc carries state ids matching the reserved `Accepting.*` prefix ([\"Accepting\", \"Accepting.AwaitingInitSyn\"]) but no top-level `<sce:session-role kind=\"accept-side\"/>` declaration. The canonical session-FSM accept-side state names are reserved for documents that claim the accept-side role. Repair: add `<sce:session-role kind=\"accept-side\"/>` to the SCXML root if the doc implements the session-FSM accept-side, OR rename the offending state ids to avoid the `Accepting.*` reservation.","actual":"Accepting"}"#,
             ),
             (
                 // Declared-consumption — reassembly per-peer-quota peer-table

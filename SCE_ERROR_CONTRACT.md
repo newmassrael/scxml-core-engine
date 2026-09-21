@@ -497,6 +497,11 @@ involves is an entry of `related`:
   about, held to the rule the record's `actual` is
   ([§3.1.1](#311-locating-the-edit)).
 
+| `role` | The site is |
+|---|---|
+| `conflicting-use` | another use of the same name whose shape the record's contradicts — the use that fixed the shape first |
+| `also-refused` | another site the same rule refuses, reported with this record rather than as one of its own because one repair covers them all |
+
 `related` is not part of `id`: which other sites a relation reaches is
 a fact about the document around the error, not about the error.
 
