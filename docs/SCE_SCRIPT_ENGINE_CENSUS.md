@@ -98,9 +98,9 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 233
+engine-documents 235
 native-prefix-documents 1
-datamodel-variable-init 246
+datamodel-variable-init 248
 transition-guard 210
 assign-action 206
 child-invoke-needs-script-engine 46
@@ -116,7 +116,7 @@ send-namelist 5
 if-condition 3
 global-script 3
 mesh-rpc-srcexpr 2
-hybrid-invoke 2
+hybrid-invoke 4
 cancel-expr 1
 ```
 
@@ -129,7 +129,7 @@ never spelled correctly.
 
 ## What the table says
 
-- **Three causes carry 75%** of the 880 records: `<data>` initialisers,
+- **Three causes carry 75%** of the 884 records: `<data>` initialisers,
   transition guards, and `<assign>`. These are the ECMAScript expression
   core, and they are the programme's first three sections. Nothing about
   that ordering was decided by preference.

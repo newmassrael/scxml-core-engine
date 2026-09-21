@@ -319,6 +319,19 @@
        families so the two cannot drift. -->
   <xs:attribute name="req" type="xs:string"/>
 
+  <!-- W3C SCXML 6.4: on an `<invoke>` whose child is named by an
+       expression, the finite set that expression may select from —
+       space separated paths, matched by document STEM
+       (docs/SCE_ACCEPTED_SUBSET.md §2.13). Declared globally because it
+       is written on `<invoke>`, a W3C element this grammar wraps rather
+       than declares, so a local declaration has nowhere to live.
+
+       `xs:string` and not `use`-constrained anywhere: the parser owns
+       all three refusals — beside a `contentexpr`, two entries sharing
+       one stem, and an attribute present but empty — and each names the
+       entry that was wrong. -->
+  <xs:attribute name="candidates" type="xs:string"/>
+
   <!-- Section 4.6: Codec — document-level default endianness -->
   <xs:attribute name="default-endian" type="sce:endianType"/>
 
@@ -1694,10 +1707,20 @@
        change for authored documents and belongs to its own round. -->
   <xs:attribute name="returns-max-size" type="xs:positiveInteger"/>
 
+  <!-- ⚠ `args` is OPTIONAL, though every `<sce:helper>` in the checkout
+       writes one. `parse_procedure_helper` reads it with
+       `unwrap_or("")` and splits on commas, so an absent `args` is a
+       helper that takes no arguments — a form the parser supports and
+       this grammar refused while the attribute was `use="required"`.
+       The discriminator for the whole file: a grammar may be stricter
+       than its parser where the extra strictness removes no MEANING (a
+       bare `<sce:reset-on/>` says exactly what omitting the element
+       says), and may not where it removes a form that means something
+       (a helper of no arguments). -->
   <xs:element name="helper">
     <xs:complexType>
       <xs:attribute name="name" type="xs:NCName" use="required"/>
-      <xs:attribute name="args" type="xs:string" use="required"/>
+      <xs:attribute name="args" type="xs:string"/>
       <xs:attribute name="returns" type="sce:sceType" use="required"/>
       <xs:attribute ref="sce:returns-max-size"/>
     </xs:complexType>
@@ -1749,8 +1772,18 @@
       <xs:attribute name="doc-id" type="xs:string"/>
       <xs:attribute name="rev" type="xs:string"/>
       <xs:attribute name="section" type="xs:string"/>
-      <xs:attribute name="page" type="xs:nonNegativeInteger"/>
-      <xs:attribute name="row" type="xs:nonNegativeInteger"/>
+      <!-- ⚠ `xs:string`, not an integer type, and for the same reason
+           `doc-id` is not `required`. The parser reads these with
+           `.parse::<u32>().ok()` and DROPS a value that does not parse
+           instead of refusing it, because the compact URI spelling of
+           the same anchor does the same — `#4.4.2:draft` reads as a
+           section with no position — and its own comment says the two
+           spellings of one grammar have to agree about what they
+           accept. An integer type here is what makes them disagree: the
+           element form would be refused for a value the compact form
+           takes, and libxml2 would be the one saying so. -->
+      <xs:attribute name="page" type="xs:string"/>
+      <xs:attribute name="row" type="xs:string"/>
       <xs:attribute name="path" type="xs:string"/>
     </xs:complexType>
   </xs:element>
@@ -1771,10 +1804,35 @@
   <!-- Bounded-collection kind: required by its parser
        (`find_sce_child(root, "capacity")` … `ok_or_else`). Distinct from
        the `capacity` ATTRIBUTE on `<sce:var>` above, which bounds a
-       byte buffer; the two share a name and nothing else. -->
+       byte buffer; the two share a name and nothing else.
+
+       TWO forms, and the parser takes exactly one of them:
+       `source="deploy" key="machines.X.limits.Y"` reads the bound out of
+       the deployment (RFC §synth-5-L lines 2553-2554), `const="N"` fixes
+       it at build time (line 2602). All three attributes are therefore
+       OPTIONAL here, and none carries a narrower type than `xs:string`.
+       This grammar names the SURFACE — which attributes exist — and the
+       parser judges the combination and the values, because that is
+       where the sentence an author can act on lives: *exactly one of
+       `source="deploy" key="..."` or `const="..."`*. Spelling the one
+       accepted `source`, or `const`'s integer-ness, into a type here
+       would put the same judgement in two places, and the copy without
+       the message is the one that would go stale.
+
+       ⚠ This element was first declared with `const` alone, `use=
+       "required"`, on 2026-09-20. Every document in the checkout spelled
+       the `const` form, so a declaration derived from the corpus
+       described the parser's accepted set too narrowly and turned SIX
+       passing contract tests red — the deploy-key form lives only in
+       test fixtures written as string literals, which no sweep over
+       `.scxml` files can see. A grammar is a statement about what the
+       PARSER accepts; the documents that happen to be checked in are a
+       sample of that, never its definition. -->
   <xs:element name="capacity">
     <xs:complexType>
-      <xs:attribute name="const" type="xs:string" use="required"/>
+      <xs:attribute name="source" type="xs:string"/>
+      <xs:attribute name="key" type="xs:string"/>
+      <xs:attribute name="const" type="xs:string"/>
     </xs:complexType>
   </xs:element>
 

@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 330474c9d384762034a0ce81e85f7fab16d80ad68caac74a931eac551a42e48f
-// template-hash: 7b98e70bedf81ba26d5ed411dff10dd848488064e2842a1bb6ffe1d783a88c2a
+// template-hash: a79dbd46d6bb33b6c94997d5e0fdd391238bcc47af4fd28607bca597b2795f8c
 // generated-at: 0
 
 
@@ -380,7 +380,7 @@ func (p *InvokeExpressionFailureIsReportedPolicy) ExecutePendingInvokes(engine *
 			p.ensureScriptEngine()
 			{
 				se := p.ScriptEngine
-				if _, err := se.EvaluateExpression(p.SessionID, `target.path`); err != nil {
+				if __sceValue, err := se.EvaluateExpression(p.SessionID, `target.path`); err != nil {
 					engine.Raise(sce.NewPlatformError(InvokeExpressionFailureIsReportedEventErrorExecution, "<invoke srcexpr='target.path'> could not be evaluated"))
 					continue
 				}
@@ -435,6 +435,7 @@ func (p *InvokeExpressionFailureIsReportedPolicy) ExecutePendingInvokes(engine *
 				// done.invoke.<id>._event.data.
 				sce.RaiseDoneInvoke("_invoke_0", wrapper.DonedataAtFinal(), engine)
 			}
+
 			continue
 		}
 	}

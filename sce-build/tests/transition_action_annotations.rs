@@ -326,7 +326,16 @@ fn the_walk_reaches_every_annotation_any_document_declares() {
     let mut files_with_ids = 0usize;
     let mut declared_total = 0usize;
     let mut unreachable: Vec<String> = Vec::new();
-    let mut unparsable = 0usize;
+    let mut unparsable: Vec<String> = Vec::new();
+    // Documents a DIFFERENT pipeline owns. `sce:req` is not a statechart
+    // annotation only — `tests/forge/resources/lookup_entry_requirements
+    // .scxml` hangs one on a `<sce:entry>` row — and a forge document
+    // handed to the statechart parser fails for the reason it is a forge
+    // document, not because anything regressed. They are counted and
+    // named rather than skipped: the forge side has its own law over
+    // them (`a_declared_attribute_must_reach_the_ir`), and naming them
+    // here is what makes that claim checkable instead of assumed.
+    let mut other_pipeline: Vec<String> = Vec::new();
 
     for path in &documents {
         let Ok(text) = std::fs::read_to_string(path) else {
@@ -339,15 +348,32 @@ fn the_walk_reaches_every_annotation_any_document_declares() {
         files_with_ids += 1;
         declared_total += declared.len();
 
+        // Ask which pipeline owns the document before handing it to one.
+        // Deciding from the document rather than from where it sits keeps
+        // this out of the business of maintaining a list of forge fixture
+        // directories, which is the shape that goes stale silently.
+        if matches!(
+            sce_build::classify_document(&text),
+            sce_build::Pipeline::Forge
+        ) {
+            other_pipeline.push(path.display().to_string());
+            continue;
+        }
+
         let Ok(model) = SCXMLParser::new().parse_string(&text, "sweep") else {
-            // ⚠ Reached only by a document that DECLARES ids and then
+            // ⚠ Reached only by a STATECHART that declares ids and then
             // will not parse. Its annotations cannot be checked at all,
             // so this is an unverified population rather than a clean
             // one, and the assertion below refuses to call it a pass.
             // (A malformed fixture carrying no ids never gets here —
-            // it is skipped above, which is why this counter reads 0
+            // it is skipped above, which is why this list stays empty
             // while the tree does contain one on purpose.)
-            unparsable += 1;
+            //
+            // ⚠⚠ It carries the PATHS, not a count. The count alone was
+            // what this reported first, and a failure saying "1
+            // document(s)" leaves the reader to re-derive which one
+            // before they can do anything about it.
+            unparsable.push(path.display().to_string());
             continue;
         };
         let reached: std::collections::BTreeSet<String> = report_lines(&model)
@@ -365,17 +391,24 @@ fn the_walk_reaches_every_annotation_any_document_declares() {
 
     println!(
         "HOLE-3 sweep: {} document(s), {files_with_ids} carrying ids, \
-         {declared_total} declared id(s), {unparsable} of those unparsable",
+         {declared_total} declared id(s), {} unparsable, {} owned by the \
+         forge pipeline",
         documents.len(),
+        unparsable.len(),
+        other_pipeline.len(),
     );
+    for p in &other_pipeline {
+        println!("  forge-owned, checked by its own law: {p}");
+    }
 
-    assert_eq!(
-        unparsable, 0,
-        "{unparsable} document(s) declare `sce:req` and do not parse, so \
-         their annotations were skipped rather than checked. A skipped \
-         check is an unrun one: this sweep would go green while saying \
-         nothing about exactly the documents that carry the thing it \
-         guards",
+    assert!(
+        unparsable.is_empty(),
+        "{} statechart(s) declare `sce:req` and do not parse, so their \
+         annotations were skipped rather than checked. A skipped check is \
+         an unrun one: this sweep would go green while saying nothing \
+         about exactly the documents that carry the thing it guards:\n  {}",
+        unparsable.len(),
+        unparsable.join("\n  "),
     );
 
     // ⚠ 26, and the number's basis matters more than the number. An

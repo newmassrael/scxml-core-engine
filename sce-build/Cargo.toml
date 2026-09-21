@@ -786,5 +786,14 @@ name = "forge_observer_monitors_may_share_an_event"
 path = "tests/forge_observer_monitors_may_share_an_event.rs"
 required-features = ["cli"]
 
+# One wording for an invoke expression that cannot be evaluated. The target
+# spawns `sce-codegen` to read the wording off the real producer rather than
+# a copy of it, so it carries the same `cli` gate as every other
+# binary-driven test.
+[[test]]
+name = "one_wording_for_an_invoke_expression_failure"
+path = "tests/one_wording_for_an_invoke_expression_failure.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true

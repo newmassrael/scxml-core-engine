@@ -347,8 +347,10 @@ fn json_mode_routes_unknown_sce_kind_through_forge_pipeline() {
     // Location pinning: XSD diagnostics MUST carry file + line from
     // libxml2. Consumers route repairs by `stage + location`, so a
     // missing line here reduces them to prose-parsing the message.
-    // CLI passes the full basename (with extension) so downstream
-    // tooling can open the file without guessing the suffix.
+    // `file` is the document AS THE CALLER NAMED IT — the path handed
+    // to `generate`, not its last segment (SCE_ERROR_CONTRACT.md §2.2).
+    // A consumer opens it to apply a fix, and a bare name opens only
+    // from the one directory the author happened to be standing in.
     let location = &parsed["location"];
     assert!(
         location.is_object(),
@@ -356,8 +358,8 @@ fn json_mode_routes_unknown_sce_kind_through_forge_pipeline() {
     );
     assert_eq!(
         location["file"].as_str(),
-        scxml.file_name().and_then(|s| s.to_str()),
-        "location.file must equal the fixture basename: {line}"
+        scxml.to_str(),
+        "location.file must equal the path the caller passed: {line}"
     );
     assert!(
         location["line"].as_u64().is_some_and(|l| l > 0),
@@ -434,10 +436,13 @@ fn json_mode_emits_one_ndjson_record_per_xsd_violation() {
             location.is_object(),
             "location object on every record: {line}"
         );
+        // The path the caller passed, not its last segment — see
+        // SCE_ERROR_CONTRACT.md §2.2 and the note at the XSD-location
+        // assertion above.
         assert_eq!(
             location["file"].as_str(),
-            Some("multi_violation.scxml"),
-            "file must be fixture basename: {line}"
+            scxml.to_str(),
+            "file must be the path the caller passed: {line}"
         );
         let lineno = location["line"]
             .as_u64()
@@ -507,10 +512,8 @@ fn json_mode_condition_missing_expr_reports_leaf_line() {
 
     let location = &parsed["location"];
     assert!(location.is_object(), "location object required: {line}");
-    assert_eq!(
-        location["file"].as_str(),
-        scxml.file_name().and_then(|s| s.to_str())
-    );
+    // As the caller named it — SCE_ERROR_CONTRACT.md §2.2.
+    assert_eq!(location["file"].as_str(), scxml.to_str());
     // The offending <data id="y"> sits on fixture line 7 (root is 2).
     // If leaf precision regressed to wrapper behaviour, this becomes 2.
     assert_eq!(

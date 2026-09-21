@@ -582,24 +582,49 @@ pub fn apply_drift_headers_to_output(
 ///   symlinked trees still resolve, while the emitted value stays the
 ///   relative one — that is what stays meaningful on a machine that never
 ///   ran the generator.
-/// - Without one, the path is emitted exactly as the caller named it.
-///   An input that has no relative spelling under the named root falls
-///   back to the same rule, rather than emitting a `../..` chain that
-///   only resolves where it was produced.
+/// - Without one, a RELATIVE path is emitted exactly as the caller named
+///   it: it is already a spelling that reproduces, because it is read
+///   against whatever root the caller stood in.
+/// - Without one, an ABSOLUTE path is reduced to its last segment.
+///   ⚠ This is the same rule as the paragraph above, applied to the case
+///   it used to miss. An absolute path IS one machine's checkout — the
+///   very thing this function refuses to consult the working directory
+///   for — so emitting it verbatim baked `/tmp/tmp.<random>/child.scxml`
+///   into twelve committed artifacts and made regenerating them produce
+///   a different byte every run. `regen-reproduces` found it;
+///   SCE_ERROR_CONTRACT.md §2.2 had already stated the rule, for markers
+///   and provenance records, in one sentence: an artifact lands in
+///   generated source, so it carries the basename rather than baking one
+///   machine's checkout into the tree.
+/// - An input that has no relative spelling under a named root falls
+///   back to the same two rules, rather than emitting a `../..` chain
+///   that only resolves where it was produced.
 pub fn header_source_path(scxml_path: &str, source_root: Option<&Path>) -> String {
-    let verbatim = || scxml_path.to_string();
+    // The spelling to fall back on whenever no root re-expresses the
+    // path: verbatim when it already reproduces, the last segment when
+    // it carries a machine's checkout.
+    let portable = || {
+        let p = Path::new(scxml_path);
+        if p.is_absolute() {
+            return p
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| scxml_path.to_string());
+        }
+        scxml_path.to_string()
+    };
     let Some(root) = source_root else {
-        return verbatim();
+        return portable();
     };
     let (Ok(abs), Ok(abs_root)) = (
         std::fs::canonicalize(scxml_path),
         std::fs::canonicalize(root),
     ) else {
-        return verbatim();
+        return portable();
     };
     match abs.strip_prefix(&abs_root) {
         Ok(rel) => rel.to_string_lossy().into_owned(),
-        Err(_) => verbatim(),
+        Err(_) => portable(),
     }
 }
 
@@ -7564,6 +7589,44 @@ pub fn find_template_dir() -> std::path::PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A `// From:` line may not carry one machine's checkout.
+    ///
+    /// The three cases are the whole rule: a relative path reproduces as
+    /// written and is kept; an absolute one does not and is reduced to
+    /// its last segment; a `source_root` re-expresses either.
+    ///
+    /// ⚠ Written after the absolute case reached twelve committed
+    /// artifacts as `/tmp/tmp.<random>/child.scxml` — a spelling that
+    /// differs on every run, so the committed trees could not be
+    /// reproduced at all. `regen-reproduces` is what noticed, and it
+    /// notices only because the temp name VARIES; an absolute path under
+    /// a stable home directory would have passed there and failed only
+    /// on another machine. This pins the rule at its source instead.
+    #[test]
+    fn a_from_line_never_carries_one_machines_checkout() {
+        assert_eq!(
+            header_source_path("integration_resources/a/a.scxml", None),
+            "integration_resources/a/a.scxml",
+            "a relative path already reproduces — keep it whole",
+        );
+        assert_eq!(
+            header_source_path("/tmp/tmp.Xy12Z/chosen.scxml", None),
+            "chosen.scxml",
+            "an absolute path is a checkout, not a spelling that travels",
+        );
+
+        let dir = std::env::temp_dir().join(format!("sce-from-line-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("sub")).expect("scratch dir");
+        let doc = dir.join("sub").join("child.scxml");
+        std::fs::write(&doc, "<scxml/>").expect("scratch document");
+        assert_eq!(
+            header_source_path(&doc.to_string_lossy(), Some(&dir)),
+            "sub/child.scxml",
+            "a named root re-expresses the path relative to itself",
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     /// The typed entry point surfaces `ValidationError::DynamicFeatures`
     /// as a structured `Located<ForgeError>` so Rust consumers can
