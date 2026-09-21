@@ -29,7 +29,7 @@
 
 use crate::forge::model::SceType;
 use crate::forge::quantity::{NumericBaseType, Quantity, Rational, UnitTag};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Inferred type lattice
@@ -687,20 +687,38 @@ pub struct TypeCtx<'a> {
     /// instead of guessing `<field>_len`. Empty for every other kind and
     /// for algorithms with no byte-addressable element field.
     pub member_len_fields: HashMap<&'a str, &'a str>,
-    /// Every name whose members an expression may read: a stateful import's
-    /// alias, a procedure's `_event`, an algorithm's item over a bounded
-    /// collection. Each is also in `vars`, typed `Unknown`.
+    /// Every name whose members an expression may read — a stateful
+    /// import's alias, a procedure's `_event`, an algorithm's item over a
+    /// bounded collection — and whether its members are known. Each is also
+    /// in `vars`, typed `Unknown`.
     ///
-    /// ⚠ The list is the POSITIVE half on purpose. Every other name a forge
+    /// ⚠ The map is the POSITIVE half on purpose. Every other name a forge
     /// kind declares — a field, a parameter, a const, a local, a byte item —
     /// is a value, and a value has no members; `len(x)` is how an expression
     /// asks one for its length. Before this set, `x.foo` on a `uint8` input
     /// generated with exit 0 on all six backends (measured 2026-09-21), and
-    /// the emitted `x.foo` named nothing in any of them. What a record's
-    /// members ARE is other passes' business — the cross-kind validator for
-    /// an import, the event schema for `_event` — so this set says only
-    /// that members may be asked for.
-    pub records: HashSet<&'a str>,
+    /// the emitted `x.foo` named nothing in any of them.
+    ///
+    /// ⚠⚠ A record's members were once "other passes' business", and no
+    /// pass minded it: the cross-kind validator walked algorithms only, where
+    /// an import's alias is not a value at all, so `frame.msgIdd` in a
+    /// procedure generated with exit 0 (measured 2026-09-21). A
+    /// [`RecordShape::Closed`] record's members are exactly its registered
+    /// `"<record>.<member>"` fields and methods, and anything else is refused.
+    pub records: HashMap<&'a str, RecordShape>,
+}
+
+/// Whether a record's members are known to the expression that reads it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecordShape {
+    /// Its members are exactly the fields registered in `vars` and the
+    /// methods registered in `funcs` under `"<record>.<member>"`.
+    Closed,
+    /// Its members belong to something this context does not carry — the
+    /// triggering event's schema for `_event`, an element type the build
+    /// did not thread for a bounded-collection item — so a member this
+    /// context cannot list is not one it may refuse.
+    Open,
 }
 
 impl<'a> TypeCtx<'a> {
@@ -714,20 +732,41 @@ impl<'a> TypeCtx<'a> {
             reject_unknown_identifiers: false,
             enums: HashMap::new(),
             member_len_fields: HashMap::new(),
-            records: HashSet::new(),
+            records: HashMap::new(),
         }
     }
 
     /// Declare a name whose members an expression may read. See
     /// [`TypeCtx::records`] for which names those are.
-    pub fn insert_record(&mut self, name: &'a str) {
+    pub fn insert_record(&mut self, name: &'a str, shape: RecordShape) {
         self.vars.insert(name, InferredType::Unknown);
-        self.records.insert(name);
+        self.records.insert(name, shape);
     }
 
     /// Whether `name` was declared through [`TypeCtx::insert_record`].
     pub fn is_record(&self, name: &str) -> bool {
-        self.records.contains(name)
+        self.records.contains_key(name)
+    }
+
+    /// The members of `record` — its registered fields and methods, sorted
+    /// — when the record is [`RecordShape::Closed`]; `None` for an open
+    /// record or a name that is no record.
+    pub fn closed_record_members(&self, record: &str) -> Option<Vec<&'a str>> {
+        if self.records.get(record) != Some(&RecordShape::Closed) {
+            return None;
+        }
+        let prefix = format!("{record}.");
+        let mut members: Vec<&'a str> = self
+            .vars
+            .keys()
+            .chain(self.funcs.keys())
+            .filter_map(|key| key.strip_prefix(prefix.as_str()))
+            // A nested path (`frame.header.id`) is a member of a member.
+            .filter(|member| !member.contains('.'))
+            .collect();
+        members.sort_unstable();
+        members.dedup();
+        Some(members)
     }
 
     /// Register an imported enum under its alias.

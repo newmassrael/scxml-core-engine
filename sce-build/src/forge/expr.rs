@@ -2545,9 +2545,10 @@ fn reject_unknown_callees(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), Exp
 ///
 /// ⚠⚠ A member is judged only where this layer knows the member set. An
 /// enum alias's is closed and carried in `ctx.enums`. A declared VALUE's is
-/// empty, which [`reject_member_of_non_record`] enforces. A record's is
-/// another pass's — the cross-kind validator's for an import, the event
-/// schema's for `_event` — so `frame.payload` is read here as `frame` alone.
+/// empty, and a closed record's is its registered fields and methods — both
+/// enforced by [`reject_undeclared_member`]. An open record's belongs to
+/// another pass — the event schema's for `_event` — so `_event.foo` is read
+/// here as `_event` alone.
 ///
 /// ⚠⚠⚠ `Ident` only, never `Raw` — a `Raw` is this pipeline's own product,
 /// for the reason [`reject_unknown_callees`] gives.
@@ -2567,7 +2568,7 @@ fn reject_unknown_names(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), ExprE
                 }
             }
             if ctx.reject_unknown_identifiers {
-                reject_member_of_non_record(object, property, ctx)?;
+                reject_undeclared_member(object, property, ctx)?;
             }
         }
         ExprKind::Call { callee, args } if matches!(callee.kind, ExprKind::Ident(_)) => {
@@ -2597,18 +2598,21 @@ fn reject_unknown_names(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), ExprE
     Ok(())
 }
 
-/// Refuse `<base>.<member>` when `<base>` is a declared VALUE: only a record
-/// ([`TypeCtx::records`]) has members an expression may ask for.
+/// Refuse `<base>.<member>` unless `<base>` declares `<member>`: a declared
+/// VALUE has no members at all, and a record whose members are known
+/// ([`crate::forge::types::RecordShape::Closed`]) has exactly those.
 ///
 /// ⚠ `<base>` is the whole dotted path, not only its head, so a member of a
 /// record's scalar field is judged too — `frame.msg_id.foo` asks a `uint32`
 /// for a member. A path the context does not carry (`_event.data`, whose
 /// fields the event schema owns) is not declared, so it is left to the pass
-/// that knows it; so is a base that is no name at all (a call, an index).
+/// that knows it; so is a base that is no name at all (a call, an index),
+/// and so is a member of an open record.
 ///
-/// A member registered under its full path is declared and passes even on a
-/// non-record base: the registration IS the declaration.
-fn reject_member_of_non_record(
+/// A member registered under its full path — a field in `vars`, a method in
+/// `funcs` — is declared and passes on any base: the registration IS the
+/// declaration.
+fn reject_undeclared_member(
     object: &TypedExpr,
     member: &str,
     ctx: &TypeCtx<'_>,
@@ -2619,8 +2623,19 @@ fn reject_member_of_non_record(
     let Some(&base_ty) = ctx.vars.get(base.as_str()) else {
         return Ok(());
     };
-    if ctx.is_record(&base) || ctx.vars.contains_key(format!("{base}.{member}").as_str()) {
+    let path = format!("{base}.{member}");
+    if ctx.vars.contains_key(path.as_str()) || ctx.funcs.contains_key(path.as_str()) {
         return Ok(());
+    }
+    if ctx.is_record(&base) {
+        let Some(declared) = ctx.closed_record_members(&base) else {
+            return Ok(());
+        };
+        return Err(ExprError::UnknownMember {
+            record: base,
+            member: member.to_string(),
+            declared: declared.into_iter().map(str::to_string).collect(),
+        });
     }
     Err(ExprError::MemberOfNonRecord {
         name: base,
@@ -4582,7 +4597,7 @@ fn c_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExpr)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::forge::types::{FuncSig, InferredType};
+    use crate::forge::types::{FuncSig, InferredType, RecordShape};
 
     // ── Helpers ─────────────────────────────────────────────────
 
@@ -5702,14 +5717,22 @@ mod tests {
     // ── members: only a record has them ───────────────────────
 
     /// A closed forge scope: a `uint8` input, an enum-typed input (which
-    /// inference types `Unknown`), and a stateful import `frame` with one
-    /// field.
+    /// inference types `Unknown`), a stateful import `frame` with one field
+    /// and one method, and `_event`, whose members the event schema owns.
     fn member_scope() -> TypeCtx<'static> {
         let mut ctx = TypeCtx::new();
         ctx.insert_var("x", int(false, 8));
         ctx.insert_var("tone", InferredType::Unknown);
-        ctx.insert_record("frame");
+        ctx.insert_record("frame", RecordShape::Closed);
         ctx.insert_var("frame.msg_id", int(false, 32));
+        ctx.insert_func(
+            "frame.encode",
+            FuncSig {
+                params: Vec::new(),
+                ret: InferredType::Bytes,
+            },
+        );
+        ctx.insert_record("_event", RecordShape::Open);
         ctx.reject_unknown_identifiers = true;
         ctx
     }
@@ -5772,13 +5795,37 @@ mod tests {
         );
     }
 
-    /// What a record's members are is another pass's question, so an
-    /// unregistered one passes here — the cross-kind validator owns it.
+    /// A closed record's field and its method are both members.
     #[test]
-    fn a_member_of_a_record_passes_whether_or_not_it_is_registered() {
+    fn a_member_a_closed_record_declares_passes() {
         let ctx = member_scope();
         assert!(member_check("frame.msg_id === 1", &ctx).is_ok());
-        assert!(member_check("frame.other === 1", &ctx).is_ok());
+        assert!(member_check("len(frame.encode()) === 4", &ctx).is_ok());
+    }
+
+    /// Anything else is refused with the record's whole member set.
+    #[test]
+    fn a_member_a_closed_record_does_not_declare_is_refused_with_its_members() {
+        let err = member_check("frame.msg_idd === 1", &member_scope()).unwrap_err();
+        assert!(
+            matches!(
+                &err,
+                ExprError::UnknownMember { record, member, declared }
+                    if record == "frame" && member == "msg_idd" && declared == &["encode", "msg_id"]
+            ),
+            "{err:?}"
+        );
+        assert_eq!(
+            err.to_string(),
+            "frame.msg_idd is not a member of frame (declared: encode, msg_id). \
+             Did you mean: msg_id?"
+        );
+    }
+
+    /// An open record's members belong to a pass that knows them.
+    #[test]
+    fn an_open_records_members_are_not_judged() {
+        assert!(member_check("_event.anything === 1", &member_scope()).is_ok());
     }
 
     /// A statechart guard's scope is the host's: the gate that keeps an

@@ -917,6 +917,12 @@ pub enum DiagnosticCode {
     // does for the same set, and does not guess which member was meant.
     #[serde(rename = "expression/unknown-enum-variant")]
     ExpressionUnknownEnumVariant,
+    // `<record>.<member>` where the record's members are known and the
+    // member is none of them — `frame.msgIdd` against a codec import.
+    // The member twin of `unknown-enum-variant`: the record's member set
+    // is closed, so the fix offers all of it as paths.
+    #[serde(rename = "expression/unknown-member")]
+    ExpressionUnknownMember,
     // `<name>.<member>` where `<name>` is a declared value — `x.foo` with
     // `x` a `uint8` input. Distinct from `unknown-identifier` because the
     // name IS declared; distinct from a record's missing field because a
@@ -3101,6 +3107,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ExpressionUnsupportedBuiltin,
         ExpressionUnknownIdentifier,
         ExpressionUnknownEnumVariant,
+        ExpressionUnknownMember,
         ExpressionMemberOfNonRecord,
         ExpressionPropertyNotCallable,
         ExpressionNamespaceNotCallable,
@@ -3652,7 +3659,9 @@ impl DiagnosticCode {
             // written in the accepted subset's typed-field section.
             ExpressionUnknownEnumVariant => Some("SCE Accepted Subset §2.2"),
             // The same section says which names a forge expression may
-            // read, and that only a record among them has members.
+            // read, and that only a record among them has members — the
+            // ones it declares.
+            ExpressionUnknownMember => Some("SCE Accepted Subset §2.2"),
             ExpressionMemberOfNonRecord => Some("SCE Accepted Subset §2.2"),
             // Same anchor again: B.2 is what makes ECMAScript's own
             // rules the datamodel's rules, and calling a value is one
@@ -4395,6 +4404,7 @@ impl DiagnosticCode {
             ExpressionUnsupportedBuiltin => "expression/unsupported-builtin",
             ExpressionUnknownIdentifier => "expression/unknown-identifier",
             ExpressionUnknownEnumVariant => "expression/unknown-enum-variant",
+            ExpressionUnknownMember => "expression/unknown-member",
             ExpressionMemberOfNonRecord => "expression/member-of-non-record",
             ExpressionPropertyNotCallable => "expression/property-not-callable",
             ExpressionNamespaceNotCallable => "expression/namespace-not-callable",
@@ -8343,6 +8353,22 @@ fn expression_fields(e: &ExprError) -> DiagnosticPayload {
             }),
             key_fragments: vec![alias.clone(), name.clone()],
         },
+        // The whole path is what `actual` names and what each candidate
+        // replaces it with, as for an enum variant.
+        ExprError::UnknownMember {
+            record,
+            member,
+            declared,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ExpressionUnknownMember,
+            stage: Stage::Expression,
+            expected: None,
+            actual: Some(format!("{record}.{member}")),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: declared.iter().map(|m| format!("{record}.{m}")).collect(),
+            }),
+            key_fragments: vec![record.clone(), member.clone()],
+        },
         // The whole access is what `actual` names: the declaration alone is
         // fine, and so would the member be on a record, so neither half is
         // the mistake by itself. No fix — see the variant.
@@ -10856,6 +10882,33 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:9c091da3bee9e93b","code":"expression/unknown-enum-variant","stage":"expression","spec":"SCE Accepted Subset §2.2","message":"Tone.RED is not a variant of Tone (declared: QUIET, SOFT, LOUD)","actual":"Tone.RED","fix":{"kind":"replace_one_of","candidates":["Tone.QUIET","Tone.SOFT","Tone.LOUD"]}}"#,
+            ),
+            (
+                // A member a closed record does not declare. Its members
+                // are a closed set, so the fix offers every one as a path;
+                // the prose adds the near miss.
+                "forge/expression-unknown-member",
+                ExprError::UnknownMember {
+                    record: "frame".into(),
+                    member: "msgIdd".into(),
+                    declared: vec!["encode".into(), "length".into(), "msgId".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:2783fd0d88a9c8dc","code":"expression/unknown-member","stage":"expression","spec":"SCE Accepted Subset §2.2","message":"frame.msgIdd is not a member of frame (declared: encode, length, msgId). Did you mean: msgId?","actual":"frame.msgIdd","fix":{"kind":"replace_one_of","candidates":["frame.encode","frame.length","frame.msgId"]}}"#,
+            ),
+            (
+                // A closed record that declares nothing — a timer import,
+                // whose state is reached through methods emitted at codegen
+                // time, none of them an expression's to call. No member
+                // spelling repairs the read, so the record carries no fix.
+                "forge/expression-unknown-member-no-members",
+                ExprError::UnknownMember {
+                    record: "tick".into(),
+                    member: "elapsed".into(),
+                    declared: Vec::new(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:af87c4390c0e7308","code":"expression/unknown-member","stage":"expression","spec":"SCE Accepted Subset §2.2","message":"tick.elapsed is not a member of tick (declared: <none>)","actual":"tick.elapsed"}"#,
             ),
             (
                 // A member asked of a declared value. The message names the
@@ -14046,6 +14099,8 @@ mod tests {
             // The imported enum's declared variants — a closed set, which
             // is this bucket's definition, and `expected` stays absent.
             | ExpressionUnknownEnumVariant
+            // A closed record's declared members, for the same reason.
+            | ExpressionUnknownMember
             | MeshDeployUnsupportedVersion
             | MeshTopologyMachineNotFound
             | MeshTopologySubscriptionSourceUnbound
@@ -15205,6 +15260,7 @@ mod tests {
                 | ExpressionUnsupportedConstruct | ExpressionUnsupportedBuiltin
                 | ExpressionUnknownIdentifier
                 | ExpressionUnknownEnumVariant
+                | ExpressionUnknownMember
                 | ExpressionMemberOfNonRecord
                 | ExpressionPropertyNotCallable
                 | ExpressionNamespaceNotCallable
@@ -15470,9 +15526,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            374,
+            375,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 374 distinct variants to match the DiagnosticCode \
+             expected 375 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -16133,6 +16189,9 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             // Forge-only: an enum alias exists in a forge kind's scope and
             // in no statechart guard, so no statechart scenario can raise it.
             | ExpressionUnknownEnumVariant
+            // Forge-only: a closed record is a forge kind's import or
+            // collection item; a statechart guard's scope is the host's.
+            | ExpressionUnknownMember
             // Forge-only for the same reason as an unknown operand: it is
             // judged only where the scope is closed, and a statechart
             // guard's scope is the host's.

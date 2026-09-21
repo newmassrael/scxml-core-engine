@@ -4493,10 +4493,11 @@ impl ForgeDocument {
     /// reached another way. Refusing `pool.free_count()` as an unknown
     /// field would be wrong, which is why the method-only kinds are `None`.
     ///
-    /// ⚠ One answer for every reader: the cross-kind member check, the
-    /// import enrichment and the collection `index-by` check each kept a
-    /// copy of this match, two of them "mirrored 1:1", and the copies had
-    /// already begun to differ on what a timer was.
+    /// ⚠ One answer for every reader: the import enrichment that registers
+    /// an alias's members for the expression layer, and the collection
+    /// `index-by` check. Three copies of this match existed, two of them
+    /// "mirrored 1:1", and they had already begun to differ on what a
+    /// timer was.
     pub fn record_fields(&self) -> Option<Vec<(String, SceType)>> {
         let fields = |fs: &[ForgeField]| {
             fs.iter()

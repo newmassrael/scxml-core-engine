@@ -2491,20 +2491,11 @@ pub fn compile_forge_from_parsed(
         label.diagnostic_label,
     )?;
 
-    // Cross-kind typed binding
-    // verification. Runs after import enrichment populates the
-    // per-import slice (the validator reads its own member surface off
-    // the import file contents rather than depending on enrichment
-    // data, but the order matters because the cycle detector inside
-    // `cross_kind_check::check` is what guarantees the surface
-    // re-walk terminates). Today wired only on the Forge→Forge path:
-    // a Statechart→Forge binding has zero call sites in the tree, so a
-    // second call here would have nothing to validate. The
-    // module-level scope comment in `cross_kind_check` records that its
-    // public API is already kind-agnostic, so wiring one is a call site
-    // rather than a redesign if such a binding lands.
-    // Its return value is the transitive `<sce:import>` closure this
-    // compile read — reported below as `GeneratedOutput::deps`.
+    // The import graph: a cycle below this document is refused, and the
+    // transitive `<sce:import>` closure this compile read is returned —
+    // reported below as `GeneratedOutput::deps`. Whether an import's
+    // members exist is the expression layer's question, asked where each
+    // expression is read.
     let import_sources = forge::cross_kind_check::check(parsed, base_dir, label.diagnostic_label)?;
 
     // Physical-quantity unit-mismatch

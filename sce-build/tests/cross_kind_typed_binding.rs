@@ -1,38 +1,30 @@
 //! NL→IR Mapping Roadmap Item 2 — cross-kind typed binding verification.
 //!
-//! Exercises the three new validators wired into
-//! `compile_forge_from_parsed` after `validate_and_enrich_imports`:
+//! What this file holds in place now:
 //!
-//! - Positive: algorithm imports a codec and references a declared
-//!   field via `<alias>.<field>` — the validator stays silent.
+//! - In an algorithm, an import's alias is not a value. An algorithm is a
+//!   free function with no instance state, so nothing binds a codec
+//!   import's alias: every `frame.<member>` — a declared field, a
+//!   misspelled one, a bare return, a read nested in a larger expression —
+//!   is refused as the undeclared name `frame`, which is the one repair
+//!   that applies to all of them.
+//! - `validation/cross-kind-circular-dependency`: two codecs that import
+//!   each other — the import-graph DFS surfaces the back-edge.
 //!
-//!   ⚠ Silent is all it can be, and "compiles clean" — what this bullet
-//!   used to say — was never true. An algorithm is a free function with no
-//!   instance state, so nothing binds a codec import's alias as a value:
-//!   the emitted Rust read `frame.msg_id` inside `fn route_msg(x: u8)`, a
-//!   name no scope declared, and the tests asserted only that files were
-//!   produced (measured 2026-09-21 by generating the fixture). Since the
-//!   forge expression layer began checking names, the document is refused
-//!   for exactly that — `frame` is undeclared — which is what the positive
-//!   cases now assert: the field resolved (else the validator, which runs
-//!   first, would have refused it as not-found), and the alias is not a
-//!   value.
-//! - Negative 1 (`validation/cross-kind-field-not-found`): same shape
-//!   but with a typo on the field name. Diagnostic carries the imported
-//!   kind's full member surface as the `Fix::ReplaceOneOf` candidate
-//!   list (`did_you_mean`-style repair).
-//! - Negative 2 (`validation/cross-kind-type-mismatch`): bare
-//!   `<sce:return expr="alias.field"/>` whose declared field type
-//!   conflicts with the algorithm signature's `<sce:return type=...>`.
-//! - Negative 3 (`validation/cross-kind-circular-dependency`): two
-//!   codecs that import each other — the import-graph DFS surfaces the
-//!   back-edge.
+//! ⚠ THE FIELD CHECK THAT USED TO LIVE HERE. A cross-kind validator walked
+//! algorithm bodies and checked each `alias.field` against the imported
+//! kind's fields, refusing `frame.msg_idd` with the codec's members as
+//! candidates and a bare `return frame.msg_id` against a mismatched return
+//! type. Both answered a question that did not arise: accepting the field
+//! only led to the alias being refused next, and correcting a typo the
+//! validator named still left a name that would never resolve. Where the
+//! alias IS a value — a procedure, say — the validator never looked, and a
+//! misspelled field generated with exit 0 (measured 2026-09-21). The member
+//! check now lives in the expression layer, over every kind; its cases are
+//! in `a_record_member_is_one_the_record_declares.rs`.
 //!
 //! Fixtures live in a per-test tempdir so the test stays self-contained
 //! and doesn't proliferate one-off files under `tests/forge/resources/`.
-//! The committed conformance fixtures (`algorithm_keyexpr_match_first`,
-//! `subscription_entry`, …) cover the happy multi-doc compile path
-//! separately.
 
 use std::fs;
 use std::path::Path;
@@ -41,12 +33,10 @@ use tempfile::tempdir;
 
 use sce_build::compile_forge_with_imports;
 use sce_build::forge::error::ValidationError;
-use sce_build::forge::model::ForgeKind;
 use sce_build::generator::Language;
 use sce_build::{DocumentLabel, ForgeCompileOptions};
 
-/// Minimal codec exposing two fields. Used as the imported kind in
-/// every positive / negative case below.
+/// Minimal codec exposing two fields. Used as the imported kind below.
 const CODEC_SCXML: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -65,195 +55,100 @@ fn write_fixture(dir: &Path, name: &str, content: &str) {
     fs::write(&path, content).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
 }
 
-fn compile_algorithm_expect_err(
+fn compile_expect_err(
     dir: &Path,
-    algo_name: &str,
+    name: &str,
 ) -> sce_build::forge::error::Located<sce_build::forge::error::ForgeError> {
-    let algo_path = dir.join(algo_name);
-    let content = fs::read_to_string(&algo_path).expect("read algo");
+    let content = fs::read_to_string(dir.join(name)).expect("read document");
     // `GeneratedOutput` doesn't implement `Debug`, so `.expect_err`
     // can't be used directly — destructure manually to surface the
     // Err side.
     match compile_forge_with_imports(
         &content,
-        DocumentLabel::symmetric(algo_name),
+        DocumentLabel::symmetric(name),
         Language::Rust,
         dir,
         &ForgeCompileOptions::default(),
     ) {
-        Ok(_) => panic!("{algo_name} must be refused, and generated"),
+        Ok(_) => panic!("{name} must be refused, and generated"),
         Err(e) => e,
     }
 }
 
-/// The refusal a document reaches when the validator let its
-/// `<alias>.<field>` through and the alias is still not a value: the
-/// forge expression layer names the alias as undeclared.
-fn assert_refused_as_unbound_alias(
-    err: sce_build::forge::error::Located<sce_build::forge::error::ForgeError>,
-    alias: &str,
-) {
-    use sce_build::forge::error::{ExprError, ForgeError};
-    match &err.error {
-        ForgeError::Expression(ExprError::UnknownIdentifier { name, .. }) => {
-            assert_eq!(name, alias, "the undeclared name must be the alias");
-        }
-        other => panic!(
-            "expected the alias `{alias}` refused as undeclared — the field resolved, \
-             so the cross-kind validator must have stayed silent — got {other:?}"
+/// An algorithm importing the codec as `frame`, returning `ret_type`, whose
+/// body is `body`.
+fn algorithm(ret_type: &str, body: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="route_msg"
+       version="1.0">
+  <sce:import src="frame_codec.scxml" kind="codec" as="frame"/>
+  <sce:signature>
+    <sce:param name="x" type="uint8"/>
+    <sce:return type="{ret_type}"/>
+  </sce:signature>
+  <sce:body>
+    {body}
+  </sce:body>
+</scxml>
+"#
+    )
+}
+
+/// Every read of the alias in an algorithm is refused as the undeclared
+/// name, whatever member it asks for and wherever it sits.
+///
+/// ⚠ The first fixture used to declare `<sce:param name="frame"
+/// type="uint8"/>` beside the import of the same name, so the name was
+/// "declared" — as a byte — and the emitted `frame.msg_id` read a field of
+/// a `u8`. A parameter shadowing an import alias is its own defect, refused
+/// by the namespace check, and is not what this test is for.
+#[test]
+fn an_imports_alias_is_not_a_value_in_an_algorithm() {
+    let cases = [
+        (
+            "declared_field",
+            "bool",
+            r#"<sce:return expr="frame.msg_id === 1"/>"#,
         ),
-    }
-}
-
-#[test]
-fn a_resolving_field_passes_the_validator_and_the_unbound_alias_is_refused() {
-    // Algorithm imports the codec and references the *declared* field
-    // `msg_id`. The validator's silent-success mode lets it through; what
-    // stops the document is that an algorithm binds no codec instance.
-    //
-    // ⚠ This fixture used to declare `<sce:param name="frame"
-    // type="uint8"/>` beside the import of the same name, so the name was
-    // "declared" — as a byte — and the emitted `frame.msg_id` read a field
-    // of a `u8`. It generated, and did not compile. A parameter shadowing
-    // an import alias is its own defect and is not what this test is for.
-    let dir = tempdir().expect("tempdir");
-    write_fixture(dir.path(), "frame_codec.scxml", CODEC_SCXML);
-    write_fixture(
-        dir.path(),
-        "algo_positive.scxml",
-        r#"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml"
-       xmlns:sce="http://sce.dev/ext"
-       sce:kind="algorithm"
-       name="route_msg"
-       version="1.0">
-  <sce:import src="frame_codec.scxml" kind="codec" as="frame"/>
-  <sce:signature>
-    <sce:param name="x" type="uint8"/>
-    <sce:return type="bool"/>
-  </sce:signature>
-  <sce:body>
-    <sce:return expr="frame.msg_id === 1"/>
-  </sce:body>
-</scxml>
-"#,
-    );
-    let err = compile_algorithm_expect_err(dir.path(), "algo_positive.scxml");
-    assert_refused_as_unbound_alias(err, "frame");
-}
-
-#[test]
-fn negative_field_not_found_emits_did_you_mean_candidates() {
-    // ⚠ This and the next fixture used to declare a `uint8` parameter
-    // named `frame` beside the import of that name. The namespace check
-    // refuses that as a duplicate before this validator runs, so the
-    // parameter is `x` and the refusal below is the validator's own.
-    //
-    // Same shape as positive but with a typo: `msg_idd` instead of
-    // `msg_id`. Validator emits `CrossKindFieldNotFound` with the
-    // imported codec's full member surface (`msg_id`, `payload`) as
-    // the closed `Fix::ReplaceOneOf` candidate list — drives the
-    // `did_you_mean`-style repair surface upstream consumers
-    // (IDE / NL→IR pipelines / human authors) wire off.
-    let dir = tempdir().expect("tempdir");
-    write_fixture(dir.path(), "frame_codec.scxml", CODEC_SCXML);
-    write_fixture(
-        dir.path(),
-        "algo_typo.scxml",
-        r#"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml"
-       xmlns:sce="http://sce.dev/ext"
-       sce:kind="algorithm"
-       name="route_msg"
-       version="1.0">
-  <sce:import src="frame_codec.scxml" kind="codec" as="frame"/>
-  <sce:signature>
-    <sce:param name="x" type="uint8"/>
-    <sce:return type="bool"/>
-  </sce:signature>
-  <sce:body>
-    <sce:return expr="frame.msg_idd === 1"/>
-  </sce:body>
-</scxml>
-"#,
-    );
-    let err = compile_algorithm_expect_err(dir.path(), "algo_typo.scxml");
-    match err.error {
-        sce_build::forge::error::ForgeError::Validation(boxed) => match *boxed {
-            ValidationError::CrossKindFieldNotFound {
-                importing_kind,
-                alias,
-                field,
-                imported_kind,
-                candidates,
-                ..
-            } => {
-                assert_eq!(importing_kind, ForgeKind::Algorithm);
-                assert_eq!(alias, "frame");
-                assert_eq!(field, "msg_idd");
-                assert_eq!(imported_kind, ForgeKind::Codec);
+        (
+            "misspelled_field",
+            "bool",
+            r#"<sce:return expr="frame.msg_idd === 1"/>"#,
+        ),
+        (
+            "bare_return",
+            "bool",
+            r#"<sce:return expr="frame.msg_id"/>"#,
+        ),
+        (
+            "nested",
+            "bool",
+            r#"<sce:if cond="(frame.msg_id &amp; 0xF0) === 0x10">
+      <sce:return expr="true"/>
+    </sce:if>
+    <sce:return expr="false"/>"#,
+        ),
+    ];
+    for (label, ret_type, body) in cases {
+        let dir = tempdir().expect("tempdir");
+        write_fixture(dir.path(), "frame_codec.scxml", CODEC_SCXML);
+        let name = format!("algo_{label}.scxml");
+        write_fixture(dir.path(), &name, &algorithm(ret_type, body));
+        let err = compile_expect_err(dir.path(), &name);
+        use sce_build::forge::error::{ExprError, ForgeError};
+        match &err.error {
+            ForgeError::Expression(ExprError::UnknownIdentifier { name, .. }) => {
                 assert_eq!(
-                    candidates,
-                    vec!["msg_id".to_string(), "payload".to_string()],
-                    "candidate set must be the imported codec's full sorted member surface"
+                    name, "frame",
+                    "{label}: the undeclared name must be the alias"
                 );
             }
-            other => panic!("expected CrossKindFieldNotFound, got {other:?}"),
-        },
-        other => panic!("expected Validation, got {other:?}"),
-    }
-}
-
-#[test]
-fn negative_type_mismatch_on_bare_return_expression() {
-    // Algorithm declares `<sce:return type="bool"/>` but the body
-    // returns `frame.msg_id` (uint8). The bare Member access shape
-    // qualifies for the type-mismatch check — composite expressions
-    // (`frame.msg_id != 0`) carry implicit boolean promotion and
-    // resolve via the typed-expression pipeline at transpile time;
-    // this validator only catches the structurally-obvious mismatch.
-    let dir = tempdir().expect("tempdir");
-    write_fixture(dir.path(), "frame_codec.scxml", CODEC_SCXML);
-    write_fixture(
-        dir.path(),
-        "algo_type_mismatch.scxml",
-        r#"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml"
-       xmlns:sce="http://sce.dev/ext"
-       sce:kind="algorithm"
-       name="route_msg"
-       version="1.0">
-  <sce:import src="frame_codec.scxml" kind="codec" as="frame"/>
-  <sce:signature>
-    <sce:param name="x" type="uint8"/>
-    <sce:return type="bool"/>
-  </sce:signature>
-  <sce:body>
-    <sce:return expr="frame.msg_id"/>
-  </sce:body>
-</scxml>
-"#,
-    );
-    let err = compile_algorithm_expect_err(dir.path(), "algo_type_mismatch.scxml");
-    match err.error {
-        sce_build::forge::error::ForgeError::Validation(boxed) => match *boxed {
-            ValidationError::CrossKindTypeMismatch {
-                importing_kind,
-                alias,
-                field,
-                actual,
-                expected,
-                ..
-            } => {
-                assert_eq!(importing_kind, ForgeKind::Algorithm);
-                assert_eq!(alias, "frame");
-                assert_eq!(field, "msg_id");
-                assert_eq!(actual, "uint8");
-                assert_eq!(expected, "bool");
-            }
-            other => panic!("expected CrossKindTypeMismatch, got {other:?}"),
-        },
-        other => panic!("expected Validation, got {other:?}"),
+            other => panic!("{label}: expected the alias refused as undeclared, got {other:?}"),
+        }
     }
 }
 
@@ -261,11 +156,8 @@ fn negative_type_mismatch_on_bare_return_expression() {
 fn negative_circular_import_dependency() {
     // Two codecs that mutually import each other — the import-graph
     // DFS surfaces the back-edge with the cycle path rendered in
-    // traversal order. Without this check the surface-table builder
-    // would recurse into infinite open-file work.
-    //
-    // The cycle is structural (alias.field references not required —
-    // the cycle detector runs before the field walker).
+    // traversal order. Without this check every walk of the import
+    // closure would recurse without end.
     let dir = tempdir().expect("tempdir");
     write_fixture(
         dir.path(),
@@ -299,7 +191,7 @@ fn negative_circular_import_dependency() {
 </scxml>
 "#,
     );
-    let err = compile_algorithm_expect_err(dir.path(), "cycle_a.scxml");
+    let err = compile_expect_err(dir.path(), "cycle_a.scxml");
     match err.error {
         sce_build::forge::error::ForgeError::Validation(boxed) => match *boxed {
             ValidationError::CrossKindCircularDependency { cycle } => {
@@ -324,43 +216,4 @@ fn negative_circular_import_dependency() {
         },
         other => panic!("expected Validation, got {other:?}"),
     }
-}
-
-#[test]
-fn silent_when_alias_resolves_to_known_field_inside_nested_expression() {
-    // Defensive regression test: a member access nested inside a
-    // larger expression (Binary, Call, etc.) must still pass the
-    // typed-binding check when the field resolves. Without the
-    // recursive walker, a positive nested case would silently fail
-    // through to codegen and miss the validator entirely.
-    let dir = tempdir().expect("tempdir");
-    write_fixture(dir.path(), "frame_codec.scxml", CODEC_SCXML);
-    write_fixture(
-        dir.path(),
-        "algo_nested.scxml",
-        r#"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml"
-       xmlns:sce="http://sce.dev/ext"
-       sce:kind="algorithm"
-       name="route_msg"
-       version="1.0">
-  <sce:import src="frame_codec.scxml" kind="codec" as="frame"/>
-  <sce:signature>
-    <sce:param name="x" type="uint8"/>
-    <sce:return type="bool"/>
-  </sce:signature>
-  <sce:body>
-    <sce:if cond="(frame.msg_id &amp; 0xF0) === 0x10">
-      <sce:return expr="true"/>
-    </sce:if>
-    <sce:return expr="false"/>
-  </sce:body>
-</scxml>
-"#,
-    );
-    // The same outcome as the flat case one node deeper: the validator's
-    // recursive walk resolves the nested `frame.msg_id` and stays silent,
-    // and the alias is then refused as the value it is not.
-    let err = compile_algorithm_expect_err(dir.path(), "algo_nested.scxml");
-    assert_refused_as_unbound_alias(err, "frame");
 }

@@ -1,464 +1,32 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// Cross-kind typed binding verification.
+// Cross-kind import graph verification.
 //
-// Walks every expression site in a parsed Forge document and validates each
-// `<alias>.<field>` member-access reference against the imported kind's
-// declared member surface. Closes a silently-broken pattern: the
-// typed-expression pipeline already
-// has the symbol table (populated by `validate_and_enrich_imports` →
-// `ForgeDocument::record_fields`) but `infer_types` returns
-// `InferredType::Unknown` for unresolved Member access — no diagnostic.
-// AI-generated SCXML hallucinates plausible-looking field names that
-// historically survived to codegen.
+// Walks the `<sce:import>` graph below a forge document, refuses a cycle
+// as `validation/cross-kind-circular-dependency`, and returns every
+// document the walk read — the transitive closure a build system must
+// invalidate on.
 //
-// Three diagnostics — `validation/cross-kind-field-not-found` (with
-// closed `Fix::ReplaceOneOf` `did_you_mean`-style candidate list),
-// `validation/cross-kind-type-mismatch` (signature return type vs the
-// declared type of the referenced field), and the defensive
-// `validation/cross-kind-circular-dependency` over the `<sce:import>`
-// graph.
-//
-// Scope (v1): the validator is wired only on the Forge→Forge path inside
-// `compile_forge_from_parsed` after `validate_and_enrich_imports`. The
-// module's public API is kind-agnostic so a future Statechart→Forge
-// binding (currently zero consumers) would add a second call site without changing diagnostic shape or
-// payload.
-//
-// Coverage (v1):
-//   * Algorithm body — every statement variant's expression slot walked
-//     (Var.init, Assign.target/expr, If.cond, While.cond, Return.expr,
-//     Call.args). Foreach.source is a bare alias / param name (not an
-//     expression) — covered by parser stage's
-//     `algorithm/foreach-source-not-iterable`.
-//   * AlgorithmConst.init (init expression — `None` skipped, those are
-//     `<sce:fold>` bodies handled by the const-fold module).
-//   * `<sce:return expr="alias.field"/>` typed against
-//     `AlgorithmSignature.return_type` for the type-mismatch axis when
-//     the expression is a bare Member access (the only shape where the
-//     resolved type is statically known).
-//
-// Procedure body, Codec embed/variant predicate expressions, and other
-// kinds' expression sites extend the same `walk_expression` helper as
-// follow-up atomics if a real silent-broken consumer surfaces. Per
-// `feedback_verify_before_ship`, we do not pre-build for hypothetical
-// sites.
+// ⚠ WHAT THIS MODULE NO LONGER DOES, AND WHY. It also walked the
+// expressions of algorithm documents and checked each `<alias>.<field>`
+// against the imported kind's fields. That check ran where it could never
+// be right and nowhere it was needed: in an algorithm an import's alias is
+// not a value at all, so every `frame.msg_id` it accepted was refused
+// right after as an undeclared name, and every `frame.msg_idd` it refused
+// sent the author to fix a field of a name that still would not resolve.
+// Meanwhile a procedure, where the alias IS a value, was never walked, and
+// `frame.msgIdd` there generated with exit 0 (measured 2026-09-21). The
+// member check now lives in the expression layer
+// (`forge::expr::reject_undeclared_member`), which reads every kind's
+// expressions and knows which names are records.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::forge::error::{Located, ValidationError};
-use crate::forge::expr::{parse_to_ast, ExprKind, TypedExpr};
-use crate::forge::import_source;
-use crate::forge::model::{
-    AlgorithmModel, AlgorithmStmt, ForgeDocument, ForgeImport, ForgeKind, ParsedForge, SceType,
-};
-
-/// Per-imported-kind member surface used for typed-binding resolution.
-///
-/// [`ForgeDocument::record_fields`], keyed by the importing
-/// document's alias (not the imported kind's bare field id)
-/// so the validator can answer "given `<alias>.<field>` in an
-/// expression, is `<field>` declared?" with a single map lookup.
-///
-/// Stateless imports (Transform / Condition / Lookup / Interpolation /
-/// Algorithm) are absent from this table: those flow through expression
-/// surface as `<alias>(arg, arg)` function calls, not as
-/// `<alias>.<field>` member access — the typo-axis is already covered
-/// by parser-stage validators (`algorithm/call-target-unknown`) and the
-/// cross-kind validator stays silent.
-struct ImportMemberSurface {
-    /// Imported kind (`codec`, `bounded-collection`, …) — surfaced
-    /// verbatim in the diagnostic so authors disambiguate when the
-    /// same alias name shadows a local field.
-    imported_kind: ForgeKind,
-    /// Imported document's `name` attribute (the kind's name, not the
-    /// file basename) so the diagnostic carries the spec-anchorable
-    /// identifier.
-    imported_name: String,
-    /// Sorted, deduplicated member surface — drives the closed-set
-    /// `Fix::ReplaceOneOf` candidate list. Type info preserved so the
-    /// type-mismatch axis can read it for the same field without a
-    /// second resolution pass.
-    fields: Vec<(String, SceType)>,
-}
-
-/// Build the per-alias member surface table from a document's parsed
-/// imports. Returns a map keyed by import alias — the same key shape
-/// `forge::type_ctx::insert_stateful_imports` uses for the
-/// `<alias>.<field>` qualified `TypeCtx::vars` lookup.
-///
-/// Re-reads each imported file at validator time (cheap: imports are
-/// small, the parse is single-pass); an import that cannot be read is
-/// skipped, for the reason [`import_source::parse_quietly`] gives.
-fn build_surface_table(
-    imports: &[ForgeImport],
-    base_dir: &Path,
-) -> Result<HashMap<String, ImportMemberSurface>, Located<crate::forge::error::ForgeError>> {
-    let mut out: HashMap<String, ImportMemberSurface> = HashMap::new();
-    for imp in imports {
-        let Some(parsed) = import_source::parse_quietly(base_dir, imp) else {
-            continue;
-        };
-        let doc = parsed.document;
-        let imported_kind = doc.kind();
-        let imported_name = doc.name().to_string();
-        // `None`: not read as `alias.field` — see the method.
-        let Some(fields) = doc.record_fields() else {
-            continue;
-        };
-        out.insert(
-            imp.alias.clone(),
-            ImportMemberSurface {
-                imported_kind,
-                imported_name,
-                fields,
-            },
-        );
-    }
-    Ok(out)
-}
-
-/// Render an [`SceType`] to its canonical schema attribute spelling
-/// (`uint8`, `bool`, `enum:<alias>`, …).
-///
-/// ⚠ Was a local match here and an identical one in
-/// `event_schema_check`; both now defer to [`SceType::as_attr`], which
-/// sits beside `SceType::from_attr` so the two directions cannot drift
-/// apart when a variant is added.
-fn sce_type_canonical(t: &SceType) -> String {
-    t.as_attr()
-}
-
-/// Walk one expression AST and visit every `Member { object: Ident(obj),
-/// property }` site, calling `on_member` with `(obj, property)`.
-///
-/// The walker is intentionally shape-narrow: `Member { object: Member(…),
-/// property }` (chained access like `frame.header.id`) is left alone.
-/// Two reasons: (a) the current symbol-table key shape is
-/// `"{alias}.{field}"` single-level only, so a chained reference cannot
-/// be resolved without nested kind metadata that v1 imports don't
-/// expose; (b) extending the walker to handle chained access would
-/// silently widen the diagnostic surface without an integration test
-/// proving the right diagnostic fires — `feedback_silently_broken_hooks`
-/// pattern. When real chained references surface, the walker extends
-/// with a separate `Member.Member` arm.
-fn walk_expression<'a, F>(expr: &'a TypedExpr, on_member: &mut F)
-where
-    F: FnMut(&'a str, &'a str),
-{
-    match &expr.kind {
-        ExprKind::Member { object, property } => {
-            if let ExprKind::Ident(obj) = &object.kind {
-                on_member(obj.as_str(), property.as_str());
-            }
-            // Continue into nested object form so a deeper Member
-            // node containing a `Ident.field` shape still surfaces.
-            walk_expression(object, on_member);
-        }
-        ExprKind::Binary { left, right, .. } => {
-            walk_expression(left, on_member);
-            walk_expression(right, on_member);
-        }
-        ExprKind::Unary { operand, .. } => walk_expression(operand, on_member),
-        ExprKind::Conditional {
-            condition,
-            consequent,
-            alternate,
-        } => {
-            walk_expression(condition, on_member);
-            walk_expression(consequent, on_member);
-            walk_expression(alternate, on_member);
-        }
-        ExprKind::Call { callee, args } => {
-            walk_expression(callee, on_member);
-            for a in args {
-                walk_expression(a, on_member);
-            }
-        }
-        ExprKind::Index { object, index } => {
-            walk_expression(object, on_member);
-            walk_expression(index, on_member);
-        }
-        // RFC c7-wildcard W-project: algorithm-kind-only projection node;
-        // recurse into its source so a member reference inside still
-        // surfaces (unreachable on the import-surface check path).
-        ExprKind::BytesView { source, .. } => walk_expression(source, on_member),
-        ExprKind::NumberLit(_)
-        | ExprKind::StringLit { .. }
-        | ExprKind::BytesLit { .. }
-        | ExprKind::BoolLit(_)
-        | ExprKind::NullLit
-        | ExprKind::Ident(_)
-        | ExprKind::Raw(_) => {}
-    }
-}
-
-/// Parse a single expression string and validate every alias.field
-/// member access against the surface table. Empty / unparseable
-/// expressions are silently skipped — those are caught by the typed
-/// expression pipeline's own diagnostics (`expression/empty`,
-/// `expression/lex`, …) at codegen entry and surfacing them here would
-/// double-emit.
-fn check_expression(
-    expr: &str,
-    surface: &HashMap<String, ImportMemberSurface>,
-    importing_kind: ForgeKind,
-    importing_name: &str,
-    location: &str,
-    line: Option<u32>,
-) -> Result<(), Located<crate::forge::error::ForgeError>> {
-    let trimmed = expr.trim();
-    if trimmed.is_empty() {
-        return Ok(());
-    }
-    let ast = match parse_to_ast(trimmed) {
-        Ok(a) => a,
-        Err(_) => return Ok(()), // typed pipeline surfaces this
-    };
-    // First-fire semantics: a single expression with multiple
-    // alias.field misses surfaces the first miss in walk order. The
-    // author fixes one at a time; emitting all of them in one shot
-    // would inflate the diagnostic stream and break the FNV1a id
-    // uniqueness guarantee on rerun (the same expression with two
-    // misses generates two distinct ids whose stability tracks order
-    // of walk rather than author intent).
-    let mut first_error: Option<ValidationError> = None;
-    walk_expression(&ast, &mut |obj, property| {
-        if first_error.is_some() {
-            return;
-        }
-        let Some(s) = surface.get(obj) else {
-            return; // obj is not a known import alias
-        };
-        if s.fields.iter().any(|(name, _)| name == property) {
-            return; // resolved
-        }
-        // Build the closed candidate set. Pre-sorted is the expected
-        // shape for `Fix::ReplaceOneOf`; the surface table already
-        // preserves the imported kind's declared field order, so a
-        // dedicated sort here keeps the wire form stable even if the
-        // imported model later changes field iteration order.
-        let mut candidates: Vec<String> = s.fields.iter().map(|(n, _)| n.clone()).collect();
-        candidates.sort_unstable();
-        candidates.dedup();
-        first_error = Some(ValidationError::CrossKindFieldNotFound {
-            importing_kind,
-            importing_name: importing_name.to_string(),
-            alias: obj.to_string(),
-            field: property.to_string(),
-            imported_kind: s.imported_kind,
-            imported_name: s.imported_name.clone(),
-            candidates,
-        });
-    });
-    if let Some(err) = first_error {
-        return Err(Located::new(err.into(), location, line, None));
-    }
-    Ok(())
-}
-
-/// Walk every statement in an algorithm body and check each expression
-/// slot. Recurses into nested blocks (If.then/else, While.body,
-/// Foreach.body).
-fn walk_algorithm_stmt(
-    stmt: &AlgorithmStmt,
-    surface: &HashMap<String, ImportMemberSurface>,
-    importing_kind: ForgeKind,
-    importing_name: &str,
-    location: &str,
-) -> Result<(), Located<crate::forge::error::ForgeError>> {
-    match stmt {
-        AlgorithmStmt::Var { init, .. } => {
-            check_expression(
-                init,
-                surface,
-                importing_kind,
-                importing_name,
-                location,
-                None,
-            )?;
-        }
-        AlgorithmStmt::Assign { target, expr } => {
-            check_expression(
-                target,
-                surface,
-                importing_kind,
-                importing_name,
-                location,
-                None,
-            )?;
-            check_expression(
-                expr,
-                surface,
-                importing_kind,
-                importing_name,
-                location,
-                None,
-            )?;
-        }
-        AlgorithmStmt::If {
-            cond,
-            then_body,
-            else_body,
-        } => {
-            check_expression(
-                cond,
-                surface,
-                importing_kind,
-                importing_name,
-                location,
-                None,
-            )?;
-            for st in then_body {
-                walk_algorithm_stmt(st, surface, importing_kind, importing_name, location)?;
-            }
-            if let Some(else_) = else_body {
-                for st in else_ {
-                    walk_algorithm_stmt(st, surface, importing_kind, importing_name, location)?;
-                }
-            }
-        }
-        AlgorithmStmt::While { cond, body, .. } => {
-            check_expression(
-                cond,
-                surface,
-                importing_kind,
-                importing_name,
-                location,
-                None,
-            )?;
-            for st in body {
-                walk_algorithm_stmt(st, surface, importing_kind, importing_name, location)?;
-            }
-        }
-        AlgorithmStmt::Foreach { body, .. } => {
-            // `source` is a bare alias / param name resolved by parser
-            // stage; not an expression. Recurse into body only.
-            for st in body {
-                walk_algorithm_stmt(st, surface, importing_kind, importing_name, location)?;
-            }
-        }
-        AlgorithmStmt::Return { expr } => {
-            if let Some(e) = expr {
-                check_expression(e, surface, importing_kind, importing_name, location, None)?;
-            }
-        }
-        AlgorithmStmt::Call { args, .. } => {
-            for arg in args {
-                check_expression(arg, surface, importing_kind, importing_name, location, None)?;
-            }
-        }
-        AlgorithmStmt::Append { target, expr } => {
-            // `target` is the buffer local; `expr` may reference an imported
-            // member (`alias.field`), so both pass through the same check as
-            // `<sce:assign>`.
-            check_expression(
-                target,
-                surface,
-                importing_kind,
-                importing_name,
-                location,
-                None,
-            )?;
-            check_expression(
-                expr,
-                surface,
-                importing_kind,
-                importing_name,
-                location,
-                None,
-            )?;
-        }
-    }
-    Ok(())
-}
-
-/// Check `<sce:return expr="alias.field"/>` against the algorithm's
-/// declared return type for the type-mismatch axis. Only the bare
-/// `Ident.Member` shape qualifies (e.g. `<sce:return expr="entry.callback_id"/>`)
-/// — composite expressions (`alias.field + 1`, `alias.field * 2`) carry
-/// implicit promotion semantics that v1 expression inference resolves
-/// at transpile time; surfacing those here would duplicate the
-/// transpile-stage coercion rules without an integration test pinning
-/// the exact failure mode.
-fn check_algorithm_return_type(
-    algo: &AlgorithmModel,
-    surface: &HashMap<String, ImportMemberSurface>,
-    location: &str,
-) -> Result<(), Located<crate::forge::error::ForgeError>> {
-    let Some(expected_ret) = algo.signature.return_type.as_ref() else {
-        return Ok(()); // void return; no type contract to violate
-    };
-    // Walk every Return statement, including nested ones inside
-    // If/While/Foreach bodies.
-    fn visit<'a>(stmts: &'a [AlgorithmStmt], out: &mut Vec<&'a str>) {
-        for st in stmts {
-            match st {
-                AlgorithmStmt::Return { expr: Some(e) } => out.push(e.as_str()),
-                AlgorithmStmt::If {
-                    then_body,
-                    else_body,
-                    ..
-                } => {
-                    visit(then_body, out);
-                    if let Some(eb) = else_body {
-                        visit(eb, out);
-                    }
-                }
-                AlgorithmStmt::While { body, .. } | AlgorithmStmt::Foreach { body, .. } => {
-                    visit(body, out);
-                }
-                _ => {}
-            }
-        }
-    }
-    let mut return_exprs: Vec<&str> = Vec::new();
-    visit(&algo.body, &mut return_exprs);
-
-    for expr in return_exprs {
-        let trimmed = expr.trim();
-        let ast = match parse_to_ast(trimmed) {
-            Ok(a) => a,
-            Err(_) => continue,
-        };
-        // Only the bare `Ident.Member` shape qualifies — see the
-        // function-level rationale on composite expressions.
-        let (obj, property) = match &ast.kind {
-            ExprKind::Member { object, property } => match &object.kind {
-                ExprKind::Ident(o) => (o.as_str(), property.as_str()),
-                _ => continue,
-            },
-            _ => continue,
-        };
-        let Some(s) = surface.get(obj) else {
-            continue;
-        };
-        let Some((_, actual_ty)) = s.fields.iter().find(|(n, _)| n == property) else {
-            // Field-not-found case is the dedicated diagnostic — skip
-            // here so we don't double-emit on the same source span.
-            continue;
-        };
-        if actual_ty != expected_ret {
-            return Err(Located::new(
-                ValidationError::CrossKindTypeMismatch {
-                    importing_kind: ForgeKind::Algorithm,
-                    importing_name: algo.name.clone(),
-                    alias: obj.to_string(),
-                    field: property.to_string(),
-                    actual: sce_type_canonical(actual_ty),
-                    expected: sce_type_canonical(expected_ret),
-                }
-                .into(),
-                location,
-                None,
-                None,
-            ));
-        }
-    }
-    Ok(())
-}
+use crate::forge::import_source::ImportSource;
+use crate::forge::model::{ForgeImport, ParsedForge};
 
 /// Walk the `<sce:import>` graph rooted at `entry_label` (the document
 /// being compiled) and reject any cycle with
@@ -533,8 +101,8 @@ pub(crate) fn check_imports_acyclic(
             // enrichment pass; here we silently treat them as "no
             // child imports" so the cycle detector does not double-
             // emit on a separately-diagnosed failure.
-            let content = std::fs::read_to_string(&child_path).ok();
-            if content.is_some() {
+            let source = ImportSource::read(base_dir, imp).ok();
+            if source.is_some() {
                 // Recorded on the read, not on the edge: a prerequisite
                 // is a file that was opened. An import naming a file
                 // that does not exist is diagnosed by the enrichment
@@ -543,26 +111,10 @@ pub(crate) fn check_imports_acyclic(
                 // dirty.
                 sources.push(canonical.clone());
             }
-            let child_imports: Vec<ForgeImport> = if let Some(content) = content {
-                let stem = child_path
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("unknown");
-                let basename = child_path
-                    .file_name()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or(stem);
-                let label = crate::DocumentLabel {
-                    identifier: stem,
-                    diagnostic_label: basename,
-                };
-                match crate::forge::parser::parse_forge_with_imports(&content, label) {
-                    Ok(Some(p)) => p.imports,
-                    _ => Vec::new(),
-                }
-            } else {
-                Vec::new()
-            };
+            let child_imports: Vec<ForgeImport> = source
+                .and_then(|s| s.parse().ok().flatten())
+                .map(|p| p.imports)
+                .unwrap_or_default();
             let child_base_dir = child_path
                 .parent()
                 .map(|p| p.to_path_buf())
@@ -600,30 +152,16 @@ pub(crate) fn check_imports_acyclic(
     Ok(sources)
 }
 
-/// Cross-kind binding validator entry point. Runs after
-/// `validate_and_enrich_imports` populates per-import enrichment data
-/// (the validator reads its own surface table off the import file
-/// contents rather than depending on the enrichment slice, so it
-/// stays single-responsibility for the binding axis only).
-///
-/// Today wired only on the Forge→Forge path. A future Statechart→Forge
-/// binding extends the same function with a Statechart arm; the
-/// diagnostic shape stays identical.
-///
-/// Returns every forge document the import walk read, sorted — the
-/// transitive closure of `<sce:import>` below `parsed`, which callers
-/// surface as [`crate::generator::GeneratedOutput::deps`] so a build
-/// system can invalidate on any of them.
+/// Refuse a cyclic `<sce:import>` graph below `parsed`, and return every
+/// forge document the walk read, sorted — the transitive closure of
+/// `<sce:import>`, which callers surface as
+/// [`crate::generator::GeneratedOutput::deps`] so a build system can
+/// invalidate on any of them.
 pub fn check(
     parsed: &ParsedForge,
     base_dir: &Path,
     label: &str,
 ) -> Result<Vec<PathBuf>, Located<crate::forge::error::ForgeError>> {
-    // Step 1 — defensive cycle detection. Runs first so a cyclic
-    // import does not infinite-loop the surface-table builder below.
-    // The walk it performs is also the only enumeration of the import
-    // closure in the pipeline, so its reads are what the caller reports
-    // as dependencies.
     let mut sources = check_imports_acyclic(&parsed.imports, label, base_dir)?;
     // Deterministic and duplicate-free: a depfile that reorders between
     // runs defeats a "regenerate and expect no diff" gate as surely as a
@@ -631,187 +169,5 @@ pub fn check(
     // document by two paths.
     sources.sort();
     sources.dedup();
-
-    // Step 2 — build per-alias member surface table. Empty when no
-    // imports (typical for standalone fixtures) — the field walker
-    // below early-returns on every Member access since no alias is
-    // ever a hit.
-    let surface = build_surface_table(&parsed.imports, base_dir)?;
-    if surface.is_empty() {
-        return Ok(sources);
-    }
-
-    // Step 3 — per-kind expression walker. v1 covers Algorithm only;
-    // other stateful kinds (Procedure body, Codec embed/variant
-    // predicate expressions, Filter/Validator/Observer expressions)
-    // extend this branch as silent-broken consumers surface — see
-    // module-level scope comment.
-    if let ForgeDocument::Algorithm(algo) = &parsed.document {
-        for stmt in &algo.body {
-            walk_algorithm_stmt(stmt, &surface, ForgeKind::Algorithm, &algo.name, label)?;
-        }
-        for c in &algo.consts {
-            // `init` is `None` when the const carries a `<sce:fold>`
-            // body instead — RFC §synth-5-F build-time fold path. Fold
-            // expressions have their own typed-binding surface
-            // handled by the const-fold module; the alias.field
-            // walker stays narrow on scalar consts.
-            if let Some(init) = &c.init {
-                check_expression(
-                    init,
-                    &surface,
-                    ForgeKind::Algorithm,
-                    &algo.name,
-                    label,
-                    None,
-                )?;
-            }
-        }
-        check_algorithm_return_type(algo, &surface, label)?;
-    }
     Ok(sources)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// `walk_expression` surfaces every Ident.Member pair, including
-    /// those nested inside Binary / Call / Conditional. Verifies the
-    /// walker contract before the per-stmt enumerator depends on it.
-    #[test]
-    fn walk_collects_member_accesses() {
-        let ast = parse_to_ast("a.x + foo(b.y, c.z) ? d.w : e.v").unwrap();
-        let mut hits: Vec<(String, String)> = Vec::new();
-        walk_expression(&ast, &mut |o, p| hits.push((o.to_string(), p.to_string())));
-        hits.sort_unstable();
-        assert_eq!(
-            hits,
-            vec![
-                ("a".to_string(), "x".to_string()),
-                ("b".to_string(), "y".to_string()),
-                ("c".to_string(), "z".to_string()),
-                ("d".to_string(), "w".to_string()),
-                ("e".to_string(), "v".to_string()),
-            ]
-        );
-    }
-
-    /// Empty expression strings + unparseable text return Ok — the
-    /// typed-expression pipeline surfaces those failures via its own
-    /// diagnostics later. Cross-kind validator stays silent so we
-    /// don't double-emit on the same expression span.
-    #[test]
-    fn check_expression_silent_on_empty_or_unparseable() {
-        let surface: HashMap<String, ImportMemberSurface> = HashMap::new();
-        assert!(check_expression(
-            "",
-            &surface,
-            ForgeKind::Algorithm,
-            "test",
-            "test.scxml",
-            None
-        )
-        .is_ok());
-        assert!(check_expression(
-            "((",
-            &surface,
-            ForgeKind::Algorithm,
-            "test",
-            "test.scxml",
-            None
-        )
-        .is_ok());
-    }
-
-    /// Member access on an unknown object name is silent — only
-    /// references whose object IS a known import alias get the
-    /// field-not-found check. Locals / signature params resolve
-    /// elsewhere.
-    #[test]
-    fn check_expression_silent_when_object_not_an_alias() {
-        let surface: HashMap<String, ImportMemberSurface> = HashMap::new();
-        // `local_var.x` references a local — surface table has no
-        // `local_var` alias entry, so the check is silent.
-        assert!(check_expression(
-            "local_var.x",
-            &surface,
-            ForgeKind::Algorithm,
-            "test",
-            "test.scxml",
-            None
-        )
-        .is_ok());
-    }
-
-    /// Known alias + unknown field → `CrossKindFieldNotFound` with the
-    /// sorted candidate set as the closed `Fix::ReplaceOneOf` carrier.
-    #[test]
-    fn check_expression_rejects_typo_on_known_alias() {
-        let mut surface: HashMap<String, ImportMemberSurface> = HashMap::new();
-        surface.insert(
-            "frame".to_string(),
-            ImportMemberSurface {
-                imported_kind: ForgeKind::Codec,
-                imported_name: "udp_frame".to_string(),
-                fields: vec![
-                    ("msg_id".to_string(), SceType::Uint8),
-                    ("payload".to_string(), SceType::Bytes),
-                ],
-            },
-        );
-        let err = check_expression(
-            "frame.msgid", // typo: should be msg_id
-            &surface,
-            ForgeKind::Algorithm,
-            "test",
-            "test.scxml",
-            None,
-        )
-        .expect_err("typo must reject");
-        match err.error {
-            crate::forge::error::ForgeError::Validation(boxed) => match *boxed {
-                ValidationError::CrossKindFieldNotFound {
-                    alias,
-                    field,
-                    candidates,
-                    ..
-                } => {
-                    assert_eq!(alias, "frame");
-                    assert_eq!(field, "msgid");
-                    assert_eq!(
-                        candidates,
-                        vec!["msg_id".to_string(), "payload".to_string()]
-                    );
-                }
-                other => panic!("unexpected variant: {other:?}"),
-            },
-            other => panic!("expected Validation, got {other:?}"),
-        }
-    }
-
-    /// Known alias + known field → silent. Both the type-mismatch and
-    /// field-not-found axes resolve the field correctly; the binding
-    /// is well-typed.
-    #[test]
-    fn check_expression_silent_on_resolved_field() {
-        let mut surface: HashMap<String, ImportMemberSurface> = HashMap::new();
-        surface.insert(
-            "frame".to_string(),
-            ImportMemberSurface {
-                imported_kind: ForgeKind::Codec,
-                imported_name: "udp_frame".to_string(),
-                fields: vec![("payload".to_string(), SceType::Bytes)],
-            },
-        );
-        assert!(check_expression(
-            "frame.payload",
-            &surface,
-            ForgeKind::Algorithm,
-            "test",
-            "test.scxml",
-            None,
-        )
-        .is_ok());
-    }
 }

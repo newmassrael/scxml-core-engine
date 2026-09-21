@@ -3545,12 +3545,12 @@ pub enum ValidationError {
     /// axis: that one resolves doc names, this one resolves
     /// post-resolution member fields.
     ///
-    /// Cross-kind typed binding. Today
-    /// emitted only from the Forge→Forge path (a Forge document's
-    /// expressions reference another Forge document imported via
-    /// `<sce:import>`); the diagnostic itself is kind-agnostic so a
-    /// future Statechart→Forge binding wires through the same code
-    /// without renaming.
+    /// Emitted by the statechart's event-schema check: a guard's
+    /// `_event.data.<field>` against the event schema the triggering event
+    /// carries. A forge expression's `<alias>.<member>` is judged by the
+    /// expression layer instead, as [`ExprError::UnknownMember`] — it once
+    /// was judged here too, but only in algorithms, where an import's alias
+    /// is not a value at all.
     #[error(
         "{importing_kind} '{importing_name}': '{alias}.{field}' references an undeclared field on imported {imported_kind} '{imported_name}'{}",
         if candidates.is_empty() {
@@ -4164,6 +4164,35 @@ pub enum ExprError {
     UnknownEnumVariant {
         alias: String,
         name: String,
+        declared: Vec<String>,
+    },
+
+    /// `<record>.<member>` where `<record>`'s members are known and
+    /// `<member>` is none of them — `frame.msgIdd` against a codec whose
+    /// fields are `length`, `msgId` and `payload`.
+    ///
+    /// The member twin of [`ExprError::UnknownEnumVariant`]: `declared` is
+    /// the record's whole member set — the fields and methods registered
+    /// for it — shown in full because it is closed, with the near misses
+    /// derived for the prose. Only a [`crate::forge::types::RecordShape::Closed`]
+    /// record is judged; an open one's members belong to a pass that knows
+    /// them.
+    ///
+    /// ⚠ Nothing refused this before. The only member check ran on
+    /// algorithms, where an import's alias is not a value, so a misspelled
+    /// field of an import in a procedure, or of a bounded-collection item,
+    /// reached the generated code (measured 2026-09-21).
+    #[error(
+        "{record}.{member} is not a member of {record} (declared: {}){}",
+        crate::forge::error::joined_or_none(.declared),
+        crate::forge::error::did_you_mean(&crate::near_miss::near_misses(
+            .member,
+            .declared.iter().map(String::as_str),
+        ))
+    )]
+    UnknownMember {
+        record: String,
+        member: String,
         declared: Vec<String>,
     },
 

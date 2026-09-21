@@ -950,7 +950,7 @@ fn check_comparison_type(
                 alias: EVENT_DATA_PATH.to_string(),
                 field: field.id.clone(),
                 actual: literal_kind_canonical(other_kind),
-                expected: sce_type_canonical(&field.sce_type),
+                expected: field.sce_type.as_attr(),
             },
         ));
     }
@@ -1089,7 +1089,7 @@ fn reject_non_representable_bytes(
                     alias: EVENT_DATA_PATH.to_string(),
                     field: field.id.clone(),
                     actual: format!("non-printable-ASCII bytes literal '{value}'"),
-                    expected: sce_type_canonical(&field.sce_type),
+                    expected: field.sce_type.as_attr(),
                 },
             ))
         }
@@ -1251,10 +1251,10 @@ fn enum_underlying_overflow(
     Some(EnumUnderlyingOverflow {
         actual: format!(
             "integer literal {value} overflows {underlying} underlying type of enum '{alias}'",
-            underlying = sce_type_canonical(&enum_model.underlying_type),
+            underlying = enum_model.underlying_type.as_attr(),
             alias = enum_ref.alias,
         ),
-        expected: sce_type_canonical(&enum_model.underlying_type),
+        expected: enum_model.underlying_type.as_attr(),
     })
 }
 
@@ -1400,12 +1400,6 @@ fn literal_kind_canonical(kind: LiteralKind) -> String {
         LiteralKind::Bool => "bool".to_string(),
         LiteralKind::String => "string".to_string(),
     }
-}
-
-/// See the note on `cross_kind_check::sce_type_canonical`: one spelling,
-/// owned by [`SceType::as_attr`] next to `from_attr`.
-fn sce_type_canonical(t: &SceType) -> String {
-    t.as_attr()
 }
 
 fn is_comparison(op: BinOp) -> bool {
@@ -1689,7 +1683,7 @@ fn check_send_param(
                 alias: format!("<send event=\"{}\">", action.event),
                 field: field.id.clone(),
                 actual: literal_kind_canonical(literal_kind),
-                expected: sce_type_canonical(&field.sce_type),
+                expected: field.sce_type.as_attr(),
             },
         ));
     }

@@ -2695,11 +2695,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce-build/src/forge/cross_kind_check.rs",
-          "symbol": "check",
-          "kind": "implements"
-        },
-        {
           "file": "sce-build/src/forge/diagnostic.rs",
           "symbol": "ALL_DIAGNOSTIC_CODES",
           "kind": "implements"
@@ -5656,6 +5651,12 @@
       "target_kind": "section",
       "target_id": "synth-5-L",
       "reason": "The member-field enumeration moved to ForgeDocument::record_fields in sce-build/src/forge/model.rs, one answer shared by the import enrichment, the cross-kind member check and the collection index-by check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-F",
+      "reason": "cross_kind_check no longer walks algorithm consts; it checks only the import graph for cycles, so it implements nothing of the build-time const fold"
     }
   ],
   "frames": {},

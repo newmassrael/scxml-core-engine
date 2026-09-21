@@ -17,7 +17,7 @@
 use crate::forge::generator::ImportContext;
 use crate::forge::model::*;
 use crate::forge::quantity::{NumericBaseType, Quantity};
-use crate::forge::types::{EnumScope, FuncSig, InferredType, TypeCtx};
+use crate::forge::types::{EnumScope, FuncSig, InferredType, RecordShape, TypeCtx};
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Low-level helpers
@@ -120,7 +120,9 @@ fn insert_stateful_imports<'a>(ctx: &mut TypeCtx<'a>, imports: &'a [ImportContex
         if !imp.is_stateful {
             continue;
         }
-        ctx.insert_record(imp.alias.as_str());
+        // The import's fields and methods are the whole of what its alias
+        // may be asked for, and both are registered just below.
+        ctx.insert_record(imp.alias.as_str(), RecordShape::Closed);
         for (qualified_key, fty) in &imp.member_field_types {
             ctx.insert_var(qualified_key.as_str(), InferredType::from_sce_type(fty));
         }
@@ -314,8 +316,9 @@ pub fn procedure<'a>(m: &'a ProcedureModel, imports: &'a [ImportContext]) -> Typ
     // them through it (`<assign expr="_event.data"/>`). The generator
     // rewrites `_event.data` to the procedure's own payload member AFTER
     // names are checked, so the name the check sees is the author's.
-    // A record: its shape is the triggering event's, not this document's.
-    ctx.insert_record("_event");
+    // A record: its shape is the triggering event's, not this document's,
+    // so its members are not this context's to judge.
+    ctx.insert_record("_event", RecordShape::Open);
     close_the_scope(&mut ctx);
     ctx
 }

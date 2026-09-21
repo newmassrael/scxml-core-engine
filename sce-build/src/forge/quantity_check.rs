@@ -323,8 +323,8 @@ mod tests {
 
     #[test]
     fn unparseable_expression_returns_ok() {
-        // Mirror cross_kind_check::check_expression — silent on
-        // syntax errors so we don't double-emit.
+        // Silent on syntax errors: the expression layer reports them,
+        // and a second voice here would double-emit.
         let result = check_expression(
             "((",
             &celsius_ctx(),

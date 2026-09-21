@@ -21625,7 +21625,7 @@ fn render_algorithm(
     lang: crate::generator::Language,
     options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
-    use crate::forge::types::{FuncSig, InferredType, TypeCtx};
+    use crate::forge::types::{FuncSig, InferredType, RecordShape, TypeCtx};
     use crate::generator::Language;
     // RFC §synth-5-B item B2 test-vector: closure rotation complete — every
     // backend (Rust + C11 + Kotlin + Cpp + Go + Python) now ships
@@ -21692,19 +21692,31 @@ fn render_algorithm(
         .collect();
     // An item over a bounded collection is an element — a record whose
     // fields `member_field_pairs` below registers when the element schema
-    // was threaded, and which carries its members either way.
+    // was threaded. Only then are its members known: on a single-file path
+    // the element type is a name in another document this compile never
+    // reads, so the item is an open record there.
     //
     // ⚠ This used to type EVERY foreach item a byte. Nothing read the slot
     // for a collection item, so nothing noticed until a value's members
     // were checked: `entry.pattern` then read as a member of a `uint8`
     // wherever the element schema is not threaded (measured 2026-09-21).
-    let mut record_items: Vec<&str> = Vec::new();
+    let mut record_items: Vec<(&str, RecordShape)> = Vec::new();
     for binding in m.body_bindings() {
         let ty = match binding {
             crate::forge::model::AlgorithmBinding::Local { sce_type, .. } => sce_type.clone(),
             crate::forge::model::AlgorithmBinding::ForeachItem { name, source } => {
-                if bounded_collection_import(imports, source).is_some() {
-                    record_items.push(name);
+                if let Some(imp) = bounded_collection_import(imports, source) {
+                    let schema_known = imp
+                        .bc_element_snake
+                        .as_ref()
+                        .zip(options.element_type_field_schemas.as_ref())
+                        .is_some_and(|(element, schemas)| schemas.contains_key(element));
+                    let shape = if schema_known {
+                        RecordShape::Closed
+                    } else {
+                        RecordShape::Open
+                    };
+                    record_items.push((name, shape));
                     continue;
                 }
                 SceType::Uint8
@@ -21741,8 +21753,8 @@ fn render_algorithm(
     for (name, ty) in &env_pairs {
         type_ctx.insert_var(name.as_str(), InferredType::from_sce_type(ty));
     }
-    for name in &record_items {
-        type_ctx.insert_record(name);
+    for &(name, shape) in &record_items {
+        type_ctx.insert_record(name, shape);
     }
     for (name, ty) in &member_field_pairs {
         type_ctx.insert_var(name.as_str(), InferredType::from_sce_type(ty));

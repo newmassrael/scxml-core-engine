@@ -724,6 +724,7 @@ references against a real document and drift silently.
 | `expression/unexpected-token` | `expression` | no | SCE Forge §3.4 |
 | `expression/unknown-enum-variant` | `expression` | `replace_one_of` | SCE Accepted Subset §2.2 |
 | `expression/unknown-identifier` | `expression` | `replace_one_of` / no | W3C SCXML §B.2 |
+| `expression/unknown-member` | `expression` | `replace_one_of` / no | SCE Accepted Subset §2.2 |
 | `expression/unsupported-builtin` | `expression` | `replace_one_of` | W3C SCXML §B.2 |
 | `expression/unsupported-construct` | `expression` | no | SCE Forge §3.4 |
 | `extern/abi-mismatch` | `validation` | `replace_with` | SCE Protocol-Synthesis RFC §5.I |

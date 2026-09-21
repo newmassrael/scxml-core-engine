@@ -566,6 +566,20 @@ scalar field for a member. Measured 2026-09-21: `x.foo` on a `uint8`
 input generated with exit 0 on all six backends and named nothing in
 any of them.
 
+⚠⚠ **And so is a member a record does not declare.** A stateful
+import's members are its fields and methods — a codec imported as
+`frame` has `frame.msgId` and `frame.encode()` — and a bounded
+collection's item has its element's fields, so `frame.msgIdd` is
+refused as `expression/unknown-member` with every declared member
+offered, as an enum's variants are. Two records are not judged, and
+say so rather than pass by accident: `_event`, whose members are the
+triggering event's and belong to its schema, and a collection item
+compiled without its element schema (a single document on its own),
+whose element type lives in a document that compile never reads.
+Measured 2026-09-21: the only member check ran on algorithms, where an
+import's alias is not a value at all, so a misspelled field of an
+import in a procedure generated with exit 0.
+
 **An `sce:` attribute this tree does not read is refused**, as
 `validation/unknown-sce-attribute`, with the nearest known names as
 the fix. The parser looks attributes up by name, so one it does not
@@ -2102,20 +2116,25 @@ written to test.
 
 ### Cross-kind typed binding (NL→IR Mapping Roadmap Item 2)
 
-When an importing kind references an imported kind's field via
-`<sce:import as="alias"/>` + `alias.field` syntax in an expression,
-the parser walks every expression site after import enrichment and
-validates the reference against the imported kind's declared member
-surface. Three rejection codes:
+When a forge expression reads an imported kind's member via
+`<sce:import as="alias"/>` + `alias.member`, the expression layer
+judges it where it reads the expression, in every kind: a member the
+import does not declare is `expression/unknown-member` (§2.2), with the
+import's fields and methods as the fix. ⚠ This used to be a separate
+walk over algorithm bodies only — where an import's alias is not a
+value, so every reference it accepted was refused next as an
+undeclared name — while a procedure, where the alias is a value, was
+never walked (measured 2026-09-21). Three codes remain on this axis:
 
-- `validation/cross-kind-field-not-found` — alias resolves but field
-  does not. Diagnostic carries a closed `Fix::ReplaceOneOf` set =
-  the imported kind's full member surface (sorted, deduplicated) so
-  consumers see the legal alternatives for `did_you_mean`-style
-  typo repair.
-- `validation/cross-kind-type-mismatch` — field resolves but its
-  declared type is incompatible with the surrounding use-site
-  contract (signature return type, `<sce:param type=...>`, …).
+- `validation/cross-kind-field-not-found` — a statechart guard's
+  `_event.data.<field>` names no field of the event schema the
+  triggering event carries. Diagnostic carries a closed
+  `Fix::ReplaceOneOf` set = the schema's declared fields (sorted,
+  deduplicated) for `did_you_mean`-style typo repair.
+- `validation/cross-kind-type-mismatch` — an event-schema field
+  resolves but what the statechart compares with it or sends into it
+  cannot be a value of its declared type (a literal the type cannot
+  represent, an enum value wider than the enum's underlying type).
   Silent when the use site does not constrain the expected type
   (`Unknown` context). NL→IR Mapping Roadmap Item 4 also routes
   physical-quantity unit mismatches in arithmetic to this same code
@@ -2139,13 +2158,11 @@ surface. Three rejection codes:
   is rendered. ⚠ Before this pair existed, a sibling read of ANY kind
   emitted an identifier the signature never bound, with exit 0.
 
-Today the validator is wired only on the Forge→Forge path (a Forge
-document's expressions reference another Forge document imported via
-`<sce:import>`) — the silent-broken pattern the
-`infer_types`-returns-`Unknown` fall-through historically allowed.
-The diagnostic codes themselves are kind-agnostic: a future
-Statechart→Forge binding would wire through the same validator
-without renaming codes or extending payload shape.
+The `validation/cross-kind-*` codes are emitted by the statechart's
+event-schema check and the physical-quantity check; the import graph's
+cycle check runs on every forge compile. A forge expression's
+`alias.member` never reaches them — the expression layer answers it
+first.
 
 ---
 
@@ -2891,6 +2908,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `expression/unsupported-builtin` | Expression |
 | `expression/unknown-identifier` | Expression |
 | `expression/unknown-enum-variant` | Expression |
+| `expression/unknown-member` | Expression |
 | `expression/member-of-non-record` | Expression |
 | `expression/property-not-callable` | Expression |
 | `expression/namespace-not-callable` | Expression |
