@@ -15207,20 +15207,27 @@ fn axis1_inversion_variant_default_arm_caller_tag_rejected() {
     // default-marker rule requires `default="true"` on an enumerated arm too, so
     // arm 0x01 keeps the marker; the `<sce:default>` is the strict
     // catch-all the validator must now reject.
-    let d1 = r#"<?xml version="1.0"?>
+    //
+    // The import of D2 is spelled under an alias the test chooses, so the
+    // record's two names — the alias and the codec — can be told apart.
+    let d1 = |alias: &str| {
+        format!(
+            r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:codec-id="codec_axis1_default_d1" sce:default-endian="big">
   <sce:import src="codec_axis1_default_arm_b.scxml" kind="codec" as="codec_axis1_default_arm_b"/>
-  <sce:import src="codec_axis1_default_d2.scxml" kind="codec" as="codec_axis1_default_d2"/>
+  <sce:import src="codec_axis1_default_d2.scxml" kind="codec" as="{alias}"/>
   <datamodel>
     <data id="tag" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
     <sce:variant tag="tag">
       <sce:arm value="0x01" type="codec_axis1_default_arm_b" default="true"/>
-      <sce:default type="codec_axis1_default_d2"/>
+      <sce:default type="{alias}"/>
     </sce:variant>
   </datamodel>
-</scxml>"#;
+</scxml>"#
+        )
+    };
 
     // D2: caller-tag β shape — `<sce:variant>` with no `tag=` attr.
     let d2 = r#"<?xml version="1.0"?>
@@ -15247,7 +15254,11 @@ fn axis1_inversion_variant_default_arm_caller_tag_rejected() {
         )
     };
 
-    std::fs::write(dir.join("codec_axis1_default_d1.scxml"), d1).expect("write d1");
+    std::fs::write(
+        dir.join("codec_axis1_default_d1.scxml"),
+        d1("codec_axis1_default_d2"),
+    )
+    .expect("write d1");
     std::fs::write(dir.join("codec_axis1_default_d2.scxml"), d2).expect("write d2");
     std::fs::write(
         dir.join("codec_axis1_default_arm_b.scxml"),
@@ -15265,57 +15276,65 @@ fn axis1_inversion_variant_default_arm_caller_tag_rejected() {
     )
     .expect("write d2_arm_b");
 
-    let result = sce_build::compile_forge_with_imports(
-        d1,
-        sce_build::DocumentLabel::symmetric("codec_axis1_default_d1"),
-        sce_build::generator::Language::Rust,
-        &dir,
-        &sce_build::ForgeCompileOptions::default(),
-    );
-    let located_err = match result {
-        Ok(_) => panic!(
-            "default-arm β-shape body must surface the typed rejection \
-             (no carve-out for the catch-all arm)"
-        ),
-        Err(e) => e,
-    };
-    // Render BEFORE destructuring so the message-shape assertion can
-    // run too — Display borrows the whole error, then the struct match
-    // moves out the owned String fields for value assertions.
-    let rendered = format!("{}", located_err.error);
-    match located_err.error {
-        ForgeError::Validation(boxed) => match *boxed {
-            ValidationError::CodecVariantArmBodyCallerTagUnsupported {
-                parent_codec,
-                arm_value,
-                embedded_alias,
-                embedded_codec,
-            } => {
-                assert_eq!(parent_codec, "codec_axis1_default_d1");
-                assert_eq!(
-                    arm_value, None,
-                    "default arm carries no enumerated value — `arm_value` MUST be \
-                     None so the diagnostic message renders `<default>` rather than \
-                     a sentinel 0x00 collision"
-                );
-                assert_eq!(embedded_alias, "codec_axis1_default_d2");
-                assert_eq!(embedded_codec, "codec_axis1_default_d2");
-            }
+    // Once under the codec's own name, once under an alias that is not
+    // it: the record names the import by its alias and the codec by its
+    // name, and with the two spelled alike a record that put the alias in
+    // both slots passed unnoticed.
+    for alias in ["codec_axis1_default_d2", "inner"] {
+        let result = sce_build::compile_forge_with_imports(
+            &d1(alias),
+            sce_build::DocumentLabel::symmetric("codec_axis1_default_d1"),
+            sce_build::generator::Language::Rust,
+            &dir,
+            &sce_build::ForgeCompileOptions::default(),
+        );
+        let located_err = match result {
+            Ok(_) => panic!(
+                "default-arm β-shape body must surface the typed rejection \
+                 (no carve-out for the catch-all arm)"
+            ),
+            Err(e) => e,
+        };
+        // Render BEFORE destructuring so the message-shape assertion can
+        // run too — Display borrows the whole error, then the struct match
+        // moves out the owned String fields for value assertions.
+        let rendered = format!("{}", located_err.error);
+        match located_err.error {
+            ForgeError::Validation(boxed) => match *boxed {
+                ValidationError::CodecVariantArmBodyCallerTagUnsupported {
+                    parent_codec,
+                    arm_value,
+                    embedded_alias,
+                    embedded_codec,
+                } => {
+                    assert_eq!(parent_codec, "codec_axis1_default_d1");
+                    assert_eq!(
+                        arm_value, None,
+                        "default arm carries no enumerated value — `arm_value` MUST be \
+                         None so the diagnostic message renders `<default>` rather than \
+                         a sentinel 0x00 collision"
+                    );
+                    assert_eq!(embedded_alias, alias);
+                    assert_eq!(embedded_codec, "codec_axis1_default_d2");
+                }
+                other => {
+                    panic!("expected CodecVariantArmBodyCallerTagUnsupported, got: {other:?}")
+                }
+            },
             other => panic!("expected CodecVariantArmBodyCallerTagUnsupported, got: {other:?}"),
-        },
-        other => panic!("expected CodecVariantArmBodyCallerTagUnsupported, got: {other:?}"),
+        }
+        // Display message must render "<default>" not "0x0" so authors
+        // with BOTH a value=0x00 enumerated arm AND a default-arm β-shape
+        // see two distinct diagnostics rather than collision-confused ones.
+        assert!(
+            rendered.contains("variant arm <default>"),
+            "Display must render `<default>` for None arm_value; got:\n{rendered}"
+        );
+        assert!(
+            !rendered.contains("variant arm value=0x0 "),
+            "Display must NOT render sentinel `value=0x0` for default arm; got:\n{rendered}"
+        );
     }
-    // Display message must render "<default>" not "0x0" so authors
-    // with BOTH a value=0x00 enumerated arm AND a default-arm β-shape
-    // see two distinct diagnostics rather than collision-confused ones.
-    assert!(
-        rendered.contains("variant arm <default>"),
-        "Display must render `<default>` for None arm_value; got:\n{rendered}"
-    );
-    assert!(
-        !rendered.contains("variant arm value=0x0 "),
-        "Display must NOT render sentinel `value=0x0` for default arm; got:\n{rendered}"
-    );
 
     let _ = std::fs::remove_dir_all(&dir);
 }

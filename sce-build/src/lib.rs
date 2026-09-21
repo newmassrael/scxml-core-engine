@@ -3901,6 +3901,7 @@ fn validate_and_enrich_imports(
                 ctx.type_name = id.type_name;
                 ctx.namespace = id.namespace;
                 ctx.member_type = id.member_type;
+                ctx.document_name = doc.name().to_string();
             }
             // RFC §synth-5-B variant primitive + recursive max-bytes enrichment:
             // codec imports carry their *full recursive* max_frame_bytes

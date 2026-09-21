@@ -27,6 +27,15 @@ use std::path::Path;
 pub struct ImportContext {
     /// Alias from `<sce:import as="...">`.
     pub alias: String,
+    /// The imported document's own name — what a diagnostic calls it when
+    /// it names the document rather than the alias the importer gave it.
+    /// The file stem until the imported document is parsed, then its
+    /// `name` (see `validate_and_enrich_imports`).
+    ///
+    /// ⚠ Without it, cross-codec refusals filled their `embedded_codec`
+    /// slot with the alias, so a message read "import 'x' (codec 'x')"
+    /// whatever codec `x` named.
+    pub document_name: String,
     /// Kind name (e.g., "codec", "transform").
     pub kind: String,
     /// PascalCase type name for the imported struct/class (stateful kinds).
@@ -568,6 +577,7 @@ fn resolve_single_import(
 
     ImportContext {
         alias: imp.alias.clone(),
+        document_name: stem.clone(),
         kind: imp.kind.to_string(),
         include_stmt: id.include_stmt,
         type_name: id.type_name,
@@ -5855,7 +5865,7 @@ fn validate_cross_codec_variant_dispatch(
                             ValidationError::CodecVariantDispatchArmsNotDistinguishableWithoutDefault {
                                 parent_codec: parent.name.clone(),
                                 embedded_alias: embed_alias.clone(),
-                                embedded_codec: embed_alias.clone(),
+                                embedded_codec: imp.document_name.clone(),
                             },
                         )));
                     }
@@ -5948,7 +5958,7 @@ fn validate_cross_codec_variant_dispatch(
                             ValidationError::CodecVariantDispatchBitWidthMismatch {
                                 parent_codec: parent.name.clone(),
                                 embedded_alias: embed_alias.clone(),
-                                embedded_codec: embed_alias.clone(),
+                                embedded_codec: imp.document_name.clone(),
                                 carrier: carrier_name.clone(),
                                 flag: flag_name.clone(),
                                 flag_width,
@@ -6044,7 +6054,7 @@ fn validate_cross_codec_variant_arm_not_caller_tag(
                     parent_codec: parent.name.clone(),
                     arm_value,
                     embedded_alias: body_alias.to_string(),
-                    embedded_codec: body_alias.to_string(),
+                    embedded_codec: imp.document_name.clone(),
                 },
             )));
         }
@@ -6125,7 +6135,7 @@ fn validate_cross_codec_flag_bind(
                     ValidationError::CodecFlagBindInputNotDeclared {
                         parent_codec: parent.name.clone(),
                         embedded_alias: imp.alias.clone(),
-                        embedded_codec: imp.alias.clone(),
+                        embedded_codec: imp.document_name.clone(),
                         input: bind.input.clone(),
                         available_inputs: leaf_inputs.iter().map(|fi| fi.name.clone()).collect(),
                     },
@@ -6141,7 +6151,7 @@ fn validate_cross_codec_flag_bind(
                     ValidationError::CodecFlagInputUnbound {
                         parent_codec: parent.name.clone(),
                         embedded_alias: imp.alias.clone(),
-                        embedded_codec: imp.alias.clone(),
+                        embedded_codec: imp.document_name.clone(),
                         input: input.name.clone(),
                     },
                 )));
@@ -23230,6 +23240,7 @@ mod tests {
     fn import_with_enum_qualified(alias: &str, qualified: &str) -> ImportContext {
         ImportContext {
             alias: alias.to_string(),
+            document_name: alias.to_string(),
             kind: "enum".to_string(),
             include_stmt: String::new(),
             type_name: String::new(),
@@ -23854,6 +23865,7 @@ mod tests {
         let imports = vec![
             ImportContext {
                 alias: "t".to_string(),
+                document_name: "t".to_string(),
                 kind: "transform".to_string(),
                 is_stateful: false,
                 include_stmt: String::new(),
@@ -23886,6 +23898,7 @@ mod tests {
             },
             ImportContext {
                 alias: "c".to_string(),
+                document_name: "c".to_string(),
                 kind: "codec".to_string(),
                 is_stateful: true,
                 include_stmt: String::new(),
