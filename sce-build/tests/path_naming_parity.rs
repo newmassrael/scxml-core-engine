@@ -366,27 +366,91 @@ fn naming_a_document_does_not_change_the_generated_bytes() {
         );
         match &baseline {
             None => baseline = Some((label.to_string(), contents)),
-            Some((base_label, base)) => {
-                assert_eq!(
-                    base.len(),
-                    contents.len(),
-                    "{base_label} emitted {} files, {label} emitted {}",
-                    base.len(),
-                    contents.len(),
-                );
-                for ((base_name, base_bytes), (name, bytes)) in base.iter().zip(contents.iter()) {
-                    assert_eq!(
-                        base_name, name,
-                        "{base_label} and {label} emitted \
-                                different file names"
-                    );
-                    assert_eq!(
-                        String::from_utf8_lossy(base_bytes),
-                        String::from_utf8_lossy(bytes),
-                        "{base_name}: {base_label} and {label} namings emitted different bytes",
-                    );
-                }
-            }
+            Some((base_label, base)) => assert_same_tree(base_label, base, label, &contents),
+        }
+    }
+}
+
+/// Two runs emitted the same files with the same bytes.
+fn assert_same_tree(base_label: &str, base: &[EmittedFile], label: &str, contents: &[EmittedFile]) {
+    assert_eq!(
+        base.len(),
+        contents.len(),
+        "{base_label} emitted {} files, {label} emitted {}",
+        base.len(),
+        contents.len(),
+    );
+    for ((base_name, base_bytes), (name, bytes)) in base.iter().zip(contents.iter()) {
+        assert_eq!(
+            base_name, name,
+            "{base_label} and {label} emitted different file names"
+        );
+        assert_eq!(
+            String::from_utf8_lossy(base_bytes),
+            String::from_utf8_lossy(bytes),
+            "{base_name}: {base_label} and {label} emitted different bytes",
+        );
+    }
+}
+
+/// Where the caller stands does not change what a document set hashes.
+///
+/// `orchestrate` roots the source hash at the directory holding the
+/// set's first document. A set with no statechart in it fell through to
+/// `.` instead, so the digest described the caller's working directory:
+/// the same forge document, named by the same absolute path, embedded a
+/// different `source-hash` from each place it was built, and from a
+/// directory holding no `.scxml` the run was refused for a hash that
+/// covered nothing. Every path here is absolute, so the only thing that
+/// varies between the three runs is the directory the process stands in.
+#[test]
+fn where_the_caller_stands_does_not_change_the_orchestrated_bytes() {
+    let docs = ScratchDir::new("standing-docs");
+    let forge_doc = docs.path().join("fold.scxml");
+    std::fs::copy(
+        repo_root().join("tests/forge/resources/algorithm_const_fold_smoke.scxml"),
+        &forge_doc,
+    )
+    .expect("stage forge document");
+    // A directory whose own `.scxml` would hash to something else, and
+    // one holding none — the two ways a working-directory walk goes wrong.
+    let unrelated = ScratchDir::new("standing-unrelated");
+    std::fs::write(unrelated.path().join("door.scxml"), CLEAN).expect("stage unrelated document");
+    let empty = ScratchDir::new("standing-empty");
+
+    let standings: [(&str, &Path); 3] = [
+        ("beside the document", docs.path()),
+        ("in an unrelated directory", unrelated.path()),
+        ("in an empty directory", empty.path()),
+    ];
+    let mut baseline: Option<(String, Vec<EmittedFile>)> = None;
+    for (label, cwd) in standings {
+        let out = ScratchDir::new("standing-out");
+        let verdict = run(
+            &[
+                "orchestrate".to_string(),
+                "--forge".to_string(),
+                forge_doc.to_string_lossy().into_owned(),
+                "-l".to_string(),
+                "rust".to_string(),
+                "-o".to_string(),
+                out.path().to_string_lossy().into_owned(),
+            ],
+            cwd,
+        );
+        assert_eq!(verdict.exit, Some(0), "orchestrate {label}: {verdict:?}");
+
+        let contents = tree_contents(out.path());
+        assert!(
+            contents
+                .iter()
+                .any(|(_, bytes)| String::from_utf8_lossy(bytes).contains("source-hash")),
+            "orchestrate {label} emitted no `source-hash` line, so the comparison \
+             below says nothing about the root the hash was taken over",
+        );
+        match &baseline {
+            None => baseline = Some((label.to_string(), contents)),
+            Some((base_label, base)) => assert_same_tree(base_label, base, label, &contents),
         }
     }
 }

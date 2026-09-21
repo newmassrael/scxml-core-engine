@@ -2737,19 +2737,30 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
 
     // Spec §synth-6.2.6 drift context — covers every output file written
     // below with a `// SCE-GENERATED` header that `sce-codegen verify`
-    // can recompute and gate on. `input_root` defaults to the directory
-    // holding the first SCXML path so a typical batch (all docs in one
-    // directory) hashes its whole input set; a flat fallback to "."
-    // keeps multi-dir invocations functional even though their hash
-    // is then the cwd recursive walk.
-    let drift_input_root: std::path::PathBuf = scxml_path_bufs
+    // can recompute and gate on. `input_root` is the directory holding
+    // the set's first document, whichever slot named it, so a typical
+    // batch (all docs in one directory) hashes its whole input set and
+    // the hash is held to cover that document.
+    //
+    // ⚠ A set with no statechart in it used to fall through to ".", so
+    // its digest described the directory the caller stood in rather
+    // than anything it named: the same documents embedded a different
+    // `source-hash` from each place they were built, and from the
+    // repository root the walk took in `target/`, which a parallel test
+    // runner is writing (measured 2026-09-21: "source set changed while
+    // it was being read"). "." now remains only for a set naming no
+    // document, which gives the hash nothing else to describe.
+    let first_document: Option<&Path> = scxml_path_bufs
         .first()
-        .map(|p| containing_dir(p))
+        .or_else(|| forge_path_bufs.first())
+        .map(|p| p.as_path());
+    let drift_input_root: std::path::PathBuf = first_document
+        .map(containing_dir)
         .unwrap_or_else(|| std::path::PathBuf::from("."));
     let drift_ctx = DriftContext::compute(
         &drift_input_root,
         deploy_path.map(Path::new),
-        scxml_path_bufs.first().map(|p| p.as_path()),
+        first_document,
     );
 
     // §10 stdout manifest. Built from the same `GenerateReport` shape
