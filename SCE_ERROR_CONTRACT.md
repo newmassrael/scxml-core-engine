@@ -855,6 +855,7 @@ references against a real document and drift silently.
 | `validation/reserved-context-id` | `validation` | no |  |
 | `validation/singleton-violation` | `validation` | no |  |
 | `validation/transform-output-cycle` | `validation` | no |  |
+| `validation/unexpected-child-element` | `validation` | `replace_one_of` |  |
 | `validation/unknown-sce-attribute` | `validation` | `replace_one_of` | SCE Accepted Subset §2.2 |
 | `validation/unresolved-placeholder` | `validation` | no |  |
 | `validation/unsupported-kind` | `validation` | `replace_one_of` | SCE Forge §3.2 |

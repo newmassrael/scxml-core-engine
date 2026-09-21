@@ -1842,7 +1842,6 @@ pub fn compile_forge_with_deploy(
                                 let mut candidates: Vec<String> =
                                     machine.limits.keys().cloned().collect();
                                 candidates.sort();
-                                let candidates_list = candidates.join(", ");
                                 return Err(Located::new(
                                     ValidationError::CollectionCapacityUnresolved {
                                         collection_name: bc.name.clone(),
@@ -1850,7 +1849,6 @@ pub fn compile_forge_with_deploy(
                                         machine: machine_name.to_string(),
                                         limit: limit_name.to_string(),
                                         candidates,
-                                        candidates_list,
                                     }
                                     .into(),
                                     label.diagnostic_label,
@@ -4513,13 +4511,11 @@ fn validate_worker_cross_refs(
         .collect();
     link_aliases.sort();
     if !link_aliases.iter().any(|a| a == &worker.link_rx) {
-        let candidates_list = link_aliases.join(", ");
         return Err(Located::new(
             ValidationError::WorkerLinkRxRefUnknown {
                 worker_name: worker.name.clone(),
                 ref_name: worker.link_rx.clone(),
                 candidates: link_aliases,
-                candidates_list,
             }
             .into(),
             importing_doc,
@@ -4633,7 +4629,6 @@ fn validate_worker_outbox_references(
             .into_iter()
             .map(|name| format!("{name}.inbox"))
             .collect();
-        let candidates_list = candidates.join(", ");
         match registry.lookup(owner) {
             Some(ScxmlDocKind::Statechart) | Some(ScxmlDocKind::Worker) => {
                 // Canonical case — passes.
@@ -4646,7 +4641,6 @@ fn validate_worker_outbox_references(
                         owner: owner.to_string(),
                         actual_kind: other_kind.as_str().to_string(),
                         candidates,
-                        candidates_list,
                     }
                     .into(),
                     diag_label.clone(),
@@ -4661,7 +4655,6 @@ fn validate_worker_outbox_references(
                         outbox_value: outbox_value.clone(),
                         owner: owner.to_string(),
                         candidates,
-                        candidates_list,
                     }
                     .into(),
                     diag_label.clone(),
@@ -5106,7 +5099,6 @@ fn validate_bounded_collection_cross_refs(
                     };
                     if !field_candidates.iter().any(|f| f == field) {
                         field_candidates.sort();
-                        let candidates_list = field_candidates.join(", ");
                         return Err(Located::new(
                             ValidationError::CollectionIndexByFieldMissing {
                                 collection_name: bc.name.clone(),
@@ -5114,7 +5106,6 @@ fn validate_bounded_collection_cross_refs(
                                 element_type: bc.element_type.clone(),
                                 element_kind,
                                 candidates: field_candidates,
-                                candidates_list,
                             }
                             .into(),
                             diag_label.clone(),
@@ -5125,13 +5116,11 @@ fn validate_bounded_collection_cross_refs(
                 }
             }
             None => {
-                let candidates_list = element_type_names.join(", ");
                 return Err(Located::new(
                     ValidationError::CollectionElementTypeNotAKind {
                         collection_name: bc.name.clone(),
                         element_type: bc.element_type.clone(),
                         candidates: element_type_names.clone(),
-                        candidates_list,
                     }
                     .into(),
                     diag_label.clone(),

@@ -544,6 +544,10 @@ pub enum DiagnosticCode {
     /// rides `fix`: here the rule rides `expected` and there is no fix.
     #[serde(rename = "validation/attribute-rule-violated")]
     ValidationAttributeRuleViolated,
+    /// A child element its parent does not take. The children it does
+    /// take are a closed set, which rides `fix`.
+    #[serde(rename = "validation/unexpected-child-element")]
+    ValidationUnexpectedChildElement,
     /// An SCE-namespace attribute the parser does not read. Distinct from
     /// `invalid-attribute`, which is a known name carrying a value outside
     /// its set: here the NAME is the thing nothing knows, so a consumer
@@ -3001,6 +3005,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationMissingAttribute,
         ValidationInvalidAttribute,
         ValidationAttributeRuleViolated,
+        ValidationUnexpectedChildElement,
         ValidationUnknownSceAttribute,
         ValidationDefaultCoversUnknownVariant,
         ValidationDefaultCoversTestedVariant,
@@ -4101,6 +4106,7 @@ impl DiagnosticCode {
             | ValidationMissingAttribute
             | ValidationInvalidAttribute
             | ValidationAttributeRuleViolated
+            | ValidationUnexpectedChildElement
             | ValidationDuplicateId
             | ValidationDuplicateContextObject
             | ValidationReservedContextId
@@ -4297,6 +4303,7 @@ impl DiagnosticCode {
             ValidationMissingAttribute => "validation/missing-attribute",
             ValidationInvalidAttribute => "validation/invalid-attribute",
             ValidationAttributeRuleViolated => "validation/attribute-rule-violated",
+            ValidationUnexpectedChildElement => "validation/unexpected-child-element",
             ValidationUnknownSceAttribute => "validation/unknown-sce-attribute",
             ValidationDefaultCoversUnknownVariant => "validation/default-covers-unknown-variant",
             ValidationDefaultCoversTestedVariant => "validation/default-covers-tested-variant",
@@ -5412,6 +5419,22 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: Some(value.clone()),
             fix: None,
             key_fragments: vec![element.clone(), attr.clone(), value.clone()],
+        },
+        // The tag as written is `actual`, and each child the parent takes
+        // is spelled the same way, so a candidate stands where it stands.
+        ValidationError::UnexpectedChildElement {
+            parent,
+            child,
+            allowed,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationUnexpectedChildElement,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(child.clone()),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: allowed.clone(),
+            }),
+            key_fragments: vec![parent.clone(), child.clone()],
         },
         ValidationError::UnsupportedKind(value) => DiagnosticPayload {
             code: DiagnosticCode::ValidationUnsupportedKind,
@@ -7262,7 +7285,6 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             worker_name,
             ref_name,
             candidates,
-            candidates_list: _,
         } => DiagnosticPayload {
             code: DiagnosticCode::WorkerLinkRxRefUnknown,
             stage: Stage::Validation,
@@ -7335,7 +7357,6 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             outbox_value,
             owner,
             candidates,
-            candidates_list: _,
         } => DiagnosticPayload {
             code: DiagnosticCode::WorkerOutboxRefUnknown,
             stage: Stage::Validation,
@@ -7358,7 +7379,6 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             owner,
             actual_kind,
             candidates,
-            candidates_list: _,
         } => DiagnosticPayload {
             code: DiagnosticCode::WorkerOutboxTargetWrongKind,
             stage: Stage::Validation,
@@ -7713,7 +7733,6 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             collection_name,
             element_type,
             candidates,
-            candidates_list: _,
         } => DiagnosticPayload {
             code: DiagnosticCode::CollectionElementTypeNotAKind,
             stage: Stage::Validation,
@@ -7735,7 +7754,6 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             element_type,
             element_kind,
             candidates,
-            candidates_list: _,
         } => DiagnosticPayload {
             code: DiagnosticCode::CollectionIndexByFieldMissing,
             stage: Stage::Validation,
@@ -7778,7 +7796,6 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             machine,
             limit,
             candidates,
-            candidates_list: _,
         } => DiagnosticPayload {
             code: DiagnosticCode::CollectionCapacityUnresolved,
             stage: Stage::Validation,
@@ -7821,7 +7838,6 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
         ValidationError::ExternSymbolNotInWhitelist {
             name,
             candidates,
-            candidates_list: _,
         } => DiagnosticPayload {
             code: DiagnosticCode::ExternSymbolNotInWhitelist,
             stage: Stage::Validation,
@@ -7879,7 +7895,6 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
         ValidationError::ExternOrderingUnspecified {
             base,
             candidates,
-            candidates_list: _,
         } => DiagnosticPayload {
             code: DiagnosticCode::ExternOrderingUnspecified,
             stage: Stage::Validation,
@@ -9443,6 +9458,18 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:2ec9170bf68dc459","code":"validation/attribute-rule-violated","stage":"validation","message":"Filter output: invalid sce:window value '0' (expected: positive integer)","expected":["positive integer"],"actual":"0"}"#,
             ),
             (
+                // A child its parent does not take: the children it does
+                // take are the candidates, spelled as the tag is.
+                "forge/unexpected-child-element",
+                ValidationError::UnexpectedChildElement {
+                    parent: "<sce:flags id='hdr'>".into(),
+                    child: "sce:flga".into(),
+                    allowed: vec!["sce:flag".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:d3a65ca642db9e36","code":"validation/unexpected-child-element","stage":"validation","message":"<sce:flags id='hdr'>: <sce:flga> is not a child it accepts (expected: sce:flag)","actual":"sce:flga","fix":{"kind":"replace_one_of","candidates":["sce:flag"]}}"#,
+            ),
+            (
                 // A misspelling, which is the likely cause: the NAME is
                 // what nothing knows, where `invalid-attribute` above is
                 // a known name carrying a value outside its set.
@@ -10224,7 +10251,6 @@ mod tests {
                     worker_name: "rx_loop".into(),
                     ref_name: "udp_scout".into(),
                     candidates: vec!["status_link".into()],
-                    candidates_list: "status_link".into(),
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
@@ -10293,8 +10319,6 @@ mod tests {
                         "session_fsm.inbox".into(),
                         "tx_loop.inbox".into(),
                     ],
-                    candidates_list:
-                        "session_fsm.inbox, tx_loop.inbox".into(),
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
@@ -10315,8 +10339,6 @@ mod tests {
                         "session_fsm.inbox".into(),
                         "tx_loop.inbox".into(),
                     ],
-                    candidates_list:
-                        "session_fsm.inbox, tx_loop.inbox".into(),
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
@@ -10602,8 +10624,6 @@ mod tests {
                         "router_handle".into(),
                         "subscription_entry".into(),
                     ],
-                    candidates_list:
-                        "router_handle, subscription_entry".into(),
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
@@ -10624,8 +10644,6 @@ mod tests {
                         "callback_id".into(),
                         "key_expr_id".into(),
                     ],
-                    candidates_list:
-                        "callback_id, key_expr_id".into(),
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
@@ -10662,8 +10680,6 @@ mod tests {
                         "in_flight_reassembly".into(),
                         "subscription_table".into(),
                     ],
-                    candidates_list:
-                        "in_flight_reassembly, subscription_table".into(),
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
@@ -10682,8 +10698,6 @@ mod tests {
                         "sce_atomic_cas_strong_acq_rel_u32".into(),
                         "sce_atomic_cas_weak_acq_rel_u32".into(),
                     ],
-                    candidates_list:
-                        "sce_atomic_cas_strong_acq_rel_u32, sce_atomic_cas_weak_acq_rel_u32".into(),
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
@@ -10726,8 +10740,6 @@ mod tests {
                         "sce_atomic_load_acquire_u32".into(),
                         "sce_atomic_load_relaxed_u32".into(),
                     ],
-                    candidates_list:
-                        "sce_atomic_load_acquire_u32, sce_atomic_load_relaxed_u32".into(),
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
@@ -12848,7 +12860,6 @@ mod tests {
                     link_name: "udp_data".into(),
                     driver: "foo_udp".into(),
                     candidates: vec!["lwip_tcp".into(), "lwip_udp".into()],
-                    candidates_list: "lwip_tcp, lwip_udp".into(),
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:29690d741179d6f1","code":"deploy/link-driver-unknown","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': link 'udp_data' declares driver 'foo_udp' which is unknown. SCE Protocol-Synthesis RFC §5.K line 2421 (`deploy/link-driver-unknown`) — the build's closed-allowlist + forge `<sce:link>` cross-doc registry union does not contain this driver. Repair: pick one of [lwip_tcp, lwip_udp].","actual":"foo_udp","fix":{"kind":"replace_one_of","candidates":["lwip_tcp","lwip_udp"]}}"#,
@@ -12890,7 +12901,6 @@ mod tests {
                         declared_class: "websocket".into(),
                         expected_class: "tcp".into(),
                         driver_candidates: vec!["websocket_tcp".into()],
-                        driver_candidates_list: "websocket_tcp".into(),
                     },
                 ))
                 .into(),
@@ -12953,7 +12963,6 @@ mod tests {
                 DeployError::LinkNotDeclaredInDeploy {
                     link_name: "udp_data".into(),
                     candidates: vec!["udp_scout".into()],
-                    candidates_list: "udp_scout".into(),
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:7769451379390caa","code":"deploy/link-not-declared-in-deploy","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"forge `<sce:link name=\"udp_data\">` declared but no `deploy.yaml::machines.<n>.links.udp_data` entry exists. Cross-doc validator (`deploy/link-not-declared-in-deploy`). Repair: add the deploy entry under one of [udp_scout] or another machine, or remove the forge link doc.","actual":"udp_data","fix":{"kind":"replace_one_of","candidates":["udp_scout"]}}"#,
@@ -12964,7 +12973,6 @@ mod tests {
                     machine: "mcu_node".into(),
                     link_name: "udp_data".into(),
                     candidates: vec!["udp_scout".into()],
-                    candidates_list: "udp_scout".into(),
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:68d69cab5e950a11","code":"deploy/link-not-declared-in-forge","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': link 'udp_data' declared in deploy.yaml but no forge `<scxml sce:kind=\"link\" name=\"udp_data\">` document was declared/imported. Cross-doc validator (`deploy/link-not-declared-in-forge`). Repair: declare the forge link doc and import it from a statechart/worker on this machine, or pick one of [udp_scout] (forge link doc names known to this build), or remove the orphan deploy entry.","actual":"udp_data","fix":{"kind":"replace_one_of","candidates":["udp_scout"]}}"#,
@@ -12981,7 +12989,6 @@ mod tests {
                         "error".into(),
                         "forbid".into(),
                     ],
-                    candidates_list: "warn, error, forbid".into(),
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:5ca8faec9e11c481","code":"deploy/stage-copy-policy-unknown","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': `pool_defaults.stage_copy_policy: errr` is not a known policy. SCE Protocol-Synthesis RFC §5.K line 2517-2519 (`deploy/stage-copy-policy-unknown`) — closed-set typo guard. Repair: pick one of [warn, error, forbid].","actual":"errr","fix":{"kind":"replace_one_of","candidates":["warn","error","forbid"]}}"#,
@@ -13984,6 +13991,7 @@ mod tests {
         match code {
             // ── Fix carries a closed candidate / attr list ─────
             ValidationInvalidAttribute
+            | ValidationUnexpectedChildElement
             | ValidationUnknownSceAttribute
             // The value space's own variants are the closed set the
             // acknowledgement should have drawn from. Its two siblings
@@ -15126,6 +15134,7 @@ mod tests {
                 | ValidationMissingElement
                 | ValidationMissingAttribute | ValidationInvalidAttribute
                 | ValidationAttributeRuleViolated
+                | ValidationUnexpectedChildElement
                 | ValidationUnknownSceAttribute
                 | ValidationDefaultCoversUnknownVariant
                 | ValidationDefaultCoversTestedVariant
@@ -15456,9 +15465,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            373,
+            374,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 373 distinct variants to match the DiagnosticCode \
+             expected 374 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -16040,6 +16049,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationMissingAttribute
             | ValidationInvalidAttribute
             | ValidationAttributeRuleViolated
+            | ValidationUnexpectedChildElement
             // Same bucket and the same reason as the sweep described
             // below: the unknown-attribute check runs over the
             // roxmltree tree so it can name the attribute's own

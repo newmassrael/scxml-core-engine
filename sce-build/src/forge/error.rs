@@ -409,6 +409,21 @@ pub enum ValidationError {
         allowed: Vec<String>,
     },
 
+    /// A child element its parent does not take — `<sce:foo>` inside
+    /// `<sce:flags>`. `allowed` is the closed set of children the parent
+    /// does take, spelled as the document spells the SCE namespace, and
+    /// rides the wire as the fix's candidates.
+    ///
+    /// ⚠ Five parents refused a stray child as an ATTRIBUTE error, with
+    /// the attribute named `child element` — a name no document carries,
+    /// and a rule in place of the closed set the parser already knew.
+    #[error("{parent}: <{child}> is not a child it accepts (expected: {})", .allowed.join(", "))]
+    UnexpectedChildElement {
+        parent: String,
+        child: String,
+        allowed: Vec<String>,
+    },
+
     /// An attribute's value breaks a rule no list of values can state —
     /// `sce:window="0"` where a positive integer is required. `rule` says
     /// what a legal value satisfies, and rides the wire as `expected`
@@ -2143,7 +2158,8 @@ pub enum ValidationError {
     /// follows the `LinkLinkClassUnknown` precedent.
     #[error(
         "<sce:extern name=\"{name}\"> references a symbol that is not on the §5.I baseline whitelist. \
-         Choose a registry-listed name (closest matches: {candidates_list}) or extend the whitelist via a target plugin (deploy.yaml `extern_symbols.target_plugin`)."
+         Choose a registry-listed name (closest matches: {}) or extend the whitelist via a target plugin (deploy.yaml `extern_symbols.target_plugin`).",
+        crate::forge::error::joined_or_none(.candidates)
     )]
     ExternSymbolNotInWhitelist {
         /// Symbol name as authored — guaranteed absent from the
@@ -2152,10 +2168,6 @@ pub enum ValidationError {
         /// Closest baseline-name candidates, sorted by shared-prefix
         /// length. Bounded at 8 for wire-payload bound.
         candidates: Vec<String>,
-        /// Joined `candidates` for the message body. Filled at
-        /// raise-site so the user-visible string lists names without
-        /// the consumer needing to format them itself.
-        candidates_list: String,
     },
 
     /// SCE Protocol-Synthesis RFC §synth-5-I `<sce:extern abi="...">` mismatch
@@ -2197,7 +2209,8 @@ pub enum ValidationError {
     /// required `_<ordering>_<width>` suffix. `Fix::ReplaceOneOf`
     /// carries the legal completions.
     #[error(
-        "<sce:extern name=\"{base}\"> is an atomic-family base without an explicit ordering + width suffix. Pick one of: {candidates_list}."
+        "<sce:extern name=\"{base}\"> is an atomic-family base without an explicit ordering + width suffix. Pick one of: {}.",
+        crate::forge::error::joined_or_none(.candidates)
     )]
     ExternOrderingUnspecified {
         /// Atomic-family base as authored
@@ -2207,8 +2220,6 @@ pub enum ValidationError {
         /// (e.g. `sce_atomic_load_acquire_u32`, …). 10 entries for
         /// load/store/fetch_*; 15 for cas_*; 4 for fences.
         candidates: Vec<String>,
-        /// Joined `candidates` for the message body.
-        candidates_list: String,
     },
 
     /// SCE Protocol-Synthesis RFC §synth-5-I target-plugin baseline-shadowing
@@ -2281,7 +2292,8 @@ pub enum ValidationError {
     /// requires explicit cross-resolution.
     #[error(
         "worker '{worker_name}': <sce:link-rx ref=\"{ref_name}\"> references a name that is not imported as a link kind. \
-         Declare the link via <sce:import as=\"{ref_name}\" src=\"...\" kind=\"link\"/> on this worker document, or replace the ref with one of the imported link-kind aliases (closest matches: {candidates_list})."
+         Declare the link via <sce:import as=\"{ref_name}\" src=\"...\" kind=\"link\"/> on this worker document, or replace the ref with one of the imported link-kind aliases (closest matches: {}).",
+        crate::forge::error::joined_or_none(.candidates)
     )]
     WorkerLinkRxRefUnknown {
         /// The worker document whose `<sce:link-rx>` carries the
@@ -2294,10 +2306,6 @@ pub enum ValidationError {
         /// to `parsed.imports` for this document. Wire payload's
         /// `Fix::ReplaceOneOf` consumes this verbatim.
         candidates: Vec<String>,
-        /// Joined comma-space form of `candidates` for the message
-        /// body (matches `ExternSymbolNotInWhitelist`'s shape so
-        /// per-instance message rendering stays parity).
-        candidates_list: String,
     },
 
     /// SCE Protocol-Synthesis RFC §synth-5-I line 1757-1758 — `<sce:inbox>` declared
@@ -2394,7 +2402,8 @@ pub enum ValidationError {
     /// shape.
     #[error(
         "worker '{worker_name}': <sce:outbox ref=\"{outbox_value}\"> names owner '{owner}' which is not a registered statechart or worker. \
-         Declare the recipient as a separate `.scxml` document in this build (statechart: `<scxml name=\"{owner}\">`; worker: `<scxml sce:kind=\"worker\" name=\"{owner}\">`), or replace the ref with one of the registered recipients: {candidates_list}."
+         Declare the recipient as a separate `.scxml` document in this build (statechart: `<scxml name=\"{owner}\">`; worker: `<scxml sce:kind=\"worker\" name=\"{owner}\">`), or replace the ref with one of the registered recipients: {}.",
+        crate::forge::error::joined_or_none(.candidates)
     )]
     WorkerOutboxRefUnknown {
         /// The worker document whose `<sce:outbox>` carries the
@@ -2415,9 +2424,6 @@ pub enum ValidationError {
         /// attribute value. Wire payload's `Fix::ReplaceOneOf` consumes
         /// this verbatim.
         candidates: Vec<String>,
-        /// Joined comma-space form of `candidates` for the message
-        /// body (matches `WorkerLinkRxRefUnknown` shape).
-        candidates_list: String,
     },
 
     /// SCE Protocol-Synthesis RFC §synth-5-D worker-outbox cross-resolution —
@@ -2437,7 +2443,8 @@ pub enum ValidationError {
     /// statechart + worker `.inbox` targets.
     #[error(
         "worker '{worker_name}': <sce:outbox ref=\"{outbox_value}\"> names '{owner}' which is registered as a {actual_kind} kind, not a statechart or worker. \
-         Outbox refs may only target statechart or worker inboxes (RFC §5.D line 911 \"any non-inbox access\" by negation admits inbox access on statechart + worker kinds). Replace with one of: {candidates_list}."
+         Outbox refs may only target statechart or worker inboxes (RFC §5.D line 911 \"any non-inbox access\" by negation admits inbox access on statechart + worker kinds). Replace with one of: {}.",
+        crate::forge::error::joined_or_none(.candidates)
     )]
     WorkerOutboxTargetWrongKind {
         /// The worker document whose `<sce:outbox>` carries the
@@ -2456,9 +2463,6 @@ pub enum ValidationError {
         /// Sorted closed candidate set — same union shape as
         /// [`Self::WorkerOutboxRefUnknown::candidates`].
         candidates: Vec<String>,
-        /// Joined comma-space form of `candidates` for the message
-        /// body.
-        candidates_list: String,
     },
 
     /// SCE Protocol-Synthesis RFC §synth-5-D worker-outbox cross-resolution —
@@ -2917,7 +2921,8 @@ pub enum ValidationError {
     #[error(
         "bounded-collection '{collection_name}': <sce:element-type>{element_type}</sce:element-type> does not name a codec-kind struct or procedure-kind state record in this build. \
          SCE Protocol-Synthesis RFC §5.L line 2566-2567 — element types must reference another forge kind by name (codec for byte-encoded structs, procedure for stateful records). \
-         Declare the element type as a separate `.scxml` document (codec: `<scxml sce:kind=\"codec\" name=\"{element_type}\">`; procedure: `<scxml sce:kind=\"procedure\" name=\"{element_type}\">`), or replace the body text with one of the registered candidates: {candidates_list}."
+         Declare the element type as a separate `.scxml` document (codec: `<scxml sce:kind=\"codec\" name=\"{element_type}\">`; procedure: `<scxml sce:kind=\"procedure\" name=\"{element_type}\">`), or replace the body text with one of the registered candidates: {}.",
+        crate::forge::error::joined_or_none(.candidates)
     )]
     CollectionElementTypeNotAKind {
         /// Bounded-collection name from `<scxml sce:kind="bounded-collection" name="...">`.
@@ -2930,9 +2935,6 @@ pub enum ValidationError {
         /// procedure doc name. Wire payload's `Fix::ReplaceOneOf`
         /// consumes this verbatim.
         candidates: Vec<String>,
-        /// Joined comma-space form of `candidates` for the message
-        /// body (matches `WorkerOutboxRefUnknown` shape).
-        candidates_list: String,
     },
 
     /// SCE Protocol-Synthesis RFC §synth-5-L line 2615 + 2651
@@ -2953,7 +2955,8 @@ pub enum ValidationError {
     #[error(
         "bounded-collection '{collection_name}': <sce:index-by field=\"{field}\"/> names a field that does not exist on element-type '{element_type}' ({element_kind} kind). \
          SCE Protocol-Synthesis RFC §5.L line 2615 — the `index-by` field enables `find_by_index(IndexKey)` and must name an actual struct field of the element type. \
-         Replace `field=\"{field}\"` with one of the {element_type}'s declared fields: {candidates_list}."
+         Replace `field=\"{field}\"` with one of the {element_type}'s declared fields: {}.",
+        crate::forge::error::joined_or_none(.candidates)
     )]
     CollectionIndexByFieldMissing {
         /// Bounded-collection name from `<scxml sce:kind="bounded-collection" name="...">`.
@@ -2971,9 +2974,6 @@ pub enum ValidationError {
         /// Sorted closed candidate set — every declared field of the
         /// resolved element-type kind.
         candidates: Vec<String>,
-        /// Joined comma-space form of `candidates` for the message
-        /// body.
-        candidates_list: String,
     },
 
     /// SCE Protocol-Synthesis RFC §synth-5-L lines 2560-2562 + 2652
@@ -3036,7 +3036,8 @@ pub enum ValidationError {
     #[error(
         "bounded-collection '{collection_name}': <sce:capacity source=\"deploy\" key=\"{key}\"/> references limit '{limit}' on machine '{machine}', but deploy.yaml does not declare `machines.{machine}.limits.{limit}`. \
          SCE Protocol-Synthesis RFC §5.L lines 2583-2585 — `<sce:capacity source=\"deploy\">` resolves at codegen time to a per-language compile-time constant from `machines.<machine>.limits.<limit>:`; an unresolved limit blocks emission. \
-         Repair: declare `{limit}: <count>` under `machines.{machine}.limits:` in deploy.yaml (declared limits today: {candidates_list}), or switch the BC's `<sce:capacity>` to `const=\"N\"`."
+         Repair: declare `{limit}: <count>` under `machines.{machine}.limits:` in deploy.yaml (declared limits today: {}), or switch the BC's `<sce:capacity>` to `const=\"N\"`.",
+        crate::forge::error::joined_or_none(.candidates)
     )]
     CollectionCapacityUnresolved {
         /// Bounded-collection name from `<scxml sce:kind="bounded-collection" name="...">`.
@@ -3054,9 +3055,6 @@ pub enum ValidationError {
         /// under `machines.<machine>.limits:`. Wire payload's
         /// `Fix::ReplaceOneOf` consumes this verbatim.
         candidates: Vec<String>,
-        /// Joined comma-space form of `candidates` for the message
-        /// body (matches the sibling cross-doc diagnostics' shape).
-        candidates_list: String,
     },
 
     /// SCE Protocol-Synthesis RFC §synth-5-O — IR provenance pre-emit
@@ -4235,6 +4233,22 @@ pub fn did_you_mean(candidates: &[String]) -> String {
         return String::new();
     }
     format!(". Did you mean: {}?", candidates.join(", "))
+}
+
+/// A candidate list as a message lists it inline: the names joined, or
+/// `<none>` when there are none, so "(closest matches: )" never reaches
+/// a reader.
+///
+/// ⚠ ONE rendering, read from the list itself. Variants used to carry a
+/// second field holding this string, joined at each raise site — two
+/// copies of one list, free to disagree, and each empty case spelled by
+/// whoever raised it (one site wrote `<no close matches>`, the rest wrote
+/// nothing at all).
+pub fn joined_or_none(candidates: &[String]) -> String {
+    if candidates.is_empty() {
+        return "<none>".to_string();
+    }
+    candidates.join(", ")
 }
 
 // ── Stage 5: Cross-file import resolution ──────────────────────

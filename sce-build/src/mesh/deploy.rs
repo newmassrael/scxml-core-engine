@@ -3531,12 +3531,10 @@ fn validate_pool_defaults(cfg: &DeployConfig) -> Result<(), DeployError> {
                     .iter()
                     .map(|s| (*s).to_string())
                     .collect();
-                let candidates_list = candidates.join(", ");
                 return Err(DeployError::StageCopyPolicyUnknown {
                     machine: machine_name.clone(),
                     value: pool_defaults.stage_copy_policy.clone(),
                     candidates,
-                    candidates_list,
                 });
             }
         }
@@ -3643,13 +3641,11 @@ fn validate_links(cfg: &DeployConfig) -> Result<(), DeployError> {
                         .map(|(n, _class, _floor)| (*n).to_string())
                         .collect();
                     candidates.sort();
-                    let candidates_list = candidates.join(", ");
                     return Err(DeployError::LinkDriverUnknown {
                         machine: machine_name.clone(),
                         link_name: link_name.clone(),
                         driver: link.driver.clone(),
                         candidates,
-                        candidates_list,
                     });
                 }
 
@@ -3923,11 +3919,9 @@ pub fn validate_links_cross_doc(
     for forge_name in &forge_set {
         if !deploy_link_names.contains(forge_name) {
             let candidates: Vec<String> = deploy_link_names.iter().map(|s| s.to_string()).collect();
-            let candidates_list = candidates.join(", ");
             return Err(DeployError::LinkNotDeclaredInDeploy {
                 link_name: (*forge_name).to_string(),
                 candidates,
-                candidates_list,
             });
         }
     }
@@ -3940,12 +3934,10 @@ pub fn validate_links_cross_doc(
             for link_name in machine.links.keys() {
                 if !forge_set.contains(link_name.as_str()) {
                     let candidates: Vec<String> = forge_set.iter().map(|s| s.to_string()).collect();
-                    let candidates_list = candidates.join(", ");
                     return Err(DeployError::LinkNotDeclaredInForge {
                         machine: machine_name.clone(),
                         link_name: link_name.clone(),
                         candidates,
-                        candidates_list,
                     });
                 }
             }
@@ -3997,7 +3989,6 @@ pub fn validate_link_driver_class_consistency(
                     .filter(|(_, class, _)| *class == declared_class)
                     .map(|(name, _, _)| (*name).to_string())
                     .collect();
-                let driver_candidates_list = driver_candidates.join(", ");
                 return Err(DeployError::LinkDriverClassMismatch(Box::new(
                     crate::mesh::error::LinkDriverClassMismatchPayload {
                         machine: machine_name.clone(),
@@ -4006,7 +3997,6 @@ pub fn validate_link_driver_class_consistency(
                         declared_class: declared_class.to_string(),
                         expected_class: expected_class.to_string(),
                         driver_candidates,
-                        driver_candidates_list,
                     },
                 )));
             }

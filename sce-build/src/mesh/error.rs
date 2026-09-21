@@ -236,8 +236,6 @@ pub struct LinkDriverClassMismatchPayload {
     /// valid path the prose names but the structured fix only
     /// carries one axis per non-overlap-class invariant.
     pub driver_candidates: Vec<String>,
-    /// Cached pretty-print of `driver_candidates`.
-    pub driver_candidates_list: String,
 }
 
 /// EventSchema cross-machine validation — distinguishes the
@@ -553,11 +551,10 @@ pub enum DeployError {
         transport: String,
         field: String,
         /// The transport's legal binding keys, ordered closest-first to
-        /// [`Self::UnknownBindingField::field`]. Sibling variants carry a
-        /// pre-rendered `candidates_list` alongside; this one derives both
-        /// the list and the suggestion at display time instead, because
-        /// two more `String`s would put the variant over the size at
-        /// which every `Result<_, DeployError>` starts paying for it.
+        /// [`Self::UnknownBindingField::field`]. The suggestion is derived
+        /// at display time, as every candidate-carrying variant now does
+        /// (`crate::forge::error::joined_or_none`), rather than stored
+        /// beside the list.
         candidates: Vec<String>,
     },
 
@@ -1552,7 +1549,8 @@ pub enum DeployError {
              line 2421 (`deploy/link-driver-unknown`) — the build's \
              closed-allowlist + forge `<sce:link>` cross-doc registry \
              union does not contain this driver. Repair: pick one of \
-             [{candidates_list}]."
+             [{}].",
+        crate::forge::error::joined_or_none(.candidates)
     )]
     LinkDriverUnknown {
         machine: String,
@@ -1563,9 +1561,6 @@ pub enum DeployError {
         /// known — diagnostic still surfaces the unknown driver but
         /// the `Fix::ReplaceOneOf` will be empty.
         candidates: Vec<String>,
-        /// Cached pretty-print of `candidates` for the error display
-        /// (joined by `, `).
-        candidates_list: String,
     },
 
     /// SCE Protocol-Synthesis RFC §synth-5-K line 2440-2442
@@ -1773,13 +1768,13 @@ pub enum DeployError {
              `deploy.yaml::machines.<n>.links.{link_name}` entry \
              exists. Cross-doc validator \
              (`deploy/link-not-declared-in-deploy`). Repair: add the deploy entry under one of [\
-             {candidates_list}] or another machine, or remove the \
-             forge link doc."
+             {}] or another machine, or remove the \
+             forge link doc.",
+        crate::forge::error::joined_or_none(.candidates)
     )]
     LinkNotDeclaredInDeploy {
         link_name: String,
         candidates: Vec<String>,
-        candidates_list: String,
     },
 
     /// Cross-doc link validator pair (§synth-5-K). A
@@ -1795,14 +1790,14 @@ pub enum DeployError {
              Cross-doc validator \
              (`deploy/link-not-declared-in-forge`). Repair: declare the forge link doc and import it \
              from a statechart/worker on this machine, or pick one \
-             of [{candidates_list}] (forge link doc names known to \
-             this build), or remove the orphan deploy entry."
+             of [{}] (forge link doc names known to \
+             this build), or remove the orphan deploy entry.",
+        crate::forge::error::joined_or_none(.candidates)
     )]
     LinkNotDeclaredInForge {
         machine: String,
         link_name: String,
         candidates: Vec<String>,
-        candidates_list: String,
     },
 
     /// SCE Protocol-Synthesis RFC §synth-5-K line 2517-2519 verbatim
@@ -1815,13 +1810,13 @@ pub enum DeployError {
              {value}` is not a known policy. SCE Protocol-Synthesis RFC §5.K \
              line 2517-2519 (`deploy/stage-copy-policy-unknown`) — \
              closed-set typo guard. Repair: pick one of \
-             [{candidates_list}]."
+             [{}].",
+        crate::forge::error::joined_or_none(.candidates)
     )]
     StageCopyPolicyUnknown {
         machine: String,
         value: String,
         candidates: Vec<String>,
-        candidates_list: String,
     },
 
     /// SCE Protocol-Synthesis RFC §synth-5-K line 2449-2451 verbatim
@@ -3585,7 +3580,6 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             link_name,
             driver,
             candidates,
-            candidates_list: _,
         } => DiagnosticPayload {
             code: DiagnosticCode::MeshDeployLinkDriverUnknown,
             stage: Stage::MeshDeploy,
@@ -3631,7 +3625,6 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 declared_class,
                 expected_class: _,
                 driver_candidates,
-                driver_candidates_list: _,
             } = payload.as_ref();
             // The candidates are DRIVERS of the class the link needs, so
             // what they replace — `actual` — is the driver. It used to be
@@ -3741,7 +3734,6 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
         DeployError::LinkNotDeclaredInDeploy {
             link_name,
             candidates,
-            candidates_list: _,
         } => DiagnosticPayload {
             code: DiagnosticCode::MeshDeployLinkNotDeclaredInDeploy,
             stage: Stage::MeshDeploy,
@@ -3756,7 +3748,6 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             machine,
             link_name,
             candidates,
-            candidates_list: _,
         } => DiagnosticPayload {
             code: DiagnosticCode::MeshDeployLinkNotDeclaredInForge,
             stage: Stage::MeshDeploy,
@@ -3771,7 +3762,6 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             machine,
             value,
             candidates,
-            candidates_list: _,
         } => DiagnosticPayload {
             code: DiagnosticCode::MeshDeployStageCopyPolicyUnknown,
             stage: Stage::MeshDeploy,

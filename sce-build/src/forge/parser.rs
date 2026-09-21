@@ -32,6 +32,49 @@ fn located<E: Into<ForgeError>>(node: &roxmltree::Node, name: &str, err: E) -> L
     Located::new(err.into(), name, Some(pos.row), Some(pos.col))
 }
 
+/// The refusal of a child element its parent does not take, located at
+/// the child. `allowed` names the children the parent does take, by local
+/// name.
+///
+/// Both sides are spelled as the document spells them: the offending tag
+/// with the prefix it was written with, and each candidate with the
+/// prefix this document binds to the SCE namespace — so a candidate is
+/// text that can stand where the offending tag stands.
+///
+/// ⚠ Where the XSD is available it refuses a stray child first, so these
+/// sites are what a build WITHOUT the schema (a vendored crate, `wasm32`)
+/// has in its place — which is why they must speak the same closed set
+/// the schema does rather than a sentence about it.
+fn unexpected_child(
+    child: &roxmltree::Node,
+    doc_name: &str,
+    parent: String,
+    allowed: &[&str],
+) -> Located<ForgeError> {
+    let name = child.tag_name().name();
+    let written = match child
+        .tag_name()
+        .namespace()
+        .and_then(|ns| child.lookup_prefix(ns))
+    {
+        Some(prefix) if !prefix.is_empty() => format!("{prefix}:{name}"),
+        _ => name.to_string(),
+    };
+    let sce_prefix = child.lookup_prefix(SCE_NAMESPACE).unwrap_or("sce");
+    located(
+        child,
+        doc_name,
+        ValidationError::UnexpectedChildElement {
+            parent,
+            child: written,
+            allowed: allowed
+                .iter()
+                .map(|local| format!("{sce_prefix}:{local}"))
+                .collect(),
+        },
+    )
+}
+
 /// Build a `Located<ForgeError>` from a stored line number rather than
 /// a live `roxmltree::Node`. Used by post-loop validators whose anchor
 /// element is no longer in scope but whose line was captured during
@@ -504,19 +547,10 @@ fn parse_externs(
         match validate_extern_with_plugin(&name, &sig, &abi, plugin) {
             Ok(()) => {}
             Err(ExternFailure::NotInWhitelist { candidates }) => {
-                let candidates_list = if candidates.is_empty() {
-                    "<no close matches>".to_string()
-                } else {
-                    candidates.join(", ")
-                };
                 return Err(located(
                     &child,
                     doc_name,
-                    ValidationError::ExternSymbolNotInWhitelist {
-                        name,
-                        candidates,
-                        candidates_list,
-                    },
+                    ValidationError::ExternSymbolNotInWhitelist { name, candidates },
                 ));
             }
             Err(ExternFailure::AbiMismatch { expected, actual }) => {
@@ -542,16 +576,12 @@ fn parse_externs(
                 ));
             }
             Err(ExternFailure::OrderingUnspecified { base, candidates }) => {
-                let candidates_vec: Vec<String> =
-                    candidates.iter().map(|s| s.to_string()).collect();
-                let candidates_list = candidates_vec.join(", ");
                 return Err(located(
                     &child,
                     doc_name,
                     ValidationError::ExternOrderingUnspecified {
                         base,
-                        candidates: candidates_vec,
-                        candidates_list,
+                        candidates: candidates.iter().map(|s| s.to_string()).collect(),
                     },
                 ));
             }
@@ -1608,17 +1638,11 @@ fn parse_flag_inputs(
             continue;
         }
         if child.tag_name().name() != "flag-input" {
-            return Err(located(
+            return Err(unexpected_child(
                 &child,
                 doc_name,
-                ValidationError::AttributeRuleViolated {
-                    element: "<sce:flag-inputs>".into(),
-                    attr: "child element".into(),
-                    value: format!("<{}>", child.tag_name().name()),
-                    rule: "only <sce:flag-input name=\"X\" width=\"N\"/> \
-                               children are accepted"
-                        .into(),
-                },
+                "<sce:flag-inputs>".into(),
+                &["flag-input"],
             ));
         }
         let name = child
@@ -2083,15 +2107,11 @@ fn parse_peek_byte_from_variant_node(
     for child in node.children().filter(|n| n.is_element()) {
         if child.tag_name().namespace() != Some(SCE_NAMESPACE) || child.tag_name().name() != "flag"
         {
-            return Err(located(
+            return Err(unexpected_child(
                 &child,
                 label.diagnostic_label,
-                ValidationError::AttributeRuleViolated {
-                    element: format!("<sce:peek-byte id='{id}'>"),
-                    attr: "child element".into(),
-                    value: child.tag_name().name().to_string(),
-                    rule: "only <sce:flag> children".into(),
-                },
+                format!("<sce:peek-byte id='{id}'>"),
+                &["flag"],
             ));
         }
         let name = child
@@ -2658,15 +2678,11 @@ fn parse_codec_variant(
             // below doesn't reject it.
             "peek-byte" => {}
             _ => {
-                return Err(located(
+                return Err(unexpected_child(
                     &child,
                     label.diagnostic_label,
-                    ValidationError::AttributeRuleViolated {
-                        element: "<sce:variant>".into(),
-                        attr: "child element".into(),
-                        value: local.to_string(),
-                        rule: "only <sce:arm>, <sce:default> or <sce:peek-byte> children".into(),
-                    },
+                    "<sce:variant>".into(),
+                    &["arm", "default", "peek-byte"],
                 ));
             }
         }
@@ -3253,15 +3269,11 @@ fn parse_codec_flags_from_node(
     for child in node.children().filter(|n| n.is_element()) {
         if child.tag_name().namespace() != Some(SCE_NAMESPACE) || child.tag_name().name() != "flag"
         {
-            return Err(located(
+            return Err(unexpected_child(
                 &child,
                 doc_name,
-                ValidationError::AttributeRuleViolated {
-                    element: format!("<sce:flags id='{}'>", field.id),
-                    attr: "child element".into(),
-                    value: child.tag_name().name().to_string(),
-                    rule: "only <sce:flag> children".into(),
-                },
+                format!("<sce:flags id='{}'>", field.id),
+                &["flag"],
             ));
         }
         let name = child
@@ -4647,20 +4659,14 @@ fn parse_one_codec_test_vector(
             "decoded" => {
                 decoded_fields.push(parse_one_decoded_field(&child, fields, label)?);
             }
-            other => {
-                return Err(located(
+            // `<sce:decoded-variant>` / `-chain` / `-entry` are not
+            // supported in a test vector: a row names one field's value.
+            _ => {
+                return Err(unexpected_child(
                     &child,
                     label.diagnostic_label,
-                    ValidationError::AttributeRuleViolated {
-                        element: "sce:test-vector".into(),
-                        attr: "<child element>".into(),
-                        value: format!("sce:{other}"),
-                        rule: "test vectors only accept <sce:decoded field=\"...\" \
-                                   value|hex|string=\"...\"/> children; \
-                                   <sce:decoded-variant>/<sce:decoded-chain>/<sce:decoded-entry> \
-                                   are not supported"
-                            .into(),
-                    },
+                    "<sce:test-vector>".into(),
+                    &["decoded"],
                 ));
             }
         }
@@ -9547,5 +9553,44 @@ fn parse_int_u64(s: &str) -> Option<u64> {
         u64::from_str_radix(hex, 16).ok()
     } else {
         s.parse::<u64>().ok()
+    }
+}
+
+#[cfg(test)]
+mod unexpected_child_tests {
+    use super::*;
+
+    /// The stray tag and every candidate come out in the document's own
+    /// spelling, whatever prefix it binds to the SCE namespace — the
+    /// property that lets a candidate stand where the stray tag stands.
+    ///
+    /// Called directly rather than through `parse_forge`: where the XSD is
+    /// available it refuses a stray child before the parser's own check,
+    /// and the check exists for the builds where it is not.
+    #[test]
+    fn spells_the_stray_tag_and_the_candidates_as_the_document_does() {
+        for prefix in ["sce", "x"] {
+            let xml = format!(r#"<p xmlns:{prefix}="{SCE_NAMESPACE}"><{prefix}:flga/></p>"#);
+            let doc = roxmltree::Document::parse(&xml).expect("fixture parses");
+            let child = doc
+                .root_element()
+                .first_element_child()
+                .expect("fixture has a child");
+            let err = unexpected_child(&child, "t.scxml", "<sce:flags>".into(), &["flag"]);
+            match err.error {
+                ForgeError::Validation(boxed) => match *boxed {
+                    ValidationError::UnexpectedChildElement { child, allowed, .. } => {
+                        assert_eq!(child, format!("{prefix}:flga"));
+                        assert_eq!(allowed, [format!("{prefix}:flag")]);
+                    }
+                    other => panic!("expected UnexpectedChildElement, got {other:?}"),
+                },
+                other => panic!("expected a validation error, got {other:?}"),
+            }
+            assert!(
+                err.location.line.is_some(),
+                "the refusal is located at the child"
+            );
+        }
     }
 }
