@@ -4480,6 +4480,70 @@ impl ForgeDocument {
         }
     }
 
+    /// The typed fields this document exposes as a record, in declaration
+    /// order — read by an importing document as `alias.field`, and by a
+    /// bounded collection's `index-by` as a field of its element — or
+    /// `None` for a kind that is not read as a record.
+    ///
+    /// ⚠ `None` and an empty list are different answers. An empty list
+    /// says the document IS read as a record and declares nothing there,
+    /// so any `alias.x` is refused; `None` says `alias.x` is not a field
+    /// read at all — a stateless kind is called as `alias(…)`, a
+    /// method-only stateful kind as `alias.method(…)`, and a vocabulary is
+    /// reached another way. Refusing `pool.free_count()` as an unknown
+    /// field would be wrong, which is why the method-only kinds are `None`.
+    ///
+    /// ⚠ One answer for every reader: the cross-kind member check, the
+    /// import enrichment and the collection `index-by` check each kept a
+    /// copy of this match, two of them "mirrored 1:1", and the copies had
+    /// already begun to differ on what a timer was.
+    pub fn record_fields(&self) -> Option<Vec<(String, SceType)>> {
+        let fields = |fs: &[ForgeField]| {
+            fs.iter()
+                .map(|f| (f.id.clone(), f.sce_type.clone()))
+                .collect::<Vec<_>>()
+        };
+        Some(match self {
+            Self::Codec(m) => m
+                .fields
+                .iter()
+                .map(|f| (f.id.clone(), f.sce_type.clone()))
+                .collect(),
+            // A validator exposes the validated inputs; its previous
+            // values are internal.
+            Self::Validator(m) => fields(&m.inputs),
+            Self::Filter(m) => vec![
+                (m.output.id.clone(), m.output.sce_type.clone()),
+                (m.input.id.clone(), m.input.sce_type.clone()),
+            ],
+            Self::Observer(m) => fields(&m.inputs),
+            Self::Procedure(m) => {
+                let mut out = fields(&m.inputs);
+                out.extend(fields(&m.internals));
+                out
+            }
+            // The alias of a bounded collection is read as `alias.x` and
+            // declares nothing there: an element's fields are reached
+            // through the foreach item, not through the collection.
+            Self::BoundedCollection(_) => Vec::new(),
+            // Method-only stateful kinds: their state is reached through
+            // methods emitted at codegen time.
+            Self::Timer(_) | Self::Link(_) | Self::BufferPool(_) | Self::Worker(_) => return None,
+            // Stateless kinds are called as `alias(…)`.
+            Self::Statechart(_)
+            | Self::Transform(_)
+            | Self::Condition(_)
+            | Self::Lookup(_)
+            | Self::Interpolation(_)
+            | Self::Algorithm(_) => return None,
+            // An enum's variants are read as `<alias>.<variant>` through
+            // the cross-kind binding pass, and an event schema's fields as
+            // `_event.data.<field>` by event name — neither through the
+            // alias as a record.
+            Self::Enum(_) | Self::EventSchema(_) => return None,
+        })
+    }
+
     /// Precise runtime dependency for this parsed document.
     ///
     /// Unlike `ForgeKind::max_runtime_dep()` which returns the conservative

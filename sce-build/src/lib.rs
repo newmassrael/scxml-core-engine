@@ -3606,37 +3606,14 @@ fn compute_codec_recursive_max_bytes(
         base_dir: &Path,
         visited: &mut HashSet<PathBuf>,
     ) -> Option<u32> {
-        let imp = imports.iter().find(|i| i.alias == alias)?;
-        let imp_path = base_dir.join(&imp.src);
-        // Use joined path (not canonical) for cycle detection: matches
-        // the way the rest of the enrichment resolves paths and avoids
-        // a hard dependency on the file existing at canonicalize time.
-        let visit_key = imp_path.clone();
-        if !visited.insert(visit_key.clone()) {
-            return None;
-        }
-        let result = (|| -> Option<u32> {
-            let content = std::fs::read_to_string(&imp_path).ok()?;
-            let stem = imp_path.file_stem()?.to_str()?;
-            let label = DocumentLabel {
-                identifier: stem,
-                diagnostic_label: imp_path.to_str()?,
-            };
-            let parsed = forge::parser::parse_forge_with_imports(&content, label).ok()??;
-            let inner_cm = match parsed.document {
-                forge::model::ForgeDocument::Codec(c) => c,
-                _ => return None,
-            };
-            let inner_base = imp_path.parent()?.to_path_buf();
+        with_resolved_import_codec(alias, imports, base_dir, visited, |inner| {
             Some(compute_codec_recursive_max_bytes(
-                &inner_cm,
-                &parsed.imports,
-                &inner_base,
-                visited,
+                inner.model,
+                inner.imports,
+                inner.base_dir,
+                inner.visited,
             ))
-        })();
-        visited.remove(&visit_key);
-        result
+        })
     }
 
     // Mirrors generator.rs render_codec's mutually-exclusive branches:
@@ -3750,12 +3727,13 @@ struct ResolvedImportCodec<'a> {
 /// Resolve one import alias to its codec model and hand it to `walk`.
 ///
 /// SSOT for the file-graph half of every transitive codec property
-/// (borrowed-ness, `as_borrowed` fallibility, owned storage genericity): the
-/// alias lookup, the re-parse, the kind check and the `visited` cycle guard
-/// live here once, so a new property only supplies its recursion step. `None`
-/// (missing file / parse error / kind mismatch / cycle) is the conservative
-/// skip every caller collapses to the property's identity value — the same
-/// skip `compute_codec_recursive_max_bytes::resolve_import_max` makes.
+/// (worst-case size, borrowed-ness, `as_borrowed` fallibility, owned storage
+/// genericity): the alias lookup, the re-parse, the kind check and the
+/// `visited` cycle guard live here once, so a new property only supplies its
+/// recursion step. `None` (missing file / parse error / kind mismatch /
+/// cycle) is the conservative skip every caller collapses to the property's
+/// identity value. ⚠ The worst-case size walk kept its own copy of all four
+/// steps until 2026-09-21.
 fn with_resolved_import_codec<T>(
     alias: &str,
     imports: &[forge::model::ForgeImport],
@@ -3765,18 +3743,15 @@ fn with_resolved_import_codec<T>(
 ) -> Option<T> {
     let imp = imports.iter().find(|i| i.alias == alias)?;
     let imp_path = base_dir.join(&imp.src);
+    // The joined path, not the canonical one, keys the cycle guard: it is
+    // how every import reader resolves a path, and it does not need the
+    // file to exist.
     let visit_key = imp_path.clone();
     if !visited.insert(visit_key.clone()) {
         return None;
     }
     let result = (|| -> Option<T> {
-        let content = std::fs::read_to_string(&imp_path).ok()?;
-        let stem = imp_path.file_stem()?.to_str()?;
-        let label = DocumentLabel {
-            identifier: stem,
-            diagnostic_label: imp_path.to_str()?,
-        };
-        let parsed = forge::parser::parse_forge_with_imports(&content, label).ok()??;
+        let parsed = forge::import_source::parse_quietly(base_dir, imp)?;
         let inner_cm = match parsed.document {
             forge::model::ForgeDocument::Codec(c) => c,
             _ => return None,
@@ -3858,38 +3833,17 @@ fn validate_and_enrich_imports(
     use forge::error::{ImportError, Located};
 
     for (ctx, imp) in import_ctx.iter_mut().zip(imports.iter()) {
-        let src_path = base_dir.join(&imp.src);
-        let src_label = src_path.display().to_string();
+        let src_label = base_dir.join(&imp.src).display().to_string();
 
-        // 1. Existence
-        if !src_path.exists() {
-            return Err(Located::new(
-                ImportError::FileNotFound {
-                    src: imp.src.clone(),
-                    searched: src_label.clone(),
-                }
-                .into(),
-                &src_label,
-                None,
-                None,
-            ));
-        }
-
-        // Read once
-        let content = std::fs::read_to_string(&src_path).map_err(|e| {
-            Located::new(
-                forge::error::ForgeError::Import(ImportError::ReadError {
-                    src: imp.src.clone(),
-                    source: e,
-                }),
-                &src_label,
-                None,
-                None,
-            )
-        })?;
+        // 1. Existence, and one read — the reading every import reader
+        //    shares, reported here because this pass is the one that
+        //    speaks for an import.
+        let source = forge::import_source::ImportSource::read(base_dir, imp)
+            .map_err(|e| Located::new(e.into(), &src_label, None, None))?;
+        let content = &source.content;
 
         // 2. Kind validation
-        let actual_kind = forge::parser::detect_kind(&content)
+        let actual_kind = forge::parser::detect_kind(content)
             .map_err(|e| Located::new(e, &src_label, None, None))?
             .ok_or_else(|| {
                 Located::new(
@@ -3929,16 +3883,7 @@ fn validate_and_enrich_imports(
         //      • type information (param/return types for stateless kinds,
         //        member field types for stateful kinds) used by the typed
         //        expression transpiler pipeline in `forge::type_ctx`.
-        let stem = src_path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("unknown");
-        let imported_label = DocumentLabel {
-            identifier: stem,
-            diagnostic_label: src_path.to_str().unwrap_or(stem),
-        };
-
-        if let Some(parsed) = forge::parser::parse_forge_with_imports(&content, imported_label)? {
+        if let Some(parsed) = source.parse()? {
             let doc = parsed.document;
             // Identity SSOT: recompute the name-derived emission context
             // (`#include` / `use` / `import`, namespace, type/member type)
@@ -3976,8 +3921,9 @@ fn validate_and_enrich_imports(
             // imports leave it `None`.
             if let forge::model::ForgeDocument::Codec(cm) = &doc {
                 let mut visited: HashSet<PathBuf> = HashSet::new();
-                visited.insert(src_path.clone());
-                let inner_base = src_path
+                visited.insert(source.path.clone());
+                let inner_base = source
+                    .path
                     .parent()
                     .map_or_else(|| base_dir.to_path_buf(), |p| p.to_path_buf());
                 ctx.codec_max_bytes = Some(compute_codec_recursive_max_bytes(
@@ -3993,7 +3939,7 @@ fn validate_and_enrich_imports(
                 // thread `<'a>` into its own struct/decode signature when
                 // it embeds / repeats / variant-dispatches this import.
                 let mut borrow_visited: HashSet<PathBuf> = HashSet::new();
-                borrow_visited.insert(src_path.clone());
+                borrow_visited.insert(source.path.clone());
                 ctx.codec_is_borrowed = codec_is_borrowed_recursive(
                     cm,
                     &parsed.imports,
@@ -4010,7 +3956,7 @@ fn validate_and_enrich_imports(
                 // whether its own projection must return `Result`.
                 ctx.codec_as_borrowed_fallible = ctx.codec_is_borrowed && {
                     let mut fallible_visited: HashSet<PathBuf> = HashSet::new();
-                    fallible_visited.insert(src_path.clone());
+                    fallible_visited.insert(source.path.clone());
                     codec_as_borrowed_fallible_recursive(
                         cm,
                         &parsed.imports,
@@ -4183,7 +4129,9 @@ fn validate_and_enrich_imports(
                 // Unqualified bare field names would collide with the
                 // enclosing kind's own inputs/internals that happen to share
                 // a name, silently producing wrong type inference.
-                ctx.member_field_types = discover_stateful_member_fields(&doc)
+                ctx.member_field_types = doc
+                    .record_fields()
+                    .unwrap_or_default()
                     .into_iter()
                     .map(|(field, ty)| (format!("{}.{}", ctx.alias, field), ty))
                     .collect();
@@ -5004,9 +4952,8 @@ fn extract_bounded_collection_index_field_sce_type(
 ///   `Fix::ReplaceOneOf`.
 /// * `collection/index-by-field-missing` — `<sce:index-by field=\"X\"/>`
 ///   names a field absent from the resolved element-type's struct.
-///   Field enumeration mirrors [`discover_stateful_member_fields`]'s
-///   codec + procedure arms (`CodecModel.fields[].id` for codecs,
-///   `ProcedureModel.inputs[].id + .internals[].id` for procedures).
+///   The fields are the element document's
+///   [`forge::model::ForgeDocument::record_fields`].
 /// * `collection/multi-writer-without-atomics` — `<sce:concurrency>`
 ///   declared as `multi-writer` while the build's aggregated
 ///   `externs` slice contains no entry whose registry-
@@ -5042,7 +4989,7 @@ fn validate_bounded_collection_cross_refs(
     externs: &[forge::model::ExternDeclaration],
 ) -> Result<(), forge::error::Located<forge::error::ForgeError>> {
     use forge::error::{Located, ValidationError};
-    use forge::model::{ConcurrencyMode, ForgeDocument};
+    use forge::model::ConcurrencyMode;
 
     // Pre-compute the sorted closed candidate set once (used by both
     // element-type-not-a-kind and the index-by validator that depends
@@ -5076,27 +5023,15 @@ fn validate_bounded_collection_cross_refs(
                 //    fix element-type first per one-error-at-a-time
                 //    wire policy). ──
                 if let Some(field) = bc.index_by.as_ref() {
-                    let (element_kind, mut field_candidates) = match doc {
-                        ForgeDocument::Codec(m) => {
-                            let names: Vec<String> =
-                                m.fields.iter().map(|f| f.id.clone()).collect();
-                            ("codec".to_string(), names)
-                        }
-                        ForgeDocument::Procedure(m) => {
-                            let names: Vec<String> = m
-                                .inputs
-                                .iter()
-                                .map(|f| f.id.clone())
-                                .chain(m.internals.iter().map(|f| f.id.clone()))
-                                .collect();
-                            ("procedure".to_string(), names)
-                        }
-                        // Unreachable: `element_type_candidates` is
-                        // populated only for codec + procedure docs in
-                        // pass-1 of `compile_scxml_with_imports`. Other
-                        // ForgeDocument variants never enter the map.
-                        _ => continue,
+                    // `element_type_candidates` holds only codec and
+                    // procedure documents (pass-1 of
+                    // `compile_scxml_with_imports`), and both are records.
+                    let Some(fields) = doc.record_fields() else {
+                        continue;
                     };
+                    let element_kind = doc.kind().to_string();
+                    let mut field_candidates: Vec<String> =
+                        fields.into_iter().map(|(name, _)| name).collect();
                     if !field_candidates.iter().any(|f| f == field) {
                         field_candidates.sort();
                         return Err(Located::new(
@@ -5261,113 +5196,6 @@ fn discover_stateless_signature(
         }
         _ => (Vec::new(), None),
     }
-}
-
-/// Extract the list of (field_name, type) pairs exposed to user expressions
-/// for a stateful imported kind.
-///
-/// The returned names must match the text a user would write in an expression
-/// like `alias_.field_name` or `alias.field_name`, which corresponds to the
-/// field IDs in the underlying kind's model.
-///
-/// * Codec → every field in `CodecModel.fields`.
-/// * Validator → `inputs` (validator exposes the validated input value as its
-///   primary field on the result; prev-values are internal).
-/// * Filter → `output` and `input`.
-/// * Observer → `inputs` and any exposed monitor state.
-/// * Procedure → `inputs` + `internals` (stateful state machine fields).
-/// * Timer → nothing (no user-visible fields in expressions).
-fn discover_stateful_member_fields(
-    doc: &forge::model::ForgeDocument,
-) -> Vec<(String, forge::model::SceType)> {
-    use forge::model::ForgeDocument;
-    let mut out = Vec::new();
-    match doc {
-        // Statechart never reaches forge codegen — SCXML pipeline owns it.
-        ForgeDocument::Statechart(_) => unreachable!(
-            "discover_stateful_member_fields called on Statechart — only forge \
-             pipeline reaches this helper (see `classify_document`)"
-        ),
-        ForgeDocument::Codec(m) => {
-            for f in &m.fields {
-                out.push((f.id.clone(), f.sce_type.clone()));
-            }
-        }
-        ForgeDocument::Validator(m) => {
-            for f in &m.inputs {
-                out.push((f.id.clone(), f.sce_type.clone()));
-            }
-        }
-        ForgeDocument::Filter(m) => {
-            out.push((m.output.id.clone(), m.output.sce_type.clone()));
-            out.push((m.input.id.clone(), m.input.sce_type.clone()));
-        }
-        ForgeDocument::Observer(m) => {
-            for f in &m.inputs {
-                out.push((f.id.clone(), f.sce_type.clone()));
-            }
-        }
-        ForgeDocument::Procedure(m) => {
-            for f in &m.inputs {
-                out.push((f.id.clone(), f.sce_type.clone()));
-            }
-            for f in &m.internals {
-                out.push((f.id.clone(), f.sce_type.clone()));
-            }
-        }
-        ForgeDocument::Timer(_) => {}
-        // RFC §synth-5-C: Link is stateful (owns an `impl Link` driver) but
-        // exposes no SCXML-expression-visible typed fields — the rx /
-        // tx surface is method-only, and no consumer
-        // calls them from authored expressions. Empty Vec keeps the
-        // exhaustive match honest. Exposing method-typed members is a
-        // different axis, not a deferral of this one: it belongs in
-        // `discover_stateful_member_methods`, and returning them here
-        // would put methods into a field-discovery result.
-        ForgeDocument::Link(_) => {}
-        // RFC §synth-5-E: BufferPool is stateful (owns slot table + freelist)
-        // but exposes no SCXML-expression-visible typed fields
-        // — acquire/release/slot/slot_mut/free_count are method-only.
-        // Member discovery defers to the first authored consumer that
-        // calls them via `<sce:call alias="..."/>` (analogous to Link's
-        // method-only stance).
-        ForgeDocument::BufferPool(_) => {}
-        // RFC §synth-5-D: Worker owns SPSC inbox state but exposes no
-        // SCXML-expression-visible typed fields — inbox
-        // producer/consumer pair, optional outbox, link-rx binding
-        // are all instance state but only addressable through methods
-        // emitted at codegen time. Member discovery defers to
-        // the first authored `<sce:call alias="..."/>` consumer.
-        ForgeDocument::Worker(_) => {}
-        // RFC §synth-5-L: BoundedCollection owns the slot table, occupancy
-        // mask, generation counters as instance state but exposes no
-        // SCXML-expression-visible typed fields — the
-        // insert/remove/get/iter/len/capacity API is method-only per
-        // spec lines 2609-2619 (bounded-collection codegen). Member
-        // discovery defers to the first authored `<sce:call>` consumer.
-        ForgeDocument::BoundedCollection(_) => {}
-        // Stateless kinds handled via stateless_signature path.
-        // Algorithm (RFC §synth-5-A) is a stateless free function; no member
-        // fields exposed to user expressions.
-        ForgeDocument::Transform(_)
-        | ForgeDocument::Condition(_)
-        | ForgeDocument::Lookup(_)
-        | ForgeDocument::Interpolation(_)
-        | ForgeDocument::Algorithm(_)
-        // Enum declares typed variants — no
-        // SCXML-expression-visible member fields. Authors reference
-        // variants as `<EnumName>.<variant>` (resolved through the
-        // cross-kind binding pass), not as alias.field.
-        | ForgeDocument::Enum(_)
-        // EventSchema is parse-time metadata.
-        // The payload contract lives in `_event.data.<field>`
-        // resolution (handled by `event_schema_check.rs`, keyed by
-        // SCXML event name) not as `alias.field` access on the
-        // schema's import alias. No member surface visible through
-        // the `alias.field` path.
-        | ForgeDocument::EventSchema(_) => {}
-    }
-    out
 }
 
 /// Discover member method signatures for a stateful import.

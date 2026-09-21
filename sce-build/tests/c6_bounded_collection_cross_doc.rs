@@ -94,9 +94,9 @@ fn assert_validator_silent_passed(
     }
 }
 
-/// Codec doc with two fields; both field ids are exposed via
-/// `discover_stateful_member_fields`'s codec arm so the cross-doc
-/// index-by validator can enumerate them.
+/// Codec doc with two fields; both field ids are the codec's
+/// `ForgeDocument::record_fields`, which the cross-doc index-by
+/// validator enumerates.
 fn codec_doc(name: &str) -> String {
     format!(
         r##"<?xml version="1.0" encoding="UTF-8"?>
@@ -111,9 +111,9 @@ fn codec_doc(name: &str) -> String {
     )
 }
 
-/// Procedure doc with one input + one internal field. Both ids enter
-/// `discover_stateful_member_fields`'s procedure arm via inputs +
-/// internals concatenation.
+/// Procedure doc with one input + one internal field. Both ids are the
+/// procedure's `ForgeDocument::record_fields` — its inputs, then its
+/// internals.
 fn procedure_doc(name: &str) -> String {
     format!(
         r##"<?xml version="1.0" encoding="UTF-8"?>

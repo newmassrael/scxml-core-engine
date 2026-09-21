@@ -28,6 +28,7 @@
 use std::path::Path;
 
 use crate::forge::error::{ForgeError, Located, ValidationError};
+use crate::forge::import_source;
 use crate::forge::model::{ForgeDocument, ForgeField, ParsedForge, SceType};
 
 /// Every field of a document, whatever kind it is.
@@ -46,29 +47,6 @@ fn fields_of(doc: &ForgeDocument) -> Vec<&ForgeField> {
         ForgeDocument::Procedure(m) => m.inputs.iter().chain(m.internals.iter()).collect(),
         ForgeDocument::EventSchema(m) => m.fields.iter().collect(),
         _ => Vec::new(),
-    }
-}
-
-/// The variants an `enum:<alias>` import declares, or `None` when the
-/// import cannot be read.
-///
-/// ⚠ A read that fails is SILENT, for the reason
-/// [`crate::forge::coverage`] gives at the same seam: the import
-/// diagnostics already name a missing or unreadable import, and a second
-/// voice saying it would double-emit.
-fn variants_of(parsed: &ParsedForge, base_dir: &Path, alias: &str) -> Option<Vec<String>> {
-    let imp = parsed.imports.iter().find(|i| i.alias == alias)?;
-    let src = base_dir.join(&imp.src);
-    let content = std::fs::read_to_string(&src).ok()?;
-    let stem = src.file_stem()?.to_str()?;
-    let basename = src.file_name()?.to_str()?;
-    let label = crate::DocumentLabel {
-        identifier: stem,
-        diagnostic_label: basename,
-    };
-    match crate::forge::parser::parse_forge(&content, label).ok()?? {
-        ForgeDocument::Enum(e) => Some(e.variants.into_iter().map(|v| v.name).collect()),
-        _ => None,
     }
 }
 
@@ -103,8 +81,10 @@ pub fn check(
         };
         match &field.sce_type {
             SceType::Enum(eref) => {
-                // An unreadable import is silent here; see `variants_of`.
-                let Some(variants) = variants_of(parsed, base_dir, &eref.alias) else {
+                // An unreadable import is silent here; see
+                // `import_source::parse_quietly`.
+                let Some(variants) = import_source::enum_variants(parsed, base_dir, &eref.alias)
+                else {
                     continue;
                 };
                 if !variants.iter().any(|v| v == value) {

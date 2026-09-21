@@ -26,6 +26,7 @@ pub mod expr;
 pub mod extern_emit;
 pub mod extern_validator;
 pub mod generator;
+pub mod import_source;
 pub mod intrinsic_registry;
 pub mod limits;
 pub mod manifest;

@@ -8,7 +8,7 @@
 // declared member surface. Closes a silently-broken pattern: the
 // typed-expression pipeline already
 // has the symbol table (populated by `validate_and_enrich_imports` →
-// `discover_stateful_member_fields`) but `infer_types` returns
+// `ForgeDocument::record_fields`) but `infer_types` returns
 // `InferredType::Unknown` for unresolved Member access — no diagnostic.
 // AI-generated SCXML hallucinates plausible-looking field names that
 // historically survived to codegen.
@@ -50,14 +50,15 @@ use std::path::{Path, PathBuf};
 
 use crate::forge::error::{Located, ValidationError};
 use crate::forge::expr::{parse_to_ast, ExprKind, TypedExpr};
+use crate::forge::import_source;
 use crate::forge::model::{
     AlgorithmModel, AlgorithmStmt, ForgeDocument, ForgeImport, ForgeKind, ParsedForge, SceType,
 };
 
 /// Per-imported-kind member surface used for typed-binding resolution.
 ///
-/// Mirrors `lib::discover_stateful_member_fields` but keyed by the
-/// importing document's alias (not the imported kind's bare field id)
+/// [`ForgeDocument::record_fields`], keyed by the importing
+/// document's alias (not the imported kind's bare field id)
 /// so the validator can answer "given `<alias>.<field>` in an
 /// expression, is `<field>` declared?" with a single map lookup.
 ///
@@ -89,52 +90,23 @@ struct ImportMemberSurface {
 /// `<alias>.<field>` qualified `TypeCtx::vars` lookup.
 ///
 /// Re-reads each imported file at validator time (cheap: imports are
-/// small, the parse is single-pass). An earlier draft tried to thread
-/// the imports through `ParsedForge` to avoid the re-read; that path
-/// crosses the `validate_and_enrich_imports` boundary and forces every
-/// caller to pre-walk imports, so the simple re-read won.
+/// small, the parse is single-pass); an import that cannot be read is
+/// skipped, for the reason [`import_source::parse_quietly`] gives.
 fn build_surface_table(
     imports: &[ForgeImport],
     base_dir: &Path,
 ) -> Result<HashMap<String, ImportMemberSurface>, Located<crate::forge::error::ForgeError>> {
     let mut out: HashMap<String, ImportMemberSurface> = HashMap::new();
     for imp in imports {
-        let src_path = base_dir.join(&imp.src);
-        let content = match std::fs::read_to_string(&src_path) {
-            Ok(c) => c,
-            // Existence + read errors already raise their own diagnostics
-            // from `validate_and_enrich_imports` upstream; we silently
-            // skip here rather than double-emit.
-            Err(_) => continue,
-        };
-        let stem = src_path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("unknown");
-        let basename = src_path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or(stem);
-        let label = crate::DocumentLabel {
-            identifier: stem,
-            diagnostic_label: basename,
-        };
-        // Re-parsing here is intentional: the import enrichment path
-        // already parsed it once but does not retain the typed model
-        // for downstream callers. Caching across both call sites would
-        // require restructuring `validate_and_enrich_imports` to thread
-        // ParsedForge through — out of scope for this atomic.
-        let parsed = match crate::forge::parser::parse_forge_with_imports(&content, label) {
-            Ok(Some(p)) => p,
-            Ok(None) => continue,
-            Err(_) => continue, // upstream import enrichment surfaces this
+        let Some(parsed) = import_source::parse_quietly(base_dir, imp) else {
+            continue;
         };
         let doc = parsed.document;
         let imported_kind = doc.kind();
         let imported_name = doc.name().to_string();
-        let fields = match collect_member_fields(&doc) {
-            Some(fs) => fs,
-            None => continue, // stateless kind — not addressable as alias.field
+        // `None`: not read as `alias.field` — see the method.
+        let Some(fields) = doc.record_fields() else {
+            continue;
         };
         out.insert(
             imp.alias.clone(),
@@ -146,83 +118,6 @@ fn build_surface_table(
         );
     }
     Ok(out)
-}
-
-/// Member field surface for a stateful imported kind. Mirrors
-/// `lib::discover_stateful_member_fields` 1:1 — kept duplicated here so
-/// the cross-kind validator does not depend on a private lib helper.
-/// Returns `None` for stateless kinds, which surface as function-call
-/// aliases through a separate diagnostic family
-/// (`algorithm/call-target-*`).
-fn collect_member_fields(doc: &ForgeDocument) -> Option<Vec<(String, SceType)>> {
-    let mut out: Vec<(String, SceType)> = Vec::new();
-    match doc {
-        ForgeDocument::Codec(m) => {
-            for f in &m.fields {
-                out.push((f.id.clone(), f.sce_type.clone()));
-            }
-        }
-        ForgeDocument::Validator(m) => {
-            for f in &m.inputs {
-                out.push((f.id.clone(), f.sce_type.clone()));
-            }
-        }
-        ForgeDocument::Filter(m) => {
-            out.push((m.output.id.clone(), m.output.sce_type.clone()));
-            out.push((m.input.id.clone(), m.input.sce_type.clone()));
-        }
-        ForgeDocument::Observer(m) => {
-            for f in &m.inputs {
-                out.push((f.id.clone(), f.sce_type.clone()));
-            }
-        }
-        ForgeDocument::Procedure(m) => {
-            for f in &m.inputs {
-                out.push((f.id.clone(), f.sce_type.clone()));
-            }
-            for f in &m.internals {
-                out.push((f.id.clone(), f.sce_type.clone()));
-            }
-        }
-        // Bounded-collection's element type is a Codec / Procedure
-        // declared by name elsewhere; the *element's* fields are
-        // accessed via the foreach iteration variable, not the BC
-        // alias itself, so the BC import's own member surface is
-        // empty for the alias.field check. The foreach-iter-var
-        // typed access is covered by the per-statement Foreach branch
-        // in `walk_algorithm_stmt`.
-        ForgeDocument::BoundedCollection(_) => return Some(Vec::new()),
-        // Stateless kinds — function-call aliases, no member surface.
-        ForgeDocument::Statechart(_)
-        | ForgeDocument::Transform(_)
-        | ForgeDocument::Condition(_)
-        | ForgeDocument::Lookup(_)
-        | ForgeDocument::Interpolation(_)
-        | ForgeDocument::Algorithm(_)
-        | ForgeDocument::Timer(_)
-        | ForgeDocument::Link(_)
-        | ForgeDocument::BufferPool(_)
-        | ForgeDocument::Worker(_)
-        // Enum is a typed vocabulary declaration
-        // — variants are not member fields accessed via `alias.field`.
-        // Authors reference variants as `<EnumName>.<variant>` which
-        // resolves through the cross-kind binding pass to the imported
-        // enum's variant list, not the member-field check below.
-        | ForgeDocument::Enum(_)
-        // EventSchema is imported via
-        // `<sce:import>` for cross-doc binding (the receive-side
-        // typecheck pass resolves `_event.data.<field>` against the
-        // schema's declared fields by *event name*, not by alias
-        // access). The import alias itself is never used in
-        // expression positions like `alias.field` — the link is
-        // implicit through SCXML event-name matching. Empty surface
-        // keeps the alias-access path from suggesting EventSchema
-        // fields as candidates for an `alias.field` typo on a
-        // different kind. Functional resolution lives in
-        // `event_schema_check.rs`.
-        | ForgeDocument::EventSchema(_) => return None,
-    }
-    Some(out)
 }
 
 /// Render an [`SceType`] to its canonical schema attribute spelling

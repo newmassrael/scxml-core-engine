@@ -24,33 +24,8 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use crate::forge::error::{ForgeError, Located, ValidationError};
-use crate::forge::model::{ForgeDocument, ForgeKind, ParsedForge};
-
-/// The variants an `enum:<alias>` import declares, or `None` when the
-/// import names no readable enum.
-///
-/// ⚠ The `None` case is NOT silent here, unlike the same read in
-/// [`crate::forge::coverage`]. There, a missing import already has its
-/// own diagnostic from the import pass and a second voice would
-/// double-emit. Here the alias is named by `of=` on the cycle, which the
-/// import pass never looks at — so nothing else in the build has an
-/// opinion about it, and staying quiet would accept a cycle over a value
-/// space that does not exist.
-fn variants_of(parsed: &ParsedForge, base_dir: &Path, alias: &str) -> Option<Vec<String>> {
-    let imp = parsed.imports.iter().find(|i| i.alias == alias)?;
-    let src = base_dir.join(&imp.src);
-    let content = std::fs::read_to_string(&src).ok()?;
-    let stem = src.file_stem()?.to_str()?;
-    let basename = src.file_name()?.to_str()?;
-    let label = crate::DocumentLabel {
-        identifier: stem,
-        diagnostic_label: basename,
-    };
-    match crate::forge::parser::parse_forge(&content, label).ok()?? {
-        ForgeDocument::Enum(e) => Some(e.variants.into_iter().map(|v| v.name).collect()),
-        _ => None,
-    }
-}
+use crate::forge::import_source;
+use crate::forge::model::{ForgeKind, ParsedForge};
 
 /// Refuse a cycle whose value space or stops do not resolve.
 pub fn check(
@@ -73,7 +48,13 @@ pub fn check(
             ))
         };
 
-        let Some(variants) = variants_of(parsed, base_dir, &cycle.of) else {
+        // ⚠ `None` is NOT silent here, unlike the same read in
+        // `coverage` and `retention`. There a missing import already has
+        // its own diagnostic from the import pass; here the alias is named
+        // by `of=`, which the import pass never looks at — so nothing else
+        // in the build has an opinion about it, and staying quiet would
+        // accept a cycle over a value space that does not exist.
+        let Some(variants) = import_source::enum_variants(parsed, base_dir, &cycle.of) else {
             // Only an enum import can be cycled over, so the enum aliases
             // are the set — not every import, which is what this listed.
             let enum_aliases: Vec<String> = parsed

@@ -1536,25 +1536,14 @@ impl SCXMLParser {
             if !matches!(import.kind, ForgeKind::EventSchema | ForgeKind::Enum) {
                 continue;
             }
-            let Ok(content) = std::fs::read_to_string(base_dir.join(&import.src)) else {
+            let Some(parsed) = crate::forge::import_source::parse_quietly(base_dir, import) else {
                 continue;
             };
-            let Some(stem) = Path::new(&import.src).file_stem().and_then(|s| s.to_str()) else {
-                continue;
-            };
-            let basename = Path::new(&import.src)
-                .file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or(stem);
-            let label = DocumentLabel {
-                identifier: stem,
-                diagnostic_label: basename,
-            };
-            match crate::forge::parser::parse_forge(&content, label) {
-                Ok(Some(ForgeDocument::EventSchema(schema))) => {
+            match parsed.document {
+                ForgeDocument::EventSchema(schema) => {
                     schemas.entry(schema.name.clone()).or_insert(schema);
                 }
-                Ok(Some(ForgeDocument::Enum(em))) => {
+                ForgeDocument::Enum(em) => {
                     enums.entry(em.name.clone()).or_insert(em);
                 }
                 _ => {}

@@ -2952,10 +2952,9 @@ pub enum ValidationError {
     /// resolution succeeds first, then field enumeration runs against
     /// the resolved kind's field set).
     ///
-    /// Field enumeration mirrors the codec + procedure arms of
-    /// [`crate::discover_stateful_member_fields`] — codec exposes
-    /// `CodecModel.fields[].id`; procedure exposes
-    /// `ProcedureModel.inputs[].id + internals[].id`.
+    /// The fields are the element document's
+    /// [`crate::forge::model::ForgeDocument::record_fields`] — a codec's
+    /// `fields`, a procedure's `inputs` and `internals`.
     ///
     /// Closed candidate list rides `Fix::ReplaceOneOf` with the sorted
     /// list of field names from the resolved element-type kind.

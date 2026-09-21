@@ -44,6 +44,7 @@ use serde::Serialize;
 
 use crate::forge::error::{ForgeError, Located};
 use crate::forge::expr::{parse_to_ast, BinOp, ExprKind, TypedExpr};
+use crate::forge::import_source;
 use crate::forge::model::{ForgeDocument, ParsedForge, SceType};
 
 /// One input whose declared value space the document does not name in
@@ -142,34 +143,6 @@ fn children(e: &TypedExpr) -> Vec<&TypedExpr> {
     }
 }
 
-/// Variants declared by the enum document an alias resolves to.
-///
-/// ⚠ Re-reads and re-parses the imported document, exactly as
-/// `cross_kind_check::build_surface_table` does and for the same stated
-/// reason: the enrichment pass does not retain the typed model for
-/// downstream callers. A read that fails is SILENT here — the import
-/// diagnostics already name a missing or unreadable import, and a
-/// second voice saying it would double-emit.
-fn variants_of(parsed: &ParsedForge, base_dir: &Path, alias: &str) -> Option<Vec<String>> {
-    let imp = parsed.imports.iter().find(|i| i.alias == alias)?;
-    let src = base_dir.join(&imp.src);
-    let content = std::fs::read_to_string(&src).ok()?;
-    let stem = src.file_stem()?.to_str()?;
-    let basename = src.file_name()?.to_str()?;
-    let label = crate::DocumentLabel {
-        identifier: stem,
-        diagnostic_label: basename,
-    };
-    // ⚠ `parse_forge` answers `Option<ForgeDocument>` — `None` is a
-    //   document this pipeline does not own (a plain statechart), not an
-    //   error. Both mean "no enum here", and both are silent for the
-    //   reason in this function's doc comment.
-    match crate::forge::parser::parse_forge(&content, label).ok()?? {
-        ForgeDocument::Enum(e) => Some(e.variants.into_iter().map(|v| v.name).collect()),
-        _ => None,
-    }
-}
-
 /// What one enum-typed input's value space looks like against the
 /// conditions that test it: which variants the document names, and
 /// which reach only the default.
@@ -203,7 +176,7 @@ fn tested_values(m: &crate::forge::model::TransformModel) -> BTreeMap<String, BT
 /// The value space of an enum-typed input, split by what the document
 /// tests. `None` for an input that has no resolvable value space —
 /// a non-enum type, or an import this pass cannot read (silent for the
-/// reason [`variants_of`] gives).
+/// reason [`import_source::parse_quietly`] gives).
 fn value_space_of(
     parsed: &ParsedForge,
     base_dir: &Path,
@@ -213,7 +186,7 @@ fn value_space_of(
     let SceType::Enum(eref) = &inp.sce_type else {
         return None;
     };
-    let variants = variants_of(parsed, base_dir, &eref.alias)?;
+    let variants = import_source::enum_variants(parsed, base_dir, &eref.alias)?;
     let named = tested.get(&inp.id).cloned().unwrap_or_default();
     Some(ValueSpace {
         alias: eref.alias.clone(),
