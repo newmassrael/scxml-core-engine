@@ -3282,15 +3282,20 @@ pub enum AlgorithmBinding<'a> {
         name: &'a str,
         sce_type: &'a SceType,
     },
-    /// `<sce:foreach item>` — the loop variable, typed by what it iterates.
-    ForeachItem { name: &'a str },
+    /// `<sce:foreach item in>` — the loop variable, typed by what `source`
+    /// names: a byte of a `bytes` value, or an element of a bounded
+    /// collection. Which one is a question about the imports, so the model
+    /// carries the name and the generator answers it.
+    ForeachItem { name: &'a str, source: &'a str },
 }
 
 impl<'a> AlgorithmBinding<'a> {
     /// The introduced name, borrowed for as long as the model lives.
     pub fn name(self) -> &'a str {
         match self {
-            AlgorithmBinding::Local { name, .. } | AlgorithmBinding::ForeachItem { name } => name,
+            AlgorithmBinding::Local { name, .. } | AlgorithmBinding::ForeachItem { name, .. } => {
+                name
+            }
         }
     }
 }
@@ -3308,8 +3313,8 @@ fn collect_algorithm_bindings<'a>(stmts: &'a [AlgorithmStmt], out: &mut Vec<Algo
             AlgorithmStmt::Var { name, sce_type, .. } => {
                 out.push(AlgorithmBinding::Local { name, sce_type });
             }
-            AlgorithmStmt::Foreach { item, body, .. } => {
-                out.push(AlgorithmBinding::ForeachItem { name: item });
+            AlgorithmStmt::Foreach { item, source, body } => {
+                out.push(AlgorithmBinding::ForeachItem { name: item, source });
                 collect_algorithm_bindings(body, out);
             }
             AlgorithmStmt::If {

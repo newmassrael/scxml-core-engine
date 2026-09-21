@@ -217,6 +217,8 @@ pub fn check(parsed: &ParsedForge, document: &str) -> Result<(), Located<ForgeEr
             first.insert(name, what);
             continue;
         };
+        // RFC §synth-5-A: an algorithm body may not rebind a parameter or
+        // an earlier local, and says so with its own code.
         let error = if what.is_algorithm_body_binding() {
             ValidationError::AlgorithmLocalShadowsParam {
                 name: name.to_string(),

@@ -552,6 +552,20 @@ ECMAScript datamodel uses. Measured the same day: it too generated
 with exit 0, and Python met the undeclared name only when the line
 first ran.
 
+⚠⚠ **So is a member of a value.** Only a record has members a forge
+expression may read — a stateful import's alias (`frame.msg_id`), a
+procedure's `_event`, and an algorithm's `<sce:foreach>` item over a
+bounded collection (`entry.pattern`). Every other declaration — a
+field, a parameter, a const, a local, a byte item, an enum-typed value
+— is a value, so `label.length` beside `<data id="label"
+sce:type="string">` is refused as `expression/member-of-non-record`,
+with no fix: `len(label)` is how an expression asks for a length, and
+which read the author meant does not follow from the member written.
+The same holds one level down: `frame.msg_id.foo` asks a record's
+scalar field for a member. Measured 2026-09-21: `x.foo` on a `uint8`
+input generated with exit 0 on all six backends and named nothing in
+any of them.
+
 **An `sce:` attribute this tree does not read is refused**, as
 `validation/unknown-sce-attribute`, with the nearest known names as
 the fix. The parser looks attributes up by name, so one it does not
@@ -2873,6 +2887,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `expression/unsupported-builtin` | Expression |
 | `expression/unknown-identifier` | Expression |
 | `expression/unknown-enum-variant` | Expression |
+| `expression/member-of-non-record` | Expression |
 | `expression/property-not-callable` | Expression |
 | `expression/namespace-not-callable` | Expression |
 | `expression/namespace-not-a-value` | Expression |

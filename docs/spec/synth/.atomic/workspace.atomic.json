@@ -375,17 +375,17 @@
         },
         {
           "file": "sce-build/src/forge/generator.rs",
-          "symbol": "collect_algorithm_local_types",
-          "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/forge/generator.rs",
           "symbol": "BC_MUTATING_METHODS",
           "kind": "references"
         },
         {
           "file": "sce-build/src/forge/parser.rs",
           "symbol": "collect_var_capacity_shapes",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/namespace.rs",
+          "symbol": "check",
           "kind": "implements"
         }
       ]
@@ -5620,6 +5620,12 @@
       "target_kind": "section",
       "target_id": "synth-5-B",
       "reason": "superseded by the symbol-level binding the ecee1fe0 pin made available: tree-sitter-go/-kotlin/-python resolve this file's enclosing symbol, so the file-level claim is no longer the most the axis can check"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-A",
+      "reason": "function deleted; its duplicate-binding refusal moved to forge::namespace::check"
     }
   ],
   "frames": {},

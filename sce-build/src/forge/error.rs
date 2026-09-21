@@ -4136,6 +4136,29 @@ pub enum ExprError {
         declared: Vec<String>,
     },
 
+    /// `<name>.<member>` where `<name>` is a declared value rather than a
+    /// record — `x.foo` with `x` a `uint8` input.
+    ///
+    /// Separate from [`ExprError::UnknownIdentifier`] because the name IS
+    /// declared; what is wrong is asking it for a member at all. Only a
+    /// record has members (a stateful import, `_event`, an item of a
+    /// bounded collection); every other declaration is a value, and no
+    /// member spelling repairs that — `len(x)` is a call, not `x.length` —
+    /// so the record carries no fix.
+    ///
+    /// `ty` is the declaration's `sce:type` when inference knows it, and
+    /// absent for an enum-typed value or a const, whose type this layer
+    /// does not carry.
+    #[error(
+        "{name} has no members{}, so {name}.{member} names nothing",
+        .ty.map_or_else(String::new, |t| format!(" (it is declared {t})"))
+    )]
+    MemberOfNonRecord {
+        name: String,
+        member: String,
+        ty: Option<&'static str>,
+    },
+
     /// Loose equality (`==` / `!=`) instead of strict.
     #[error("loose {operator} is not permitted in Extended SCXML. Use {strict} instead.")]
     StrictEquality {

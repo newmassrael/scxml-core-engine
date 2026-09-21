@@ -481,60 +481,112 @@ fn backend_axis_refusal_is_fatal_only_when_the_backend_was_named() {
     }
 }
 
-/// A document-axis refusal is fatal whether or not a backend was named
-/// — the document is wrong under every backend, so there is nothing for
-/// a sweep to report.
 /// A forge expression's name refusal is the document's, not a backend's.
 ///
 /// ⚠ Measured 2026-09-21 before the axis was read off the record: `check`
-/// with no `--language` answered this document with six `rejected`
-/// verdicts and exit 0 — "valid, just not buildable anywhere" — because
-/// the single-document route assumed whatever reached its recorder had
-/// already passed every document check. The undeclared operand is
-/// refused inside each backend's transpile, so it arrived six times and
-/// was filed six times as one backend's gap.
+/// with no `--language` answered the undeclared operand with six
+/// `rejected` verdicts and exit 0 — "valid, just not buildable anywhere"
+/// — because the single-document route assumed whatever reached its
+/// recorder had already passed every document check. The name is refused
+/// inside each backend's transpile, so it arrived six times and was filed
+/// six times as one backend's gap. Every refusal that pass makes takes
+/// the same route, so each is a row here.
 #[test]
 fn a_forge_name_refusal_is_fatal_with_or_without_a_named_backend() {
-    let staged = ScratchDir::new("check-forge-name-axis");
-    let doc = staged.path().join("undeclared.scxml");
-    std::fs::write(
-        &doc,
-        r#"<?xml version="1.0" encoding="UTF-8"?>
+    // (fixture name, the output field's expr, the code it must raise)
+    let cases = [
+        ("undeclared", "conut + 1", "expression/unknown-identifier"),
+        // `count` is declared; asking a value for a member is the mistake.
+        (
+            "member_of_value",
+            "count.value + 1",
+            "expression/member-of-non-record",
+        ),
+    ];
+    let cwd = repo_root();
+    for (name, expr, code) in cases {
+        let staged = ScratchDir::new(&format!("check-forge-name-axis-{name}"));
+        let doc = staged.path().join(format!("{name}.scxml"));
+        std::fs::write(
+            &doc,
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       version="1.0" sce:kind="transform" name="undeclared">
+       version="1.0" sce:kind="transform" name="{name}">
   <datamodel>
     <data id="count" sce:type="int32" sce:direction="in"/>
-    <data id="next" sce:type="int32" sce:direction="out" expr="conut + 1"/>
+    <data id="next" sce:type="int32" sce:direction="out" expr="{expr}"/>
   </datamodel>
 </scxml>
-"#,
-    )
-    .expect("stage fixture");
-    let doc_str = doc.to_str().unwrap();
-    let cwd = repo_root();
+"#
+            ),
+        )
+        .expect("stage fixture");
+        let doc_str = doc.to_str().unwrap();
 
-    for args in [
-        vec!["check", doc_str],
-        vec!["check", doc_str, "-l", "python"],
-    ] {
-        let (verdict, stdout) = run(&args, &cwd);
-        assert_ne!(
-            verdict.exit,
-            Some(0),
-            "an undeclared operand must be fatal for {args:?}",
-        );
-        assert_eq!(
-            verdict.code.as_deref(),
-            Some("expression/unknown-identifier"),
-            "unexpected code for {args:?}",
-        );
-        assert!(
-            stdout.trim().is_empty(),
-            "stdout must stay empty on failure ({args:?}): {stdout}",
-        );
+        for args in [
+            vec!["check", doc_str],
+            vec!["check", doc_str, "-l", "python"],
+        ] {
+            let (verdict, stdout) = run(&args, &cwd);
+            assert_ne!(verdict.exit, Some(0), "`{expr}` must be fatal for {args:?}");
+            assert_eq!(
+                verdict.code.as_deref(),
+                Some(code),
+                "unexpected code for `{expr}` under {args:?}",
+            );
+            assert!(
+                stdout.trim().is_empty(),
+                "stdout must stay empty on failure ({args:?}): {stdout}",
+            );
+        }
     }
 }
 
+/// An item of a bounded collection is a record, so `entry.callback_id` is
+/// a member read the name check must let through — on the single-document
+/// route too, where the element's field schema is not threaded and the
+/// member is therefore registered nowhere.
+///
+/// ⚠ The item used to be typed a byte whatever it iterated. Nothing read
+/// that slot for a collection until members of a value were refused, and
+/// then this committed fixture would have been refused as asking a
+/// `uint8` for a member.
+#[test]
+fn a_bounded_collection_item_is_a_record_on_the_single_document_route() {
+    let doc = repo_root().join("tests/forge/resources/algorithm_bc_iter_minimal.scxml");
+    assert!(doc.exists(), "fixture missing: {}", doc.display());
+    // Go places an imported package under a module path, and refuses an
+    // import without one as its own configuration gap — not what this
+    // test is about, so every backend is given what it needs.
+    let (swept, stdout) = run(
+        &[
+            "check",
+            doc.to_str().unwrap(),
+            "--go-module-prefix",
+            "example.com/generated",
+        ],
+        &repo_root(),
+    );
+    assert_eq!(
+        swept.exit,
+        Some(0),
+        "check refused the fixture: {:?}",
+        swept.code
+    );
+    let manifest: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("sweep emits a manifest");
+    for v in manifest["languages"]
+        .as_array()
+        .expect("sweep manifest carries languages")
+    {
+        assert_eq!(v["status"], "ok", "{v}");
+    }
+}
+
+/// A document-axis refusal is fatal whether or not a backend was named
+/// — the document is wrong under every backend, so there is nothing for
+/// a sweep to report.
 #[test]
 fn document_axis_refusal_is_fatal_with_or_without_a_named_backend() {
     let staged = ScratchDir::new("check-doc-axis");

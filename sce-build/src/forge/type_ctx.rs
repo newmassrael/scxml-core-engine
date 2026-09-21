@@ -16,7 +16,7 @@
 
 use crate::forge::generator::ImportContext;
 use crate::forge::model::*;
-use crate::forge::quantity::NumericBaseType;
+use crate::forge::quantity::{NumericBaseType, Quantity};
 use crate::forge::types::{EnumScope, FuncSig, InferredType, TypeCtx};
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -36,13 +36,21 @@ fn insert_fields<'a>(ctx: &mut TypeCtx<'a>, fields: &'a [ForgeField]) {
 }
 
 /// Map a `ForgeField` to its `InferredType`, wrapping in `Quantity`
-/// when the field carries an `sce:quantity=…` annotation. Non-numeric
-/// fields ignore the annotation here — the validation stage rejects
-/// quantity-on-non-numeric earlier so this helper's job is purely
-/// numeric-base lookup.
+/// when the field carries an `sce:quantity=…` annotation.
 pub(crate) fn forge_field_type(f: &ForgeField) -> InferredType {
-    let base_ty = InferredType::from_sce_type(&f.sce_type);
-    let Some(q) = f.quantity else {
+    quantified_type(&f.sce_type, f.quantity)
+}
+
+/// The one mapping from a declared `sce:type` plus an optional
+/// `sce:quantity` to an inferred type, for every field shape that carries
+/// the two. A non-numeric base keeps its raw type: a unit means nothing
+/// on it, and saying so is validation's job, not inference's.
+///
+/// ⚠ ONE body. `forge_field_type` and `codec_field_type` each carried a
+/// copy of it, identical but for the field type they read.
+fn quantified_type(sce_type: &SceType, quantity: Option<Quantity>) -> InferredType {
+    let base_ty = InferredType::from_sce_type(sce_type);
+    let Some(q) = quantity else {
         return base_ty;
     };
     match base_ty {
@@ -58,9 +66,6 @@ pub(crate) fn forge_field_type(f: &ForgeField) -> InferredType {
             offset: q.offset,
             unit: q.unit,
         },
-        // Non-numeric base: quantity annotation has no meaning. The
-        // validator stage flags this; here we just keep the raw type
-        // so downstream inference still operates.
         other => other,
     }
 }
@@ -115,7 +120,7 @@ fn insert_stateful_imports<'a>(ctx: &mut TypeCtx<'a>, imports: &'a [ImportContex
         if !imp.is_stateful {
             continue;
         }
-        ctx.insert_var(imp.alias.as_str(), InferredType::Unknown);
+        ctx.insert_record(imp.alias.as_str());
         for (qualified_key, fty) in &imp.member_field_types {
             ctx.insert_var(qualified_key.as_str(), InferredType::from_sce_type(fty));
         }
@@ -304,13 +309,13 @@ pub fn procedure<'a>(m: &'a ProcedureModel, imports: &'a [ImportContext]) -> Typ
     insert_stateless_imports(&mut ctx, imports);
     insert_stateful_imports(&mut ctx, imports);
     insert_enum_imports(&mut ctx, imports);
-    // W3C SCXML 5.10: `_event` is a system variable bound in every data
+    // §scxml-5.10: `_event` is a system variable bound in every data
     // model, and a procedure's transitions read the reply that triggered
     // them through it (`<assign expr="_event.data"/>`). The generator
     // rewrites `_event.data` to the procedure's own payload member AFTER
     // names are checked, so the name the check sees is the author's.
-    // `Unknown`: its shape is the triggering event's, not this document's.
-    ctx.insert_var("_event", InferredType::Unknown);
+    // A record: its shape is the triggering event's, not this document's.
+    ctx.insert_record("_event");
     close_the_scope(&mut ctx);
     ctx
 }
@@ -335,28 +340,9 @@ pub fn codec<'a>(m: &'a CodecModel, imports: &'a [ImportContext]) -> TypeCtx<'a>
 }
 
 /// Map a `CodecField` to its `InferredType`, wrapping in `Quantity`
-/// when the field carries an `sce:quantity=…` annotation. Mirrors
-/// [`forge_field_type`] for [`ForgeField`].
+/// when the field carries an `sce:quantity=…` annotation.
 pub(crate) fn codec_field_type(f: &CodecField) -> InferredType {
-    let base_ty = InferredType::from_sce_type(&f.sce_type);
-    let Some(q) = f.quantity else {
-        return base_ty;
-    };
-    match base_ty {
-        InferredType::Int { signed, bits } => InferredType::Quantity {
-            base: NumericBaseType::Int { signed, bits },
-            scale: q.scale,
-            offset: q.offset,
-            unit: q.unit,
-        },
-        InferredType::Float { bits } => InferredType::Quantity {
-            base: NumericBaseType::Float { bits },
-            scale: q.scale,
-            offset: q.offset,
-            unit: q.unit,
-        },
-        other => other,
-    }
+    quantified_type(&f.sce_type, f.quantity)
 }
 
 /// Empty context — no variables, no functions. Used for expressions that

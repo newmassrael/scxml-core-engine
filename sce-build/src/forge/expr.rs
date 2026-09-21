@@ -2543,10 +2543,11 @@ fn reject_unknown_callees(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), Exp
 /// owns that, with the builtins and method keys it alone knows. Only the
 /// arguments are walked.
 ///
-/// ⚠⚠ Only the HEAD of a member path is a name this layer can speak about:
-/// `payload.length` reads `payload`; what `.length` means is the member's
-/// type's business. The exception is an enum alias, whose member set is
-/// closed and carried in `ctx.enums`.
+/// ⚠⚠ A member is judged only where this layer knows the member set. An
+/// enum alias's is closed and carried in `ctx.enums`. A declared VALUE's is
+/// empty, which [`reject_member_of_non_record`] enforces. A record's is
+/// another pass's — the cross-kind validator's for an import, the event
+/// schema's for `_event` — so `frame.payload` is read here as `frame` alone.
 ///
 /// ⚠⚠⚠ `Ident` only, never `Raw` — a `Raw` is this pipeline's own product,
 /// for the reason [`reject_unknown_callees`] gives.
@@ -2564,6 +2565,9 @@ fn reject_unknown_names(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), ExprE
                         declared: scope.variants.to_vec(),
                     });
                 }
+            }
+            if ctx.reject_unknown_identifiers {
+                reject_member_of_non_record(object, property, ctx)?;
             }
         }
         ExprKind::Call { callee, args } if matches!(callee.kind, ExprKind::Ident(_)) => {
@@ -2591,6 +2595,38 @@ fn reject_unknown_names(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), ExprE
         reject_unknown_names(child, ctx)?;
     }
     Ok(())
+}
+
+/// Refuse `<base>.<member>` when `<base>` is a declared VALUE: only a record
+/// ([`TypeCtx::records`]) has members an expression may ask for.
+///
+/// ⚠ `<base>` is the whole dotted path, not only its head, so a member of a
+/// record's scalar field is judged too — `frame.msg_id.foo` asks a `uint32`
+/// for a member. A path the context does not carry (`_event.data`, whose
+/// fields the event schema owns) is not declared, so it is left to the pass
+/// that knows it; so is a base that is no name at all (a call, an index).
+///
+/// A member registered under its full path is declared and passes even on a
+/// non-record base: the registration IS the declaration.
+fn reject_member_of_non_record(
+    object: &TypedExpr,
+    member: &str,
+    ctx: &TypeCtx<'_>,
+) -> Result<(), ExprError> {
+    let Some(base) = flatten_member_path(object) else {
+        return Ok(());
+    };
+    let Some(&base_ty) = ctx.vars.get(base.as_str()) else {
+        return Ok(());
+    };
+    if ctx.is_record(&base) || ctx.vars.contains_key(format!("{base}.{member}").as_str()) {
+        return Ok(());
+    }
+    Err(ExprError::MemberOfNonRecord {
+        name: base,
+        member: member.to_string(),
+        ty: base_ty.declared_spelling(),
+    })
 }
 
 /// Replace every `<alias>.<variant>` on an imported enum with this backend's
@@ -5661,6 +5697,97 @@ mod tests {
         )
         .unwrap();
         assert_eq!(out, "ev.elapsed_ms == 0");
+    }
+
+    // ── members: only a record has them ───────────────────────
+
+    /// A closed forge scope: a `uint8` input, an enum-typed input (which
+    /// inference types `Unknown`), and a stateful import `frame` with one
+    /// field.
+    fn member_scope() -> TypeCtx<'static> {
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("x", int(false, 8));
+        ctx.insert_var("tone", InferredType::Unknown);
+        ctx.insert_record("frame");
+        ctx.insert_var("frame.msg_id", int(false, 32));
+        ctx.reject_unknown_identifiers = true;
+        ctx
+    }
+
+    fn member_check(src: &str, ctx: &TypeCtx<'_>) -> Result<String, ExprError> {
+        transpile_typed(
+            src,
+            ExprTarget::Cpp,
+            ctx,
+            &HashMap::new(),
+            InferredType::Unknown,
+        )
+    }
+
+    #[test]
+    fn a_member_of_a_scalar_is_refused_with_its_declared_type() {
+        let err = member_check("x.foo + 1", &member_scope()).unwrap_err();
+        assert!(
+            matches!(
+                &err,
+                ExprError::MemberOfNonRecord { name, member, ty: Some("uint8") }
+                    if name == "x" && member == "foo"
+            ),
+            "{err:?}"
+        );
+        assert_eq!(
+            err.to_string(),
+            "x has no members (it is declared uint8), so x.foo names nothing"
+        );
+    }
+
+    #[test]
+    fn a_member_of_a_value_inference_cannot_type_is_refused_without_one() {
+        let err = member_check("tone.level", &member_scope()).unwrap_err();
+        assert!(
+            matches!(
+                &err,
+                ExprError::MemberOfNonRecord { name, member, ty: None }
+                    if name == "tone" && member == "level"
+            ),
+            "{err:?}"
+        );
+        assert_eq!(
+            err.to_string(),
+            "tone has no members, so tone.level names nothing"
+        );
+    }
+
+    /// The base is the whole path: a record's scalar field is a value too.
+    #[test]
+    fn a_member_of_a_records_scalar_field_is_refused() {
+        let err = member_check("frame.msg_id.foo", &member_scope()).unwrap_err();
+        assert!(
+            matches!(
+                &err,
+                ExprError::MemberOfNonRecord { name, member, ty: Some("uint32") }
+                    if name == "frame.msg_id" && member == "foo"
+            ),
+            "{err:?}"
+        );
+    }
+
+    /// What a record's members are is another pass's question, so an
+    /// unregistered one passes here — the cross-kind validator owns it.
+    #[test]
+    fn a_member_of_a_record_passes_whether_or_not_it_is_registered() {
+        let ctx = member_scope();
+        assert!(member_check("frame.msg_id === 1", &ctx).is_ok());
+        assert!(member_check("frame.other === 1", &ctx).is_ok());
+    }
+
+    /// A statechart guard's scope is the host's: the gate that keeps an
+    /// unknown operand legal there keeps this legal too.
+    #[test]
+    fn an_open_scope_does_not_judge_members() {
+        let mut ctx = member_scope();
+        ctx.reject_unknown_identifiers = false;
+        assert!(member_check("x.foo", &ctx).is_ok());
     }
 
     // ── transpile_lvalue ───────────────────────────────────────

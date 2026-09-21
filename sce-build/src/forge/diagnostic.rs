@@ -907,6 +907,12 @@ pub enum DiagnosticCode {
     // does for the same set, and does not guess which member was meant.
     #[serde(rename = "expression/unknown-enum-variant")]
     ExpressionUnknownEnumVariant,
+    // `<name>.<member>` where `<name>` is a declared value — `x.foo` with
+    // `x` a `uint8` input. Distinct from `unknown-identifier` because the
+    // name IS declared; distinct from a record's missing field because a
+    // value has no members at all, so no member spelling is the repair.
+    #[serde(rename = "expression/member-of-non-record")]
+    ExpressionMemberOfNonRecord,
     // A name this datamodel provides, written as a call — `t.length()`,
     // `Math.PI()`. Distinct from `unsupported-builtin`, which says the
     // name is absent: here it is present, so there is nothing to offer
@@ -3083,6 +3089,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ExpressionUnsupportedBuiltin,
         ExpressionUnknownIdentifier,
         ExpressionUnknownEnumVariant,
+        ExpressionMemberOfNonRecord,
         ExpressionPropertyNotCallable,
         ExpressionNamespaceNotCallable,
         ExpressionNamespaceNotAValue,
@@ -3632,6 +3639,9 @@ impl DiagnosticCode {
             // `enum:<alias>` is and which member references it admits is
             // written in the accepted subset's typed-field section.
             ExpressionUnknownEnumVariant => Some("SCE Accepted Subset §2.2"),
+            // The same section says which names a forge expression may
+            // read, and that only a record among them has members.
+            ExpressionMemberOfNonRecord => Some("SCE Accepted Subset §2.2"),
             // Same anchor again: B.2 is what makes ECMAScript's own
             // rules the datamodel's rules, and calling a value is one
             // ECMAScript answers for itself.
@@ -4369,6 +4379,7 @@ impl DiagnosticCode {
             ExpressionUnsupportedBuiltin => "expression/unsupported-builtin",
             ExpressionUnknownIdentifier => "expression/unknown-identifier",
             ExpressionUnknownEnumVariant => "expression/unknown-enum-variant",
+            ExpressionMemberOfNonRecord => "expression/member-of-non-record",
             ExpressionPropertyNotCallable => "expression/property-not-callable",
             ExpressionNamespaceNotCallable => "expression/namespace-not-callable",
             ExpressionNamespaceNotAValue => "expression/namespace-not-a-value",
@@ -8275,6 +8286,17 @@ fn expression_fields(e: &ExprError) -> DiagnosticPayload {
             }),
             key_fragments: vec![alias.clone(), name.clone()],
         },
+        // The whole access is what `actual` names: the declaration alone is
+        // fine, and so would the member be on a record, so neither half is
+        // the mistake by itself. No fix — see the variant.
+        ExprError::MemberOfNonRecord { name, member, .. } => DiagnosticPayload {
+            code: DiagnosticCode::ExpressionMemberOfNonRecord,
+            stage: Stage::Expression,
+            expected: None,
+            actual: Some(format!("{name}.{member}")),
+            fix: None,
+            key_fragments: vec![name.clone(), member.clone()],
+        },
         // The call is what `actual` names, because the call is what the
         // consumer edits: `.length` occurs on the line either way, and a
         // record pointing at it would leave the consumer to work out
@@ -10744,6 +10766,32 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:9c091da3bee9e93b","code":"expression/unknown-enum-variant","stage":"expression","spec":"SCE Accepted Subset §2.2","message":"Tone.RED is not a variant of Tone (declared: QUIET, SOFT, LOUD)","actual":"Tone.RED","fix":{"kind":"replace_one_of","candidates":["Tone.QUIET","Tone.SOFT","Tone.LOUD"]}}"#,
+            ),
+            (
+                // A member asked of a declared value. The message names the
+                // declaration's type so the author sees why it has no
+                // members; the record carries no fix, because which read the
+                // author meant does not follow from the member written.
+                "forge/expression-member-of-non-record",
+                ExprError::MemberOfNonRecord {
+                    name: "label".into(),
+                    member: "length".into(),
+                    ty: Some("string"),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:971da1fc5695e81c","code":"expression/member-of-non-record","stage":"expression","spec":"SCE Accepted Subset §2.2","message":"label has no members (it is declared string), so label.length names nothing","actual":"label.length"}"#,
+            ),
+            (
+                // An enum-typed value or a const: this layer does not carry
+                // its type, so the message says only that it has no members.
+                "forge/expression-member-of-non-record-untyped",
+                ExprError::MemberOfNonRecord {
+                    name: "tone".into(),
+                    member: "level".into(),
+                    ty: None,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:e5b650bf2691e3aa","code":"expression/member-of-non-record","stage":"expression","spec":"SCE Accepted Subset §2.2","message":"tone has no members, so tone.level names nothing","actual":"tone.level"}"#,
             ),
             (
                 // A name the datamodel provides, called. The repair is
@@ -14362,6 +14410,10 @@ mod tests {
             // that could stand in its place follows from that — so no
             // fix, and `expected` stays absent with it.
             | ExpressionLiteralNotCallable
+            // The declaration is a value; which record, call or plain read
+            // the author meant does not follow from the member they wrote,
+            // so no fix — and `expected` stays absent with it.
+            | ExpressionMemberOfNonRecord
             | ExpressionStrictEquality
             // The name that was called is the name that repairs it, so
             // there is one replacement rather than a set — and none at
@@ -15067,6 +15119,7 @@ mod tests {
                 | ExpressionUnsupportedConstruct | ExpressionUnsupportedBuiltin
                 | ExpressionUnknownIdentifier
                 | ExpressionUnknownEnumVariant
+                | ExpressionMemberOfNonRecord
                 | ExpressionPropertyNotCallable
                 | ExpressionNamespaceNotCallable
                 | ExpressionNamespaceNotAValue
@@ -15331,9 +15384,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            371,
+            372,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 371 distinct variants to match the DiagnosticCode \
+             expected 372 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -15992,6 +16045,10 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             // Forge-only: an enum alias exists in a forge kind's scope and
             // in no statechart guard, so no statechart scenario can raise it.
             | ExpressionUnknownEnumVariant
+            // Forge-only for the same reason as an unknown operand: it is
+            // judged only where the scope is closed, and a statechart
+            // guard's scope is the host's.
+            | ExpressionMemberOfNonRecord
             | ExpressionStrictEquality
             | ExpressionTypeCoercion
             | ExpressionGoTernaryUnsupported

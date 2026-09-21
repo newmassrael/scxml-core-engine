@@ -20299,6 +20299,21 @@ fn algorithm_format_param(l: &LangCtx, name: &str, ty: &SceType) -> String {
     l.place_param(name, &algorithm_param_type(l, ty))
 }
 
+/// The bounded-collection import a `<sce:foreach in>` names, if it names one.
+/// Anything else a foreach may iterate is a `bytes` value.
+///
+/// ⚠ ONE predicate for three readers — the item's type, its element fields
+/// and the loop's lowering. Each used to spell the lookup itself, and the
+/// first of them typed every item a byte, bounded collections included.
+fn bounded_collection_import<'i>(
+    imports: &'i [ImportContext],
+    source: &str,
+) -> Option<&'i ImportContext> {
+    imports
+        .iter()
+        .find(|imp| imp.alias.as_str() == source && imp.kind == "bounded-collection")
+}
+
 /// RFC c7-wildcard W-project: collect `("<item>.<field>", SceType)` pairs
 /// for every `<sce:foreach item="entry" in="<bc-alias>">` whose source is
 /// a bounded-collection import with a resolved element-type schema. These
@@ -20317,7 +20332,8 @@ fn algorithm_format_param(l: &LangCtx, name: &str, ty: &SceType) -> String {
 /// when present, else the `<field>_len` the codec emit auto-names for a
 /// tail/fixed `bytes` field. The projection reads this so the borrowed
 /// view carries the *actual* length sibling, never a `_len` guess. Walks
-/// the same nested-block structure as [`collect_algorithm_local_types`].
+/// the same nested-block structure as
+/// [`crate::forge::model::AlgorithmModel::body_bindings`].
 fn collect_bc_foreach_member_types(
     stmts: &[AlgorithmStmt],
     imports: &[ImportContext],
@@ -20328,10 +20344,7 @@ fn collect_bc_foreach_member_types(
     for s in stmts {
         match s {
             AlgorithmStmt::Foreach { item, source, body } => {
-                if let Some(imp) = imports
-                    .iter()
-                    .find(|i| i.alias.as_str() == source.as_str() && i.kind == "bounded-collection")
-                {
+                if let Some(imp) = bounded_collection_import(imports, source) {
                     if let Some(elem_snake) = imp.bc_element_snake.as_ref() {
                         if let Some(fields) = schemas.get(elem_snake) {
                             for (fname, fty, len_field) in fields {
@@ -20370,10 +20383,6 @@ fn collect_bc_foreach_member_types(
     }
 }
 
-/// Lower an algorithm body into a multi-line code string in the
-/// target language. Each statement consumes the type context built by
-/// `collect_algorithm_local_types`; nested blocks reuse the same flat
-/// context (shadowing is forbidden, so flat is sufficient).
 /// SCE byte-buffer-build (§4.12): collect the declared `capacity` of every
 /// `<sce:var type="bytes" capacity="N">` buffer local in an algorithm body,
 /// keyed by the SCXML name. The C11 append lowering reads it to bound the
@@ -20432,6 +20441,12 @@ struct AlgorithmBodyCfg<'a> {
     c11_result_type: Option<&'a str>,
 }
 
+/// Lower an algorithm body into a multi-line code string in the target
+/// language. Every statement reads one flat type context — the parameters
+/// plus each binding [`crate::forge::model::AlgorithmModel::body_bindings`]
+/// lists — and nested blocks reuse it. Flat is sufficient because
+/// [`crate::forge::namespace::check`] refuses a name declared twice before
+/// any backend renders.
 fn lower_algorithm_body(
     stmts: &[AlgorithmStmt],
     cfg: &AlgorithmBodyCfg,
@@ -20934,10 +20949,7 @@ fn lower_algorithm_stmt(
             // `algorithm/foreach-source-not-iterable` rejects sources
             // that resolve to neither, so by the time codegen runs we
             // trust source matches one branch.
-            let bc_import = imports.iter().find(|imp| {
-                imp.alias.as_str() == source.as_str() && imp.kind == "bounded-collection"
-            });
-            if let Some(imp) = bc_import {
+            if let Some(imp) = bounded_collection_import(imports, source) {
                 // RFC §synth-5-A v1 + §synth-5-L line 2642-2647 (item C7
                 // lowering, 2026-05-13): the BC
                 // foreach body carries the element-type per item; a
@@ -21661,13 +21673,25 @@ fn render_algorithm(
         .iter()
         .map(|p| (p.name.clone(), p.sce_type.clone()))
         .collect();
+    // An item over a bounded collection is an element — a record whose
+    // fields `member_field_pairs` below registers when the element schema
+    // was threaded, and which carries its members either way.
+    //
+    // ⚠ This used to type EVERY foreach item a byte. Nothing read the slot
+    // for a collection item, so nothing noticed until a value's members
+    // were checked: `entry.pattern` then read as a member of a `uint8`
+    // wherever the element schema is not threaded (measured 2026-09-21).
+    let mut record_items: Vec<&str> = Vec::new();
     for binding in m.body_bindings() {
         let ty = match binding {
             crate::forge::model::AlgorithmBinding::Local { sce_type, .. } => sce_type.clone(),
-            // A foreach over `bytes` exposes each item as a byte; an item
-            // over a bounded collection is typed through its element's
-            // fields (`member_field_pairs` below), not through this slot.
-            crate::forge::model::AlgorithmBinding::ForeachItem { .. } => SceType::Uint8,
+            crate::forge::model::AlgorithmBinding::ForeachItem { name, source } => {
+                if bounded_collection_import(imports, source).is_some() {
+                    record_items.push(name);
+                    continue;
+                }
+                SceType::Uint8
+            }
         };
         env_pairs.push((binding.name().to_string(), ty));
     }
@@ -21699,6 +21723,9 @@ fn render_algorithm(
     let mut type_ctx = TypeCtx::new();
     for (name, ty) in &env_pairs {
         type_ctx.insert_var(name.as_str(), InferredType::from_sce_type(ty));
+    }
+    for name in &record_items {
+        type_ctx.insert_record(name);
     }
     for (name, ty) in &member_field_pairs {
         type_ctx.insert_var(name.as_str(), InferredType::from_sce_type(ty));

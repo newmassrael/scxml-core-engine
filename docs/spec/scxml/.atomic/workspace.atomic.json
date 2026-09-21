@@ -5722,6 +5722,11 @@
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "clear_event_metadata",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/type_ctx.rs",
+          "symbol": "procedure",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {

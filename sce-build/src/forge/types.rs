@@ -29,7 +29,7 @@
 
 use crate::forge::model::SceType;
 use crate::forge::quantity::{NumericBaseType, Quantity, Rational, UnitTag};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Inferred type lattice
@@ -176,6 +176,63 @@ impl InferredType {
     /// `true` when this is a `Quantity` variant.
     pub fn is_quantity(&self) -> bool {
         matches!(self, Self::Quantity { .. })
+    }
+
+    /// The `sce:type` a document declared to produce this type, when one
+    /// did — the way back from [`Self::from_sce_type`] for the diagnostic
+    /// that has to name a declaration to its author.
+    ///
+    /// `None` for what no declaration produces: untyped literals, `null`,
+    /// `Unknown` (which is also what an enum-typed declaration maps to), and
+    /// an integer width no `sce:type` spells. A `Quantity` answers with its
+    /// wire type; the unit annotates that type rather than replacing it.
+    pub fn declared_spelling(self) -> Option<&'static str> {
+        Some(match self.strip_quantity() {
+            Self::Int {
+                signed: false,
+                bits: 8,
+            } => "uint8",
+            Self::Int {
+                signed: false,
+                bits: 16,
+            } => "uint16",
+            Self::Int {
+                signed: false,
+                bits: 32,
+            } => "uint32",
+            Self::Int {
+                signed: false,
+                bits: 64,
+            } => "uint64",
+            Self::Int {
+                signed: true,
+                bits: 8,
+            } => "int8",
+            Self::Int {
+                signed: true,
+                bits: 16,
+            } => "int16",
+            Self::Int {
+                signed: true,
+                bits: 32,
+            } => "int32",
+            Self::Int {
+                signed: true,
+                bits: 64,
+            } => "int64",
+            Self::Float { bits: 32 } => "float32",
+            Self::Float { bits: 64 } => "float64",
+            Self::Bool => "bool",
+            Self::Str => "string",
+            Self::Bytes => "bytes",
+            Self::Int { .. }
+            | Self::Float { .. }
+            | Self::UntypedInt
+            | Self::UntypedFloat
+            | Self::Null
+            | Self::Unknown
+            | Self::Quantity { .. } => return None,
+        })
     }
 
     /// Map an `SceType` from the model layer to an inferred concrete type.
@@ -630,6 +687,20 @@ pub struct TypeCtx<'a> {
     /// instead of guessing `<field>_len`. Empty for every other kind and
     /// for algorithms with no byte-addressable element field.
     pub member_len_fields: HashMap<&'a str, &'a str>,
+    /// Every name whose members an expression may read: a stateful import's
+    /// alias, a procedure's `_event`, an algorithm's item over a bounded
+    /// collection. Each is also in `vars`, typed `Unknown`.
+    ///
+    /// ⚠ The list is the POSITIVE half on purpose. Every other name a forge
+    /// kind declares — a field, a parameter, a const, a local, a byte item —
+    /// is a value, and a value has no members; `len(x)` is how an expression
+    /// asks one for its length. Before this set, `x.foo` on a `uint8` input
+    /// generated with exit 0 on all six backends (measured 2026-09-21), and
+    /// the emitted `x.foo` named nothing in any of them. What a record's
+    /// members ARE is other passes' business — the cross-kind validator for
+    /// an import, the event schema for `_event` — so this set says only
+    /// that members may be asked for.
+    pub records: HashSet<&'a str>,
 }
 
 impl<'a> TypeCtx<'a> {
@@ -643,7 +714,20 @@ impl<'a> TypeCtx<'a> {
             reject_unknown_identifiers: false,
             enums: HashMap::new(),
             member_len_fields: HashMap::new(),
+            records: HashSet::new(),
         }
+    }
+
+    /// Declare a name whose members an expression may read. See
+    /// [`TypeCtx::records`] for which names those are.
+    pub fn insert_record(&mut self, name: &'a str) {
+        self.vars.insert(name, InferredType::Unknown);
+        self.records.insert(name);
+    }
+
+    /// Whether `name` was declared through [`TypeCtx::insert_record`].
+    pub fn is_record(&self, name: &str) -> bool {
+        self.records.contains(name)
     }
 
     /// Register an imported enum under its alias.
@@ -741,6 +825,36 @@ mod tests {
             InferredType::from_sce_type(&SceType::Bytes),
             InferredType::Bytes
         );
+    }
+
+    /// A diagnostic that names a declaration's type has to spell it the
+    /// way the author wrote it, so every scalar `sce:type` must come back
+    /// from inference as itself.
+    #[test]
+    fn declared_spelling_inverts_from_sce_type_for_every_scalar() {
+        for ty in [
+            SceType::Uint8,
+            SceType::Uint16,
+            SceType::Uint32,
+            SceType::Uint64,
+            SceType::Int8,
+            SceType::Int16,
+            SceType::Int32,
+            SceType::Int64,
+            SceType::Float32,
+            SceType::Float64,
+            SceType::Bool,
+            SceType::String,
+            SceType::Bytes,
+        ] {
+            assert_eq!(
+                InferredType::from_sce_type(&ty).declared_spelling(),
+                Some(ty.as_attr().as_str()),
+                "{ty:?}"
+            );
+        }
+        assert_eq!(InferredType::Unknown.declared_spelling(), None);
+        assert_eq!(InferredType::UntypedInt.declared_spelling(), None);
     }
 
     // ── join_arith ──────────────────────────────────────────────
