@@ -67,6 +67,8 @@ not say. All domain-free; the ones an author acts on most are:
 | `no-decision-logic` | an output exists with nothing in the prose that decides it |
 | `gate-off-unstated` | an output is gated and the prose does not say what it becomes when the gate is false |
 | `no-time-input` | the prose states a duration and no input can observe time passing |
+| `precondition-not-in-table` | the prose writes a precondition the pack's table has no reading for, so whoever writes the document decides what it means |
+| `precondition-assumed` | the prose relies on a precondition the pack reads by assumption; the question says where, how often, and the pack's reason |
 | `example-shows-memory` | two cases drive the same inputs and require different results, so the component remembers something the prose never states |
 | `depends-on-another-component` | the examples drive addresses another specification in the system writes, so this document is one of several and cannot be judged alone |
 
@@ -138,6 +140,12 @@ runnable code from the document. ⚠ It refuses rather than skipping -- a kind
 whose generated shape it cannot drive, an input rule it cannot evaluate, an
 expected address the binding never writes. A verifier that quietly skips what
 it does not understand reports a clean run for a document it never executed.
+
+⚠ A pass also says what it RESTS ON that no case can reach. Every precondition
+the pack reads by assumption is printed beside the counts, with the pack's
+reason. A precondition read as a constant is not in the document at all, so a
+right reading and a wrong one pass identically -- the one kind of wrong a run
+cannot catch, which is why the run has to name it.
 
 `--backend` picks which lowering is DRIVEN. The product emits six; this drives
 the one it can import and refuses the rest, rather than reporting on a program
@@ -470,6 +478,10 @@ thirty-three copies of one sentence bury every other class.
       phrases:
         "supply on": "powerOn"
         "supply off": "!powerOn"
+        "mains connected":   # read by ASSUMPTION, with the reason
+          expression: "true"
+          assumed: "nothing on this platform runs without mains"
+      pattern: '(?i)\bwhile (?P<phrase>(?:supply|mains) \w+)\b'
 
     gate_off:                # question 4, an ordered cascade
       - {when: has_symbol,     symbol: "OFF",  use: "OFF"}   # ⚠ quoted
@@ -480,6 +492,21 @@ thirty-three copies of one sentence bury every other class.
 `gate_off` is ordered and the first clause that applies wins. It is a cascade
 rather than a set of rules because a generator has to choose one value; a rule
 set that offers three candidates has not answered anything.
+
+A phrase whose reading is an assumption about the platform says so, with the
+reason, in the object form. ⚠ A reading that names no input -- `true`,
+`false` -- MUST: the pack is refused otherwise. Such a reading removes the
+condition from the document, so no case can exercise it and a pass is silent
+about it by construction. The reason written here is what `questions`, the
+brief and `verify` repeat wherever the phrase reaches them. It is often the
+right reading -- a condition that holds whenever anything is running has
+nothing to observe -- and that is exactly why it has to be written down rather
+than left to look like a fact.
+
+`pattern` is where this kind of document writes a precondition, with a named
+group `phrase`. With it, `questions` looks up every precondition the prose
+writes; without it the table cannot be matched against the prose, and
+`questions` says so instead of answering empty.
 
 A convention may also DEFINE a reading idiom rather than only naming one:
 

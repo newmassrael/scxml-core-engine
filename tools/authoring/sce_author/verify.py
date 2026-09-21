@@ -137,6 +137,20 @@ class Verification:
     # itself a pure computation while something else remembers for it -- and
     # the verifier was doing it to its own reader.
     host_memory: list[str] = field(default_factory=list)
+    # Preconditions the PACK reads by assumption, to the reading and the
+    # reason it gives: {phrase: {"expression": ..., "reason": ...}}.
+    #
+    # ⚠ A pass is conditional on every one of these, and nothing a case does
+    # can move them: a condition read as a constant is not in the document at
+    # all, so a right reading and a wrong one pass identically. That is the
+    # one kind of wrong a run cannot catch, which is why the run has to say
+    # it rests on it.
+    #
+    # ⚠ Every assumption the pack makes, not only the ones this document
+    # relies on. Which phrases the prose actually writes is `questions`'
+    # answer -- only the prose says, and this run is not handed it. Listing
+    # fewer than the pack holds would be a guess about a text nobody read.
+    assumed_preconditions: dict = field(default_factory=dict)
     # ⚠ Failing addresses whose value the DOCUMENT marks `sce:assumed`, to the
     # reason its author wrote. An assumption compiles, so nothing downstream
     # ever mentioned it again and a case refuting one read as "your document
@@ -381,6 +395,14 @@ def host_memory_of(inputs: dict, conventions) -> list[str]:
             if (protocols.get(rule["protocol"]) or {}).get("latch"):
                 held.append(name)
     return sorted(held)
+
+
+def assumed_preconditions_of(conventions) -> dict:
+    """The pack's assumed readings, as a verdict carries them."""
+    phrases = getattr(conventions, "precondition_phrases", None) or {}
+    assumed = getattr(conventions, "precondition_assumed", None) or {}
+    return {phrase: {"expression": phrases[phrase], "reason": reason}
+            for phrase, reason in sorted(assumed.items())}
 
 
 def _given(case, address: str):
@@ -1016,6 +1038,7 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
     verification.unbound = sorted(expected - bound)
     verification.unasserted = sorted(bound - expected)
     verification.host_memory = host_memory_of(inputs, pack.conventions)
+    verification.assumed_preconditions = assumed_preconditions_of(pack.conventions)
 
     try:
         run = StatechartRun(module, build)
@@ -1159,6 +1182,7 @@ def verify(pack: Pack, binding_path: pathlib.Path,
     verification.unbound = sorted(expected - bound)
     verification.unasserted = sorted(bound - expected)
     verification.host_memory = host_memory_of(inputs, pack.conventions)
+    verification.assumed_preconditions = assumed_preconditions_of(pack.conventions)
 
     # A latch carries state between cases, so it exists only when the pack says
     # the cases are a timeline. Without that, `None` here is what makes the

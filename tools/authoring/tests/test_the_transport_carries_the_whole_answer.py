@@ -42,6 +42,7 @@ CARRIES = {
     "unbound": "unbound",
     "unasserted": "unasserted",
     "host_memory": "host_memory",
+    "assumed_preconditions": "assumed_preconditions",
     "refuted": "refuted_assumptions",
 }
 
@@ -61,6 +62,9 @@ class TheTransportCarriesTheWholeAnswer(unittest.TestCase):
             unbound=["plant/out/a.value"],
             unasserted=["plant/out/b.value"],
             host_memory=["wasApproaching"],
+            assumed_preconditions={"powered": {
+                "expression": "true",
+                "reason": "the controller only runs while energised"}},
             refuted={"plant/out/c.value": "the author called this a guess"},
         )
         payload = verification_payload(result)

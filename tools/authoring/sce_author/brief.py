@@ -103,7 +103,14 @@ def assemble(prose: Prose, pack: Pack) -> str:
         parts.append("")
         parts.append("Phrase the prose writes, and the expression it becomes:")
         for phrase, expr in sorted(conv.precondition_phrases.items()):
-            parts.append(f"- `{phrase}` -> `{expr}`")
+            # ⚠ An assumed reading is printed AS one. This line used to be
+            # the only place the table surfaced at all, and an assumption
+            # printed like any other reading is a fact to whoever writes the
+            # document -- the author then drops the condition with nothing to
+            # say they were told why.
+            reason = conv.precondition_assumed.get(phrase)
+            parts.append(f"- `{phrase}` -> `{expr}`"
+                         + (f" — ASSUMED by the pack: {reason}" if reason else ""))
     if conv.protocols:
         parts.append("")
         parts.append("Ways of reading an address that a binding may name:")

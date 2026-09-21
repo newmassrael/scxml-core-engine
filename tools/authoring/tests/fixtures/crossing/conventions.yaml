@@ -22,6 +22,9 @@ preconditions:
   phrases:
     "powered": "poweredUp"
     "not powered": "!poweredUp"
+  # Where this discipline writes a precondition: as the state of the
+  # installation, in a clause of its own.
+  pattern: '(?i)\bwhile the installation is (?P<phrase>[a-z ]+?)(?=[,.;]|$)'
 
 # A different cascade, with a different neutral. The first pack's `OFF` rule
 # would give the wrong answer for every output here.

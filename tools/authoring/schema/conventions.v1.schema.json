@@ -43,8 +43,29 @@
         },
         "phrases": {
           "type": "object",
-          "additionalProperties": {"type": "string"},
-          "description": "Normalised phrase to an expression over the inputs above."
+          "additionalProperties": {
+            "oneOf": [
+              {"type": "string"},
+              {
+                "type": "object",
+                "required": ["expression", "assumed"],
+                "additionalProperties": false,
+                "properties": {
+                  "expression": {"type": "string", "minLength": 1},
+                  "assumed": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Why this expression holds on this platform although the prose does not say so. The string is the reason, and every report that the phrase reaches repeats it."
+                  }
+                }
+              }
+            ]
+          },
+          "description": "Normalised phrase to an expression over the inputs above. A string is a plain reading. The object form records that the reading is an ASSUMPTION about the platform, with its reason. ⚠ An expression that reads no input at all -- `true`, `false` -- MUST use the object form: it removes the condition from everything a case can exercise, so a pass says nothing about it, and the pack is refused rather than let that happen without a reason on record."
+        },
+        "pattern": {
+          "type": "string",
+          "description": "A regular expression with a named group `phrase`, recognising where THIS kind of document writes a precondition. With it, `questions` finds every precondition the prose writes and says which ones the table above does not cover and which ones it covers only by assumption. Without it, those two questions cannot be asked and `questions` says so rather than returning nothing."
         },
         "normalise": {
           "type": "array",

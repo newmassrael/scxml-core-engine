@@ -130,6 +130,16 @@ def cmd_verify(args) -> int:
         print(f"  {len(result.host_memory)} value(s) this run remembered for "
               f"the host, which the caller must keep between rounds: "
               f"{', '.join(result.host_memory)}")
+    # ⚠ Printed whenever it is non-empty, beside the counts for the same
+    # reason. No case can move these: a precondition the pack reads as a
+    # constant is not in the document, so the pass above is conditional on
+    # each reason below being true, and nothing in this run tested one.
+    if result.assumed_preconditions:
+        print(f"  {len(result.assumed_preconditions)} precondition(s) the "
+              f"pack reads by assumption, which no case here can test:")
+        for phrase, held in result.assumed_preconditions.items():
+            print(f"          {phrase!r} as {held['expression']!r}: "
+                  f"{held['reason']}")
     # ⚠ Unjudged is reported beside the other two and never folded into either.
     # Counting it as a pass claims a run that did not happen; counting it as a
     # failure blames a document for a case nobody could drive.

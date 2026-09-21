@@ -231,6 +231,16 @@ class Conventions:
     name_classes: list[NameClass]
     precondition_inputs: dict[str, str]
     precondition_phrases: dict[str, str]
+    # Phrases whose reading is an ASSUMPTION about the platform, to the reason
+    # the pack gives. ⚠ Kept beside the phrase rather than in a comment next
+    # to it: a reason that lives only in the pack's source is lost at the
+    # first tool that copies the table, and after that the assumption reads
+    # as a fact to every report downstream.
+    precondition_assumed: dict[str, str]
+    # Where THIS kind of document writes a precondition, with a named group
+    # `phrase`. None means the core cannot find them, and the questions that
+    # need to are declined out loud rather than answered empty.
+    precondition_pattern: re.Pattern | None
     normalise: list[tuple[str, str]]
     gate_off: list[dict]
     neutral_symbols: tuple[str, ...]
@@ -266,17 +276,40 @@ class Conventions:
                 found.setdefault(token, nc.role)
         return found
 
-    def phrase_expression(self, phrase: str) -> str | None:
+    def normalise_phrase(self, phrase: str) -> str:
+        """The spelling a phrase is looked up under in the table."""
         key = phrase.strip().lower()
         for frm, to in self.normalise:
             key = re.sub(frm, to, key)
-        return self.precondition_phrases.get(key.strip())
+        return key.strip()
+
+    def phrase_expression(self, phrase: str) -> str | None:
+        return self.precondition_phrases.get(self.normalise_phrase(phrase))
+
+
+# The two literals an expression may carry without reading anything.
+_LITERALS = frozenset({"true", "false"})
+
+
+def reads_no_input(expression: str) -> bool:
+    """Does this expression name nothing a case could drive?
+
+    ⚠ Decided on the expression's own identifiers rather than against the
+    declared inputs. Asking "does it name a declared input" would also catch an
+    expression naming an UNDECLARED one, which is a different defect with a
+    different remedy, and reporting it here would send its author to write a
+    reason for a constant they never wrote.
+    """
+    names = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expression)
+    return all(n.lower() in _LITERALS for n in names)
 
 
 def load_conventions(paths: list[pathlib.Path]) -> Conventions:
     classes: list[NameClass] = []
     inputs: dict[str, str] = {}
     phrases: dict[str, str] = {}
+    assumed: dict[str, str] = {}
+    phrase_pattern = None
     normalise: list[tuple[str, str]] = []
     gate_off: list[dict] = []
     neutral: list[str] = []
@@ -295,7 +328,41 @@ def load_conventions(paths: list[pathlib.Path]) -> Conventions:
             classes.append(NameClass(re.compile(nc["pattern"]), nc["role"]))
         pre = doc.get("preconditions") or {}
         inputs.update(pre.get("inputs") or {})
-        phrases.update({k.strip().lower(): v for k, v in (pre.get("phrases") or {}).items()})
+        for raw, reading in (pre.get("phrases") or {}).items():
+            key = raw.strip().lower()
+            if isinstance(reading, dict):
+                phrases[key] = reading["expression"]
+                assumed[key] = reading["assumed"]
+            else:
+                phrases[key] = reading
+                # A later file that reads the phrase plainly withdraws the
+                # assumption an earlier one recorded for it.
+                assumed.pop(key, None)
+            # ⚠ Refused at the pack, where it is written once, rather than
+            # reported downstream, where it would be read hundreds of times
+            # and believed. A phrase read as a constant is a condition the
+            # prose states and nothing will ever test: every case passes the
+            # same way whether the reading is right or not. The object form
+            # costs one line and makes every report that reaches the phrase
+            # say why it was allowed.
+            if reads_no_input(phrases[key]) and key not in assumed:
+                raise PackError(
+                    f"{path}: preconditions.phrases {raw!r} reads as "
+                    f"{phrases[key]!r}, which names no input -- the condition "
+                    f"the prose states is removed from everything a case can "
+                    f"exercise, so a pass says nothing about it. Write it as "
+                    f"{{expression: {phrases[key]!r}, assumed: \"<why this "
+                    f"holds on this platform>\"}} so the reason travels with "
+                    f"it and every report that reaches the phrase can name it."
+                )
+        if pre.get("pattern"):
+            phrase_pattern = re.compile(pre["pattern"])
+            if "phrase" not in phrase_pattern.groupindex:
+                raise PackError(
+                    f"{path}: preconditions.pattern needs the named group "
+                    f"`phrase` -- without it the core cannot say which part "
+                    f"of a match is the precondition to look up"
+                )
         normalise += [(n["from"], n["to"]) for n in (pre.get("normalise") or [])]
         gate_off += doc.get("gate_off") or []
         gate_off_note = doc.get("gate_off_note") or gate_off_note
@@ -320,6 +387,8 @@ def load_conventions(paths: list[pathlib.Path]) -> Conventions:
         name_classes=classes,
         precondition_inputs=inputs,
         precondition_phrases=phrases,
+        precondition_assumed=assumed,
+        precondition_pattern=phrase_pattern,
         normalise=normalise,
         gate_off=gate_off,
         neutral_symbols=tuple(dict.fromkeys(neutral)),

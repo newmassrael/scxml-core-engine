@@ -63,6 +63,10 @@ CONVENTIONS = {
     "preconditions": {
         "inputs": {"supplyOn": "the supply is present"},
         "phrases": {"supply on": "supplyOn"},
+        # A pack with a table says where its prose writes one. Without this
+        # the preconditions cannot be looked up, and every clean
+        # specification below would carry a note saying so -- truthfully.
+        "pattern": r"(?i)\bwhile (?P<phrase>[a-z]+ (?:on|off))\b",
     },
     "gate_off": [
         {"when": "has_symbol", "symbol": "OFF", "use": "OFF"},

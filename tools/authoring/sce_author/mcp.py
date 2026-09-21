@@ -310,6 +310,9 @@ def verification_payload(result) -> dict:
         # takes one round's inputs, so a caller has to hold these between
         # calls; a reader shown only a pass would not know they were owed.
         "host_memory": result.host_memory,
+        # ⚠ What the pass RESTS ON that no case can reach. A client that
+        # draws a green bar from the counts alone draws it over these.
+        "assumed_preconditions": result.assumed_preconditions,
         "refuted_assumptions": result.refuted,
         "cases": [
             {"name": case.name,

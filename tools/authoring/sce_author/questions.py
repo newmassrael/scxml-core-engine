@@ -67,7 +67,7 @@ import re
 from dataclasses import dataclass, asdict
 from functools import lru_cache
 
-from .pack import Conventions, Model, gate_off_value
+from .pack import Conventions, Model, gate_off_value, reads_no_input
 from .prose import Prose, token
 
 
@@ -98,6 +98,10 @@ SEVERITY = {
     "no-decision-logic": "warning",
     "no-time-input": "warning",
     "no-examples": "warning",
+    # The prose states a precondition the pack's table does not read, so the
+    # author decides what it means -- which is the decision the table exists
+    # to take away from them.
+    "precondition-not-in-table": "warning",
     # A check that declined to run. It says so rather than returning nothing,
     # because nothing is indistinguishable from a clean answer.
     "cases-carry-no-values": "note",
@@ -109,6 +113,10 @@ SEVERITY = {
     # here; `gate_off_unstated` carries the measurement that says so.
     "gate-off-unstated": "note",
     "value-cased-differently": "note",
+    # A note for the same reason: the pack does answer, and says why. What
+    # the note adds is WHERE the prose relies on that answer.
+    "precondition-assumed": "note",
+    "precondition-check-declined": "note",
 }
 
 
@@ -478,6 +486,101 @@ def gate_off_unstated(prose: Prose, model: Model, conv: Conventions, examples=No
                     line=where[1] if where else 0,
                 )
             )
+    return out
+
+
+def preconditions_against_the_table(prose: Prose, model: Model, conv: Conventions,
+                                    examples=None) -> list[Question]:
+    """Every precondition the prose writes, looked up in the pack's table.
+
+    Two answers are worth an author's attention, and neither was reachable
+    before this: the table was printed in the brief and read by nothing else.
+
+      not in the table     the prose states a condition the pack never
+                           decided how to read, so whoever writes the
+                           document decides it -- silently, and differently
+                           each time
+      in it by assumption  the pack reads it on a stated assumption. Where the
+                           reading names no input, the condition is gone from
+                           everything a case can exercise, and a pass is
+                           silent about it by construction
+
+    ⚠ Measured before this existed, on a copy of the fixture pack: replacing a
+    phrase's reading with a constant changed one line of the brief and nothing
+    in these questions, and deleting the phrase from the table changed nothing
+    either. A condition could leave the document by either route and no
+    report would differ.
+
+    ⚠ One question per PHRASE, with a count and the first place it is written,
+    never one per occurrence. A single precondition is typically written
+    hundreds of times across a specification, and hundreds of copies of one
+    sentence bury every other class, the way `example-drives-undeclared-address`
+    was measured to.
+    """
+    if not conv.precondition_phrases:
+        return []
+    if conv.precondition_pattern is None:
+        # ⚠ The table exists, so the prose presumably writes preconditions,
+        # and nothing here can find them. An empty answer from a check that
+        # never ran is the shape this module exists to refuse.
+        held = len(conv.precondition_assumed)
+        return [Question(
+            kind="precondition-check-declined",
+            subject="(this pack)",
+            detail=(
+                "the pack declares a precondition table and no "
+                "preconditions.pattern, so where the specification writes a "
+                "precondition -- and whether each one is in the table -- "
+                "cannot be checked"
+                + (f"; {held} of its phrase(s) are read by assumption, and "
+                   f"where the specification relies on them cannot be shown"
+                   if held else "")
+            ),
+        )]
+    seen: dict[str, list] = {}
+    for src in prose.sources:
+        for lineno, line in enumerate(src.text.splitlines(), 1):
+            for match in conv.precondition_pattern.finditer(line):
+                key = conv.normalise_phrase(match.group("phrase"))
+                if not key:
+                    continue
+                entry = seen.setdefault(key, [str(src.path), lineno, 0])
+                entry[2] += 1
+    out = []
+    for key, (path, lineno, count) in sorted(seen.items()):
+        written = f"written {count} time(s)"
+        if key not in conv.precondition_phrases:
+            out.append(Question(
+                kind="precondition-not-in-table",
+                subject=key,
+                detail=(
+                    f"{written}, and the pack's precondition table has no "
+                    f"reading for it, so whoever writes the document decides "
+                    f"what it means"
+                ),
+                file=path,
+                line=lineno,
+            ))
+            continue
+        reason = conv.precondition_assumed.get(key)
+        if reason is None:
+            continue
+        expression = conv.precondition_phrases[key]
+        consequence = (
+            "a constant, so no case can exercise the condition and a pass "
+            "says nothing about it" if reads_no_input(expression) else
+            "a case exercises that expression, not what the phrase says"
+        )
+        out.append(Question(
+            kind="precondition-assumed",
+            subject=key,
+            detail=(
+                f"{written}; the pack reads it as `{expression}` by "
+                f"assumption -- {consequence}. The pack's reason: {reason}"
+            ),
+            file=path,
+            line=lineno,
+        ))
     return out
 
 
@@ -855,6 +958,7 @@ CLASSES = (
     values_outside_space,
     outputs_without_logic,
     gate_off_unstated,
+    preconditions_against_the_table,
     durations_without_a_clock,
 )
 
