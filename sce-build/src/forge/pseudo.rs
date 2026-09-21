@@ -301,10 +301,17 @@
 //! bet that no author writes those words. It is why `send` and
 //! `monitor` are blocks and why `= <expr>` ends its line.
 //!
-//! A `<field-clause>` is any of `= <expr>`, `max-size <n>`,
-//! `quantity <scale> <offset> <unit>`, `retain <scope> initial <expr>`,
-//! `default-covers <a> <b> ...`, each written only when the model
-//! carries it, always in that order.
+//! A `<field-clause>` is any of `max-size <n>`,
+//! `quantity <scale> <offset> <unit>`, `retain <scope> initial <value>`,
+//! `default-covers <a> <b> ...`, `= <expr>`, each written only when the
+//! model carries it, always in that order.
+//!
+//! ⚠ `= <expr>` comes LAST because of the rule above: it is the line's
+//! one free-text value, so anything after it is unreachable to a reader.
+//! The clause values before it are single words — a value that would
+//! carry a space is escaped to one by `word`, whose comment says why —
+//! and `default-covers` is the variadic one, so it sits at the end of
+//! the word-shaped clauses where a list can run to the expression.
 //!
 //! A transition writes `on <event>` only when it has one and
 //! `when <cond>` only when it has one, so an unconditional eventless
@@ -777,6 +784,38 @@ fn text(s: &str) -> std::borrow::Cow<'_, str> {
     comment_text::encode(s)
 }
 
+/// Author-supplied text for a position where the grammar splits on
+/// whitespace: a clause value that is NOT the last thing on its line.
+///
+/// ⚠ WHY A SECOND SPELLING. The module law is that a line carries one
+/// free-text value and it comes last, because a reader splitting on
+/// spaces cannot find the end of a value that may contain them. Three
+/// clause values sit in the middle of a field line anyway — a
+/// `quantity` unit, and a `retain` scope and initial value — and for a
+/// `string` field `sce:initial="hello world"` is legal today
+/// ([`crate::forge::retention::check`] refuses nothing a string can
+/// hold). Rendered raw, that line reads back as a different document or
+/// as none at all.
+///
+/// So a value in that position is encoded to exactly one word. The
+/// space becomes `\x20`, which [`comment_text::encode`] never emits and
+/// [`comment_text::decode`] does not accept, so the reader undoes this
+/// layer first and the two escapes cannot be confused: a literal
+/// backslash reaches here already encoded as `\x5C`, so the four
+/// characters `\x20` in the output can only be the one this wrote.
+///
+/// ⚠⚠ This is NOT the answer for an expression or an id. Those are long
+/// author text where `\x20` would make the review surface unreadable,
+/// and the grammar already puts them last on their line, which is the
+/// better answer where it is available.
+fn word(s: &str) -> String {
+    text(s).replace(' ', WORD_SPACE)
+}
+
+/// The one spelling of the escaped space [`word`] writes and
+/// `crate::forge::unpseudo` undoes.
+pub(crate) const WORD_SPACE: &str = "\\x20";
+
 // ── Algorithm ──────────────────────────────────────────────────
 
 fn render_algorithm(m: &AlgorithmModel) -> Vec<Node> {
@@ -1085,30 +1124,47 @@ fn render_field(f: &ForgeField, out: &mut Out<'_>) {
         Direction::Internal => "internal",
     };
     let mut line = format!("{} {}: {}", dir, text(&f.id), f.sce_type.as_attr());
-    if let Some(expr) = &f.expr {
-        let _ = write!(line, " = {}", text(expr));
-    }
     if let Some(max) = f.max_size {
         let _ = write!(line, " max-size {max}");
     }
     if let Some(q) = &f.quantity {
-        let _ = write!(line, " quantity {} {} {}", q.scale, q.offset, q.unit);
+        let _ = write!(
+            line,
+            " quantity {} {} {}",
+            q.scale,
+            q.offset,
+            word(&q.unit.to_string())
+        );
     }
     if let Some(r) = &f.retain {
         let _ = write!(
             line,
             " retain {} initial {}",
-            text(&r.scope),
-            text(&r.initial)
+            word(&r.scope),
+            word(&r.initial)
         );
     }
     if !f.default_covers.is_empty() {
-        let covers: Vec<String> = f
-            .default_covers
-            .iter()
-            .map(|c| text(c).into_owned())
-            .collect();
+        let covers: Vec<String> = f.default_covers.iter().map(|c| word(c)).collect();
         let _ = write!(line, " default-covers {}", covers.join(" "));
+    }
+    // ⚠ LAST, and that is the grammar, not a preference. The expression
+    // is the line's one free-text value: the reader takes everything
+    // after the first ` = ` as the expression, so a clause written
+    // after it is a clause the reader never sees — the silent loss this
+    // pair exists to detect. Written first, as it was, `internal c:
+    // uint16 = 0 retain nvm initial 7` read back with the expression
+    // `0 retain nvm initial 7` and no retention.
+    //
+    // ⚠⚠ That is not hypothetical, and it is worth saying which
+    // measurement covers what. No AUTHORED document in the tree carries
+    // an expression beside another clause, which is why the corpus
+    // sweep never went red. A model can, and one fixture already did —
+    // `forge_pseudo_render::a_procedure_renders_every_form_it_can_carry`
+    // pinned that exact line, so the old order was being asserted as
+    // correct while it was unreadable.
+    if let Some(expr) = &f.expr {
+        let _ = write!(line, " = {}", text(expr));
     }
     out.line(&line);
 }

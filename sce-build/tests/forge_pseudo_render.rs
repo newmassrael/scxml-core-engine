@@ -249,7 +249,7 @@ fn a_procedure_renders_every_form_it_can_carry() {
 procedure unlock initial request
   in seed: uint32
   in payload: bytes max-size 64
-  internal counter: uint16 = 0 retain nvm initial 7 default-covers A B
+  internal counter: uint16 retain nvm initial 7 default-covers A B = 0
   helper computeKey(uint32, bytes) -> bytes returns-max 8
   state request:
     send diag:

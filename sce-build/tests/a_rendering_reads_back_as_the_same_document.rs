@@ -236,3 +236,82 @@ fn every_covered_kind_survives_the_round_trip() {
         broken.join("\n")
     );
 }
+
+/// Every field clause the model can carry survives the round trip —
+/// including the values a corpus does not happen to contain.
+///
+/// # Why the sweep above does not cover this
+///
+/// The sweep judges the documents that exist. The reader covered
+/// `max-size` and `quantity` and silently refused `retain` and
+/// `default-covers`, and the sweep said nothing, because no document in
+/// the tree used them; the day two documents did, the gate went red for
+/// a gap that had been there all along. A corpus answers what authors
+/// have written so far, which is not the question of what the model can
+/// hold.
+///
+/// # How this stays honest as the model grows
+///
+/// `ForgeField` is built here as a struct literal naming EVERY field.
+/// Adding one to the model does not silently skip this test — it stops
+/// compiling until somebody fills the new field in, and the assertion
+/// then makes the renderer and the reader agree about it. That is the
+/// difference between a guard and a list: a list of clauses would go
+/// stale exactly the way the reader did.
+///
+/// # The spaces are the point
+///
+/// Each free-text clause value carries an interior space. A `string`
+/// field's `sce:initial` may hold one — `forge::retention::check`
+/// refuses nothing a string can hold — and a clause value is not the
+/// last thing on its line, so without the escape `pseudo::word` writes,
+/// the line reads back as a different field or as none.
+#[test]
+fn every_field_clause_survives_the_round_trip() {
+    use sce_build::forge::model::{
+        Direction, ForgeDocument, ForgeField, Retention, SceType, TransformModel,
+    };
+    use sce_build::forge::quantity::{Quantity, Rational, UnitTag};
+
+    let loaded = ForgeField {
+        id: "every_clause".to_string(),
+        sce_type: SceType::String,
+        direction: Direction::In,
+        expr: Some("a + b  /* two spaces stay */".to_string()),
+        quantity: Some(Quantity {
+            scale: Rational::new(1, 10).expect("a legal rational"),
+            offset: Rational::new(-5, 1).expect("a legal rational"),
+            unit: UnitTag::intern("degrees per second"),
+        }),
+        max_size: Some(64),
+        // ⚠ Invented, and deliberately so. A `default-covers` list in
+        // the wild names the variants of somebody's enum, and copying a
+        // real one in would put that vocabulary in this tree. Two
+        // members is what the clause needs to prove it is read as a
+        // list rather than a single word; what they spell is nothing.
+        default_covers: vec!["FIRST_VARIANT".to_string(), "SECOND_VARIANT".to_string()],
+        retain: Some(Retention {
+            scope: "battery backed store".to_string(),
+            initial: "hello world".to_string(),
+        }),
+    };
+
+    let document = ForgeDocument::Transform(TransformModel {
+        name: "EveryClause".to_string(),
+        inputs: vec![loaded],
+        outputs: Vec::new(),
+        source_location: None,
+    });
+
+    let rendered =
+        sce_build::forge::pseudo::render(&document).expect("the renderer covers a transform");
+    let read_back = unpseudo::parse(&rendered).unwrap_or_else(|e| {
+        panic!("the reader refused a rendering of its own renderer:\n{rendered}\n{e:?}")
+    });
+
+    assert_eq!(
+        unpseudo::ir_for_comparison(&document).expect("a model serialises"),
+        unpseudo::ir_for_comparison(&read_back).expect("a model serialises"),
+        "a clause was lost between the renderer and the reader:\n{rendered}"
+    );
+}

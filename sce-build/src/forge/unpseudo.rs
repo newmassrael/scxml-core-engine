@@ -134,6 +134,18 @@ fn undo(s: &str, line: usize) -> Result<String, ParseError> {
     })
 }
 
+/// One word of a clause, as `crate::forge::pseudo::word` wrote it.
+///
+/// The escaped space is undone BEFORE `undo`, and it has to be that way
+/// round: `comment_text::decode` refuses `\x20`, so running it first
+/// would reject every value this layer encoded. The order is
+/// unambiguous because a literal backslash in the author's text reaches
+/// the output as `\x5C`, so the four characters `\x20` there can only
+/// be the escape the renderer wrote.
+fn undo_word(s: &str, line: usize) -> Result<String, ParseError> {
+    undo(&s.replace(crate::forge::pseudo::WORD_SPACE, " "), line)
+}
+
 /// Read a rendering back into a document.
 ///
 /// Covers the kinds the round-trip gate exercises today; a head this
@@ -491,7 +503,7 @@ fn parse_field(line: &Line<'_>) -> Result<ForgeField, ParseError> {
             "quantity" => {
                 let scale = rational(rest.get(i + 1).copied().unwrap_or(""), line.number)?;
                 let offset = rational(rest.get(i + 2).copied().unwrap_or(""), line.number)?;
-                let unit = crate::forge::quantity::UnitTag::intern(&undo(
+                let unit = crate::forge::quantity::UnitTag::intern(&undo_word(
                     rest.get(i + 3).copied().unwrap_or(""),
                     line.number,
                 )?);
@@ -501,6 +513,38 @@ fn parse_field(line: &Line<'_>) -> Result<ForgeField, ParseError> {
                     unit,
                 });
                 i += 4;
+            }
+            // `retain <scope> initial <value>` — the keyword between the
+            // two values is the renderer's, so its absence means the
+            // line is not one this renderer wrote and a guess would be
+            // worse than the error.
+            "retain" => {
+                let scope = undo_word(rest.get(i + 1).copied().unwrap_or(""), line.number)?;
+                if rest.get(i + 2).copied() != Some("initial") {
+                    return Err(ParseError {
+                        line: line.number,
+                        why: "a `retain <scope>` clause is followed by `initial <value>`"
+                            .to_string(),
+                    });
+                }
+                let initial = undo_word(rest.get(i + 3).copied().unwrap_or(""), line.number)?;
+                f.retain = Some(crate::forge::model::Retention { scope, initial });
+                i += 4;
+            }
+            // `default-covers <a> <b> ...` — variadic, so it runs to the
+            // end of the word-shaped clauses. It is written last among
+            // them for exactly that reason, and it stops at `=` because
+            // the expression that may follow is not one of its members.
+            "default-covers" => {
+                let end = rest[i + 1..]
+                    .iter()
+                    .position(|w| *w == "=")
+                    .map_or(rest.len(), |at| i + 1 + at);
+                f.default_covers = rest[i + 1..end]
+                    .iter()
+                    .map(|c| undo_word(c, line.number))
+                    .collect::<Result<_, _>>()?;
+                i = end;
             }
             other => {
                 return Err(ParseError {
