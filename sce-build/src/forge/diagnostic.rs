@@ -7747,10 +7747,12 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 code: DiagnosticCode::PoolStageCopyAcceptRejectedUnderForbid,
                 stage: Stage::Validation,
                 // `actual` carries the offending element's name so the
-                // wire payload surfaces what was rejected. Per
-                // non_overlap_class: two valid repair paths (remove
+                // wire payload surfaces what was rejected — its local name,
+                // which the link document spells whatever prefix it binds,
+                // and without the angle brackets its tag never closes on.
+                // Per non_overlap_class: two valid repair paths (remove
                 // opt-out vs change policy), no closed candidate set.
-                actual: Some("<sce:accept-stage-copy-rate>".to_string()),
+                actual: Some("accept-stage-copy-rate".to_string()),
                 expected: None,
                 fix: None,
                 key_fragments: vec![machine.clone(), link_name.clone()],
@@ -8944,6 +8946,7 @@ fn scxml_semantic_fields(e: &crate::scxml_semantic::ScxmlSemanticError) -> Diagn
             needs,
             rule,
             state,
+            observed,
         } => DiagnosticPayload {
             code: DiagnosticCode::ScxmlNullDatamodelForbidsConstruct,
             stage: Stage::Validation,
@@ -8951,7 +8954,9 @@ fn scxml_semantic_fields(e: &crate::scxml_semantic::ScxmlSemanticError) -> Diagn
             // nothing, and saying so is the point — `expected` names the
             // missing language rather than a value to substitute.
             expected: Some(vec![format!("{needs} (W3C SCXML {rule})")]),
-            actual: Some(construct.clone()),
+            // The element's name or the attribute's value as the document
+            // writes it; `<param>` and `expr="…"` are the message's forms.
+            actual: observed.clone(),
             fix: None,
             key_fragments: {
                 let mut k = vec!["null-datamodel".to_string(), construct.clone()];
@@ -9988,9 +9993,10 @@ mod tests {
                     needs: "the data model its §5 semantics operate on".into(),
                     rule: "B.1.7".into(),
                     state: "idle".into(),
+                    observed: Some("param".into()),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:18b3e668983fd6d6","code":"scxml/null-datamodel-forbids-construct","stage":"validation","spec":"W3C SCXML §B.1","message":"<param> is not available under datamodel=\"null\": it needs the data model its §5 semantics operate on, which W3C SCXML B.1.7 withholds — declare the data model this document actually uses, or remove the construct","expected":["the data model its §5 semantics operate on (W3C SCXML B.1.7)"],"actual":"<param>"}"#,
+                r#"{"v":1,"id":"fnv1a:18b3e668983fd6d6","code":"scxml/null-datamodel-forbids-construct","stage":"validation","spec":"W3C SCXML §B.1","message":"<param> is not available under datamodel=\"null\": it needs the data model its §5 semantics operate on, which W3C SCXML B.1.7 withholds — declare the data model this document actually uses, or remove the construct","expected":["the data model its §5 semantics operate on (W3C SCXML B.1.7)"],"actual":"param"}"#,
             ),
             (
                 // NL→IR Mapping Roadmap Item 3 — Statechart
@@ -10675,7 +10681,7 @@ mod tests {
                     link_name: "udp_data".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:c4ce58defa7ffd7f","code":"pool/stage-copy-accept-rejected-under-forbid","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.K","message":"link 'udp_data' on machine 'mcu_node': `<sce:accept-stage-copy-rate>` declared but `pool_defaults.stage_copy_policy: forbid` rejects the opt-out outright. SCE Protocol-Synthesis RFC §5.K line 2512-2516 — only structural fixes (raise `<sce:slot-size>` or lower `expected_p99_bytes`) are accepted under `forbid`. Repair: remove `<sce:accept-stage-copy-rate>` from link 'udp_data', or change `pool_defaults.stage_copy_policy` to `error` (which permits the opt-out).","actual":"<sce:accept-stage-copy-rate>"}"#,
+                r#"{"v":1,"id":"fnv1a:c4ce58defa7ffd7f","code":"pool/stage-copy-accept-rejected-under-forbid","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.K","message":"link 'udp_data' on machine 'mcu_node': `<sce:accept-stage-copy-rate>` declared but `pool_defaults.stage_copy_policy: forbid` rejects the opt-out outright. SCE Protocol-Synthesis RFC §5.K line 2512-2516 — only structural fixes (raise `<sce:slot-size>` or lower `expected_p99_bytes`) are accepted under `forbid`. Repair: remove `<sce:accept-stage-copy-rate>` from link 'udp_data', or change `pool_defaults.stage_copy_policy` to `error` (which permits the opt-out).","actual":"accept-stage-copy-rate"}"#,
             ),
             // ── §synth-5-L Bounded-collection cross-doc resolution (item C6) ──
             (

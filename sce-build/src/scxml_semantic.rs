@@ -242,8 +242,8 @@ pub enum ScxmlSemanticError {
          model this document actually uses, or remove the construct"
     )]
     NullDatamodelForbidsConstruct {
-        /// What appeared, spelled as the author wrote it (`<script>`,
-        /// `expr=`, `cond="x > 1"`).
+        /// What appeared, for the message (`<script>`, `expr="x + 1"`,
+        /// `cond="x > 1"`).
         construct: String,
         /// The language the construct requires — "a value expression
         /// language", "a scripting language", …
@@ -252,6 +252,12 @@ pub enum ScxmlSemanticError {
         rule: String,
         /// Owning state id, empty at document scope.
         state: String,
+        /// The construct as the document's own text spells it — the
+        /// element's name, or the attribute's value with its entities
+        /// still in place — which the wire reports as `actual`
+        /// (SCE_ERROR_CONTRACT §3.1.1). `None` for an empty value, which
+        /// spells nothing to find.
+        observed: Option<String>,
     },
 
     /// Top-level `<script>` element either (a) has empty content
@@ -694,6 +700,7 @@ mod tests {
                 needs: "a scripting language".into(),
                 rule: "B.1.5".into(),
                 state: "s1".into(),
+                observed: Some("script".into()),
             },
             ScxmlSemanticError::TopLevelScriptUnloaded {
                 index: None,

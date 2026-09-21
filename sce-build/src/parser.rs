@@ -597,7 +597,8 @@ fn is_native_script_block(node: &roxmltree::Node) -> bool {
 fn enforce_datamodel_languages(
     root: &roxmltree::Node,
     datamodel: Datamodel,
-) -> Result<(), ScxmlSemanticError> {
+    diag_label: &str,
+) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
     // §scxml-B-1 withholds four languages one sub-section at a time:
     // §scxml-B-1-1 the underlying data model, §scxml-B-1-2 every boolean
     // expression but `In(id)`, §scxml-B-1-3 location expressions,
@@ -618,6 +619,12 @@ fn enforce_datamodel_languages(
         }
         String::new()
     }
+    // Each refusal is placed where its `actual` is: the refused element's
+    // own row, or the row of the attribute holding the refused value.
+    let refused = |pos: roxmltree::TextPos, err: ScxmlSemanticError| {
+        crate::forge::error::Located::new(err.into(), diag_label, Some(pos.row), Some(pos.col))
+    };
+    let element_row = |node: &roxmltree::Node| node.document().text_pos_at(node.range().start);
 
     let mut stack: Vec<roxmltree::Node> = root.children().filter(|n| n.is_element()).collect();
     while let Some(node) = stack.pop() {
@@ -644,31 +651,45 @@ fn enforce_datamodel_languages(
         // A `<script>` that is not a native block carries data model
         // script text, which B-1-5 has no language for.
         if name == "script" {
-            return Err(ScxmlSemanticError::NullDatamodelForbidsConstruct {
-                construct: "<script>".to_string(),
-                needs: "a scripting language".to_string(),
-                rule: "B.1.5".to_string(),
-                state: owning_state(&node),
-            });
+            return Err(refused(
+                element_row(&node),
+                ScxmlSemanticError::NullDatamodelForbidsConstruct {
+                    construct: "<script>".to_string(),
+                    needs: "a scripting language".to_string(),
+                    rule: "B.1.5".to_string(),
+                    state: owning_state(&node),
+                    observed: Some(name.to_string()),
+                },
+            ));
         }
 
         if ELEMENTS_NEEDING_A_DATA_MODEL.contains(&name) {
-            return Err(ScxmlSemanticError::NullDatamodelForbidsConstruct {
-                construct: format!("<{name}>"),
-                needs: "the underlying data model it declares or writes to".to_string(),
-                rule: "B.1.1".to_string(),
-                state: owning_state(&node),
-            });
+            return Err(refused(
+                element_row(&node),
+                ScxmlSemanticError::NullDatamodelForbidsConstruct {
+                    construct: format!("<{name}>"),
+                    needs: "the underlying data model it declares or writes to".to_string(),
+                    rule: "B.1.1".to_string(),
+                    state: owning_state(&node),
+                    observed: Some(name.to_string()),
+                },
+            ));
         }
 
         for (attr, needs, rule) in EXPRESSION_ATTRIBUTES {
             if let Some(value) = node.attribute(*attr) {
-                return Err(ScxmlSemanticError::NullDatamodelForbidsConstruct {
-                    construct: format!("{attr}=\"{value}\""),
-                    needs: (*needs).to_string(),
-                    rule: (*rule).to_string(),
-                    state: owning_state(&node),
-                });
+                let (written, pos) = attribute_as_written(&node, attr)
+                    .expect("the attribute `node.attribute` just returned");
+                return Err(refused(
+                    pos,
+                    ScxmlSemanticError::NullDatamodelForbidsConstruct {
+                        construct: format!("{attr}=\"{value}\""),
+                        needs: (*needs).to_string(),
+                        rule: (*rule).to_string(),
+                        state: owning_state(&node),
+                        observed: (!written.is_empty()).then(|| written.to_string()),
+                    },
+                ));
             }
         }
 
@@ -680,18 +701,41 @@ fn enforce_datamodel_languages(
             // with `datamodel="null"` and were refused while the `<script>`
             // form beside them passed (ADR 0003).
             if !is_null_datamodel_condition(cond) && !is_native_condition(cond) {
-                return Err(ScxmlSemanticError::NullDatamodelForbidsConstruct {
-                    construct: format!("cond=\"{cond}\""),
-                    needs: "a boolean expression language beyond In()".to_string(),
-                    rule: "B.1.2".to_string(),
-                    state: owning_state(&node),
-                });
+                let (written, pos) = attribute_as_written(&node, "cond")
+                    .expect("the attribute `node.attribute` just returned");
+                return Err(refused(
+                    pos,
+                    ScxmlSemanticError::NullDatamodelForbidsConstruct {
+                        construct: format!("cond=\"{cond}\""),
+                        needs: "a boolean expression language beyond In()".to_string(),
+                        rule: "B.1.2".to_string(),
+                        state: owning_state(&node),
+                        observed: (!written.is_empty()).then(|| written.to_string()),
+                    },
+                ));
             }
         }
 
         stack.extend(node.children().filter(|n| n.is_element()));
     }
     Ok(())
+}
+
+/// An unqualified attribute's value as the document's text spells it —
+/// entities and all, where `node.attribute` hands back the decoded value —
+/// with the position the attribute starts at.
+fn attribute_as_written<'input>(
+    node: &roxmltree::Node<'_, 'input>,
+    name: &str,
+) -> Option<(&'input str, roxmltree::TextPos)> {
+    let attr = node
+        .attributes()
+        .find(|a| a.name() == name && a.namespace().is_none())?;
+    let document = node.document();
+    Some((
+        &document.input_text()[attr.range_value()],
+        document.text_pos_at(attr.range().start),
+    ))
 }
 
 /// Collect `<sce:unresolved>` markers attached to `node` — both
@@ -1803,8 +1847,7 @@ impl SCXMLParser {
         // build a model whose expressions were never in a language the
         // document named — the state the `datamodel` attribute existed to
         // prevent and, until now, did not.
-        enforce_datamodel_languages(&root, model.datamodel)
-            .map_err(|e| crate::forge::error::Located::new(e.into(), diag_label, None, None))?;
+        enforce_datamodel_languages(&root, model.datamodel, diag_label)?;
 
         // Parse datamodel
         self.parse_datamodel(&root, &mut model, diag_label)?;
