@@ -19556,13 +19556,17 @@ impl LangCtx {
             .find(|(a, _)| a == alias)
             .map(|(_, qualified)| qualified.as_str())
             .unwrap_or_else(|| {
-                // `cross_kind_check` and `validate_and_enrich_imports`
-                // refuse an `enum:<alias>` whose alias is not imported, so
-                // reaching here means either that gate fired wrong or this
-                // context was built without the document's imports.
+                // The parser's `read_type_attr` refuses an `enum:<alias>`
+                // no `<sce:import kind="enum">` declares, so reaching here
+                // means either that gate fired wrong or this context was
+                // built without the document's imports.
+                //
+                // ⚠ The gate this comment used to name did not exist: a
+                // field typed `enum:Nope` reached this panic from user
+                // input, exit 101 on every backend (measured 2026-09-21).
                 panic!(
                     "SceType::Enum(alias='{alias}') reached a context built by {} that \
-                     does not carry it — either the import gate let an unresolved alias \
+                     does not carry it — either `read_type_attr` let an unresolved alias \
                      through, or this render built its context without the document's \
                      imports",
                     self.origin
@@ -23345,11 +23349,11 @@ mod tests {
     #[test]
     #[should_panic(expected = "reached a context built by LangCtx::new that does not carry it")]
     fn an_unimported_alias_panics_naming_the_context() {
-        // Cross-kind binding (`cross_kind_check::check`) and
-        // `validate_and_enrich_imports` reject unresolved enum aliases
-        // before codegen runs, so this branch should be unreachable in
-        // production. The panic surfaces the gate failure at the
-        // codegen site rather than emitting wrong code.
+        // The parser's `read_type_attr` refuses an unresolved enum alias
+        // before codegen runs (`a_type_names_what_the_document_imports`
+        // holds that), so this branch is unreachable from a document. The
+        // panic surfaces a gate failure at the codegen site rather than
+        // emitting wrong code.
         let l = LangCtx::new(crate::generator::Language::Cpp, &[]);
         let _ = l.type_name(&enum_ref("Missing"));
     }

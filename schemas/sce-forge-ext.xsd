@@ -82,9 +82,9 @@
   <!-- NL→IR Mapping Roadmap Item C1 Path A — `sce:type` accepts
        primitive `sceType` values plus the `enum:<alias>` pattern
        referring to an imported `sce:kind="enum"` document. The
-       pattern is the lexically authored token; cross-doc resolution
-       against the document's `<sce:import>` table happens in the
-       cross-kind binding pass, not at XSD validation time. -->
+       pattern is the lexically authored token; resolution against the
+       document's `<sce:import kind="enum">` table happens in the
+       parser (`read_type_attr`), not at XSD validation time. -->
   <xs:simpleType name="sceTypeOrEnumRef">
     <xs:union memberTypes="sce:sceType">
       <xs:simpleType>

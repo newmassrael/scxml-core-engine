@@ -2765,18 +2765,14 @@ pub fn parse_codec_field_from_node(
         .to_string();
 
     let sce_type_str = sce_attr(node, "type").unwrap_or_else(|| "uint8".to_string());
-    let sce_type = SceType::from_attr(&sce_type_str).ok_or_else(|| {
-        located(
-            node,
-            doc_name,
-            ValidationError::InvalidAttribute {
-                element: format!("field '{id}'"),
-                attr: "sce:type".into(),
-                value: sce_type_str.clone(),
-                allowed: SceType::scalar_attr_names(),
-            },
-        )
-    })?;
+    let sce_type = read_type_attr(
+        node,
+        doc_name,
+        TypeGrammar::ScalarOrEnumRef,
+        format!("field '{id}'"),
+        "sce:type",
+        &sce_type_str,
+    )?;
 
     let byte_offset_str = sce_attr(node, "byte").ok_or_else(|| {
         located(
@@ -5396,18 +5392,14 @@ fn parse_procedure_helper(
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
     {
-        let sce_ty = SceType::from_attr(part).ok_or_else(|| {
-            located(
-                node,
-                doc_name,
-                ValidationError::InvalidAttribute {
-                    element: format!("<sce:helper name=\"{helper_name}\">"),
-                    attr: "args".into(),
-                    value: part.to_string(),
-                    allowed: SceType::scalar_attr_names(),
-                },
-            )
-        })?;
+        let sce_ty = read_type_attr(
+            node,
+            doc_name,
+            TypeGrammar::Scalar,
+            format!("<sce:helper name=\"{helper_name}\">"),
+            "args",
+            part,
+        )?;
         args.push(sce_ty);
     }
     let returns_raw = node.attribute("returns").ok_or_else(|| {
@@ -5420,18 +5412,14 @@ fn parse_procedure_helper(
             },
         )
     })?;
-    let returns = SceType::from_attr(returns_raw).ok_or_else(|| {
-        located(
-            node,
-            doc_name,
-            ValidationError::InvalidAttribute {
-                element: format!("<sce:helper name=\"{helper_name}\">"),
-                attr: "returns".into(),
-                value: returns_raw.to_string(),
-                allowed: SceType::scalar_attr_names(),
-            },
-        )
-    })?;
+    let returns = read_type_attr(
+        node,
+        doc_name,
+        TypeGrammar::Scalar,
+        format!("<sce:helper name=\"{helper_name}\">"),
+        "returns",
+        returns_raw,
+    )?;
     // Bounded-bytes contract: optional cap
     // on a bytes-typed return. Validator pass flags it if `returns` is
     // not bytes.
@@ -6837,18 +6825,14 @@ fn parse_algorithm_signature(
                         },
                     )
                 })?;
-                let sce_type = SceType::from_attr(type_str).ok_or_else(|| {
-                    located(
-                        &child,
-                        doc_name,
-                        ValidationError::InvalidAttribute {
-                            element: format!("<sce:param name=\"{name}\">"),
-                            attr: "type".into(),
-                            value: type_str.into(),
-                            allowed: SceType::scalar_attr_names(),
-                        },
-                    )
-                })?;
+                let sce_type = read_type_attr(
+                    &child,
+                    doc_name,
+                    TypeGrammar::Scalar,
+                    format!("<sce:param name=\"{name}\">"),
+                    "type",
+                    type_str,
+                )?;
                 params.push(AlgorithmParam { name, sce_type });
             }
             "return" => {
@@ -6865,18 +6849,14 @@ fn parse_algorithm_signature(
                 }
                 seen_return = true;
                 if let Some(type_str) = child.attribute("type") {
-                    let sce_type = SceType::from_attr(type_str).ok_or_else(|| {
-                        located(
-                            &child,
-                            doc_name,
-                            ValidationError::InvalidAttribute {
-                                element: "<sce:return>".into(),
-                                attr: "type".into(),
-                                value: type_str.into(),
-                                allowed: SceType::scalar_attr_names(),
-                            },
-                        )
-                    })?;
+                    let sce_type = read_type_attr(
+                        &child,
+                        doc_name,
+                        TypeGrammar::Scalar,
+                        "<sce:return>".into(),
+                        "type",
+                        type_str,
+                    )?;
                     return_type = Some(sce_type);
                 }
                 // Cap on a `bytes` return's output buffer (the no-alloc
@@ -6923,20 +6903,36 @@ fn parse_algorithm_const(
             },
         )
     })?;
-    let sce_type = AlgorithmConstType::from_attr(type_str).ok_or_else(|| {
-        located(
-            node,
-            doc_name,
-            ValidationError::AttributeRuleViolated {
-                element: format!("<sce:const name=\"{name}\">"),
-                attr: "type".into(),
-                value: type_str.into(),
-                rule: "scalar (uint8..uint64, int8..int64, float32, float64, bool, string) \
-                           or array<elem, len> (RFC §5.F)"
-                    .into(),
-            },
+    // ⚠ The rule names no enum, and none is a const's type: the fold path
+    // refuses an enum element, and an enum scalar reached code generation
+    // unchecked — `AlgorithmConstType::from_attr` reads its scalar with
+    // `SceType::from_attr`, which accepts any `enum:<alias>`.
+    let names_an_enum = |t: &AlgorithmConstType| {
+        matches!(
+            t,
+            AlgorithmConstType::Scalar(SceType::Enum(_))
+                | AlgorithmConstType::Array {
+                    elem: SceType::Enum(_),
+                    ..
+                }
         )
-    })?;
+    };
+    let sce_type = AlgorithmConstType::from_attr(type_str)
+        .filter(|t| !names_an_enum(t))
+        .ok_or_else(|| {
+            located(
+                node,
+                doc_name,
+                ValidationError::AttributeRuleViolated {
+                    element: format!("<sce:const name=\"{name}\">"),
+                    attr: "type".into(),
+                    value: type_str.into(),
+                    rule: "scalar (uint8..uint64, int8..int64, float32, float64, bool, string) \
+                           or array<elem, len> (RFC §5.F)"
+                        .into(),
+                },
+            )
+        })?;
 
     // RFC §synth-5-F: `sce:compute-at="build"` is the only legal value for
     // the attribute. Anything else is a hard error so future values
@@ -7278,18 +7274,14 @@ fn parse_algorithm_stmt(
         "var" => {
             let name = require_attr(node, "name", "<sce:var>", doc_name)?;
             let type_str = require_attr(node, "type", "<sce:var>", doc_name)?;
-            let sce_type = SceType::from_attr(&type_str).ok_or_else(|| {
-                located(
-                    node,
-                    doc_name,
-                    ValidationError::InvalidAttribute {
-                        element: format!("<sce:var name=\"{name}\">"),
-                        attr: "type".into(),
-                        value: type_str.clone(),
-                        allowed: SceType::scalar_attr_names(),
-                    },
-                )
-            })?;
+            let sce_type = read_type_attr(
+                node,
+                doc_name,
+                TypeGrammar::Scalar,
+                format!("<sce:var name=\"{name}\">"),
+                "type",
+                &type_str,
+            )?;
             let capacity = node.attribute("capacity").and_then(parse_int);
             // A `bytes` local is a growable buffer seeded empty and filled
             // via `<sce:append>`; it takes `capacity`, not `init`. Reject a
@@ -9146,6 +9138,82 @@ fn sce_attr(node: &roxmltree::Node, local_name: &str) -> Option<String> {
         .map(|s| s.to_string())
 }
 
+/// The aliases of every `<sce:import kind="enum">` in `node`'s document —
+/// the only names an `enum:<alias>` type may use there.
+fn enum_import_aliases(node: &roxmltree::Node) -> Vec<String> {
+    node.document()
+        .root_element()
+        .children()
+        .filter(|c| {
+            c.is_element()
+                && c.tag_name().name() == "import"
+                && c.tag_name().namespace() == Some(SCE_NAMESPACE)
+                && c.attribute("kind") == Some(ForgeKind::Enum.as_attr())
+        })
+        .filter_map(|c| c.attribute("as").map(str::to_string))
+        .collect()
+}
+
+/// Which of the schema's two type grammars a position declares its type
+/// in — `sce-forge-ext.xsd` names them `sceType` and `sceTypeOrEnumRef`.
+///
+/// ⚠ The parser must admit no more than the schema: where the schema is
+/// not loaded, this reading is the only one. Every position read its type
+/// with [`SceType::from_attr`], which accepts `enum:<alias>` everywhere,
+/// so an algorithm parameter the schema types `sceType` took an enum in
+/// any build without the schema (measured 2026-09-21).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TypeGrammar {
+    /// `sceType` — a scalar: an algorithm's parameters, return and
+    /// locals, a helper's signature.
+    Scalar,
+    /// `sceTypeOrEnumRef` — a scalar, or `enum:<alias>` naming an enum
+    /// this document imports: a field's `sce:type`.
+    ScalarOrEnumRef,
+}
+
+/// Read a type-valued attribute in `grammar`. The `Err` is the refusal,
+/// with every type the document could have written there as its
+/// candidates.
+///
+/// ⚠ ONE reading for every position that declares a type. Each of them
+/// called [`SceType::from_attr`] and offered the scalar names alone, so
+/// `enum:<alias>` — the one spelling that depends on the document — was
+/// never a candidate, and an alias naming no enum import passed every
+/// stage until code generation panicked on it (measured 2026-09-21:
+/// `sce:type="enum:Nope"` exited 101 on every backend).
+pub(crate) fn read_type_attr(
+    node: &roxmltree::Node,
+    doc_name: &str,
+    grammar: TypeGrammar,
+    element: String,
+    attr: &str,
+    text: &str,
+) -> Result<SceType, Located<ForgeError>> {
+    let aliases = match grammar {
+        TypeGrammar::Scalar => Vec::new(),
+        TypeGrammar::ScalarOrEnumRef => enum_import_aliases(node),
+    };
+    let parsed = SceType::from_attr(text).filter(|ty| match ty {
+        SceType::Enum(r) => aliases.contains(&r.alias),
+        _ => true,
+    });
+    parsed.ok_or_else(|| {
+        let mut allowed = SceType::scalar_attr_names();
+        allowed.extend(aliases.iter().map(|a| format!("enum:{a}")));
+        located(
+            node,
+            doc_name,
+            ValidationError::InvalidAttribute {
+                element,
+                attr: attr.into(),
+                value: text.to_string(),
+                allowed,
+            },
+        )
+    })
+}
+
 /// Every SCE-namespace attribute name this tree reads.
 ///
 /// ⚠ WHY A LIST EXISTS AT ALL. This parser looks attributes up BY NAME
@@ -9462,18 +9530,14 @@ fn parse_forge_field(
             },
         )
     })?;
-    let sce_type = SceType::from_attr(&type_str).ok_or_else(|| {
-        located(
-            data,
-            doc_name,
-            ValidationError::InvalidAttribute {
-                element: format!("field '{id}'"),
-                attr: "sce:type".into(),
-                value: type_str.clone(),
-                allowed: SceType::scalar_attr_names(),
-            },
-        )
-    })?;
+    let sce_type = read_type_attr(
+        data,
+        doc_name,
+        TypeGrammar::ScalarOrEnumRef,
+        format!("field '{id}'"),
+        "sce:type",
+        &type_str,
+    )?;
 
     let dir_str = sce_attr(data, "direction").ok_or_else(|| {
         located(
@@ -9890,5 +9954,78 @@ mod filter_parameter_tests {
                 "sce:alpha=\"{alpha}\""
             );
         }
+    }
+}
+
+/// The reading an XSD-less build relies on. Called directly because the
+/// schema answers these cases first wherever it is loaded.
+#[cfg(test)]
+mod type_attr_tests {
+    use super::*;
+
+    /// `read_type_attr` over a `<data>` in a document importing the enum
+    /// `Nrc`.
+    fn read(grammar: TypeGrammar, text: &str) -> Result<SceType, Vec<String>> {
+        let xml = format!(
+            r#"<scxml xmlns:sce="{SCE_NAMESPACE}">
+                 <sce:import as="Nrc" src="nrc.scxml" kind="enum"/>
+                 <sce:import as="frame" src="f.scxml" kind="codec"/>
+                 <data/>
+               </scxml>"#
+        );
+        let doc = roxmltree::Document::parse(&xml).expect("fixture parses");
+        let data = doc
+            .root_element()
+            .children()
+            .find(|n| n.has_tag_name("data"))
+            .expect("fixture has a data element");
+        read_type_attr(
+            &data,
+            "t.scxml",
+            grammar,
+            "field 'x'".into(),
+            "sce:type",
+            text,
+        )
+        .map_err(|err| match err.error {
+            ForgeError::Validation(boxed) => match *boxed {
+                ValidationError::InvalidAttribute { allowed, .. } => allowed,
+                other => panic!("expected InvalidAttribute, got {other:?}"),
+            },
+            other => panic!("expected a validation error, got {other:?}"),
+        })
+    }
+
+    /// A misspelled type is offered every type the document can write —
+    /// the scalars and its enum, and not its codec import, which is no type.
+    #[test]
+    fn a_misspelled_type_is_offered_the_documents_enums() {
+        let allowed = read(TypeGrammar::ScalarOrEnumRef, "uint88").unwrap_err();
+        assert!(allowed.contains(&"uint8".to_string()), "{allowed:?}");
+        assert!(allowed.contains(&"enum:Nrc".to_string()), "{allowed:?}");
+        assert!(!allowed.contains(&"enum:frame".to_string()), "{allowed:?}");
+    }
+
+    #[test]
+    fn an_imported_enum_reads_where_the_grammar_admits_one() {
+        assert!(matches!(
+            read(TypeGrammar::ScalarOrEnumRef, "enum:Nrc"),
+            Ok(SceType::Enum(r)) if r.alias == "Nrc"
+        ));
+        assert!(read(TypeGrammar::ScalarOrEnumRef, "enum:Nope").is_err());
+        assert!(read(TypeGrammar::ScalarOrEnumRef, "enum:frame").is_err());
+    }
+
+    /// A scalar-only position refuses even an imported enum, and offers
+    /// none — the schema's `sceType` has no enum in it.
+    #[test]
+    fn a_scalar_position_refuses_every_enum() {
+        let allowed = read(TypeGrammar::Scalar, "enum:Nrc").unwrap_err();
+        assert!(allowed.contains(&"uint8".to_string()), "{allowed:?}");
+        assert!(
+            !allowed.iter().any(|a| a.starts_with("enum:")),
+            "{allowed:?}"
+        );
+        assert_eq!(read(TypeGrammar::Scalar, "uint16"), Ok(SceType::Uint16));
     }
 }

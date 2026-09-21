@@ -2299,14 +2299,14 @@ impl SCXMLParser {
                         attr: "sce:type".to_string(),
                     })
                 })?;
-                let output_type = SceType::from_attr(&type_str).ok_or_else(|| {
-                    locate(ValidationError::InvalidAttribute {
-                        element: format!("inline transform '{id}' <data>"),
-                        attr: "sce:type".to_string(),
-                        value: type_str.clone(),
-                        allowed: SceType::scalar_attr_names(),
-                    })
-                })?;
+                let output_type = crate::forge::parser::read_type_attr(
+                    data,
+                    source_name,
+                    crate::forge::parser::TypeGrammar::ScalarOrEnumRef,
+                    format!("inline transform '{id}' <data>"),
+                    "sce:type",
+                    &type_str,
+                )?;
 
                 InlineKindData::Transform {
                     inputs: Vec::new(),
