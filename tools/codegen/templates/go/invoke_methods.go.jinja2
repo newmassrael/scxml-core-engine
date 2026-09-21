@@ -301,7 +301,20 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			p.ensureScriptEngine()
 			{
 				se := p.ScriptEngine
+{# ⚠ This comment opens WITHOUT a leading dash on purpose. A dash there
+    strips the whitespace before the comment, which here is the newline
+    ending `se := p.ScriptEngine` — the two statements then render on one
+    line and the file is not Go at all.
+    Bind the value only where something reads it. Go REFUSES a declared
+    variable nothing uses, so binding it on the stub path — where the
+    build has no candidates to match it against — does not merely waste a
+    name, it fails to compile. The `contentexpr` arm below has always
+    spelled the discard form for the same reason. -#}
+{% if invoke_info.candidates %}
 				if __sceValue, err := se.EvaluateExpression(p.SessionID, `{{ invoke_info.srcexpr | to_lua_expr }}`); err != nil {
+{% else %}
+				if _, err := se.EvaluateExpression(p.SessionID, `{{ invoke_info.srcexpr | to_lua_expr }}`); err != nil {
+{% endif %}
 {% if 'error.execution' in model.events %}
 					engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke srcexpr='{{ invoke_info.srcexpr }}'> could not be evaluated"))
 {% endif %}
