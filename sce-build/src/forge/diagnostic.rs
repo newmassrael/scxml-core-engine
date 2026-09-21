@@ -5660,6 +5660,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             left_unit,
             right_unit,
             expr,
+            observed,
         } => DiagnosticPayload {
             // NL→IR Mapping Roadmap Item 4 — reuse the same
             // DiagnosticCode as cross-kind type-mismatch (concept
@@ -5671,7 +5672,8 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             code: DiagnosticCode::ValidationCrossKindTypeMismatch,
             stage: Stage::Validation,
             expected: Some(vec![left_unit.clone()]),
-            actual: Some(right_unit.clone()),
+            // The operation as written; the units live on the fields.
+            actual: observed.clone(),
             fix: None,
             key_fragments: vec![
                 kind.to_string(),

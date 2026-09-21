@@ -82,7 +82,11 @@ fn check_transform(
         let Some(expr_src) = out.expr.as_ref() else {
             continue;
         };
-        check_expression(expr_src, &ctx, ForgeKind::Transform, &m.name, label)?;
+        let site = ExpressionSite {
+            source: expr_src,
+            line: out.expr_line,
+        };
+        check_expression(site, &ctx, ForgeKind::Transform, &m.name, label)?;
     }
     Ok(())
 }
@@ -95,7 +99,11 @@ fn check_condition(
     let ctx = type_ctx::condition(m, imports);
     // ConditionModel exposes the body expression on `m.expr`.
     if !m.expr.trim().is_empty() {
-        check_expression(&m.expr, &ctx, ForgeKind::Condition, &m.name, label)?;
+        let site = ExpressionSite {
+            source: &m.expr,
+            line: m.expr_line,
+        };
+        check_expression(site, &ctx, ForgeKind::Condition, &m.name, label)?;
     }
     Ok(())
 }
@@ -108,23 +116,34 @@ fn check_validator(
     let ctx = type_ctx::validator(m, imports);
     if let Some(expr) = m.rules.plausibility.as_ref() {
         if !expr.trim().is_empty() {
-            check_expression(expr, &ctx, ForgeKind::Validator, &m.name, label)?;
+            let site = ExpressionSite {
+                source: expr,
+                line: m.rules.plausibility_line,
+            };
+            check_expression(site, &ctx, ForgeKind::Validator, &m.name, label)?;
         }
     }
     Ok(())
+}
+
+/// An expression and the row of the attribute it was read from.
+#[derive(Clone, Copy)]
+struct ExpressionSite<'a> {
+    source: &'a str,
+    line: Option<u32>,
 }
 
 /// Parse + infer the expression, then walk the typed AST looking for
 /// binary-op nodes whose two operands carry `InferredType::Quantity`
 /// annotations on different unit tags.
 fn check_expression(
-    expr_src: &str,
+    site: ExpressionSite<'_>,
     ctx: &TypeCtx<'_>,
     kind: ForgeKind,
     name: &str,
     label: &str,
 ) -> Result<(), Located<crate::forge::error::ForgeError>> {
-    let trimmed = expr_src.trim();
+    let trimmed = site.source.trim();
     if trimmed.is_empty() {
         return Ok(());
     }
@@ -146,9 +165,13 @@ fn check_expression(
                 left_unit: mismatch.left_unit.to_owned(),
                 right_unit: mismatch.right_unit.to_owned(),
                 expr: trimmed.to_owned(),
+                observed: mismatch
+                    .span
+                    .and_then(|span| trimmed.get(span))
+                    .map(str::to_string),
             },
         ));
-        return Err(Located::new(err, label, None, None));
+        return Err(Located::new(err, label, site.line, None));
     }
     Ok(())
 }
@@ -175,6 +198,7 @@ fn find_unit_mismatch(ast: &TypedExpr) -> Option<UnitMismatch> {
                         op: binop_token(*op),
                         left_unit: u_l.as_str(),
                         right_unit: u_r.as_str(),
+                        span: ast.span.clone(),
                     });
                 }
             }
@@ -222,6 +246,8 @@ struct UnitMismatch {
     op: &'static str,
     left_unit: &'static str,
     right_unit: &'static str,
+    /// Where the operation the units meet in was read from.
+    span: Option<std::ops::Range<usize>>,
 }
 
 fn binop_token(op: BinOp) -> &'static str {
@@ -313,6 +339,34 @@ mod tests {
         assert_eq!(m.op, "-");
     }
 
+    /// The refusal reports the operation the units meet in, as written —
+    /// the innermost one, not the whole expression and not a unit, which
+    /// the fields declare and the expression never spells.
+    #[test]
+    fn the_refusal_names_the_operation_as_written() {
+        let site = ExpressionSite {
+            source: "  (celsius - kelvin) + celsius ",
+            line: Some(16),
+        };
+        let err = check_expression(
+            site,
+            &celsius_ctx(),
+            ForgeKind::Transform,
+            "test_fn",
+            "test.scxml",
+        )
+        .expect_err("the mismatch is refused");
+        assert_eq!(err.location.line, Some(16), "the attribute's row: {err:?}");
+        let crate::forge::error::ForgeError::Validation(boxed) = &err.error else {
+            panic!("a validation refusal: {err:?}");
+        };
+        let ValidationError::QuantityUnitMismatch { observed, .. } = boxed.as_ref() else {
+            panic!("a unit mismatch: {boxed:?}");
+        };
+        // Parentheses and all: the operand as the author wrote it.
+        assert_eq!(observed.as_deref(), Some("(celsius - kelvin)"));
+    }
+
     #[test]
     fn comparison_between_different_units_is_detected() {
         let mut ast = parse_to_ast("celsius < kelvin").unwrap();
@@ -326,7 +380,10 @@ mod tests {
         // Silent on syntax errors: the expression layer reports them,
         // and a second voice here would double-emit.
         let result = check_expression(
-            "((",
+            ExpressionSite {
+                source: "((",
+                line: None,
+            },
             &celsius_ctx(),
             ForgeKind::Transform,
             "test_fn",

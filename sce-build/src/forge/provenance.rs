@@ -507,6 +507,7 @@ mod tests {
             sce_type: SceType::Uint8,
             direction: Direction::In,
             expr: None,
+            expr_line: None,
             quantity: None,
             max_size: None,
             default_covers: Vec::new(),
@@ -531,6 +532,7 @@ mod tests {
                 name: "c".into(),
                 inputs: vec![scalar.clone()],
                 expr: "x > 0".into(),
+                expr_line: None,
                 source_location: None,
             }),
             ForgeDocument::Codec(CodecModel {
@@ -550,6 +552,7 @@ mod tests {
                     ranges: Vec::new(),
                     rate_of_changes: Vec::new(),
                     plausibility: None,
+                    plausibility_line: None,
                 },
                 source_location: None,
             }),

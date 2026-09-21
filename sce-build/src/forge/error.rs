@@ -3646,10 +3646,13 @@ pub enum ValidationError {
         left_unit: String,
         /// Right operand's unit, rendered via `UnitTag::as_str`.
         right_unit: String,
-        /// Original expression source as authored, for the
-        /// diagnostic's `actual` slot. Helps the author find the
-        /// specific site without a separate location pointer.
+        /// The whole expression as authored, for the message.
         expr: String,
+        /// The operation the two units meet in, as the author wrote it —
+        /// the innermost one, when several are nested — which the wire
+        /// reports as `actual` (SCE_ERROR_CONTRACT §3.1.1). The units are
+        /// not: they are declared on the fields, not in the expression.
+        observed: Option<String>,
     },
 
     /// The `<sce:import>` graph contains a cycle:

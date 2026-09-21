@@ -347,6 +347,7 @@ fn parse_validator(head: &Line<'_>, body: &[&Line<'_>]) -> Result<ValidatorModel
             ranges: Vec::new(),
             rate_of_changes: Vec::new(),
             plausibility: None,
+            plausibility_line: None,
         },
         source_location: None,
     };
@@ -470,6 +471,8 @@ fn parse_field(line: &Line<'_>) -> Result<ForgeField, ParseError> {
         sce_type,
         direction: dir,
         expr: None,
+        // A pseudocode line is not a row of the SCXML document.
+        expr_line: None,
         quantity: None,
         max_size: None,
         default_covers: Vec::new(),
@@ -562,6 +565,7 @@ fn parse_condition(head: &Line<'_>, body: &[&Line<'_>]) -> Result<ConditionModel
         name: head_name(head)?,
         inputs: Vec::new(),
         expr: String::new(),
+        expr_line: None,
         source_location: None,
     };
     for l in body {

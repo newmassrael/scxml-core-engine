@@ -181,6 +181,7 @@ mod tests {
                 sce_type: SceType::Bytes,
                 direction: Direction::Internal,
                 expr: None,
+                expr_line: None,
                 quantity: None,
                 max_size: seed_cap,
                 default_covers: Vec::new(),
