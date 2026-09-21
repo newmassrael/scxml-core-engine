@@ -3984,8 +3984,18 @@ pub enum ExprError {
     Lex { position: usize, detail: String },
 
     /// Unsupported ECMAScript construct (arrow, nullish, spread, …).
+    ///
+    /// `construct` names the construct for the message; `observed` is the
+    /// text the author wrote for it — the operator, the reserved word, the
+    /// name, the literal — and is what the wire reports as `actual`,
+    /// since a consumer searches the document for that and not for a
+    /// description (SCE_ERROR_CONTRACT §3.1.1). `None` when no single
+    /// spelling in the source stands for the construct.
     #[error("unsupported ECMAScript construct: {construct}. Extended SCXML expressions must use the stateless subset.")]
-    UnsupportedConstruct { construct: String },
+    UnsupportedConstruct {
+        construct: String,
+        observed: Option<String>,
+    },
 
     /// A standard-library *name* the ECMAScript datamodel does not
     /// provide — `words.map(...)`, `JSON.serialize(...)`, `Math.tanh(...)`.

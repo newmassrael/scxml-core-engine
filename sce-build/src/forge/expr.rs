@@ -526,9 +526,13 @@ fn reject_policy_violating_tokens(tokens: &[Token]) -> Result<(), ExprError> {
                     strict: "!==",
                 })
             }
-            Token::Unsupported(construct) => {
+            Token::Unsupported {
+                construct,
+                spelling,
+            } => {
                 return Err(ExprError::UnsupportedConstruct {
                     construct: (*construct).to_string(),
+                    observed: Some((*spelling).to_string()),
                 })
             }
             _ => {}
@@ -863,11 +867,14 @@ pub(crate) enum Token {
     LooseNeq,
     /// A construct that is lexically well-formed ECMAScript but outside
     /// the Forge subset (`=>`, `??`, `?.`, `...`, a template literal).
-    /// Carries its author-facing description; rejected by
-    /// [`reject_policy_violating_tokens`] as
+    /// Carries its author-facing description and the spelling the author
+    /// wrote; rejected by [`reject_policy_violating_tokens`] as
     /// [`ExprError::UnsupportedConstruct`], the same diagnostic the
     /// tokenizer used to raise, one layer up.
-    Unsupported(&'static str),
+    Unsupported {
+        construct: &'static str,
+        spelling: &'static str,
+    },
     Lt,
     Gt,
     LtEq,
@@ -905,7 +912,7 @@ pub(crate) enum Token {
     MinusMinus,
     /// Compound assignment (`+=`, `-=`, `*=`, `/=`, `%=`), carrying the
     /// arithmetic operator it folds in.
-    OpAssign(BinOp),
+    OpAssign(ArithOp),
     Eof,
 }
 
@@ -943,7 +950,7 @@ impl fmt::Display for Token {
             Token::StrictNeq => write!(f, "!=="),
             Token::LooseEq => write!(f, "=="),
             Token::LooseNeq => write!(f, "!="),
-            Token::Unsupported(c) => write!(f, "{c}"),
+            Token::Unsupported { construct, .. } => write!(f, "{construct}"),
             Token::Lt => write!(f, "<"),
             Token::Gt => write!(f, ">"),
             Token::LtEq => write!(f, "<="),
@@ -972,26 +979,37 @@ impl fmt::Display for Token {
             Token::Assign => write!(f, "="),
             Token::PlusPlus => write!(f, "++"),
             Token::MinusMinus => write!(f, "--"),
-            Token::OpAssign(op) => write!(f, "{}=", ecma_arith_text(*op)),
+            Token::OpAssign(op) => write!(f, "{}=", op.text()),
             Token::Eof => write!(f, "EOF"),
         }
     }
 }
 
-/// The ECMAScript spelling of the arithmetic operators a compound
-/// assignment can fold in. Used by [`Token`]'s `Display` and by the
-/// ECMAScript-to-Lua emitter, which needs the source spelling rather than
-/// any one backend's rendering of it.
-pub(crate) fn ecma_arith_text(op: BinOp) -> &'static str {
-    match op {
-        BinOp::Add => "+",
-        BinOp::Sub => "-",
-        BinOp::Mul => "*",
-        BinOp::Div => "/",
-        BinOp::Mod => "%",
-        other => {
-            debug_assert!(false, "not a compound-assignment operator: {other:?}");
-            "+"
+/// The arithmetic operators a compound assignment can fold in — the only
+/// ones the lexer reads before `=`.
+///
+/// Its own type rather than a [`BinOp`], which let `Token::OpAssign` carry
+/// `Shl` or `StrictEq`: no input produced one, yet every consumer had to
+/// answer for it, and the answers were a debug-formatted refusal and a
+/// silent `+`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ArithOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+}
+
+impl ArithOp {
+    /// The ECMAScript spelling, without the `=`.
+    pub(crate) fn text(self) -> &'static str {
+        match self {
+            Self::Add => "+",
+            Self::Sub => "-",
+            Self::Mul => "*",
+            Self::Div => "/",
+            Self::Mod => "%",
         }
     }
 }
@@ -1153,22 +1171,34 @@ pub(crate) fn tokenize_as(input: &str, mode: LexMode) -> Result<Vec<Token>, Expr
         // input and identical for these ASCII needles, so the unknown
         // character now walks to the arm that names it.
         if bytes[i..].starts_with(b"...") {
-            tokens.push(Token::Unsupported("spread/rest (...)"));
+            tokens.push(Token::Unsupported {
+                construct: "spread/rest (...)",
+                spelling: "...",
+            });
             i += 3;
             continue;
         }
         if bytes[i..].starts_with(b"=>") {
-            tokens.push(Token::Unsupported("arrow function (=>)"));
+            tokens.push(Token::Unsupported {
+                construct: "arrow function (=>)",
+                spelling: "=>",
+            });
             i += 2;
             continue;
         }
         if bytes[i..].starts_with(b"??") {
-            tokens.push(Token::Unsupported("nullish coalescing (??)"));
+            tokens.push(Token::Unsupported {
+                construct: "nullish coalescing (??)",
+                spelling: "??",
+            });
             i += 2;
             continue;
         }
         if bytes[i..].starts_with(b"?.") {
-            tokens.push(Token::Unsupported("optional chaining (?.)"));
+            tokens.push(Token::Unsupported {
+                construct: "optional chaining (?.)",
+                spelling: "?.",
+            });
             i += 2;
             continue;
         }
@@ -1186,7 +1216,10 @@ pub(crate) fn tokenize_as(input: &str, mode: LexMode) -> Result<Vec<Token>, Expr
                 Some(offset) => i + 1 + offset + 1,
                 None => len,
             };
-            tokens.push(Token::Unsupported("template literal (`)"));
+            tokens.push(Token::Unsupported {
+                construct: "template literal (`)",
+                spelling: "`",
+            });
             continue;
         }
 
@@ -1220,11 +1253,11 @@ pub(crate) fn tokenize_as(input: &str, mode: LexMode) -> Result<Vec<Token>, Expr
                 b">=" => Some(Token::GtEq),
                 b"++" if ecma => Some(Token::PlusPlus),
                 b"--" if ecma => Some(Token::MinusMinus),
-                b"+=" if ecma => Some(Token::OpAssign(BinOp::Add)),
-                b"-=" if ecma => Some(Token::OpAssign(BinOp::Sub)),
-                b"*=" if ecma => Some(Token::OpAssign(BinOp::Mul)),
-                b"/=" if ecma => Some(Token::OpAssign(BinOp::Div)),
-                b"%=" if ecma => Some(Token::OpAssign(BinOp::Mod)),
+                b"+=" if ecma => Some(Token::OpAssign(ArithOp::Add)),
+                b"-=" if ecma => Some(Token::OpAssign(ArithOp::Sub)),
+                b"*=" if ecma => Some(Token::OpAssign(ArithOp::Mul)),
+                b"/=" if ecma => Some(Token::OpAssign(ArithOp::Div)),
+                b"%=" if ecma => Some(Token::OpAssign(ArithOp::Mod)),
                 _ => None,
             };
             if let Some(t) = tok {
@@ -1304,6 +1337,7 @@ fn validate_keyword(word: &str) -> Result<(), ExprError> {
         if word == kw {
             return Err(ExprError::UnsupportedConstruct {
                 construct: desc.to_string(),
+                observed: Some(kw.to_string()),
             });
         }
     }

@@ -317,7 +317,13 @@ fn binary(op: BinOp, left: &Expr, right: &Expr) -> Result<String, ExprError> {
                             "instanceof {} (only Array is representable)",
                             describe(other)
                         ),
-                    })
+                        // The constructor the author named, when a name is
+                        // what they wrote; otherwise the operator itself.
+                        observed: Some(match other {
+                            Expr::Ident(name) => name.clone(),
+                            _ => "instanceof".to_string(),
+                        }),
+                    });
                 }
             }
         }
@@ -396,6 +402,7 @@ fn member(object: &Expr, property: &str) -> Result<String, ExprError> {
                 other if builtins::MATH_FUNCTIONS.contains(&other) => {
                     Err(ExprError::UnsupportedConstruct {
                         construct: format!("Math.{other}"),
+                        observed: Some(other.to_string()),
                     })
                 }
                 other => Err(builtins::unknown_member(builtins::Namespace::Math, other)
@@ -613,6 +620,7 @@ fn math_call(name: &str, args: &[String]) -> Result<String, ExprError> {
         if args.len() != 2 {
             return Err(ExprError::UnsupportedConstruct {
                 construct: format!("Math.pow with {} argument(s)", args.len()),
+                observed: Some("pow".to_string()),
             });
         }
         return Ok(format!("(({}) ^ ({}))", args[0], args[1]));
@@ -640,6 +648,7 @@ fn function_literal(params: &[String], body: &[Stmt]) -> Result<String, ExprErro
         if is_lua_keyword(param) {
             return Err(ExprError::UnsupportedConstruct {
                 construct: format!("parameter named '{param}' (a Lua keyword)"),
+                observed: Some(param.clone()),
             });
         }
     }
@@ -698,6 +707,7 @@ fn statement(stmt: &Stmt, scope: Scope, out: &mut String) -> Result<(), ExprErro
                 if scope.in_function && is_lua_keyword(name) {
                     return Err(ExprError::UnsupportedConstruct {
                         construct: format!("local variable named '{name}' (a Lua keyword)"),
+                        observed: Some(name.clone()),
                     });
                 }
                 let keyword = if scope.in_function { "local " } else { "" };
@@ -807,6 +817,7 @@ fn statement(stmt: &Stmt, scope: Scope, out: &mut String) -> Result<(), ExprErro
             if is_lua_keyword(name) {
                 return Err(ExprError::UnsupportedConstruct {
                     construct: format!("loop variable named '{name}' (a Lua keyword)"),
+                    observed: Some(name.clone()),
                 });
             }
             out.push_str(&format!(
@@ -824,6 +835,7 @@ fn statement(stmt: &Stmt, scope: Scope, out: &mut String) -> Result<(), ExprErro
             if is_lua_keyword(name) {
                 return Err(ExprError::UnsupportedConstruct {
                     construct: format!("function named '{name}' (a Lua keyword)"),
+                    observed: Some(name.clone()),
                 });
             }
             let literal = function_literal(params, body)?;
@@ -1034,6 +1046,7 @@ fn lua_number(text: &str) -> Result<String, ExprError> {
         Ok(v) => Ok(v.to_string()),
         Err(_) => Err(ExprError::UnsupportedConstruct {
             construct: format!("numeric literal '{text}'"),
+            observed: Some(text.to_string()),
         }),
     }
 }

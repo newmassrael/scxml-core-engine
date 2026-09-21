@@ -157,8 +157,9 @@ fn a_refused_expression_is_reported_and_the_document_still_generates() {
     assert_eq!(record["code"], "expression/unsupported-construct");
     assert_eq!(record["stage"], "expression");
     assert_eq!(
-        record["actual"], "reserved word 'return' used as a value",
-        "the construct rides `actual`, not just the prose"
+        record["actual"], "return",
+        "`actual` is the word the author wrote — the one a consumer finds \
+         on the reported line — and the description stays in the message"
     );
     // The author has to be able to open the line. A location naming
     // only the file would leave them the same search the raise did —

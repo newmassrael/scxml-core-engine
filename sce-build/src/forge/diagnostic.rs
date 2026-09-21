@@ -4985,6 +4985,7 @@ impl ToDiagnostics for crate::ecmascript_acceptance::RefusedExpression {
     fn exit_code(&self) -> i32 {
         ForgeError::Expression(ExprError::UnsupportedConstruct {
             construct: String::new(),
+            observed: None,
         })
         .exit_code()
     }
@@ -8290,11 +8291,16 @@ fn expression_fields(e: &ExprError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![position.to_string(), detail.clone()],
         },
-        ExprError::UnsupportedConstruct { construct } => DiagnosticPayload {
+        ExprError::UnsupportedConstruct {
+            construct,
+            observed,
+        } => DiagnosticPayload {
             code: DiagnosticCode::ExpressionUnsupportedConstruct,
             stage: Stage::Expression,
             expected: None,
-            actual: Some(construct.clone()),
+            // The author's spelling, not the description of it: the
+            // description is not in the document.
+            actual: observed.clone(),
             fix: None,
             key_fragments: vec![construct.clone()],
         },
@@ -10821,9 +10827,10 @@ mod tests {
                 "forge/expression-unsupported-construct",
                 ExprError::UnsupportedConstruct {
                     construct: "arrow function".into(),
+                    observed: Some("=>".into()),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:d953d35f95a3575d","code":"expression/unsupported-construct","stage":"expression","spec":"SCE Forge §3.4","message":"unsupported ECMAScript construct: arrow function. Extended SCXML expressions must use the stateless subset.","actual":"arrow function"}"#,
+                r#"{"v":1,"id":"fnv1a:d953d35f95a3575d","code":"expression/unsupported-construct","stage":"expression","spec":"SCE Forge §3.4","message":"unsupported ECMAScript construct: arrow function. Extended SCXML expressions must use the stateless subset.","actual":"=>"}"#,
             ),
             (
                 // A standard method name the datamodel has no

@@ -345,7 +345,7 @@ impl<'a> Parser<'a> {
         let left = self.parse_conditional()?;
         let op = match self.peek() {
             Token::Assign => None,
-            Token::OpAssign(op) => Some(map_arith(*op)?),
+            Token::OpAssign(op) => Some(map_arith(*op)),
             _ => return Ok(left),
         };
         self.advance();
@@ -757,6 +757,7 @@ impl<'a> Parser<'a> {
                 if is_reserved_word(&word) {
                     return Err(ExprError::UnsupportedConstruct {
                         construct: format!("reserved word '{word}' used as a value"),
+                        observed: Some(word),
                     });
                 }
                 self.advance();
@@ -792,21 +793,16 @@ fn binary(op: BinOp, left: Expr, right: Expr) -> Expr {
 }
 
 /// Map the arithmetic operator a compound assignment carries from the
-/// shared lexer's [`crate::forge::expr::BinOp`] to this dialect's.
-fn map_arith(op: crate::forge::expr::BinOp) -> Result<BinOp, ExprError> {
-    use crate::forge::expr::BinOp as Shared;
-    Ok(match op {
-        Shared::Add => BinOp::Add,
-        Shared::Sub => BinOp::Sub,
-        Shared::Mul => BinOp::Mul,
-        Shared::Div => BinOp::Div,
-        Shared::Mod => BinOp::Mod,
-        other => {
-            return Err(ExprError::UnsupportedConstruct {
-                construct: format!("compound assignment with {other:?}"),
-            })
-        }
-    })
+/// shared lexer's [`crate::forge::expr::ArithOp`] to this dialect's.
+fn map_arith(op: crate::forge::expr::ArithOp) -> BinOp {
+    use crate::forge::expr::ArithOp;
+    match op {
+        ArithOp::Add => BinOp::Add,
+        ArithOp::Sub => BinOp::Sub,
+        ArithOp::Mul => BinOp::Mul,
+        ArithOp::Div => BinOp::Div,
+        ArithOp::Mod => BinOp::Mod,
+    }
 }
 
 /// Decode ECMAScript string escapes to the characters they denote.
