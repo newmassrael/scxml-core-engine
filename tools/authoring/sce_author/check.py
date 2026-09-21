@@ -157,6 +157,50 @@ def read_document(path: pathlib.Path) -> Document:
     )
 
 
+def imports_of(path: pathlib.Path) -> list[pathlib.Path]:
+    """Every document this one imports, and every one those import, once each.
+
+    ⚠ The product's generator builds ONE document per run. The others it names
+    only as build dependencies, while the code it writes expects each
+    `<sce:import>` as a sibling beside it. A caller that builds a document in
+    order to RUN it therefore owes the whole closure -- and `verify` built the
+    root alone, so a document importing so much as an enumeration died on its
+    own import line before a single case had run.
+
+    Paths are resolved against the importing document, as the generator
+    resolves them. An import the core cannot find or read is refused here,
+    naming the document that asked for it, rather than surfacing later as a
+    module the runtime cannot load.
+    """
+    root_path = pathlib.Path(path).resolve()
+    found: list[pathlib.Path] = []
+    visited = {root_path}
+    pending = [root_path]
+    while pending:
+        current = pending.pop(0)
+        try:
+            root = ET.parse(current).getroot()
+        except (ET.ParseError, OSError) as exc:
+            raise PackError(f"{current}: cannot be read as a document ({exc})") from exc
+        for node in root.iter(f"{SCE_NS}import"):
+            src = node.get("src")
+            if not src:
+                raise PackError(
+                    f"{current}: an <sce:import> names no `src`, so there is "
+                    f"no document to build beside this one")
+            target = (current.parent / src).resolve()
+            if target in visited:
+                continue
+            if not target.is_file():
+                raise PackError(
+                    f"{current}: imports {src!r}, and there is no document at "
+                    f"{target}")
+            visited.add(target)
+            found.append(target)
+            pending.append(target)
+    return found
+
+
 def read_binding(path: pathlib.Path) -> dict:
     # ⚠ Pointing `--binding` at a document that is not one is the ordinary
     # mistake here, and it used to arrive as a YAML parser traceback whose
@@ -393,8 +437,13 @@ def check(pack: Pack, binding_path: pathlib.Path) -> list[Finding]:
             Finding(
                 f"document {document.path.name}",
                 f"declares kind {document.kind!r}, which answers from this "
-                f"round's inputs alone, but the binding feeds its own output "
-                f"back as {', '.join(memory)}. The component is this document "
+                # ⚠ "Reads an earlier round", not "feeds its own output back":
+                # the list holds an input's previous value and a latched
+                # protocol as well as the document's own last output, and the
+                # narrower sentence sent an author looking for a feedback loop
+                # their binding did not have.
+                f"round's inputs alone, but the binding reads an earlier round "
+                f"through {', '.join(memory)}. The component is this document "
                 f"plus something that remembers, and the kind does not say so.",
             )
         )

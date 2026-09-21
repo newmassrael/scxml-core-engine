@@ -221,7 +221,7 @@ class TheCheckRefuses(Fixture):
                                                            "guard, not the "
                                                            "obligation"}}}
         found = str(self.bind(b))
-        self.assertIn("feeds its own output back", found)
+        self.assertIn("reads an earlier round", found)
         self.assertIn("'transform'", found)
 
     def test_a_kind_that_is_allowed_to_remember_is_left_alone(self):
@@ -234,7 +234,7 @@ class TheCheckRefuses(Fixture):
                                            "caller_keeps": "measuring the kind "
                                                            "guard, not the "
                                                            "obligation"}}}
-        self.assertNotIn("feeds its own output back", str(self.bind(b)))
+        self.assertNotIn("reads an earlier round", str(self.bind(b)))
 
     def test_a_latched_protocol_is_memory_too(self):
         """⚠ The same lie arriving through a key that did not exist when the
@@ -255,7 +255,7 @@ class TheCheckRefuses(Fixture):
             "parameters": {"up": "Plant.Input.Count",
                            "down": "Plant.Input.SupplyMode"}}}}
         found = str(self.bind(b))
-        self.assertIn("feeds its own output back", found)
+        self.assertIn("reads an earlier round", found)
         self.assertIn("'transform'", found)
 
     def test_a_latch_over_the_platforms_own_plumbing_is_not_the_authors_memory(self):
@@ -280,7 +280,7 @@ class TheCheckRefuses(Fixture):
         over_plumbing = {**BINDING, "inputs": {**BINDING["inputs"], "gate": {
             "protocol": "paired-counter",
             "parameters": {"up": "Plant.Supply.On", "down": "Plant.Supply.Off"}}}}
-        self.assertNotIn("feeds its own output back",
+        self.assertNotIn("reads an earlier round",
                          str(self.bind(over_plumbing)))
 
         # One parameter outside the plumbing and it is the document's again.
@@ -288,7 +288,7 @@ class TheCheckRefuses(Fixture):
             "protocol": "paired-counter",
             "parameters": {"up": "Plant.Input.Count",
                            "down": "Plant.Supply.Off"}}}}
-        self.assertIn("feeds its own output back", str(self.bind(mixed)))
+        self.assertIn("reads an earlier round", str(self.bind(mixed)))
 
     def test_an_undefined_protocol_is_undecidable_not_innocent(self):
         """⚠ The discriminator, and the honest third answer.
@@ -304,7 +304,7 @@ class TheCheckRefuses(Fixture):
                            "down": "Plant.Input.SupplyMode"}}}}
         found = str(self.bind(b))
         self.assertIn("cannot be decided", found)
-        self.assertNotIn("feeds its own output back", found)
+        self.assertNotIn("reads an earlier round", found)
 
     def test_a_kind_allowed_to_remember_is_left_alone_by_both_arms(self):
         document = DOCUMENT.replace('sce:kind="transform"', 'sce:kind="procedure"')
@@ -319,7 +319,7 @@ class TheCheckRefuses(Fixture):
             "parameters": {"up": "Plant.Input.Count",
                            "down": "Plant.Input.SupplyMode"}}}}
         found = str(self.bind(b))
-        self.assertNotIn("feeds its own output back", found)
+        self.assertNotIn("reads an earlier round", found)
         self.assertNotIn("cannot be decided", found)
 
     def test_a_document_value_with_no_binding_at_all(self):

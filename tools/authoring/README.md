@@ -136,7 +136,9 @@ existed, the last step of the workflow was "and hope".
 It needs nothing new. The examples carry values, so they are a test suite; the
 binding says which address feeds which input and receives which output, so the
 marshalling needs no subject knowledge; and the product already generates
-runnable code from the document. ⚠ It refuses rather than skipping -- a kind
+runnable code from the document. The generator builds one document per run, so
+`verify` builds every document the root imports beside it, and every import of
+those -- the generated code expects each `<sce:import>` as a sibling. ⚠ It refuses rather than skipping -- a kind
 whose generated shape it cannot drive, an input rule it cannot evaluate, an
 expected address the binding never writes. A verifier that quietly skips what
 it does not understand reports a clean run for a document it never executed.

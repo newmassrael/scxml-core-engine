@@ -36,7 +36,7 @@ import sys
 import tempfile
 from dataclasses import dataclass, field
 
-from .check import read_binding
+from .check import imports_of, read_binding
 from .errors import AuthoringError
 from .pack import Pack
 
@@ -1158,6 +1158,16 @@ def verify(pack: Pack, binding_path: pathlib.Path,
     build = generate(document, codegen, into, backend)
     if build.refusal:
         return Verification(refusal=build.refusal)
+    # ⚠ The generated module imports each `<sce:import>` as a sibling, and the
+    # generator builds only the document it was handed. Without this every
+    # document importing an enumeration died on its own import line, before a
+    # case ran -- a crash that named the generated module, not the import.
+    for imported in imports_of(document):
+        built = generate(imported, codegen, into, backend)
+        if built.refusal:
+            return Verification(refusal=(
+                f"{imported.name}, which {document.name} imports, could not "
+                f"be built: {built.refusal}"))
     module = load(into, document)
 
     if declared.kind in STATECHART_KINDS:
