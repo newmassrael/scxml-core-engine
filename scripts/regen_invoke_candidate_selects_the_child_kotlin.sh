@@ -23,7 +23,8 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 STEM="invoke_candidate_selects_the_child"
-FIXTURE="integration_resources/$STEM/$STEM.scxml"
+FIXTURE_DIR="integration_resources/$STEM"
+FIXTURE="$FIXTURE_DIR/$STEM.scxml"
 GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/$STEM"
 PACKAGE_PREFIX="com.sce.integration"
 
@@ -35,12 +36,19 @@ trap 'rm -rf "$TMP"' EXIT
 
 "$CODEGEN" generate "$FIXTURE" -l kotlin -o "$TMP/" \
     --kotlin-package-prefix "$PACKAGE_PREFIX"
+# ⚠ Generated from the TRACKED document, not from the copy the parent run
+# staged beside itself. A candidate is a real file in the fixture
+# directory, so naming it there is both true and reproducible; naming the
+# staged copy would put `$TMP` — a different name on every run — into the
+# `// From:` line of a committed artefact, which `regen-reproduces` reads
+# as the tree failing to regenerate.
 for child in "$TMP"/*.scxml; do
     [ -e "$child" ] || continue
-    case "$(basename "$child")" in
-        "$STEM.scxml") continue ;;
-    esac
-    "$CODEGEN" generate "$child" --as-child --parent-stem "$STEM" -l kotlin -o "$TMP/" \
+    base="$(basename "$child")"
+    [ "$base" = "$STEM.scxml" ] && continue
+    src="$FIXTURE_DIR/$base"
+    [ -f "$src" ] || src="$child"
+    "$CODEGEN" generate "$src" --as-child --parent-stem "$STEM" -l kotlin -o "$TMP/" \
         --kotlin-package-prefix "$PACKAGE_PREFIX"
 done
 

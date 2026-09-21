@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 78137dd5dbf3788d85f431e023917a5a31da66e1584276135a6c5f977b5fdfe9
+// source-hash: 34a3aa3a202a7ed359ee0ab4d1bade13a9630715ad1b32496ec4d19b29db3f4f
 // template-hash: a79dbd46d6bb33b6c94997d5e0fdd391238bcc47af4fd28607bca597b2795f8c
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
-// Source: other.scxml
+// Source: integration_resources/invoke_candidate_selects_the_child/other.scxml
 // Generator: SCE Kotlin Code Generator v1.0
 // SCE-MAP: other.scxml:6 :: _machine
 
