@@ -620,7 +620,7 @@ fn check_transition(
         return Ok(());
     };
 
-    let cond = transition.cond.trim();
+    let cond = guard_text(transition);
     if cond.is_empty() {
         return Ok(());
     }
@@ -940,6 +940,9 @@ fn check_comparison_type(
         Some(kind) => kind,
         None => return Ok(()),
     };
+    let observed = other_operand
+        .source(guard_text(transition))
+        .map(str::to_string);
     if !literal_is_compatible_with(&field.sce_type, other_kind) {
         return Err(located_on_transition(
             transition,
@@ -949,8 +952,9 @@ fn check_comparison_type(
                 importing_name: statechart_name.to_string(),
                 alias: EVENT_DATA_PATH.to_string(),
                 field: field.id.clone(),
-                actual: literal_kind_canonical(other_kind),
+                found: literal_kind_phrase(other_kind),
                 expected: field.sce_type.as_attr(),
+                observed,
             },
         ));
     }
@@ -971,8 +975,9 @@ fn check_comparison_type(
                 importing_name: statechart_name.to_string(),
                 alias: EVENT_DATA_PATH.to_string(),
                 field: field.id.clone(),
-                actual: overflow.actual,
+                found: overflow.found,
                 expected: overflow.expected,
+                observed,
             },
         ));
     }
@@ -993,8 +998,9 @@ fn check_comparison_type(
                 importing_name: statechart_name.to_string(),
                 alias: EVENT_DATA_PATH.to_string(),
                 field: field.id.clone(),
-                actual: not_declared.actual,
+                found: not_declared.found,
                 expected: not_declared.expected,
+                observed,
             },
         ));
     }
@@ -1088,8 +1094,9 @@ fn reject_non_representable_bytes(
                     importing_name: statechart_name.to_string(),
                     alias: EVENT_DATA_PATH.to_string(),
                     field: field.id.clone(),
-                    actual: format!("non-printable-ASCII bytes literal '{value}'"),
+                    found: format!("non-printable-ASCII bytes literal '{value}'"),
                     expected: field.sce_type.as_attr(),
+                    observed: other.source(guard_text(transition)).map(str::to_string),
                 },
             ))
         }
@@ -1200,14 +1207,14 @@ fn literal_is_compatible_with(field_type: &SceType, literal_kind: LiteralKind) -
 
 /// Width-narrowing diagnostic payload returned by
 /// [`enum_underlying_overflow`]. `expected` carries the canonical name
-/// of the enum's declared `underlying_type` (e.g. `"uint8"`), `actual`
-/// names the offending integer literal with its parsed value (e.g.
-/// `"integer literal 131071 (0x1FFFF) overflows uint8 underlying type of enum 'Result'"`).
+/// of the enum's declared `underlying_type` (e.g. `"uint8"`), `found`
+/// describes the offending integer literal with its parsed value (e.g.
+/// `"integer literal 131071, which overflows the uint8 underlying type of enum 'Result'"`).
 /// Keeping both halves text-only lets the existing
 /// `CrossKindTypeMismatch` variant carry the narrowing diagnostic
 /// without new wire codes.
 struct EnumUnderlyingOverflow {
-    actual: String,
+    found: String,
     expected: String,
 }
 
@@ -1249,8 +1256,8 @@ fn enum_underlying_overflow(
         return None;
     }
     Some(EnumUnderlyingOverflow {
-        actual: format!(
-            "integer literal {value} overflows {underlying} underlying type of enum '{alias}'",
+        found: format!(
+            "integer literal {value}, which overflows the {underlying} underlying type of enum '{alias}'",
             underlying = enum_model.underlying_type.as_attr(),
             alias = enum_ref.alias,
         ),
@@ -1289,7 +1296,7 @@ fn integer_literal_value(operand: &TypedExpr) -> Option<i128> {
 /// can flow through the same `CrossKindTypeMismatch` reuse precedent
 /// without a new wire code.
 struct EnumVariantNotDeclared {
-    actual: String,
+    found: String,
     expected: String,
 }
 
@@ -1345,8 +1352,8 @@ fn enum_variant_not_declared(
         .collect::<Vec<_>>()
         .join(", ");
     Some(EnumVariantNotDeclared {
-        actual: format!(
-            "integer literal {value} is not a declared variant of enum '{alias}' (declared: {declared})",
+        found: format!(
+            "integer literal {value}, which is not a declared variant of enum '{alias}' (declared: {declared})",
             alias = enum_ref.alias,
         ),
         expected: format!("enum:{alias}", alias = enum_ref.alias),
@@ -1393,13 +1400,21 @@ fn value_fits_underlying(value: i128, underlying: &SceType) -> bool {
     (min..=max).contains(&value)
 }
 
-fn literal_kind_canonical(kind: LiteralKind) -> String {
+/// A literal's kind as the message names what a field was given.
+fn literal_kind_phrase(kind: LiteralKind) -> String {
     match kind {
-        LiteralKind::Int => "integer".to_string(),
-        LiteralKind::Float => "float".to_string(),
-        LiteralKind::Bool => "bool".to_string(),
-        LiteralKind::String => "string".to_string(),
+        LiteralKind::Int => "an integer literal".to_string(),
+        LiteralKind::Float => "a float literal".to_string(),
+        LiteralKind::Bool => "a bool literal".to_string(),
+        LiteralKind::String => "a string literal".to_string(),
     }
+}
+
+/// The text a transition's guard is parsed from — the one string
+/// [`parse_to_ast`] reads here, so the spans of the tree it returns slice
+/// it.
+fn guard_text(transition: &Transition) -> &str {
+    transition.cond.trim()
 }
 
 fn is_comparison(op: BinOp) -> bool {
@@ -1672,6 +1687,7 @@ fn check_send_param(
     let Some(literal_kind) = operand_literal_kind(&expr_ast) else {
         return Ok(());
     };
+    let observed = expr_ast.source(expr_text).map(str::to_string);
     if !literal_is_compatible_with(&field.sce_type, literal_kind) {
         return Err(located_on_param(
             param,
@@ -1682,8 +1698,9 @@ fn check_send_param(
                 importing_name: statechart_name.to_string(),
                 alias: format!("<send event=\"{}\">", action.event),
                 field: field.id.clone(),
-                actual: literal_kind_canonical(literal_kind),
+                found: literal_kind_phrase(literal_kind),
                 expected: field.sce_type.as_attr(),
+                observed,
             },
         ));
     }
@@ -1697,8 +1714,9 @@ fn check_send_param(
                 importing_name: statechart_name.to_string(),
                 alias: format!("<send event=\"{}\">", action.event),
                 field: field.id.clone(),
-                actual: overflow.actual,
+                found: overflow.found,
                 expected: overflow.expected,
+                observed,
             },
         ));
     }
@@ -1719,8 +1737,9 @@ fn check_send_param(
                 importing_name: statechart_name.to_string(),
                 alias: format!("<send event=\"{}\">", action.event),
                 field: field.id.clone(),
-                actual: not_declared.actual,
+                found: not_declared.found,
                 expected: not_declared.expected,
+                observed,
             },
         ));
     }

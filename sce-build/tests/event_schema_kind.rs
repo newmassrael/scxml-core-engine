@@ -213,13 +213,17 @@ fn negative_type_mismatch_rejects_with_typed_diagnostic() {
         ForgeError::Validation(boxed) => match *boxed {
             ValidationError::CrossKindTypeMismatch {
                 field,
-                actual,
+                found,
                 expected,
+                observed,
                 ..
             } => {
                 assert_eq!(field, "elapsed_ms");
-                assert_eq!(actual, "string");
+                assert_eq!(found, "a string literal");
                 assert_eq!(expected, "uint32");
+                // The operand as the author wrote it — what the wire
+                // reports as `actual`.
+                assert_eq!(observed.as_deref(), Some("'forty-two'"));
             }
             other => panic!("expected CrossKindTypeMismatch, got {other:?}"),
         },
@@ -434,14 +438,16 @@ fn negative_send_type_mismatch_rejects_with_typed_diagnostic() {
         ForgeError::Validation(boxed) => match *boxed {
             ValidationError::CrossKindTypeMismatch {
                 field,
-                actual,
+                found,
                 expected,
                 alias,
+                observed,
                 ..
             } => {
                 assert_eq!(field, "elapsed_ms");
-                assert_eq!(actual, "string");
+                assert_eq!(found, "a string literal");
                 assert_eq!(expected, "uint32");
+                assert_eq!(observed.as_deref(), Some("'not-a-number'"));
                 // Send-side alias names the offending action shape
                 // so the diagnostic message distinguishes it from
                 // the receive-side `_event.data` alias.
@@ -585,7 +591,7 @@ fn negative_enum_literal_overflow_receive_side_rejects() {
         ForgeError::Validation(boxed) => match *boxed {
             ValidationError::CrossKindTypeMismatch {
                 field,
-                actual,
+                found,
                 expected,
                 alias,
                 ..
@@ -593,8 +599,8 @@ fn negative_enum_literal_overflow_receive_side_rejects() {
                 assert_eq!(field, "status");
                 assert_eq!(expected, "uint8");
                 assert!(
-                    actual.contains("256") && actual.contains("uint8") && actual.contains("Result"),
-                    "expected message to name literal 256, underlying uint8, alias Result; got {actual:?}"
+                    found.contains("256") && found.contains("uint8") && found.contains("Result"),
+                    "expected message to name literal 256, underlying uint8, alias Result; got {found:?}"
                 );
                 assert_eq!(alias, "_event.data");
             }
@@ -631,20 +637,22 @@ fn negative_enum_literal_overflow_send_side_rejects() {
         ForgeError::Validation(boxed) => match *boxed {
             ValidationError::CrossKindTypeMismatch {
                 field,
-                actual,
+                found,
                 expected,
                 alias,
+                observed,
                 ..
             } => {
                 assert_eq!(field, "status");
                 assert_eq!(expected, "uint8");
                 // 0x1FFFF = 131071 (decimal form in the diagnostic).
                 assert!(
-                    actual.contains("131071")
-                        && actual.contains("uint8")
-                        && actual.contains("Result"),
-                    "expected message to name 131071, uint8, Result; got {actual:?}"
+                    found.contains("131071") && found.contains("uint8") && found.contains("Result"),
+                    "expected message to name 131071, uint8, Result; got {found:?}"
                 );
+                // The wire's `actual` is the literal as written, hex and
+                // all — the decimal is the message's reading of it.
+                assert_eq!(observed.as_deref(), Some("0x1FFFF"));
                 assert!(
                     alias.contains("send") && alias.contains("job.completed"),
                     "expected alias to name the <send event=\"job.completed\"> site, got {alias:?}"
@@ -683,15 +691,15 @@ fn negative_enum_literal_overflow_send_side_decimal_rejects() {
         ForgeError::Validation(boxed) => match *boxed {
             ValidationError::CrossKindTypeMismatch {
                 field,
-                actual,
+                found,
                 expected,
                 ..
             } => {
                 assert_eq!(field, "status");
                 assert_eq!(expected, "uint8");
                 assert!(
-                    actual.contains("256") && actual.contains("uint8"),
-                    "expected message to name 256 + uint8; got {actual:?}"
+                    found.contains("256") && found.contains("uint8"),
+                    "expected message to name 256 + uint8; got {found:?}"
                 );
             }
             other => panic!("expected CrossKindTypeMismatch, got {other:?}"),
@@ -780,7 +788,7 @@ fn negative_enum_variant_not_declared_receive_side_rejects() {
         ForgeError::Validation(boxed) => match *boxed {
             ValidationError::CrossKindTypeMismatch {
                 field,
-                actual,
+                found,
                 expected,
                 alias,
                 ..
@@ -788,13 +796,13 @@ fn negative_enum_variant_not_declared_receive_side_rejects() {
                 assert_eq!(field, "status");
                 assert_eq!(expected, "enum:Result");
                 assert!(
-                    actual.contains("integer literal 7")
-                        && actual.contains("not a declared variant")
-                        && actual.contains("Result")
-                        && actual.contains("ok=0")
-                        && actual.contains("error=1")
-                        && actual.contains("timeout=2"),
-                    "expected message to name literal 7 + declared variant set; got {actual:?}"
+                    found.contains("integer literal 7")
+                        && found.contains("not a declared variant")
+                        && found.contains("Result")
+                        && found.contains("ok=0")
+                        && found.contains("error=1")
+                        && found.contains("timeout=2"),
+                    "expected message to name literal 7 + declared variant set; got {found:?}"
                 );
                 assert_eq!(alias, "_event.data");
             }
@@ -831,18 +839,19 @@ fn negative_enum_variant_not_declared_send_side_rejects() {
         ForgeError::Validation(boxed) => match *boxed {
             ValidationError::CrossKindTypeMismatch {
                 field,
-                actual,
+                found,
                 expected,
                 alias,
+                observed,
                 ..
             } => {
                 assert_eq!(field, "status");
                 assert_eq!(expected, "enum:Result");
                 assert!(
-                    actual.contains("integer literal 7")
-                        && actual.contains("not a declared variant"),
-                    "expected message to name literal 7 + membership reason; got {actual:?}"
+                    found.contains("integer literal 7") && found.contains("not a declared variant"),
+                    "expected message to name literal 7 + membership reason; got {found:?}"
                 );
+                assert_eq!(observed.as_deref(), Some("7"));
                 assert!(
                     alias.contains("send") && alias.contains("job.completed"),
                     "expected alias to name the <send event=\"job.completed\"> site, got {alias:?}"

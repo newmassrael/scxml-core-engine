@@ -340,14 +340,10 @@ fn lower_stateful_import_calls(ast: &mut TypedExpr, lowerings: &[ImportLowering]
                         if let Some((_, free_fn)) =
                             lowering.methods.iter().find(|(name, _)| name == property)
                         {
-                            let prepended = TypedExpr {
-                                kind: ExprKind::Raw(lowering.prepended_arg.clone()),
-                                ty: InferredType::Unknown,
-                            };
-                            let new_callee = Box::new(TypedExpr {
-                                kind: ExprKind::Raw(free_fn.clone()),
-                                ty: InferredType::Unknown,
-                            });
+                            let prepended =
+                                TypedExpr::new(ExprKind::Raw(lowering.prepended_arg.clone()));
+                            let new_callee =
+                                Box::new(TypedExpr::new(ExprKind::Raw(free_fn.clone())));
                             let mut new_args = Vec::with_capacity(args.len() + 1);
                             new_args.push(prepended);
                             new_args.append(args);
@@ -491,9 +487,14 @@ pub(crate) fn parse_to_ast(expr: &str) -> Result<TypedExpr, ExprError> {
     if trimmed.is_empty() {
         return Err(ExprError::Empty { what: "expression" });
     }
-    let tokens = tokenize(trimmed)?;
+    let (tokens, mut spans) = tokenize_spanned(trimmed, LexMode::Forge)?;
+    // Ranges into `expr` as the caller holds it, not into its trimmed copy.
+    let lead = expr.len() - expr.trim_start().len();
+    for span in &mut spans {
+        *span = span.start + lead..span.end + lead;
+    }
     reject_policy_violating_tokens(&tokens)?;
-    Parser::new(&tokens).parse_expression()
+    Parser::new(&tokens, &spans).parse_expression()
 }
 
 /// The Forge expression language's admission rules, as a single pass over
@@ -629,18 +630,41 @@ fn shape_name(kind: &ExprKind) -> &'static str {
 /// Every node carries exactly one `ty` slot. The parser initializes
 /// `ty = InferredType::Unknown`, and [`infer_types`] overwrites it in a
 /// bottom-up pass. Emitters then consume the annotated tree.
-#[derive(Debug, Clone, PartialEq)]
+///
+/// `span` is the byte range of the text the node was parsed from, in the
+/// string given to [`parse_to_ast`] — so a refusal can report what the
+/// author wrote (SCE_ERROR_CONTRACT §3.1.1) rather than a description or
+/// a re-rendering of it. `None` for a node a rewrite synthesised, which
+/// no source text spells.
+#[derive(Debug, Clone)]
 pub(crate) struct TypedExpr {
     pub kind: ExprKind,
     pub ty: InferredType,
+    pub span: Option<std::ops::Range<usize>>,
+}
+
+/// Structural equality: two trees are the same expression whatever text
+/// they were read from, so `span` — where, not what — takes no part.
+impl PartialEq for TypedExpr {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind && self.ty == other.ty
+    }
 }
 
 impl TypedExpr {
+    /// A node no source text spells.
     fn new(kind: ExprKind) -> Self {
         Self {
             kind,
             ty: InferredType::Unknown,
+            span: None,
         }
+    }
+
+    /// The text this node was parsed from, given the string it was parsed
+    /// from. `None` for a synthesised node.
+    pub(crate) fn source<'s>(&self, parsed: &'s str) -> Option<&'s str> {
+        self.span.clone().and_then(|range| parsed.get(range))
     }
 }
 
@@ -1023,13 +1047,28 @@ fn tokenize(input: &str) -> Result<Vec<Token>, ExprError> {
 }
 
 pub(crate) fn tokenize_as(input: &str, mode: LexMode) -> Result<Vec<Token>, ExprError> {
+    tokenize_spanned(input, mode).map(|(tokens, _)| tokens)
+}
+
+/// A token stream with the byte range each token was read from: one range
+/// per token, `Eof` taking the empty range at the end of `input`.
+type SpannedTokens = (Vec<Token>, Vec<std::ops::Range<usize>>);
+
+/// [`tokenize_as`], keeping where each token was read from.
+fn tokenize_spanned(input: &str, mode: LexMode) -> Result<SpannedTokens, ExprError> {
     let mut tokens = Vec::new();
+    let mut spans = Vec::new();
     let bytes = input.as_bytes();
     let len = bytes.len();
     let mut i = 0;
     let ecma = mode == LexMode::EcmaScript;
+    let mut token_start = 0;
 
     while i < len {
+        // Every pass below reads at most one token, so the token the last
+        // pass read — if it read one — ends where this pass begins.
+        close_span(&tokens, &mut spans, token_start..i);
+        token_start = i;
         if bytes[i].is_ascii_whitespace() {
             i += 1;
             continue;
@@ -1312,8 +1351,25 @@ pub(crate) fn tokenize_as(input: &str, mode: LexMode) -> Result<Vec<Token>, Expr
         i += 1;
     }
 
+    close_span(&tokens, &mut spans, token_start..i);
     tokens.push(Token::Eof);
-    Ok(tokens)
+    spans.push(len..len);
+    Ok((tokens, spans))
+}
+
+/// Give the token a lexer pass just read — if it read one — its range.
+fn close_span(
+    tokens: &[Token],
+    spans: &mut Vec<std::ops::Range<usize>>,
+    range: std::ops::Range<usize>,
+) {
+    debug_assert!(
+        tokens.len() <= spans.len() + 1,
+        "a lexer pass read more than one token, so their ranges cannot be told apart"
+    );
+    if spans.len() < tokens.len() {
+        spans.push(range);
+    }
 }
 
 fn validate_keyword(word: &str) -> Result<(), ExprError> {
@@ -1367,12 +1423,42 @@ fn validate_keyword(word: &str) -> Result<(), ExprError> {
 
 struct Parser<'a> {
     tokens: &'a [Token],
+    /// One byte range per token, from [`tokenize_spanned`].
+    spans: &'a [std::ops::Range<usize>],
     pos: usize,
 }
 
 impl<'a> Parser<'a> {
-    fn new(tokens: &'a [Token]) -> Self {
-        Self { tokens, pos: 0 }
+    fn new(tokens: &'a [Token], spans: &'a [std::ops::Range<usize>]) -> Self {
+        debug_assert_eq!(tokens.len(), spans.len(), "one range per token");
+        Self {
+            tokens,
+            spans,
+            pos: 0,
+        }
+    }
+
+    /// Where the construct about to be parsed begins.
+    fn start(&self) -> usize {
+        self.spans
+            .get(self.pos)
+            .or(self.spans.last())
+            .map_or(0, |span| span.start)
+    }
+
+    /// A node for the construct that began at `start` and ends with the
+    /// last token consumed.
+    fn node(&self, start: usize, kind: ExprKind) -> TypedExpr {
+        let end = self
+            .pos
+            .checked_sub(1)
+            .and_then(|last| self.spans.get(last))
+            .map_or(start, |span| span.end.max(start));
+        TypedExpr {
+            kind,
+            ty: InferredType::Unknown,
+            span: Some(start..end),
+        }
     }
 
     fn peek(&self) -> &Token {
@@ -1408,92 +1494,117 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_conditional(&mut self) -> Result<TypedExpr, ExprError> {
+        let start = self.start();
         let expr = self.parse_logical_or()?;
         if *self.peek() == Token::Question {
             self.advance();
             let consequent = self.parse_conditional()?;
             self.expect(&Token::Colon)?;
             let alternate = self.parse_conditional()?;
-            return Ok(TypedExpr::new(ExprKind::Conditional {
-                condition: Box::new(expr),
-                consequent: Box::new(consequent),
-                alternate: Box::new(alternate),
-            }));
+            return Ok(self.node(
+                start,
+                ExprKind::Conditional {
+                    condition: Box::new(expr),
+                    consequent: Box::new(consequent),
+                    alternate: Box::new(alternate),
+                },
+            ));
         }
         Ok(expr)
     }
 
     fn parse_logical_or(&mut self) -> Result<TypedExpr, ExprError> {
+        let start = self.start();
         let mut left = self.parse_logical_and()?;
         while *self.peek() == Token::PipePipe {
             self.advance();
             let right = self.parse_logical_and()?;
-            left = TypedExpr::new(ExprKind::Binary {
-                op: BinOp::Or,
-                left: Box::new(left),
-                right: Box::new(right),
-            });
+            left = self.node(
+                start,
+                ExprKind::Binary {
+                    op: BinOp::Or,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
+            );
         }
         Ok(left)
     }
 
     fn parse_logical_and(&mut self) -> Result<TypedExpr, ExprError> {
+        let start = self.start();
         let mut left = self.parse_bitwise_or()?;
         while *self.peek() == Token::AmpAmp {
             self.advance();
             let right = self.parse_bitwise_or()?;
-            left = TypedExpr::new(ExprKind::Binary {
-                op: BinOp::And,
-                left: Box::new(left),
-                right: Box::new(right),
-            });
+            left = self.node(
+                start,
+                ExprKind::Binary {
+                    op: BinOp::And,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
+            );
         }
         Ok(left)
     }
 
     fn parse_bitwise_or(&mut self) -> Result<TypedExpr, ExprError> {
+        let start = self.start();
         let mut left = self.parse_bitwise_xor()?;
         while *self.peek() == Token::Pipe {
             self.advance();
             let right = self.parse_bitwise_xor()?;
-            left = TypedExpr::new(ExprKind::Binary {
-                op: BinOp::BitOr,
-                left: Box::new(left),
-                right: Box::new(right),
-            });
+            left = self.node(
+                start,
+                ExprKind::Binary {
+                    op: BinOp::BitOr,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
+            );
         }
         Ok(left)
     }
 
     fn parse_bitwise_xor(&mut self) -> Result<TypedExpr, ExprError> {
+        let start = self.start();
         let mut left = self.parse_bitwise_and()?;
         while *self.peek() == Token::Caret {
             self.advance();
             let right = self.parse_bitwise_and()?;
-            left = TypedExpr::new(ExprKind::Binary {
-                op: BinOp::BitXor,
-                left: Box::new(left),
-                right: Box::new(right),
-            });
+            left = self.node(
+                start,
+                ExprKind::Binary {
+                    op: BinOp::BitXor,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
+            );
         }
         Ok(left)
     }
 
     fn parse_bitwise_and(&mut self) -> Result<TypedExpr, ExprError> {
+        let start = self.start();
         let mut left = self.parse_equality()?;
         while *self.peek() == Token::Amp {
             self.advance();
             let right = self.parse_equality()?;
-            left = TypedExpr::new(ExprKind::Binary {
-                op: BinOp::BitAnd,
-                left: Box::new(left),
-                right: Box::new(right),
-            });
+            left = self.node(
+                start,
+                ExprKind::Binary {
+                    op: BinOp::BitAnd,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
+            );
         }
         Ok(left)
     }
 
     fn parse_equality(&mut self) -> Result<TypedExpr, ExprError> {
+        let start = self.start();
         let mut left = self.parse_relational()?;
         loop {
             let op = match self.peek() {
@@ -1503,16 +1614,20 @@ impl<'a> Parser<'a> {
             };
             self.advance();
             let right = self.parse_relational()?;
-            left = TypedExpr::new(ExprKind::Binary {
-                op,
-                left: Box::new(left),
-                right: Box::new(right),
-            });
+            left = self.node(
+                start,
+                ExprKind::Binary {
+                    op,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
+            );
         }
         Ok(left)
     }
 
     fn parse_relational(&mut self) -> Result<TypedExpr, ExprError> {
+        let start = self.start();
         let mut left = self.parse_shift()?;
         loop {
             let op = match self.peek() {
@@ -1524,16 +1639,20 @@ impl<'a> Parser<'a> {
             };
             self.advance();
             let right = self.parse_shift()?;
-            left = TypedExpr::new(ExprKind::Binary {
-                op,
-                left: Box::new(left),
-                right: Box::new(right),
-            });
+            left = self.node(
+                start,
+                ExprKind::Binary {
+                    op,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
+            );
         }
         Ok(left)
     }
 
     fn parse_shift(&mut self) -> Result<TypedExpr, ExprError> {
+        let start = self.start();
         let mut left = self.parse_additive()?;
         loop {
             let op = match self.peek() {
@@ -1544,16 +1663,20 @@ impl<'a> Parser<'a> {
             };
             self.advance();
             let right = self.parse_additive()?;
-            left = TypedExpr::new(ExprKind::Binary {
-                op,
-                left: Box::new(left),
-                right: Box::new(right),
-            });
+            left = self.node(
+                start,
+                ExprKind::Binary {
+                    op,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
+            );
         }
         Ok(left)
     }
 
     fn parse_additive(&mut self) -> Result<TypedExpr, ExprError> {
+        let start = self.start();
         let mut left = self.parse_multiplicative()?;
         loop {
             let op = match self.peek() {
@@ -1563,16 +1686,20 @@ impl<'a> Parser<'a> {
             };
             self.advance();
             let right = self.parse_multiplicative()?;
-            left = TypedExpr::new(ExprKind::Binary {
-                op,
-                left: Box::new(left),
-                right: Box::new(right),
-            });
+            left = self.node(
+                start,
+                ExprKind::Binary {
+                    op,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
+            );
         }
         Ok(left)
     }
 
     fn parse_multiplicative(&mut self) -> Result<TypedExpr, ExprError> {
+        let start = self.start();
         let mut left = self.parse_unary()?;
         loop {
             let op = match self.peek() {
@@ -1583,16 +1710,20 @@ impl<'a> Parser<'a> {
             };
             self.advance();
             let right = self.parse_unary()?;
-            left = TypedExpr::new(ExprKind::Binary {
-                op,
-                left: Box::new(left),
-                right: Box::new(right),
-            });
+            left = self.node(
+                start,
+                ExprKind::Binary {
+                    op,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
+            );
         }
         Ok(left)
     }
 
     fn parse_unary(&mut self) -> Result<TypedExpr, ExprError> {
+        let start = self.start();
         let op = match self.peek() {
             Token::Minus => Some(UnaryOp::Neg),
             Token::Plus => Some(UnaryOp::Pos),
@@ -1603,15 +1734,19 @@ impl<'a> Parser<'a> {
         if let Some(op) = op {
             self.advance();
             let operand = self.parse_unary()?;
-            return Ok(TypedExpr::new(ExprKind::Unary {
-                op,
-                operand: Box::new(operand),
-            }));
+            return Ok(self.node(
+                start,
+                ExprKind::Unary {
+                    op,
+                    operand: Box::new(operand),
+                },
+            ));
         }
         self.parse_postfix()
     }
 
     fn parse_postfix(&mut self) -> Result<TypedExpr, ExprError> {
+        let start = self.start();
         let mut expr = self.parse_primary()?;
         loop {
             match self.peek() {
@@ -1626,19 +1761,25 @@ impl<'a> Parser<'a> {
                             })
                         }
                     };
-                    expr = TypedExpr::new(ExprKind::Member {
-                        object: Box::new(expr),
-                        property: prop,
-                    });
+                    expr = self.node(
+                        start,
+                        ExprKind::Member {
+                            object: Box::new(expr),
+                            property: prop,
+                        },
+                    );
                 }
                 Token::LBracket => {
                     self.advance();
                     let index = self.parse_conditional()?;
                     self.expect(&Token::RBracket)?;
-                    expr = TypedExpr::new(ExprKind::Index {
-                        object: Box::new(expr),
-                        index: Box::new(index),
-                    });
+                    expr = self.node(
+                        start,
+                        ExprKind::Index {
+                            object: Box::new(expr),
+                            index: Box::new(index),
+                        },
+                    );
                 }
                 Token::LParen => {
                     self.advance();
@@ -1651,10 +1792,13 @@ impl<'a> Parser<'a> {
                         }
                     }
                     self.expect(&Token::RParen)?;
-                    expr = TypedExpr::new(ExprKind::Call {
-                        callee: Box::new(expr),
-                        args,
-                    });
+                    expr = self.node(
+                        start,
+                        ExprKind::Call {
+                            callee: Box::new(expr),
+                            args,
+                        },
+                    );
                 }
                 _ => break,
             }
@@ -1663,19 +1807,24 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_primary(&mut self) -> Result<TypedExpr, ExprError> {
+        let start = self.start();
         match self.advance().clone() {
-            Token::Number(n) => Ok(TypedExpr::new(ExprKind::NumberLit(n))),
+            Token::Number(n) => Ok(self.node(start, ExprKind::NumberLit(n))),
             Token::String { value, quote } => {
-                Ok(TypedExpr::new(ExprKind::StringLit { value, quote }))
+                Ok(self.node(start, ExprKind::StringLit { value, quote }))
             }
-            Token::Ident(s) if s == "true" => Ok(TypedExpr::new(ExprKind::BoolLit(true))),
-            Token::Ident(s) if s == "false" => Ok(TypedExpr::new(ExprKind::BoolLit(false))),
-            Token::Ident(s) if s == "null" => Ok(TypedExpr::new(ExprKind::NullLit)),
-            Token::Ident(s) => Ok(TypedExpr::new(ExprKind::Ident(s))),
+            Token::Ident(s) if s == "true" => Ok(self.node(start, ExprKind::BoolLit(true))),
+            Token::Ident(s) if s == "false" => Ok(self.node(start, ExprKind::BoolLit(false))),
+            Token::Ident(s) if s == "null" => Ok(self.node(start, ExprKind::NullLit)),
+            Token::Ident(s) => Ok(self.node(start, ExprKind::Ident(s))),
             Token::LParen => {
                 let inner = self.parse_conditional()?;
                 self.expect(&Token::RParen)?;
-                Ok(inner)
+                // The operand as written, parentheses and all.
+                Ok(TypedExpr {
+                    span: self.node(start, ExprKind::NullLit).span,
+                    ..inner
+                })
             }
             other => Err(ExprError::UnexpectedToken {
                 token: other.to_string(),
@@ -2146,27 +2295,20 @@ fn project_str_as_bytes_view(node: &mut TypedExpr, ctx: &TypeCtx<'_>) {
             .map(|base| format!("{base}.{property}"))
             .and_then(|path| ctx.lookup_member_len_field(&path))
             .map(|len_member| {
-                Box::new(TypedExpr {
-                    kind: ExprKind::Member {
-                        object: object.clone(),
-                        property: len_member.to_string(),
-                    },
-                    // The length sibling is a small unsigned count; its
-                    // precise width does not affect the C11 emit (it
-                    // initialises a `size_t`), so `Unknown` is faithful.
-                    ty: InferredType::Unknown,
-                })
+                // The length sibling is a small unsigned count; its
+                // precise width does not affect the C11 emit (it
+                // initialises a `size_t`), so `Unknown` is faithful.
+                Box::new(TypedExpr::new(ExprKind::Member {
+                    object: object.clone(),
+                    property: len_member.to_string(),
+                }))
             })
     } else {
         None
     };
-    let source = std::mem::replace(
-        node,
-        TypedExpr {
-            kind: ExprKind::NullLit,
-            ty: InferredType::Unknown,
-        },
-    );
+    let source = std::mem::replace(node, TypedExpr::new(ExprKind::NullLit));
+    // The view is read from the same text its source was.
+    node.span = source.span.clone();
     node.kind = ExprKind::BytesView {
         source: Box::new(source),
         len,
@@ -5567,8 +5709,7 @@ mod tests {
             },
         );
         // frame.encode()[0] should infer Index on Bytes → u8
-        let tokens = tokenize("frame.encode()[0]").unwrap();
-        let mut ast = Parser::new(&tokens).parse_expression().unwrap();
+        let mut ast = parse_to_ast("frame.encode()[0]").unwrap();
         infer_types(&mut ast, &ctx);
         assert_eq!(ast.ty, int(false, 8));
     }
@@ -5576,10 +5717,43 @@ mod tests {
     #[test]
     fn member_call_unknown_when_not_registered() {
         let ctx = TypeCtx::new();
-        let tokens = tokenize("frame.encode()").unwrap();
-        let mut ast = Parser::new(&tokens).parse_expression().unwrap();
+        let mut ast = parse_to_ast("frame.encode()").unwrap();
         infer_types(&mut ast, &ctx);
         assert_eq!(ast.ty, InferredType::Unknown);
+    }
+
+    /// Every node the parser builds names the text it was read from, in
+    /// the string the caller passed — surrounding whitespace, a
+    /// non-ASCII literal and a parenthesised operand included — so a
+    /// refusal can quote what the author wrote.
+    #[test]
+    fn a_parsed_node_names_the_text_it_was_read_from() {
+        let source = "  _event.data.raw === ('café') && -n.len() > 0x1F ";
+        let ast = parse_to_ast(source).unwrap();
+        assert_eq!(ast.source(source), Some(source.trim()));
+        let ExprKind::Binary { left, right, .. } = &ast.kind else {
+            panic!("expected `&&` at the top: {ast:?}");
+        };
+        let ExprKind::Binary {
+            left: data,
+            right: literal,
+            ..
+        } = &left.kind
+        else {
+            panic!("expected `===` on the left: {left:?}");
+        };
+        assert_eq!(data.source(source), Some("_event.data.raw"));
+        assert_eq!(literal.source(source), Some("('café')"));
+        let ExprKind::Binary {
+            left: negated,
+            right: hex,
+            ..
+        } = &right.kind
+        else {
+            panic!("expected `>` on the right: {right:?}");
+        };
+        assert_eq!(negated.source(source), Some("-n.len()"));
+        assert_eq!(hex.source(source), Some("0x1F"));
     }
 
     /// The lexer is total: it answers for any `&str`, including one holding

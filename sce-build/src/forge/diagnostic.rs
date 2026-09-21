@@ -5611,13 +5611,16 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             importing_name,
             alias,
             field,
-            actual,
             expected,
+            observed,
+            ..
         } => DiagnosticPayload {
             code: DiagnosticCode::ValidationCrossKindTypeMismatch,
             stage: Stage::Validation,
             expected: Some(vec![expected.clone()]),
-            actual: Some(actual.clone()),
+            // The operand the author wrote; its description stays in the
+            // message.
+            actual: observed.clone(),
             fix: None,
             key_fragments: vec![
                 importing_kind.to_string(),
@@ -9727,16 +9730,19 @@ mod tests {
             ),
             (
                 "forge/cross-kind-type-mismatch",
+                // The shape its one producer emits: a typed event field
+                // compared with a literal it cannot hold.
                 ValidationError::CrossKindTypeMismatch {
-                    importing_kind: ForgeKind::Algorithm,
-                    importing_name: "keyexpr_match".into(),
-                    alias: "subs".into(),
-                    field: "callback_id".into(),
-                    actual: "uint32".into(),
-                    expected: "bool".into(),
+                    importing_kind: ForgeKind::Statechart,
+                    importing_name: "monitor".into(),
+                    alias: "_event.data".into(),
+                    field: "elapsed_ms".into(),
+                    found: "a string literal".into(),
+                    expected: "uint32".into(),
+                    observed: Some("'late'".into()),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:f19b566002125832","code":"validation/cross-kind-type-mismatch","stage":"validation","message":"algorithm 'keyexpr_match': 'subs.callback_id' has type 'uint32' but context expects 'bool'","expected":["bool"],"actual":"uint32"}"#,
+                r#"{"v":1,"id":"fnv1a:08e17a70cb512bdc","code":"validation/cross-kind-type-mismatch","stage":"validation","message":"statechart 'monitor': '_event.data.elapsed_ms' expects 'uint32', got a string literal","expected":["uint32"],"actual":"'late'"}"#,
             ),
             (
                 "forge/cross-kind-circular-dependency",

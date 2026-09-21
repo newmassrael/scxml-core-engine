@@ -3593,30 +3593,33 @@ pub enum ValidationError {
         candidates: Vec<String>,
     },
 
-    /// An expression in an importing kind references `<alias>.<field>`
-    /// where the field resolves but the inferred type at the use site
-    /// is incompatible with the field's declared type. Emitted only
-    /// when the surrounding context constrains the expected type (e.g.
-    /// `<sce:return expr="alias.field"/>` whose return type is declared
-    /// on the kind signature) — opportunistic checks where the expected
-    /// type is `Unknown` stay silent, since there is no contract to
-    /// violate.
+    /// A value meets a field an imported kind types, and cannot inhabit
+    /// it: `_event.data.<field>` compared with a literal of another kind,
+    /// or a `<send>` param written as one, where the field's type comes
+    /// from an imported event schema.
     ///
     /// Cross-kind typed binding.
     #[error(
-        "{importing_kind} '{importing_name}': '{alias}.{field}' has type '{actual}' but context expects '{expected}'"
+        "{importing_kind} '{importing_name}': '{alias}.{field}' expects '{expected}', got {found}"
     )]
     CrossKindTypeMismatch {
         importing_kind: ForgeKind,
         importing_name: String,
         alias: String,
         field: String,
-        /// Declared type of the imported field, rendered through
-        /// [`SceType::canonical`] for stable wire form.
-        actual: String,
-        /// Expected type imposed by the use site (signature return
-        /// type, `<sce:param type=...>`, …), rendered the same way.
+        /// What the field met, described: the kind of literal, or the
+        /// rule the literal breaks (an enum value that overflows its
+        /// carrier or names no variant, a bytes literal that is not
+        /// printable ASCII).
+        found: String,
+        /// The type or rule the field imposes, spelled as the document
+        /// spells types.
         expected: String,
+        /// The operand as the author wrote it — what the wire reports as
+        /// `actual`, since a consumer searches the reported row for it
+        /// (SCE_ERROR_CONTRACT §3.1.1). `None` when no source text spells
+        /// it.
+        observed: Option<String>,
     },
 
     /// Two operands carrying `sce:quantity=…` annotations on
