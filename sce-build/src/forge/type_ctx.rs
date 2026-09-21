@@ -17,7 +17,7 @@
 use crate::forge::generator::ImportContext;
 use crate::forge::model::*;
 use crate::forge::quantity::NumericBaseType;
-use crate::forge::types::{FuncSig, InferredType, TypeCtx};
+use crate::forge::types::{EnumScope, FuncSig, InferredType, TypeCtx};
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Low-level helpers
@@ -132,6 +132,42 @@ fn insert_stateful_imports<'a>(ctx: &mut TypeCtx<'a>, imports: &'a [ImportContex
     }
 }
 
+/// Register every imported enum under its alias, so an expression's
+/// `<alias>.<variant>` can be checked against the declared variants and
+/// lowered to this backend's spelling.
+///
+/// ⚠ Every builder calls this, not only the ones whose kind "uses" enums:
+/// which kinds use them is the author's call, and the parser accepts
+/// `enum:<alias>` on every field it reads.
+///
+/// `pub(crate)` for the one kind that builds its context outside this
+/// module — the algorithm renderer — so it registers enums through the
+/// same code rather than a copy of it.
+pub(crate) fn insert_enum_imports<'a>(ctx: &mut TypeCtx<'a>, imports: &'a [ImportContext]) {
+    for imp in imports {
+        if imp.kind != "enum" {
+            continue;
+        }
+        ctx.insert_enum(
+            imp.alias.as_str(),
+            EnumScope {
+                variants: &imp.enum_variants,
+                qualified_type: imp.enum_qualified_type.as_str(),
+                source_name: imp.enum_source_name.as_str(),
+            },
+        );
+    }
+}
+
+/// Everything a forge kind's expression may name comes from its own
+/// declarations and its imports — there is no host behind it. So every
+/// forge builder refuses the two mistakes a name can be: a call to
+/// something unprovided, and a read of something undeclared.
+fn close_the_scope(ctx: &mut TypeCtx<'_>) {
+    ctx.reject_unknown_callees = true;
+    ctx.reject_unknown_identifiers = true;
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Per-kind builders
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -166,7 +202,8 @@ pub fn transform<'a>(m: &'a TransformModel, imports: &'a [ImportContext]) -> Typ
     // generated with exit 0 and emitted C++ that did not compile, as did
     // `expr="totallyMadeUpFn(v)"`. See `TypeCtx::reject_unknown_callees` for
     // why the statechart path must keep the opposite default.
-    ctx.reject_unknown_callees = true;
+    insert_enum_imports(&mut ctx, imports);
+    close_the_scope(&mut ctx);
     ctx
 }
 
@@ -178,7 +215,8 @@ pub fn condition<'a>(m: &'a ConditionModel, imports: &'a [ImportContext]) -> Typ
     insert_fields(&mut ctx, &m.inputs);
     insert_stateless_imports(&mut ctx, imports);
     insert_stateful_imports(&mut ctx, imports);
-    ctx.reject_unknown_callees = true;
+    insert_enum_imports(&mut ctx, imports);
+    close_the_scope(&mut ctx);
     ctx
 }
 
@@ -190,7 +228,8 @@ pub fn validator<'a>(m: &'a ValidatorModel, imports: &'a [ImportContext]) -> Typ
     insert_fields(&mut ctx, &m.inputs);
     insert_stateless_imports(&mut ctx, imports);
     insert_stateful_imports(&mut ctx, imports);
-    ctx.reject_unknown_callees = true;
+    insert_enum_imports(&mut ctx, imports);
+    close_the_scope(&mut ctx);
     ctx
 }
 
@@ -203,7 +242,8 @@ pub fn lookup<'a>(m: &'a LookupModel, imports: &'a [ImportContext]) -> TypeCtx<'
     );
     insert_stateless_imports(&mut ctx, imports);
     insert_stateful_imports(&mut ctx, imports);
-    ctx.reject_unknown_callees = true;
+    insert_enum_imports(&mut ctx, imports);
+    close_the_scope(&mut ctx);
     ctx
 }
 
@@ -217,7 +257,8 @@ pub fn filter<'a>(m: &'a FilterModel, imports: &'a [ImportContext]) -> TypeCtx<'
     );
     insert_stateless_imports(&mut ctx, imports);
     insert_stateful_imports(&mut ctx, imports);
-    ctx.reject_unknown_callees = true;
+    insert_enum_imports(&mut ctx, imports);
+    close_the_scope(&mut ctx);
     ctx
 }
 
@@ -228,6 +269,8 @@ pub fn observer<'a>(m: &'a ObserverModel, imports: &'a [ImportContext]) -> TypeC
     insert_fields(&mut ctx, &m.inputs);
     insert_stateless_imports(&mut ctx, imports);
     insert_stateful_imports(&mut ctx, imports);
+    insert_enum_imports(&mut ctx, imports);
+    close_the_scope(&mut ctx);
     ctx
 }
 
@@ -260,6 +303,15 @@ pub fn procedure<'a>(m: &'a ProcedureModel, imports: &'a [ImportContext]) -> Typ
     insert_procedure_helpers(&mut ctx, &m.helpers);
     insert_stateless_imports(&mut ctx, imports);
     insert_stateful_imports(&mut ctx, imports);
+    insert_enum_imports(&mut ctx, imports);
+    // W3C SCXML 5.10: `_event` is a system variable bound in every data
+    // model, and a procedure's transitions read the reply that triggered
+    // them through it (`<assign expr="_event.data"/>`). The generator
+    // rewrites `_event.data` to the procedure's own payload member AFTER
+    // names are checked, so the name the check sees is the author's.
+    // `Unknown`: its shape is the triggering event's, not this document's.
+    ctx.insert_var("_event", InferredType::Unknown);
+    close_the_scope(&mut ctx);
     ctx
 }
 
@@ -277,6 +329,8 @@ pub fn codec<'a>(m: &'a CodecModel, imports: &'a [ImportContext]) -> TypeCtx<'a>
     }
     insert_stateless_imports(&mut ctx, imports);
     insert_stateful_imports(&mut ctx, imports);
+    insert_enum_imports(&mut ctx, imports);
+    close_the_scope(&mut ctx);
     ctx
 }
 

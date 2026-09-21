@@ -27,9 +27,7 @@ use std::path::PathBuf;
 /// cost a `String` in every `Result<_, DeployError>` in the crate.
 fn closest_legal_key_clause(field: &str, candidates: &[String]) -> String {
     match candidates.first() {
-        Some(name)
-            if crate::mesh::deploy::edit_distance(field, name) <= (name.len() / 3).max(1) =>
-        {
+        Some(name) if crate::near_miss::edit_distance(field, name) <= (name.len() / 3).max(1) => {
             format!(" \u{2014} closest legal key: `{name}`")
         }
         _ => String::new(),

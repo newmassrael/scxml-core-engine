@@ -135,6 +135,9 @@ pub mod literal_text;
 pub mod manifest;
 pub mod mesh;
 pub mod model;
+/// How far a misspelling is from what the author meant — the one edit
+/// distance every "did you mean" in this crate is measured with.
+pub mod near_miss;
 pub mod parser;
 /// Byte-level mapping from an expanded SCXML document back to its
 /// source origins. Consumed by the parser boundary to remap

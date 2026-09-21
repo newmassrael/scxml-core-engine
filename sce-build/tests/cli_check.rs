@@ -206,6 +206,22 @@ const SYNTHETIC_AXES: &[(&str, &str)] = &[
 </scxml>
 "#,
     ),
+    // A forge expression naming something nothing declares. Refused
+    // inside every backend's transpile — which is exactly why the sweep
+    // needs it: that route had assumed whatever reached its per-backend
+    // recorder was one backend's refusal.
+    (
+        "axis_forge_undeclared_operand.scxml",
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="transform" name="axis_forge_undeclared_operand">
+  <datamodel>
+    <data id="count" sce:type="int32" sce:direction="in"/>
+    <data id="next" sce:type="int32" sce:direction="out" expr="conut + 1"/>
+  </datamodel>
+</scxml>
+"#,
+    ),
 ];
 
 /// Stage every synthetic axis document into `dir` and return the paths.
@@ -468,6 +484,57 @@ fn backend_axis_refusal_is_fatal_only_when_the_backend_was_named() {
 /// A document-axis refusal is fatal whether or not a backend was named
 /// — the document is wrong under every backend, so there is nothing for
 /// a sweep to report.
+/// A forge expression's name refusal is the document's, not a backend's.
+///
+/// ⚠ Measured 2026-09-21 before the axis was read off the record: `check`
+/// with no `--language` answered this document with six `rejected`
+/// verdicts and exit 0 — "valid, just not buildable anywhere" — because
+/// the single-document route assumed whatever reached its recorder had
+/// already passed every document check. The undeclared operand is
+/// refused inside each backend's transpile, so it arrived six times and
+/// was filed six times as one backend's gap.
+#[test]
+fn a_forge_name_refusal_is_fatal_with_or_without_a_named_backend() {
+    let staged = ScratchDir::new("check-forge-name-axis");
+    let doc = staged.path().join("undeclared.scxml");
+    std::fs::write(
+        &doc,
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="transform" name="undeclared">
+  <datamodel>
+    <data id="count" sce:type="int32" sce:direction="in"/>
+    <data id="next" sce:type="int32" sce:direction="out" expr="conut + 1"/>
+  </datamodel>
+</scxml>
+"#,
+    )
+    .expect("stage fixture");
+    let doc_str = doc.to_str().unwrap();
+    let cwd = repo_root();
+
+    for args in [
+        vec!["check", doc_str],
+        vec!["check", doc_str, "-l", "python"],
+    ] {
+        let (verdict, stdout) = run(&args, &cwd);
+        assert_ne!(
+            verdict.exit,
+            Some(0),
+            "an undeclared operand must be fatal for {args:?}",
+        );
+        assert_eq!(
+            verdict.code.as_deref(),
+            Some("expression/unknown-identifier"),
+            "unexpected code for {args:?}",
+        );
+        assert!(
+            stdout.trim().is_empty(),
+            "stdout must stay empty on failure ({args:?}): {stdout}",
+        );
+    }
+}
+
 #[test]
 fn document_axis_refusal_is_fatal_with_or_without_a_named_backend() {
     let staged = ScratchDir::new("check-doc-axis");

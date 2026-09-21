@@ -9114,21 +9114,10 @@ const KNOWN_SCE_ATTRS: &[&str] = &[
 /// `pressure` writes `sce:axis-pressure`, which no fixed list anticipates.
 const KNOWN_SCE_ATTR_PREFIXES: &[&str] = &["axis-"];
 
-/// Edit distance, capped: used only to turn a refusal into a suggestion.
-fn edit_distance(a: &str, b: &str) -> usize {
-    let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
-    let mut prev: Vec<usize> = (0..=b.len()).collect();
-    let mut cur = vec![0usize; b.len() + 1];
-    for (i, ca) in a.iter().enumerate() {
-        cur[0] = i + 1;
-        for (j, cb) in b.iter().enumerate() {
-            let cost = usize::from(ca != cb);
-            cur[j + 1] = (prev[j] + cost).min(prev[j + 1] + 1).min(cur[j] + 1);
-        }
-        std::mem::swap(&mut prev, &mut cur);
-    }
-    prev[b.len()]
-}
+// Edit distance, used only to turn a refusal into a suggestion — the one
+// metric in `crate::near_miss`; the ≤3-and-take-4 selection below is this
+// refusal's own.
+use crate::near_miss::edit_distance;
 
 /// Refuse any SCE-namespace attribute the tree does not read.
 ///

@@ -205,27 +205,17 @@ impl DocumentScope {
     /// swapped, and a diagnostic that says so can be repaired without
     /// reading the document. The distance bound scales with length so a
     /// two-letter name does not match every other two-letter name.
+    ///
+    /// The rule itself is [`crate::near_miss::near_misses`], shared with the
+    /// forge expression layer because both emit the same diagnostic code.
     pub fn candidates_for(&self, name: &str) -> Vec<String> {
-        let budget = match name.chars().count() {
-            0..=3 => 1,
-            4..=7 => 2,
-            _ => 3,
-        };
-        let mut scored: Vec<(usize, &String)> = self
-            .declared
-            .iter()
-            .filter(|candidate| !candidate.starts_with('_'))
-            .filter_map(|candidate| {
-                let distance = edit_distance(name, candidate);
-                (distance <= budget).then_some((distance, candidate))
-            })
-            .collect();
-        scored.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(b.1)));
-        scored
-            .into_iter()
-            .take(SUGGESTION_LIMIT)
-            .map(|(_, name)| name.clone())
-            .collect()
+        crate::near_miss::near_misses(
+            name,
+            self.declared
+                .iter()
+                .map(String::as_str)
+                .filter(|candidate| !candidate.starts_with('_')),
+        )
     }
 
     fn absorb_state(&mut self, state: &State, stage: ScopeStage) {
@@ -307,10 +297,6 @@ impl DocumentScope {
         self.declare(trimmed);
     }
 }
-
-/// At most this many suggestions ride a diagnostic. A repair the consumer
-/// has to choose from twenty candidates is not a repair.
-const SUGGESTION_LIMIT: usize = 3;
 
 fn is_plain_identifier(text: &str) -> bool {
     let mut chars = text.chars();
@@ -452,25 +438,4 @@ fn children(expr: &Expr) -> Vec<&Expr> {
         Expr::Function { .. } => Vec::new(),
         Expr::Assign { target, value, .. } => vec![target.as_ref(), value.as_ref()],
     }
-}
-
-/// Levenshtein distance, bounded by nothing — the strings compared here
-/// are identifiers, so the quadratic cost is over names, not documents.
-fn edit_distance(a: &str, b: &str) -> usize {
-    let a: Vec<char> = a.chars().collect();
-    let b: Vec<char> = b.chars().collect();
-    if a.is_empty() {
-        return b.len();
-    }
-    let mut previous: Vec<usize> = (0..=b.len()).collect();
-    let mut current = vec![0usize; b.len() + 1];
-    for (i, ca) in a.iter().enumerate() {
-        current[0] = i + 1;
-        for (j, cb) in b.iter().enumerate() {
-            let substitution = previous[j] + usize::from(ca != cb);
-            current[j + 1] = substitution.min(previous[j + 1] + 1).min(current[j] + 1);
-        }
-        std::mem::swap(&mut previous, &mut current);
-    }
-    previous[b.len()]
 }

@@ -4106,6 +4106,36 @@ pub enum ExprError {
         candidates: Vec<String>,
     },
 
+    /// `<alias>.<name>` where `<alias>` is an imported enum that declares no
+    /// variant `<name>` — `Mode.RUN` against an enum declaring `RUN_BATCH`.
+    ///
+    /// Separate from [`ExprError::UnknownIdentifier`] because the repair
+    /// comes from somewhere else again: not the document's declarations but
+    /// the IMPORTED enum's, which is a closed set the author can be shown in
+    /// full. `declared` is that set; the prose adds its near misses, which
+    /// are deliberately none when nothing is close — `RUN` is not offered
+    /// `RUN_BATCH`, because choosing which mode is the specification's call,
+    /// not a spelling correction.
+    ///
+    /// ⚠ The near misses are DERIVED, not stored. A stored copy made this
+    /// variant the largest in `ExprError` and pushed every
+    /// `Result<_, Located<ForgeError>>` in the crate over clippy's
+    /// `result_large_err` bound — for a value `name` and `declared` already
+    /// determine.
+    #[error(
+        "{alias}.{name} is not a variant of {alias} (declared: {}){}",
+        .declared.join(", "),
+        crate::forge::error::did_you_mean(&crate::near_miss::near_misses(
+            .name,
+            .declared.iter().map(String::as_str),
+        ))
+    )]
+    UnknownEnumVariant {
+        alias: String,
+        name: String,
+        declared: Vec<String>,
+    },
+
     /// Loose equality (`==` / `!=`) instead of strict.
     #[error("loose {operator} is not permitted in Extended SCXML. Use {strict} instead.")]
     StrictEquality {

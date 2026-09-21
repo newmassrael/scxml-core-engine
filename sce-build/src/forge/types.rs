@@ -521,6 +521,20 @@ pub fn join_int(left: InferredType, right: InferredType) -> InferredType {
 // Function signatures and type context
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+/// An imported `sce:kind="enum"` document as an expression can name it:
+/// `<alias>.<variant>`.
+#[derive(Debug, Clone, Copy)]
+pub struct EnumScope<'a> {
+    /// Declared variant names, in the enum document's own spelling — the
+    /// spelling an expression writes.
+    pub variants: &'a [String],
+    /// This backend's qualified type for the enum.
+    pub qualified_type: &'a str,
+    /// The enum document's own name; `enum_naming` derives each variant's
+    /// backend identifier from it.
+    pub source_name: &'a str,
+}
+
 /// Signature of a function that may appear in a SCXML expression as
 /// `callee(args...)`. Used to type `Call` nodes where the callee is a
 /// cross-file import or a built-in intrinsic.
@@ -586,6 +600,27 @@ pub struct TypeCtx<'a> {
     /// `expr="round(v)"` and `expr="totallyMadeUpFn(v)"` generated with exit 0
     /// and emitted C++ that did not compile.
     pub reject_unknown_callees: bool,
+    /// Whether a free identifier this context does not carry is an ERROR —
+    /// the value-position twin of [`reject_unknown_callees`](Self::reject_unknown_callees).
+    ///
+    /// ⚠ The callee check left the far more common mistake open: a
+    /// misspelled OPERAND. Measured 2026-09-21, `expr="conut + 1"` beside
+    /// `<data id="count">` generated with exit 0 on all six backends, and
+    /// the emitted code named an identifier nothing bound — a compile error
+    /// in five backends and, in Python, a `NameError` the first time the
+    /// line runs. Off by default for the same reason the callee check is:
+    /// a statechart guard reads what the host provides.
+    pub reject_unknown_identifiers: bool,
+    /// Every enum this document imports, keyed by its alias — the only
+    /// names an `<alias>.<variant>` reference may use.
+    ///
+    /// ⚠ Carried HERE so the one pass that reads an expression's names is
+    /// also the one that knows which variants exist. Before, a transform
+    /// resolved a declared variant through a rename table built beside
+    /// the renderer, and an undeclared one fell through that table to a
+    /// verbatim emit: `Mode.RUN` against an enum that declares `RUN_BATCH`
+    /// generated with exit 0. Every other kind had no table at all.
+    pub enums: HashMap<&'a str, EnumScope<'a>>,
     /// RFC c7-wildcard W-project (§8 Smell A fix): qualified member path
     /// (`"entry.pattern"`) → its **length sibling member name**
     /// (`"pattern_len"`). Populated by the algorithm renderer from the
@@ -605,8 +640,20 @@ impl<'a> TypeCtx<'a> {
             array_elems: HashMap::new(),
             project_str_args_as_bytes_view: false,
             reject_unknown_callees: false,
+            reject_unknown_identifiers: false,
+            enums: HashMap::new(),
             member_len_fields: HashMap::new(),
         }
+    }
+
+    /// Register an imported enum under its alias.
+    pub fn insert_enum(&mut self, alias: &'a str, scope: EnumScope<'a>) {
+        self.enums.insert(alias, scope);
+    }
+
+    /// The imported enum an alias names, if it names one.
+    pub fn lookup_enum(&self, alias: &str) -> Option<&EnumScope<'a>> {
+        self.enums.get(alias)
     }
 
     /// Register a member path's C11 length sibling (W-project §8 Smell A).

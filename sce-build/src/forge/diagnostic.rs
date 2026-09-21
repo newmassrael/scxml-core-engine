@@ -899,6 +899,14 @@ pub enum DiagnosticCode {
     // misses among them and there may be none.
     #[serde(rename = "expression/unknown-identifier")]
     ExpressionUnknownIdentifier,
+    // `<alias>.<name>` on an imported enum that declares no such variant —
+    // `Mode.RUN` where the enum declares `RUN_BATCH`. Distinct from
+    // `unknown-identifier` because the repair comes from the IMPORTED
+    // enum rather than the document's own declarations, and that set is
+    // closed: the fix offers all of it, as `default-covers-unknown-variant`
+    // does for the same set, and does not guess which member was meant.
+    #[serde(rename = "expression/unknown-enum-variant")]
+    ExpressionUnknownEnumVariant,
     // A name this datamodel provides, written as a call — `t.length()`,
     // `Math.PI()`. Distinct from `unsupported-builtin`, which says the
     // name is absent: here it is present, so there is nothing to offer
@@ -3074,6 +3082,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ExpressionUnsupportedConstruct,
         ExpressionUnsupportedBuiltin,
         ExpressionUnknownIdentifier,
+        ExpressionUnknownEnumVariant,
         ExpressionPropertyNotCallable,
         ExpressionNamespaceNotCallable,
         ExpressionNamespaceNotAValue,
@@ -3423,6 +3432,37 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
 };
 
 impl Diagnostic {
+    /// Whether this refusal belongs to ONE backend — the only kind a
+    /// backend sweep may report as data rather than fail on
+    /// (SCE_ERROR_CONTRACT.md §10.3.1).
+    ///
+    /// Rendering stages (`generate/*`, `codegen/*`, mesh codegen) are one
+    /// backend's by definition. So are the two expression refusals an
+    /// EMITTER raises — Go has no ternary, and Rust's coercion rules are
+    /// Rust's. Every other expression refusal is raised before any
+    /// emitter runs, by the target-independent half of the pipeline
+    /// (tokenizer, parser, name resolution), and is the same answer under
+    /// every backend: the document is wrong.
+    ///
+    /// ⚠ WHY THIS IS A PROPERTY OF THE RECORD. `check` used to decide it
+    /// by route: the single-document route assumed that whatever reached
+    /// its per-backend recorder was one backend's, "because the document
+    /// validators already ran". The forge expression layer raises its
+    /// name refusals inside each backend's transpile, so an undeclared
+    /// operand or an undeclared enum variant was recorded as six backend
+    /// rejections and `check` exited 0 — a document no backend can build,
+    /// reported as valid (measured 2026-09-21). The other route decided by
+    /// stage alone and made the opposite mistake: a Go-only ternary
+    /// refusal was fatal for all six.
+    pub fn refuses_one_backend(&self) -> bool {
+        matches!(self.stage, Stage::Generate | Stage::MeshCodegen)
+            || matches!(
+                self.code,
+                DiagnosticCode::ExpressionGoTernaryUnsupported
+                    | DiagnosticCode::ExpressionTypeCoercion
+            )
+    }
+
     /// Construct a last-resort diagnostic for failures in the
     /// diagnostic pipeline itself — e.g. serde serialization error,
     /// OOM during `to_diagnostic`. Flowing even this path through
@@ -3572,15 +3612,26 @@ impl DiagnosticCode {
             ScxmlNullDatamodelForbidsConstruct => Some("W3C SCXML §B.1"),
             // The name the author reached for is one Appendix B.2's
             // datamodel defines and SCE does not implement, so it
-            // anchors on the ECMAScript data model rather than on
-            // Forge's expression language: a Forge document cannot
-            // reach it, and the author fixing it is reading B.2.
+            // anchors on the ECMAScript data model.
+            //
+            // ⚠ This used to add "a Forge document cannot reach it". It
+            // can and does: `forge/expr.rs::reject_unknown_callees` raises
+            // this code on a forge kind's `expr=` (vocabulary "SCE's forge
+            // expression layer"). The anchor still holds, because that
+            // layer is the ECMAScript subset Extended SCXML admits and
+            // B.2 is where its rules come from; the sentence did not.
             ExpressionUnsupportedBuiltin => Some("W3C SCXML §B.2"),
             // Same anchor, same reason: B.2 is where the ECMAScript data
             // model says the datamodel's variables are the ones the
-            // document declares, so a name outside them is answered
-            // there and not in Forge's expression language.
+            // document declares. Raised by BOTH layers — the ECMAScript
+            // resolver and, since 2026-09-21, the forge expression layer
+            // (`reject_unknown_names`), whose expressions inherit the rule
+            // as the ECMAScript subset they are.
             ExpressionUnknownIdentifier => Some("W3C SCXML §B.2"),
+            // Not B.2: an enum alias is SCE's, not ECMAScript's. What an
+            // `enum:<alias>` is and which member references it admits is
+            // written in the accepted subset's typed-field section.
+            ExpressionUnknownEnumVariant => Some("SCE Accepted Subset §2.2"),
             // Same anchor again: B.2 is what makes ECMAScript's own
             // rules the datamodel's rules, and calling a value is one
             // ECMAScript answers for itself.
@@ -4317,6 +4368,7 @@ impl DiagnosticCode {
             ExpressionUnsupportedConstruct => "expression/unsupported-construct",
             ExpressionUnsupportedBuiltin => "expression/unsupported-builtin",
             ExpressionUnknownIdentifier => "expression/unknown-identifier",
+            ExpressionUnknownEnumVariant => "expression/unknown-enum-variant",
             ExpressionPropertyNotCallable => "expression/property-not-callable",
             ExpressionNamespaceNotCallable => "expression/namespace-not-callable",
             ExpressionNamespaceNotAValue => "expression/namespace-not-a-value",
@@ -8204,6 +8256,25 @@ fn expression_fields(e: &ExprError) -> DiagnosticPayload {
             // same way are one diagnostic identity.
             key_fragments: vec![name.clone()],
         },
+        // The closed set is the fix, exactly as for
+        // `default-covers-unknown-variant`: the producer knows every legal
+        // member and not which one was meant. The near misses shape only
+        // the prose — a consumer reading `fix` gets the whole set, in
+        // declaration order, and chooses.
+        ExprError::UnknownEnumVariant {
+            alias,
+            name,
+            declared,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ExpressionUnknownEnumVariant,
+            stage: Stage::Expression,
+            expected: None,
+            actual: Some(format!("{alias}.{name}")),
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: declared.iter().map(|v| format!("{alias}.{v}")).collect(),
+            }),
+            key_fragments: vec![alias.clone(), name.clone()],
+        },
         // The call is what `actual` names, because the call is what the
         // consumer edits: `.length` occurs on the line either way, and a
         // record pointing at it would leave the consumer to work out
@@ -9295,6 +9366,9 @@ mod tests {
                 // declares. The likeliest shape of this failure, and
                 // the one the named-rather-than-boolean design exists
                 // to catch.
+                //
+                // ⚠ The vocabulary is invented on purpose. It used to be
+                // a real product's region list, copied into a public tree.
                 "forge/default-covers-unknown-variant",
                 ValidationError::DefaultCoversUnknownVariant {
                     field: "terrain".into(),
@@ -10644,6 +10718,32 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:1f905d2454137dec","code":"expression/unknown-identifier","stage":"expression","spec":"W3C SCXML §B.2","message":"wholesaleDistributor is not declared by this document","actual":"wholesaleDistributor"}"#,
+            ),
+            (
+                // A member the imported enum does not declare. `fix` offers
+                // the whole declared set — the producer knows every legal
+                // member and not which was meant — while the prose names
+                // the near miss.
+                "forge/expression-unknown-enum-variant",
+                ExprError::UnknownEnumVariant {
+                    alias: "Tone".into(),
+                    name: "LOUDER".into(),
+                    declared: vec!["QUIET".into(), "SOFT".into(), "LOUD".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:ae6de9e4fd790793","code":"expression/unknown-enum-variant","stage":"expression","spec":"SCE Accepted Subset §2.2","message":"Tone.LOUDER is not a variant of Tone (declared: QUIET, SOFT, LOUD). Did you mean: LOUD?","actual":"Tone.LOUDER","fix":{"kind":"replace_one_of","candidates":["Tone.QUIET","Tone.SOFT","Tone.LOUD"]}}"#,
+            ),
+            (
+                // An unrelated member has no near miss. The declared set
+                // still rides `fix`; selecting one is the author's decision.
+                "forge/expression-unknown-enum-variant-no-near-miss",
+                ExprError::UnknownEnumVariant {
+                    alias: "Tone".into(),
+                    name: "RED".into(),
+                    declared: vec!["QUIET".into(), "SOFT".into(), "LOUD".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:9c091da3bee9e93b","code":"expression/unknown-enum-variant","stage":"expression","spec":"SCE Accepted Subset §2.2","message":"Tone.RED is not a variant of Tone (declared: QUIET, SOFT, LOUD)","actual":"Tone.RED","fix":{"kind":"replace_one_of","candidates":["Tone.QUIET","Tone.SOFT","Tone.LOUD"]}}"#,
             ),
             (
                 // A name the datamodel provides, called. The repair is
@@ -13804,6 +13904,9 @@ mod tests {
             // for the same reason, and empty candidates become no `fix`
             // rather than an empty choice.
             | ExpressionUnknownIdentifier
+            // The imported enum's declared variants — a closed set, which
+            // is this bucket's definition, and `expected` stays absent.
+            | ExpressionUnknownEnumVariant
             | MeshDeployUnsupportedVersion
             | MeshTopologyMachineNotFound
             | MeshTopologySubscriptionSourceUnbound
@@ -14963,6 +15066,7 @@ mod tests {
                 | ExpressionEmpty | ExpressionLex
                 | ExpressionUnsupportedConstruct | ExpressionUnsupportedBuiltin
                 | ExpressionUnknownIdentifier
+                | ExpressionUnknownEnumVariant
                 | ExpressionPropertyNotCallable
                 | ExpressionNamespaceNotCallable
                 | ExpressionNamespaceNotAValue
@@ -15227,9 +15331,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            370,
+            371,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 370 distinct variants to match the DiagnosticCode \
+             expected 371 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -15885,6 +15989,9 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ReassemblyPerPeerQuotaBuildInvariantViolated
             | ExpressionEmpty
             | ExpressionLex
+            // Forge-only: an enum alias exists in a forge kind's scope and
+            // in no statechart guard, so no statechart scenario can raise it.
+            | ExpressionUnknownEnumVariant
             | ExpressionStrictEquality
             | ExpressionTypeCoercion
             | ExpressionGoTernaryUnsupported

@@ -4,7 +4,19 @@
 //! `compile_forge_from_parsed` after `validate_and_enrich_imports`:
 //!
 //! - Positive: algorithm imports a codec and references a declared
-//!   field via `<alias>.<field>` — compiles clean.
+//!   field via `<alias>.<field>` — the validator stays silent.
+//!
+//!   ⚠ Silent is all it can be, and "compiles clean" — what this bullet
+//!   used to say — was never true. An algorithm is a free function with no
+//!   instance state, so nothing binds a codec import's alias as a value:
+//!   the emitted Rust read `frame.msg_id` inside `fn route_msg(x: u8)`, a
+//!   name no scope declared, and the tests asserted only that files were
+//!   produced (measured 2026-09-21 by generating the fixture). Since the
+//!   forge expression layer began checking names, the document is refused
+//!   for exactly that — `frame` is undeclared — which is what the positive
+//!   cases now assert: the field resolved (else the validator, which runs
+//!   first, would have refused it as not-found), and the alias is not a
+//!   value.
 //! - Negative 1 (`validation/cross-kind-field-not-found`): same shape
 //!   but with a typo on the field name. Diagnostic carries the imported
 //!   kind's full member surface as the `Fix::ReplaceOneOf` candidate
@@ -53,19 +65,6 @@ fn write_fixture(dir: &Path, name: &str, content: &str) {
     fs::write(&path, content).unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
 }
 
-fn compile_algorithm(dir: &Path, algo_name: &str) -> sce_build::generator::GeneratedOutput {
-    let algo_path = dir.join(algo_name);
-    let content = fs::read_to_string(&algo_path).expect("read algo");
-    compile_forge_with_imports(
-        &content,
-        DocumentLabel::symmetric(algo_name),
-        Language::Rust,
-        dir,
-        &ForgeCompileOptions::default(),
-    )
-    .expect("happy path compile succeeds")
-}
-
 fn compile_algorithm_expect_err(
     dir: &Path,
     algo_name: &str,
@@ -82,16 +81,41 @@ fn compile_algorithm_expect_err(
         dir,
         &ForgeCompileOptions::default(),
     ) {
-        Ok(_) => panic!("cross-kind validator must reject {algo_name}"),
+        Ok(_) => panic!("{algo_name} must be refused, and generated"),
         Err(e) => e,
     }
 }
 
+/// The refusal a document reaches when the validator let its
+/// `<alias>.<field>` through and the alias is still not a value: the
+/// forge expression layer names the alias as undeclared.
+fn assert_refused_as_unbound_alias(
+    err: sce_build::forge::error::Located<sce_build::forge::error::ForgeError>,
+    alias: &str,
+) {
+    use sce_build::forge::error::{ExprError, ForgeError};
+    match &err.error {
+        ForgeError::Expression(ExprError::UnknownIdentifier { name, .. }) => {
+            assert_eq!(name, alias, "the undeclared name must be the alias");
+        }
+        other => panic!(
+            "expected the alias `{alias}` refused as undeclared — the field resolved, \
+             so the cross-kind validator must have stayed silent — got {other:?}"
+        ),
+    }
+}
+
 #[test]
-fn positive_alias_field_resolves() {
+fn a_resolving_field_passes_the_validator_and_the_unbound_alias_is_refused() {
     // Algorithm imports the codec and references the *declared* field
-    // `msg_id` — happy path. Confirms the validator's silent-success
-    // mode: when alias.field resolves, no diagnostic interrupts codegen.
+    // `msg_id`. The validator's silent-success mode lets it through; what
+    // stops the document is that an algorithm binds no codec instance.
+    //
+    // ⚠ This fixture used to declare `<sce:param name="frame"
+    // type="uint8"/>` beside the import of the same name, so the name was
+    // "declared" — as a byte — and the emitted `frame.msg_id` read a field
+    // of a `u8`. It generated, and did not compile. A parameter shadowing
+    // an import alias is its own defect and is not what this test is for.
     let dir = tempdir().expect("tempdir");
     write_fixture(dir.path(), "frame_codec.scxml", CODEC_SCXML);
     write_fixture(
@@ -105,7 +129,7 @@ fn positive_alias_field_resolves() {
        version="1.0">
   <sce:import src="frame_codec.scxml" kind="codec" as="frame"/>
   <sce:signature>
-    <sce:param name="frame" type="uint8"/>
+    <sce:param name="x" type="uint8"/>
     <sce:return type="bool"/>
   </sce:signature>
   <sce:body>
@@ -114,11 +138,8 @@ fn positive_alias_field_resolves() {
 </scxml>
 "#,
     );
-    let output = compile_algorithm(dir.path(), "algo_positive.scxml");
-    assert!(
-        !output.files.is_empty(),
-        "happy-path compile must produce output files"
-    );
+    let err = compile_algorithm_expect_err(dir.path(), "algo_positive.scxml");
+    assert_refused_as_unbound_alias(err, "frame");
 }
 
 #[test]
@@ -332,9 +353,9 @@ fn silent_when_alias_resolves_to_known_field_inside_nested_expression() {
 </scxml>
 "#,
     );
-    let output = compile_algorithm(dir.path(), "algo_nested.scxml");
-    assert!(
-        !output.files.is_empty(),
-        "nested-positive compile must produce output files"
-    );
+    // The same outcome as the flat case one node deeper: the validator's
+    // recursive walk resolves the nested `frame.msg_id` and stays silent,
+    // and the alias is then refused as the value it is not.
+    let err = compile_algorithm_expect_err(dir.path(), "algo_nested.scxml");
+    assert_refused_as_unbound_alias(err, "frame");
 }

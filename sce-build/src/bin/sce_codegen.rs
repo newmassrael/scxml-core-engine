@@ -22,7 +22,7 @@ use sce_build::analyzer;
 use sce_build::cli_error::CliError;
 use sce_build::cli_language::LanguageRoute;
 use sce_build::filters;
-use sce_build::forge::diagnostic::{Diagnostic, Stage, ToDiagnostics};
+use sce_build::forge::diagnostic::{Diagnostic, ToDiagnostics};
 use sce_build::forge::error::{ForgeError, Located};
 use sce_build::manifest::{
     ArtifactEntry, DeployInfo, LanguageVerdict, Manifest, ManifestKind, RejectedInfo,
@@ -2952,13 +2952,25 @@ fn first_diagnostic_code<E: ToDiagnostics>(err: &E) -> String {
 /// named the backend, its refusal is the answer to the question they
 /// asked and must behave exactly as `generate -l <lang>` does. When no
 /// backend was named the sweep is exploratory, so a refusal is data —
-/// but only a refusal that belongs to one backend. `axis` is how the
-/// caller's route tells the two apart.
+/// but only a refusal that belongs to one backend.
+///
+/// Only such a refusal can ride the manifest's `languages` array. A
+/// document, a cross-doc reference or a deploy topology is wrong under
+/// every backend, so a sweep has nothing to report about it and must
+/// fail the same way `--language` would — otherwise `check` answers
+/// "valid" with exit 0 for a build no producer can produce.
+///
+/// ⚠ Which one a refusal is, is read off the refusal
+/// ([`Diagnostic::refuses_one_backend`]), never off the route. There
+/// were two route-level rules and each was wrong in its own direction —
+/// one called an undeclared name six backend rejections and exited 0,
+/// the other made a Go-only refusal fatal for all six.
+///
+/// [`Diagnostic::refuses_one_backend`]: sce_build::forge::diagnostic::Diagnostic::refuses_one_backend
 fn record_backend_outcome<E: ToDiagnostics>(
     verdicts: &mut Vec<LanguageVerdict>,
     lang: Language,
     explicit: bool,
-    axis: SweepAxis,
     error_format: ErrorFormat,
     outcome: Result<(), E>,
 ) {
@@ -2966,46 +2978,14 @@ fn record_backend_outcome<E: ToDiagnostics>(
     match outcome {
         Ok(()) => verdicts.push(LanguageVerdict::ok(wire)),
         Err(e) => {
-            if explicit || !axis.is_one_backends_refusal(&e) {
+            let one_backends = e
+                .to_diagnostics()
+                .first()
+                .is_some_and(|d| d.refuses_one_backend());
+            if explicit || !one_backends {
                 error_format.emit_and_exit(&e, "");
             }
             verdicts.push(LanguageVerdict::rejected(wire, first_diagnostic_code(&e)));
-        }
-    }
-}
-
-/// How a route's refusals are classified when no backend was named.
-///
-/// Only a refusal that belongs to one backend can ride the manifest's
-/// `languages` array. A document, a cross-doc reference or a deploy
-/// topology is wrong under every backend, so a sweep has nothing to
-/// report about it and must fail the same way `--language` would —
-/// otherwise `check` answers "valid" with exit 0 for a build no
-/// producer can produce.
-#[derive(Clone, Copy)]
-enum SweepAxis {
-    /// The route already ran its document validators and exited on
-    /// them, so everything reaching the recorder is one backend's
-    /// refusal by construction. The single-document route.
-    BackendOnly,
-    /// The route's compile call fuses document-set validation with
-    /// per-backend rendering, so nothing about the call site says which
-    /// axis a refusal came from. Read it off the diagnostic instead.
-    ByStage,
-}
-
-impl SweepAxis {
-    /// Stages that describe rendering for one backend. Every other
-    /// stage — the document stages, and the mesh deploy/topology
-    /// validators — reaches the same verdict whichever backend is
-    /// named.
-    fn is_one_backends_refusal<E: ToDiagnostics>(self, err: &E) -> bool {
-        match self {
-            SweepAxis::BackendOnly => true,
-            SweepAxis::ByStage => err
-                .to_diagnostics()
-                .first()
-                .is_some_and(|d| matches!(d.stage, Stage::Generate | Stage::MeshCodegen)),
         }
     }
 }
@@ -3307,14 +3287,7 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
             deploy_cfg.as_ref(),
         )
         .map(|_| ());
-        record_backend_outcome(
-            &mut verdicts,
-            *lang,
-            explicit,
-            SweepAxis::ByStage,
-            error_format,
-            outcome,
-        );
+        record_backend_outcome(&mut verdicts, *lang, explicit, error_format, outcome);
     }
 
     outln!(
@@ -3478,14 +3451,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                     &forge_opts,
                 )
                 .map(|_| ());
-                record_backend_outcome(
-                    &mut verdicts,
-                    *lang,
-                    explicit,
-                    SweepAxis::BackendOnly,
-                    error_format,
-                    outcome,
-                );
+                record_backend_outcome(&mut verdicts, *lang, explicit, error_format, outcome);
             }
             // Forge kinds are stateless by construction — no script
             // engine is reachable from them, and nothing schedules or
@@ -3682,14 +3648,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                         None,
                     )
                 });
-                record_backend_outcome(
-                    &mut verdicts,
-                    *lang,
-                    explicit,
-                    SweepAxis::BackendOnly,
-                    error_format,
-                    outcome,
-                );
+                record_backend_outcome(&mut verdicts, *lang, explicit, error_format, outcome);
             }
         }
     }

@@ -505,6 +505,43 @@ Field cardinality and direction constraints are enforced per-kind —
 e.g. `Transform` requires at least one input and one output field
 (`validation/empty-collection`, `validation/invalid-direction`).
 
+**Naming an enum's variant in an expression.** An `expr=` (or any
+other forge expression) refers to a variant of an imported enum as
+`<alias>.<variant>`, with the alias the `<sce:import as="…">` gave the
+enum document and the variant spelled exactly as that document declares
+it:
+
+```xml
+<sce:import as="Tone" src="tone.scxml" kind="enum"/>
+<data id="alarm" sce:type="bool" sce:direction="in"/>
+<data id="tone" sce:type="enum:Tone" sce:direction="out"
+      expr="alarm ? Tone.LOUD : Tone.QUIET"/>
+```
+
+Each backend receives its own spelling of the reference (`Tone::Loud`,
+`TONE_LOUD`, …) from the one place that also spells the declaration, so
+the two cannot drift. This holds in every forge kind whose expressions
+read fields — transform, condition, validator, observer, procedure,
+codec, lookup, filter and algorithm — not only the transform.
+
+⚠ **A member the enum does not declare is refused**, as
+`expression/unknown-enum-variant`, with the declared set as the fix.
+The set is offered whole, not narrowed to a guess: `Tone.RED` against
+an enum declaring `QUIET SOFT LOUD` is not a spelling of any of them,
+and which one the author meant is a decision for whoever wrote the
+specification. Measured 2026-09-21: before this refusal such a
+reference generated with exit 0 on all six backends and named nothing
+in any of them.
+
+⚠⚠ **So is an operand nothing declares.** A forge expression may read
+only its own kind's fields, its imports and its `<sce:helper>`
+declarations — there is no host behind it — so `conut + 1` beside
+`<data id="count">` is refused as `expression/unknown-identifier`
+with `count` offered, the same code and the same suggestion rule the
+ECMAScript datamodel uses. Measured the same day: it too generated
+with exit 0, and Python met the undeclared name only when the line
+first ran.
+
 **An `sce:` attribute this tree does not read is refused**, as
 `validation/unknown-sce-attribute`, with the nearest known names as
 the fix. The parser looks attributes up by name, so one it does not
@@ -2825,6 +2862,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `expression/unsupported-construct` | Expression |
 | `expression/unsupported-builtin` | Expression |
 | `expression/unknown-identifier` | Expression |
+| `expression/unknown-enum-variant` | Expression |
 | `expression/property-not-callable` | Expression |
 | `expression/namespace-not-callable` | Expression |
 | `expression/namespace-not-a-value` | Expression |

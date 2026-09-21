@@ -16095,28 +16095,36 @@ fn render_procedure_cpp(
     // the same set of procedure inputs/internals as identifiers.
     let procedure_type_ctx = crate::forge::type_ctx::procedure(m, imports);
     let empty_procedure_renames = std::collections::HashMap::new();
+    // ⚠ A default that does not transpile is an error, here and in the five
+    // sibling renderers below. Each used to fall back to the RAW expression
+    // (`.unwrap_or_else(|_| e.clone())`), which put ECMAScript into C++,
+    // Rust, Go, Kotlin, Python and C alike and reported the document as
+    // generated — the same silence `transpile_procedure_expr` had.
     let internal_fields: Vec<serde_json::Value> = m
         .internals
         .iter()
-        .map(|f| {
+        .map(|f| -> Result<serde_json::Value, ForgeError> {
             let expected = crate::forge::types::InferredType::from_sce_type(&f.sce_type);
-            let default_val = f.expr.as_ref().map(|e| {
-                expr::transpile_typed(
-                    e,
-                    ExprTarget::Cpp,
-                    &procedure_type_ctx,
-                    &empty_procedure_renames,
-                    expected,
-                )
-                .unwrap_or_else(|_| e.clone())
-            });
-            serde_json::json!({
+            let default_val = f
+                .expr
+                .as_ref()
+                .map(|e| {
+                    expr::transpile_typed(
+                        e,
+                        ExprTarget::Cpp,
+                        &procedure_type_ctx,
+                        &empty_procedure_renames,
+                        expected,
+                    )
+                })
+                .transpose()?;
+            Ok(serde_json::json!({
                 "id": f.id,
                 "cpp_type": l.type_name(&f.sce_type),
                 "default_value": default_val,
-            })
+            }))
         })
-        .collect();
+        .collect::<Result<_, _>>()?;
 
     // Initial state
     let initial_state = filters::to_pascal_case(m.initial.clone());
@@ -16182,132 +16190,30 @@ fn render_procedure_cpp(
         })
         .collect();
 
-    // States with onentry sends
-    let states_with_entry: Vec<serde_json::Value> = m
-        .states
-        .iter()
-        .filter(|s| !s.on_entry_sends.is_empty())
-        .map(|s| {
-            let sends: Vec<serde_json::Value> = s
-                .on_entry_sends
-                .iter()
-                .map(|send| {
-                    let addr_expr = send.addr.as_ref().map(|a| {
-                        transpile_procedure_expr(
-                            a,
-                            ExprTarget::Cpp,
-                            &procedure_type_ctx,
-                            &rename_map,
-                            crate::forge::types::InferredType::Unknown,
-                        )
-                    });
-                    let payload_expr = send.payload.as_ref().map(|p| {
-                        transpile_procedure_expr(
-                            p,
-                            ExprTarget::Cpp,
-                            &procedure_type_ctx,
-                            &rename_map,
-                            crate::forge::types::InferredType::Unknown,
-                        )
-                    });
-                    serde_json::json!({
-                        "service": send.service,
-                        "subfunc": send.subfunc,
-                        "has_addr": send.addr.is_some(),
-                        "addr_expr": addr_expr.unwrap_or_default(),
-                        "payload": send.payload.is_some(),
-                        "payload_expr": payload_expr.unwrap_or_default(),
-                    })
-                })
-                .collect();
-            serde_json::json!({
-                "name": filters::to_pascal_case(s.id.clone()),
-                "sends": sends,
-            })
-        })
-        .collect();
-
-    // Final states with done data
-    let final_states_with_donedata: Vec<serde_json::Value> = m
-        .states
-        .iter()
-        .filter(|s| s.is_final && !s.done_params.is_empty())
-        .map(|s| {
-            let done_params: Vec<serde_json::Value> = s
-                .done_params
-                .iter()
-                .map(|p| {
-                    // The expected type stays `Unknown`: `doneData_` takes a
-                    // string, but the VALUE keeps its own type and the C++
-                    // template renders it with `SCE::Forge::doneDataValue`,
-                    // the way the Rust template has always appended
-                    // `.to_string()`. Asking the transpiler for `Str` here
-                    // was tried first and changed nothing — it decides
-                    // numeric width, not string coercion.
-                    let transpiled = transpile_procedure_expr(
-                        &p.expr,
-                        ExprTarget::Cpp,
-                        &procedure_type_ctx,
-                        &rename_map,
-                        crate::forge::types::InferredType::Unknown,
-                    );
-                    serde_json::json!({
-                        "name": p.name,
-                        "expr": transpiled,
-                    })
-                })
-                .collect();
-            serde_json::json!({
-                "name": filters::to_pascal_case(s.id.clone()),
-                "done_params": done_params,
-            })
-        })
-        .collect();
-
-    // Non-final states with transitions
-    let non_final_states: Vec<serde_json::Value> = m
-        .states
-        .iter()
-        .filter(|s| !s.is_final)
-        .map(|s| {
-            let transitions: Vec<serde_json::Value> = s
-                .transitions
-                .iter()
-                .enumerate()
-                .map(|(idx, tr)| {
-                    let event_enum_name = tr.event.as_ref().map(|ev| {
-                        event_name_map
-                            .get(ev)
-                            .cloned()
-                            .unwrap_or_else(|| filters::to_pascal_case(ev.clone()))
-                    });
-                    let cond_transpiled = tr.cond.as_ref().map(|c| {
-                        transpile_procedure_expr(
-                            c,
-                            ExprTarget::Cpp,
-                            &procedure_type_ctx,
-                            &rename_map,
-                            crate::forge::types::InferredType::Bool,
-                        )
-                    });
-                    serde_json::json!({
-                        "index": idx,
-                        "has_event": tr.event.is_some(),
-                        "event_name": tr.event.as_deref().unwrap_or(""),
-                        "event_enum": event_enum_name.unwrap_or_default(),
-                        "has_cond": tr.cond.is_some(),
-                        "cond": cond_transpiled.unwrap_or_default(),
-                        "target_name": filters::to_pascal_case(tr.target.clone()),
-                        "has_assigns": !tr.assigns.is_empty(),
-                    })
-                })
-                .collect();
-            serde_json::json!({
-                "name": filters::to_pascal_case(s.id.clone()),
-                "transitions": transitions,
-            })
-        })
-        .collect();
+    // ⚠ The same three builders the Kotlin, Rust, Go and Python renderers
+    // use. This renderer carried its own copy of all three, key for key —
+    // which is how an error-handling change reached four backends and had
+    // to be made a fifth time here.
+    let states_with_entry = build_procedure_states_with_entry(
+        m,
+        ExprTarget::Cpp,
+        &procedure_type_ctx,
+        &rename_map,
+        None,
+    )?;
+    let final_states_with_donedata = build_procedure_final_states_with_donedata(
+        m,
+        ExprTarget::Cpp,
+        &procedure_type_ctx,
+        &rename_map,
+    )?;
+    let non_final_states = build_procedure_non_final_states(
+        m,
+        ExprTarget::Cpp,
+        &procedure_type_ctx,
+        &rename_map,
+        event_name_map,
+    )?;
 
     let states_with_assigns = build_procedure_states_with_assigns(
         m,
@@ -16315,7 +16221,7 @@ fn render_procedure_cpp(
         &procedure_type_ctx,
         &assign_rename_map,
         &[],
-    );
+    )?;
 
     // Collect raw sce:payload expressions for header dependency comment (CR#6)
     let payload_exprs: Vec<String> = m
@@ -16441,34 +16347,38 @@ fn render_procedure_c(
         .states
         .iter()
         .filter(|s| !s.is_final)
-        .map(|s| {
+        .map(|s| -> Result<serde_json::Value, ForgeError> {
             let transitions: Vec<serde_json::Value> = s
                 .transitions
                 .iter()
-                .map(|tr| {
-                    let cond_transpiled = tr.cond.as_ref().map(|c| {
-                        transpile_procedure_expr(
-                            c,
-                            ExprTarget::C,
-                            &procedure_type_ctx,
-                            &rename_map,
-                            crate::forge::types::InferredType::Bool,
-                        )
-                    });
+                .map(|tr| -> Result<serde_json::Value, ForgeError> {
+                    let cond_transpiled = tr
+                        .cond
+                        .as_ref()
+                        .map(|c| {
+                            transpile_procedure_expr(
+                                c,
+                                ExprTarget::C,
+                                &procedure_type_ctx,
+                                &rename_map,
+                                crate::forge::types::InferredType::Bool,
+                            )
+                        })
+                        .transpose()?;
                     let target_enum = format!("{}_STATE_{}", upper, to_upper_snake(&tr.target),);
-                    serde_json::json!({
+                    Ok(serde_json::json!({
                         "has_cond": tr.cond.is_some(),
                         "cond": cond_transpiled.unwrap_or_default(),
                         "target_enum": target_enum,
-                    })
+                    }))
                 })
-                .collect();
-            serde_json::json!({
+                .collect::<Result<_, _>>()?;
+            Ok(serde_json::json!({
                 "enum_name": format!("{}_STATE_{}", upper, to_upper_snake(&s.id)),
                 "transitions": transitions,
-            })
+            }))
         })
-        .collect();
+        .collect::<Result<_, _>>()?;
 
     let final_states: Vec<serde_json::Value> = m
         .states
@@ -16603,26 +16513,29 @@ fn render_procedure_c_l2(
     let internal_fields: Vec<serde_json::Value> = m
         .internals
         .iter()
-        .map(|f| {
+        .map(|f| -> Result<serde_json::Value, ForgeError> {
             let id_snake = filters::to_snake_case(f.id.clone());
-            let default = f.expr.as_ref().map(|e| {
-                let inferred = crate::forge::types::InferredType::from_sce_type(&f.sce_type);
-                expr::transpile_typed(
-                    e,
-                    ExprTarget::C,
-                    &procedure_type_ctx,
-                    &empty_renames,
-                    inferred,
-                )
-                .unwrap_or_else(|_| e.clone())
-            });
-            serde_json::json!({
+            let default = f
+                .expr
+                .as_ref()
+                .map(|e| {
+                    let inferred = crate::forge::types::InferredType::from_sce_type(&f.sce_type);
+                    expr::transpile_typed(
+                        e,
+                        ExprTarget::C,
+                        &procedure_type_ctx,
+                        &empty_renames,
+                        inferred,
+                    )
+                })
+                .transpose()?;
+            Ok(serde_json::json!({
                 "id": id_snake,
                 "c_type": c_l2_type(&l, &f.sce_type),
                 "default_value": default,
-            })
+            }))
         })
-        .collect();
+        .collect::<Result<_, _>>()?;
 
     // Helper closures: function pointer with by-value args, no
     // user_data slot. By-value matches the call-site shape (the
@@ -16766,12 +16679,12 @@ fn render_procedure_c_l2(
         .states
         .iter()
         .filter(|s| !s.on_entry_sends.is_empty())
-        .map(|s| {
+        .map(|s| -> Result<serde_json::Value, ForgeError> {
             let sends: Vec<serde_json::Value> = s
                 .on_entry_sends
                 .iter()
-                .map(|send| {
-                    let addr_expr = send.addr.as_ref().map(|a| {
+                .map(|send| -> Result<serde_json::Value, ForgeError> {
+                    let addr_expr = send.addr.as_ref().map(|a| -> Result<String, ForgeError> {
                         // Address is a string-typed identifier; cpp
                         // wraps with std::to_string. C: emit a
                         // sprintf-style string. For this fixture the
@@ -16786,7 +16699,7 @@ fn render_procedure_c_l2(
                             &rename_map,
                             crate::forge::types::InferredType::Unknown,
                             &import_lowerings,
-                        );
+                        )?;
                         // Build a const-string expression: just empty
                         // string for now — the handler in
                         // procedure_security_access does not assert on
@@ -16794,63 +16707,68 @@ fn render_procedure_c_l2(
                         // can lift to a sprintf-into-static-buffer if
                         // they need the addr literal value.
                         let _ = renamed;
-                        "\"\"".to_string()
+                        Ok("\"\"".to_string())
                     });
-                    let payload_expr = send.payload.as_ref().map(|p| {
-                        transpile_procedure_expr_c11(
-                            p,
-                            &procedure_type_ctx,
-                            &rename_map,
-                            crate::forge::types::InferredType::Bytes,
-                            &import_lowerings,
-                        )
-                    });
-                    serde_json::json!({
+                    let addr_expr = addr_expr.transpose()?;
+                    let payload_expr = send
+                        .payload
+                        .as_ref()
+                        .map(|p| {
+                            transpile_procedure_expr_c11(
+                                p,
+                                &procedure_type_ctx,
+                                &rename_map,
+                                crate::forge::types::InferredType::Bytes,
+                                &import_lowerings,
+                            )
+                        })
+                        .transpose()?;
+                    Ok(serde_json::json!({
                         "service": send.service,
                         "subfunc": send.subfunc,
                         "has_addr": send.addr.is_some(),
                         "addr_expr": addr_expr.unwrap_or_default(),
                         "payload": send.payload.is_some(),
                         "payload_expr": payload_expr.unwrap_or_default(),
-                    })
+                    }))
                 })
-                .collect();
-            serde_json::json!({
+                .collect::<Result<_, _>>()?;
+            Ok(serde_json::json!({
                 "enum_name": format!("{}_STATE_{}", upper, to_upper_snake(&s.id)),
                 "sends": sends,
-            })
+            }))
         })
-        .collect();
+        .collect::<Result<_, _>>()?;
 
     // Final states with done data: emit one static const array per state.
     let final_states_with_donedata: Vec<serde_json::Value> = m
         .states
         .iter()
         .filter(|s| s.is_final && !s.done_params.is_empty())
-        .map(|s| {
+        .map(|s| -> Result<serde_json::Value, ForgeError> {
             let done_params: Vec<serde_json::Value> = s
                 .done_params
                 .iter()
-                .map(|p| {
+                .map(|p| -> Result<serde_json::Value, ForgeError> {
                     let transpiled = transpile_procedure_expr_c11(
                         &p.expr,
                         &procedure_type_ctx,
                         &rename_map,
                         crate::forge::types::InferredType::Str,
                         &import_lowerings,
-                    );
-                    serde_json::json!({
+                    )?;
+                    Ok(serde_json::json!({
                         "name": p.name,
                         "expr": transpiled,
-                    })
+                    }))
                 })
-                .collect();
-            serde_json::json!({
+                .collect::<Result<_, _>>()?;
+            Ok(serde_json::json!({
                 "name_snake": filters::to_snake_case(s.id.clone()),
                 "done_params": done_params,
-            })
+            }))
         })
-        .collect();
+        .collect::<Result<_, _>>()?;
 
     // Final states (with has_donedata flag for the run loop).
     let donedata_set: std::collections::HashSet<String> = m
@@ -16878,12 +16796,12 @@ fn render_procedure_c_l2(
         .states
         .iter()
         .filter(|s| !s.is_final)
-        .map(|s| {
+        .map(|s| -> Result<serde_json::Value, ForgeError> {
             let transitions: Vec<serde_json::Value> = s
                 .transitions
                 .iter()
                 .enumerate()
-                .map(|(idx, tr)| {
+                .map(|(idx, tr)| -> Result<serde_json::Value, ForgeError> {
                     let event_enum_name = tr.event.as_ref().map(|ev| {
                         let pascal = event_raw_to_pascal
                             .get(ev)
@@ -16891,16 +16809,20 @@ fn render_procedure_c_l2(
                             .unwrap_or_else(|| filters::to_pascal_case(ev.clone()));
                         format!("{}_EVENT_{}", upper, to_upper_snake(&pascal))
                     });
-                    let cond_transpiled = tr.cond.as_ref().map(|c| {
-                        transpile_procedure_expr_c11(
-                            c,
-                            &procedure_type_ctx,
-                            &rename_map,
-                            crate::forge::types::InferredType::Bool,
-                            &import_lowerings,
-                        )
-                    });
-                    serde_json::json!({
+                    let cond_transpiled = tr
+                        .cond
+                        .as_ref()
+                        .map(|c| {
+                            transpile_procedure_expr_c11(
+                                c,
+                                &procedure_type_ctx,
+                                &rename_map,
+                                crate::forge::types::InferredType::Bool,
+                                &import_lowerings,
+                            )
+                        })
+                        .transpose()?;
+                    Ok(serde_json::json!({
                         "has_event": tr.event.is_some(),
                         "event_enum": event_enum_name.unwrap_or_default(),
                         "has_cond": tr.cond.is_some(),
@@ -16908,15 +16830,15 @@ fn render_procedure_c_l2(
                         "target_enum": format!("{}_STATE_{}", upper, to_upper_snake(&tr.target)),
                         "index": idx,
                         "has_assigns": !tr.assigns.is_empty(),
-                    })
+                    }))
                 })
-                .collect();
-            serde_json::json!({
+                .collect::<Result<_, _>>()?;
+            Ok(serde_json::json!({
                 "enum_name": format!("{}_STATE_{}", upper, to_upper_snake(&s.id)),
                 "transitions": transitions,
-            })
+            }))
         })
-        .collect();
+        .collect::<Result<_, _>>()?;
 
     // States with assigns + cap-check info (shared with cpp/Rust
     // backends via build_procedure_states_with_assigns; the C target
@@ -16931,7 +16853,7 @@ fn render_procedure_c_l2(
         &procedure_type_ctx,
         &assign_rename_map,
         &import_lowerings,
-    );
+    )?;
     // States in m.states keep their raw id; pair them up by index so
     // the post-process is independent of how PascalCase rendered.
     let assign_state_ids: Vec<&str> = m
@@ -17236,24 +17158,32 @@ fn stateful_import_field_renames(
 }
 
 /// Transpile a procedure expression with a pre-built rename map and
-/// type context. On failure, emits a C++ comment with the error for
-/// compile-time visibility.
+/// type context.
 ///
 /// `expected` drives top-level coercion — pass `InferredType::Bool` for
 /// guard conditions, the target field type for assignments, and
 /// `InferredType::Unknown` for payloads/sends where the consumer accepts
 /// any value.
+///
+/// ⚠ A refusal is an ERROR, as it is for every other kind. This used to
+/// return `/* SCE_TRANSPILE_ERROR: … */ <the raw expression>` and carry on,
+/// on the theory that the comment would surface at compile time. It did in
+/// C++, and nowhere else it mattered: `sce-codegen check` reported the
+/// document generated, Python met the raw ECMAScript only when the line ran,
+/// and the one pass that knows which document and which expression was at
+/// fault had turned its answer into text inside a generated file (measured
+/// 2026-09-21, where it was hiding every procedure's `_event.data` read the
+/// moment names began to be checked).
 fn transpile_procedure_expr(
     raw: &str,
     target: ExprTarget,
     type_ctx: &crate::forge::types::TypeCtx<'_>,
     renames: &std::collections::HashMap<&str, &str>,
     expected: crate::forge::types::InferredType,
-) -> String {
-    match expr::transpile_typed(raw, target, type_ctx, renames, expected) {
-        Ok(result) => result,
-        Err(e) => format!("/* SCE_TRANSPILE_ERROR: {} */ {}", e, raw),
-    }
+) -> Result<String, ForgeError> {
+    Ok(expr::transpile_typed(
+        raw, target, type_ctx, renames, expected,
+    )?)
 }
 
 /// C11 procedure expression transpile that runs the stateful-import
@@ -17267,14 +17197,13 @@ fn transpile_procedure_expr_c11(
     renames: &std::collections::HashMap<&str, &str>,
     expected: crate::forge::types::InferredType,
     lowerings: &[expr::ImportLowering],
-) -> String {
+) -> Result<String, ForgeError> {
     if lowerings.is_empty() {
         return transpile_procedure_expr(raw, ExprTarget::C, type_ctx, renames, expected);
     }
-    match expr::transpile_typed_with_import_lowering(raw, type_ctx, renames, expected, lowerings) {
-        Ok(result) => result,
-        Err(e) => format!("/* SCE_TRANSPILE_ERROR: {} */ {}", e, raw),
-    }
+    Ok(expr::transpile_typed_with_import_lowering(
+        raw, type_ctx, renames, expected, lowerings,
+    )?)
 }
 
 // ── Procedure: Rust ─────────────────────────────────────────
@@ -17383,32 +17312,36 @@ fn build_procedure_non_final_states(
     type_ctx: &crate::forge::types::TypeCtx<'_>,
     rename_map: &std::collections::HashMap<&str, &str>,
     event_name_map: &std::collections::BTreeMap<String, String>,
-) -> Vec<serde_json::Value> {
+) -> Result<Vec<serde_json::Value>, ForgeError> {
     m.states
         .iter()
         .filter(|s| !s.is_final)
-        .map(|s| {
+        .map(|s| -> Result<serde_json::Value, ForgeError> {
             let transitions: Vec<serde_json::Value> = s
                 .transitions
                 .iter()
                 .enumerate()
-                .map(|(idx, tr)| {
+                .map(|(idx, tr)| -> Result<serde_json::Value, ForgeError> {
                     let event_enum_name = tr.event.as_ref().map(|ev| {
                         event_name_map
                             .get(ev)
                             .cloned()
                             .unwrap_or_else(|| filters::to_pascal_case(ev.clone()))
                     });
-                    let cond_transpiled = tr.cond.as_ref().map(|c| {
-                        transpile_procedure_expr(
-                            c,
-                            target,
-                            type_ctx,
-                            rename_map,
-                            crate::forge::types::InferredType::Bool,
-                        )
-                    });
-                    serde_json::json!({
+                    let cond_transpiled = tr
+                        .cond
+                        .as_ref()
+                        .map(|c| {
+                            transpile_procedure_expr(
+                                c,
+                                target,
+                                type_ctx,
+                                rename_map,
+                                crate::forge::types::InferredType::Bool,
+                            )
+                        })
+                        .transpose()?;
+                    Ok(serde_json::json!({
                         "index": idx,
                         "has_event": tr.event.is_some(),
                         "event_name": tr.event.as_deref().unwrap_or(""),
@@ -17417,13 +17350,13 @@ fn build_procedure_non_final_states(
                         "cond": cond_transpiled.unwrap_or_default(),
                         "target_name": filters::to_pascal_case(tr.target.clone()),
                         "has_assigns": !tr.assigns.is_empty(),
-                    })
+                    }))
                 })
-                .collect();
-            serde_json::json!({
+                .collect::<Result<_, _>>()?;
+            Ok(serde_json::json!({
                 "name": filters::to_pascal_case(s.id.clone()),
                 "transitions": transitions,
-            })
+            }))
         })
         .collect()
 }
@@ -17435,48 +17368,56 @@ fn build_procedure_states_with_entry(
     type_ctx: &crate::forge::types::TypeCtx<'_>,
     rename_map: &std::collections::HashMap<&str, &str>,
     payload_rename_map: Option<&std::collections::HashMap<&str, &str>>,
-) -> Vec<serde_json::Value> {
+) -> Result<Vec<serde_json::Value>, ForgeError> {
     let payload_map = payload_rename_map.unwrap_or(rename_map);
     m.states
         .iter()
         .filter(|s| !s.on_entry_sends.is_empty())
-        .map(|s| {
+        .map(|s| -> Result<serde_json::Value, ForgeError> {
             let sends: Vec<serde_json::Value> = s
                 .on_entry_sends
                 .iter()
-                .map(|send| {
-                    let addr_expr = send.addr.as_ref().map(|a| {
-                        transpile_procedure_expr(
-                            a,
-                            target,
-                            type_ctx,
-                            rename_map,
-                            crate::forge::types::InferredType::Unknown,
-                        )
-                    });
-                    let payload_expr = send.payload.as_ref().map(|p| {
-                        transpile_procedure_expr(
-                            p,
-                            target,
-                            type_ctx,
-                            payload_map,
-                            crate::forge::types::InferredType::Unknown,
-                        )
-                    });
-                    serde_json::json!({
+                .map(|send| -> Result<serde_json::Value, ForgeError> {
+                    let addr_expr = send
+                        .addr
+                        .as_ref()
+                        .map(|a| {
+                            transpile_procedure_expr(
+                                a,
+                                target,
+                                type_ctx,
+                                rename_map,
+                                crate::forge::types::InferredType::Unknown,
+                            )
+                        })
+                        .transpose()?;
+                    let payload_expr = send
+                        .payload
+                        .as_ref()
+                        .map(|p| {
+                            transpile_procedure_expr(
+                                p,
+                                target,
+                                type_ctx,
+                                payload_map,
+                                crate::forge::types::InferredType::Unknown,
+                            )
+                        })
+                        .transpose()?;
+                    Ok(serde_json::json!({
                         "service": send.service,
                         "subfunc": send.subfunc,
                         "has_addr": send.addr.is_some(),
                         "addr_expr": addr_expr.unwrap_or_default(),
                         "payload": send.payload.is_some(),
                         "payload_expr": payload_expr.unwrap_or_default(),
-                    })
+                    }))
                 })
-                .collect();
-            serde_json::json!({
+                .collect::<Result<_, _>>()?;
+            Ok(serde_json::json!({
                 "name": filters::to_pascal_case(s.id.clone()),
                 "sends": sends,
-            })
+            }))
         })
         .collect()
 }
@@ -17487,32 +17428,39 @@ fn build_procedure_final_states_with_donedata(
     target: ExprTarget,
     type_ctx: &crate::forge::types::TypeCtx<'_>,
     rename_map: &std::collections::HashMap<&str, &str>,
-) -> Vec<serde_json::Value> {
+) -> Result<Vec<serde_json::Value>, ForgeError> {
     m.states
         .iter()
         .filter(|s| s.is_final && !s.done_params.is_empty())
-        .map(|s| {
+        .map(|s| -> Result<serde_json::Value, ForgeError> {
             let done_params: Vec<serde_json::Value> = s
                 .done_params
                 .iter()
-                .map(|p| {
+                .map(|p| -> Result<serde_json::Value, ForgeError> {
+                    // The expected type stays `Unknown`: done data is a
+                    // string on every backend, but the VALUE keeps its own
+                    // type and each template stringifies it itself (C++
+                    // `SCE::Forge::doneDataValue`, Rust `.to_string()`).
+                    // Asking the transpiler for `Str` was tried and changed
+                    // nothing — it decides numeric width, not string
+                    // coercion.
                     let transpiled = transpile_procedure_expr(
                         &p.expr,
                         target,
                         type_ctx,
                         rename_map,
                         crate::forge::types::InferredType::Unknown,
-                    );
-                    serde_json::json!({
+                    )?;
+                    Ok(serde_json::json!({
                         "name": p.name,
                         "expr": transpiled,
-                    })
+                    }))
                 })
-                .collect();
-            serde_json::json!({
+                .collect::<Result<_, _>>()?;
+            Ok(serde_json::json!({
                 "name": filters::to_pascal_case(s.id.clone()),
                 "done_params": done_params,
-            })
+            }))
         })
         .collect()
 }
@@ -17537,7 +17485,7 @@ fn build_procedure_states_with_assigns(
     type_ctx: &crate::forge::types::TypeCtx<'_>,
     assign_rename_map: &std::collections::HashMap<&str, &str>,
     import_lowerings: &[expr::ImportLowering],
-) -> Vec<serde_json::Value> {
+) -> Result<Vec<serde_json::Value>, ForgeError> {
     // Bounded-bytes cap contract: bytes-typed slot id → resolved
     // cap. The cpp branch consumes these fields directly; the other
     // backends ignore the extra JSON properties and wire the
@@ -17568,29 +17516,27 @@ fn build_procedure_states_with_assigns(
     m.states
         .iter()
         .filter(|s| s.transitions.iter().any(|tr| !tr.assigns.is_empty()))
-        .map(|s| {
+        .map(|s| -> Result<serde_json::Value, ForgeError> {
             let assign_transitions: Vec<serde_json::Value> = s
                 .transitions
                 .iter()
                 .enumerate()
                 .filter(|(_, tr)| !tr.assigns.is_empty())
-                .map(|(idx, tr)| {
+                .map(|(idx, tr)| -> Result<serde_json::Value, ForgeError> {
                     let assigns: Vec<serde_json::Value> = tr
                         .assigns
                         .iter()
-                        .map(|a| {
+                        .map(|a| -> Result<serde_json::Value, ForgeError> {
+                            // ⚠ An lvalue that does not transpile is an error —
+                            // it used to become `/* SCE_LVALUE_ERROR: … */`
+                            // followed by the raw location, the same silence
+                            // `transpile_procedure_expr` had.
                             let (location_emitted, lhs_ty) = expr::transpile_lvalue(
                                 &a.location,
                                 target,
                                 type_ctx,
                                 assign_rename_map,
-                            )
-                            .unwrap_or_else(|e| {
-                                (
-                                    format!("/* SCE_LVALUE_ERROR: {} */ {}", e, a.location),
-                                    crate::forge::types::InferredType::Unknown,
-                                )
-                            });
+                            )?;
                             // C11 stateful-import lowering: assign RHS may
                             // call an imported codec's instance method
                             // (e.g. `frame.encode()`), which needs the
@@ -17605,7 +17551,7 @@ fn build_procedure_states_with_assigns(
                                     assign_rename_map,
                                     lhs_ty,
                                     import_lowerings,
-                                )
+                                )?
                             } else {
                                 transpile_procedure_expr(
                                     &a.expr,
@@ -17613,7 +17559,7 @@ fn build_procedure_states_with_assigns(
                                     type_ctx,
                                     assign_rename_map,
                                     lhs_ty,
-                                )
+                                )?
                             };
                             let wrapped =
                                 if matches!(lhs_ty, crate::forge::types::InferredType::Bytes)
@@ -17633,24 +17579,24 @@ fn build_procedure_states_with_assigns(
                             let is_bytes_with_cap = cap_check_target
                                 && slot_cap.is_some()
                                 && matches!(lhs_ty, crate::forge::types::InferredType::Bytes);
-                            serde_json::json!({
+                            Ok(serde_json::json!({
                                 "location": location_emitted,
                                 "expr": wrapped,
                                 "is_bytes_with_cap": is_bytes_with_cap,
                                 "cap": slot_cap.unwrap_or(0),
-                            })
+                            }))
                         })
-                        .collect();
-                    serde_json::json!({
+                        .collect::<Result<_, _>>()?;
+                    Ok(serde_json::json!({
                         "index": idx,
                         "assigns": assigns,
-                    })
+                    }))
                 })
-                .collect();
-            serde_json::json!({
+                .collect::<Result<_, _>>()?;
+            Ok(serde_json::json!({
                 "name": filters::to_pascal_case(s.id.clone()),
                 "assign_transitions": assign_transitions,
-            })
+            }))
         })
         .collect()
 }
@@ -17813,28 +17759,25 @@ fn render_procedure_kotlin(
     let internal_fields: Vec<serde_json::Value> = m
         .internals
         .iter()
-        .map(|f| {
+        .map(|f| -> Result<serde_json::Value, ForgeError> {
             let expected = crate::forge::types::InferredType::from_sce_type(&f.sce_type);
-            let default_val = f.expr.as_ref().map_or_else(
-                || kotlin_default(&f.sce_type).to_string(),
-                |e| {
-                    expr::transpile_typed(
-                        e,
-                        ExprTarget::Kotlin,
-                        &procedure_type_ctx,
-                        &empty_procedure_renames,
-                        expected,
-                    )
-                    .unwrap_or_else(|_| e.clone())
-                },
-            );
-            serde_json::json!({
+            let default_val = match &f.expr {
+                None => kotlin_default(&f.sce_type).to_string(),
+                Some(e) => expr::transpile_typed(
+                    e,
+                    ExprTarget::Kotlin,
+                    &procedure_type_ctx,
+                    &empty_procedure_renames,
+                    expected,
+                )?,
+            };
+            Ok(serde_json::json!({
                 "id": f.id,
                 "kt_type": l.type_name(&f.sce_type),
                 "default_value": default_val,
-            })
+            }))
         })
-        .collect();
+        .collect::<Result<_, _>>()?;
 
     // Rename map: Kotlin only renames _event.data → pendingEventData, plus
     // stateful-import method entries so `alias.encode` collapses cleanly
@@ -17871,13 +17814,13 @@ fn render_procedure_kotlin(
         &procedure_type_ctx,
         &rename_map,
         None,
-    );
+    )?;
     let final_states_with_donedata = build_procedure_final_states_with_donedata(
         m,
         ExprTarget::Kotlin,
         &procedure_type_ctx,
         &rename_map,
-    );
+    )?;
 
     let non_final_states = build_procedure_non_final_states(
         m,
@@ -17885,7 +17828,7 @@ fn render_procedure_kotlin(
         &procedure_type_ctx,
         &rename_map,
         &common.event_name_map,
-    );
+    )?;
 
     let states_with_assigns = build_procedure_states_with_assigns(
         m,
@@ -17893,7 +17836,7 @@ fn render_procedure_kotlin(
         &procedure_type_ctx,
         &assign_rename_map,
         &[],
-    );
+    )?;
 
     let tmpl = env
         .get_template("procedure.kt.jinja2")
@@ -18078,29 +18021,26 @@ fn render_procedure_rust(
     let internal_fields: Vec<serde_json::Value> = m
         .internals
         .iter()
-        .map(|f| {
+        .map(|f| -> Result<serde_json::Value, ForgeError> {
             let snake_id = filters::to_snake_case(f.id.clone());
             let expected = crate::forge::types::InferredType::from_sce_type(&f.sce_type);
-            let default_val = f.expr.as_ref().map_or_else(
-                || rust_default(&f.sce_type).to_string(),
-                |e| {
-                    expr::transpile_typed(
-                        e,
-                        ExprTarget::Rust,
-                        &procedure_type_ctx,
-                        &empty_procedure_renames,
-                        expected,
-                    )
-                    .unwrap_or_else(|_| e.clone())
-                },
-            );
-            serde_json::json!({
+            let default_val = match &f.expr {
+                None => rust_default(&f.sce_type).to_string(),
+                Some(e) => expr::transpile_typed(
+                    e,
+                    ExprTarget::Rust,
+                    &procedure_type_ctx,
+                    &empty_procedure_renames,
+                    expected,
+                )?,
+            };
+            Ok(serde_json::json!({
                 "id": snake_id,
                 "rs_type": l.type_name(&f.sce_type),
                 "default_value": default_val,
-            })
+            }))
         })
-        .collect();
+        .collect::<Result<_, _>>()?;
 
     let type_map = build_procedure_type_map(m);
 
@@ -18151,27 +18091,27 @@ fn render_procedure_rust(
         &procedure_type_ctx,
         &rename_map,
         Some(&payload_rename_map),
-    );
+    )?;
     let final_states_with_donedata = build_procedure_final_states_with_donedata(
         m,
         ExprTarget::Rust,
         &procedure_type_ctx,
         &rename_map,
-    );
+    )?;
     let non_final_states = build_procedure_non_final_states(
         m,
         ExprTarget::Rust,
         &procedure_type_ctx,
         &rename_map,
         &common.event_name_map,
-    );
+    )?;
     let states_with_assigns = build_procedure_states_with_assigns(
         m,
         ExprTarget::Rust,
         &procedure_type_ctx,
         &assign_rename_map,
         &[],
-    );
+    )?;
 
     let tmpl = env
         .get_template("procedure.rs.jinja2")
@@ -18347,27 +18287,30 @@ fn render_procedure_go(
     let internal_fields: Vec<serde_json::Value> = m
         .internals
         .iter()
-        .map(|f| {
+        .map(|f| -> Result<serde_json::Value, ForgeError> {
             let go_id = go_escape_builtin(&f.id);
             let expected = crate::forge::types::InferredType::from_sce_type(&f.sce_type);
-            let default_val = f.expr.as_ref().map(|e| {
-                expr::transpile_typed(
-                    e,
-                    ExprTarget::Go,
-                    &procedure_type_ctx,
-                    &empty_procedure_renames,
-                    expected,
-                )
-                .unwrap_or_else(|_| e.clone())
-            });
-            serde_json::json!({
+            let default_val = f
+                .expr
+                .as_ref()
+                .map(|e| {
+                    expr::transpile_typed(
+                        e,
+                        ExprTarget::Go,
+                        &procedure_type_ctx,
+                        &empty_procedure_renames,
+                        expected,
+                    )
+                })
+                .transpose()?;
+            Ok(serde_json::json!({
                 "id": go_id,
                 "go_type": l.type_name(&f.sce_type),
                 "has_default": default_val.is_some(),
                 "default_value": default_val.unwrap_or_default(),
-            })
+            }))
         })
-        .collect();
+        .collect::<Result<_, _>>()?;
 
     let states_with_entry = build_procedure_states_with_entry(
         m,
@@ -18375,27 +18318,27 @@ fn render_procedure_go(
         &procedure_type_ctx,
         &rename_map,
         None,
-    );
+    )?;
     let final_states_with_donedata = build_procedure_final_states_with_donedata(
         m,
         ExprTarget::Go,
         &procedure_type_ctx,
         &rename_map,
-    );
+    )?;
     let non_final_states = build_procedure_non_final_states(
         m,
         ExprTarget::Go,
         &procedure_type_ctx,
         &rename_map,
         &common.event_name_map,
-    );
+    )?;
     let states_with_assigns = build_procedure_states_with_assigns(
         m,
         ExprTarget::Go,
         &procedure_type_ctx,
         &assign_rename_map,
         &[],
-    );
+    )?;
 
     let tmpl = env
         .get_template("procedure.go.jinja2")
@@ -18551,29 +18494,26 @@ fn render_procedure_python(
     let internal_fields: Vec<serde_json::Value> = m
         .internals
         .iter()
-        .map(|f| {
+        .map(|f| -> Result<serde_json::Value, ForgeError> {
             let snake_id = filters::to_snake_case(f.id.clone());
             let expected = crate::forge::types::InferredType::from_sce_type(&f.sce_type);
-            let default_val = f.expr.as_ref().map_or_else(
-                || python_default(&f.sce_type).to_string(),
-                |e| {
-                    expr::transpile_typed(
-                        e,
-                        ExprTarget::Python,
-                        &procedure_type_ctx,
-                        &empty_procedure_renames,
-                        expected,
-                    )
-                    .unwrap_or_else(|_| e.clone())
-                },
-            );
-            serde_json::json!({
+            let default_val = match &f.expr {
+                None => python_default(&f.sce_type).to_string(),
+                Some(e) => expr::transpile_typed(
+                    e,
+                    ExprTarget::Python,
+                    &procedure_type_ctx,
+                    &empty_procedure_renames,
+                    expected,
+                )?,
+            };
+            Ok(serde_json::json!({
                 "snake_id": snake_id,
                 "py_type": l.type_name(&f.sce_type),
                 "default_value": default_val,
-            })
+            }))
         })
-        .collect();
+        .collect::<Result<_, _>>()?;
 
     let states_with_entry = build_procedure_states_with_entry(
         m,
@@ -18581,27 +18521,27 @@ fn render_procedure_python(
         &procedure_type_ctx,
         &rename_map,
         None,
-    );
+    )?;
     let final_states_with_donedata = build_procedure_final_states_with_donedata(
         m,
         ExprTarget::Python,
         &procedure_type_ctx,
         &rename_map,
-    );
+    )?;
     let non_final_states = build_procedure_non_final_states(
         m,
         ExprTarget::Python,
         &procedure_type_ctx,
         &rename_map,
         &common.event_name_map,
-    );
+    )?;
     let states_with_assigns = build_procedure_states_with_assigns(
         m,
         ExprTarget::Python,
         &procedure_type_ctx,
         &assign_rename_map,
         &[],
-    );
+    )?;
 
     let tmpl = env
         .get_template("procedure.py.jinja2")
@@ -21826,6 +21766,8 @@ fn render_algorithm(
     // The per-backend `BytesView` emit assumes the algorithm-kind string
     // representation, so the flag stays off for every other kind.
     type_ctx.project_str_args_as_bytes_view = true;
+    crate::forge::type_ctx::insert_enum_imports(&mut type_ctx, imports);
+    type_ctx.reject_unknown_identifiers = true;
     // RFC §synth-5-F `<sce:const name="X" type="array<elem, N>">` registers X
     // as an indexable container with element type elem so `X[idx]` is
     // typed as `elem` instead of falling through to `Unknown`. Required
@@ -21838,6 +21780,15 @@ fn render_algorithm(
         if let crate::forge::model::AlgorithmConstType::Array { elem, .. } = &c.sce_type {
             type_ctx.insert_array_elem(c.name.as_str(), InferredType::from_sce_type(elem));
         }
+        // ⚠ The NAME is declared too, not only an array's element type.
+        // Registering only the element left `CRC16_TABLE` undeclared as a
+        // value, which nothing noticed until names were checked (measured
+        // 2026-09-21: 29 refusals, every one a committed fixture). It is
+        // registered `Unknown` on purpose: this pass declares the name, and
+        // what inference makes of a const's value is `lookup_array_elem`'s
+        // for an array and was never claimed for a scalar — claiming it
+        // here would change emitted code under the cover of a name check.
+        type_ctx.insert_var(c.name.as_str(), InferredType::Unknown);
     }
 
     // RFC c7-wildcard W-project: register each cross-algorithm import's

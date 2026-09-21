@@ -3504,28 +3504,15 @@ fn check_extra_keys<'a>(
     })
 }
 
-/// Levenshtein distance, iterative single-row.
-///
-/// The forge extern registry ranks its 101 candidates by shared prefix
-/// instead, which is the right trade at that size. Here the candidate
-/// set is at most two dozen short keys, so the exact distance is
-/// affordable — and it is the difference between naming and missing the
-/// suggestion for the transposition and insertion typos this guard
-/// exists to catch (`topci`, `kye`), where the shared prefix is 1 or 2.
-pub(crate) fn edit_distance(a: &str, b: &str) -> usize {
-    let b_chars: Vec<char> = b.chars().collect();
-    let mut prev: Vec<usize> = (0..=b_chars.len()).collect();
-    let mut cur = vec![0usize; b_chars.len() + 1];
-    for (i, ca) in a.chars().enumerate() {
-        cur[0] = i + 1;
-        for (j, &cb) in b_chars.iter().enumerate() {
-            let cost = usize::from(ca != cb);
-            cur[j + 1] = (prev[j] + cost).min(prev[j + 1] + 1).min(cur[j] + 1);
-        }
-        std::mem::swap(&mut prev, &mut cur);
-    }
-    prev[b_chars.len()]
-}
+// Levenshtein distance — `crate::near_miss::edit_distance`.
+//
+// The forge extern registry ranks its 101 candidates by shared prefix
+// instead, which is the right trade at that size. Here the candidate
+// set is at most two dozen short keys, so the exact distance is
+// affordable — and it is the difference between naming and missing the
+// suggestion for the transposition and insertion typos this guard
+// exists to catch (`topci`, `kye`), where the shared prefix is 1 or 2.
+use crate::near_miss::edit_distance;
 
 /// SCE Protocol-Synthesis RFC §synth-5-K line 2517-2519 parse-time typo guard
 /// (`deploy/stage-copy-policy-unknown`). Walks every machine's

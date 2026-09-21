@@ -712,6 +712,7 @@ references against a real document and drift silently.
 | `expression/strict-equality` | `expression` | `replace_with` | SCE Forge §3.4 |
 | `expression/type-coercion` | `expression` | no | SCE Forge §3.4 |
 | `expression/unexpected-token` | `expression` | no | SCE Forge §3.4 |
+| `expression/unknown-enum-variant` | `expression` | `replace_one_of` | SCE Accepted Subset §2.2 |
 | `expression/unknown-identifier` | `expression` | `replace_one_of` / no | W3C SCXML §B.2 |
 | `expression/unsupported-builtin` | `expression` | `replace_one_of` | W3C SCXML §B.2 |
 | `expression/unsupported-construct` | `expression` | no | SCE Forge §3.4 |
@@ -1266,16 +1267,26 @@ nothing. Two fields carry that difference:
   is `"rejected"`.
 
 The exit code splits the two refusal axes. A **document-axis** refusal
-(`xml/*`, `validation/*`, `scxml/*`) is fatal — the document is wrong
-under every backend, stdout stays empty per [§10.2](#102-stream-discipline).
-A **backend-axis** refusal (`generate/*`, `codegen/*`) is fatal only
-when the operator named the backend with `--language`, so `check -l X`
-and `generate -l X` always agree; that agreement is swept over the
-fixture corpus by
+(`xml/*`, `validation/*`, `scxml/*`, and `expression/*` but the two
+below) is fatal — the document is wrong under every backend, stdout
+stays empty per [§10.2](#102-stream-discipline).
+A **backend-axis** refusal (`generate/*`, `codegen/*`, and the two
+expression refusals a single backend's emitter raises —
+`expression/go-ternary-unsupported` and `expression/type-coercion`) is
+fatal only when the operator named the backend with `--language`, so
+`check -l X` and `generate -l X` always agree; that agreement is swept
+over the fixture corpus by
 `tests/cli_check.rs::check_and_generate_agree_on_every_document_and_backend`.
 Without `--language` every backend is checked, the per-backend verdict
 rides `languages`, and the exit is `0`: "only the Rust backend can
 lower this document" is an answer, not a failure.
+
+⚠ The axis is a property of the refusal
+(`Diagnostic::refuses_one_backend`), not of the route that reached it.
+A forge document's expressions are name-checked inside each backend's
+transpile, so an undeclared operand or enum variant arrives once per
+backend — and was recorded as six backend rejections with exit `0`
+until the axis was read off the record (measured 2026-09-21).
 
 #### 10.3.1.1 Document sets
 

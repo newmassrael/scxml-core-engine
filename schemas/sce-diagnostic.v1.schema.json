@@ -126,6 +126,7 @@
         "expression/unsupported-construct",
         "expression/unsupported-builtin",
         "expression/unknown-identifier",
+        "expression/unknown-enum-variant",
         "expression/property-not-callable",
         "expression/namespace-not-callable",
         "expression/namespace-not-a-value",

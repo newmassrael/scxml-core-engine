@@ -85,6 +85,20 @@ pub enum ExprTarget {
 }
 
 impl ExprTarget {
+    /// The code generator's name for this backend — what
+    /// [`crate::forge::enum_naming`] spells a variant reference for.
+    pub(crate) fn language(self) -> crate::generator::Language {
+        use crate::generator::Language;
+        match self {
+            ExprTarget::Cpp => Language::Cpp,
+            ExprTarget::Kotlin => Language::Kotlin,
+            ExprTarget::Rust => Language::Rust,
+            ExprTarget::Go => Language::Go,
+            ExprTarget::Python => Language::Python,
+            ExprTarget::C => Language::C11,
+        }
+    }
+
     /// Every backend SCE generates code for. This is the canonical list a
     /// "lowers natively on all backends" verdict must exercise — checking
     /// a proper subset (historically just Rust + Go) is a proxy that lies
@@ -142,14 +156,7 @@ pub fn transpile_typed(
     // context; the rename pass then changes only the syntactic form,
     // leaving each TypedExpr's `ty` slot intact (which is exactly what the
     // `Raw` arm of `infer_types` already documents).
-    infer_types(&mut ast, ctx);
-    // ⚠ Before rename, for the same reason inference runs before it: the
-    // callee is still in its user-visible form here, which is what `ctx` is
-    // keyed by and what the diagnostic must name back to the author.
-    reject_unknown_callees(&ast, ctx)?;
-    if !renames.is_empty() {
-        rename_identifiers(&mut ast, renames);
-    }
+    resolve_then_rename(&mut ast, ctx, renames, target)?;
 
     // RFC c7-wildcard W-project: Go exports struct fields in PascalCase
     // (the `codec_field_id` SSOT). Inside an algorithm body every member
@@ -267,18 +274,47 @@ pub(crate) fn transpile_typed_with_import_lowering(
     if !lowerings.is_empty() {
         lower_stateful_import_calls(&mut ast, lowerings);
     }
-    infer_types(&mut ast, ctx);
     // ⚠ The C11 path lowers stateful import calls ABOVE, so by here a
     // `smoother.update(x)` has become the `Raw` C symbol
-    // `filter_low_pass_update(...)`. The check ignores `Raw` callees for that
-    // reason — they are this pipeline's product, not an author's name, and
-    // they are not in `ctx.funcs` under any spelling. A user's name is still
-    // an `Ident` at this point, so the check keeps its subject either way.
-    reject_unknown_callees(&ast, ctx)?;
-    if !renames.is_empty() {
-        rename_identifiers(&mut ast, renames);
-    }
+    // `filter_low_pass_update(...)`. Both name checks ignore a `Raw` for that
+    // reason — it is this pipeline's product, not an author's name, and it
+    // is in `ctx` under no spelling. A user's name is still an `Ident` at
+    // this point, so each check keeps its subject either way.
+    resolve_then_rename(&mut ast, ctx, renames, ExprTarget::C)?;
     emit_c(&ast, expected)
+}
+
+/// The passes between parsing and emission that every typed transpile
+/// runs, in the one order that is correct — ONE copy.
+///
+/// ⚠ There were two, one per entry point, and they had already drifted:
+/// the name checks and the enum lowering went into [`transpile_typed`] and
+/// not into [`transpile_typed_with_import_lowering`], so a C11 procedure
+/// with a stateful import would have skipped both — found while adding
+/// them, 2026-09-21. The order:
+///
+/// 1. [`infer_types`] BEFORE anything renames, because `ctx` is keyed by
+///    the names the author wrote and a renamed node is a `Raw` it can no
+///    longer look up (see [`transpile_typed`]).
+/// 2. The two name checks, still before rename, for the same reason and
+///    because the diagnostic must name back what the author wrote.
+/// 3. Enum variants lowered to this backend's spelling once the names are
+///    known good; rename leaves the resulting `Raw` alone.
+/// 4. Rename.
+fn resolve_then_rename(
+    ast: &mut TypedExpr,
+    ctx: &TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    target: ExprTarget,
+) -> Result<(), ExprError> {
+    infer_types(ast, ctx);
+    reject_unknown_callees(ast, ctx)?;
+    reject_unknown_names(ast, ctx)?;
+    lower_enum_variant_refs(ast, ctx, target);
+    if !renames.is_empty() {
+        rename_identifiers(ast, renames);
+    }
+    Ok(())
 }
 
 /// Walk a TypedExpr in place and rewrite every `Call{Member{Ident(alias),
@@ -2483,6 +2519,137 @@ fn reject_unknown_callees(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), Exp
         reject_unknown_callees(child, ctx)?;
     }
     Ok(())
+}
+
+/// Refuse a name the context does not carry: an operand nothing declares,
+/// or an `<alias>.<name>` on an imported enum that declares no such variant.
+///
+/// ⚠ WHY THIS EXISTS. `infer_types` types an unresolved name `Unknown` and
+/// the emitters print it verbatim, so until this check both of these
+/// generated with exit 0 on all six backends (measured 2026-09-21):
+///
+/// ```text
+/// expr="conut + 1"                  (beside <data id="count">)
+/// expr="w ? Mode.RUN : Mode.STOP"    (the enum declares RUN_BATCH, not RUN)
+/// ```
+///
+/// The first named an identifier nothing bound — a compile error in five
+/// backends and a `NameError` in Python the first time the line ran. The
+/// second names an undeclared enum variant. This invented mode example
+/// exercises the same name-resolution rule: a declared variant must be
+/// named explicitly rather than inferred from a shorter spelling.
+///
+/// ⚠⚠ The CALLEE of a call is not judged here — [`reject_unknown_callees`]
+/// owns that, with the builtins and method keys it alone knows. Only the
+/// arguments are walked.
+///
+/// ⚠⚠ Only the HEAD of a member path is a name this layer can speak about:
+/// `payload.length` reads `payload`; what `.length` means is the member's
+/// type's business. The exception is an enum alias, whose member set is
+/// closed and carried in `ctx.enums`.
+///
+/// ⚠⚠⚠ `Ident` only, never `Raw` — a `Raw` is this pipeline's own product,
+/// for the reason [`reject_unknown_callees`] gives.
+fn reject_unknown_names(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), ExprError> {
+    match &expr.kind {
+        ExprKind::Member { object, property } => {
+            if let ExprKind::Ident(alias) = &object.kind {
+                if let Some(scope) = ctx.lookup_enum(alias) {
+                    if scope.variants.iter().any(|v| v == property) {
+                        return Ok(());
+                    }
+                    return Err(ExprError::UnknownEnumVariant {
+                        alias: alias.clone(),
+                        name: property.clone(),
+                        declared: scope.variants.to_vec(),
+                    });
+                }
+            }
+        }
+        ExprKind::Call { callee, args } if matches!(callee.kind, ExprKind::Ident(_)) => {
+            for arg in args {
+                reject_unknown_names(arg, ctx)?;
+            }
+            return Ok(());
+        }
+        ExprKind::Ident(name)
+            if ctx.reject_unknown_identifiers && !ctx.vars.contains_key(name.as_str()) =>
+        {
+            return Err(ExprError::UnknownIdentifier {
+                name: name.clone(),
+                // A qualified `alias.field` key is not something a bare
+                // name could have meant.
+                candidates: crate::near_miss::near_misses(
+                    name,
+                    ctx.vars.keys().copied().filter(|k| !k.contains('.')),
+                ),
+            });
+        }
+        _ => {}
+    }
+    for child in expr_children(expr) {
+        reject_unknown_names(child, ctx)?;
+    }
+    Ok(())
+}
+
+/// Replace every `<alias>.<variant>` on an imported enum with this backend's
+/// reference to that variant, as a pre-resolved [`ExprKind::Raw`].
+///
+/// ⚠ ONE place for every kind. The spelling was a rename table built by the
+/// transform renderer alone, so a condition, validator, observer, procedure
+/// or algorithm comparing against a variant emitted `Mode.RUN_BATCH` verbatim
+/// into C++, Rust and C, where it names nothing. The spelling itself is
+/// [`crate::forge::enum_naming::variant_ref`]'s — it has to match the
+/// declaration the enum kind emits, and that module is what keeps the two
+/// from drifting.
+///
+/// Runs after [`reject_unknown_names`], so every enum member reaching here
+/// is a declared variant.
+fn lower_enum_variant_refs(expr: &mut TypedExpr, ctx: &TypeCtx<'_>, target: ExprTarget) {
+    if let ExprKind::Member { object, property } = &expr.kind {
+        if let ExprKind::Ident(alias) = &object.kind {
+            if let Some(scope) = ctx.lookup_enum(alias) {
+                let reference = crate::forge::enum_naming::variant_ref(
+                    target.language(),
+                    scope.qualified_type,
+                    scope.source_name,
+                    property,
+                );
+                expr.kind = ExprKind::Raw(reference);
+                return;
+            }
+        }
+    }
+    for child in expr_children_mut(expr) {
+        lower_enum_variant_refs(child, ctx, target);
+    }
+}
+
+/// Every sub-expression of `expr`, in source order, mutably — the twin of
+/// [`expr_children`] for passes that rewrite the tree.
+fn expr_children_mut(expr: &mut TypedExpr) -> Vec<&mut TypedExpr> {
+    match &mut expr.kind {
+        ExprKind::Binary { left, right, .. } => vec![left, right],
+        ExprKind::Unary { operand, .. } => vec![operand],
+        ExprKind::Conditional {
+            condition,
+            consequent,
+            alternate,
+        } => vec![condition, consequent, alternate],
+        ExprKind::Call { callee, args } => {
+            let mut v = vec![&mut **callee];
+            v.extend(args.iter_mut());
+            v
+        }
+        ExprKind::Index { object, index } => vec![object, index],
+        ExprKind::Member { object, .. } => vec![&mut **object],
+        ExprKind::BytesView { source, len } => match len {
+            Some(l) => vec![source, l],
+            None => vec![&mut **source],
+        },
+        _ => Vec::new(),
+    }
 }
 
 /// Every sub-expression of `expr`, in source order.
