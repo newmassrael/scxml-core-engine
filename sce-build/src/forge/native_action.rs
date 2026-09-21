@@ -41,12 +41,14 @@
 //! definition*, so it never degrades to a runtime fallback.
 
 use crate::filters;
-use crate::forge::error::{ForgeError, Located, ValidationError};
+use crate::forge::error::{
+    ForgeError, Located, RelatedRole, RelatedSite, SourceLocation, ValidationError,
+};
 use crate::forge::event_schema_check::schema_is_native_payload_eligible;
 use crate::forge::generator::host_param_type;
 use crate::forge::model::{EventSchemaModel, ForgeKind, SceType};
 use crate::generator::Language;
-use crate::model::{Action, SCXMLModel};
+use crate::model::{Action, Param, SCXMLModel};
 use std::collections::{BTreeMap, BTreeSet};
 
 const ACTION_TYPE: &str = "native_action";
@@ -105,10 +107,17 @@ fn located_on_action(
     diag_label: &str,
     err: ValidationError,
 ) -> Located<ForgeError> {
-    let (line, col) = action
-        .source_location
-        .as_ref()
-        .map_or((None, None), |l| (l.line, l.col));
+    located_at(action.source_location.as_ref(), diag_label, err)
+}
+
+/// A refusal at a recorded position, or file-scoped when none was
+/// recorded.
+fn located_at(
+    at: Option<&SourceLocation>,
+    diag_label: &str,
+    err: ValidationError,
+) -> Located<ForgeError> {
+    let (line, col) = at.map_or((None, None), |l| (l.line, l.col));
     Located::new(ForgeError::Validation(Box::new(err)), diag_label, line, col)
 }
 
@@ -123,6 +132,8 @@ fn placement_err(action: &Action, diag_label: &str, detail: &str) -> Located<For
     )
 }
 
+/// A refusal of the action's arguments as a whole, on the action's row,
+/// where its name is.
 fn argument_err(action: &Action, diag_label: &str, detail: String) -> Located<ForgeError> {
     located_on_action(
         action,
@@ -130,6 +141,28 @@ fn argument_err(action: &Action, diag_label: &str, detail: String) -> Located<Fo
         ValidationError::NativeActionArgument {
             name: action.native_action_name.clone(),
             detail,
+            observed: action.native_action_name.clone(),
+        },
+    )
+}
+
+/// A refusal of one argument, on its `<sce:arg>` row, where its `expr`
+/// is — not on the action's, which does not hold it.
+fn one_argument_err(
+    action: &Action,
+    arg: &Param,
+    diag_label: &str,
+    detail: String,
+) -> Located<ForgeError> {
+    located_at(
+        arg.source_location
+            .as_ref()
+            .or(action.source_location.as_ref()),
+        diag_label,
+        ValidationError::NativeActionArgument {
+            name: action.native_action_name.clone(),
+            detail,
+            observed: arg.expr.clone(),
         },
     )
 }
@@ -192,7 +225,7 @@ pub fn validate(
     // every time, so a single generated `Actions` trait method serves every
     // call site. Detecting a conflict here is fail-fast at SCE's own validation
     // stage rather than deferring it to a type error in the downstream compiler.
-    let mut signatures: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut signatures = SignatureTable::new();
 
     for state in scxml.states.values() {
         // Eventless positions: <onentry>/<onexit> blocks, an <initial>
@@ -236,7 +269,7 @@ pub fn validate(
 fn check_placement(
     action: &Action,
     scope: &PayloadScope,
-    signatures: &mut BTreeMap<String, Vec<String>>,
+    signatures: &mut SignatureTable,
     diag_label: &str,
 ) -> Result<(), Located<ForgeError>> {
     if is_native(action) {
@@ -281,31 +314,54 @@ fn signature_of(
     }
 }
 
+/// The first call of each native action name: the signature every later
+/// call must match, and where that call is, so a conflict can name it.
+type SignatureTable = BTreeMap<String, (Vec<String>, Option<SourceLocation>)>;
+
 /// Record `sig` for `action.native_action_name` in the document-wide table,
 /// rejecting a divergence from a prior occurrence — one generated trait method
 /// must serve every call site of a given name, regardless of position.
 fn register_signature(
     action: &Action,
     sig: Vec<String>,
-    signatures: &mut BTreeMap<String, Vec<String>>,
+    signatures: &mut SignatureTable,
     diag_label: &str,
 ) -> Result<(), Located<ForgeError>> {
     match signatures.get(&action.native_action_name) {
-        Some(prev) if *prev != sig => Err(located_on_action(
-            action,
-            diag_label,
-            ValidationError::NativeActionSignatureConflict {
-                name: action.native_action_name.clone(),
-                detail: format!(
-                    "argument types ({}) here disagree with ({}) at another call site",
-                    sig.join(", "),
-                    prev.join(", "),
-                ),
-            },
-        )),
+        Some((prev, first_at)) if *prev != sig => {
+            let refusal = located_on_action(
+                action,
+                diag_label,
+                ValidationError::NativeActionSignatureConflict {
+                    name: action.native_action_name.clone(),
+                    detail: format!(
+                        "argument types ({}) here disagree with ({}) at another call site",
+                        sig.join(", "),
+                        prev.join(", "),
+                    ),
+                },
+            );
+            // The call that fixed the signature first, which this one
+            // contradicts: the consumer reads it to decide which to change.
+            Err(match first_at {
+                Some(at) => refusal.related_to(RelatedSite {
+                    role: RelatedRole::ConflictingUse,
+                    location: SourceLocation {
+                        file: diag_label.to_string(),
+                        line: at.line,
+                        col: at.col,
+                    },
+                    actual: Some(action.native_action_name.clone()),
+                }),
+                None => refusal,
+            })
+        }
         Some(_) => Ok(()),
         None => {
-            signatures.insert(action.native_action_name.clone(), sig);
+            signatures.insert(
+                action.native_action_name.clone(),
+                (sig, action.source_location.clone()),
+            );
             Ok(())
         }
     }
@@ -354,8 +410,9 @@ fn validate_args(
     let mut sig = Vec::with_capacity(action.params.len());
     for arg in &action.params {
         let Some(field_name) = arg_field(&arg.expr) else {
-            return Err(argument_err(
+            return Err(one_argument_err(
                 action,
+                arg,
                 diag_label,
                 format!(
                     "argument '{}' must be a bare `_event.data.<field>` reference \
@@ -368,8 +425,11 @@ fn validate_args(
             let mut candidates: Vec<String> = schema.fields.iter().map(|f| f.id.clone()).collect();
             candidates.sort();
             candidates.dedup();
-            return Err(located_on_action(
-                action,
+            // On the `<sce:arg>` that names the field, not on the action.
+            return Err(located_at(
+                arg.source_location
+                    .as_ref()
+                    .or(action.source_location.as_ref()),
                 diag_label,
                 ValidationError::CrossKindFieldNotFound {
                     importing_kind: ForgeKind::Statechart,
@@ -1137,7 +1197,22 @@ mod tests {
                 </state>
             </scxml>"#,
         );
-        assert!(validate(&model, &fragment_schema(), "t").is_err());
+        let refusal = validate(&model, &fragment_schema(), "t").expect_err("the signatures differ");
+        // The record names the call that contradicts; `related` names the
+        // call that fixed the signature first, where the same name is.
+        assert_eq!(refusal.location.line, Some(7), "{refusal:?}");
+        assert_eq!(
+            refusal.related(),
+            [RelatedSite {
+                role: RelatedRole::ConflictingUse,
+                location: SourceLocation {
+                    file: "t".to_string(),
+                    line: Some(4),
+                    col: refusal.related()[0].location.col,
+                },
+                actual: Some("f".to_string()),
+            }],
+        );
     }
 
     #[test]

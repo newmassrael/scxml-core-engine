@@ -452,6 +452,33 @@
         "col": { "type": "integer", "minimum": 1 }
       }
     },
+    "related": {
+      "description": "The other places a relation-shaped rejection involves — the earlier call whose signature this one contradicts, say. `location` and `actual` remain the one site a consumer edits; each entry names another site, what it is to the record (`role`, a closed set), and the token at that site the relation is about. Absent when the rejection is a fault at one site. See SCE_ERROR_CONTRACT.md §2.4.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["role", "location"],
+        "additionalProperties": false,
+        "properties": {
+          "role": { "type": "string", "enum": ["conflicting-use"] },
+          "location": {
+            "type": "object",
+            "required": ["file"],
+            "additionalProperties": false,
+            "properties": {
+              "file": { "type": "string" },
+              "line": { "type": "integer", "minimum": 1 },
+              "col": { "type": "integer", "minimum": 1 }
+            }
+          },
+          "actual": {
+            "description": "The token at this site, as the document spells it — held to the rule `actual` is (SCE_ERROR_CONTRACT.md §3.1.1).",
+            "type": "string"
+          }
+        }
+      }
+    },
     "expected": {
       "description": "Non-repair metadata. Holds grammatical expectations (parser token names) or cardinality notes. Never a substitution candidate list — see SCE_ERROR_CONTRACT.md §3.2 (non-overlap rule).",
       "type": "array",

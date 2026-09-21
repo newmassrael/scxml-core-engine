@@ -282,7 +282,7 @@ fn a_rejection_on_an_anchored_node_carries_its_anchors() {
         validation_error(&err),
     );
     assert_eq!(
-        anchors(&err.spec_provenance),
+        anchors(err.spec_provenance()),
         vec![
             ("OEM-DIAG-SPEC", Some("D"), Some("3.4.2"), Some(112)),
             ("ISO-14229-1", None, Some("11.2.1"), None),
@@ -296,7 +296,7 @@ fn a_rejection_on_an_anchored_node_carries_its_anchors() {
     assert_eq!(diagnostics.len(), 1);
     assert_eq!(
         anchors(&diagnostics[0].spec_provenance),
-        anchors(&err.spec_provenance),
+        anchors(err.spec_provenance()),
         "the diagnostic must carry what the located error carried",
     );
 }

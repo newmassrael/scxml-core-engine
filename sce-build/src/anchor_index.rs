@@ -268,7 +268,7 @@ impl AnchorIndex {
         &self,
         err: crate::forge::error::Located<E>,
     ) -> crate::forge::error::Located<E> {
-        if !err.spec_provenance.is_empty() {
+        if !err.spec_provenance().is_empty() {
             return err;
         }
         let anchors = self.enclosing(&err.location);

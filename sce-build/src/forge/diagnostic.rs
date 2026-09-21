@@ -97,6 +97,13 @@ pub trait SingleDiagnostic: ToDiagnostics {
         None
     }
 
+    /// The other sites a relation-shaped rejection involves. Default
+    /// empty — overridden by `Located<E>`, the only wrapper that carries
+    /// any.
+    fn diagnostic_related(&self) -> Vec<Related> {
+        Vec::new()
+    }
+
     /// NL→IR Mapping Roadmap Item 7 — the spec anchors of the node
     /// this rejection is about.
     ///
@@ -131,6 +138,7 @@ pub trait SingleDiagnostic: ToDiagnostics {
             message: self.to_string(),
             location,
             expanded_from,
+            related: self.diagnostic_related(),
             expected: payload.expected,
             actual: payload.actual,
             // One place decides whether a repair proposal survives to
@@ -312,6 +320,13 @@ pub struct Diagnostic {
     /// [`Fix::with_a_choice_to_offer`]'s call site.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expanded_from: Option<Location>,
+
+    /// The other places the rejection involves, when it is a relation
+    /// between sites — the earlier call whose signature this one
+    /// contradicts. `location` and `actual` remain the one site a
+    /// consumer edits. See SCE_ERROR_CONTRACT.md §2.4.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub related: Vec<Related>,
 
     /// Non-repair expectation metadata — parser-level expectations
     /// (e.g. "identifier") or cardinality constraints (e.g. "exactly
@@ -3509,6 +3524,7 @@ impl Diagnostic {
             // A meta failure has no document behind it, so nothing
             // was expanded to produce it.
             expanded_from: None,
+            related: Vec::new(),
             spec: code.spec_anchor(),
             message,
             location: None,
@@ -4808,6 +4824,36 @@ pub struct Location {
     pub col: Option<u32>,
 }
 
+impl From<&crate::forge::error::SourceLocation> for Location {
+    fn from(at: &crate::forge::error::SourceLocation) -> Self {
+        Location {
+            file: at.file.clone(),
+            line: at.line,
+            col: at.col,
+        }
+    }
+}
+
+/// One entry of a record's `related` — another site the rejection
+/// involves (SCE_ERROR_CONTRACT.md §2.4).
+#[derive(Debug, Clone, Serialize)]
+pub struct Related {
+    pub role: crate::forge::error::RelatedRole,
+    pub location: Location,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actual: Option<String>,
+}
+
+impl From<&crate::forge::error::RelatedSite> for Related {
+    fn from(site: &crate::forge::error::RelatedSite) -> Self {
+        Related {
+            role: site.role,
+            location: Location::from(&site.location),
+            actual: site.actual.clone(),
+        }
+    }
+}
+
 /// Structured repair proposal.
 ///
 /// `Fix` is the sole channel for repair signals: whenever the producer
@@ -5039,23 +5085,19 @@ impl SingleDiagnostic for Located<ForgeError> {
     }
 
     fn diagnostic_location(&self) -> Option<Location> {
-        Some(Location {
-            file: self.location.file.clone(),
-            line: self.location.line,
-            col: self.location.col,
-        })
+        Some(Location::from(self.location.as_ref()))
     }
 
     fn diagnostic_expanded_from(&self) -> Option<Location> {
-        self.expanded_from.as_ref().map(|at| Location {
-            file: at.file.clone(),
-            line: at.line,
-            col: at.col,
-        })
+        self.expansion_site().map(Location::from)
+    }
+
+    fn diagnostic_related(&self) -> Vec<Related> {
+        self.related().iter().map(Related::from).collect()
     }
 
     fn diagnostic_spec_provenance(&self) -> Vec<crate::provenance::SpecProvenance> {
-        self.spec_provenance.to_vec()
+        self.spec_provenance().to_vec()
     }
 }
 
@@ -5860,25 +5902,33 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             stage: Stage::Validation,
             // The repair is to MOVE the element to a `<transition>`, not to
             // substitute a value, so no closed candidate set exists and `fix`
-            // stays `None`; `actual` carries the offending placement detail.
+            // stays `None`. `actual` is the action's name, which its row
+            // spells; where it may and may not go is the message's.
             expected: None,
-            actual: Some(detail.clone()),
+            actual: Some(name.clone()),
             fix: None,
             key_fragments: vec![name.clone(), detail.clone()],
         },
-        ValidationError::NativeActionArgument { name, detail } => DiagnosticPayload {
+        ValidationError::NativeActionArgument {
+            name,
+            detail,
+            observed,
+        } => DiagnosticPayload {
             code: DiagnosticCode::ValidationNativeActionArgument,
             stage: Stage::Validation,
             expected: None,
-            actual: Some(detail.clone()),
+            actual: Some(observed.clone()),
             fix: None,
             key_fragments: vec![name.clone(), detail.clone()],
         },
+        // `actual` is the action's name at this call; the call that fixed
+        // the other signature rides `related`, and the two type lists are
+        // the message's.
         ValidationError::NativeActionSignatureConflict { name, detail } => DiagnosticPayload {
             code: DiagnosticCode::ValidationNativeActionSignatureConflict,
             stage: Stage::Validation,
             expected: None,
-            actual: Some(detail.clone()),
+            actual: Some(name.clone()),
             fix: None,
             key_fragments: vec![name.clone(), detail.clone()],
         },
@@ -9893,16 +9943,17 @@ mod tests {
                     detail: "supported only as a direct <transition> child".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:1473c2ac552ffeb4","code":"validation/native-action-placement","stage":"validation","message":"<sce:action name=\"do_effect\">: supported only as a direct <transition> child","actual":"supported only as a direct <transition> child"}"#,
+                r#"{"v":1,"id":"fnv1a:1473c2ac552ffeb4","code":"validation/native-action-placement","stage":"validation","message":"<sce:action name=\"do_effect\">: supported only as a direct <transition> child","actual":"do_effect"}"#,
             ),
             (
                 "forge/native-action-argument",
                 ValidationError::NativeActionArgument {
                     name: "append".into(),
                     detail: "argument '42' must be a bare `_event.data.<field>` reference".into(),
+                    observed: "42".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:670341f082aeea0c","code":"validation/native-action-argument","stage":"validation","message":"<sce:action name=\"append\">: argument '42' must be a bare `_event.data.<field>` reference","actual":"argument '42' must be a bare `_event.data.<field>` reference"}"#,
+                r#"{"v":1,"id":"fnv1a:670341f082aeea0c","code":"validation/native-action-argument","stage":"validation","message":"<sce:action name=\"append\">: argument '42' must be a bare `_event.data.<field>` reference","actual":"42"}"#,
             ),
             (
                 "forge/native-action-signature-conflict",
@@ -9911,7 +9962,7 @@ mod tests {
                     detail: "argument types (bytes) here disagree with (uint32) on another transition".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:2f5ea10b3dcdc557","code":"validation/native-action-signature-conflict","stage":"validation","message":"<sce:action name=\"append\">: argument types (bytes) here disagree with (uint32) on another transition","actual":"argument types (bytes) here disagree with (uint32) on another transition"}"#,
+                r#"{"v":1,"id":"fnv1a:2f5ea10b3dcdc557","code":"validation/native-action-signature-conflict","stage":"validation","message":"<sce:action name=\"append\">: argument types (bytes) here disagree with (uint32) on another transition","actual":"append"}"#,
             ),
             (
                 "forge/mesh-rpc-reserved-param",
@@ -18531,6 +18582,37 @@ mod anchor_contract_tests {
              SCHEMA_STATUS const — update one to match the other and \
              verify SCE_ERROR_CONTRACT.md §8.1",
         );
+    }
+
+    /// The `role`s the schema admits in `related` are exactly the ones
+    /// the producer can emit — a role added on one side only is a record
+    /// the schema refuses, or a value no producer sends.
+    #[test]
+    fn related_roles_match_the_schema() {
+        use crate::forge::error::RelatedRole;
+        use std::collections::BTreeSet;
+        let schema: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../schemas/sce-diagnostic.v1.schema.json"
+        ))
+        .expect("schema file must be valid JSON");
+        let admitted: BTreeSet<String> = schema
+            .pointer("/properties/related/items/properties/role/enum")
+            .and_then(|v| v.as_array())
+            .expect("the schema lists the related roles")
+            .iter()
+            .map(|v| v.as_str().expect("a role is a string").to_string())
+            .collect();
+        let emitted: BTreeSet<String> = RelatedRole::ALL
+            .iter()
+            .map(|role| {
+                serde_json::to_value(role)
+                    .expect("a role serializes")
+                    .as_str()
+                    .expect("as a string")
+                    .to_string()
+            })
+            .collect();
+        assert_eq!(admitted, emitted);
     }
 
     /// One `ExprError` variant, one `DiagnosticCode` — the mapping is

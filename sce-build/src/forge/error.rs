@@ -65,12 +65,25 @@ pub struct SourceLocation {
 #[derive(Debug, Clone)]
 pub struct Located<E> {
     pub error: E,
-    /// Boxed for the same reason `expanded_from` is: this type is the
-    /// `Err` half of most signatures in the crate, so its size is paid
-    /// by every caller on the success path too, and
-    /// `clippy::result_large_err` is what noticed. A location is read
-    /// once, on the failure path, where an indirection costs nothing.
+    /// Boxed for the reason `context` is: this type is the `Err` half of
+    /// most signatures in the crate, so its size is paid by every caller
+    /// on the success path too, and `clippy::result_large_err` is what
+    /// noticed. A location is read once, on the failure path, where an
+    /// indirection costs nothing.
     pub location: Box<SourceLocation>,
+    /// What only some rejections carry, boxed together so one that
+    /// carries none of it — almost all of them — costs one pointer.
+    ///
+    /// ⚠ One box, not one per field: each rare field boxed on its own was
+    /// how this type grew past `clippy::result_large_err`'s threshold the
+    /// day a third one arrived. Read it through [`Self::expansion_site`],
+    /// [`Self::spec_provenance`] and [`Self::related`].
+    context: Option<Box<LocatedContext>>,
+}
+
+/// The parts of a [`Located`] only some rejections carry.
+#[derive(Debug, Clone, Default)]
+struct LocatedContext {
     /// The `<sce:use>` whose parameters synthesised the rejected
     /// value, when a preprocessor assembled it.
     ///
@@ -78,26 +91,46 @@ pub struct Located<E> {
     /// After template expansion those are two different files and both
     /// are load-bearing: `location` is the template row a reader opens
     /// to see the shape, this is the call site that chose the value.
-    /// Absent for every document no preprocessor rewrote, which is
-    /// almost all of them — which is also why it is boxed: `Located`
-    /// is the `Err` half of most signatures in the crate, and paying
-    /// a `SourceLocation` inline on every one of them to describe a
-    /// case almost none of them hit is what `clippy::result_large_err`
-    /// objects to.
-    pub expanded_from: Option<Box<SourceLocation>>,
+    expanded_from: Option<SourceLocation>,
     /// NL→IR Mapping Roadmap Item 7 — the spec documents the rejected
     /// node is anchored at, carried verbatim from its
     /// `sce:provenance`. Rides onto the diagnostic wire's
-    /// `spec_provenance`, which has existed since Item 6 with no
-    /// producer.
-    ///
-    /// `Box<[…]>` rather than `Vec` for the reason the two fields
-    /// above are boxed: `Located` is the `Err` half of most signatures
-    /// in the crate and `clippy::result_large_err` prices every byte
-    /// of it against the success path. An empty boxed slice allocates
-    /// nothing, so the case that is almost always true costs one
-    /// pointer and no heap.
-    pub spec_provenance: Box<[crate::provenance::SpecProvenance]>,
+    /// `spec_provenance`.
+    spec_provenance: Vec<crate::provenance::SpecProvenance>,
+    /// The other places the rejection involves, when it is a relation
+    /// between two sites rather than a fault at one — the earlier call
+    /// whose signature this one contradicts, say. `location` and `actual`
+    /// stay the one site a consumer edits; these are what it reads to
+    /// decide how (SCE_ERROR_CONTRACT §2.4).
+    related: Vec<RelatedSite>,
+}
+
+/// Another place a rejection involves, beside the one its record is
+/// located at (SCE_ERROR_CONTRACT §2.4).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RelatedSite {
+    pub role: RelatedRole,
+    pub location: SourceLocation,
+    /// The token at `location` the relation is about, as the document
+    /// spells it — held to the rule the record's own `actual` is
+    /// (§3.1.1). `None` when nothing on that row spells it.
+    pub actual: Option<String>,
+}
+
+/// What a related site is to the record it rides on. A closed set, so a
+/// consumer dispatches on it as it does on `code`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RelatedRole {
+    /// Another use of the same name whose shape this one contradicts —
+    /// the call site that fixed the signature first.
+    ConflictingUse,
+}
+
+impl RelatedRole {
+    /// Every role, so the schema's list of them can be checked against
+    /// what the producer can send.
+    pub const ALL: &'static [RelatedRole] = &[RelatedRole::ConflictingUse];
 }
 
 impl<E> Located<E> {
@@ -114,18 +147,47 @@ impl<E> Located<E> {
                 line,
                 col,
             }),
-            expanded_from: None,
-            spec_provenance: Vec::new().into_boxed_slice(),
+            context: None,
         }
+    }
+
+    fn context_mut(&mut self) -> &mut LocatedContext {
+        self.context.get_or_insert_with(Default::default)
+    }
+
+    /// The call site that supplied the substituted bytes, when a
+    /// preprocessor assembled the rejected value.
+    pub fn expansion_site(&self) -> Option<&SourceLocation> {
+        self.context.as_ref()?.expanded_from.as_ref()
+    }
+
+    /// The spec documents the rejected node is anchored at.
+    pub fn spec_provenance(&self) -> &[crate::provenance::SpecProvenance] {
+        self.context
+            .as_deref()
+            .map_or(&[], |context| context.spec_provenance.as_slice())
+    }
+
+    /// The other places the rejection involves (SCE_ERROR_CONTRACT §2.4).
+    pub fn related(&self) -> &[RelatedSite] {
+        self.context
+            .as_deref()
+            .map_or(&[], |context| context.related.as_slice())
+    }
+
+    /// Record another place the rejection involves.
+    pub fn related_to(mut self, site: RelatedSite) -> Self {
+        self.context_mut().related.push(site);
+        self
     }
 
     /// Record the call site that supplied the substituted bytes.
     pub fn expanded_from(mut self, file: impl Into<String>, line: u32, col: u32) -> Self {
-        self.expanded_from = Some(Box::new(SourceLocation {
+        self.context_mut().expanded_from = Some(SourceLocation {
             file: file.into(),
             line: Some(line),
             col: Some(col),
-        }));
+        });
         self
     }
 
@@ -143,9 +205,15 @@ impl<E> Located<E> {
     /// nothing rather than a guess.
     pub fn with_spec_provenance(
         mut self,
-        anchors: impl Into<Box<[crate::provenance::SpecProvenance]>>,
+        anchors: impl Into<Vec<crate::provenance::SpecProvenance>>,
     ) -> Self {
-        self.spec_provenance = anchors.into();
+        let anchors = anchors.into();
+        // An empty set of anchors is no context to carry.
+        if !anchors.is_empty() {
+            self.context_mut().spec_provenance = anchors;
+        } else if let Some(context) = self.context.as_mut() {
+            context.spec_provenance.clear();
+        }
         self
     }
 }
@@ -739,8 +807,17 @@ pub enum ValidationError {
     /// a typed native value: it is not a bare `_event.data.<field>`
     /// reference, the triggering event imports no EventSchema, or the
     /// referenced payload field is enum-typed (not natively representable).
+    ///
+    /// `observed` is what the record's row spells for the refusal — the
+    /// argument's `expr` when one argument is at fault and the record
+    /// names its `<sce:arg>`, the action's name when the refusal is about
+    /// the action's arguments as a whole.
     #[error("<sce:action name=\"{name}\">: {detail}")]
-    NativeActionArgument { name: String, detail: String },
+    NativeActionArgument {
+        name: String,
+        detail: String,
+        observed: String,
+    },
 
     /// §scxml-G-7 — a `<sce:action name>` appears on more than one
     /// transition with incompatible argument signatures, so a single

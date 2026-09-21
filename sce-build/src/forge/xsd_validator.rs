@@ -106,6 +106,7 @@ impl crate::forge::diagnostic::ToDiagnostics for XsdErrors {
                     // authored coordinates by `remap_post_expansion`;
                     // they carry no per-record call site.
                     expanded_from: None,
+                    related: Vec::new(),
                     spec: code.spec_anchor(),
                     message: d.message.clone(),
                     location: Some(Location {

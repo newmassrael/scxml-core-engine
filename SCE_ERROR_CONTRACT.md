@@ -78,6 +78,7 @@ compatibility.
 | `message` | English prose | Human-readable one-liner. **Not** machine-parsed. Not part of `id`. |
 | `location` | object | Source location when known. See [§2.2](#22-location-object). |
 | `expanded_from` | object | The `<sce:use>` whose parameters synthesised `actual`. Present only when a preprocessor assembled the rejected value. See [§2.3](#23-expanded-values). |
+| `related` | array of objects | The other sites a relation-shaped rejection involves, each with a `role`, a `location` and optionally the `actual` token at that site. Absent when the rejection is a fault at one site. See [§2.4](#24-related-sites). |
 | `expected` | array of strings | Non-repair expectation metadata (parser expectations like `"identifier"`, cardinality constraints like `"1"`). **Never** carries a candidate list for substitution — that role belongs to `fix`. The two fields are disjoint by contract (see [§3.2](#32-no-overlap-between-fix-and-expected)). |
 | `actual` | string | The observed value that triggered rejection, **as the document spells it**: a token a consumer finds on `location.line` (see [§3.1.1](#311-locating-the-edit)). Absent when the rejected value is not in the document — a CLI argument, a value SCE computed, something missing. A *description* of the value (`reserved word 'return' used as a value`, `integer literal 300, which overflows uint8`) belongs to `message`; a computed limit belongs to `expected`. On a record with no `location` (the `cli` stage) the invocation is the document, and `actual` is the argument as given. |
 | `fix` | object | Structured repair proposal. The sole channel for repair signals. See [§3 Fixes](#3-fixes). |
@@ -467,6 +468,37 @@ Two consequences for consumers:
   between fixing the template, the call site's parameters, or the
   document the expansion refers into, and the three coordinates are
   what let a consumer state that choice.
+
+### 2.4 Related sites
+
+Some rejections are a relation between two places rather than a fault
+at one: a call whose argument types contradict an earlier call of the
+same name, a field that must precede another, a cycle through several
+documents. One `location` can name only one of them, and folding the
+others into `actual` as prose (`here disagree with (uint32) on another
+transition`) hands the consumer a sentence where it needed a
+coordinate.
+
+`location` and `actual` keep naming the one site the consumer edits —
+the later call, the field out of order. Every other place the relation
+involves is an entry of `related`:
+
+```json
+"related": [
+  {"role": "conflicting-use", "location": {"file": "door.scxml", "line": 12, "col": 9}, "actual": "notify"}
+]
+```
+
+- `role` says what the site is to the record. It is a closed set, so a
+  consumer dispatches on it as it does on `code`; a new role is an
+  additive change ([§8](#8-evolution-policy)).
+- `location` has the shape of the record's own.
+- `actual`, when present, is the token at that site the relation is
+  about, held to the rule the record's `actual` is
+  ([§3.1.1](#311-locating-the-edit)).
+
+`related` is not part of `id`: which other sites a relation reaches is
+a fact about the document around the error, not about the error.
 
 ## 3. Fixes
 
@@ -1097,8 +1129,9 @@ would have to guess; `cli/query-no-match` is the case that exists.
   than those the user passed in.
 - **No ANSI / color escapes** in JSON mode — ever.
 - **Field order** within a record is fixed: `v`, `id`, `generator`,
-  `code`, `stage`, `spec`, `message`, `location`, `expected`, `actual`,
-  `fix`.
+  `code`, `stage`, `spec`, `message`, `location`, `expanded_from`,
+  `related`, `expected`, `actual`, `fix`, `spec_provenance`,
+  `question_kind`.
 - **One record per line.** A record never contains a raw `\n`.
   Consumers may split stderr on `\n` without a JSON parser lookahead.
 - **`id` stability**: rewording a `thiserror` `#[error]` template

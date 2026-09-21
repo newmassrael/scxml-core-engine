@@ -125,6 +125,17 @@ struct FixRecord {
     /// The record's `expected`, which §3.2 declares disjoint from
     /// `fix`.
     expected: Vec<String>,
+    /// The record's `related` sites (§2.4).
+    related: Vec<RelatedEntry>,
+}
+
+/// One `related` entry, reduced to what the locating rule reads.
+#[derive(Debug, Clone)]
+struct RelatedEntry {
+    role: String,
+    file: String,
+    line: Option<usize>,
+    actual: Option<String>,
 }
 
 /// A record naming the call site a preprocessor substituted from.
@@ -285,6 +296,37 @@ impl FixRecord {
                         .collect()
                 })
                 .unwrap_or_default(),
+            related: value
+                .get("related")
+                .and_then(|r| r.as_array())
+                .map(|entries| {
+                    entries
+                        .iter()
+                        .map(|entry| RelatedEntry {
+                            role: entry
+                                .get("role")
+                                .and_then(|r| r.as_str())
+                                .unwrap_or_default()
+                                .to_string(),
+                            file: entry
+                                .get("location")
+                                .and_then(|l| l.get("file"))
+                                .and_then(|f| f.as_str())
+                                .unwrap_or_default()
+                                .to_string(),
+                            line: entry
+                                .get("location")
+                                .and_then(|l| l.get("line"))
+                                .and_then(serde_json::Value::as_u64)
+                                .map(|n| n as usize),
+                            actual: entry
+                                .get("actual")
+                                .and_then(|a| a.as_str())
+                                .map(str::to_string),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
         }
     }
 }
@@ -393,37 +435,43 @@ fn locating_violation(root: &Path, rec: &FixRecord) -> Option<String> {
         };
     };
     let named = rec.file.as_deref().unwrap_or(&rec.doc);
+    let site = format!("[{} / {}] {}", rec.doc, rec.lang, rec.code);
+    token_violation(root, &site, named, rec.line, actual)
+}
+
+/// Is `actual` findable in `named` — on `line` when there is one,
+/// exactly once in the file when there is not? The rule a record's own
+/// `actual` and each `related` entry's are both held to (§3.1.1, §2.4).
+fn token_violation(
+    root: &Path,
+    site: &str,
+    named: &str,
+    line: Option<usize>,
+    actual: &str,
+) -> Option<String> {
     let path = root.join(named);
     let Ok(text) = std::fs::read_to_string(&path) else {
         return Some(format!(
-            "[{} / {}] {} names location.file={named} which does not \
+            "{site} names location.file={named} which does not \
              open — §2.2: \"A consumer opens it to apply a fix\".",
-            rec.doc, rec.lang, rec.code,
         ));
     };
     let lines: Vec<&str> = text.lines().collect();
-    match rec.line {
+    match line {
         Some(line) => {
             let Some(source_line) = lines.get(line - 1) else {
                 return Some(format!(
-                    "[{} / {}] {} points at line {line} of {named}, which \
-                     has {} lines.",
-                    rec.doc,
-                    rec.lang,
-                    rec.code,
+                    "{site} points at line {line} of {named}, which has {} lines.",
                     lines.len(),
                 ));
             };
             if !source_line.contains(actual) {
                 return Some(format!(
-                    "[{} / {}] {} carries actual={actual:?} and points at \
+                    "{site} carries actual={actual:?} and points at \
                      {named}:{line}, but that line does not contain it:\n    \
                      {}\n  The consumer edits the line it was given, so a \
                      coordinate on the enclosing element repairs the wrong \
                      token (or nothing).",
-                    rec.doc,
-                    rec.lang,
-                    rec.code,
                     source_line.trim(),
                 ));
             }
@@ -435,13 +483,10 @@ fn locating_violation(root: &Path, rec: &FixRecord) -> Option<String> {
                 return None;
             }
             Some(format!(
-                "[{} / {}] {} carries actual={actual:?} with no \
-                 location.line, and that token occurs {hits} time(s) in \
-                 {named}. Without a line the whole-file search is the only \
-                 locating strategy the wire offers, and it is {} here.",
-                rec.doc,
-                rec.lang,
-                rec.code,
+                "{site} carries actual={actual:?} with no location.line, and \
+                 that token occurs {hits} time(s) in {named}. Without a line \
+                 the whole-file search is the only locating strategy the wire \
+                 offers, and it is {} here.",
                 if hits == 0 {
                     "a miss — the value is not in the file at all"
                 } else {
@@ -450,6 +495,22 @@ fn locating_violation(root: &Path, rec: &FixRecord) -> Option<String> {
             ))
         }
     }
+}
+
+/// Each `related` entry that names a token, held to the rule the
+/// record's own `actual` is.
+fn related_violations(root: &Path, rec: &FixRecord) -> Vec<String> {
+    rec.related
+        .iter()
+        .filter_map(|entry| {
+            let actual = entry.actual.as_deref()?;
+            let site = format!(
+                "[{} / {}] {} related[{}]",
+                rec.doc, rec.lang, rec.code, entry.role
+            );
+            token_violation(root, &site, &entry.file, entry.line, actual)
+        })
+        .collect()
 }
 
 /// Every `actual` is a token the consumer can find where `location`
@@ -486,17 +547,26 @@ fn every_actual_names_a_site_the_consumer_can_locate() {
 
     let judged: Vec<&FixRecord> = records
         .iter()
-        .filter(|r| !r.fix_kind.is_empty() || (r.actual.is_some() && !r.expanded))
+        .filter(|r| {
+            !r.fix_kind.is_empty() || (r.actual.is_some() && !r.expanded) || !r.related.is_empty()
+        })
         .collect();
     let violations: Vec<String> = judged
         .iter()
-        .filter_map(|rec| locating_violation(&root, rec))
+        .flat_map(|rec| {
+            let own = if !rec.fix_kind.is_empty() || !rec.expanded {
+                locating_violation(&root, rec)
+            } else {
+                None
+            };
+            own.into_iter().chain(related_violations(&root, rec))
+        })
         .collect();
 
     assert!(
         violations.is_empty(),
-        "{} of {} records carrying `actual` or `fix` name a site the \
-         consumer cannot find:\n{}",
+        "{} of {} records carrying `actual`, `fix` or `related` name a site \
+         the consumer cannot find:\n{}",
         violations.len(),
         judged.len(),
         violations.join("\n"),
