@@ -79,7 +79,7 @@ compatibility.
 | `location` | object | Source location when known. See [§2.2](#22-location-object). |
 | `expanded_from` | object | The `<sce:use>` whose parameters synthesised `actual`. Present only when a preprocessor assembled the rejected value. See [§2.3](#23-expanded-values). |
 | `expected` | array of strings | Non-repair expectation metadata (parser expectations like `"identifier"`, cardinality constraints like `"1"`). **Never** carries a candidate list for substitution — that role belongs to `fix`. The two fields are disjoint by contract (see [§3.2](#32-no-overlap-between-fix-and-expected)). |
-| `actual` | string | The observed value that triggered rejection. |
+| `actual` | string | The observed value that triggered rejection, **as the document spells it**: a token a consumer finds on `location.line` (see [§3.1.1](#311-locating-the-edit)). Absent when the rejected value is not in the document — a CLI argument, a value SCE computed, something missing. A *description* of the value (`reserved word 'return' used as a value`, `integer literal 300, which overflows uint8`) belongs to `message`; a computed limit belongs to `expected`. On a record with no `location` (the `cli` stage) the invocation is the document, and `actual` is the argument as given. |
 | `fix` | object | Structured repair proposal. The sole channel for repair signals. See [§3 Fixes](#3-fixes). |
 | `spec_provenance` | array of objects | NL→IR Mapping Roadmap Items 6+7+8 — spec-document anchors that justify the rejected node (`doc_id` + optional `rev`/`section`/`page`), in document order. SCE never infers this: the anchors are the `sce:provenance` the author wrote, carried verbatim. Which node's anchors, and what an absent field means, are fixed by [§2.1.2](#212-which-anchor-a-diagnostic-carries). |
 | `question_kind` | string (enum) | NL→IR Mapping Roadmap Item 6 — coarse routing label so IDE / triage tooling can dispatch on the *kind* of question the diagnostic raises (`implicit_default` / `ambiguous_mapping` / `cross_doc_conflict` / `unit_unspecified` / `unknown_vocabulary` / `structural`). Extensible — consumers must treat unknown values as `structural`. Absent on purely structural rejections that map cleanly onto `code` alone. |
@@ -508,10 +508,12 @@ producer cannot ship the two readings of it from different sites.
 ### 3.1.1 Locating the edit
 
 Every `fix` names an edit the consumer performs on the document in
-[`location.file`](#22-location-object). Two properties make that
-possible, and both are enforced against the emitted corpus by
-`sce-build/tests/diagnostic_fix_is_applicable.rs` rather than asserted
-here:
+[`location.file`](#22-location-object), and every `actual` names a
+token the consumer looks for there — a record without a repair is still
+read by someone searching for the value it reports. Two properties make
+that possible, and both are enforced against the emitted corpus by
+`sce-build/tests/diagnostic_fix_is_applicable.rs`, over **every record
+carrying `actual`**, fix or no fix, rather than asserted here:
 
 - When the record carries `location.line`, the value in `actual` occurs
   on that line. A coordinate on an enclosing element — the `<send>`
@@ -520,6 +522,12 @@ here:
 - When it does not, `actual` occurs exactly once in the document, since
   a whole-file search is then the only locating strategy the wire
   offers.
+
+The one exemption is a value a preprocessor assembled
+([§2.3](#23-expanded-values)): it carries `expanded_from`, and its row
+holds the parameterised shape instead. A value that is not in the
+document at all is not exempt — it is not an `actual`
+([§2.1](#21-field-semantics)).
 
 The same target replays each substitution proposal against the CLI:
 applying it must clear the record's `id`.

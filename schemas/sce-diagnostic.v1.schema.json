@@ -458,7 +458,7 @@
       "items": { "type": "string" }
     },
     "actual": {
-      "description": "Observed value that triggered the rejection.",
+      "description": "Observed value that triggered the rejection, as the document spells it: a token found on `location.line` (or exactly once in the document when there is no line). Absent when the rejected value is not in the document. A description of the value belongs to `message` — see SCE_ERROR_CONTRACT.md §2.1 and §3.1.1.",
       "type": "string"
     },
     "fix": {

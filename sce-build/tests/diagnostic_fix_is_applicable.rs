@@ -29,7 +29,10 @@
 //      where the token is absent. When `location.line` is absent the
 //      token must be unambiguous in the document, because a
 //      whole-file search is then the only locating strategy the wire
-//      leaves and two hits make it a coin flip.
+//      leaves and two hits make it a coin flip. ⚠ This question is put
+//      to EVERY record carrying `actual`, fix or no fix: §2.1 makes
+//      `actual` the observed value, and a record without a repair is
+//      still read by a consumer looking for the token it names.
 //
 //   2. **Does the edit actually resolve the rejection?** For the
 //      substitution variants the gate rewrites the document with the
@@ -55,6 +58,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::OnceLock;
 
 use sce_build::forge::codegen_matrix::language_wire_name;
 use sce_build::generator::Language;
@@ -108,6 +113,10 @@ struct FixRecord {
     actual: Option<String>,
     file: Option<String>,
     line: Option<usize>,
+    /// Whether the record carries `expanded_from` — §2.3 exempts its
+    /// `actual` from occurring on `location`'s row.
+    expanded: bool,
+    /// The fix's `kind`, or empty for a record with no `fix`.
     fix_kind: String,
     /// Replacement values, in the order the producer listed them.
     /// `replace_with` contributes its single `to`; `replace_one_of`
@@ -135,40 +144,19 @@ struct ExpandedRecord {
     line: Option<usize>,
 }
 
-/// Run `check` over one document in one backend and collect the
-/// records naming an expansion call site.
-fn expanded_records_for(root: &Path, doc: &str, lang: Language) -> Vec<ExpandedRecord> {
-    let wire = language_wire_name(lang);
-    let out = Command::new(sce_codegen_bin())
-        .arg("check")
-        .arg(doc)
-        .arg("-l")
-        .arg(wire)
-        .arg("--error-format")
-        .arg("json")
-        .current_dir(root)
-        .output()
-        .expect("invoke sce-codegen check");
-    let mut records = Vec::new();
-    for line in String::from_utf8_lossy(&out.stderr).lines() {
-        let line = line.trim();
-        if !line.starts_with('{') {
-            continue;
-        }
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
-            continue;
-        };
-        let Some(from) = value.get("expanded_from") else {
-            continue;
-        };
-        records.push(ExpandedRecord {
+impl ExpandedRecord {
+    /// The record's expansion fields, or `None` when it names no call
+    /// site.
+    fn from_value(doc: &str, lang: &'static str, value: &serde_json::Value) -> Option<Self> {
+        let from = value.get("expanded_from")?;
+        Some(ExpandedRecord {
             doc: doc.to_string(),
             code: value
                 .get("code")
                 .and_then(|c| c.as_str())
                 .unwrap_or_default()
                 .to_string(),
-            lang: wire,
+            lang,
             actual: value
                 .get("actual")
                 .and_then(|a| a.as_str())
@@ -198,55 +186,67 @@ fn expanded_records_for(root: &Path, doc: &str, lang: Language) -> Vec<ExpandedR
                 .and_then(|l| l.get("line"))
                 .and_then(serde_json::Value::as_u64)
                 .map(|n| n as usize),
-        });
+        })
     }
-    records
 }
 
-/// Run `check` over one document in one backend and collect the
-/// fix-bearing records.
-fn fix_records_for(root: &Path, doc: &str, lang: Language) -> Vec<FixRecord> {
-    let wire = language_wire_name(lang);
+/// Run `check` over one document in one backend and return every record
+/// it wrote, parsed.
+///
+/// The one place this gate drives the CLI, so the corpus sweep and the
+/// replay of a repair read the wire the same way.
+fn check_records(root: &Path, doc: &str, lang: Language) -> Vec<serde_json::Value> {
     let out = Command::new(sce_codegen_bin())
         .arg("check")
         .arg(doc)
         .arg("-l")
-        .arg(wire)
+        .arg(language_wire_name(lang))
         .arg("--error-format")
         .arg("json")
         .current_dir(root)
         .output()
         .expect("invoke sce-codegen check");
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    let mut records = Vec::new();
-    for line in stderr.lines() {
-        let line = line.trim();
-        if !line.starts_with('{') {
-            continue;
-        }
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
-            continue;
-        };
-        let Some(fix) = value.get("fix") else {
-            continue;
-        };
+    String::from_utf8_lossy(&out.stderr)
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with('{'))
+        .filter_map(|line| serde_json::from_str(line).ok())
+        .collect()
+}
+
+/// Run `check` over one document in one backend and collect every
+/// record, fix-bearing or not.
+fn records_for(root: &Path, doc: &str, lang: Language) -> Vec<FixRecord> {
+    let wire = language_wire_name(lang);
+    check_records(root, doc, lang)
+        .iter()
+        .map(|value| FixRecord::from_value(doc, wire, value))
+        .collect()
+}
+
+impl FixRecord {
+    fn from_value(doc: &str, lang: &'static str, value: &serde_json::Value) -> Self {
+        let fix = value.get("fix");
         let fix_kind = fix
-            .get("kind")
+            .and_then(|f| f.get("kind"))
             .and_then(|k| k.as_str())
             .unwrap_or_default()
             .to_string();
         let mut replacements = Vec::new();
-        if let Some(to) = fix.get("to").and_then(|t| t.as_str()) {
+        if let Some(to) = fix.and_then(|f| f.get("to")).and_then(|t| t.as_str()) {
             replacements.push(to.to_string());
         }
-        if let Some(candidates) = fix.get("candidates").and_then(|c| c.as_array()) {
+        if let Some(candidates) = fix
+            .and_then(|f| f.get("candidates"))
+            .and_then(|c| c.as_array())
+        {
             for c in candidates {
                 if let Some(s) = c.as_str() {
                     replacements.push(s.to_string());
                 }
             }
         }
-        records.push(FixRecord {
+        FixRecord {
             doc: doc.to_string(),
             id: value
                 .get("id")
@@ -258,7 +258,7 @@ fn fix_records_for(root: &Path, doc: &str, lang: Language) -> Vec<FixRecord> {
                 .and_then(|c| c.as_str())
                 .unwrap_or_default()
                 .to_string(),
-            lang: wire,
+            lang,
             actual: value
                 .get("actual")
                 .and_then(|a| a.as_str())
@@ -273,6 +273,7 @@ fn fix_records_for(root: &Path, doc: &str, lang: Language) -> Vec<FixRecord> {
                 .and_then(|l| l.get("line"))
                 .and_then(serde_json::Value::as_u64)
                 .map(|n| n as usize),
+            expanded: value.get("expanded_from").is_some(),
             fix_kind,
             replacements,
             expected: value
@@ -284,23 +285,91 @@ fn fix_records_for(root: &Path, doc: &str, lang: Language) -> Vec<FixRecord> {
                         .collect()
                 })
                 .unwrap_or_default(),
-        });
-    }
-    records
-}
-
-/// Sweep the whole corpus once. Shared by both tests so the CLI is
-/// driven over the tree a single time per test binary.
-fn sweep() -> (Vec<String>, Vec<FixRecord>) {
-    let root = repo_root();
-    let documents = tracked_documents();
-    let mut records = Vec::new();
-    for doc in &documents {
-        for lang in Language::ALL {
-            records.extend(fix_records_for(&root, doc, *lang));
         }
     }
-    (documents, records)
+}
+
+/// Every record `check` wrote over the tracked corpus, in every backend.
+struct Corpus {
+    documents: Vec<String>,
+    /// One entry per `(document, backend)` run, in document order and,
+    /// within a document, in [`Language::ALL`] order.
+    runs: Vec<(String, Language, Vec<serde_json::Value>)>,
+}
+
+/// The corpus sweep, run once per test binary and shared by every test
+/// in it.
+///
+/// The CLI runs once per `(document, backend)` pair — thousands of
+/// processes — and sequentially that took over five minutes, paid again
+/// by every test that swept, since nothing held the result. The pairs
+/// are now spread over the machine's cores and the result is memoised.
+/// Order is restored after the parallel run: a violation list that
+/// reorders between runs reads as a change when nothing changed.
+fn corpus() -> &'static Corpus {
+    static CORPUS: OnceLock<Corpus> = OnceLock::new();
+    CORPUS.get_or_init(|| {
+        let root = repo_root();
+        let documents = tracked_documents();
+        let pairs: Vec<(usize, Language)> = (0..documents.len())
+            .flat_map(|d| Language::ALL.iter().map(move |lang| (d, *lang)))
+            .collect();
+        let next = AtomicUsize::new(0);
+        let workers = std::thread::available_parallelism().map_or(1, |n| n.get());
+        let mut done: Vec<(usize, Vec<serde_json::Value>)> = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..workers)
+                .map(|_| {
+                    scope.spawn(|| {
+                        let mut mine = Vec::new();
+                        loop {
+                            let i = next.fetch_add(1, Ordering::Relaxed);
+                            let Some(&(d, lang)) = pairs.get(i) else {
+                                break;
+                            };
+                            mine.push((i, check_records(&root, &documents[d], lang)));
+                        }
+                        mine
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .flat_map(|h| h.join().expect("a sweep worker panicked"))
+                .collect()
+        });
+        done.sort_by_key(|(i, _)| *i);
+        assert_eq!(
+            done.len(),
+            pairs.len(),
+            "the sweep ran {} of {} (document, backend) pairs",
+            done.len(),
+            pairs.len(),
+        );
+        let runs = done
+            .into_iter()
+            .map(|(i, values)| {
+                let (d, lang) = pairs[i];
+                (documents[d].clone(), lang, values)
+            })
+            .collect();
+        Corpus { documents, runs }
+    })
+}
+
+/// The swept corpus, as the records the applicability questions judge.
+fn sweep() -> (&'static [String], Vec<FixRecord>) {
+    let corpus = corpus();
+    let records = corpus
+        .runs
+        .iter()
+        .flat_map(|(doc, lang, values)| {
+            let wire = language_wire_name(*lang);
+            values
+                .iter()
+                .map(move |value| FixRecord::from_value(doc, wire, value))
+        })
+        .collect();
+    (&corpus.documents, records)
 }
 
 /// Is `actual` a value a consumer can locate in the document it was
@@ -383,9 +452,20 @@ fn locating_violation(root: &Path, rec: &FixRecord) -> Option<String> {
     }
 }
 
-/// Every repair proposal names an edit site the consumer can find.
+/// Every `actual` is a token the consumer can find where `location`
+/// says it is — on a fix-bearing record, the edit site; on every other,
+/// the observed value itself.
+///
+/// ⚠ This held only fix-bearing records, and `actual` without a fix
+/// was free to be prose: `carrier at index 1, embed at index 0`,
+/// `8 < 16`, `supported only as a direct <transition> child`. §2.1
+/// calls `actual` "the observed value", and a sentence about a relation
+/// is not one — a consumer searching the document for it finds nothing
+/// (measured 2026-09-21). A record under `expanded_from` is exempt, as
+/// §2.3 says: its `location` row holds the template's shape, not the
+/// assembled value.
 #[test]
-fn every_fix_names_a_site_the_consumer_can_locate() {
+fn every_actual_names_a_site_the_consumer_can_locate() {
     let root = repo_root();
     let (documents, records) = sweep();
 
@@ -395,26 +475,30 @@ fn every_fix_names_a_site_the_consumer_can_locate() {
          {MIN_DOCUMENTS}. A sweep over nothing certifies nothing.",
         documents.len(),
     );
+    let fix_bearing = records.iter().filter(|r| !r.fix_kind.is_empty()).count();
     assert!(
-        records.len() >= MIN_FIX_BEARING_RECORDS,
-        "sweep collected only {} fix-bearing records; expected at \
+        fix_bearing >= MIN_FIX_BEARING_RECORDS,
+        "sweep collected only {fix_bearing} fix-bearing records; expected at \
          least {MIN_FIX_BEARING_RECORDS}. Either the corpus stopped \
          exercising the repair surface or the producer stopped \
          emitting `fix`.",
-        records.len(),
     );
 
-    let violations: Vec<String> = records
+    let judged: Vec<&FixRecord> = records
+        .iter()
+        .filter(|r| !r.fix_kind.is_empty() || (r.actual.is_some() && !r.expanded))
+        .collect();
+    let violations: Vec<String> = judged
         .iter()
         .filter_map(|rec| locating_violation(&root, rec))
         .collect();
 
     assert!(
         violations.is_empty(),
-        "{} of {} fix-bearing records name an edit site the consumer \
-         cannot find:\n{}",
+        "{} of {} records carrying `actual` or `fix` name a site the \
+         consumer cannot find:\n{}",
         violations.len(),
-        records.len(),
+        judged.len(),
         violations.join("\n"),
     );
 }
@@ -461,7 +545,7 @@ fn applying_a_substitution_clears_the_diagnostic_that_proposed_it() {
 
         // Baseline: the record must reproduce from the staged copy,
         // otherwise the replay says nothing about the repair.
-        let before = fix_records_for(temp.path(), &staged, language_of(rec.lang));
+        let before = records_for(temp.path(), &staged, language_of(rec.lang));
         let before_ids: BTreeSet<&str> = before.iter().map(|r| r.id.as_str()).collect();
         if !before_ids.contains(rec.id.as_str()) {
             violations.push(format!(
@@ -479,7 +563,7 @@ fn applying_a_substitution_clears_the_diagnostic_that_proposed_it() {
         let repaired = apply_substitution(&text, actual, replacement, rec.line);
         std::fs::write(&staged_path, &repaired).expect("staged document writes");
 
-        let after = fix_records_for(temp.path(), &staged, language_of(rec.lang));
+        let after = records_for(temp.path(), &staged, language_of(rec.lang));
         let after_ids: BTreeSet<&str> = after.iter().map(|r| r.id.as_str()).collect();
         performed += 1;
         if after_ids.contains(rec.id.as_str()) {
@@ -581,7 +665,7 @@ const MIN_EXPANDED_RECORDS: usize = 6;
 /// does not contain `actual` and no way to learn why. Without the
 /// suppression it also has a `replace_one_of` naming candidates for a
 /// value that is not there — the shape
-/// `every_fix_names_a_site_the_consumer_can_locate` rejects, and the
+/// `every_actual_names_a_site_the_consumer_can_locate` rejects, and the
 /// reason this record is exempt from it.
 ///
 /// The oracle is independent of the producer twice over: the call
@@ -591,12 +675,16 @@ const MIN_EXPANDED_RECORDS: usize = 6;
 #[test]
 fn a_synthesised_value_names_the_call_site_that_chose_it() {
     let root = repo_root();
-    let mut records = Vec::new();
-    for doc in tracked_documents() {
-        for lang in Language::ALL {
-            records.extend(expanded_records_for(&root, &doc, *lang));
-        }
-    }
+    let records: Vec<ExpandedRecord> = corpus()
+        .runs
+        .iter()
+        .flat_map(|(doc, lang, values)| {
+            let wire = language_wire_name(*lang);
+            values
+                .iter()
+                .filter_map(move |value| ExpandedRecord::from_value(doc, wire, value))
+        })
+        .collect();
 
     assert!(
         records.len() >= MIN_EXPANDED_RECORDS,
@@ -641,8 +729,9 @@ fn a_synthesised_value_names_the_call_site_that_chose_it() {
             )),
         }
         // `location` must have been resolved out of expanded
-        // coordinates too. Suppressing the `fix` takes this record out
-        // of `every_fix_names_a_site_the_consumer_can_locate`'s reach,
+        // coordinates too. Suppressing the `fix`, and carrying
+        // `expanded_from`, takes this record out of
+        // `every_actual_names_a_site_the_consumer_can_locate`'s reach,
         // so without this check a producer that stopped resolving
         // rows would keep a green board while every one of these
         // records pointed at a row of the wrong file — the mutation
@@ -763,7 +852,7 @@ fn expected_and_fix_never_carry_the_same_list() {
 fn the_sweep_reaches_more_than_one_fix_variant() {
     let (_documents, records) = sweep();
     let mut by_kind: BTreeMap<String, usize> = BTreeMap::new();
-    for rec in &records {
+    for rec in records.iter().filter(|r| !r.fix_kind.is_empty()) {
         *by_kind.entry(rec.fix_kind.clone()).or_default() += 1;
     }
     assert!(
