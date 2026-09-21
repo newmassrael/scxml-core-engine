@@ -1476,6 +1476,31 @@ fn check_row(row: &Row, tracked: &BTreeSet<String>) {
                 row.id
             );
 
+            // 1b. And it is REACHABLE from this branch, not merely present
+            //     as an object.
+            //
+            //     ⚠ Measured 2026-09-21: `per-call-cost` and
+            //     `swap-net-footprint` pinned a commit that a rebase had
+            //     orphaned. It survived in the clone that wrote the row —
+            //     `cat-file -t` answered `commit`, so this check passed
+            //     there — and existed in no fresh clone at all, so the
+            //     lane was green locally and red in CI for days. Asking
+            //     whether an object EXISTS answers a question about one
+            //     machine's object store; asking whether it is an ancestor
+            //     answers the one the ledger means, which is whether a
+            //     reader can check the pin out.
+            let (reachable, _) = git_at_root(&["merge-base", "--is-ancestor", sha, "HEAD"]);
+            assert!(
+                reachable,
+                "row `{}` pins its number to `{sha}`, which this repository \
+                 carries as an object but NOT as an ancestor of HEAD — an \
+                 orphan a rebase left behind, or a commit that was never \
+                 pushed. It is absent from every fresh clone, so the number \
+                 is re-derivable only on the machine that happens to still \
+                 hold it. Pin a commit that is in the published history.",
+                row.id
+            );
+
             // 2. That commit still holds everything the measurement rested
             //    on, so a reader can check it out and run the probe again.
             for path in DEPARTED_WITH_REWRITER {
