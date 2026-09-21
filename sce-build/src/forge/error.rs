@@ -449,7 +449,14 @@ pub enum ValidationError {
     /// leaves the field at its default and says nothing. The author's
     /// sentence and the machine's behaviour part company silently, which
     /// is the one failure mode a generator must not have.
-    #[error("{element}: unknown attribute sce:{attr} (known: {})", .known.join(", "))]
+    ///
+    /// `attr` and `known` are spelled as the document writes them — with
+    /// the prefix it binds to the SCE namespace — so a suggestion is text
+    /// that can stand where the unknown name stands. ⚠ The suggestions
+    /// used to be bare (`direction`) beside a prefixed `actual`
+    /// (`sce:directon`): applying one dropped the namespace, and the
+    /// attribute became one nobody reads, silently at its default.
+    #[error("{element}: unknown attribute {attr} (known: {})", crate::forge::error::joined_or_none(.known))]
     UnknownSceAttribute {
         element: String,
         attr: String,

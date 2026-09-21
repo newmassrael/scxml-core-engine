@@ -60,7 +60,7 @@ fn unexpected_child(
         Some(prefix) if !prefix.is_empty() => format!("{prefix}:{name}"),
         _ => name.to_string(),
     };
-    let sce_prefix = child.lookup_prefix(SCE_NAMESPACE).unwrap_or("sce");
+    let sce_prefix = sce_prefix_of(child);
     located(
         child,
         doc_name,
@@ -1000,40 +1000,15 @@ fn parse_lookup(
 // ── Enum kind parsing ────────────────────────────────────────
 
 /// Parse a `<sce:variant value="...">` literal into a mathematical
-/// integer.
+/// integer — [`crate::forge::model::parse_int_literal`], the one grammar
+/// every integer-valued attribute shares.
 ///
-/// Accepts an optional leading `-`, then either a `0x`-prefixed hex
-/// magnitude or a decimal one. The sign is applied to the magnitude
-/// rather than parsed as part of it so `-0x80` reads the way an author
-/// writing an int8 boundary expects, and so the caller sees one
-/// out-of-range diagnostic for both `-1 on uint8` and `256 on uint8`
-/// instead of a malformed-literal error for the first.
-///
-/// `i128` is wide enough that no legal carrier's range can overflow the
-/// parse, so a `None` here means the text was not an integer at all —
-/// the caller renders that as `NumericParse`, and the range check that
-/// follows is the only place a well-formed but unrepresentable value is
-/// reported.
+/// The enum's range check stays with its caller rather than going through
+/// [`SceType::numeric_literal`], because it reports the out-of-range case
+/// as its own code (`validation/enum-variant-value-overflows-underlying`)
+/// and a malformed literal as `NumericParse`.
 pub(crate) fn parse_variant_value(text: &str) -> Option<i128> {
-    let (negative, magnitude) = match text.strip_prefix('-') {
-        Some(rest) => (true, rest.trim_start()),
-        None => (false, text),
-    };
-    let parsed: i128 = if let Some(hex) = magnitude
-        .strip_prefix("0x")
-        .or_else(|| magnitude.strip_prefix("0X"))
-    {
-        i128::from_str_radix(hex, 16).ok()?
-    } else {
-        magnitude.parse::<i128>().ok()?
-    };
-    // A `+`-signed or otherwise re-signed magnitude would have slipped
-    // through `parse::<i128>` as a second sign; reject it so the
-    // grammar stays the one documented above.
-    if parsed < 0 {
-        return None;
-    }
-    Some(if negative { -parsed } else { parsed })
+    crate::forge::model::parse_int_literal(text)
 }
 
 /// Parse an `sce:kind="enum"` document into an [`EnumModel`].
@@ -3036,7 +3011,7 @@ pub fn parse_codec_field_from_node(
     // `<sce:embed>` shapes don't carry quantity (their wire-level
     // representation is byte-stream or list, not a scalar physical
     // value), so only this primary `<sce:field>` parser wires it.
-    let quantity = parse_quantity_attrs(node, doc_name, &format!("codec field '{id}'"))?;
+    let quantity = parse_quantity_attrs(node, doc_name, &format!("codec field '{id}'"), &sce_type)?;
 
     Ok(CodecField {
         id,
@@ -4891,48 +4866,37 @@ fn strip_hex_whitespace(s: &str) -> String {
     s.chars().filter(|c| !c.is_ascii_whitespace()).collect()
 }
 
-fn parse_decoded_int_literal(s: &str, return_type: &SceType) -> Result<DecodedFieldValue, String> {
-    let trimmed = s.trim();
-    if trimmed.is_empty() {
-        return Err("value attribute is empty".into());
-    }
-    let (negative, digits) = if let Some(rest) = trimmed.strip_prefix('-') {
-        (true, rest.trim_start())
-    } else {
-        (false, trimmed)
-    };
-    let magnitude = if let Some(rest) = digits
-        .strip_prefix("0x")
-        .or_else(|| digits.strip_prefix("0X"))
-    {
-        u64::from_str_radix(rest, 16).map_err(|e| format!("invalid hex literal after '0x': {e}"))?
-    } else if let Some(rest) = digits
-        .strip_prefix("0b")
-        .or_else(|| digits.strip_prefix("0B"))
-    {
-        u64::from_str_radix(rest, 2)
-            .map_err(|e| format!("invalid binary literal after '0b': {e}"))?
-    } else {
-        digits
-            .parse::<u64>()
-            .map_err(|e| format!("invalid decimal integer literal: {e}"))?
-    };
-    if negative {
-        if !return_type.is_signed() {
-            return Err(format!(
-                "negative value not allowed for unsigned field type {return_type:?}"
-            ));
-        }
-        let signed = i64::try_from(magnitude)
-            .map(|n| -n)
-            .map_err(|_| format!("value '-{magnitude}' overflows i64"))?;
-        Ok(DecodedFieldValue::Int(signed))
-    } else if return_type.is_signed() {
-        let signed =
-            i64::try_from(magnitude).map_err(|_| format!("value '{magnitude}' overflows i64"))?;
-        Ok(DecodedFieldValue::Int(signed))
-    } else {
-        Ok(DecodedFieldValue::Uint(magnitude))
+/// An integer test-vector value, read by the grammar every integer-valued
+/// attribute shares and held to the field's type
+/// ([`SceType::numeric_literal`]) — so `value="300"` on a `uint8` field is
+/// refused here instead of being narrowed to 44 when the test is emitted.
+fn parse_decoded_int_literal(s: &str, ty: &SceType) -> Result<DecodedFieldValue, String> {
+    Ok(match int_literal_of(s, ty)? {
+        IntOfType::Signed(n) => DecodedFieldValue::Int(n),
+        IntOfType::Unsigned(n) => DecodedFieldValue::Uint(n),
+    })
+}
+
+/// An integer literal already held to its type's range, split by
+/// signedness into the widths the test-vector models store.
+enum IntOfType {
+    Signed(i64),
+    Unsigned(u64),
+}
+
+/// `s` as a value of the integer type `ty`, or the rule it breaks. The
+/// conversions cannot fail once [`SceType::numeric_literal`] has held the
+/// value to the type's range; they are checked anyway rather than cast, so
+/// a type wider than 64 bits added later is refused instead of truncated.
+fn int_literal_of(s: &str, ty: &SceType) -> Result<IntOfType, String> {
+    match ty.numeric_literal(s)? {
+        NumericLiteral::Int(n) if ty.is_signed() => i64::try_from(n)
+            .map(IntOfType::Signed)
+            .map_err(|_| format!("a value representable in 64 bits ({})", ty.as_attr())),
+        NumericLiteral::Int(n) => u64::try_from(n)
+            .map(IntOfType::Unsigned)
+            .map_err(|_| format!("a value representable in 64 bits ({})", ty.as_attr())),
+        NumericLiteral::Float(_) => Err(format!("an integer ({})", ty.as_attr())),
     }
 }
 
@@ -4962,25 +4926,85 @@ fn parse_validator(
         let field = parse_forge_field(&data, label.diagnostic_label)?;
         match field.direction {
             Direction::In => {
-                // Extract validator rules from sce: attributes on input <data> elements.
-                let has_range_min = sce_attr(&data, "range-min");
-                let has_range_max = sce_attr(&data, "range-max");
-                if has_range_min.is_some() || has_range_max.is_some() {
+                // Extract validator rules from sce: attributes on input <data>
+                // elements. Every bound is read as a value of the field's own
+                // type and stored in the spelling every backend accepts.
+                //
+                // ⚠ These strings used to reach the templates as written:
+                // `sce:range-min="low"` was emitted into the check verbatim,
+                // on a bool field as readily as on a number, and `min > max`
+                // generated a validator that rejects every input.
+                // Each bound keeps the author's spelling beside its value: a
+                // refusal names what was written, the generated check reads
+                // the value.
+                type Bound = Option<(String, NumericLiteral)>;
+                let bound = |attr: &str| -> Result<Bound, Located<ForgeError>> {
+                    let Some(text) = sce_attr(&data, attr) else {
+                        return Ok(None);
+                    };
+                    field
+                        .sce_type
+                        .numeric_literal(&text)
+                        .map(|value| Some((text.clone(), value)))
+                        .map_err(|rule| {
+                            located(
+                                &data,
+                                label.diagnostic_label,
+                                ValidationError::AttributeRuleViolated {
+                                    element: format!("field '{}'", field.id),
+                                    attr: format!("sce:{attr}"),
+                                    value: text,
+                                    rule,
+                                },
+                            )
+                        })
+                };
+                let min = bound("range-min")?;
+                let max = bound("range-max")?;
+                if let (Some((lo_text, lo)), Some((hi_text, hi))) = (&min, &max) {
+                    if lo > hi {
+                        return Err(located(
+                            &data,
+                            label.diagnostic_label,
+                            ValidationError::AttributeRuleViolated {
+                                element: format!("field '{}'", field.id),
+                                attr: "sce:range-max".into(),
+                                value: hi_text.clone(),
+                                rule: format!("at least sce:range-min ({lo_text})"),
+                            },
+                        ));
+                    }
+                }
+                if min.is_some() || max.is_some() {
                     ranges.push(RangeRule {
                         id: field.id.clone(),
-                        min: has_range_min,
-                        max: has_range_max,
+                        min: min.map(|(_, value)| value.to_source()),
+                        max: max.map(|(_, value)| value.to_source()),
                     });
                 }
 
-                if let Some(max_delta) = sce_attr(&data, "max-delta") {
+                if let Some((max_delta_text, max_delta)) = bound("max-delta")? {
+                    if !max_delta.is_positive() {
+                        return Err(located(
+                            &data,
+                            label.diagnostic_label,
+                            ValidationError::AttributeRuleViolated {
+                                element: format!("field '{}'", field.id),
+                                attr: "sce:max-delta".into(),
+                                value: max_delta_text,
+                                rule: "a positive change — a limit of zero or less rejects \
+                                       every sample that differs from the last"
+                                    .into(),
+                            },
+                        ));
+                    }
                     let sample_interval_str =
                         sce_attr(&data, "sample-interval").unwrap_or_else(|| "100ms".to_string());
                     let sample_interval_ms = parse_time_interval(&sample_interval_str)
                         .map_err(|e| located(&data, label.diagnostic_label, e))?;
                     rate_of_changes.push(RateOfChangeRule {
                         id: field.id.clone(),
-                        max_delta,
+                        max_delta: max_delta.to_source(),
                         sample_interval_ms,
                     });
                 }
@@ -5080,7 +5104,23 @@ fn parse_procedure(
             let field = parse_forge_field(&data, label.diagnostic_label)?;
             match field.direction {
                 Direction::In => inputs.push(field),
-                Direction::Internal => internals.push(field),
+                Direction::Internal => {
+                    // An internal with no `expr` starts at its type's default,
+                    // and an enum has none: zero need not be a declared
+                    // variant, and the generated Rust enum derives no
+                    // `Default`. The document must say where it starts.
+                    if matches!(field.sce_type, SceType::Enum(_)) && field.expr.is_none() {
+                        return Err(located(
+                            &data,
+                            label.diagnostic_label,
+                            ValidationError::MissingAttribute {
+                                element: format!("field '{}'", field.id),
+                                attr: "expr".into(),
+                            },
+                        ));
+                    }
+                    internals.push(field)
+                }
                 Direction::Out => {
                     // Output fields are not used as execute() parameters
                 }
@@ -5665,6 +5705,7 @@ fn parse_filter(
     })?;
 
     let mut input: Option<ForgeField> = None;
+    let mut input_node: Option<roxmltree::Node> = None;
     let mut output: Option<ForgeField> = None;
     let mut output_node: Option<roxmltree::Node> = None;
     let mut filter_type: Option<FilterType> = None;
@@ -5676,6 +5717,7 @@ fn parse_filter(
         match dir.as_deref() {
             Some("in") => {
                 input = Some(parse_forge_field(&data, label.diagnostic_label)?);
+                input_node = Some(data);
             }
             Some("out") => {
                 output = Some(parse_forge_field(&data, label.diagnostic_label)?);
@@ -5704,8 +5746,50 @@ fn parse_filter(
                     )
                 })?);
 
-                window = sce_attr(&data, "window").and_then(|s| s.parse::<u32>().ok());
-                alpha = sce_attr(&data, "alpha").and_then(|s| s.parse::<f64>().ok());
+                // ⚠ A malformed value used to read as an absent one — the
+                // parse was `.ok()` — so `sce:window="five"` was reported as
+                // a MISSING window, and `sce:window="0"` was accepted
+                // although every runtime refuses it (Rust and Go panic, C++
+                // fails a static_assert). `sce:alpha` had no range at all:
+                // `NaN` reached the Rust template as `NaN_f64`.
+                let refuse = |attr: &str, value: String, rule: &str| {
+                    located(
+                        &data,
+                        label.diagnostic_label,
+                        ValidationError::AttributeRuleViolated {
+                            element: "Filter output".into(),
+                            attr: attr.into(),
+                            value,
+                            rule: rule.into(),
+                        },
+                    )
+                };
+                window = match sce_attr(&data, "window") {
+                    None => None,
+                    Some(text) => match text.trim().parse::<u32>() {
+                        Ok(n) if n >= 1 => Some(n),
+                        _ => {
+                            return Err(refuse(
+                                "sce:window",
+                                text,
+                                "a positive integer — the number of samples the window holds",
+                            ))
+                        }
+                    },
+                };
+                alpha = match sce_attr(&data, "alpha") {
+                    None => None,
+                    Some(text) => match text.trim().parse::<f64>() {
+                        Ok(a) if a.is_finite() && a > 0.0 && a <= 1.0 => Some(a),
+                        _ => {
+                            return Err(refuse(
+                                "sce:alpha",
+                                text,
+                                "a number in (0, 1] — the weight each new sample carries",
+                            ))
+                        }
+                    },
+                };
             }
             _ => {
                 return Err(located(
@@ -5799,6 +5883,66 @@ fn parse_filter(
         }
     }
 
+    // The field types each filter's runtime can carry. The Rust, C++ and Go
+    // runtimes agree: moving-average and low-pass are generic over a FLOAT
+    // type and take their input through a numeric cast; debounce latches
+    // one of its own samples, so its output IS its input type, and it needs
+    // equality and a default value — a number or a bool, not a string, not
+    // bytes, and not an enum (whose Rust type derives no `Default`).
+    //
+    // ⚠ Nothing checked this. A `bool` moving average, or a `uint8` output
+    // on a low-pass, generated with exit 0 and failed to compile in every
+    // backend whose runtime states the contract (measured 2026-09-21).
+    let input_anchor = input_node.as_ref().unwrap_or(&datamodel);
+    let wrong_input = |rule: &str| {
+        located(
+            input_anchor,
+            label.diagnostic_label,
+            ValidationError::AttributeRuleViolated {
+                element: format!("field '{}'", input.id),
+                attr: "sce:type".into(),
+                value: input.sce_type.as_attr(),
+                rule: rule.into(),
+            },
+        )
+    };
+    let wrong_output = |allowed: Vec<String>| {
+        located(
+            param_anchor,
+            label.diagnostic_label,
+            ValidationError::InvalidAttribute {
+                element: format!("field '{}'", output.id),
+                attr: "sce:type".into(),
+                value: output.sce_type.as_attr(),
+                allowed,
+            },
+        )
+    };
+    match filter_type {
+        FilterType::MovingAverage | FilterType::LowPass => {
+            if !input.sce_type.is_numeric() {
+                return Err(wrong_input(
+                    "a numeric type — an averaging filter does arithmetic on its input",
+                ));
+            }
+            if !output.sce_type.is_float() {
+                return Err(wrong_output(SceType::scalar_attr_names_where(
+                    SceType::is_float,
+                )));
+            }
+        }
+        FilterType::Debounce => {
+            if !(input.sce_type.is_numeric() || matches!(input.sce_type, SceType::Bool)) {
+                return Err(wrong_input(
+                    "a numeric or bool type — debounce compares samples and starts from a default",
+                ));
+            }
+            if output.sce_type != input.sce_type {
+                return Err(wrong_output(vec![input.sce_type.as_attr()]));
+            }
+        }
+    }
+
     Ok(FilterModel {
         name: label.identifier.to_string(),
         input,
@@ -5828,10 +5972,11 @@ fn parse_interpolation(
     })?;
 
     let mut inputs = Vec::new();
+    let mut input_nodes: Vec<roxmltree::Node> = Vec::new();
     let mut output: Option<ForgeField> = None;
+    let mut output_node: Option<roxmltree::Node> = None;
     let mut method: Option<InterpolationMethod> = None;
     let mut out_of_bounds = OutOfBounds::default();
-    let mut axes = Vec::new();
     let mut values = Vec::new();
 
     for data in data_children(&datamodel) {
@@ -5839,9 +5984,11 @@ fn parse_interpolation(
         match dir.as_deref() {
             Some("in") => {
                 inputs.push(parse_forge_field(&data, label.diagnostic_label)?);
+                input_nodes.push(data);
             }
             Some("out") => {
                 output = Some(parse_forge_field(&data, label.diagnostic_label)?);
+                output_node = Some(data);
 
                 let method_str = sce_attr(&data, "interpolation").ok_or_else(|| {
                     located(
@@ -5887,52 +6034,24 @@ fn parse_interpolation(
                     })?;
                 }
 
-                // Parse sce:axis-{input_id} attributes
-                for inp in &inputs {
-                    let axis_attr = format!("axis-{}", inp.id);
-                    if let Some(bp_str) = sce_attr(&data, &axis_attr) {
-                        let breakpoints: Result<Vec<f64>, _> = bp_str
-                            .split_whitespace()
-                            .map(|s| s.parse::<f64>())
-                            .collect();
-                        let breakpoints = breakpoints.map_err(|e| {
-                            located(
-                                &data,
-                                label.diagnostic_label,
-                                ValidationError::NumericParse {
-                                    element: format!("Interpolation axis-{}", inp.id),
-                                    attr: format!("sce:axis-{}", inp.id),
-                                    value: bp_str.clone(),
-                                    detail: e.to_string(),
-                                },
-                            )
-                        })?;
-                        axes.push(InterpolationAxis {
-                            input_id: inp.id.clone(),
-                            breakpoints,
-                        });
-                    }
-                }
+                // The `sce:axis-<input>` attributes are read after the loop:
+                // an input declared below this output is still an input.
 
                 // Parse table values from text content
                 let text = data.text().unwrap_or("").trim().to_string();
                 if !text.is_empty() {
-                    values = text
-                        .split_whitespace()
-                        .map(|s| s.parse::<f64>())
-                        .collect::<Result<Vec<_>, _>>()
-                        .map_err(|e| {
-                            located(
-                                &data,
-                                label.diagnostic_label,
-                                ValidationError::NumericParse {
-                                    element: "Interpolation output".into(),
-                                    attr: "table values".into(),
-                                    value: text.clone(),
-                                    detail: e.to_string(),
-                                },
-                            )
-                        })?;
+                    values = parse_finite_list(&text).map_err(|detail| {
+                        located(
+                            &data,
+                            label.diagnostic_label,
+                            ValidationError::NumericParse {
+                                element: "Interpolation output".into(),
+                                attr: "table values".into(),
+                                value: text.clone(),
+                                detail,
+                            },
+                        )
+                    })?;
                 }
             }
             _ => {
@@ -5980,6 +6099,107 @@ fn parse_interpolation(
             },
         ));
     }
+
+    // Every runtime interpolates in double precision — Rust's and Go's take
+    // `f64` slices, C++'s `const double (&)[N]` — and the tables are
+    // declared in the output's type, so the output IS `float64` and each
+    // input is a number the lookup can convert.
+    let out_node = output_node.expect("a present output recorded its node");
+    for (inp, node) in inputs.iter().zip(&input_nodes) {
+        if !inp.sce_type.is_numeric() {
+            return Err(located(
+                node,
+                label.diagnostic_label,
+                ValidationError::AttributeRuleViolated {
+                    element: format!("field '{}'", inp.id),
+                    attr: "sce:type".into(),
+                    value: inp.sce_type.as_attr(),
+                    rule: "a numeric type — an interpolation axis is a number line".into(),
+                },
+            ));
+        }
+    }
+    if output.sce_type != SceType::Float64 {
+        return Err(located(
+            &out_node,
+            label.diagnostic_label,
+            ValidationError::InvalidAttribute {
+                element: format!("field '{}'", output.id),
+                attr: "sce:type".into(),
+                value: output.sce_type.as_attr(),
+                allowed: vec![SceType::Float64.as_attr()],
+            },
+        ));
+    }
+
+    // Each `sce:axis-<input>` names a declared input. ⚠ The `axis-` prefix
+    // is exempt from the unknown-attribute check, which meant a misspelt
+    // `sce:axis-rmp` was accepted and then silently had no input to index.
+    for attr in out_node.attributes() {
+        if attr.namespace() != Some(SCE_NAMESPACE) {
+            continue;
+        }
+        if let Some(indexed) = attr.name().strip_prefix("axis-") {
+            if !inputs.iter().any(|inp| inp.id == indexed) {
+                let axis_names: Vec<String> = inputs
+                    .iter()
+                    .map(|inp| format!("axis-{}", inp.id))
+                    .collect();
+                return Err(unknown_sce_attr(
+                    &out_node,
+                    label.diagnostic_label,
+                    attr.name(),
+                    axis_names.iter().map(String::as_str),
+                ));
+            }
+        }
+    }
+
+    // One axis per input that declares one, in input order. ⚠ This used to
+    // run inside the loop, over the inputs seen SO FAR — so an input
+    // declared below its output lost its axis without a word, and the
+    // refusal that followed blamed the axis count.
+    let mut axes = Vec::new();
+    for inp in &inputs {
+        let attr = format!("axis-{}", inp.id);
+        let Some(bp_str) = sce_attr(&out_node, &attr) else {
+            continue;
+        };
+        let breakpoints = parse_finite_list(&bp_str).map_err(|detail| {
+            located(
+                &out_node,
+                label.diagnostic_label,
+                ValidationError::NumericParse {
+                    element: format!("Interpolation axis-{}", inp.id),
+                    attr: format!("sce:{attr}"),
+                    value: bp_str.clone(),
+                    detail,
+                },
+            )
+        })?;
+        // The lookup locates a sample by walking the breakpoints in order,
+        // so they must rise strictly; a repeat would divide by zero.
+        if let Some(pair) = breakpoints.windows(2).find(|w| w[1] <= w[0]) {
+            return Err(located(
+                &out_node,
+                label.diagnostic_label,
+                ValidationError::AttributeRuleViolated {
+                    element: "Interpolation output".into(),
+                    attr: format!("sce:{attr}"),
+                    value: bp_str.clone(),
+                    rule: format!(
+                        "strictly increasing breakpoints ({} is followed by {})",
+                        pair[0], pair[1]
+                    ),
+                },
+            ));
+        }
+        axes.push(InterpolationAxis {
+            input_id: inp.id.clone(),
+            breakpoints,
+        });
+    }
+
     if axes.is_empty() {
         return Err(located(
             &datamodel,
@@ -6568,50 +6788,15 @@ fn parse_test_vector_value(s: &str, return_type: &SceType) -> Result<TestVectorV
     let is_integer = return_type.is_signed() || return_type.is_unsigned();
     if !is_integer {
         return Err(format!(
-            "<sce:test-vector value> only supports bool/integer scalar return types in v1; got '{return_type:?}' — multi-field codec or float-result test vectors defer to B5"
+            "<sce:test-vector value> only supports bool/integer scalar return types in v1; got '{}' — multi-field codec or float-result test vectors defer to B5",
+            return_type.as_attr()
         ));
     }
-
-    let (negative, digits) = if let Some(rest) = trimmed.strip_prefix('-') {
-        (true, rest.trim_start())
-    } else {
-        (false, trimmed)
-    };
-
-    let magnitude = if let Some(rest) = digits
-        .strip_prefix("0x")
-        .or_else(|| digits.strip_prefix("0X"))
-    {
-        u64::from_str_radix(rest, 16).map_err(|e| format!("invalid hex literal after '0x': {e}"))?
-    } else if let Some(rest) = digits
-        .strip_prefix("0b")
-        .or_else(|| digits.strip_prefix("0B"))
-    {
-        u64::from_str_radix(rest, 2)
-            .map_err(|e| format!("invalid binary literal after '0b': {e}"))?
-    } else {
-        digits
-            .parse::<u64>()
-            .map_err(|e| format!("invalid decimal integer literal: {e}"))?
-    };
-
-    if negative {
-        if !return_type.is_signed() {
-            return Err(format!(
-                "negative value not allowed for unsigned return type {return_type:?}"
-            ));
-        }
-        let signed = i64::try_from(magnitude)
-            .map(|n| -n)
-            .map_err(|_| format!("value '-{magnitude}' overflows i64"))?;
-        Ok(TestVectorValue::Int(signed))
-    } else if return_type.is_signed() {
-        let signed =
-            i64::try_from(magnitude).map_err(|_| format!("value '{magnitude}' overflows i64"))?;
-        Ok(TestVectorValue::Int(signed))
-    } else {
-        Ok(TestVectorValue::Uint(magnitude))
-    }
+    // The same grammar and the same range check as a codec's test vector.
+    Ok(match int_literal_of(trimmed, return_type)? {
+        IntOfType::Signed(n) => TestVectorValue::Int(n),
+        IntOfType::Unsigned(n) => TestVectorValue::Uint(n),
+    })
 }
 
 fn parse_algorithm_signature(
@@ -9129,26 +9314,42 @@ pub fn reject_unknown_sce_attrs(content: &str, doc_name: &str) -> Result<(), Loc
                 .filter(|(d, _)| *d <= 3)
                 .collect();
             near.sort();
-            let known: Vec<String> = near
-                .into_iter()
-                .take(4)
-                .map(|(_, k)| k.to_string())
-                .collect();
-            let pos = doc.text_pos_at(node.range().start);
-            return Err(Located::new(
-                ValidationError::UnknownSceAttribute {
-                    element: format!("<{}>", node.tag_name().name()),
-                    attr: name.to_string(),
-                    known,
-                }
-                .into(),
+            return Err(unknown_sce_attr(
+                &node,
                 doc_name,
-                Some(pos.row),
-                Some(pos.col),
+                name,
+                near.into_iter().take(4).map(|(_, k)| k),
             ));
         }
     }
     Ok(())
+}
+
+/// The prefix `node`'s document binds to the SCE namespace, so a name this
+/// parser proposes is spelled the way the document spells its own.
+fn sce_prefix_of<'a>(node: &roxmltree::Node<'a, '_>) -> &'a str {
+    node.lookup_prefix(SCE_NAMESPACE).unwrap_or("sce")
+}
+
+/// The refusal of an SCE-namespace attribute nothing reads, located at its
+/// element, with `known` — local names — offered as replacements. Both the
+/// offending name and each suggestion carry the document's SCE prefix.
+fn unknown_sce_attr<'k>(
+    node: &roxmltree::Node,
+    doc_name: &str,
+    name: &str,
+    known: impl Iterator<Item = &'k str>,
+) -> Located<ForgeError> {
+    let prefix = sce_prefix_of(node);
+    located(
+        node,
+        doc_name,
+        ValidationError::UnknownSceAttribute {
+            element: format!("<{}>", node.tag_name().name()),
+            attr: format!("{prefix}:{name}"),
+            known: known.map(|k| format!("{prefix}:{k}")).collect(),
+        },
+    )
 }
 
 /// Parse `<sce:entry key="..." value="..."/>` children from a node.
@@ -9298,7 +9499,7 @@ fn parse_forge_field(
     })?;
 
     let expr = data.attribute("expr").map(|s| s.to_string());
-    let quantity = parse_quantity_attrs(data, doc_name, &format!("field '{id}'"))?;
+    let quantity = parse_quantity_attrs(data, doc_name, &format!("field '{id}'"), &sce_type)?;
     // Bounded-bytes contract: optional cap
     // on bytes-typed slots. Parsed for every field; the validator
     // pass decides whether to flag it on a non-bytes field.
@@ -9416,6 +9617,7 @@ fn parse_quantity_attrs(
     node: &roxmltree::Node,
     doc_name: &str,
     owner_label: &str,
+    ty: &SceType,
 ) -> Result<Option<crate::forge::quantity::Quantity>, Located<ForgeError>> {
     use crate::forge::quantity::{Quantity, Rational, UnitTag};
 
@@ -9460,6 +9662,25 @@ fn parse_quantity_attrs(
                 attr: "sce:quantity".into(),
                 value: unit_str,
                 rule: "non-empty unit name (e.g. `celsius`, `s`, `m/s^2`)".into(),
+            },
+        ));
+    }
+    // A unit annotates a number. ⚠ Inference used to keep a non-numeric
+    // field's raw type and move on, beside a comment saying validation
+    // refused this earlier — no stage did, so `sce:quantity="celsius"`
+    // on a `bool` or a `string` generated with exit 0.
+    if !ty.is_numeric() {
+        return Err(located(
+            node,
+            doc_name,
+            ValidationError::AttributeRuleViolated {
+                element: owner_label.to_string(),
+                attr: "sce:quantity".into(),
+                value: unit_str,
+                rule: format!(
+                    "a numeric field — a unit annotates a number, and this field is declared {}",
+                    ty.as_attr()
+                ),
             },
         ));
     }
@@ -9534,26 +9755,31 @@ fn data_children<'a>(
         .filter(|n| n.is_element() && n.tag_name().name() == "data")
 }
 
-/// Parse an integer from a string (supports 0x hex prefix).
+/// Parse a `u32` from a string, in the grammar every integer-valued
+/// attribute shares ([`crate::forge::model::parse_int_literal`]).
 fn parse_int(s: &str) -> Option<u32> {
-    let s = s.trim();
-    if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
-        u32::from_str_radix(hex, 16).ok()
-    } else {
-        s.parse::<u32>().ok()
-    }
+    crate::forge::model::parse_int_literal(s.trim()).and_then(|n| u32::try_from(n).ok())
 }
 
-/// Parse a u64 integer from a string (supports 0x hex prefix). Used by
-/// RFC §synth-5-B variant arm `value=` attributes which must hold any tag
-/// width up to uint64.
+/// Parse a `u64` the same way. Used by RFC §synth-5-B variant arm
+/// `value=` attributes, which must hold any tag width up to uint64.
 fn parse_int_u64(s: &str) -> Option<u64> {
-    let s = s.trim();
-    if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
-        u64::from_str_radix(hex, 16).ok()
-    } else {
-        s.parse::<u64>().ok()
-    }
+    crate::forge::model::parse_int_literal(s.trim()).and_then(|n| u64::try_from(n).ok())
+}
+
+/// A whitespace-separated list of finite numbers — an interpolation axis
+/// or table. `Err` names the first token that is not one.
+///
+/// ⚠ Finite, not merely parseable: `f64::from_str` accepts `NaN` and `inf`,
+/// which a breakpoint search and a table lookup cannot use and which no
+/// backend spells the same way.
+fn parse_finite_list(text: &str) -> Result<Vec<f64>, String> {
+    text.split_whitespace()
+        .map(|token| match token.parse::<f64>() {
+            Ok(v) if v.is_finite() => Ok(v),
+            _ => Err(format!("'{token}' is not a finite number")),
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -9590,6 +9816,78 @@ mod unexpected_child_tests {
             assert!(
                 err.location.line.is_some(),
                 "the refusal is located at the child"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod filter_parameter_tests {
+    use super::*;
+
+    /// The attribute a filter output is refused on, or `None` when the
+    /// filter parses.
+    fn refused_attr(output_attrs: &str) -> Option<String> {
+        let xml = format!(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="{SCE_NAMESPACE}"
+                      sce:kind="filter">
+                 <datamodel>
+                   <data id="raw" sce:type="float64" sce:direction="in"/>
+                   <data id="out" sce:type="float64" sce:direction="out" {output_attrs}/>
+                 </datamodel>
+               </scxml>"#
+        );
+        let doc = roxmltree::Document::parse(&xml).expect("fixture parses");
+        match parse_filter(&doc.root_element(), DocumentLabel::symmetric("t.scxml")) {
+            Ok(_) => None,
+            Err(err) => match err.error {
+                ForgeError::Validation(boxed) => match *boxed {
+                    ValidationError::AttributeRuleViolated { attr, .. } => Some(attr),
+                    other => panic!("expected AttributeRuleViolated, got {other:?}"),
+                },
+                other => panic!("expected a validation error, got {other:?}"),
+            },
+        }
+    }
+
+    /// Every runtime refuses an empty window, and a malformed one is not an
+    /// absent one. Called directly rather than through `parse_forge`: the
+    /// XSD types `sce:window` as a positive integer and answers first where
+    /// it is available, and this check is what a build without it has.
+    #[test]
+    fn a_window_is_a_positive_integer() {
+        for window in ["0", "five", "-3", "2.5"] {
+            assert_eq!(
+                refused_attr(&format!(
+                    r#"sce:filter="moving-average" sce:window="{window}""#
+                ))
+                .as_deref(),
+                Some("sce:window"),
+                "sce:window=\"{window}\""
+            );
+        }
+        assert_eq!(
+            refused_attr(r#"sce:filter="moving-average" sce:window="1""#),
+            None
+        );
+    }
+
+    /// A low-pass weight lies in (0, 1]. The XSD types it `decimal`, which
+    /// admits `0` and `1.5`; without the XSD, `NaN` and `inf` arrive too.
+    #[test]
+    fn a_low_pass_weight_lies_in_the_unit_interval() {
+        for alpha in ["0", "-0.5", "1.5", "NaN", "inf", "x"] {
+            assert_eq!(
+                refused_attr(&format!(r#"sce:filter="low-pass" sce:alpha="{alpha}""#)).as_deref(),
+                Some("sce:alpha"),
+                "sce:alpha=\"{alpha}\""
+            );
+        }
+        for alpha in ["1", "0.1", "1.0"] {
+            assert_eq!(
+                refused_attr(&format!(r#"sce:filter="low-pass" sce:alpha="{alpha}""#)),
+                None,
+                "sce:alpha=\"{alpha}\""
             );
         }
     }

@@ -599,27 +599,6 @@ impl SceType {
         )
     }
 
-    /// Stringified maximum value for unsigned integer types — used by the
-    /// C11 validator template to detect when a `range-max` annotation
-    /// equals the type's natural ceiling so the generated `> max`
-    /// comparison can be elided. gcc's `-Wtype-limits` (promoted to
-    /// `-Werror` in the C11 conformance build) rejects tautological
-    /// comparisons like `uint8_t > 255`, so the generator must surface
-    /// the type's max as a string for jinja-side comparison against the
-    /// rule's `max` text. Returns `None` for non-unsigned types — the
-    /// equivalent signed-max elision would require also tracking the
-    /// signed-min boundary, and no current fixture pins type-extremal
-    /// signed bounds.
-    pub fn unsigned_max_str(&self) -> Option<&'static str> {
-        match self {
-            Self::Uint8 => Some("255"),
-            Self::Uint16 => Some("65535"),
-            Self::Uint32 => Some("4294967295"),
-            Self::Uint64 => Some("18446744073709551615"),
-            _ => None,
-        }
-    }
-
     /// Signed integer types (int8..int64).
     pub fn is_signed(&self) -> bool {
         matches!(self, Self::Int8 | Self::Int16 | Self::Int32 | Self::Int64)
@@ -667,6 +646,140 @@ impl SceType {
             (0, (1i128 << bits) - 1)
         })
     }
+
+    /// Integer or floating-point — the types arithmetic, bounds and
+    /// physical quantities are defined over.
+    pub fn is_numeric(&self) -> bool {
+        self.is_unsigned() || self.is_signed() || self.is_float()
+    }
+
+    /// `text` as a value this type holds, or the rule it breaks.
+    ///
+    /// ⚠ ONE reading of a typed numeric literal for every attribute that
+    /// carries one — a validator bound, a retained initial value, a test
+    /// vector's expected value. Four sites parsed integers their own way
+    /// (hex here, binary there, decimal only in a third) and two of them
+    /// never held the value to the type, so `value="300"` passed for a
+    /// `uint8` and was narrowed to 44 downstream (measured 2026-09-21).
+    ///
+    /// The `Err` is the rule a legal value satisfies, phrased to stand as
+    /// a diagnostic's `expected`.
+    pub fn numeric_literal(&self, text: &str) -> Result<NumericLiteral, String> {
+        if let Some((lo, hi)) = self.int_value_range() {
+            let rule = || format!("an integer in {lo}..={hi} ({})", self.as_attr());
+            return match parse_int_literal(text.trim()) {
+                Some(n) if n >= lo && n <= hi => Ok(NumericLiteral::Int(n)),
+                _ => Err(rule()),
+            };
+        }
+        if self.is_float() {
+            // A `float32` bound is emitted as an `f32` literal, and one past
+            // `f32::MAX` is a compile error in Rust (`overflowing_literals`
+            // is deny-by-default) — finite as an `f64` is not enough.
+            let fits = |v: f64| match self {
+                Self::Float32 => (v as f32).is_finite(),
+                _ => v.is_finite(),
+            };
+            return match text.trim().parse::<f64>() {
+                Ok(v) if fits(v) => Ok(NumericLiteral::Float(v)),
+                _ => Err(format!(
+                    "a finite decimal number within {}'s range",
+                    self.as_attr()
+                )),
+            };
+        }
+        Err(format!(
+            "a numeric type; this position is declared {}",
+            self.as_attr()
+        ))
+    }
+}
+
+/// A numeric literal read against a declared type by
+/// [`SceType::numeric_literal`] — already within that type's range.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum NumericLiteral {
+    /// An integer; `i128` holds every value of every integer type.
+    Int(i128),
+    /// A finite floating-point value.
+    Float(f64),
+}
+
+impl NumericLiteral {
+    /// The value spelled as source every backend reads the same way: an
+    /// integer in decimal, a float always with a decimal point or an
+    /// exponent — so `10` on a `float64` becomes `10.0`, which Rust accepts
+    /// where it refuses an integer literal, and `0b101` becomes `5`, which
+    /// C11 has no spelling for.
+    pub fn to_source(self) -> String {
+        match self {
+            Self::Int(n) => n.to_string(),
+            // `{:?}` is Rust's round-trip spelling of an f64, and it always
+            // carries a `.` or an `e` (`10.0`, `0.1`, `1e21`).
+            Self::Float(v) => format!("{v:?}"),
+        }
+    }
+
+    /// Whether the value lies above zero.
+    pub fn is_positive(self) -> bool {
+        match self {
+            Self::Int(n) => n > 0,
+            Self::Float(v) => v > 0.0,
+        }
+    }
+}
+
+/// Two literals read against ONE type order exactly. ⚠ Comparing them as
+/// `f64` does not: a `uint64` minimum of 2^53 + 1 and a maximum of 2^53
+/// round to the same double, and the crossed pair read as equal. Literals
+/// of different kinds were read against different types and have no order.
+impl PartialOrd for NumericLiteral {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match (self, other) {
+            (Self::Int(a), Self::Int(b)) => a.partial_cmp(b),
+            (Self::Float(a), Self::Float(b)) => a.partial_cmp(b),
+            _ => None,
+        }
+    }
+}
+
+/// An integer literal as an `sce:` attribute writes one: an optional `-`,
+/// then a `0x` hex, `0b` binary or decimal magnitude. `None` when the text
+/// is not an integer at all; whether the value fits a type is
+/// [`SceType::numeric_literal`]'s question.
+///
+/// The sign is applied to the magnitude rather than parsed as part of it,
+/// so `-0x80` reads the way an author writing an int8 boundary expects.
+/// `i128` holds every legal carrier's range, so the parse itself cannot
+/// overflow for any value a type could accept.
+pub fn parse_int_literal(text: &str) -> Option<i128> {
+    let (negative, magnitude) = match text.strip_prefix('-') {
+        Some(rest) => (true, rest.trim_start()),
+        None => (false, text),
+    };
+    let (radix, digits) = if let Some(hex) = magnitude
+        .strip_prefix("0x")
+        .or_else(|| magnitude.strip_prefix("0X"))
+    {
+        (16, hex)
+    } else if let Some(bin) = magnitude
+        .strip_prefix("0b")
+        .or_else(|| magnitude.strip_prefix("0B"))
+    {
+        (2, bin)
+    } else {
+        (10, magnitude)
+    };
+    // `from_str_radix` reads a sign of its own, so a second one (`--1`,
+    // `-+1`) and one behind a prefix (`0x-5`, `0x+5`) would slip through as
+    // part of the digits. The only signs this grammar has are the leading
+    // `-` above and a lone `+` on a decimal, which `parse::<i128>` has
+    // always accepted and stays so.
+    if digits.starts_with('-') || (digits.starts_with('+') && (negative || radix != 10)) {
+        return None;
+    }
+    let parsed = i128::from_str_radix(digits, radix).ok()?;
+    Some(if negative { -parsed } else { parsed })
 }
 
 // ── Cycle ──────────────────────────────────────────────────────
@@ -4651,5 +4764,94 @@ mod tests {
             json.get("line").is_none(),
             "ProcedureState.line must be #[serde(skip)] for byte-stability; got {json}"
         );
+    }
+
+    /// The integer grammar: one leading `-`, a `0x` / `0b` / decimal
+    /// magnitude, and a lone `+` on a decimal only.
+    #[test]
+    fn an_integer_literal_has_one_sign_and_it_leads() {
+        let accepted = [
+            ("0", 0),
+            ("255", 255),
+            ("+7", 7),
+            ("-1", -1),
+            ("0xFF", 255),
+            ("0XfF", 255),
+            ("-0x80", -128),
+            ("0b101", 5),
+            ("-0B1", -1),
+        ];
+        for (text, want) in accepted {
+            assert_eq!(parse_int_literal(text), Some(want), "{text}");
+        }
+        for text in [
+            "", "-", "--1", "-+1", "0x", "0x-5", "0x+5", "-0x+5", "0b+1", "0b2", "1.0", "ten",
+        ] {
+            assert_eq!(parse_int_literal(text), None, "{text:?} must not parse");
+        }
+    }
+
+    /// A literal is read against the type it annotates: an integer type
+    /// takes an integer inside its range, a float type a finite decimal, and
+    /// anything else no number at all.
+    #[test]
+    fn a_numeric_literal_is_held_to_its_type() {
+        assert_eq!(
+            SceType::Uint8.numeric_literal("0xFF"),
+            Ok(NumericLiteral::Int(255))
+        );
+        assert_eq!(
+            SceType::Int8.numeric_literal("-0x80"),
+            Ok(NumericLiteral::Int(-128))
+        );
+        assert_eq!(
+            SceType::Uint64.numeric_literal("18446744073709551615"),
+            Ok(NumericLiteral::Int(i128::from(u64::MAX)))
+        );
+        assert_eq!(
+            SceType::Float64.numeric_literal("1e300"),
+            Ok(NumericLiteral::Float(1e300))
+        );
+        for (ty, text) in [
+            (SceType::Uint8, "256"),
+            (SceType::Uint8, "-1"),
+            (SceType::Int8, "128"),
+            (SceType::Uint16, "1.5"),
+            (SceType::Float64, "NaN"),
+            (SceType::Float32, "inf"),
+            (SceType::Float32, "1e300"),
+            (SceType::Bool, "0"),
+            (SceType::String, "1"),
+        ] {
+            assert!(
+                ty.numeric_literal(text).is_err(),
+                "{text} must be refused for {}",
+                ty.as_attr()
+            );
+        }
+    }
+
+    /// Two bounds of one type order exactly, including where `f64` cannot
+    /// tell them apart.
+    #[test]
+    fn two_bounds_order_without_rounding() {
+        let above = NumericLiteral::Int((1_i128 << 53) + 1);
+        let below = NumericLiteral::Int(1_i128 << 53);
+        assert!(above > below);
+        assert_eq!(above.partial_cmp(&NumericLiteral::Float(1.0)), None);
+        assert!(NumericLiteral::Float(0.5).is_positive());
+        assert!(!NumericLiteral::Int(0).is_positive());
+        assert!(!NumericLiteral::Float(-0.0).is_positive());
+    }
+
+    /// The emitted spelling: an integer in decimal, a float with a point or
+    /// an exponent.
+    #[test]
+    fn a_literal_is_emitted_in_one_spelling() {
+        assert_eq!(NumericLiteral::Int(255).to_source(), "255");
+        assert_eq!(NumericLiteral::Int(-128).to_source(), "-128");
+        assert_eq!(NumericLiteral::Float(10.0).to_source(), "10.0");
+        assert_eq!(NumericLiteral::Float(-40.5).to_source(), "-40.5");
+        assert_eq!(NumericLiteral::Float(1e21).to_source(), "1e21");
     }
 }

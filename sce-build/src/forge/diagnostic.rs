@@ -5380,7 +5380,9 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             // `InvalidAttribute` below, one level up: there the value was
             // wrong, here the attribute is.
             expected: None,
-            actual: Some(format!("sce:{attr}")),
+            // Both spelled as written, so a candidate replaces `actual`
+            // without dropping the namespace prefix.
+            actual: Some(attr.clone()),
             fix: Some(Fix::ReplaceOneOf {
                 candidates: known.clone(),
             }),
@@ -9474,13 +9476,16 @@ mod tests {
                 // what nothing knows, where `invalid-attribute` above is
                 // a known name carrying a value outside its set.
                 "forge/unknown-sce-attribute",
+                // Both sides carry the prefix, as the document writes them:
+                // the candidate used to be bare, and applying it dropped
+                // the attribute out of the SCE namespace.
                 ValidationError::UnknownSceAttribute {
                     element: "<data>".into(),
-                    attr: "directon".into(),
-                    known: vec!["direction".into()],
+                    attr: "sce:directon".into(),
+                    known: vec!["sce:direction".into()],
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:5951c84e07165387","code":"validation/unknown-sce-attribute","stage":"validation","spec":"SCE Accepted Subset §2.2","message":"<data>: unknown attribute sce:directon (known: direction)","actual":"sce:directon","fix":{"kind":"replace_one_of","candidates":["direction"]}}"#,
+                r#"{"v":1,"id":"fnv1a:2771f19a65a7647a","code":"validation/unknown-sce-attribute","stage":"validation","spec":"SCE Accepted Subset §2.2","message":"<data>: unknown attribute sce:directon (known: sce:direction)","actual":"sce:directon","fix":{"kind":"replace_one_of","candidates":["sce:direction"]}}"#,
             ),
             (
                 // A value space that was renamed upstream: the

@@ -13287,12 +13287,16 @@ fn render_validator(
             // Same -Werror=type-limits hazard at the upper bound: a
             // `uint8_t > 255` test is tautologically false. The C11
             // template elides the upper-bound comparison when this
-            // flag is true. Computed by string-comparing the rule's
-            // declared max against the type's natural ceiling so a
-            // user who writes `range-max="200"` for a uint8 still
-            // gets the comparison emitted (not tautological).
-            let is_max_at_type_max = match (&r.max, r.sce_type.unsigned_max_str()) {
-                (Some(max_str), Some(type_max)) => max_str == type_max,
+            // flag is true. Computed by comparing the rule's declared max
+            // against the type's natural ceiling as NUMBERS, so a user who
+            // writes `range-max="200"` for a uint8 still gets the
+            // comparison emitted (not tautological) — and one who writes
+            // `0xFF` gets it elided, which a comparison of strings missed.
+            let is_max_at_type_max = match (&r.max, r.sce_type.int_value_range()) {
+                (Some(max_str), Some((_, type_max))) if r.sce_type.is_unsigned() => {
+                    r.sce_type.numeric_literal(max_str)
+                        == Ok(crate::forge::model::NumericLiteral::Int(type_max))
+                }
                 _ => false,
             };
             obj.insert("is_max_at_type_max".into(), is_max_at_type_max.into());

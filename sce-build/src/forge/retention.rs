@@ -116,34 +116,33 @@ pub fn check(
                     return not_one_of(vec!["true".into(), "false".into()]);
                 }
             }
-            ty if ty.int_value_range().is_some() => {
-                // `int_value_range` answers for every integer width, so
-                // the bound comes from the declared type rather than
-                // from a list here that would go stale beside it.
-                let (lo, hi) = ty.int_value_range().expect("the guard just asked");
-                match value.parse::<i128>() {
-                    Ok(n) if n >= lo && n <= hi => {}
-                    _ => {
-                        return Err(Located::new(
-                            ValidationError::AttributeRuleViolated {
-                                element,
-                                attr: "sce:initial".into(),
-                                value: value.to_string(),
-                                rule: format!("an integer in {lo}..={hi} ({})", ty.as_attr()),
-                            }
-                            .into(),
-                            document,
-                            None,
-                            None,
-                        ))
-                    }
+            // A number's range is a rule no list states; the reading is
+            // the one every typed numeric attribute shares, so hex and
+            // binary initial values are accepted as they are elsewhere.
+            //
+            // ⚠ Floats are held too. This arm used to cover integers only,
+            // beside a comment saying every literal an author can write is
+            // one a float can hold — but `sce:initial="warm"` on a float64
+            // is not a number, and it reached the emitted code as written.
+            ty if ty.is_numeric() => {
+                if let Err(rule) = ty.numeric_literal(value) {
+                    return Err(Located::new(
+                        ValidationError::AttributeRuleViolated {
+                            element,
+                            attr: "sce:initial".into(),
+                            value: value.to_string(),
+                            rule,
+                        }
+                        .into(),
+                        document,
+                        None,
+                        None,
+                    ));
                 }
             }
-            // Float, string and bytes: every literal an author can write
-            // is one the type can hold, so there is nothing to refuse.
-            // Stated rather than silently skipped — an empty arm here is
-            // a decision, and the parser has already rejected an empty
-            // `sce:initial`.
+            // String and bytes: nothing here to refuse by value — stated
+            // rather than silently skipped, and the parser has already
+            // rejected an empty `sce:initial`.
             _ => {}
         }
     }
