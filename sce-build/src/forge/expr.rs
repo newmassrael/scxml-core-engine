@@ -142,6 +142,43 @@ pub fn transpile_typed(
     renames: &HashMap<&str, &str>,
     expected: InferredType,
 ) -> Result<String, ExprError> {
+    transpile_at(expr, target, ctx, renames, expected, Position::Operand)
+}
+
+/// [`transpile_typed`] for the value a function RETURNS in the type its
+/// signature declares — a transform output's body. It differs in one
+/// place: Rust declares a `string` result `String`, and a string inside an
+/// expression is borrowed, so the value is made owned (see
+/// [`emit_rust_returned_str`]). Every other target and type emits exactly
+/// what [`transpile_typed`] does.
+pub fn transpile_returned(
+    expr: &str,
+    target: ExprTarget,
+    ctx: &TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    expected: InferredType,
+) -> Result<String, ExprError> {
+    transpile_at(expr, target, ctx, renames, expected, Position::Returned)
+}
+
+/// Where the emitted value goes, for the one target that cares.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Position {
+    /// Anywhere a borrowed value serves — an operand, an argument, a
+    /// guard.
+    Operand,
+    /// Returned from a function, in the type its signature declares.
+    Returned,
+}
+
+fn transpile_at(
+    expr: &str,
+    target: ExprTarget,
+    ctx: &TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    expected: InferredType,
+    position: Position,
+) -> Result<String, ExprError> {
     let expr = expr.trim();
     if expr.is_empty() {
         return Err(ExprError::Empty { what: "expression" });
@@ -174,6 +211,9 @@ pub fn transpile_typed(
     match target {
         ExprTarget::Cpp => emit_cpp(&ast, expected),
         ExprTarget::Kotlin => emit_kotlin(&ast, expected),
+        ExprTarget::Rust if position == Position::Returned && expected == InferredType::Str => {
+            emit_rust_returned_str(&ast)
+        }
         ExprTarget::Rust => emit_rust(&ast, expected),
         ExprTarget::Go => emit_go(&ast, expected),
         ExprTarget::Python => emit_python(&ast, expected),
@@ -3821,6 +3861,42 @@ fn emit_rust(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprErr
     }
     let raw = rust_emit_node(expr)?;
     rust_coerce(raw, expr.ty, expected, expr)
+}
+
+/// A `string` value a Rust function returns, in the `String` its signature
+/// declares.
+///
+/// Inside an expression a string is borrowed: a parameter is a `&str`, a
+/// literal a `&'static str`. Returned as they are, from a function declared
+/// `-> String`, neither compiles — measured 2026-09-22, every transform with
+/// a `string` output failed to build on Rust. So the value is made owned
+/// where it is borrowed, leaf by leaf:
+///
+/// * a conditional lowers each arm on its own, because both arms of a Rust
+///   `if` must be ONE type, and an arm that is already owned next to one
+///   that is not would still disagree if only the whole were converted;
+/// * a call is already owned — a sibling output's own function (the rename
+///   pass has lowered it to a `Raw` call by now) returns `String`, as does
+///   an imported transform's;
+/// * anything else is borrowed, and takes `.to_string()`.
+fn emit_rust_returned_str(expr: &TypedExpr) -> Result<String, ExprError> {
+    match &expr.kind {
+        ExprKind::Conditional {
+            condition,
+            consequent,
+            alternate,
+        } => Ok(format!(
+            "if {} {{ {} }} else {{ {} }}",
+            emit_rust(condition, InferredType::Bool)?,
+            emit_rust_returned_str(consequent)?,
+            emit_rust_returned_str(alternate)?,
+        )),
+        ExprKind::Call { .. } | ExprKind::Raw(_) => emit_rust(expr, InferredType::Str),
+        _ => {
+            let borrowed = emit_rust(expr, InferredType::Str)?;
+            Ok(format!("{}.to_string()", wrap_postfix(expr, borrowed)))
+        }
+    }
 }
 
 fn rust_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {

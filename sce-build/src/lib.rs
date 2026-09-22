@@ -2538,12 +2538,8 @@ pub fn compile_forge_from_parsed(
     //           capacity, and no cell declares one.
     //   string  on C11: a `const char *` kept between activations points into
     //           the caller's buffer.
-    //   string  on Rust: a transform's string output is returned as borrowed
-    //           text from a function declared to return `String`, so a string
-    //           transform does not compile on Rust with or without
-    //           `previous()`. That is its own defect, fixed on its own.
     //
-    // C++, Go, Kotlin and Python hold an owned string and lower it.
+    // C++, Rust, Go, Kotlin and Python hold an owned string and lower it.
     if let forge::model::ForgeDocument::Transform(m) = &parsed.document {
         for cell in forge::previous_value::cells(m) {
             let why = match (&cell.param.sce_type, language) {
@@ -2553,14 +2549,8 @@ pub fn compile_forge_from_parsed(
                 }
                 (forge::model::SceType::String, generator::Language::C11) => {
                     "C11 keeps a `string` as a `const char *` into the caller's buffer, which \
-                     the next activation may overwrite; C++, Go, Kotlin and Python hold an \
-                     owned string and lower it"
-                }
-                (forge::model::SceType::String, generator::Language::Rust) => {
-                    "Rust returns a transform's string output as borrowed text from a \
-                     function declared to return `String`, so a string transform does not \
-                     compile on Rust yet, with or without `previous()`; C++, Go, Kotlin and \
-                     Python lower it"
+                     the next activation may overwrite; C++, Rust, Go, Kotlin and Python hold \
+                     an owned string and lower it"
                 }
                 _ => continue,
             };

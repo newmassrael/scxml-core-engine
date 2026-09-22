@@ -1319,15 +1319,12 @@ field a document declares can take a name the holder introduces for
 itself: a field named `holder`, `out` or `self` is legal, and the
 holder's own name moves out of its way.
 
-⚠ **Three cells are refused**, each as `generate/unsupported-feature`
+⚠ **Two cells are refused**, each as `generate/unsupported-feature`
 pointing at the read, before any renderer runs: a `bytes` field on every
 backend (a buffer kept between activations needs a capacity no cell
-declares); a `string` field on C11 (a string is a pointer into the
-caller's buffer, which the next activation may overwrite); and a
-`string` field on Rust (a Rust transform returns its string output as
-borrowed text from a function declared to return `String`, so a string
-transform does not compile there with or without `previous()` — a
-defect of its own, fixed on its own).
+declares), and a `string` field on C11 (a string is a pointer into the
+caller's buffer, which the next activation may overwrite). The other
+five backends keep an owned string.
 
 ⚠ **A transform that reads `previous()` cannot be called through an
 import yet.** An `<sce:import kind="transform">` stands for a pure

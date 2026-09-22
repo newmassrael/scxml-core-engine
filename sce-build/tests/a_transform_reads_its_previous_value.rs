@@ -9,8 +9,8 @@
 //! previously, and a HOLDER keeps those values between activations and
 //! computes every output of one activation before it replaces any of them.
 //!
-//! Three cells are refused, each once, before rendering and naming the read:
-//! `bytes` on every backend, and `string` on C11 and on Rust. What a holder
+//! Two cells are refused, each once, before rendering and naming the read:
+//! `bytes` on every backend, and `string` on C11. What a holder
 //! DOES is `transform_previous_value` in the forge conformance catalog, run
 //! on all six backends; this file holds the verdicts in place, and the names
 //! a holder introduces for itself.
@@ -280,26 +280,78 @@ fn a_string_cell_is_lowered_where_the_holder_owns_the_string() {
     let t = Tmp::new("string");
     let text = delayed("string");
     let doc = t.write("delayed.scxml", &text);
-    for lang in ["python", "cpp", "go", "kotlin"] {
+    for lang in ["python", "cpp", "rust", "go", "kotlin"] {
         generated(&doc, &t.dir(lang), lang);
     }
-    // C11 keeps a string as a pointer into the caller's buffer, and a Rust
-    // string output does not compile yet — both refused, at the read,
-    // before rendering.
-    for lang in ["c", "rust"] {
-        let run = generate(&doc, &t.dir(lang), lang);
-        assert_ne!(run.exit, Some(0), "{lang} generated a string cell");
-        let record = only_record(&run);
-        assert_eq!(
-            record["code"], "generate/unsupported-feature",
-            "{lang}: {record}"
-        );
-        assert_eq!(
-            record["location"]["line"].as_u64(),
-            Some(row_of(&text, "previous(reported)")),
-            "{lang}: the refusal does not point at the read: {record}"
-        );
-    }
+    // C11 keeps a string as a pointer into the caller's buffer — refused,
+    // at the read, before rendering.
+    let run = generate(&doc, &t.dir("c"), "c");
+    assert_ne!(run.exit, Some(0), "c generated a string cell");
+    let record = only_record(&run);
+    assert_eq!(record["code"], "generate/unsupported-feature", "{record}");
+    assert_eq!(
+        record["location"]["line"].as_u64(),
+        Some(row_of(&text, "previous(reported)")),
+        "the refusal does not point at the read: {record}"
+    );
+}
+
+#[test]
+fn a_string_holder_compiles_and_runs_on_rust() {
+    // ⚠ Rust declares a string output `-> String` and a string inside an
+    // expression is borrowed, so until the returned value was made owned no
+    // transform with a string output compiled on Rust — with or without
+    // `previous()`. Every shape that makes a string is here: a parameter
+    // returned as it is, a literal, a conditional whose one arm is a sibling
+    // output (already owned) and whose other is a literal (borrowed), and a
+    // kept string passed back in.
+    let Some(rustc) = toolchain::require_or_skip("rustc", "compile a generated holder") else {
+        return;
+    };
+    let t = Tmp::new("rust_string");
+    let doc = t.write(
+        "latest.scxml",
+        &transform(
+            "latest",
+            r#"    <data id="reported" sce:type="string" sce:direction="in" sce:initial=""/>
+    <data id="shown" sce:type="string" sce:direction="out"
+          expr="len(reported) > 0 ? reported : previous(reported)"/>
+    <data id="tagged" sce:type="string" sce:direction="out"
+          expr="len(reported) > 0 ? shown : 'none'"/>
+    <data id="fixed" sce:type="string" sce:direction="out" expr="'always'"/>"#,
+        ),
+    );
+    let out = t.dir("rs");
+    let module = generated(&doc, &out, "rust").artifact(".rs");
+    std::fs::write(
+        out.join("main.rs"),
+        format!(
+            "#[path = \"{}\"]\nmod latest;\n\n\
+             fn main() {{\n\
+             \tlet mut h = latest::Latest::new();\n\
+             \tfor r in [\"a\", \"\", \"b\"] {{\n\
+             \t\tlet o = h.update(r);\n\
+             \t\tprint!(\"{{}}/{{}}/{{}} \", o.shown, o.tagged, o.fixed);\n\
+             \t}}\n\
+             \th.reset();\n\
+             \tlet o = h.update(\"\");\n\
+             \tprintln!(\"[{{}}]/{{}}\", o.shown, o.tagged);\n\
+             }}\n",
+            module.file_name().unwrap().to_str().unwrap()
+        ),
+    )
+    .expect("write main.rs");
+    run_ok(
+        &rustc,
+        &["--edition=2021", "-D", "warnings", "-o", "main", "main.rs"],
+        &out,
+    );
+    // An empty report shows the last one; reset() is the first activation
+    // again, whose previous report is the empty `sce:initial`.
+    assert_eq!(
+        run_ok(&out.join("main"), &[], &out),
+        "a/a/always a/none/always b/b/always []/none\n"
+    );
 }
 
 #[test]

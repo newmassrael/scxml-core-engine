@@ -1313,7 +1313,9 @@ fn render_transform(
                 .chain(enum_variant_refs.iter().cloned())
                 .collect();
             let renames = rename_map(&pairs);
-            let expr_val = expr::transpile_typed(
+            // The body is what the output's function RETURNS, in the type
+            // its signature declares.
+            let expr_val = expr::transpile_returned(
                 out.expr.as_deref().unwrap_or("0"),
                 l.expr_target(),
                 &type_ctx,

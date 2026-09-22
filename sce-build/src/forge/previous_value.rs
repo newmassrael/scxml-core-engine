@@ -25,9 +25,9 @@
 //! output function (`previous_<x>`, [`param_name`]) and one kept value of
 //! the transform's holder. The rendering itself is `render_transform`'s.
 //!
-//! ⚠ The cells no backend lowers — `bytes` anywhere, `string` on C11 and on
-//! Rust — are refused before rendering, at the read [`first_read`] finds,
-//! as `generate/unsupported-feature`. A document the validator accepts and
+//! ⚠ The cells no backend lowers — `bytes` anywhere, `string` on C11 — are
+//! refused before rendering, at the read [`first_read`] finds, as
+//! `generate/unsupported-feature`. A document the validator accepts and
 //! a generator silently mis-emits is the outcome that refusal exists to
 //! rule out.
 
