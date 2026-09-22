@@ -169,8 +169,8 @@ pub struct StructField {
 ///
 /// `name` is the SOURCE spelling — the document's — and not any language's
 /// rendering of it. That is what makes one manifest serve six arms whose
-/// identifier conventions disagree, and it is the same choice the codec
-/// fixtures make for field names.
+/// identifier conventions disagree; each arm's identifier is added at render
+/// time from the generator's own spelling rule, never typed here.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct EnumVariantFixture {
@@ -479,10 +479,11 @@ pub enum FixtureSpec {
     /// spell a variant `GeneralReject`, Python and Kotlin `GENERAL_REJECT`,
     /// and Go prefixes the type name onto each constant.
     ///
-    /// So `variants` holds the SOURCE spelling the document writes, and each
-    /// fragment applies its own case filter — the same contract the codec
-    /// fixtures use for field names, and for the same reason: a canonical
-    /// key that is not any one language's.
+    /// So `variants` holds the SOURCE spelling the document writes — a
+    /// canonical key that is not any one language's. The identifier each arm
+    /// asserts on is not re-derived by the fragment: the render puts the
+    /// declaration's own spelling beside each variant (see
+    /// `fold_enum_identifiers`).
     Enum {
         /// Declared variants in document order, as `{name, value}`.
         variants: Vec<EnumVariantFixture>,
@@ -1912,6 +1913,50 @@ fn fold_reject_vectors(
     Ok(true)
 }
 
+/// Put on each variant of an enum fixture the identifier this language's
+/// declaration emits for it, as `ident`, taken from
+/// [`crate::forge::enum_naming::variant_ident`].
+///
+/// The manifest keeps the SOURCE spelling, and that stays right: one
+/// manifest serves six arms whose conventions disagree. What a fragment must
+/// not do is turn that spelling into its language's identifier with its own
+/// case filters, because the declaration already has one owner for that and
+/// a fragment that re-derives it is a second copy that learns nothing when
+/// the owner changes. The C arm's copy had already drifted — it upper-cased
+/// the type prefix where the owner snake-cases it — and agreed only because
+/// every fixture name so far is snake case.
+fn fold_enum_identifiers(
+    value: &mut serde_json::Value,
+    fixture: &Fixture,
+    language: Language,
+) -> Result<(), String> {
+    let FixtureSpec::Enum { variants } = &fixture.spec else {
+        return Ok(());
+    };
+    let rows = value
+        .get_mut("variants")
+        .and_then(|v| v.as_array_mut())
+        .ok_or_else(|| {
+            format!(
+                "fixture {}: an enum fixture did not serialize its 'variants' as an array",
+                fixture.name
+            )
+        })?;
+    for (row, variant) in rows.iter_mut().zip(variants) {
+        let ident =
+            crate::forge::enum_naming::variant_ident(language, &fixture.name, &variant.name);
+        row.as_object_mut()
+            .ok_or_else(|| {
+                format!(
+                    "fixture {}: variant '{}' did not serialize to a JSON object",
+                    fixture.name, variant.name
+                )
+            })?
+            .insert("ident".into(), serde_json::Value::from(ident));
+    }
+    Ok(())
+}
+
 /// Render the per-language conformance harness from a manifest, returning
 /// the rendered source code.
 ///
@@ -2298,6 +2343,7 @@ pub fn render_harness(
                 .map_err(|e| format!("serialize fixture {}: {e}", f.name))?;
             baked_from_reference |=
                 fold_reject_vectors(&mut v, &reference, f, language, &reference_path)?;
+            fold_enum_identifiers(&mut v, f, language)?;
             // `oracle_eligible: false` fixtures don't have a field oracle —
             // they're compile-only. Skip the lookup + merge so the harness
             // fragment renders the minimal probe block without any `cases`
@@ -2486,6 +2532,52 @@ mod tests {
                          for a fixture kind in fixtures.json."
                     );
                 }
+            }
+        }
+    }
+
+    /// An enum fragment must name the identifier the declaration emits,
+    /// which only `enum_naming::variant_ident` knows. Every catalog fixture
+    /// is snake case, a name every case filter maps the same way — so the
+    /// catalog cannot tell a fragment that asks the owner from one that
+    /// re-derives the spelling. A camelCase name can: C's owner snake-cases
+    /// the type prefix (`CACHE_MODE_…`), and the fragment's own `upper`
+    /// filter did not (`CACHEMODE_…`).
+    #[test]
+    fn an_enum_fragment_names_the_identifier_the_declaration_emits() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let resource_dir = root.path().join("resources");
+        std::fs::create_dir_all(&resource_dir).expect("resources dir");
+        std::fs::create_dir_all(root.path().join("conformance")).expect("conformance dir");
+        std::fs::write(
+            root.path().join("conformance/numerical_reference.json"),
+            r#"{"version": 1, "float_tolerance": 1e-9,
+                "enums": {"cacheMode": {"variants": [
+                    {"name": "readOnly", "value": 3},
+                    {"name": "readWrite", "value": 7}]}}}"#,
+        )
+        .expect("write oracle");
+        let manifest: Manifest = serde_json::from_str(
+            r#"{"version": 1, "fixtures": [{
+                "name": "cacheMode", "kind": "enum", "ref_section": "enums",
+                "variants": [{"name": "readOnly", "value": 3},
+                             {"name": "readWrite", "value": 7}]}]}"#,
+        )
+        .expect("manifest");
+        manifest.validate().expect("manifest validates");
+        let template_base =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tools/codegen/templates");
+
+        for &lang in Language::ALL {
+            let rendered = render_harness(&manifest, lang, &template_base, &resource_dir)
+                .unwrap_or_else(|e| panic!("{lang:?}: render failed: {e}"));
+            for variant in ["readOnly", "readWrite"] {
+                let ident = crate::forge::enum_naming::variant_ident(lang, "cacheMode", variant);
+                assert!(
+                    rendered.source.contains(&ident),
+                    "{lang:?}: the harness does not name `{ident}`, the identifier the \
+                     declaration emits for cacheMode.{variant}"
+                );
             }
         }
     }

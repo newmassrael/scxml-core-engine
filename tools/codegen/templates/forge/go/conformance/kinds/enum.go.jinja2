@@ -2,9 +2,9 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
 
 {# Enum kind — see the C++ fragment for why the oracle compares VALUES and
-   keys on the source spelling. Go has no scoped enum, so each constant is
-   prefixed with the type name; that prefix is this arm's convention and is
-   applied here rather than stored in the manifest. #}
+   keys on the source spelling. Go has no scoped enum, so each constant
+   carries the type name; `v.ident` already does, which is why only the
+   package qualifies it here. #}
 	{
 		spec := ref.enumEntry(t, "{{ f.ref_section }}", "{{ f.name }}")
 
@@ -20,9 +20,9 @@
 			t.Errorf("{{ f.name }} variant {{ loop.index0 }}: oracle names %q, manifest %q",
 				spec.Variants[{{ loop.index0 }}].Name, "{{ v.name }}")
 		}
-		if int64({{ f.name }}.{{ f.name | to_pascal_case }}{{ v.name | to_pascal_case }}) != spec.Variants[{{ loop.index0 }}].Value {
+		if int64({{ f.name }}.{{ v.ident }}) != spec.Variants[{{ loop.index0 }}].Value {
 			t.Errorf("{{ f.name }}.{{ v.name }} = %d, want %d",
-				int64({{ f.name }}.{{ f.name | to_pascal_case }}{{ v.name | to_pascal_case }}),
+				int64({{ f.name }}.{{ v.ident }}),
 				spec.Variants[{{ loop.index0 }}].Value)
 		}
 {% endfor %}

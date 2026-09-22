@@ -5,8 +5,9 @@
 
    The oracle compares the NUMBER each variant carries. The spelling is the
    language's business and differs across the arms, so the manifest carries
-   the SOURCE name and this fragment applies C++'s filter to it — the same
-   contract the codec fragments use for field names.
+   the SOURCE name, and `v.ident` is the member the declaration emits — put
+   there by the render from the generator's own spelling rule, so no arm
+   keeps a second copy of it.
 
    Comparing the declared VALUE and not the ordinal is the point: a
    conversion that dropped the values would emit 0..N-1 and satisfy any
@@ -28,10 +29,10 @@
             CHECK(o["name"].get<std::string>() == "{{ v.name }}",
                   "{{ f.name }} variant {{ loop.index0 }}: oracle names '%s', manifest '{{ v.name }}'",
                   o["name"].get<std::string>().c_str());
-            CHECK(static_cast<long long>(G::{{ f.name | to_pascal_case }}::{{ v.name | to_pascal_case }})
+            CHECK(static_cast<long long>(G::{{ f.name | to_pascal_case }}::{{ v.ident }})
                       == o["value"].get<long long>(),
                   "{{ f.name }}::{{ v.name }} = %lld, expected %lld",
-                  static_cast<long long>(G::{{ f.name | to_pascal_case }}::{{ v.name | to_pascal_case }}),
+                  static_cast<long long>(G::{{ f.name | to_pascal_case }}::{{ v.ident }}),
                   o["value"].get<long long>());
         }
 {% endfor %}

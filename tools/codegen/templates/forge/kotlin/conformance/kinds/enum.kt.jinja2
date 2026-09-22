@@ -2,9 +2,9 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
 
 {# Enum kind — see the C++ fragment for why the oracle compares VALUES and
-   keys on the source spelling. Kotlin renders a variant in SCREAMING_SNAKE
-   and carries the number in a `raw` property rather than as the constant
-   itself, so the comparison goes through `.raw`. #}
+   keys on the source spelling; `v.ident` is the member the declaration
+   emits. Kotlin carries the number in a `raw` property rather than as the
+   constant itself, so the comparison goes through `.raw`. #}
         val spec = ref["{{ f.ref_section }}"]!!.jsonObject["{{ f.name }}"]!!.jsonObject
         val variants = spec["variants"]!!.jsonArray
 
@@ -24,7 +24,7 @@
         )
         assertEquals(
             variants[{{ loop.index0 }}].jsonObject["value"]!!.jsonPrimitive.long,
-            {{ f.name | to_pascal_case }}.{{ v.name | to_upper_snake_case }}.raw.toLong(),
+            {{ f.name | to_pascal_case }}.{{ v.ident }}.raw.toLong(),
             "{{ f.name }}.{{ v.name }}",
         )
 {% endfor %}

@@ -2,9 +2,8 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
 
 {# Enum kind — see the C++ fragment for why the oracle compares VALUES and
-   keys on the source spelling. Python renders a variant in SCREAMING_SNAKE,
-   which is why the name in the manifest is the document's and not this
-   arm's. `spec` is bound by the harness. #}
+   keys on the source spelling; `v.ident` is the member the declaration
+   emits. `spec` is bound by the harness. #}
         variants = spec["variants"]
 
         # Count first: a vocabulary that gained or lost a variant without the
@@ -20,7 +19,7 @@
             "{{ f.name }} variant {{ loop.index0 }} name",
         )
         self.assertEqual(
-            int({{ f.name }}.{{ f.name | to_pascal_case }}.{{ v.name | to_upper_snake_case }}),
+            int({{ f.name }}.{{ f.name | to_pascal_case }}.{{ v.ident }}),
             variants[{{ loop.index0 }}]["value"],
             "{{ f.name }}.{{ v.name }}",
         )

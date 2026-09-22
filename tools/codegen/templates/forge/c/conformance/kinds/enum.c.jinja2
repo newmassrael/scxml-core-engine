@@ -7,10 +7,12 @@
    the expected values are materialised here as a static table rather than
    read at runtime. That is the same choice every other C11 fragment makes.
 
-   C has no namespaces, so a variant is `<UPPER_FIXTURE>_<UPPER_VARIANT>`.
-   The manifest carries the SOURCE spelling and this fragment applies C's
-   filter — the contract the codec fragments use for field names, and the
-   reason one manifest serves six arms whose conventions disagree.
+   C has no namespaces, so a variant's constant carries the type name. The
+   manifest carries the SOURCE spelling; `v.ident` is the constant the
+   declaration emits, put there by the render from the generator's own
+   spelling rule, so this fragment names no convention of its own. It used
+   to upper-case the fixture name where the declaration snake-cases it, and
+   the two agreed only while every fixture name was already snake case.
 
    ⚠ NOTE THE ASYMMETRY, because it decides how this arm is mutation-tested.
    The other five arms READ the oracle at run time; this one BAKES from the
@@ -26,7 +28,7 @@ static void test_{{ f.name }}(void) {
         long long actual;
     } variants[] = {
 {% for v in f.variants %}
-        { "{{ v.name }}", {{ v.value }}LL, (long long){{ f.name | upper }}_{{ v.name | to_upper_snake_case }} },
+        { "{{ v.name }}", {{ v.value }}LL, (long long){{ v.ident }} },
 {% endfor %}
     };
     const size_t n = sizeof(variants) / sizeof(variants[0]);

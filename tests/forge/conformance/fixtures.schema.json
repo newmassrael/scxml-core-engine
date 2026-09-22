@@ -97,7 +97,7 @@
       }
     },
     "EnumVariantFixture": {
-      "description": "One `<sce:variant name=\"...\" value=\"...\"/>` of an `sce:kind=\"enum\"`.\n\n`name` is the SOURCE spelling — the document's — and not any language's rendering of it. That is what makes one manifest serve six arms whose identifier conventions disagree, and it is the same choice the codec fixtures make for field names.",
+      "description": "One `<sce:variant name=\"...\" value=\"...\"/>` of an `sce:kind=\"enum\"`.\n\n`name` is the SOURCE spelling — the document's — and not any language's rendering of it. That is what makes one manifest serve six arms whose identifier conventions disagree; each arm's identifier is added at render time from the generator's own spelling rule, never typed here.",
       "type": "object",
       "required": [
         "name",
@@ -488,7 +488,7 @@
           }
         },
         {
-          "description": "A named value vocabulary (`sce:kind=\"enum\"`).\n\nThe one thing six languages must agree on is the NUMBER each variant carries, because that number is on a wire. Everything else about the emitted type differs by language and legitimately so: C++ and Rust spell a variant `GeneralReject`, Python and Kotlin `GENERAL_REJECT`, and Go prefixes the type name onto each constant.\n\nSo `variants` holds the SOURCE spelling the document writes, and each fragment applies its own case filter — the same contract the codec fixtures use for field names, and for the same reason: a canonical key that is not any one language's.",
+          "description": "A named value vocabulary (`sce:kind=\"enum\"`).\n\nThe one thing six languages must agree on is the NUMBER each variant carries, because that number is on a wire. Everything else about the emitted type differs by language and legitimately so: C++ and Rust spell a variant `GeneralReject`, Python and Kotlin `GENERAL_REJECT`, and Go prefixes the type name onto each constant.\n\nSo `variants` holds the SOURCE spelling the document writes — a canonical key that is not any one language's. The identifier each arm asserts on is not re-derived by the fragment: the render puts the declaration's own spelling beside each variant (see `fold_enum_identifiers`).",
           "type": "object",
           "required": [
             "kind",
