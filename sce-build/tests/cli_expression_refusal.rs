@@ -605,37 +605,98 @@ fn a_literal_written_as_a_call_is_reported_with_neither_a_choice_nor_a_fix() {
     );
 }
 
-/// The corpus this repository authors is lint-clean, which is what
-/// `scripts/gates/example-codegen.sh` now enforces for refusals too.
+/// Every statechart this repository AUTHORS, which is every tracked one
+/// outside the W3C corpus.
+///
+/// ⚠ DERIVED, NOT LISTED. This used to name `examples/*.scxml` and
+/// `integration_resources/*/*.scxml`, which is 56 of the 560 tracked
+/// statecharts, with no reason given for the other 504. Measured
+/// 2026-09-22 by checking all of them: five carry an expression
+/// refusal, four are W3C tests writing an illegal expression on purpose
+/// (309, 343, 344, 457) — and the fifth was
+/// `tests/integration/test_thermostat.scxml`, an authored document
+/// calling six functions it never declared, which the hand-written list
+/// did not reach.
+///
+/// `resources/` is the one exclusion and it is a provenance rule rather
+/// than a preference: the directory is the W3C IRP suite, fetched by
+/// `resources/download-tests.py` against `resources/manifest.xml`, so
+/// nothing in it is this repository's to write. A forge document is
+/// left out for a different reason — it carries no SCXML datamodel
+/// expression at all — and the generator's own `detect_kind` decides
+/// which is which rather than a path convention.
+fn authored_statecharts() -> Vec<String> {
+    common::repository::paths_git_tracks(&["*.scxml"])
+        .into_iter()
+        .filter(|rel| !rel.starts_with("resources/"))
+        .filter(|rel| {
+            let Ok(text) = std::fs::read_to_string(repo_root().join(rel)) else {
+                return false;
+            };
+            // A document that does not parse carries no expression
+            // either; `check` reports its own refusal and the sweep
+            // below reads no expression record from it.
+            matches!(
+                sce_build::forge::parser::detect_kind(&text),
+                Ok(None) | Ok(Some(sce_build::forge::model::ForgeKind::Statechart)) | Err(_)
+            )
+        })
+        .collect()
+}
+
+/// The corpus this repository authors is free of refused expressions,
+/// which is what `scripts/gates/example-codegen.sh` also enforces over
+/// the documents it lints.
 ///
 /// Asserted here as well as in the shell gate because that gate is
 /// `ci_only` — the registry gives it no push-time trigger, so it is
-/// judged in `example-codegen.yml` and nowhere else. Holding the same
-/// sweep in the workspace suite gives it a second lane, on a trigger set
-/// of its own, rather than one workflow deciding it alone.
+/// judged in `example-codegen.yml` and nowhere else. Holding the sweep
+/// in the workspace suite gives it a second lane, on a trigger set of
+/// its own, rather than one workflow deciding it alone. ⚠ The two
+/// populations are no longer the same: this one is derived (see
+/// [`authored_statecharts`]) and the gate's lint sweep still names two
+/// directories.
 #[test]
 fn every_authored_document_is_free_of_refused_expressions() {
-    let documents: Vec<String> = common::repository::paths_git_tracks(&[
-        "examples/*.scxml",
-        "integration_resources/*/*.scxml",
-    ]);
-    // The corpus was 35 documents when this bound was set; a discovery
-    // bug that swept nothing would otherwise read as a pass.
+    let documents = authored_statecharts();
+    // 307 authored statecharts when this bound was set; a discovery bug
+    // that swept nothing would otherwise read as a pass.
     assert!(
-        documents.len() >= 30,
+        documents.len() >= 250,
         "swept only {} authored document(s)",
         documents.len()
     );
 
-    let mut carrying = Vec::new();
-    for document in &documents {
-        let run = run(&["check", document, "--error-format=json"]);
-        for record in records(&run.stderr) {
-            if record["stage"] == "expression" {
-                carrying.push(format!("{document}: {}", record["message"]));
-            }
-        }
-    }
+    // One `check` per document, spread over the machine: the sweep is
+    // 300-odd subprocesses at roughly a second each, and running them
+    // one after another is the difference between a test that is part
+    // of the suite and one nobody runs.
+    let threads = std::thread::available_parallelism().map_or(4, std::num::NonZeroUsize::get);
+    let chunk = documents.len().div_ceil(threads);
+    let carrying: Vec<String> = std::thread::scope(|scope| {
+        let handles: Vec<_> = documents
+            .chunks(chunk.max(1))
+            .map(|slice| {
+                scope.spawn(move || {
+                    let mut found = Vec::new();
+                    for document in slice {
+                        let run = run(&["check", document, "--error-format=json"]);
+                        for record in records(&run.stderr) {
+                            if record["stage"] == "expression" {
+                                found.push(format!("{document}: {}", record["message"]));
+                            }
+                        }
+                    }
+                    found
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .flat_map(|h| h.join().expect("sweep thread"))
+            .collect()
+    });
+
     assert!(
         carrying.is_empty(),
         "authored document(s) carry a refused expression:\n{}",

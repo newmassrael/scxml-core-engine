@@ -500,15 +500,19 @@ fn a_native_guard_lowers_the_same_on_both_doors() {
 #[test]
 fn every_guard_the_backends_emit_natively_has_a_value() {
     let root = repo_root();
-    let documents: Vec<String> = common::repository::paths_git_tracks(&[
-        "resources/*/*.scxml",
-        "integration_resources/*/*.scxml",
-        "examples/*/*.scxml",
-    ]);
-    // The corpus was 240 documents when this bound was set; a discovery
-    // bug that swept nothing would otherwise read as a pass.
+    // Every document the repository tracks, not a list of directories: the
+    // claim is about what the emitters see, and they see whatever a caller
+    // hands them. The list this replaced named three roots and so read 309
+    // of the 560 tracked statecharts (measured 2026-09-22) — the test
+    // fixtures, `tests/integration` and the backend integration trees were
+    // outside it without a reason given. A document that does not parse,
+    // or needs a script engine, is skipped below on what it IS rather than
+    // on where it lives.
+    let documents: Vec<String> = common::repository::paths_git_tracks(&["*.scxml"]);
+    // The repository tracked 764 `.scxml` when this bound was set; a
+    // discovery bug that swept nothing would otherwise read as a pass.
     assert!(
-        documents.len() >= 200,
+        documents.len() >= 700,
         "swept only {} document(s)",
         documents.len()
     );

@@ -31,8 +31,22 @@
 # machine to raise `error.execution` instead — so it is reported on every
 # run and fatal only here, where the author has no conformance excuse for
 # writing one. `sce-build/tests/cli_expression_refusal.rs` asserts the
-# same sweep from Rust, so the refusal has a check that runs with the
-# workspace tests rather than only where this gate runs.
+# refusal half from Rust, so it has a check that runs with the workspace
+# tests rather than only where this gate runs.
+#
+# ⚠ THE TWO POPULATIONS ARE NOT THE SAME, and the difference is the lint
+# half. The Rust sweep is derived — every tracked statechart outside the
+# W3C corpus, 307 of them — while the loop below still names two
+# directories, because `--lint` asks more than "is this expression
+# refused". Measured 2026-09-22 over the derived population: plain
+# `check` accepts 228 of them and `--lint` refuses 12. Ten are
+# `<xi:include>` FRAGMENTS under tests/parsing/fixtures, whose
+# unreachable states are what being a fragment means; one is
+# tests/mesh/srcexpr_miss.scxml, whose unreachable `phantom` state works
+# around the generator emitting no transport for a srcexpr-only
+# document; one is the no_std probe, whose deliberate event-handling gap
+# is undeclared. Widening this loop waits on those three repairs — none
+# of them is an exemption list.
 #
 # This gate is `ci_only`: the registry gives it no push-time trigger,
 # because generating from every authored document is work proportional to
