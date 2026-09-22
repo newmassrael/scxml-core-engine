@@ -261,7 +261,13 @@ def read_document(path: pathlib.Path) -> Document:
         path=path,
         inputs=tuple(inputs),
         outputs=tuple(outputs),
-        kind=root.get(f"{SCE_NS}kind", ""),
+        # ⚠ No `sce:kind` is a STATECHART, as the product reads it: a forge
+        # kind is opt-in, and a plain SCXML document goes the statechart way
+        # (`forge::parser::parse_forge` answers "not a forge document"). This
+        # read an absent kind as '' -- measured 2026-09-22, an author writing
+        # plain SCXML from a brief had a document `check` accepted and
+        # `verify` then refused as a kind it could not drive.
+        kind=root.get(f"{SCE_NS}kind") or "statechart",
         assumed=assumed,
         unresolved=unresolved,
         reads=reads,

@@ -766,6 +766,39 @@ MAX_OPEN_INPUTS = 6
 _NOT_WRITTEN = object()
 
 
+def _names_value(key, value) -> bool:
+    """Whether a binding key -- in a `map` or a `when` -- names the value the
+    document produced.
+
+    ⚠ A document output declared `bool` arrives as True or False, and a
+    binding writes its two cases as `0`/`1`, as `true`/`false`, or as YAML's
+    own booleans: three spellings of the same two cases, all of which the
+    schema admits and `check` accepts. Matching one spelling made a boolean
+    output unmappable under the other two. Measured 2026-09-22: two authors
+    writing from a brief both wrote `true`/`false`, `check` passed both
+    bindings, and every case of both was then unjudged with "the binding's
+    map has no entry" -- a verdict about the verifier, reported as one about
+    the binding.
+    """
+    if isinstance(value, bool):
+        if isinstance(key, bool):
+            return key is value
+        return str(key).strip().lower() in (("1", "true") if value else ("0", "false"))
+    if isinstance(key, bool):
+        # A truth value names no number and no symbol.
+        return False
+    return str(key) == str(value)
+
+
+def _mapped(table: dict, value) -> tuple[bool, object]:
+    """The entry of a binding's `map` that names `value`: (True, what it
+    writes), or (False, None) when no key names it."""
+    for key, written in table.items():
+        if _names_value(key, value):
+            return True, written
+    return False, None
+
+
 def _held(name: str, rule: dict, value, history) -> object:
     """The value a `hold_last` rule writes this round.
 
@@ -781,9 +814,7 @@ def _held(name: str, rule: dict, value, history) -> object:
         raise VerifyError(
             f"output {name!r}: `hold_last` holds a MAPPED value, and this rule "
             f"has no map -- there is nothing a value could fail to be found in")
-    table = {str(k) for k in rule["map"]}
-    wanted = str(int(value)) if isinstance(value, bool) else str(value)
-    if wanted in table:
+    if _mapped(rule["map"], value)[0]:
         return value
     return history.held.get(name, _NOT_WRITTEN)
 
@@ -954,18 +985,18 @@ def output_values(name: str, rule: dict, computed) -> dict:
     out = {}
     key = address + (f".{rule['field']}" if rule.get("field") else "")
     if "map" in rule:
-        table = {str(k): v for k, v in rule["map"].items()}
         # ⚠ A document output declared `bool` arrives as True/False, and a map
-        # of a two-valued field is naturally written 0/1. Those are the same
-        # two cases, and comparing the spellings made every boolean output
-        # unmappable -- reported as "the binding's map has no entry", which
-        # sends a reader to edit a binding that was right.
-        wanted = str(int(computed)) if isinstance(computed, bool) else str(computed)
-        if wanted not in table:
+        # of a two-valued field is written 0/1, true/false, or as YAML's own
+        # booleans. Those are the same two cases, and comparing spellings made
+        # a boolean output unmappable -- reported as "the binding's map has no
+        # entry", which sends a reader to edit a binding that was right. One
+        # reading for every site, `_names_value`.
+        found, written = _mapped(rule["map"], computed)
+        if not found:
             raise VerifyError(
                 f"output {name!r}: the document produced {computed!r} and the "
                 f"binding's map has no entry for it")
-        out[key] = table[wanted]
+        out[key] = written
     elif rule.get("passthrough"):
         out[key] = computed
     else:
@@ -975,7 +1006,7 @@ def output_values(name: str, rule: dict, computed) -> dict:
     # `when` first and `also` after, which is the order the schema states: a
     # default in `also` fills what `when` left alone rather than replacing it.
     for value, fields in (rule.get("when") or {}).items():
-        if str(value) == str(computed):
+        if _names_value(value, computed):
             for fname, fvalue in fields.items():
                 out[f"{address}.{fname}"] = fvalue
     for fname, fvalue in (rule.get("also") or {}).items():

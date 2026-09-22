@@ -257,6 +257,20 @@ class AStatechartIsDrivenNotCalled(unittest.TestCase):
                          (result.passed, result.failed, result.unjudged),
                          [(r.name, r.refusal, r.failures) for r in result.results])
 
+    def test_plain_scxml_with_no_kind_is_a_statechart(self):
+        """⚠ A forge kind is opt-in, and the product reads a document that
+        names none as a statechart. The core read the absent kind as '' and
+        refused to drive it -- measured when an author wrote plain SCXML from
+        a brief, `check` passed it and `verify` then refused it."""
+        plain = DOCUMENT.replace('\n       sce:kind="statechart"', "")
+        self.assertNotIn("sce:kind", plain)
+        (self.tmp / "signal.scxml").write_text(plain, encoding="utf-8")
+        result = self.run_with()
+        self.assertTrue(result.ran, result.refusal)
+        self.assertEqual((2, 0, 0),
+                         (result.passed, result.failed, result.unjudged),
+                         [(r.name, r.refusal, r.failures) for r in result.results])
+
     def test_a_record_that_writes_codes_drives_the_same_events(self):
         """⚠ The spelling the record keeps is not the binding's business.
 
