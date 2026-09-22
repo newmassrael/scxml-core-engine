@@ -38,9 +38,10 @@
 // exactly what §scxml-3.4 says. Aiming at the RULE TEXT rather than at
 // the file is what keeps this from becoming a ban on a clause number.
 
+mod common;
+
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -147,14 +148,8 @@ const MIN_RULE_SITES: usize = 30;
 
 fn tracked_sources() -> Vec<PathBuf> {
     let root = repo_root();
-    let out = Command::new("git")
-        .args(["-C", &root.display().to_string(), "ls-files"])
-        .output()
-        .expect("git ls-files runs");
-    assert!(out.status.success(), "git ls-files failed");
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .filter(|l| !l.is_empty())
+    common::repository::paths_git_tracks(&[])
+        .into_iter()
         .map(|l| root.join(l))
         .collect()
 }

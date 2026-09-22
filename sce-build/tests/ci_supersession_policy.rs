@@ -182,6 +182,8 @@
 //! the table against the directory in BOTH directions, so a new workflow is red
 //! until somebody measures it -- unclassified is not a pass.
 
+mod common;
+
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -920,15 +922,9 @@ fn claims(text: &str) -> Vec<Claim> {
 /// Every file git tracks, as an absolute path.
 fn tracked_files() -> Vec<PathBuf> {
     let root = repo_root();
-    let out = std::process::Command::new("git")
-        .args(["-C", &root.display().to_string(), "ls-files", "-z"])
-        .output()
-        .expect("git ls-files runs");
-    assert!(out.status.success(), "git ls-files failed: {out:?}");
-    out.stdout
-        .split(|b| *b == 0)
-        .filter(|s| !s.is_empty())
-        .map(|s| root.join(String::from_utf8_lossy(s).into_owned()))
+    common::repository::paths_git_tracks(&[])
+        .into_iter()
+        .map(|p| root.join(p))
         .collect()
 }
 

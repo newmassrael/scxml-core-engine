@@ -125,17 +125,8 @@ fn repo_root() -> PathBuf {
 /// not be able to satisfy a row, and a configured build directory is
 /// full of files that would.
 fn tracked_files() -> BTreeSet<String> {
-    let out = std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo_root())
-        .args(["ls-files", "-z"])
-        .output()
-        .expect("git ls-files runs");
-    assert!(out.status.success(), "git ls-files must succeed");
-    String::from_utf8_lossy(&out.stdout)
-        .split('\0')
-        .filter(|p| !p.is_empty())
-        .map(str::to_string)
+    common::repository::paths_git_tracks(&[])
+        .into_iter()
         .collect()
 }
 

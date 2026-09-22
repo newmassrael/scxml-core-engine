@@ -29,6 +29,8 @@
 // caller names and belong to the drift-hash axis, which has its own
 // gate.
 
+mod common;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -76,16 +78,8 @@ const SCXML_ROOTS: &[&str] = &[
 /// makes those names ambiguous and, worse, lets the gate regenerate
 /// from a build product rather than from a source document.
 fn tracked_paths() -> std::collections::BTreeSet<String> {
-    let out = Command::new("git")
-        .args(["ls-files", "-z"])
-        .current_dir(repo_root())
-        .output()
-        .expect("git ls-files");
-    assert!(out.status.success(), "git ls-files failed");
-    out.stdout
-        .split(|b| *b == 0)
-        .filter(|s| !s.is_empty())
-        .map(|s| String::from_utf8_lossy(s).into_owned())
+    common::repository::paths_git_tracks(&[])
+        .into_iter()
         .collect()
 }
 

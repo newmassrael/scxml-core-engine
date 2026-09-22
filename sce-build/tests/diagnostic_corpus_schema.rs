@@ -25,6 +25,8 @@
 // its own target the unfiltered workflow runs one test rather than
 // that file's whole suite. See `workflow_trigger_coverage.rs`.
 
+mod common;
+
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -50,16 +52,8 @@ fn repo_root() -> PathBuf {
 /// this gate speaks for.
 fn tracked_fixture_documents() -> Vec<PathBuf> {
     let root = repo_root();
-    let out = Command::new("git")
-        .args(["ls-files", "-z", "sce-build/tests/fixtures"])
-        .current_dir(&root)
-        .output()
-        .expect("git ls-files");
-    assert!(out.status.success(), "git ls-files failed");
-    out.stdout
-        .split(|b| *b == 0)
-        .filter(|s| !s.is_empty())
-        .map(|s| String::from_utf8_lossy(s).into_owned())
+    common::repository::paths_git_tracks(&["sce-build/tests/fixtures"])
+        .into_iter()
         .filter(|rel| rel.ends_with(".scxml"))
         .map(|rel| root.join(rel))
         .collect()

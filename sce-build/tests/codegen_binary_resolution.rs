@@ -22,6 +22,8 @@
 //! binary at all. These tests pin that, the workflow's artifact path
 //! agreement, and the fact that the fallback actually works.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 
 /// The four files allowed to name the release profile: they are what
@@ -51,19 +53,8 @@ fn repo_root() -> PathBuf {
 /// Tracked files only — `git ls-files` is the enumeration source so
 /// gitignored artifacts (build trees, generated probe sources) never
 /// enter the gate and an untracked scratch file cannot red CI.
-fn tracked_files(root: &Path) -> Vec<String> {
-    let out = std::process::Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(["ls-files", "-z"])
-        .output()
-        .expect("git ls-files runs");
-    assert!(out.status.success(), "git ls-files must succeed");
-    String::from_utf8_lossy(&out.stdout)
-        .split('\0')
-        .filter(|p| !p.is_empty())
-        .map(|p| p.to_string())
-        .collect()
+fn tracked_files() -> Vec<String> {
+    common::repository::paths_git_tracks(&[])
 }
 
 /// `(line number, text)` for the lines of `text` that are not wholly a
@@ -100,7 +91,7 @@ fn nothing_outside_the_locators_names_the_release_profile() {
     let mut scanned = 0usize;
     let mut violations: Vec<String> = Vec::new();
 
-    for rel in tracked_files(&root) {
+    for rel in tracked_files() {
         if LOCATORS.contains(&rel.as_str()) {
             continue;
         }
@@ -160,7 +151,7 @@ fn nothing_outside_the_locators_reaches_into_a_profile_directory() {
     let mut scanned = 0usize;
     let mut violations: Vec<String> = Vec::new();
 
-    for rel in tracked_files(&root) {
+    for rel in tracked_files() {
         if LOCATORS.contains(&rel.as_str()) {
             continue;
         }
@@ -564,7 +555,7 @@ fn every_regen_script_sources_the_shell_locator() {
     let mut scanned = 0usize;
     let mut orphans: Vec<String> = Vec::new();
 
-    for rel in tracked_files(&root) {
+    for rel in tracked_files() {
         let Some(name) = rel.strip_prefix("scripts/") else {
             continue;
         };

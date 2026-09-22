@@ -42,6 +42,8 @@
 //!   answer only while the suite that holds it still opens it, so that is
 //!   the condition, and `readers_of` carries the reasoning.
 
+mod common;
+
 use sce_build::generator::{Language, ScriptEngineTarget};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -207,16 +209,7 @@ fn divergences() -> Vec<serde_json::Value> {
 /// Files tracked by git, so an untracked scratch copy cannot answer for the
 /// tree.
 fn tracked_files() -> Vec<String> {
-    let out = std::process::Command::new("git")
-        .args(["ls-files"])
-        .current_dir(repo_root())
-        .output()
-        .expect("git ls-files runs");
-    assert!(out.status.success(), "git ls-files failed");
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .map(str::to_string)
-        .collect()
+    common::repository::paths_git_tracks(&[])
 }
 
 /// The comment syntax of a file the suites are built from, or `None` for a

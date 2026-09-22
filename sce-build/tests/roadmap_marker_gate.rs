@@ -16,6 +16,8 @@
 // requires a token suffix (a digit-led token, a single letter, or
 // a letter+digit token after the separator).
 
+mod common;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -61,16 +63,8 @@ fn repo_root() -> PathBuf {
 /// build trees) never enter the gate, and an untracked scratch file
 /// cannot red CI.
 fn tracked_files(root: &Path) -> Vec<PathBuf> {
-    let out = std::process::Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(["ls-files", "-z"])
-        .output()
-        .expect("git ls-files runs");
-    assert!(out.status.success(), "git ls-files must succeed");
-    String::from_utf8_lossy(&out.stdout)
-        .split('\0')
-        .filter(|p| !p.is_empty())
+    common::repository::paths_git_tracks(&[])
+        .into_iter()
         .map(|p| root.join(p))
         .collect()
 }

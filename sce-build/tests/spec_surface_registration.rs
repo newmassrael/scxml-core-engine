@@ -39,6 +39,8 @@
 // sibling gate, a hand-listed set covered 6 of 16 trees and stayed green
 // while misclassifying 2000+ files as production.
 
+mod common;
+
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -66,21 +68,7 @@ const REGISTRY: &str = "SCE_WIRE_CONTRACTS.md";
 /// `build/`, `target/` and every other untracked tree by a list — the
 /// exact thing this file refuses to write.
 fn tracked_paths() -> Vec<String> {
-    let root = repo_root();
-    let out = std::process::Command::new("git")
-        .args(["-C", &root.display().to_string(), "ls-files"])
-        .output()
-        .expect("git ls-files runs");
-    assert!(
-        out.status.success(),
-        "git ls-files failed: {}",
-        String::from_utf8_lossy(&out.stderr),
-    );
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .filter(|l| !l.is_empty())
-        .map(str::to_owned)
-        .collect()
+    common::repository::paths_git_tracks(&[])
 }
 
 /// A candidate under a `fixtures/` DIRECTORY is one member of a corpus

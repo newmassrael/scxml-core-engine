@@ -31,6 +31,8 @@
 // `forge::symbol_mangling`; this gate decodes it with `demangle` rather
 // than restating it [[feedback-declared-coverage-is-not-coverage]].
 
+mod common;
+
 use sce_build::forge::sourcemap::Sourcemap;
 use sce_build::forge::symbol_mangling::demangle;
 use std::collections::BTreeMap;
@@ -50,16 +52,8 @@ fn sce_codegen_bin() -> PathBuf {
 
 /// Every sidecar git tracks, as repo-relative paths.
 fn tracked_sidecars() -> Vec<PathBuf> {
-    let out = Command::new("git")
-        .args(["ls-files", "*sce_sourcemap.json"])
-        .current_dir(repo_root())
-        .output()
-        .expect("git ls-files runs");
-    assert!(out.status.success(), "git ls-files failed");
-    String::from_utf8(out.stdout)
-        .expect("git output is utf-8")
-        .lines()
-        .filter(|l| !l.is_empty())
+    common::repository::paths_git_tracks(&["*sce_sourcemap.json"])
+        .into_iter()
         .map(PathBuf::from)
         .collect()
 }

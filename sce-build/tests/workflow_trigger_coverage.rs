@@ -1612,21 +1612,7 @@ fn is_committed_artefact(path: &Path) -> bool {
 /// Every tracked path, from git rather than from a directory walk, so
 /// build output and ignored trees cannot enter the population.
 fn tracked_files() -> Vec<String> {
-    let out = std::process::Command::new("git")
-        .args(["ls-files", "-z"])
-        .current_dir(repo_root())
-        .output()
-        .expect("git ls-files runs in the repository");
-    assert!(
-        out.status.success(),
-        "git ls-files failed: {:?}",
-        out.status
-    );
-    String::from_utf8_lossy(&out.stdout)
-        .split('\0')
-        .filter(|s| !s.is_empty())
-        .map(str::to_owned)
-        .collect()
+    common::repository::paths_git_tracks(&[])
 }
 
 /// Whether `path` matches one GitHub Actions `paths:` filter pattern.

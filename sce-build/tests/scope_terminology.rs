@@ -22,9 +22,10 @@
 // violations and pass, which is the failure mode that lets a term creep
 // back one commit at a time.
 
+mod common;
+
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -151,14 +152,8 @@ const MIN_SCANNED_FILES: usize = 5000;
 /// ignored build output cannot affect the verdict.
 fn tracked_sources() -> Vec<PathBuf> {
     let root = repo_root();
-    let out = Command::new("git")
-        .args(["-C", &root.display().to_string(), "ls-files"])
-        .output()
-        .expect("git ls-files runs");
-    assert!(out.status.success(), "git ls-files failed");
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .filter(|l| !l.is_empty())
+    common::repository::paths_git_tracks(&[])
+        .into_iter()
         .map(|l| root.join(l))
         .collect()
 }

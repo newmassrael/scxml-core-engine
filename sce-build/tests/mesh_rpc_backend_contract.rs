@@ -45,6 +45,8 @@
 //! Rule 3 is what keeps rules 1-2 from being a table that only agrees with
 //! itself: the doc, the template tree and the binary have to say one thing.
 
+mod common;
+
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -192,15 +194,8 @@ fn contract_rows() -> Vec<Row> {
 /// directory under the template root is not a backend anyone can generate
 /// from, and a directory holding no tracked file renders nothing.
 fn tracked_mesh_dirs() -> BTreeSet<String> {
-    let out = Command::new("git")
-        .args(["ls-files", "--", MESH_TEMPLATE_ROOT])
-        .current_dir(repo_root())
-        .output()
-        .expect("git ls-files runs");
-    assert!(out.status.success(), "git ls-files failed");
-
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
+    common::repository::paths_git_tracks(&[MESH_TEMPLATE_ROOT])
+        .iter()
         .filter_map(|p| {
             p.strip_prefix(MESH_TEMPLATE_ROOT)?
                 .trim_start_matches('/')

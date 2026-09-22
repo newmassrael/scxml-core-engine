@@ -110,7 +110,6 @@ mod common;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use common::rust_source::{code_mask, code_only};
 use common::source_lexing::{
@@ -625,8 +624,8 @@ fn repo_root() -> PathBuf {
 /// about the tree as committed, and an untracked scratch file is not part of
 /// it. That also makes this gate's inputs wider than any `paths:` filter,
 /// which is why it is registered in `UNFILTERABLE_GATES`.
-fn production_sources(root: &Path) -> Vec<(String, Lang)> {
-    tracked_files(root)
+fn production_sources() -> Vec<(String, Lang)> {
+    tracked_files()
         .into_iter()
         .filter(|p| is_production(p))
         .filter_map(|p| language_of(&p).map(|l| (p, l)))
@@ -634,16 +633,8 @@ fn production_sources(root: &Path) -> Vec<(String, Lang)> {
 }
 
 /// Every path `git` tracks.
-fn tracked_files(root: &Path) -> Vec<String> {
-    let out = Command::new("git")
-        .args(["-C", &root.display().to_string(), "ls-files"])
-        .output()
-        .expect("git ls-files");
-    assert!(out.status.success(), "git ls-files failed");
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .map(str::to_string)
-        .collect()
+fn tracked_files() -> Vec<String> {
+    common::repository::paths_git_tracks(&[])
 }
 
 /// Every name in a position that runs, in ONE file.
@@ -700,7 +691,7 @@ fn refusals_in(path: &str, source: &str, lang: Lang) -> Vec<Hit> {
 fn sweep(root: &Path) -> (Vec<Hit>, BTreeMap<&'static str, usize>) {
     let mut hits = Vec::new();
     let mut per_language: BTreeMap<&'static str, usize> = BTreeMap::new();
-    for (path, lang) in production_sources(root) {
+    for (path, lang) in production_sources() {
         let Ok(source) = std::fs::read_to_string(root.join(&path)) else {
             continue;
         };
@@ -876,7 +867,7 @@ fn every_entry_is_still_carrying_weight() {
 #[test]
 fn the_test_trees_are_derived_not_listed() {
     const FLOOR: usize = 14;
-    let excluded: std::collections::BTreeSet<String> = tracked_files(&repo_root())
+    let excluded: std::collections::BTreeSet<String> = tracked_files()
         .into_iter()
         .filter(|p| !is_production(p))
         .filter_map(|p| test_tree_of(&p))
@@ -993,8 +984,7 @@ fn the_sweep_reads_the_tree_it_claims_to() {
 /// directory. This is what makes that arrival a red instead.
 #[test]
 fn every_template_resolves_to_a_target_language() {
-    let root = repo_root();
-    let undeclared: Vec<String> = production_sources(&root)
+    let undeclared: Vec<String> = production_sources()
         .into_iter()
         .filter(|(p, l)| matches!(l, Lang::Template(_)) && !template_target_is_declared(p))
         .map(|(p, _)| format!("  {p}"))

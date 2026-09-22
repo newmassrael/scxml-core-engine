@@ -222,15 +222,8 @@ fn declared_oracles(casefile: &str) -> Vec<String> {
 /// Every path git tracks, for asking whether a declaration names a real file
 /// rather than one somebody moved.
 fn tracked_files() -> BTreeSet<String> {
-    let out = Command::new("git")
-        .args(["ls-files"])
-        .current_dir(repo_root())
-        .output()
-        .expect("git ls-files");
-    assert!(out.status.success(), "git ls-files failed");
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .map(str::to_string)
+    common::repository::paths_git_tracks(&[])
+        .into_iter()
         .collect()
 }
 

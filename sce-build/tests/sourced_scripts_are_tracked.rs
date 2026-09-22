@@ -17,9 +17,10 @@
 // asked whether a sourced path is something git would hand a fresh
 // clone. This gate asks exactly that.
 
+mod common;
+
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -28,17 +29,12 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// TRACKED only, never what the repository merely holds: an untracked
+/// script a gate sources is exactly what this suite exists to report, so
+/// a population that counted it would call it fine.
 fn tracked_paths() -> BTreeSet<String> {
-    let out = Command::new("git")
-        .args(["ls-files", "-z"])
-        .current_dir(repo_root())
-        .output()
-        .expect("git ls-files");
-    assert!(out.status.success(), "git ls-files failed");
-    out.stdout
-        .split(|b| *b == 0)
-        .filter(|s| !s.is_empty())
-        .map(|s| String::from_utf8_lossy(s).into_owned())
+    common::repository::paths_git_tracks(&[])
+        .into_iter()
         .collect()
 }
 

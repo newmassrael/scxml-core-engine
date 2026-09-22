@@ -55,6 +55,8 @@
 // not the producer's proposal. `ROUNDTRIPS_PERFORMED_MIN` keeps the
 // substitution half from silently emptying out.
 
+mod common;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -82,17 +84,7 @@ fn repo_root() -> PathBuf {
 /// generator output, and a document nobody committed is not part of
 /// the corpus this gate speaks for.
 fn tracked_documents() -> Vec<String> {
-    let out = Command::new("git")
-        .args(["ls-files", "-z", "*.scxml"])
-        .current_dir(repo_root())
-        .output()
-        .expect("git ls-files");
-    assert!(out.status.success(), "git ls-files failed");
-    out.stdout
-        .split(|b| *b == 0)
-        .filter(|s| !s.is_empty())
-        .map(|s| String::from_utf8_lossy(s).into_owned())
-        .collect()
+    common::repository::paths_git_tracks(&["*.scxml"])
 }
 
 /// Lower bounds. Every per-record assertion is vacuously true over an

@@ -51,9 +51,10 @@
 //! move is to leave a script out rather than to add it and then paper over
 //! the result with 74 registry entries that argue nothing.
 
+mod common;
+
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 /// A script this gate reads, and the ranges that spell it.
 ///
@@ -164,16 +165,11 @@ fn repo_root() -> PathBuf {
 /// neighbouring tree-wide gates give: the claim is about the tree as
 /// committed, and that also makes this gate's inputs wider than any
 /// `paths:` filter — which is why it is registered in `UNFILTERABLE_GATES`.
-fn tracked_files(root: &Path) -> Vec<String> {
-    let out = Command::new("git")
-        .args(["-C", &root.display().to_string(), "ls-files"])
-        .output()
-        .expect("git ls-files");
-    assert!(out.status.success(), "git ls-files failed");
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .map(str::to_string)
-        .collect()
+/// Every tracked path, read with `-z` — a gate whose subject is non-Latin
+/// text is the one most exposed to a reading that quotes non-ASCII paths
+/// into names no file has.
+fn tracked_files() -> Vec<String> {
+    common::repository::paths_git_tracks(&[])
 }
 
 /// One offending line, for a message the reader can act on without
@@ -212,7 +208,7 @@ fn hits_in(path: &str, text: &str) -> Vec<Hit> {
 /// removes every one of those without a suffix list to maintain — and a
 /// Shift-JIS document under a vendored tree drops out by the same rule.
 fn judged_files(root: &Path) -> Vec<(String, String)> {
-    tracked_files(root)
+    tracked_files()
         .into_iter()
         .filter(|p| !NOT_OURS.iter().any(|d| p.starts_with(d)))
         .filter_map(|p| {
