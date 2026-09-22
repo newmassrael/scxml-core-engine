@@ -21,6 +21,8 @@
 //! the RFC's `[[feedback-design-preflight]]` one-atomic-one-scope
 //! discipline.
 
+mod common;
+
 use sce_build::forge::drift::{compute_source_hash, compute_template_hash, DriftHashes};
 use sce_build::generator::GeneratedOutput;
 use std::fs;
@@ -849,23 +851,23 @@ fn committed_trees_carry_a_pinned_generated_at() {
     // Adding them was green on the spot — all 64 existing integration files
     // were already pinned — so what the gap cost was not a dirty tree but the
     // guarantee: two thirds of a stem's committed output was unwatched.
+    //
+    // `backends/go/tests/generated` is not listed, though it used to be:
+    // `.gitignore` excludes it, so no commit carries it and it has no
+    // committed stamp to pin. A directory walk read it anyway and judged
+    // whatever the last local regeneration had left there.
     let roots = [
         "backends/rust/tests/src/generated",
         "backends/rust/tests/src/integration",
         "backends/kotlin/tests/src/main/kotlin/com/sce/generated",
         "backends/kotlin/tests/src/main/kotlin/com/sce/integration",
-        "backends/go/tests/generated",
         "backends/go/tests/integration",
     ];
 
     let mut checked = 0usize;
     let mut unpinned: Vec<String> = Vec::new();
     for rel in roots {
-        let root = workspace.join(rel);
-        if !root.is_dir() {
-            continue;
-        }
-        collect_generated_at(&root, &mut checked, &mut unpinned);
+        collect_generated_at(&workspace, rel, &mut checked, &mut unpinned);
     }
 
     assert!(
@@ -887,19 +889,22 @@ fn committed_trees_carry_a_pinned_generated_at() {
     );
 }
 
-/// Recursive helper for [`committed_trees_carry_a_pinned_generated_at`].
-/// Only files that actually carry a §synth-6.2.6 header are considered —
-/// hand-written siblings in the same tree are not generated output.
-fn collect_generated_at(dir: &Path, checked: &mut usize, unpinned: &mut Vec<String>) {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            collect_generated_at(&path, checked, unpinned);
-            continue;
-        }
+/// Helper for [`committed_trees_carry_a_pinned_generated_at`]: every file
+/// git tracks under `rel`. Only files that actually carry a §synth-6.2.6
+/// header are considered — hand-written siblings in the same tree are not
+/// generated output.
+///
+/// Tracked rather than walked, because the claim is about COMMITTED
+/// output: a walk also judged files a local regeneration wrote and nobody
+/// committed, so the verdict depended on the working tree.
+fn collect_generated_at(
+    workspace: &Path,
+    rel: &str,
+    checked: &mut usize,
+    unpinned: &mut Vec<String>,
+) {
+    for tracked in common::repository::paths_git_tracks(&[rel]) {
+        let path = workspace.join(&tracked);
         let Ok(content) = fs::read_to_string(&path) else {
             continue;
         };

@@ -23,11 +23,14 @@
 // target; the pattern is anchored on a spec citation, so only a line
 // number attached to one is rejected.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 
-/// Directories scanned for citations. Walked rather than listed —
-/// a gate that reads a hand-kept file list reports full coverage while
-/// checking whatever the author had open (measured, in this repo, at 8%).
+/// Directories scanned for citations. Every file git tracks under them is
+/// read, rather than a list of files — a gate that reads a hand-kept file
+/// list reports full coverage while checking whatever the author had open
+/// (measured, in this repo, at 8%).
 const SCAN_ROOTS: &[&str] = &["sce-build/src", "sce/include", "tools", "tests", "backends"];
 
 const EXTENSIONS: &[&str] = &[
@@ -69,36 +72,28 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
+/// Every tracked source under `SCAN_ROOTS` carrying one of `EXTENSIONS`.
+///
+/// Tracked rather than walked: a citation in a file nobody committed is
+/// nobody's citation, and a walk judged whatever lay beside the sources.
 fn source_files(root: &Path) -> Vec<PathBuf> {
-    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            if path.is_dir() {
-                // `build` / `target` hold generated copies of the same
-                // comments; scanning them double-reports one defect.
-                if !matches!(name.as_ref(), "build" | "target" | "node_modules")
-                    && !name.starts_with('.')
-                {
-                    walk(&path, out);
-                }
-            } else if path
-                .extension()
-                .and_then(|e| e.to_str())
-                .is_some_and(|e| EXTENSIONS.contains(&e))
-            {
-                out.push(path);
-            }
-        }
-    }
-    let mut found = Vec::new();
-    for r in SCAN_ROOTS {
-        walk(&root.join(r), &mut found);
-    }
+    let mut found: Vec<PathBuf> = common::repository::paths_git_tracks(SCAN_ROOTS)
+        .into_iter()
+        .filter(|rel| {
+            let (dirs, _) = rel.rsplit_once('/').unwrap_or(("", rel));
+            // `build` / `target` hold generated copies of the same
+            // comments; scanning them double-reports one defect.
+            let generated = dirs
+                .split('/')
+                .any(|d| matches!(d, "build" | "target" | "node_modules") || d.starts_with('.'));
+            !generated
+                && Path::new(rel)
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .is_some_and(|e| EXTENSIONS.contains(&e))
+        })
+        .map(|rel| root.join(rel))
+        .collect();
     found.sort();
     found
 }

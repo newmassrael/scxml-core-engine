@@ -48,6 +48,8 @@
 // green while all three stated reasons had become false, because nothing asked
 // the tool. Now something does.
 
+mod common;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -298,7 +300,7 @@ fn each_named_gap_still_has_the_cause_it_names() {
     let mut unreached_now: Vec<String> = Vec::new();
     let mut asked: BTreeSet<&String> = BTreeSet::new();
     for dir in RUNTIMES {
-        for ext in source_extensions(&root, dir) {
+        for ext in source_extensions(dir) {
             let Some(lang) = extensions.get(&ext) else {
                 continue; // the axis never claimed to route this extension
             };
@@ -344,7 +346,7 @@ fn each_named_gap_still_has_the_cause_it_names() {
     let mut wrong: Vec<String> = Vec::new();
     for (dir, cause, reason) in UNREACHED {
         // The languages this tree is written in, through the tool's table.
-        let langs: BTreeSet<&String> = source_extensions(&root, dir)
+        let langs: BTreeSet<&String> = source_extensions(dir)
             .iter()
             .filter_map(|ext| extensions.get(ext))
             .collect();
@@ -389,7 +391,7 @@ fn each_named_gap_still_has_the_cause_it_names() {
         if named.contains(dir) {
             continue;
         }
-        for ext in source_extensions(&root, dir) {
+        for ext in source_extensions(dir) {
             if let Some(lang) = extensions.get(&ext) {
                 if unresolved_here.contains(lang) {
                     unnamed.push(format!("{dir}: `{ext}` is `{lang}`, unresolved here"));
@@ -494,23 +496,18 @@ fn parse_reach(text: &str) -> (BTreeSet<String>, BTreeMap<String, String>) {
 }
 
 /// Extensions of the hand-authored sources under one runtime tree.
-fn source_extensions(root: &Path, dir: &str) -> BTreeSet<String> {
-    fn walk(at: &Path, out: &mut BTreeSet<String>) {
-        let Ok(entries) = fs::read_dir(at) else {
-            return;
-        };
-        for e in entries.flatten() {
-            let p = e.path();
-            if p.is_dir() {
-                walk(&p, out);
-            } else if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
-                out.insert(format!(".{ext}"));
-            }
-        }
-    }
-    let mut out = BTreeSet::new();
-    walk(&root.join(dir), &mut out);
-    out
+///
+/// Tracked rather than walked: a walk also collected what local builds and
+/// test runs leave under a runtime. Measured 2026-09-22, the Kotlin
+/// runtime's untracked `build/` added thirteen extensions — `.class`,
+/// `.jar`, `.dex` among them — and the Python runtime held nineteen
+/// untracked files, none of which a CI checkout has.
+fn source_extensions(dir: &str) -> BTreeSet<String> {
+    common::repository::paths_git_tracks(&[dir])
+        .iter()
+        .filter_map(|p| Path::new(p).extension().and_then(|e| e.to_str()))
+        .map(|ext| format!(".{ext}"))
+        .collect()
 }
 
 /// The rev-pinned binary, or `None` when this machine has no build of it.

@@ -153,6 +153,10 @@ cargo test -p sce-build --features cli,ffi \
     --test an_action_uses_only_the_fields_its_tag_declares \
     --test the_analyzer_declares_which_fields_it_writes \
     --test transition_action_annotations \
+    --test b9_drift_detection \
+    --test a_value_written_into_a_string_literal_is_escaped \
+    --test codegen_depfile_coverage \
+    --test spec_citations_carry_no_line_numbers \
     --test an_identifier_is_checked_against_the_grammar_w3c_gives_it \
     --test a_name_the_generated_code_spells_is_a_code_identifier \
     --test non_latin_prose_declares_why_it_is_here \

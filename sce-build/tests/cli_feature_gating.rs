@@ -51,7 +51,7 @@
 
 use std::collections::BTreeSet;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 mod common;
 use common::gate_selectors::repo_root;
@@ -196,28 +196,22 @@ fn declared_targets() -> BTreeSet<String> {
     out
 }
 
-/// Every file under the command trees, plus the named ones.
+/// Every tracked file under the command trees, plus the named ones.
+///
+/// Tracked rather than walked: a script nobody committed runs on no other
+/// machine, and a walk judged whatever lay in `scripts/` locally. A tree
+/// that yields nothing is refused rather than read as empty — the walk
+/// panicked on a missing directory, and that loudness is kept.
 fn command_files() -> Vec<(String, String)> {
-    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
-        let entries = match fs::read_dir(dir) {
-            Ok(e) => e,
-            Err(e) => panic!("read {}: {}", dir.display(), e),
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                walk(&path, out);
-            } else {
-                out.push(path);
-            }
-        }
-    }
-
     let root = repo_root();
-    let mut paths = Vec::new();
+    let tracked = common::repository::paths_git_tracks(COMMAND_TREES);
     for tree in COMMAND_TREES {
-        walk(&root.join(tree), &mut paths);
+        assert!(
+            tracked.iter().any(|p| p.starts_with(&format!("{tree}/"))),
+            "no tracked file under {tree}; the command tree moved or the read is broken"
+        );
     }
+    let mut paths: Vec<PathBuf> = tracked.into_iter().map(|p| root.join(p)).collect();
     for file in COMMAND_FILES {
         paths.push(root.join(file));
     }

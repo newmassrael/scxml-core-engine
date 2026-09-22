@@ -23,7 +23,7 @@ use sce_build::literal_text::{
 use sce_build::template_lexing::{interpolations, Class, Syntax};
 use std::borrow::Cow;
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// The generator binary, named HERE rather than in the shared helper.
 ///
@@ -201,14 +201,11 @@ fn the_guard_stops_the_character_that_closes_a_raw_literal() {
 /// as a whole would report a healthy number.
 #[test]
 fn the_engine_finds_the_literals_the_templates_hold() {
-    let root = repo_root().join("tools/codegen/templates");
-    let mut files: Vec<PathBuf> = Vec::new();
-    collect_templates(&root, &mut files);
+    let files = shipped_templates();
     assert!(
         files.len() >= 200,
-        "only {} template(s) under {}; the walk has stopped reading them",
+        "only {} template(s) tracked under {TEMPLATE_ROOT}; the walk has stopped reading them",
         files.len(),
-        root.display()
     );
 
     for (syntax, name) in SYNTAXES {
@@ -333,18 +330,20 @@ fn the_census_the_documentation_cites_is_derived_from_the_tree() {
     );
 }
 
-fn collect_templates(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            collect_templates(&path, out);
-        } else if path.extension().is_some_and(|e| e == "jinja2") {
-            out.push(path);
-        }
-    }
+const TEMPLATE_ROOT: &str = "tools/codegen/templates";
+
+/// Every template the repository tracks under [`TEMPLATE_ROOT`].
+///
+/// Tracked rather than walked: the claim is about what ships, and a walk of
+/// the directory also read whatever an editor or a half-finished
+/// regeneration had left beside the templates.
+fn shipped_templates() -> Vec<PathBuf> {
+    let root = repo_root();
+    common::repository::paths_git_tracks(&[TEMPLATE_ROOT])
+        .into_iter()
+        .filter(|p| p.ends_with(".jinja2"))
+        .map(|p| root.join(p))
+        .collect()
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -599,9 +598,7 @@ fn hostile_free_text_stays_inside_the_literal_in_every_backend() {
 /// template and the line instead.
 #[test]
 fn no_shipped_template_writes_into_an_inadmissible_raw_literal() {
-    let root = repo_root().join("tools/codegen/templates");
-    let mut files: Vec<PathBuf> = Vec::new();
-    collect_templates(&root, &mut files);
+    let files = shipped_templates();
     let mut refused = Vec::new();
     let mut read = 0usize;
     for path in &files {

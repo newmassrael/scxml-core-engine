@@ -287,6 +287,21 @@ const UNFILTERABLE_GATES: &[&str] = &[
     "an_action_uses_only_the_fields_its_tag_declares",
     "the_analyzer_declares_which_fields_it_writes",
     "transition_action_annotations",
+    // Four sweeps of a named set of directories, each read from what git
+    // tracks there: committed generated trees keep a pinned stamp, every
+    // shipped template's literals are escaped, every CMake codegen step
+    // declares its inputs, no spec citation carries a line number. Each
+    // walked its directories from disk before 2026-09-22, which this
+    // registry's detector could not see. For two of them that was a hole,
+    // not a formality: the CMake and citation sweeps read `cmake/`,
+    // `tests/`, `tools/` and the non-Rust `backends/`, which no lane that
+    // runs them filters on, so a change there alone started nothing that
+    // judged it. The drift sweep was covered all along by
+    // `drift-verify.yml`, whose filter names its trees.
+    "b9_drift_detection",
+    "a_value_written_into_a_string_literal_is_escaped",
+    "codegen_depfile_coverage",
+    "spec_citations_carry_no_line_numbers",
     "test_result_gating",
     // Asks `git ls-files` for every tracked `*.sh` under `scripts/` and for
     // every `mnemosyne.toml`, and holds the Mnemosyne revision to one shell

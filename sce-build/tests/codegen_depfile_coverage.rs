@@ -27,18 +27,21 @@
 // This is a source-scanning gate, so it carries a floor: a scan that
 // silently matches nothing reads every bit as green as a correct tree.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 
 /// Roots under which every CMake file is scanned.
 ///
-/// Discovered by walking, not listed. A hand-kept list is what made the
-/// first version of this gate read as full coverage while checking 12 of
-/// the 153 codegen steps in the tree — it named the three files the
-/// author happened to be editing, and the generator is invoked from nine.
-/// The same defect the gate exists to catch, in the gate.
+/// Discovered from what git tracks under them, not listed. A hand-kept
+/// list is what made the first version of this gate read as full coverage
+/// while checking 12 of the 153 codegen steps in the tree — it named the
+/// three files the author happened to be editing, and the generator is
+/// invoked from nine. The same defect the gate exists to catch, in the
+/// gate.
 const SCAN_ROOTS: &[&str] = &["cmake", "tests", "backends"];
 
-/// Measured lower bound on codegen invocations found by that walk — read
+/// Measured lower bound on codegen invocations found that way — read
 /// off a run with the floor set impossibly high, not guessed. A step that
 /// stops being scanned (renamed file, changed invocation spelling, a root
 /// dropped above) pushes the count below it.
@@ -103,31 +106,22 @@ fn runs_codegen(body: &str) -> bool {
 
 /// Every `CMakeLists.txt` / `*.cmake` under `SCAN_ROOTS`, skipping build
 /// output. Sorted so a failure lists files in a stable order.
+///
+/// Tracked rather than walked: a CMake file nobody committed is not a step
+/// the build runs, and a walk read whatever a local configure had written.
 fn cmake_files(root: &Path) -> Vec<PathBuf> {
-    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            if path.is_dir() {
-                // Generated trees restate the source commands; scanning
-                // them would double-count and pin the floor to whatever
-                // happens to be configured locally.
-                if name != "build" && !name.starts_with('.') {
-                    walk(&path, out);
-                }
-            } else if name == "CMakeLists.txt" || name.ends_with(".cmake") {
-                out.push(path);
-            }
-        }
-    }
-    let mut found = Vec::new();
-    for r in SCAN_ROOTS {
-        walk(&root.join(r), &mut found);
-    }
+    let mut found: Vec<PathBuf> = common::repository::paths_git_tracks(SCAN_ROOTS)
+        .into_iter()
+        .filter(|rel| {
+            let (dirs, name) = rel.rsplit_once('/').unwrap_or(("", rel));
+            // Generated trees restate the source commands; scanning them
+            // would double-count and pin the floor to whatever happens to
+            // be configured locally.
+            let generated = dirs.split('/').any(|d| d == "build" || d.starts_with('.'));
+            !generated && (name == "CMakeLists.txt" || name.ends_with(".cmake"))
+        })
+        .map(|rel| root.join(rel))
+        .collect();
     found.sort();
     found
 }
