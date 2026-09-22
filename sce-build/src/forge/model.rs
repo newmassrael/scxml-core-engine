@@ -1434,9 +1434,18 @@ pub struct ProcedureSendAction {
     /// Address expression — typically a variable name (sce:addr attribute). Optional.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub addr: Option<String>,
+    /// The `sce:addr` attribute as written and where, so a refusal of the
+    /// address names it as the author spelled it, on its own row. Skipped
+    /// from serialization, as every position on this model is.
+    #[serde(skip)]
+    pub addr_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     /// Payload expression (sce:payload attribute). Optional.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub payload: Option<String>,
+    /// The `sce:payload` attribute as written and where, for the reason
+    /// [`ProcedureSendAction::addr_spelling`] gives.
+    #[serde(skip)]
+    pub payload_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     /// Cap on the bytes the service handler may return as `_event.data`,
     /// declared via `sce:response-max-size="N"`. `None` ⇒ fall back to
     /// [`crate::forge::limits::BYTES_DEFAULT_MAX`].

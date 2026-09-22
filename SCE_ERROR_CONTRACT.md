@@ -904,6 +904,7 @@ references against a real document and drift silently.
 | `validation/removed-attribute` | `validation` | `remove_fields` | SCE Mesh §13 |
 | `validation/require-either` | `validation` | `add_one_of` |  |
 | `validation/reserved-context-id` | `validation` | no |  |
+| `validation/send-operand-type` | `validation` | no | SCE Forge §4.5 |
 | `validation/singleton-violation` | `validation` | no |  |
 | `validation/transform-output-cycle` | `validation` | no |  |
 | `validation/unexpected-child-element` | `validation` | `replace_one_of` |  |

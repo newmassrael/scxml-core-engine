@@ -559,6 +559,11 @@ pub enum DiagnosticCode {
     /// rides `fix`: here the rule rides `expected` and there is no fix.
     #[serde(rename = "validation/attribute-rule-violated")]
     ValidationAttributeRuleViolated,
+    /// A procedure `<send>` operand of a type the service request cannot
+    /// carry. The operand as written is `actual`; the type it may have is
+    /// `expected`; there is no fix, since the repair is the author's.
+    #[serde(rename = "validation/send-operand-type")]
+    ValidationSendOperandType,
     /// A child element its parent does not take. The children it does
     /// take are a closed set, which rides `fix`.
     #[serde(rename = "validation/unexpected-child-element")]
@@ -3032,6 +3037,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationMissingAttribute,
         ValidationInvalidAttribute,
         ValidationAttributeRuleViolated,
+        ValidationSendOperandType,
         ValidationUnexpectedChildElement,
         ValidationUnknownSceAttribute,
         ValidationDefaultCoversUnknownVariant,
@@ -3615,6 +3621,9 @@ impl DiagnosticCode {
             ValidationDefaultCoversTestedVariant => Some("SCE Accepted Subset §2.2"),
             ValidationDefaultCoversNotAValueSpace => Some("SCE Accepted Subset §2.2"),
             ValidationInvalidDirection => Some("SCE Forge §3.3"),
+            // The procedure kind's section states what a `<send>`'s
+            // payload and address are.
+            ValidationSendOperandType => Some("SCE Forge §4.5"),
             ValidationWrongPipeline => Some("SCE Forge §4"),
 
             // ── Forge expression language (SCE_FORGE.md §3.4) ────
@@ -4338,6 +4347,7 @@ impl DiagnosticCode {
             ValidationMissingAttribute => "validation/missing-attribute",
             ValidationInvalidAttribute => "validation/invalid-attribute",
             ValidationAttributeRuleViolated => "validation/attribute-rule-violated",
+            ValidationSendOperandType => "validation/send-operand-type",
             ValidationUnexpectedChildElement => "validation/unexpected-child-element",
             ValidationUnknownSceAttribute => "validation/unknown-sce-attribute",
             ValidationDefaultCoversUnknownVariant => "validation/default-covers-unknown-variant",
@@ -5495,6 +5505,22 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: Some(value.clone()),
             fix: None,
             key_fragments: vec![element.clone(), attr.clone(), value.clone()],
+        },
+        // The operand as written is `actual`; what it is rides the message,
+        // and what it may be rides `expected`.
+        ValidationError::SendOperandType {
+            service,
+            attr,
+            observed,
+            found: _,
+            rule,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationSendOperandType,
+            stage: Stage::Validation,
+            expected: Some(vec![(*rule).to_string()]),
+            actual: Some(observed.clone()),
+            fix: None,
+            key_fragments: vec![service.clone(), (*attr).to_string(), observed.clone()],
         },
         // The tag as written is `actual`, and each child the parent takes
         // is spelled the same way, so a candidate stands where it stands.
@@ -9719,6 +9745,20 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:2ca78e103b7c0bd0","code":"validation/event-name-grammar","stage":"validation","spec":"W3C SCXML §3.12.1","message":"<transition event=\"go*/Y\">: 'go*/Y' is not a valid event descriptor — a token starts with a letter, digit or '_' and continues with letters, digits, '_' or '-', with '.' separating tokens","expected":["event descriptor"],"actual":"go*/Y"}"#,
+            ),
+            (
+                // The field as the attribute spells it is `actual`; its
+                // declared type is only the message's.
+                "forge/send-operand-type",
+                ValidationError::SendOperandType {
+                    service: "svc".into(),
+                    attr: "sce:payload",
+                    observed: "fileId".into(),
+                    found: "declared uint32".into(),
+                    rule: crate::forge::validate::PAYLOAD_RULE,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:ee74a7fa84cb51e0","code":"validation/send-operand-type","stage":"validation","spec":"SCE Forge §4.5","message":"<send sce:service=\"svc\">: sce:payload=\"fileId\" is declared uint32 — expected bytes — a codec's encode_to_vec(), or a bytes field; a scalar has no payload meaning without an endianness and a width, which is the decision a codec makes","expected":["bytes — a codec's encode_to_vec(), or a bytes field; a scalar has no payload meaning without an endianness and a width, which is the decision a codec makes"],"actual":"fileId"}"#,
             ),
             (
                 // An XML Name, and so a legal W3C `id` — but the generated
@@ -14466,6 +14506,9 @@ mod tests {
             // describes the position and names no replacement, which is
             // exactly why it left `invalid-attribute`'s candidate list.
             | ValidationAttributeRuleViolated
+            // The type a `<send>` operand may have is a rule, not a value
+            // to put there: which expression is meant is the author's.
+            | ValidationSendOperandType
             // The `<sce:flag-bind>` the import lacks is a child element,
             // which no `Fix` variant adds; it rides `expected` as what the
             // position requires. It used to ride `Fix::AddAttribute` with
@@ -15355,6 +15398,7 @@ mod tests {
                 | ValidationMissingElement
                 | ValidationMissingAttribute | ValidationInvalidAttribute
                 | ValidationAttributeRuleViolated
+                | ValidationSendOperandType
                 | ValidationUnexpectedChildElement
                 | ValidationUnknownSceAttribute
                 | ValidationDefaultCoversUnknownVariant
@@ -15688,9 +15732,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            376,
+            377,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 376 distinct variants to match the DiagnosticCode \
+             expected 377 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -16272,6 +16316,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationMissingAttribute
             | ValidationInvalidAttribute
             | ValidationAttributeRuleViolated
+            | ValidationSendOperandType
             | ValidationUnexpectedChildElement
             // Same bucket and the same reason as the sweep described
             // below: the unknown-attribute check runs over the

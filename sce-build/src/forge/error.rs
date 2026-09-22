@@ -532,6 +532,27 @@ pub enum ValidationError {
         rule: String,
     },
 
+    /// A procedure `<send>` hands its service an operand of a type the
+    /// service request cannot carry — a payload that is not bytes, an
+    /// address that is neither an integer nor a string.
+    ///
+    /// ⚠ The payload refusal was an [`ValidationError::AttributeRuleViolated`]
+    /// whose `value` was `"<name> (declared <type>)"`, so the record's
+    /// `actual` was a sentence no row of the document holds, and it carried
+    /// no line. `observed` is the operand as written — the `actual` — and
+    /// `found` is what it is, for the message.
+    #[error(
+        "<send sce:service=\"{service}\">: {attr}=\"{observed}\" is {found} — expected {rule}"
+    )]
+    SendOperandType {
+        service: String,
+        /// `sce:payload` or `sce:addr`.
+        attr: &'static str,
+        observed: String,
+        found: String,
+        rule: &'static str,
+    },
+
     /// An attribute in the SCE namespace that nothing in the parser
     /// reads.
     ///

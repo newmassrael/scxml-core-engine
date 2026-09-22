@@ -13,26 +13,16 @@
 //! exceeds the cap; this pass is the static counterpart that prevents
 //! self-contradicting SCXML from compiling at all.
 
-use crate::forge::error::ValidationError;
+use crate::forge::error::{ForgeError, Located, ValidationError};
 use crate::forge::limits::resolve_bytes_max;
 use crate::forge::model::{ProcedureModel, ProcedureState, SceType};
 
-/// Validate that every declared `sce:max-size` / `sce:response-max-size`
-/// / `sce:returns-max-size` annotation in the procedure is consistent
-/// with the destination slot it ultimately fills.
-///
-/// Rule (RFC §bytesguard-3 B1): for every `<assign location="X" expr="_event.data"/>`
-/// inside a transition leaving a state whose `<onentry>` contains a
-/// `<send>` with `sce:response-max-size=M`, and where `X` is a bytes-typed
-/// slot with `sce:max-size=N`, the constraint `M ≤ N` must hold. The
-/// resolved cap (annotation, else [`crate::forge::limits::BYTES_DEFAULT_MAX`])
-/// is the comparison target.
-///
-/// Returns the first violation encountered, mirroring the existing
-/// [`crate::forge::parser::parse_procedure`] convention of emitting one
-/// validation error at a time. Multi-violation aggregation is
-/// out-of-scope for this pass (consistent with how `parse_procedure`
-/// itself short-circuits on the first failure).
+/// What a `<send>`'s `sce:payload` may be, as a refusal names it
+/// (`SCE_FORGE.md` §4.5).
+pub const PAYLOAD_RULE: &str = "bytes — a codec's encode_to_vec(), or a bytes field; \
+     a scalar has no payload meaning without an endianness and a width, which is \
+     the decision a codec makes";
+
 /// Refuse a `sce:payload` that names a declared field which is not bytes.
 ///
 /// A procedure's payload is a wire blob: every runtime in this crate types
@@ -53,11 +43,15 @@ use crate::forge::model::{ProcedureModel, ProcedureState, SceType};
 /// or anything this pass cannot resolve is left alone — a checker that
 /// guessed at the rest would refuse working documents, which is the failure
 /// this one is meant to prevent, pointed the other way.
+///
+/// The refusal names the field as the attribute spells it, on the row it
+/// sits on. It carried no line until 2026-09-22 and put the sentence
+/// `"<name> (declared <type>)"` where its `actual` belongs, which no row
+/// of any document holds.
 pub fn validate_payload_is_bytes(
-    model: &crate::forge::model::ProcedureModel,
-) -> Result<(), Box<ValidationError>> {
-    use crate::forge::model::SceType;
-
+    model: &ProcedureModel,
+    doc_name: &str,
+) -> Result<(), Located<ForgeError>> {
     for state in &model.states {
         for send in &state.on_entry_sends {
             let Some(payload) = send.payload.as_ref() else {
@@ -75,20 +69,51 @@ pub fn validate_payload_is_bytes(
             if matches!(field.sce_type, SceType::Bytes) {
                 continue;
             }
-            return Err(Box::new(ValidationError::AttributeRuleViolated {
-                element: format!("<send sce:service=\"{}\">", send.service),
-                attr: "sce:payload".into(),
-                value: format!("{name} (declared {})", field.sce_type.as_attr()),
-                rule: "bytes — a codec's encode_to_vec(), or a bytes field. \
-                           A scalar has no payload meaning without an endianness \
-                           and a width, which is the decision a codec makes"
-                    .into(),
-            }));
+            let written = send
+                .payload_spelling
+                .as_ref()
+                .and_then(|spelling| spelling.locate_trimmed(0..name.len()));
+            let (line, col) = match written {
+                Some(written) => (Some(written.row), Some(written.col)),
+                None => (None, None),
+            };
+            return Err(Located::new(
+                ValidationError::SendOperandType {
+                    service: send.service.clone(),
+                    attr: "sce:payload",
+                    observed: written
+                        .and_then(|written| written.on_one_row())
+                        .unwrap_or(name)
+                        .to_string(),
+                    found: format!("declared {}", field.sce_type.as_attr()),
+                    rule: PAYLOAD_RULE,
+                }
+                .into(),
+                doc_name,
+                line,
+                col,
+            ));
         }
     }
     Ok(())
 }
 
+/// Validate that every declared `sce:max-size` / `sce:response-max-size`
+/// / `sce:returns-max-size` annotation in the procedure is consistent
+/// with the destination slot it ultimately fills.
+///
+/// Rule (RFC §bytesguard-3 B1): for every `<assign location="X" expr="_event.data"/>`
+/// inside a transition leaving a state whose `<onentry>` contains a
+/// `<send>` with `sce:response-max-size=M`, and where `X` is a bytes-typed
+/// slot with `sce:max-size=N`, the constraint `M ≤ N` must hold. The
+/// resolved cap (annotation, else [`crate::forge::limits::BYTES_DEFAULT_MAX`])
+/// is the comparison target.
+///
+/// Returns the first violation encountered, mirroring the existing
+/// [`crate::forge::parser::parse_procedure`] convention of emitting one
+/// validation error at a time. Multi-violation aggregation is
+/// out-of-scope for this pass (consistent with how `parse_procedure`
+/// itself short-circuits on the first failure).
 pub fn validate_bytes_max_size_consistency(
     model: &ProcedureModel,
 ) -> Result<(), Box<ValidationError>> {
@@ -212,7 +237,9 @@ mod tests {
                         service: "SecurityAccess".to_string(),
                         subfunc: Some("0x01".to_string()),
                         addr: None,
+                        addr_spelling: None,
                         payload: None,
+                        payload_spelling: None,
                         response_max_size: response_cap,
                     }],
                     done_params: Vec::new(),
@@ -281,5 +308,42 @@ mod tests {
         // resolver gates the check symmetrically.
         let model = build_model(None, None);
         assert!(validate_bytes_max_size_consistency(&model).is_ok());
+    }
+
+    /// A scalar payload is refused on the row its attribute sits on,
+    /// naming the field as written — the attribute here is on a row of its
+    /// own, below the `<send` it belongs to.
+    #[test]
+    fn a_scalar_payload_is_refused_on_its_own_row() {
+        use crate::forge::diagnostic::ToDiagnostics;
+        let document = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="procedure" name="probe" initial="a" version="1.0">
+  <datamodel><data id="fileId" sce:type="uint32" sce:direction="in"/></datamodel>
+  <state id="a">
+    <onentry>
+      <send sce:service="svc"
+            sce:payload="fileId"/>
+    </onentry>
+    <transition event="ok" target="d"/>
+  </state>
+  <final id="d"/>
+</scxml>"#;
+        let label = crate::DocumentLabel {
+            identifier: "probe",
+            diagnostic_label: "probe.scxml",
+        };
+        let refusal = crate::forge::parser::parse_forge_with_imports(document, label)
+            .expect_err("a uint32 payload is refused");
+        let record = &refusal.error.to_diagnostics()[0];
+        assert_eq!(
+            serde_json::to_string(&record.code).unwrap(),
+            "\"validation/send-operand-type\""
+        );
+        assert_eq!(record.actual.as_deref(), Some("fileId"));
+        assert_eq!(
+            (refusal.location.line, refusal.location.col),
+            (Some(7), Some(26)),
+            "{refusal:?}"
+        );
     }
 }

@@ -2766,6 +2766,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/missing-attribute` | Validation |
 | `validation/invalid-attribute` | Validation |
 | `validation/attribute-rule-violated` | Validation |
+| `validation/send-operand-type` | Validation |
 | `validation/unexpected-child-element` | Validation |
 | `validation/unknown-sce-attribute` | Validation |
 | `validation/default-covers-unknown-variant` | Validation |

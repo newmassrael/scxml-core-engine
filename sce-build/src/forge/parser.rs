@@ -5347,9 +5347,7 @@ fn parse_procedure(
     // A payload that is not bytes cannot be lowered by any backend — the
     // runtimes type it as a wire blob — so it is refused here rather than
     // emitted as source that does not compile.
-    if let Err(err) = crate::forge::validate::validate_payload_is_bytes(&model) {
-        return Err(located_at_line(label.diagnostic_label, None, err));
-    }
+    crate::forge::validate::validate_payload_is_bytes(&model, label.diagnostic_label)?;
 
     Ok(model)
 }
@@ -5581,7 +5579,9 @@ fn parse_procedure_onentry(
                 service,
                 subfunc,
                 addr,
+                addr_spelling: AttributeSpelling::of(&child, Some(SCE_NAMESPACE), "addr"),
                 payload,
+                payload_spelling: AttributeSpelling::of(&child, Some(SCE_NAMESPACE), "payload"),
                 response_max_size,
             });
         }

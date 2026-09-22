@@ -1659,7 +1659,9 @@ fn parse_procedure_state(
                 service: undo(service.trim_end_matches(':'), l.number)?,
                 subfunc: None,
                 addr: None,
+                addr_spelling: None,
                 payload: None,
+                payload_spelling: None,
                 response_max_size: None,
             };
             for k in sub {
