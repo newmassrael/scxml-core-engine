@@ -904,10 +904,11 @@ def examples_need_memory(prose: Prose, model: Model, conv: Conventions,
                     f"two cases drive the same inputs and require {first!r} "
                     f"and {second!r} here, so this depends on something other "
                     f"than the inputs; the specification has to say what is "
-                    f"remembered, and the binding has to say who keeps it -- "
-                    f"a kind that may remember can hold it, the platform may "
-                    f"publish the earlier value at an address of its own, or "
-                    f"the caller keeps it and `caller_keeps` records why"
+                    f"remembered, and something has to keep it -- the "
+                    f"document itself, by reading `previous(<field>)` (a "
+                    f"transform may), the platform, by publishing the earlier "
+                    f"value at an address of its own, or the caller, with "
+                    f"`caller_keeps` recording why"
                 ),
                 file=str(prose.locate(entry.names[0])[0])
                 if entry and entry.names and prose.locate(entry.names[0]) else "",

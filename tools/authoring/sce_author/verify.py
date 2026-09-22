@@ -274,6 +274,20 @@ class Build:
     def needs_event_scheduler(self) -> bool:
         return bool(self.manifest.get("needs_event_scheduler"))
 
+    @property
+    def holder(self) -> dict | None:
+        """The object the document keeps its `previous()` values in, by the
+        names the product gave it -- or None, when the document is pure
+        functions and each output is called on its own.
+
+        ⚠ Read from the manifest, not from the document. Whether a transform
+        keeps state is the product's decision, taken while it rendered, and
+        the manifest reports that decision with the names to call. Scanning
+        the XML for `previous(` here would be a second answer to the same
+        question, free to disagree with the first.
+        """
+        return self.manifest.get("holder") or None
+
 
 def generate(document: pathlib.Path, codegen: pathlib.Path,
              into: pathlib.Path, backend: str = "python") -> Build:
@@ -1588,7 +1602,8 @@ def verify(pack: Pack, binding_path: pathlib.Path,
         return Verification(refusal=(
             f"{document.name} declares kind {declared.kind!r}. This verifier "
             f"drives {', '.join(sorted(CALLABLE_KINDS))}, whose generated shape "
-            f"is one function per output, and "
+            f"is one function per output -- beside a holder when the document "
+            f"keeps values -- and "
             f"{', '.join(sorted(STATECHART_KINDS))}, which it drives by events. "
             f"Another kind is another calling convention, and guessing at one "
             f"would produce a verdict about something that was never run."))
@@ -1709,6 +1724,32 @@ def verify(pack: Pack, binding_path: pathlib.Path,
     # restarts whenever the situation does and going backwards is ordinary.
     # The check would have refused a whole component's records as broken.
 
+    # ⚠ A document that keeps values between activations is driven through
+    # its HOLDER -- one per run, one `update` per round, setup steps included
+    # -- because only the holder keeps what the next round reads. Calling each
+    # output's function on its own would hand it no kept value at all.
+    holder = build.holder
+    if holder:
+        activation = binding.get("activation")
+        if activation != "on-change":
+            said = (f"says it runs {activation!r}" if activation else
+                    "does not say how the host runs it")
+            return Verification(refusal=(
+                f"{document.name} keeps values from one activation to the next "
+                f"(it reads previous()), and the binding {said}. What "
+                f"`previous(x)` means is the value one ACTIVATION ago, and these "
+                f"records can replay only one kind: one activation per recorded "
+                f"case, which is `activation: on-change`. Say which the host "
+                f"does; under `periodic` the records cannot stand in for the "
+                f"activations that happened between them."))
+        if not examples.ordered:
+            return Verification(refusal=(
+                f"{document.name} keeps values from one activation to the next "
+                f"(it reads previous()), and the examples do not declare "
+                f"themselves `ordered`. Without an order there is no activation "
+                f"before this one, and reading the file's order as a timeline "
+                f"would be reading a promise nobody made."))
+
     if not examples.ordered:
         needs_history = sorted(
             [n for n, r in inputs.items()
@@ -1723,6 +1764,21 @@ def verify(pack: Pack, binding_path: pathlib.Path,
                 f"made."))
 
     failed: set = set()
+    # One holder per joint value of the unresolved inputs -- one when there
+    # are none -- each driven through every round under its own value.
+    #
+    # ⚠ That is sound only while the holders AGREE on what they keep. Driving
+    # a constant value per holder tries two timelines of an unknown input, not
+    # every one; but if every holder ends a round keeping the same values, the
+    # round's kept values did not depend on the unknown at all, so no timeline
+    # could have reached a different state -- and the next round starts from
+    # one known state again. The first round after which they disagree is
+    # where the kept values stop being known, and every later round is refused
+    # rather than judged on a state that only one of the guesses reached.
+    worlds = ([getattr(module, holder["new"])() for _ in assignments]
+              if holder else None)
+    # Why what the document kept is no longer known, once it is not.
+    lost = ""
     for case, owner, judged in rounds_of(examples.cases):
         if id(owner) in failed:
             continue
@@ -1766,8 +1822,36 @@ def verify(pack: Pack, binding_path: pathlib.Path,
             result.refusal = str(exc) if judged else f"{case.name}: {exc}"
             verification.results.append(result)
             failed.add(id(owner))
+            if worlds is not None and not lost:
+                # ⚠ The next one might NOT, when the document keeps values:
+                # the activation that did not happen is one the kept values
+                # never saw, and every later round would start from a state
+                # the host could not have been in.
+                lost = (f"round {case.name!r} could not be driven, so what "
+                        f"the document kept from then on is not known")
             continue
         kwargs = {_snake(n): v for n, v in values.items()}
+        # With a holder, ONE activation per round computes every output, and
+        # each output is read from the record it returns.
+        records = None
+        if worlds is not None:
+            if lost:
+                result.refusal = lost if judged else f"{case.name}: {lost}"
+                verification.results.append(result)
+                failed.add(id(owner))
+                continue
+            try:
+                records = [getattr(w, holder["update"])(
+                               **kwargs, **{_snake(k): v for k, v in a.items()})
+                           for w, a in zip(worlds, assignments)]
+            except TypeError as exc:
+                return Verification(refusal=(
+                    f"the document's holder would not take the bound inputs "
+                    f"({exc})"))
+            if any(vars(w) != vars(worlds[0]) for w in worlds[1:]):
+                lost = (f"after round {case.name!r} what the document kept "
+                        f"depends on unresolved input(s) {', '.join(unknown)}, "
+                        f"so no later round starts from a known state")
         produced: dict = {}
         undetermined: set = set()
         for name, rule in outputs.items():
@@ -1784,8 +1868,11 @@ def verify(pack: Pack, binding_path: pathlib.Path,
                     history.outputs[name] = _UNDETERMINED
                 undetermined.update(written_positions({name: rule})[0])
                 continue
-            fn = getattr(module, "compute_" + _snake(name), None)
-            if fn is None:
+            fn = (None if records is not None else
+                  getattr(module, "compute_" + _snake(name), None))
+            produces = (hasattr(records[0], _snake(name)) if records is not None
+                        else fn is not None)
+            if not produces:
                 if not rule.get("internal"):
                     return Verification(refusal=(
                         f"output {name!r}: the binding names it and the "
@@ -1794,8 +1881,10 @@ def verify(pack: Pack, binding_path: pathlib.Path,
             try:
                 # One run per joint value of the unresolved inputs -- a single
                 # run when there are none, which is the run as it always was.
-                runs = [fn(**kwargs, **{_snake(k): v for k, v in a.items()})
-                        for a in assignments]
+                runs = ([getattr(r, _snake(name)) for r in records]
+                        if records is not None else
+                        [fn(**kwargs, **{_snake(k): v for k, v in a.items()})
+                         for a in assignments])
                 computed = runs[0]
                 settled = all(r == computed for r in runs[1:])
                 if history is not None:

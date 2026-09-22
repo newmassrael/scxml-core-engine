@@ -126,7 +126,42 @@ def assemble(prose: Prose, pack: Pack) -> str:
         parts.append(f"- **{q.kind}** `{q.subject}`{at} — {q.detail}")
 
     parts += ["", "## 6. When you have to decide anyway", "", _DECIDING]
+    parts += ["", "## 7. When the answer depends on what happened before",
+              "", _REMEMBERING]
     return "\n".join(parts) + "\n"
+
+
+# ⚠ A specification very often answers from history -- "when A becomes B",
+# "keep the last value while nothing is reported" -- and until a transform
+# could say so, the only way to write it was for the BINDING to feed the value
+# back in. The document then claimed a purity it did not have, and the memory
+# was left to whoever hosts the generated code. Measured on one corpus, eleven
+# of twenty-nine documents were written that way. The move is taught here, at
+# the point of writing, because a refusal after the fact is the more
+# expensive way to learn it.
+_REMEMBERING = """\
+A transform can keep a value from one activation to the next, and says so
+itself. `previous(x)` is the value field `x` of this document held at the end
+of the previous activation; `x` is one of its inputs or outputs:
+
+    <data id="shown" sce:type="int32" sce:direction="out" sce:initial="0"
+          expr="reported > 0 ? reported : previous(shown)"/>
+
+- A field read through `previous()` must declare `sce:initial`: the value it
+  holds before the first activation. There is no silent default.
+- A read through `previous()` is not a dependency, so an output may read its
+  own previous value. `shown = shown + 1` is a cycle; `previous(shown) + 1` is
+  not.
+- The binding says when the host runs the document: `activation: on-change`
+  (once each time its inputs change) or `activation: periodic` (once per
+  period). What "previous" means depends on it, and `verify` refuses a
+  document that reads `previous()` until the binding says.
+
+Do not make the BINDING remember instead (`previous_of`, `state_of`). Memory
+the binding keeps is memory the document does not declare, so the document
+alone is no longer the component; `check` refuses it on a transform and names
+the `previous()` that replaces it.
+"""
 
 
 # ⚠ Section 5 tells an author what is missing and stops there, which leaves

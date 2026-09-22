@@ -726,13 +726,14 @@ class TheQuestionsFire(Fixture):
         Two cases settle that something is remembered. Saying only that
         leaves the author to discover the obligation later, from a caller —
         and the home a binding reaches for by default is the one nobody has
-        to agree to out loud. So the question names all three.
+        to agree to out loud. So the question names all three, the document's
+        own first: a transform keeps a value by reading `previous(<field>)`.
         """
         self.write_pack(MODEL, CONVENTIONS, examples=self.valued())
         said = " ".join(
             q.detail for q in self.asked(self.MEMORY)
             if q.kind == "example-shows-memory")
-        for home in ("can hold it", "address of its own", "caller_keeps"):
+        for home in ("previous(<field>)", "address of its own", "caller_keeps"):
             self.assertIn(home, said,
                           f"the question does not offer {home!r} as a home")
 

@@ -66,9 +66,10 @@ def _keys_that_hold_no_symbol() -> frozenset:
 SCXML_NS = "{http://www.w3.org/2005/07/scxml}"
 SCE_NS = "{http://sce.dev/ext}"
 
-# Kinds whose definition is an answer from this round's inputs alone. A
-# document of one of these that needs memory has been named wrongly, and the
-# only place that shows is the binding.
+# Kinds whose binding may not hand them memory. A transform may KEEP values,
+# and says so in the document itself with `previous(<field>)`; the other three
+# keep none. Either way a binding that reads an earlier round is memory the
+# document does not declare, and the only place that shows is the binding.
 STATELESS_KINDS = frozenset({"transform", "lookup", "condition", "interpolation"})
 
 
@@ -576,18 +577,44 @@ def check(pack: Pack, binding_path: pathlib.Path) -> list[Finding]:
             )
 
     if memory and document.kind in STATELESS_KINDS:
+        # ⚠ The refusal names the FIX, because there is now one in the
+        # document: a transform keeps a value by reading `previous(<field>)`,
+        # with the field's `sce:initial` for the first activation. A refusal
+        # that said only "the kind does not say so" left the author choosing
+        # between a statechart and the same binding again.
+        moves = []
+        for name in memory:
+            rule = declared_inputs[name]
+            kept = rule.get("previous_of") or rule.get("state_of")
+            if not kept:
+                continue
+            first = (f" (the binding's `initial`, {rule['initial']!r})"
+                     if "initial" in rule else "")
+            moves.append(
+                f"where it reads {name!r}, read `previous({kept})`, give "
+                f"{kept!r} the `sce:initial` it holds before the first "
+                f"activation{first}, and drop the input {name!r}")
+        if not moves:
+            fix = ""
+        elif document.kind == "transform":
+            fix = (" Declare the memory in the document instead: "
+                   + "; ".join(moves) + ".")
+        else:
+            fix = (f" A {document.kind} keeps no value; write it as a "
+                   f"transform, which can: " + "; ".join(moves) + ".")
         out.append(
             Finding(
                 f"document {document.path.name}",
-                f"declares kind {document.kind!r}, which answers from this "
+                f"declares kind {document.kind!r}, whose binding may not hand "
                 # ⚠ "Reads an earlier round", not "feeds its own output back":
                 # the list holds an input's previous value and a latched
                 # protocol as well as the document's own last output, and the
                 # narrower sentence sent an author looking for a feedback loop
                 # their binding did not have.
-                f"round's inputs alone, but the binding reads an earlier round "
-                f"through {', '.join(memory)}. The component is this document "
-                f"plus something that remembers, and the kind does not say so.",
+                f"it memory, but the binding reads an earlier round through "
+                f"{', '.join(memory)}. The component is this document plus "
+                f"something that remembers, and the document does not say so."
+                + fix,
             )
         )
 

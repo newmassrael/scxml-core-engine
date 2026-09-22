@@ -12,6 +12,10 @@
       "type": "string",
       "description": "Path to the SCXML this binds, relative to the binding file."
     },
+    "activation": {
+      "enum": ["on-change", "periodic"],
+      "description": "When the host runs the document: once each time its inputs change (`on-change`), or once per period whatever changed (`periodic`). It decides what `previous(x)` means -- the value one ACTIVATION ago -- and an edge detector means different things under the two, so it is a fact about the deployment rather than the document, and it lives here beside the addresses. `verify` replays one activation per recorded case, which is the on-change reading: a document that keeps values between activations is refused without this key, and refused under `periodic`, which records of changes cannot replay. A document that reads no `previous()` means the same under both and needs no answer."
+    },
     "inputs": {
       "type": "object",
       "additionalProperties": {"$ref": "#/$defs/input"}

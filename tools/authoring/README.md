@@ -564,7 +564,7 @@ each of them cost a measurement to separate:
 |---|---|---|
 | values in `given`/`expect` | run the document at all | every check that compares two cases declines |
 | `independent_cases` | compare two cases | the memory check declines rather than reading a delta as a whole input |
-| `ordered` | replay something that carries state | protocols and `previous_of`/`state_of` decline |
+| `ordered` | replay something that carries state | a document reading `previous()`, protocols, and `previous_of`/`state_of` decline |
 | `drove` | know what a case ASSERTED | a reading restated at the same value looks like nothing happening |
 
 ⚠ `variant` and `elapsed_ms` sit on the case rather than in `given` for the
@@ -598,6 +598,7 @@ the model's addresses the document's names are.
 
     version: 1
     document: controller.scxml
+    activation: on-change
     inputs:
       approaching: {address: plant/in/approach, equals: APPROACHING}
       supplyOn:    {unresolved: "the platform list is not available yet"}
@@ -624,6 +625,26 @@ the model's addresses the document's names are.
                 when: {1: {blink: "ON"}}, also: {source: "LOCAL"}}
       reading: {address: plant/out/reading, field: value, passthrough: true}
       held:    {internal: true}
+
+**`activation` says when the host runs the document** — once each time its
+inputs change (`on-change`), or once per period whatever changed (`periodic`).
+It decides what `previous(x)` means, the value one ACTIVATION ago, and an edge
+detector means different things under the two, so it is a deployment fact and
+it lives here beside the addresses. `verify` replays one activation per
+recorded case, which is the on-change reading: a document that reads
+`previous()` is refused without the key and refused under `periodic`, which
+records of changes cannot replay. A document that reads none needs no answer.
+
+**Memory belongs in the document.** A transform that needs the round before
+says so itself — `previous(x)` is the value field `x` held one activation ago,
+and `x` declares the `sce:initial` it holds before the first
+(`docs/SCE_ACCEPTED_SUBSET.md` §3.4.1). `verify` then drives the document's own
+holder, one activation per round, and the document alone is the component.
+`check` refuses a transform whose BINDING reaches back instead, and the refusal
+names the move: read `previous(<field>)` where the document read the remembered
+input, give the field its `sce:initial`, and drop the input. `previous_of` and
+`state_of` stay in this vocabulary only until the bindings that use them have
+made that move.
 
 **A rule naming a previous round says who keeps it.** `previous_of` and
 `state_of` both require `caller_keeps`, and the string is the reason. Generated
