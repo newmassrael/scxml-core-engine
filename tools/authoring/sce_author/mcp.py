@@ -320,8 +320,12 @@ def verification_payload(result) -> dict:
         # an unknown used to cost everything. It has to see the price is now
         # only the positions that genuinely turn on it, or it goes back to
         # guessing an address that passes.
+        # ⚠ `outputs` is the DOCUMENT's undecided values; `output_addresses`
+        # is the BINDING's unplaced ones. Two questions for two people, so
+        # they are not merged under one name.
         "unresolved": {"inputs": result.unresolved,
                        "outputs": result.unresolved_outputs,
+                       "output_addresses": result.unaddressed_outputs,
                        "withheld_positions": result.undetermined},
         "cases": [
             {"name": case.name,

@@ -119,7 +119,7 @@
         "address": {"type": "string"},
         "unresolved": {
           "type": "string",
-          "description": "Written INSTEAD of `address`, when nobody has yet said which address this output reaches. The string is the reason. An unresolved OUTPUT is narrower than an unresolved input: the rest of the document still runs, and only the positions this one would have written go unchecked."
+          "description": "Written INSTEAD of `address`, when nobody has yet said which address this output reaches. The string is the reason. An unresolved OUTPUT is narrower than an unresolved input: the rest of the document still runs, and only the positions this one could have written go unjudged -- every position the examples read that no named rule writes and that ends in one of this rule's fields. ⚠ Unjudged, not unchecked: a case expecting one of them is not passed, because counting it unchecked let a binding that failed a case pass it by writing this key on the output that failed."
         },
         "field": {"type": "string"},
         "map": {

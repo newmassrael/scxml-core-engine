@@ -148,7 +148,7 @@ def cmd_verify(args) -> int:
     # an unknown that withholds every position must be exactly as visible as
     # one that withholds none, or `unresolved` becomes the way to make a hard
     # case disappear.
-    if result.unresolved or result.unresolved_outputs:
+    if result.still_open:
         blocked = sum(1 for c in result.results if c.undetermined)
         if result.unresolved:
             # ⚠ Worded for both paths. A computation is run under each value
@@ -169,6 +169,12 @@ def cmd_verify(args) -> int:
                   f"placeholder for this run only, and never judged:")
             for name, why in result.unresolved_outputs.items():
                 print(f"          {name}: {why}")
+        if result.unaddressed_outputs:
+            print(f"  {len(result.unaddressed_outputs)} output(s) the binding "
+                  f"has no address for yet; any position no named rule "
+                  f"writes may be theirs, and none of those is judged:")
+            for name, why in result.unaddressed_outputs.items():
+                print(f"          {name}: {why}")
         print(f"  {result.undetermined} position(s) in {blocked} case(s) "
               f"rest on them and were not judged")
     # ⚠ Unjudged is reported beside the other two and never folded into either.
@@ -187,8 +193,8 @@ def cmd_verify(args) -> int:
     # refusal carried status 1 and that was the protection; running them
     # instead kept the counts honest and, for one change, let the status
     # become 0 -- so the status now says so explicitly.
-    if result.unresolved or result.unresolved_outputs:
-        print(f"  not a pass: {len(result.unresolved) + len(result.unresolved_outputs)} "
+    if result.still_open:
+        print(f"  not a pass: {result.still_open} "
               f"value(s) are still unresolved, so the status is non-zero even "
               f"though {'nothing' if not result.failed else 'more than that'} "
               f"failed")

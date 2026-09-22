@@ -51,6 +51,7 @@ CARRIES = {
     # Carried under the same key: an open value is one question whether the
     # binding or the document is the one that left it open.
     "unresolved_outputs": "unresolved",
+    "unaddressed_outputs": "unresolved",
 }
 
 
@@ -105,11 +106,14 @@ class TheTransportCarriesTheWholeAnswer(unittest.TestCase):
         payload = verification_payload(
             Verification(backend="python", results=[case],
                          unresolved={"override": "nobody has said"},
-                         unresolved_outputs={"chime": "no play mode given"}))
+                         unresolved_outputs={"chime": "no play mode given"},
+                         unaddressed_outputs={"bell": "no list yet"}))
         self.assertEqual({"override": "nobody has said"},
                          payload["unresolved"]["inputs"])
         self.assertEqual({"chime": "no play mode given"},
                          payload["unresolved"]["outputs"])
+        self.assertEqual({"bell": "no list yet"},
+                         payload["unresolved"]["output_addresses"])
         self.assertEqual(1, payload["unresolved"]["withheld_positions"])
         self.assertEqual(["plant/out/a.value"],
                          payload["cases"][0]["undetermined"])

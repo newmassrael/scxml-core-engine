@@ -192,10 +192,27 @@ class Verification:
     # no position any of them writes is judged. The document itself is
     # untouched and its shipping build still refuses.
     unresolved_outputs: dict = field(default_factory=dict)
+    # Outputs the BINDING leaves `unresolved` -- nobody has said which address
+    # they reach -- to the reason. Not the same question as the one above:
+    # there the document has not decided a VALUE, here the binding has not
+    # placed one. Every position the examples read that no named rule writes
+    # may be where one of these lands, and none of those is judged.
+    unaddressed_outputs: dict = field(default_factory=dict)
 
     @property
     def undetermined(self) -> int:
         return sum(len(r.undetermined) for r in self.results)
+
+    @property
+    def still_open(self) -> int:
+        """How many values the binding or the document leaves undecided.
+
+        ⚠ The one count a caller gates on. Summing the fields at each call
+        site is how an open output came to exit green: the status read two of
+        the three and nothing said a third existed.
+        """
+        return (len(self.unresolved) + len(self.unresolved_outputs)
+                + len(self.unaddressed_outputs))
 
     @property
     def ran(self) -> bool:
@@ -1131,6 +1148,116 @@ def sent_value(name: str, rule: dict, requests):
     return request.event_name
 
 
+def open_frame(pack: Pack, inputs: dict, outputs: dict,
+               backend: str = "") -> tuple[Verification, set, dict]:
+    """What either path reports before a case runs, from the binding alone.
+
+    One copy for both paths. The statechart path was written by copying this
+    block from the computation path, and a field added to one later would
+    have been missing from the other with nothing to say so.
+    """
+    bound, writes = written_positions(outputs)
+    verification = Verification(backend=backend)
+    expected = {a for case in pack.examples.cases for a in case.expect}
+    verification.unbound = sorted(expected - bound)
+    verification.unasserted = sorted(bound - expected)
+    verification.host_memory = host_memory_of(inputs, pack.conventions)
+    verification.assumed_preconditions = assumed_preconditions_of(pack.conventions)
+    verification.unresolved = {n: r["unresolved"] for n, r in sorted(inputs.items())
+                               if r.get("unresolved")}
+    verification.unaddressed_outputs = {
+        n: r["unresolved"] for n, r in sorted(outputs.items())
+        if r.get("unresolved") and not r.get("internal")}
+    return verification, bound, writes
+
+
+def _suffixes_written(rule: dict) -> set:
+    """The tail of every position an output rule writes, address left off.
+
+    `written_positions` builds each position as the address followed by
+    these, so an output with no address yet can only have written a position
+    that ends in one of them. An empty tail is a rule writing the bare
+    address, which any position could be.
+    """
+    tails = {f".{rule['field']}" if rule.get("field") else ""}
+    for fields in (rule.get("when") or {}).values():
+        tails |= {f".{fname}" for fname in fields}
+    tails |= {f".{fname}" for fname in (rule.get("also") or {})}
+    return tails
+
+
+class CaseJudge:
+    """What a case's expectations say about what a run produced.
+
+    ⚠ ONE copy, for both paths. Each had its own, and the rule that a case
+    with a withheld position is not a pass lived in only one of them.
+    """
+
+    def __init__(self, verification: Verification, pack: Pack, binding: dict,
+                 declared, outputs: dict, bound: set, writes: dict):
+        self.verification, self.model = verification, pack.model
+        self.binding, self.declared = binding, declared
+        self.bound, self.writes = bound, writes
+        # ⚠ An output with no address yet still writes SOMEWHERE -- a place
+        # nobody has named. Every position the examples read that no named
+        # rule writes may be that place. These used to be counted `unchecked`,
+        # as positions no rule of this binding claims, and an unchecked
+        # position does not stop a pass: measured 2026-09-22, a binding that
+        # failed one case of five passed all five, exit 0, once the failing
+        # output was written `unresolved`. That is the loophole the input
+        # side had already closed -- write `unresolved` wherever it is hard
+        # and watch the pass count hold.
+        self.unaddressed = {name: _suffixes_written(outputs[name])
+                            for name in verification.unaddressed_outputs}
+
+    def landing_here(self, position: str) -> list:
+        """The unaddressed outputs this position could turn out to be."""
+        if position in self.bound:
+            return []
+        return [name for name, tails in self.unaddressed.items()
+                if "" in tails or any(position.endswith(t) for t in tails if t)]
+
+    def judge(self, result: CaseResult, case, produced: dict,
+              undetermined=frozenset(), open_values=()) -> None:
+        """Compare every position the case expects, and close the verdict.
+
+        `undetermined` is what the run itself could not settle; `open_values`
+        names what it rested on, for the refusal.
+        """
+        resting_on: set = set()
+        for address, want in sorted(case.expect.items()):
+            maybe = self.landing_here(address)
+            if address in undetermined or maybe:
+                result.undetermined.append(address)
+                resting_on.update(maybe if maybe else open_values)
+                continue
+            if address not in produced:
+                result.unchecked.append(address)
+                continue
+            if not _same(want, produced[address], _field_at(self.model, address)):
+                result.failures.append((address, want, produced[address]))
+                rests_on = assumption_behind(self.writes.get(address),
+                                             self.declared, self.binding)
+                if rests_on:
+                    self.verification.refuted.setdefault(address, rests_on)
+        # ⚠ A case with ANY withheld position is not a pass. The first version
+        # only refused one whose EVERY position was withheld, and it never
+        # fired: a case that expects an event also expects the identifier and
+        # sound the binding writes as constants, those come out identical
+        # under any input, and so a case whose whole point -- on or off --
+        # depended on the unknown still counted as passed on the constants
+        # alone. Measured on the first probe: 4 passed, when 3 of the 4 had
+        # their status withheld. A wrong answer on a position that WAS settled
+        # is still a failure: withholding the unknown does not excuse what was
+        # known.
+        if result.undetermined and not result.failures:
+            result.refusal = (
+                f"{len(result.undetermined)} position(s) this case expects "
+                f"depend on unresolved value(s) {', '.join(sorted(resting_on))}; "
+                f"the rest agreed, but a case is not passed on part of what it "
+                f"asserts")
+
+
 def rounds_of(cases):
     """Every round the examples drive, in order, and whether it is judged.
 
@@ -1325,14 +1452,8 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
             "machine. Every case would be judged against a document sitting "
             "in its initial configuration, which is a verdict about nothing."))
 
-    bound, writes = written_positions(outputs)
-
-    verification = Verification()
-    expected = {a for case in examples.cases for a in case.expect}
-    verification.unbound = sorted(expected - bound)
-    verification.unasserted = sorted(bound - expected)
-    verification.host_memory = host_memory_of(inputs, pack.conventions)
-    verification.assumed_preconditions = assumed_preconditions_of(pack.conventions)
+    verification, bound, writes = open_frame(pack, inputs, outputs)
+    judge = CaseJudge(verification, pack, binding, declared, outputs, bound, writes)
 
     # ⚠ An unresolved input that names an event is one whose SENDING nobody
     # can say: a case may have driven the address it turns out to be, or not.
@@ -1353,8 +1474,6 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
     # somewhere no record drove it.
     open_events = {n: r["event"] for n, r in sorted(inputs.items())
                    if r.get("unresolved") and r.get("event")}
-    verification.unresolved = {n: r["unresolved"] for n, r in sorted(inputs.items())
-                               if r.get("unresolved")}
     # Why the run stopped being knowable, once it has.
     lost = ""
 
@@ -1478,16 +1597,7 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
             verification.results.append(result)
             failed.add(id(owner))
             continue
-        for address, want in sorted(case.expect.items()):
-            if address not in produced:
-                result.unchecked.append(address)
-                continue
-            if not _same(want, produced[address], _field_at(pack.model, address)):
-                result.failures.append((address, want, produced[address]))
-                rests_on = assumption_behind(writes.get(address), declared,
-                                             binding)
-                if rests_on:
-                    verification.refuted.setdefault(address, rests_on)
+        judge.judge(result, case, produced)
         verification.results.append(result)
     return verification
 
@@ -1565,15 +1675,9 @@ def verify(pack: Pack, binding_path: pathlib.Path,
 
     inputs = dict(binding.get("inputs") or {})
     outputs = dict(binding.get("outputs") or {})
-    bound, writes = written_positions(outputs)
-
-    verification = Verification(backend=backend)
+    verification, bound, writes = open_frame(pack, inputs, outputs, backend)
     verification.unresolved_outputs = dict(sorted(withheld.items()))
-    expected = {a for case in examples.cases for a in case.expect}
-    verification.unbound = sorted(expected - bound)
-    verification.unasserted = sorted(bound - expected)
-    verification.host_memory = host_memory_of(inputs, pack.conventions)
-    verification.assumed_preconditions = assumed_preconditions_of(pack.conventions)
+    judge = CaseJudge(verification, pack, binding, declared, outputs, bound, writes)
 
     # A latch carries state between cases, so it exists only when the pack says
     # the cases are a timeline. Without that, `None` here is what makes the
@@ -1606,9 +1710,7 @@ def verify(pack: Pack, binding_path: pathlib.Path,
     #
     # An unresolved OUTPUT was already narrower and still is: the rest runs,
     # and only the positions that output would have written go unchecked.
-    open_inputs = {n: r["unresolved"] for n, r in inputs.items()
-                   if r.get("unresolved")}
-    verification.unresolved = dict(sorted(open_inputs.items()))
+    open_inputs = verification.unresolved
     numbers = sorted(n for n in open_inputs if inputs[n].get("number"))
     remembered = sorted(n for n, r in inputs.items()
                         if r.get("previous_of") in open_inputs
@@ -1765,37 +1867,8 @@ def verify(pack: Pack, binding_path: pathlib.Path,
             verification.results.append(result)
             failed.add(id(owner))
             continue
-        for address, want in sorted(case.expect.items()):
-            if address in undetermined:
-                result.undetermined.append(address)
-                continue
-            if address not in produced:
-                result.unchecked.append(address)
-                continue
-            if not _same(want, produced[address], _field_at(pack.model, address)):
-                result.failures.append((address, want, produced[address]))
-                rests_on = assumption_behind(writes.get(address), declared,
-                                             binding)
-                if rests_on:
-                    verification.refuted.setdefault(address, rests_on)
-        # ⚠ A case with ANY withheld position is not a pass. The first version
-        # only refused one whose EVERY position was withheld, and it never
-        # fired: a case that expects an event also expects the identifier and
-        # sound the binding writes as constants, those come out identical under
-        # any input, and so a case whose whole point -- on or off -- depended
-        # on the unknown still counted as passed on the constants alone.
-        # Measured on the first probe: 4 passed, when 3 of the 4 had their
-        # status withheld. That is the loophole this change had to close --
-        # write `unresolved` wherever it is hard and watch the pass count hold.
-        # A wrong answer on a position that WAS settled is still a failure:
-        # withholding the unknown does not excuse what was known.
-        if result.undetermined and not result.failures:
-            open_values = unknown + sorted(withheld)
-            result.refusal = (
-                f"{len(result.undetermined)} position(s) this case expects "
-                f"depend on unresolved value(s) {', '.join(open_values)}; the "
-                f"rest agreed, but a case is not passed on part of what it "
-                f"asserts")
+        judge.judge(result, case, produced, undetermined,
+                    open_values=unknown + sorted(withheld))
         if history is not None:
             history.inputs = dict(values)
             history.started = True

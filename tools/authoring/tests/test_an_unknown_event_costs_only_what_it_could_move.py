@@ -191,6 +191,24 @@ class AnOpenEventIsJudgedUntilItCouldAct(unittest.TestCase):
                          [(r.name, r.refusal) for r in result.results])
         self.assertEqual({}, result.unresolved)
 
+    def test_an_open_output_is_withheld_here_too(self):
+        """⚠ The comparison is shared with the computation path, and so is the
+        rule that a position an open output may have written is not judged.
+        Counted unchecked, as it was, every case below passed with nothing
+        compared at all."""
+        bound = binding()
+        bound["outputs"]["roadSignal"] = {
+            **{k: v for k, v in bound["outputs"]["roadSignal"].items()
+               if k != "address"},
+            "unresolved": "the platform list naming the road signal is not out"}
+        result = self.judge("maintenance", bound)
+        self.assertEqual((0, 0, 3), self.counts(result),
+                         [(r.name, r.refusal) for r in result.results])
+        self.assertEqual(["roadSignal"], list(result.unaddressed_outputs))
+        for case in result.results:
+            self.assertEqual(["plant/out/road-signal.value"], case.undetermined)
+            self.assertIn("roadSignal", case.refusal)
+
     def test_the_command_does_not_exit_green_on_an_open_event(self):
         argv = ["verify", "--pack", str(self.tmp), "--binding", str(self.binding)]
         self.judge("maintenance", binding(fault=OPEN_FAULT))

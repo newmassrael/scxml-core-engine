@@ -124,18 +124,72 @@ class ADocumentCanPrecedeItsAddresses(unittest.TestCase):
     def test_an_open_output_is_narrower_and_the_rest_still_runs(self):
         """⚠ Not the same as an open input. An output with nowhere to land
         stops nothing: the document still computes every other value, and only
-        the positions this one would have written go unchecked.
+        the positions this one could have written go unjudged.
         """
         result = verify(self.pack, self.binding(self.open_output))
         self.assertTrue(result.ran, f"it would not run: {result.refusal}")
         self.assertTrue(result.results)
-        unchecked = {a for case in result.results for a in case.unchecked}
-        self.assertIn("plant/out/bell.value", unchecked)
+        self.assertEqual({"bell": REASON}, result.unaddressed_outputs)
+        withheld = {a for case in result.results for a in case.undetermined}
+        self.assertEqual({"plant/out/bell.value"}, withheld)
         self.assertIn("plant/out/bell.value", result.unbound)
         # The other outputs were still judged.
-        checked = {a for case in result.results
-                   for a in case.failures} | set()
-        self.assertNotIn("plant/out/road-signal.value", unchecked)
+        unchecked = {a for case in result.results for a in case.unchecked}
+        self.assertNotIn("plant/out/road-signal.value", withheld | unchecked)
+
+    @unittest.skipUnless(_default_codegen().exists(),
+                         "the product's code generator is not built")
+    def test_an_open_output_cannot_turn_a_failure_into_a_pass(self):
+        """⚠ The loophole, measured 2026-09-22 on this very fixture. Its
+        binding fails one case, on the bell. Written `unresolved` on the bell,
+        the position was counted unchecked -- a position no rule claims, which
+        does not stop a pass -- and the run read 5 passed, 0 failed, exit 0.
+        """
+        from tests.test_the_commands_work_as_a_product import run
+        closed = verify(self.pack, self.binding(lambda d: None))
+        self.assertEqual(1, closed.failed, "the premise: one case fails")
+        self.assertEqual(
+            ["plant/out/bell.value"],
+            [a for c in closed.results for a, _, _ in c.failures],
+            "the premise: it fails on the output about to be opened")
+
+        path = self.binding(self.open_output)
+        opened = verify(self.pack, path)
+        failing = next(c.name for c in closed.results if c.failures)
+        self.assertFalse(
+            next(c for c in opened.results if c.name == failing).passed,
+            "opening the failing output must not pass its case")
+        # ⚠ Not equal: every case expecting the bell is withheld, including
+        # those that passed with it placed. What matters is that the count
+        # can only fall -- never rise -- when a value is opened.
+        self.assertLessEqual(opened.passed, closed.passed)
+        for case in opened.results:
+            if "plant/out/bell.value" in case.undetermined:
+                self.assertFalse(case.passed, case.name)
+        code, said, _ = run(["verify", "--pack", str(self.tmp),
+                             "--binding", str(path)])
+        self.assertEqual(1, code, said)
+        self.assertIn("not a pass", said)
+        self.assertIn("has no address for yet", said)
+
+    def test_an_open_output_only_withholds_positions_ending_in_its_fields(self):
+        """An open output writes its unknown address followed by its own
+        fields, so a position ending in another field cannot be its."""
+        from sce_author.verify import CaseJudge, Verification
+        verification = Verification(unaddressed_outputs={"bell": REASON})
+        outputs = {"bell": {"unresolved": REASON, "field": "value",
+                            "also": {"id": "X"}}}
+        judge = CaseJudge(verification, self.pack, {}, None, outputs,
+                          {"plant/out/road-signal.value"}, {})
+        self.assertEqual(["bell"], judge.landing_here("plant/out/other.value"))
+        self.assertEqual(["bell"], judge.landing_here("plant/out/other.id"))
+        self.assertEqual([], judge.landing_here("plant/out/other.status"))
+        self.assertEqual([], judge.landing_here("plant/out/road-signal.value"),
+                         "a position a named rule writes is that rule's")
+        bare = CaseJudge(verification, self.pack, {}, None,
+                         {"bell": {"unresolved": REASON}}, set(), {})
+        self.assertEqual(["bell"], bare.landing_here("plant/out/anything"),
+                         "a rule writing the bare address could be anywhere")
 
     # --------------------------------------------------- the second phase
 

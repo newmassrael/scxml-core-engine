@@ -730,8 +730,19 @@ the string is the reason, for whoever can answer it:
                             the platform list is not available yet"}
 
 `check` then reports an address still missing rather than a name that does not
-exist; `verify` says it cannot run rather than running the document on a value
-nobody supplied. When the list arrives, only this file changes.
+exist. `verify` runs, never on a value nobody supplied, and judges only what
+cannot depend on the gap:
+
+| open rule | what `verify` withholds |
+|---|---|
+| a boolean input of a computation | the positions that come out different when the case is run under both values |
+| an event input of a statechart | every case from the first configuration in which an active state could act on that event |
+| an output | every expected position no named rule writes that ends in one of its fields |
+| a number input, or one a later round remembers | the whole run, which is refused: there are no two values to try, or the unknown would travel into rounds that never read it |
+
+A case with any withheld position is not passed, and while any rule is open
+the command's status is non-zero however the counts read. When the list
+arrives, only this file changes.
 
 ⚠⚠ This exists because ABSENCE HAS TO BE WRITABLE OR IT DOES NOT GET WRITTEN.
 Asked for a complete binding with no list to hand, an author — human or model
