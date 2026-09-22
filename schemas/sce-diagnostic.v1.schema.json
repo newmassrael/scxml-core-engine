@@ -544,7 +544,8 @@
             "kind": { "const": "replace_one_of" },
             "candidates": {
               "type": "array",
-              "items": { "type": "string" }
+              "items": { "type": "string" },
+              "minItems": 1
             }
           }
         },

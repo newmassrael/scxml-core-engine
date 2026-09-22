@@ -114,6 +114,15 @@ struct FixRecord {
     /// `replace_with` contributes its single `to`; `replace_one_of`
     /// contributes every candidate.
     replacements: Vec<String>,
+    /// How many choices a choice variant offers — `candidates` for
+    /// `replace_one_of`, `attrs` for `add_one_of`, `None` for a
+    /// deterministic variant and for a record with no `fix`.
+    ///
+    /// Counted separately from `replacements` because `add_one_of`
+    /// names ATTRIBUTES to add, not values to substitute: folding them
+    /// in would hand the substitution tests a token no `actual` was
+    /// ever compared against.
+    choices: Option<usize>,
     /// The record's `expected`, which §3.2 declares disjoint from
     /// `fix`.
     expected: Vec<String>,
@@ -277,6 +286,19 @@ impl FixRecord {
                 .and_then(serde_json::Value::as_u64)
                 .map(|n| n as usize),
             expanded: value.get("expanded_from").is_some(),
+            choices: match fix_kind.as_str() {
+                "replace_one_of" => Some(
+                    fix.and_then(|f| f.get("candidates"))
+                        .and_then(|c| c.as_array())
+                        .map_or(0, Vec::len),
+                ),
+                "add_one_of" => Some(
+                    fix.and_then(|f| f.get("attrs"))
+                        .and_then(|a| a.as_array())
+                        .map_or(0, Vec::len),
+                ),
+                _ => None,
+            },
             fix_kind,
             replacements,
             expected: value
@@ -902,6 +924,59 @@ fn expected_and_fix_never_carry_the_same_list() {
         "{} records duplicate a list across `expected` and `fix`:\n{}",
         violations.len(),
         violations.join("\n"),
+    );
+}
+
+/// A choice variant on the wire offers at least one choice.
+///
+/// SCE_ERROR_CONTRACT.md §3.1: "A choice variant's set is never empty.
+/// There is no choosing from nothing" — a producer that finds no repair
+/// ships a record with no `fix`, which `Fix::with_a_choice_to_offer`
+/// enforces at the one point a payload becomes a record.
+/// `expression/unknown-identifier` reaches that state whenever no
+/// declared name is near enough to propose.
+///
+/// ⚠ NO OTHER CASE HERE CAN SEE THIS ONE. They read each candidate, so
+/// a record offering none satisfies all of them vacuously. Measured
+/// 2026-09-22 by deleting the producer's suppression: every case above
+/// stayed green while `"candidates": []` shipped. The schema did not
+/// catch it either — `add_one_of.attrs` carried `minItems: 1` and
+/// `replace_one_of.candidates` carried no bound until the commit that
+/// added this test.
+#[test]
+fn a_choice_variant_on_the_wire_offers_at_least_one_choice() {
+    let (_documents, records) = sweep();
+    let offered: Vec<&FixRecord> = records.iter().filter(|r| r.choices.is_some()).collect();
+    // The corpus carried 30 choice-variant records when this bound was
+    // set; a sweep that reached none would satisfy the assertion below
+    // by seeing nothing.
+    assert!(
+        offered.len() >= 20,
+        "the sweep reached {} choice-variant record(s); §3.1 names two \
+         of them and the corpus emits both, so a count this low means \
+         the sweep stopped reaching the corpus rather than that the \
+         producer stopped offering choices.",
+        offered.len(),
+    );
+
+    let empty: Vec<String> = offered
+        .iter()
+        .filter(|r| r.choices == Some(0))
+        .map(|r| {
+            format!(
+                "[{} / {}] {} ships fix.{} with no choice in it — \
+                 SCE_ERROR_CONTRACT.md §3.1 spells that case as a record \
+                 with no `fix` at all.",
+                r.doc, r.lang, r.code, r.fix_kind,
+            )
+        })
+        .collect();
+
+    assert!(
+        empty.is_empty(),
+        "{} record(s) offer a choice from nothing:\n{}",
+        empty.len(),
+        empty.join("\n"),
     );
 }
 
