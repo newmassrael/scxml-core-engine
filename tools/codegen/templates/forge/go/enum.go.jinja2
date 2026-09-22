@@ -10,6 +10,9 @@
 
 package {{ package }}
 
+{# A defined integer type holds every value of its carrier, so one shape
+   serves an open and a closed set; what differs is whether a value outside
+   the declared list is a value of the type, which FromUnderlying answers. #}
 type {{ enum_name }} {{ underlying_type }}
 
 const (
@@ -17,3 +20,29 @@ const (
 	{{ v.name }} {{ enum_name }} = {{ v.value }}
 {% endfor %}
 )
+
+// ToUnderlying returns the carrier value this holds.
+func (v {{ enum_name }}) ToUnderlying() {{ underlying_type }} {
+	return {{ underlying_type }}(v)
+}
+
+{% if is_open %}
+// {{ enum_name }}FromUnderlying returns the value raw stands for. Total:
+// sce:strict-variants="false" leaves the declared set open, so every carrier
+// value is one of this type's values.
+func {{ enum_name }}FromUnderlying(raw {{ underlying_type }}) {{ enum_name }} {
+	return {{ enum_name }}(raw)
+}
+{% else %}
+// {{ enum_name }}FromUnderlying returns the variant raw declares, and false
+// when raw declares none — the declared set is closed.
+func {{ enum_name }}FromUnderlying(raw {{ underlying_type }}) ({{ enum_name }}, bool) {
+	switch raw {
+{% for v in variants %}
+	case {{ v.value }}:
+		return {{ v.name }}, true
+{% endfor %}
+	}
+	return 0, false
+}
+{% endif %}

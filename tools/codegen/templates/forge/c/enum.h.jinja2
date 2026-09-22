@@ -14,10 +14,43 @@
 
 #include <stdint.h>
 
+{# A C enumerated type holds every value of its carrier, so one shape serves
+   an open and a closed set; what differs is whether a value outside the
+   declared list is a value of the type, which `from_underlying` answers. #}
 typedef enum {
 {% for v in variants %}
     {{ v.name }} = {{ v.value }},
 {% endfor %}
 } {{ enum_name }}_t;
+
+#include <stdbool.h>
+
+/* The carrier value this holds. */
+static inline {{ underlying_type }} {{ snake_name }}_to_underlying({{ enum_name }}_t value) {
+    return ({{ underlying_type }})value;
+}
+
+{% if is_open %}
+/* The value `raw` stands for. Total: sce:strict-variants="false" leaves the
+ * declared set open, so every carrier value is one of this type's values. */
+static inline {{ enum_name }}_t {{ snake_name }}_from_underlying({{ underlying_type }} raw) {
+    return ({{ enum_name }}_t)raw;
+}
+{% else %}
+/* The variant `raw` declares, written through `out`; false when `raw`
+ * declares none — the declared set is closed, so a value outside it is not
+ * a value of this type. */
+static inline bool {{ snake_name }}_from_underlying({{ underlying_type }} raw, {{ enum_name }}_t *out) {
+    switch (raw) {
+{% for v in variants %}
+    case {{ v.value }}:
+        *out = {{ v.name }};
+        return true;
+{% endfor %}
+    default:
+        return false;
+    }
+}
+{% endif %}
 
 #endif  /* {{ guard }} */

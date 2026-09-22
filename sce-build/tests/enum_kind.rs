@@ -381,21 +381,31 @@ fn signed_enum_reaches_every_backend_with_negative_values() {
     assert!(code.contains("-128"), "python must render -128:\n{code}");
 }
 
-// ── strict-variants doc-as-contract: codegen ignores it ──────────
+// ── strict-variants: the default is strict, and codegen reads it ──
 
-/// `forge::generator::render_enum` carries a comment asserting that
-/// `EnumModel::strict_variants` is never consumed by codegen — the
-/// strict-variants opt-out is a parse-time validator concern. This drift guard
-/// mechanises that claim: two enum documents differing only in
-/// `sce:strict-variants` (and sharing the same identifier so the
-/// emitted symbol names stay byte-identical) must produce
-/// byte-identical [`GeneratedOutput`] at every backend. Any
-/// divergence signals codegen has started reading the opt-out
-/// flag — at which point either the codegen-side read must revert
-/// or design RFC §8 (strict variant membership) must expand to
-/// cover the new surface.
+/// Two claims, and the second one replaces what this guard used to
+/// assert.
+///
+/// `sce:strict-variants` used to be a parse-time validator concern that
+/// codegen never read, so this guard demanded byte-identical output from
+/// the two settings and `render_enum` carried a comment saying the flag
+/// never reached it. It is no longer one: an open set admits a value no
+/// variant declares, and a Rust enum, a Kotlin `enum class` and a Python
+/// `Enum` cannot hold such a value in the shape a closed set emits — so
+/// the emitted TYPE differs. That is the escape hatch this guard's own
+/// comment named, taken.
+///
+/// What survives is the half still true and still load-bearing — an
+/// absent attribute means strict — plus the half that now says so: the
+/// two settings must NOT agree, on any backend, or one has quietly kept
+/// emitting the closed shape for an open document.
+///
+/// Whether they differ in the RIGHT way is not a string match here. It
+/// is `forge_rust_codec_enum_fields_runtime` and its five-backend
+/// compile companion, which decode a carrier value no variant declares
+/// and require the closed set to refuse it and the open one to carry it.
 #[test]
-fn enum_codegen_ignores_strict_variants_at_every_backend() {
+fn strict_variants_defaults_to_strict_and_reaches_every_backend() {
     use sce_build::compile_forge_from_string;
     use sce_build::generator::Language;
 
@@ -428,10 +438,10 @@ fn enum_codegen_ignores_strict_variants_at_every_backend() {
         )
     }
 
-    // Three surface forms must all collapse to the same emitted
-    // bytes: explicit strict, explicit open, and the default
-    // (attribute absent). The default-absent case is the implicit
-    // strict path most authors hit.
+    // Two of the three surface forms collapse to the same emitted
+    // bytes — explicit strict and the default (attribute absent), which
+    // is the implicit strict path most authors hit. The third must not
+    // join them.
     let implicit = enum_doc(None);
     let explicit_strict = enum_doc(Some("true"));
     let explicit_open = enum_doc(Some("false"));
@@ -457,11 +467,28 @@ fn enum_codegen_ignores_strict_variants_at_every_backend() {
         // preprocessor inputs).
         assert_eq!(
             a.files, b.files,
-            "{lang:?}: implicit-default and explicit strict=true diverge — render_enum is reading strict_variants",
+            "{lang:?}: implicit-default and explicit strict=true diverge — \
+             the absent attribute must mean strict",
         );
-        assert_eq!(
+        assert_ne!(
             b.files, c.files,
-            "{lang:?}: explicit strict=true and strict=false diverge — render_enum is reading strict_variants",
+            "{lang:?}: strict=true and strict=false emit the same bytes — \
+             this backend is emitting the closed shape for an open document, \
+             which cannot hold a value no variant declares",
         );
+
+        // Neither shape may drop the table on its way to a different
+        // type: both still declare every value the document wrote.
+        // Read off `enum_doc` rather than restated, so a fixture edit
+        // cannot leave this checking values nobody declares.
+        for value in ["0", "1", "2"] {
+            for (label, out) in [("strict", &b), ("open", &c)] {
+                let code = &out.files[0].1;
+                assert!(
+                    code.contains(value),
+                    "{lang:?} ({label}): the declared value {value} is missing:\n{code}",
+                );
+            }
+        }
     }
 }

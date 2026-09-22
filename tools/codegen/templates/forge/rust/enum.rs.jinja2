@@ -8,10 +8,71 @@
 // Runtime: {{ runtime_dep }}
 // Do not edit — regenerate from the source SCXML file.
 
+{% if is_open %}
+{# `sce:strict-variants="false"`: a value no variant declares is legal, and a
+   Rust enum cannot hold one — an undeclared discriminant is undefined
+   behaviour, not an unusual value. The type therefore carries the value and
+   names the declared ones as associated constants, spelled as every other
+   backend spells them so a reference to `<alias>.<variant>` lowers the same
+   way whether the set is open or closed. #}
+#[repr(transparent)]
+{{ forge_enum_derives_attr }}
+pub struct {{ enum_name }}(pub {{ underlying_type }});
+
+#[allow(non_upper_case_globals)]
+impl {{ enum_name }} {
+{% for v in variants %}
+    pub const {{ v.name }}: Self = Self({{ v.value }});
+{% endfor %}
+
+    /// The carrier value this holds.
+    pub const fn to_underlying(self) -> {{ underlying_type }} {
+        self.0
+    }
+
+    /// The value `raw` stands for. Total: the declared set is open, so
+    /// every carrier value is one of this type's values.
+    pub const fn from_underlying(raw: {{ underlying_type }}) -> Self {
+        Self(raw)
+    }
+}
+{% else %}
 #[repr({{ underlying_type }})]
 {{ forge_enum_derives_attr }}
 pub enum {{ enum_name }} {
 {% for v in variants %}
     {{ v.name }} = {{ v.value }},
 {% endfor %}
+}
+
+impl {{ enum_name }} {
+    /// The carrier value this variant declares.
+    pub const fn to_underlying(self) -> {{ underlying_type }} {
+        self as {{ underlying_type }}
+    }
+
+    /// The variant `raw` declares, or `None` — the declared set is closed,
+    /// so a value outside it is not a value of this type.
+    pub const fn from_underlying(raw: {{ underlying_type }}) -> Option<Self> {
+        match raw {
+{% for v in variants %}
+            {{ v.value }} => Some(Self::{{ v.name }}),
+{% endfor %}
+            _ => None,
+        }
+    }
+}
+{% endif %}
+
+{# Both shapes spell the first declared variant the same way — an
+   associated constant on the open set's newtype, a variant on the
+   closed set's enum — so one impl serves both. The carrier's zero is
+   NOT the default: a closed set does not hold a value it never
+   declared. A holder is default-constructed only to be filled by a
+   decode, so any declared value serves and this is the one the
+   document leads with. #}
+impl Default for {{ enum_name }} {
+    fn default() -> Self {
+        Self::{{ variants[0].name }}
+    }
 }

@@ -2,6 +2,24 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{#- One field of the positional prefix, written into the out-struct. An
+    enum-typed field travels on the wire as the enum's carrier, so
+    `decode_expr` reads that carrier and the enum's own conversion
+    turns it into a value of the type; a closed set's conversion is
+    partial, and a carrier value it does not declare is not a value of
+    that type, so the frame does not decode. The statement carries its
+    own indentation because the three call sites below share it. #}
+{% macro decode_field(field) %}
+{% if field.is_enum and field.enum_is_open %}
+    out->{{ field.id }} = {{ field.enum_from_underlying }}({{ field.decode_expr }});
+{%- elif field.is_enum %}
+    if (!{{ field.enum_from_underlying }}({{ field.decode_expr }}, &out->{{ field.id }})) {
+        return SCE_FORGE_CODEC_UNDECLARED_ENUM_VALUE;
+    }
+{%- else %}
+    out->{{ field.id }} = {{ field.decode_expr }};
+{%- endif %}
+{% endmacro %}
 {{ sce_map.source_marker(source_location, "c", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
 
 /* SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec") */
@@ -214,7 +232,7 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
     const uint8_t *raw = sce_forge_cursor_peek(cursor, {{ c_min_bytes_macro }});
     if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
 {% for field in fields %}
-    out->{{ field.id }} = {{ field.decode_expr }};
+{{ decode_field(field) }}
 {% endfor %}
     if (!sce_forge_cursor_advance(cursor, {{ c_min_bytes_macro }})) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
 {% endif %}
@@ -314,7 +332,7 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
     }
 {% endif %}
 {% else %}
-    out->{{ field.id }} = {{ field.decode_expr }};
+{{ decode_field(field) }}
 {% endif %}
 {% endfor %}
     if (!sce_forge_cursor_advance(cursor, _consumed)) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
@@ -323,7 +341,7 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
     const uint8_t *raw = sce_forge_cursor_peek(cursor, {{ c_min_bytes_macro }});
     if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
 {% for field in fields %}
-    out->{{ field.id }} = {{ field.decode_expr }};
+{{ decode_field(field) }}
 {% endfor %}
     if (!sce_forge_cursor_advance(cursor, {{ c_min_bytes_macro }})) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     return SCE_FORGE_CODEC_OK;

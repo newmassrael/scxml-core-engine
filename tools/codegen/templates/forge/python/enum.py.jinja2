@@ -10,9 +10,43 @@
 # Do not edit — regenerate from the source SCXML file.
 
 from enum import IntEnum
+{% if not is_open %}
+from typing import Optional
+{% endif %}
 
 
 class {{ enum_name }}(IntEnum):
 {% for v in variants %}
     {{ v.name }} = {{ v.value }}
 {% endfor %}
+
+    def to_underlying(self) -> int:
+        """The carrier value this holds."""
+        return int(self)
+
+{% if is_open %}
+    @classmethod
+    def _missing_(cls, value: object) -> "{{ enum_name }}":
+        # sce:strict-variants="false": a value no variant declares is legal,
+        # so it becomes a member of this enum rather than a ValueError.
+        member = int.__new__(cls, value)  # type: ignore[call-overload]
+        member._name_ = f"UNDECLARED_{int(value)}"  # type: ignore[arg-type]
+        member._value_ = int(value)  # type: ignore[arg-type]
+        return member
+
+    @classmethod
+    def from_underlying(cls, raw: int) -> "{{ enum_name }}":
+        """The value ``raw`` stands for. Total: the declared set is open."""
+        return cls(raw)
+{% else %}
+    @classmethod
+    def from_underlying(cls, raw: int) -> Optional["{{ enum_name }}"]:
+        """
+        The variant ``raw`` declares, or None — the declared set is closed,
+        so a value outside it is not a value of this type.
+        """
+        try:
+            return cls(raw)
+        except ValueError:
+            return None
+{% endif %}

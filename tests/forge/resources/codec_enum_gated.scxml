@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Conformance fixture: enum-typed codec fields on the STREAMING path.
+
+  A codec reaches that path when any field is gated, repeated, chained or
+  embedded — and then every field takes it, including the ungated ones.
+  It is a second decode and encode emission, separate from the positional
+  one `codec_enum_fields.scxml` pins, and it used to meet an enum-typed
+  field with the bare per-language type functions rather than the
+  document's imports: C++ and C11 aborted the generator outright, and
+  Rust emitted a struct whose field was the enum while its decode bound
+  the carrier.
+
+  Both arms of that path carry an enum here. `code` is ungated, so it
+  exercises the plain arm; `state` is gated on `flags.has_state`, so it
+  exercises the optional arm — including what a fresh codec holds when
+  the field was never on the wire, which is absent, not a value.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="codec" sce:default-endian="big" name="codec_enum_gated">
+  <sce:import src="enum_session_state.scxml" kind="enum" as="session"/>
+  <sce:import src="enum_uds_nrc.scxml" kind="enum" as="nrc"/>
+  <datamodel>
+    <sce:flags id="flags" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="has_state" bit="0"/>
+    </sce:flags>
+    <sce:field id="code" sce:type="enum:nrc" sce:byte="1" sce:bit-size="8"/>
+    <sce:field id="state" sce:type="enum:session" sce:byte="2" sce:bit-size="8"
+               sce:present-if="flags.has_state"/>
+  </datamodel>
+</scxml>

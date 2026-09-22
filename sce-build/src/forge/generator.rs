@@ -323,6 +323,22 @@ pub struct ImportContext {
     /// `TYPE_VARIANT`), so the variant alone cannot produce them.
     #[serde(skip)]
     pub enum_source_name: String,
+    /// The carrier an imported `sce:kind="enum"` document declares —
+    /// `sce:underlying-type`. `None` for every other import kind.
+    ///
+    /// A codec field of this type is written and read as this type, so
+    /// the emission needs it beside the enum's name; deriving it a second
+    /// time from the imported document at each codec site is how the two
+    /// answers drift.
+    #[serde(skip)]
+    pub enum_underlying: Option<SceType>,
+    /// Whether the imported enum admits a value no variant declares —
+    /// `sce:strict-variants="false"`. A closed enum's decode refuses such
+    /// a value; an open one carries it, which is what the protocols that
+    /// declare one need (a UDS negative-response code an ECU may answer
+    /// with outside the table).
+    #[serde(skip)]
+    pub enum_is_open: bool,
 }
 
 /// Resolve a list of `ForgeImport` into template-ready `ImportContext`.
@@ -615,6 +631,8 @@ fn resolve_single_import(
         enum_qualified_type: String::new(),
         enum_variants: Vec::new(),
         enum_source_name: String::new(),
+        enum_underlying: None,
+        enum_is_open: false,
     }
 }
 
@@ -1466,8 +1484,8 @@ fn render_lookup(
 // ── Enum rendering (unified) ──────────────────────────────────
 //
 // Emit a backend-native typed enum from
-// `EnumModel`. Each backend lowers the variant list to its idiomatic
-// shape:
+// `EnumModel`. Each backend lowers a CLOSED variant list to its
+// idiomatic shape:
 //   * C++  : `enum class <Pascal> : <underlying_int> { <Pascal> = N, … };`
 //   * Rust : `#[repr(<underlying_int>)] pub enum <Pascal> { <Pascal> = N, … }`
 //   * Kotlin: `enum class <Pascal>(val raw: <UnderlyingInt>) { <UPPER_SNAKE>(N), … }`
@@ -1475,19 +1493,31 @@ fn render_lookup(
 //   * Python: `class <Pascal>(IntEnum): <UPPER_SNAKE> = N`
 //   * C11  : `typedef enum { <UPPER_TYPE>_<UPPER_VARIANT> = N, … } <Pascal>_t;`
 //
+// An OPEN list (`sce:strict-variants="false"`) must also hold a value no
+// variant declares. C++, Go and C11 already do — their types carry every
+// value of the carrier — so their shape is unchanged. Rust and Kotlin
+// cannot (an undeclared Rust discriminant is undefined behaviour; a
+// Kotlin `enum class` has a fixed instance set), so they emit a type
+// that carries the carrier and names the declared values as constants;
+// Python keeps `IntEnum` and makes an undeclared value a member through
+// `_missing_`. Every backend answers the same two conversions either way
+// — `to_underlying`, and a `from_underlying` that is partial for a
+// closed list and total for an open one — so a codec field reads and
+// writes an enum the same way whichever it is.
+//
 // `m.underlying_type` is always a fixed-width integer primitive
 // (`Uint8/16/32/64`, `Int8/16/32/64`); the parser rejects any other
 // shape via `validation/enum-unsupported-underlying-type`, so the
 // `<lang>_type(&m.underlying_type)` lookups here never reach the
 // `SceType::Enum(_)` arm.
 //
-// Strict-variants note: `m.strict_variants` is deliberately not consumed here.
-// The opt-out flag is a parse-time validator concern (it gates the
-// membership check in `event_schema_check::enum_variant_not_declared`)
-// and emits identical typed enum syntax in every backend regardless
-// of the flag. A grep for `strict_variants` in this file must remain
-// zero — the flag is a parse-time membership-check concern only and
-// never changes the emitted enum syntax.
+// Strict-variants note: `m.strict_variants` is consumed here, and it
+// used not to be. It still gates the parse-time membership check in
+// `event_schema_check::enum_variant_not_declared`; it now also decides
+// which of the two shapes above a backend emits, because a type that
+// cannot hold an undeclared value cannot stand for an open set.
+// `strict_variants_defaults_to_strict_and_reaches_every_backend` pins
+// that every backend reads it.
 fn render_enum(
     env: &minijinja::Environment,
     m: &EnumModel,
@@ -1568,6 +1598,19 @@ fn render_enum(
     ctx.insert("underlying_type".into(), underlying_type.into());
     ctx.insert("sce_underlying_name".into(), sce_underlying_name.into());
     ctx.insert("variants".into(), serde_json::json!(variants));
+    // Whether a value no variant declares is legal — `sce:strict-variants`.
+    // An open enum's emitted type must CARRY such a value, which a Rust
+    // enum and a Kotlin enum class cannot, so those two emit a
+    // value-carrying type instead; the rest already carry it by their own
+    // language's rules. Both shapes answer the same two conversions, so a
+    // codec field reads and writes an enum the same way either way.
+    ctx.insert("is_open".into(), (!m.strict_variants).into());
+    // The document's own name in snake case — the prefix C11's conversion
+    // functions carry, since C has no namespace to put them in.
+    ctx.insert(
+        "snake_name".into(),
+        filters::to_snake_case(m.name.clone()).into(),
+    );
     l.insert_imports(&mut ctx, imports);
 
     if matches!(l.lang, crate::generator::Language::Rust) {
@@ -3539,6 +3582,43 @@ fn render_codec(
                 "decode_expr".into(),
                 generate_decode_expr(f, m.default_endian, lang, &m.fields).into(),
             );
+            // An enum-typed field is carried on the wire as the enum's
+            // carrier, so `decode_expr` reads that carrier and the template
+            // turns it into a value of the type. Which is a per-language
+            // shape — a closed enum's conversion can fail, and each backend
+            // fails its own way — so the template gets the conversion's
+            // NAME and writes the call itself.
+            if let SceType::Enum(r) = &f.sce_type {
+                obj.insert("is_enum".into(), serde_json::Value::Bool(true));
+                obj.insert(
+                    "enum_from_underlying".into(),
+                    l.enum_from_underlying(&r.alias).into(),
+                );
+                // C++ has no Default trait; the equivalent is a brace
+                // init on the declaration, and without one a
+                // value-initialized codec would hold the carrier's zero
+                // — not a value of a closed set. The other five either
+                // spell their default elsewhere (Rust's `Default`,
+                // Kotlin's constructor, Python's dataclass) or have only
+                // the language's own zero-initialization (C11, Go).
+                //
+                // A gated field declares `std::optional<T>`, whose
+                // default must be the ABSENT state — initializing it
+                // with a value of `T` would make a fresh codec claim the
+                // field was on the wire.
+                if matches!(l.lang, crate::generator::Language::Cpp) && f.present_if.is_none() {
+                    obj.insert(
+                        "cpp_default_init".into(),
+                        format!("{{{}}}", l.enum_default_expr(&r.alias)).into(),
+                    );
+                }
+                obj.insert(
+                    "enum_is_open".into(),
+                    serde_json::Value::Bool(l.enum_import(&r.alias).is_open),
+                );
+            } else {
+                obj.insert("is_enum".into(), serde_json::Value::Bool(false));
+            }
             obj.insert("is_variable".into(), serde_json::Value::Bool(f.is_variable_length()));
             obj.insert("is_vle".into(), serde_json::Value::Bool(f.is_vle()));
             // RFC §synth-5-B string fields — C11 codec.h.jinja2 switches the
@@ -4092,7 +4172,7 @@ fn render_codec(
                 let skip_default_overwrite =
                     f.is_repeat() || f.is_tlv_chain() || f.is_embed();
                 if !skip_default_overwrite {
-                    obj.insert("kt_default".into(), kotlin_default(&f.sce_type).into());
+                    obj.insert("kt_default".into(), l.default_expr(&f.sce_type).into());
                 }
                 // RFC §synth-5-B flags primitive on Kotlin: bitwise ops on
                 // UByte/UShort/UInt/ULong are awkward (no UByte literal,
@@ -4135,7 +4215,7 @@ fn render_codec(
                     // on-wire decode round-trips correctly.
                     "None".to_string()
                 } else {
-                    python_default(&f.sce_type).to_string()
+                    l.default_expr(&f.sce_type)
                 };
                 obj.insert("default_value".into(), py_default.into());
                 // RFC §synth-5-B flags primitive on Python: ints are
@@ -4212,7 +4292,7 @@ fn render_codec(
                     Some(64) => format!("{{0x{:016x}uLL}}", acc),
                     _        => format!("{{0x{:02x}u}}", acc),
                 };
-                obj.insert("cpp_flag_default_init".into(), cpp_literal.into());
+                obj.insert("cpp_default_init".into(), cpp_literal.into());
                 // Kotlin default-value expression: emitted as the right-
                 // hand side of the data class primary constructor's
                 // `var id: UByte = …` default. UByte / UShort have no
@@ -4298,20 +4378,10 @@ fn render_codec(
             if needs_streaming_path {
                 obj.insert(
                     "present_if_decode_stmt".into(),
-                    present_if_streaming_decode_stmt(
-                        f,
-                        &m.fields,
-                        m.default_endian,
-                        lang,
-                    )
-                    .into(),
+                    present_if_streaming_decode_stmt(&l, f, &m.fields, m.default_endian).into(),
                 );
-                let mut encode_block = present_if_streaming_encode_block(
-                    f,
-                    &m.fields,
-                    m.default_endian,
-                    lang,
-                );
+                let mut encode_block =
+                    present_if_streaming_encode_block(&l, f, &m.fields, m.default_endian);
                 // RFC §synth-5-B parent-tag carriers — inject `| _derived_<carrier>`
                 // into the single-byte carrier emit so the derived bits
                 // land in the outgoing stream. Carrier is uint8 per v1
@@ -4449,7 +4519,7 @@ fn render_codec(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    let encode_exprs = generate_encode_exprs(&m.fields, m.default_endian, lang);
+    let encode_exprs = generate_encode_exprs(&m.fields, m.default_endian, &l);
 
     // RFC §synth-5-B parent-tag carriers — locals block; `parent_tag_derivations` was
     // computed at the top of `compile_codec` so it could feed the
@@ -4643,6 +4713,20 @@ fn render_codec(
     );
     ctx.insert("has_embed_fields".into(), m.has_embed_fields().into());
     ctx.insert("has_string_fields".into(), m.has_string_fields().into());
+    // A closed enum's carrier-to-value conversion can fail, so a codec
+    // holding such a field decodes through a failure path and names the
+    // error the failure raises. Python is the backend that has to know
+    // this at file scope: it imports each error class it raises by name.
+    ctx.insert(
+        "has_closed_enum_fields".into(),
+        m.fields
+            .iter()
+            .any(|f| match &f.sce_type {
+                SceType::Enum(r) => !l.enum_import(&r.alias).is_open,
+                _ => false,
+            })
+            .into(),
+    );
     ctx.insert("has_tail_fields".into(), m.has_tail_fields().into());
     ctx.insert(
         "has_dma_aligned_fields".into(),
@@ -9465,15 +9549,14 @@ fn codec_field_local_name(id: &str, lang: crate::generator::Language) -> String 
 /// list is read off `fields` so the bit position resolves at codegen
 /// time into a literal mask (no runtime metadata).
 fn present_if_streaming_decode_stmt(
+    l: &LangCtx,
     field: &CodecField,
     fields: &[CodecField],
     default_endian: Endian,
-    lang: crate::generator::Language,
 ) -> String {
+    let lang = l.lang;
     match &field.bit_size {
-        BitSize::Fixed { bits } => {
-            present_if_decode_fixed(field, fields, default_endian, lang, *bits)
-        }
+        BitSize::Fixed { bits } => present_if_decode_fixed(l, field, fields, default_endian, *bits),
         BitSize::Tail => present_if_decode_tail(field, fields, lang),
         BitSize::LengthRef => present_if_decode_length_ref(field, fields, lang),
         BitSize::Vle { width_bits } => present_if_decode_vle(field, fields, lang, *width_bits),
@@ -9491,23 +9574,98 @@ fn present_if_streaming_decode_stmt(
     }
 }
 
+/// The streaming path's read of one fixed-width field, as a value of the
+/// field's own type.
+///
+/// The wire carries an enum-typed field as the enum's carrier, so
+/// `carrier_read` reads that carrier and the enum's own conversion turns
+/// it into a value of the type. A closed set's conversion can fail — a
+/// carrier value it never declared is not a value of that type — and
+/// each backend fails its own way, so the answer comes back in two
+/// parts: the statements that conversion costs, indented to `indent` and
+/// empty when it costs none, and the expression that stands for the
+/// value. For every other type the read IS the value.
+fn streaming_fixed_enum_conversion(
+    l: &LangCtx,
+    field: &CodecField,
+    carrier_read: &str,
+    indent: &str,
+) -> (String, String) {
+    use crate::generator::Language;
+    let SceType::Enum(r) = &field.sce_type else {
+        return (String::new(), carrier_read.to_string());
+    };
+    let from = l.enum_from_underlying(&r.alias);
+    if l.enum_import(&r.alias).is_open {
+        return (String::new(), format!("{from}({carrier_read})"));
+    }
+    match l.lang {
+        Language::Rust => (
+            String::new(),
+            format!("{from}({carrier_read}).ok_or(CodecError::UndeclaredEnumValue)?"),
+        ),
+        Language::Kotlin => (
+            String::new(),
+            format!("{from}({carrier_read}) ?: return null"),
+        ),
+        Language::Cpp => (
+            format!(
+                "const auto _enum_v = {from}({carrier_read});\n{indent}\
+                 if (!_enum_v.has_value()) return std::nullopt;\n{indent}"
+            ),
+            "*_enum_v".to_string(),
+        ),
+        Language::Go => (
+            format!(
+                "_enumV, _enumOk := {from}({carrier_read})\n{indent}\
+                 if !_enumOk {{\n{indent}\treturn nil, codec.ErrUndeclaredEnumValue\n{indent}}}\n{indent}"
+            ),
+            "_enumV".to_string(),
+        ),
+        Language::C11 => (
+            format!(
+                "{ty} _enum_v;\n{indent}\
+                 if (!{from}({carrier_read}, &_enum_v)) return SCE_FORGE_CODEC_UNDECLARED_ENUM_VALUE;\n{indent}",
+                ty = l.type_name(&field.sce_type),
+            ),
+            "_enum_v".to_string(),
+        ),
+        Language::Python => (
+            format!(
+                "_enum_v = {from}({carrier_read})\n{indent}\
+                 if _enum_v is None:\n{indent}    raise UndeclaredEnumValue(\"{id}\")\n{indent}",
+                id = field.id,
+            ),
+            "_enum_v".to_string(),
+        ),
+    }
+}
+
 /// RFC §synth-5-B present-if + Fixed bit-size: the historical 12-arm
 /// table for fixed-width gated fields. Extracted from the
 /// `present_if_streaming_decode_stmt` body during the item B2 refactor —
 /// no behavior change for present-if fixtures.
 fn present_if_decode_fixed(
+    l: &LangCtx,
     field: &CodecField,
     fields: &[CodecField],
     default_endian: Endian,
-    lang: crate::generator::Language,
     bits: u32,
 ) -> String {
     use crate::generator::Language;
+    let lang = l.lang;
     let n = bits.div_ceil(8);
 
     // Build the per-language slice-read body that materializes the
-    // field's value as `_v` typed as the field's natural carrier.
-    let body = streaming_fixed_field_body(field, default_endian, n, lang);
+    // field's value as `_v` typed as the field's natural carrier — for
+    // an enum, through the conversion whose statements each arm places
+    // at its own indent.
+    let carrier_read = streaming_fixed_field_body(field, default_endian, n, lang);
+    let (conv12, body12) = streaming_fixed_enum_conversion(l, field, &carrier_read, "            ");
+    let (conv16, body16) =
+        streaming_fixed_enum_conversion(l, field, &carrier_read, "                ");
+    let (conv_tab, body_tab) = streaming_fixed_enum_conversion(l, field, &carrier_read, "\t\t");
+    let (conv8, body8) = streaming_fixed_enum_conversion(l, field, &carrier_read, "        ");
 
     // Per-language struct-field casing must match `LangCtx::codec_field_id`
     // so the helper-rendered `let <id> = ...` (decode) and `self.<id>`
@@ -9526,7 +9684,7 @@ fn present_if_decode_fixed(
         (Language::Rust, None) => format!(
             "let {id} = {{\n            \
                  let raw = cursor.peek_slice({n})?;\n            \
-                 let _v = {body};\n            \
+                 {conv12}let _v = {body12};\n            \
                  cursor.advance({n})?;\n            \
                  _v\n        \
              }};"
@@ -9536,7 +9694,7 @@ fn present_if_decode_fixed(
             format!(
                 "let {id} = if {test} {{\n            \
                      let raw = cursor.peek_slice({n})?;\n            \
-                     let _v = {body};\n            \
+                     {conv12}let _v = {body12};\n            \
                      cursor.advance({n})?;\n            \
                      Some(_v)\n        \
                  }} else {{\n            \
@@ -9545,26 +9703,26 @@ fn present_if_decode_fixed(
             )
         }
         (Language::Cpp, None) => {
-            let ty = cpp_type(&field.sce_type);
+            let ty = l.type_name(&field.sce_type);
             format!(
                 "{ty} {id};\n        \
                  {{\n            \
                      const std::uint8_t* raw = cursor.peek_slice({n});\n            \
                      if (raw == nullptr) return std::nullopt;\n            \
-                     {id} = static_cast<{ty}>({body});\n            \
+                     {conv12}{id} = static_cast<{ty}>({body12});\n            \
                      if (!cursor.advance({n})) return std::nullopt;\n        \
                  }}"
             )
         }
         (Language::Cpp, Some(p)) => {
-            let ty = cpp_type(&field.sce_type);
+            let ty = l.type_name(&field.sce_type);
             let test = present_if_test_literal(fields, p, lang);
             format!(
                 "std::optional<{ty}> {id};\n        \
                  if ({test}) {{\n            \
                      const std::uint8_t* raw = cursor.peek_slice({n});\n            \
                      if (raw == nullptr) return std::nullopt;\n            \
-                     {id} = static_cast<{ty}>({body});\n            \
+                     {conv12}{id} = static_cast<{ty}>({body12});\n            \
                      if (!cursor.advance({n})) return std::nullopt;\n        \
                  }}"
             )
@@ -9581,7 +9739,7 @@ fn present_if_decode_fixed(
         (Language::Kotlin, None) => format!(
             "val {id} = run {{\n                \
                  val raw = cursor.peekSlice({n}) ?: return null\n                \
-                 val _v = {body}\n                \
+                 {conv16}val _v = {body16}\n                \
                  if (!cursor.advance({n})) return null\n                \
                  _v\n            \
              }}"
@@ -9591,7 +9749,7 @@ fn present_if_decode_fixed(
             format!(
                 "val {id} = if ({test}) {{\n                \
                      val raw = cursor.peekSlice({n}) ?: return null\n                \
-                     val _v = {body}\n                \
+                     {conv16}val _v = {body16}\n                \
                      if (!cursor.advance({n})) return null\n                \
                      _v\n            \
                  }} else {{\n                \
@@ -9608,7 +9766,7 @@ fn present_if_decode_fixed(
         // Tabs match the surrounding template indent (`Decode<X>` body
         // is at one tab; the sub-block lives at two tabs).
         (Language::Go, None) => {
-            let ty = go_type(&field.sce_type);
+            let ty = l.type_name(&field.sce_type);
             let go_id = filters::to_pascal_case(id.to_string());
             format!(
                 "var {go_id} {ty}\n\t\
@@ -9617,7 +9775,7 @@ fn present_if_decode_fixed(
                      if err != nil {{\n\t\t\t\
                          return nil, err\n\t\t\
                      }}\n\t\t\
-                     {go_id} = {body}\n\t\t\
+                     {conv_tab}{go_id} = {body_tab}\n\t\t\
                      if err := cursor.Advance({n}); err != nil {{\n\t\t\t\
                          return nil, err\n\t\t\
                      }}\n\t\
@@ -9625,7 +9783,7 @@ fn present_if_decode_fixed(
             )
         }
         (Language::Go, Some(p)) => {
-            let ty = go_type(&field.sce_type);
+            let ty = l.type_name(&field.sce_type);
             let go_id = filters::to_pascal_case(id.to_string());
             let test = present_if_test_literal(fields, p, lang);
             format!(
@@ -9635,7 +9793,7 @@ fn present_if_decode_fixed(
                      if err != nil {{\n\t\t\t\
                          return nil, err\n\t\t\
                      }}\n\t\t\
-                     _v := {body}\n\t\t\
+                     {conv_tab}_v := {body_tab}\n\t\t\
                      if err := cursor.Advance({n}); err != nil {{\n\t\t\t\
                          return nil, err\n\t\t\
                      }}\n\t\t\
@@ -9657,7 +9815,7 @@ fn present_if_decode_fixed(
                 "{{\n        \
                      const uint8_t *raw = sce_forge_cursor_peek(cursor, {n});\n        \
                      if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
-                     out->{id_snake} = {body};\n        \
+                     {conv8}out->{id_snake} = {body8};\n        \
                      if (!sce_forge_cursor_advance(cursor, {n})) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
                  }}"
             )
@@ -9665,15 +9823,23 @@ fn present_if_decode_fixed(
         (Language::C11, Some(p)) => {
             let id_snake = filters::to_snake_case(id.to_string());
             let test = present_if_test_literal(fields, p, lang);
-            let c_ty = c_type(&field.sce_type);
+            let c_ty = l.type_name(&field.sce_type);
+            // The absent branch leaves the member holding a value of its
+            // own type. For a number that is the carrier's zero, which
+            // C11 has always written here; for an enum it is not, since
+            // a closed set does not hold a value it never declared.
+            let absent = match &field.sce_type {
+                SceType::Enum(r) => l.enum_default_expr(&r.alias),
+                _ => "0".to_string(),
+            };
             format!(
                 "if ({test}) {{\n        \
                      const uint8_t *raw = sce_forge_cursor_peek(cursor, {n});\n        \
                      if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n        \
-                     out->{id_snake} = ({c_ty})({body});\n        \
+                     {conv8}out->{id_snake} = ({c_ty})({body8});\n        \
                      if (!sce_forge_cursor_advance(cursor, {n})) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n    \
                  }} else {{\n        \
-                     out->{id_snake} = 0;\n    \
+                     out->{id_snake} = {absent};\n    \
                  }}"
             )
         }
@@ -9691,7 +9857,7 @@ fn present_if_decode_fixed(
             let py_id = filters::to_snake_case(id.to_string());
             format!(
                 "raw = cursor.peek_slice({n})\n            \
-                 {py_id} = {body}\n            \
+                 {conv12}{py_id} = {body12}\n            \
                  cursor.advance({n})"
             )
         }
@@ -9701,7 +9867,7 @@ fn present_if_decode_fixed(
             format!(
                 "if {test}:\n                \
                      raw = cursor.peek_slice({n})\n                \
-                     _v = {body}\n                \
+                     {conv16}_v = {body16}\n                \
                      cursor.advance({n})\n                \
                      {py_id} = _v\n            \
                  else:\n                \
@@ -10787,15 +10953,14 @@ fn present_if_decode_vle(
 /// decode side. Fixed/Tail/LengthRef/Vle each get a dedicated
 /// per-language encode helper.
 fn present_if_streaming_encode_block(
+    l: &LangCtx,
     field: &CodecField,
     fields: &[CodecField],
     default_endian: Endian,
-    lang: crate::generator::Language,
 ) -> String {
+    let lang = l.lang;
     match &field.bit_size {
-        BitSize::Fixed { bits } => {
-            present_if_encode_fixed(field, fields, default_endian, lang, *bits)
-        }
+        BitSize::Fixed { bits } => present_if_encode_fixed(l, field, fields, default_endian, *bits),
         BitSize::Tail => present_if_encode_tail(field, fields, lang),
         BitSize::LengthRef => present_if_encode_length_ref(field, fields, lang),
         BitSize::Vle { width_bits } => present_if_encode_vle(field, fields, lang, *width_bits),
@@ -10813,30 +10978,31 @@ fn present_if_streaming_encode_block(
 /// RFC §synth-5-B present-if Fixed bit-size encode (extracted from the original
 /// `present_if_streaming_encode_block` body during the item B2 refactor).
 fn present_if_encode_fixed(
+    l: &LangCtx,
     field: &CodecField,
     fields: &[CodecField],
     default_endian: Endian,
-    lang: crate::generator::Language,
     bits: u32,
 ) -> String {
     use crate::generator::Language;
+    let lang = l.lang;
     let n = bits.div_ceil(8);
 
     let id_owned = codec_field_local_name(&field.id, lang);
     let id = id_owned.as_str();
     match (lang, field.present_if.is_some()) {
-        (Language::Rust, false) => streaming_fixed_field_encode_rust(field, default_endian, n),
+        (Language::Rust, false) => streaming_fixed_field_encode_rust(l, field, default_endian, n),
         (Language::Rust, true) => {
-            let inner = streaming_fixed_field_encode_rust_from_local(field, default_endian, n);
+            let inner = streaming_fixed_field_encode_rust_from_local(l, field, default_endian, n);
             format!(
                 "        if let Some(_v) = self.{id} {{\n\
                  {inner}\
                  \n        }}"
             )
         }
-        (Language::Cpp, false) => streaming_fixed_field_encode_cpp(field, default_endian, n),
+        (Language::Cpp, false) => streaming_fixed_field_encode_cpp(l, field, default_endian, n),
         (Language::Cpp, true) => {
-            let inner = streaming_fixed_field_encode_cpp_from_local(field, default_endian, n);
+            let inner = streaming_fixed_field_encode_cpp_from_local(l, field, default_endian, n);
             format!(
                 "        if ({id}.has_value()) {{\n            \
                      auto _v = *{id};\n\
@@ -10844,27 +11010,29 @@ fn present_if_encode_fixed(
                  \n        }}"
             )
         }
-        (Language::Kotlin, false) => streaming_fixed_field_encode_kotlin(field, default_endian, n),
+        (Language::Kotlin, false) => {
+            streaming_fixed_field_encode_kotlin(l, field, default_endian, n)
+        }
         (Language::Kotlin, true) => {
             // Kotlin's safe-call+let extracts the inner value when the
             // optional is non-null; the inline lambda body emits the
             // same byte appends as the non-gated form but reads from
             // the lambda's `_v` parameter instead of `this.<id>`.
-            let inner = streaming_fixed_field_encode_kotlin_from_local(field, default_endian, n);
+            let inner = streaming_fixed_field_encode_kotlin_from_local(l, field, default_endian, n);
             format!(
                 "        this.{id}?.let {{ _v ->\n\
                  {inner}\
                  \n        }}"
             )
         }
-        (Language::Go, false) => streaming_fixed_field_encode_go(field, default_endian, n),
+        (Language::Go, false) => streaming_fixed_field_encode_go(l, field, default_endian, n),
         (Language::Go, true) => {
             // Go: nil-check the pointer field and dereference into
             // a local `_v` so the byte appends operate on the carrier
             // type (mirrors the non-gated form's `s.<Id>` read but
             // through the optional).
             let go_id = filters::to_pascal_case(id.to_string());
-            let inner = streaming_fixed_field_encode_go_from_local(field, default_endian, n);
+            let inner = streaming_fixed_field_encode_go_from_local(l, field, default_endian, n);
             format!(
                 "\tif s.{go_id} != nil {{\n\t\t\
                      _v := *s.{go_id}\n\
@@ -10872,7 +11040,7 @@ fn present_if_encode_fixed(
                  \n\t}}"
             )
         }
-        (Language::C11, false) => streaming_fixed_field_encode_c11(field, default_endian, n),
+        (Language::C11, false) => streaming_fixed_field_encode_c11(l, field, default_endian, n),
         (Language::C11, true) => {
             // C11: presence is encoded by the carrier flag bit on the
             // struct member (no nullable wrapper), so the encode site
@@ -10891,14 +11059,16 @@ fn present_if_encode_fixed(
                 .as_ref()
                 .expect("gated arm requires predicate");
             let test = present_if_test_literal_encode(fields, p, Language::C11);
-            let inner = streaming_fixed_field_encode_c11_inner(field, default_endian, n);
+            let inner = streaming_fixed_field_encode_c11_inner(l, field, default_endian, n);
             format!(
                 "    if ({test}) {{\n\
                  {inner}\
                  \n    }}"
             )
         }
-        (Language::Python, false) => streaming_fixed_field_encode_python(field, default_endian, n),
+        (Language::Python, false) => {
+            streaming_fixed_field_encode_python(l, field, default_endian, n)
+        }
         (Language::Python, true) => {
             // Python: `is not None` discriminates the optional. Inner
             // body is one indent deeper (12 cols) so it sits inside
@@ -10906,7 +11076,7 @@ fn present_if_encode_fixed(
             // gated form — Python's optional only changes the
             // surrounding test, not the byte-extraction expression).
             let py_id = filters::to_snake_case(field.id.clone());
-            let inner = streaming_fixed_field_encode_python_inner(field, default_endian, n);
+            let inner = streaming_fixed_field_encode_python_inner(l, field, default_endian, n);
             format!(
                 "        if self.{py_id} is not None:\n\
                  {inner}"
@@ -11532,42 +11702,48 @@ fn encode_multibyte_unified(
 /// Encode block for a non-gated fixed field — Rust. Reads `self.<id>`
 /// and writes `n` bytes in the field's effective endianness via the shared
 /// byte-extraction SSOT ([`encode_multibyte_unified`]).
-fn streaming_fixed_field_encode_rust(field: &CodecField, default_endian: Endian, n: u32) -> String {
+fn streaming_fixed_field_encode_rust(
+    l: &LangCtx,
+    field: &CodecField,
+    default_endian: Endian,
+    n: u32,
+) -> String {
     // Rust struct fields are snake_case (see `LangCtx::codec_field_id`),
     // so `self.<id>` must read through the snake-cased name. A camelCase
     // `<sce:field id>` declared by the author becomes `pub opt_n` at
     // struct-decl time; the encode read here must use the same casing.
     let id = filters::to_snake_case(field.id.clone());
     let endian = field.effective_endian(default_endian);
+    // An enum-typed field goes onto the wire as the enum's carrier.
+    // Every other type is its own carrier, and `codec_carrier_expr`
+    // hands the read back unchanged.
+    let source = l.codec_carrier_expr(&field.sce_type, &format!("self.{id}"));
     if n == 1 {
         // Single-byte carrier writes directly — no shift/mask needed.
-        return format!("        w.write_u8(self.{id})?;");
+        return format!("        w.write_u8({source})?;");
     }
-    encode_multibyte_unified(
-        &format!("self.{id}"),
-        n,
-        endian,
-        crate::generator::Language::Rust,
-    )
-    .into_iter()
-    .map(|e| format!("        w.write_u8({e})?;"))
-    .collect::<Vec<_>>()
-    .join("\n")
+    encode_multibyte_unified(&source, n, endian, crate::generator::Language::Rust)
+        .into_iter()
+        .map(|e| format!("        w.write_u8({e})?;"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Encode block for a gated fixed field — Rust. Reads from `_v` (the
 /// inner of the `Some` arm) instead of `self.<id>`. The caller wraps
 /// this in `if let Some(_v) = self.<id> { ... }`.
 fn streaming_fixed_field_encode_rust_from_local(
+    l: &LangCtx,
     field: &CodecField,
     default_endian: Endian,
     n: u32,
 ) -> String {
     let endian = field.effective_endian(default_endian);
+    let source = l.codec_carrier_expr(&field.sce_type, "_v");
     if n == 1 {
-        return "            w.write_u8(_v)?;".to_string();
+        return format!("            w.write_u8({source})?;");
     }
-    encode_multibyte_unified("_v", n, endian, crate::generator::Language::Rust)
+    encode_multibyte_unified(&source, n, endian, crate::generator::Language::Rust)
         .into_iter()
         .map(|e| format!("            w.write_u8({e})?;"))
         .collect::<Vec<_>>()
@@ -11578,16 +11754,22 @@ fn streaming_fixed_field_encode_rust_from_local(
 /// encode SSOT ([`encode_multibyte_unified`]); the cast spelling (bare
 /// `uint8_t`) and `& 0xFF` mask match both the positional path and the
 /// decode fold, which also emit bare `uint16_t`/`uint32_t`.
-fn streaming_fixed_field_encode_cpp(field: &CodecField, default_endian: Endian, n: u32) -> String {
+fn streaming_fixed_field_encode_cpp(
+    l: &LangCtx,
+    field: &CodecField,
+    default_endian: Endian,
+    n: u32,
+) -> String {
     let id = field.id.as_str();
     let endian = field.effective_endian(default_endian);
+    let source = l.codec_carrier_expr(&field.sce_type, id);
     if n == 1 {
         // Single-byte uint8 carrier: no narrowing cast needed; the value
         // already fits write_u8's parameter type. Keeps the parent-tag
         // injection needle simple (`w.write_u8({id})`).
-        return format!("        if (auto _e = w.write_u8({id}); _e) return _e;");
+        return format!("        if (auto _e = w.write_u8({source}); _e) return _e;");
     }
-    encode_multibyte_unified(id, n, endian, crate::generator::Language::Cpp)
+    encode_multibyte_unified(&source, n, endian, crate::generator::Language::Cpp)
         .into_iter()
         .map(|e| format!("        if (auto _e = w.write_u8({e}); _e) return _e;"))
         .collect::<Vec<_>>()
@@ -11596,15 +11778,17 @@ fn streaming_fixed_field_encode_cpp(field: &CodecField, default_endian: Endian, 
 
 /// Cpp encode counterpart — gated, reads from `_v` local.
 fn streaming_fixed_field_encode_cpp_from_local(
+    l: &LangCtx,
     field: &CodecField,
     default_endian: Endian,
     n: u32,
 ) -> String {
     let endian = field.effective_endian(default_endian);
+    let source = l.codec_carrier_expr(&field.sce_type, "_v");
     if n == 1 {
-        return "            if (auto _e = w.write_u8(_v); _e) return _e;".to_string();
+        return format!("            if (auto _e = w.write_u8({source}); _e) return _e;");
     }
-    encode_multibyte_unified("_v", n, endian, crate::generator::Language::Cpp)
+    encode_multibyte_unified(&source, n, endian, crate::generator::Language::Cpp)
         .into_iter()
         .map(|e| format!("            if (auto _e = w.write_u8({e}); _e) return _e;"))
         .collect::<Vec<_>>()
@@ -11617,53 +11801,51 @@ fn streaming_fixed_field_encode_cpp_from_local(
 /// widening through `Int` for n ≤ 4 or `Long` for n ≥ 5) to the encode SSOT
 /// ([`encode_multibyte_unified`]).
 fn streaming_fixed_field_encode_kotlin(
+    l: &LangCtx,
     field: &CodecField,
     default_endian: Endian,
     n: u32,
 ) -> String {
     let id = field.id.as_str();
     let endian = field.effective_endian(default_endian);
+    let source = l.codec_carrier_expr(&field.sce_type, &format!("this.{id}"));
     if n == 1 {
         // Bare carrier path — Kotlin Byte fits write_u8 directly.
         // Keeps parent-tag injection needle simple (`writeU8(this.<id>.toByte())`).
-        return format!("        w.writeU8(this.{id}.toByte())?.let {{ return it }}");
+        return format!("        w.writeU8({source}.toByte())?.let {{ return it }}");
     }
-    encode_multibyte_unified(
-        &format!("this.{id}"),
-        n,
-        endian,
-        crate::generator::Language::Kotlin,
-    )
-    .into_iter()
-    .map(|e| format!("        w.writeU8({e})?.let {{ return it }}"))
-    .collect::<Vec<_>>()
-    .join("\n")
+    encode_multibyte_unified(&source, n, endian, crate::generator::Language::Kotlin)
+        .into_iter()
+        .map(|e| format!("        w.writeU8({e})?.let {{ return it }}"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Go encode counterpart — non-gated. Mirrors `encode_single_field_unified`
 /// for Go: byte fields cast directly, multi-byte fields pull bytes via
 /// `byte(s.<Id> >> shift)` in the field's effective endianness. Tab
 /// indentation matches the surrounding `Encode()` method body.
-fn streaming_fixed_field_encode_go(field: &CodecField, default_endian: Endian, n: u32) -> String {
+fn streaming_fixed_field_encode_go(
+    l: &LangCtx,
+    field: &CodecField,
+    default_endian: Endian,
+    n: u32,
+) -> String {
     let go_id = filters::to_pascal_case(field.id.to_string());
     let endian = field.effective_endian(default_endian);
     let emit = |buf: &str| -> String {
         format!("\tif err := w.WriteBytes([]byte{{ {buf} }}); err != nil {{\n\t\treturn err\n\t}}")
     };
+    let source = l.codec_carrier_expr(&field.sce_type, &format!("s.{go_id}"));
     if n == 1 {
         // Bare carrier path keeps parent-tag injection needle simple.
-        return emit(&format!("s.{go_id}"));
+        return emit(&source);
     }
-    encode_multibyte_unified(
-        &format!("s.{go_id}"),
-        n,
-        endian,
-        crate::generator::Language::Go,
-    )
-    .into_iter()
-    .map(|e| emit(&e))
-    .collect::<Vec<_>>()
-    .join("\n")
+    encode_multibyte_unified(&source, n, endian, crate::generator::Language::Go)
+        .into_iter()
+        .map(|e| emit(&e))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// C11 encode counterpart — non-gated. Mirrors `encode_single_field_unified`
@@ -11671,22 +11853,23 @@ fn streaming_fixed_field_encode_go(field: &CodecField, default_endian: Endian, n
 /// drop through `(uint8_t)((self-><id> >> shift) & 0xFF)`. The C11 encode
 /// signature uses an `encoded_t r` with `r.bytes[r.len++]` so each byte
 /// append both writes the slot and bumps the length.
-fn streaming_fixed_field_encode_c11(field: &CodecField, default_endian: Endian, n: u32) -> String {
+fn streaming_fixed_field_encode_c11(
+    l: &LangCtx,
+    field: &CodecField,
+    default_endian: Endian,
+    n: u32,
+) -> String {
     let id_snake = filters::to_snake_case(field.id.clone());
     let endian = field.effective_endian(default_endian);
+    let source = l.codec_carrier_expr(&field.sce_type, &format!("self->{id_snake}"));
     if n == 1 {
-        return format!("    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->{id_snake}));");
+        return format!("    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, {source}));");
     }
-    encode_multibyte_unified(
-        &format!("self->{id_snake}"),
-        n,
-        endian,
-        crate::generator::Language::C11,
-    )
-    .into_iter()
-    .map(|e| format!("    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, {e}));"))
-    .collect::<Vec<_>>()
-    .join("\n")
+    encode_multibyte_unified(&source, n, endian, crate::generator::Language::C11)
+        .into_iter()
+        .map(|e| format!("    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, {e}));"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// C11 encode inner body — same per-byte writes as the non-gated form
@@ -11694,27 +11877,22 @@ fn streaming_fixed_field_encode_c11(field: &CodecField, default_endian: Endian, 
 /// gate. C11 has no nullable wrapper so reads go through `self-><id>`
 /// in both gated and non-gated paths; only the indentation differs.
 fn streaming_fixed_field_encode_c11_inner(
+    l: &LangCtx,
     field: &CodecField,
     default_endian: Endian,
     n: u32,
 ) -> String {
     let id_snake = filters::to_snake_case(field.id.clone());
     let endian = field.effective_endian(default_endian);
+    let source = l.codec_carrier_expr(&field.sce_type, &format!("self->{id_snake}"));
     if n == 1 {
-        return format!(
-            "        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->{id_snake}));"
-        );
+        return format!("        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, {source}));");
     }
-    encode_multibyte_unified(
-        &format!("self->{id_snake}"),
-        n,
-        endian,
-        crate::generator::Language::C11,
-    )
-    .into_iter()
-    .map(|e| format!("        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, {e}));"))
-    .collect::<Vec<_>>()
-    .join("\n")
+    encode_multibyte_unified(&source, n, endian, crate::generator::Language::C11)
+        .into_iter()
+        .map(|e| format!("        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, {e}));"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Python encode counterpart — non-gated. Mirrors `encode_single_field_unified`
@@ -11723,25 +11901,22 @@ fn streaming_fixed_field_encode_c11_inner(
 /// `& 0xFF` is the canonical narrow). Inside the codec's `encode()`
 /// method body (8-space indent).
 fn streaming_fixed_field_encode_python(
+    l: &LangCtx,
     field: &CodecField,
     default_endian: Endian,
     n: u32,
 ) -> String {
     let py_id = filters::to_snake_case(field.id.clone());
     let endian = field.effective_endian(default_endian);
+    let source = l.codec_carrier_expr(&field.sce_type, &format!("self.{py_id}"));
     if n == 1 {
-        return format!("        w.write_u8(self.{py_id} & 0xFF)");
+        return format!("        w.write_u8({source} & 0xFF)");
     }
-    encode_multibyte_unified(
-        &format!("self.{py_id}"),
-        n,
-        endian,
-        crate::generator::Language::Python,
-    )
-    .into_iter()
-    .map(|e| format!("        w.write_u8({e})"))
-    .collect::<Vec<_>>()
-    .join("\n")
+    encode_multibyte_unified(&source, n, endian, crate::generator::Language::Python)
+        .into_iter()
+        .map(|e| format!("        w.write_u8({e})"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Python encode counterpart — gated, indented one level deeper so
@@ -11750,31 +11925,29 @@ fn streaming_fixed_field_encode_python(
 /// extraction expression — `self.<id>` is still the correct read,
 /// because the `is not None` check has narrowed the type to `int`.
 fn streaming_fixed_field_encode_python_inner(
+    l: &LangCtx,
     field: &CodecField,
     default_endian: Endian,
     n: u32,
 ) -> String {
     let py_id = filters::to_snake_case(field.id.clone());
     let endian = field.effective_endian(default_endian);
+    let source = l.codec_carrier_expr(&field.sce_type, &format!("self.{py_id}"));
     if n == 1 {
-        return format!("            w.write_u8(self.{py_id} & 0xFF)");
+        return format!("            w.write_u8({source} & 0xFF)");
     }
-    encode_multibyte_unified(
-        &format!("self.{py_id}"),
-        n,
-        endian,
-        crate::generator::Language::Python,
-    )
-    .into_iter()
-    .map(|e| format!("            w.write_u8({e})"))
-    .collect::<Vec<_>>()
-    .join("\n")
+    encode_multibyte_unified(&source, n, endian, crate::generator::Language::Python)
+        .into_iter()
+        .map(|e| format!("            w.write_u8({e})"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Go encode counterpart — gated, reads from `_v` local. The caller
 /// wraps this in `if s.<Id> != nil { _v := *s.<Id>; ... }` so `_v` is
 /// the unwrapped carrier value at one extra tab level.
 fn streaming_fixed_field_encode_go_from_local(
+    l: &LangCtx,
     field: &CodecField,
     default_endian: Endian,
     n: u32,
@@ -11783,10 +11956,11 @@ fn streaming_fixed_field_encode_go_from_local(
     let emit = |buf: &str| -> String {
         format!("\t\tif err := w.WriteBytes([]byte{{ {buf} }}); err != nil {{\n\t\t\treturn err\n\t\t}}")
     };
+    let source = l.codec_carrier_expr(&field.sce_type, "_v");
     if n == 1 {
-        return emit("_v");
+        return emit(&source);
     }
-    encode_multibyte_unified("_v", n, endian, crate::generator::Language::Go)
+    encode_multibyte_unified(&source, n, endian, crate::generator::Language::Go)
         .into_iter()
         .map(|e| emit(&e))
         .collect::<Vec<_>>()
@@ -11797,15 +11971,17 @@ fn streaming_fixed_field_encode_go_from_local(
 /// The caller wraps this in `this.<id>?.let { _v -> ... }` so `_v` is
 /// already the unwrapped non-null carrier value.
 fn streaming_fixed_field_encode_kotlin_from_local(
+    l: &LangCtx,
     field: &CodecField,
     default_endian: Endian,
     n: u32,
 ) -> String {
     let endian = field.effective_endian(default_endian);
+    let source = l.codec_carrier_expr(&field.sce_type, "_v");
     if n == 1 {
-        return "            w.writeU8(_v.toByte())?.let { return it }".to_string();
+        return format!("            w.writeU8({source}.toByte())?.let {{ return it }}");
     }
-    encode_multibyte_unified("_v", n, endian, crate::generator::Language::Kotlin)
+    encode_multibyte_unified(&source, n, endian, crate::generator::Language::Kotlin)
         .into_iter()
         .map(|e| format!("            w.writeU8({e})?.let {{ return it }}"))
         .collect::<Vec<_>>()
@@ -13071,11 +13247,12 @@ fn parent_tag_apply_simple_path_suffix(
 fn generate_encode_exprs(
     fields: &[CodecField],
     default_endian: Endian,
-    lang: crate::generator::Language,
+    l: &LangCtx,
 ) -> Vec<String> {
-    // Asks this context only for identifier and byte-expression spelling,
-    // never for a type — so no import table is needed to answer it.
-    let l = LangCtx::primitive(lang);
+    // The context carries the document's imports because an enum-typed
+    // field is written as its carrier, through the conversion the imported
+    // enum emits — a spelling only the import table knows.
+    let lang = l.lang;
     let mut exprs = Vec::new();
 
     let mut byte_groups: std::collections::BTreeMap<u32, Vec<&CodecField>> =
@@ -13096,14 +13273,19 @@ fn generate_encode_exprs(
 
     for group in byte_groups.values() {
         if group.len() == 1 {
-            encode_single_field_unified(group[0], default_endian, &mut exprs, lang);
+            encode_single_field_unified(group[0], default_endian, &mut exprs, l);
         } else {
             let mut parts = Vec::new();
             for field in group {
                 let bit_off = field.bit_offset.unwrap_or(0);
                 let bits = field.fixed_bits().unwrap_or(8);
                 let mask = (1u64 << bits) - 1;
-                let field_ref = l.codec_field_ref(&l.codec_field_id(&field.id));
+                // Sub-byte fields share a byte; an enum among them is still
+                // written as its carrier before the shift and mask.
+                let field_ref = l.codec_carrier_expr(
+                    &field.sce_type,
+                    &l.codec_field_ref(&l.codec_field_id(&field.id)),
+                );
                 match lang {
                     crate::generator::Language::Kotlin => parts.push(format!(
                         "({field_ref}.toInt() and 0x{mask:02X} shl {bit_off})"
@@ -13141,14 +13323,14 @@ fn encode_single_field_unified(
     field: &CodecField,
     default_endian: Endian,
     exprs: &mut Vec<String>,
-    lang: crate::generator::Language,
+    l: &LangCtx,
 ) {
     use crate::generator::Language;
-    // Identifier and byte-expression spelling only — see
-    // `generate_encode_exprs`.
-    let l = LangCtx::primitive(lang);
+    let lang = l.lang;
     let name = l.codec_field_id(&field.id);
-    let field_ref = l.codec_field_ref(&name);
+    // An enum-typed field is written as its carrier — see
+    // `LangCtx::codec_carrier_expr`.
+    let field_ref = l.codec_carrier_expr(&field.sce_type, &l.codec_field_ref(&name));
     let bit_off = field.bit_offset.unwrap_or(0);
     let endian = field.effective_endian(default_endian);
 
@@ -17762,10 +17944,16 @@ fn kotlin_default(ty: &SceType) -> &'static str {
         SceType::Bool => "false",
         SceType::String => "\"\"",
         SceType::Bytes => "byteArrayOf()",
-        // Enum-typed fields default to the `"0"` integer-underneath
-        // placeholder; no typed variant default is claimed here (the
-        // Enum kind's typed lowering lives in `render_enum`).
-        SceType::Enum(_) => "0",
+        // Enum kind: the carrier's zero is not a value of a closed set,
+        // so the default of an enum-typed field is the first variant the
+        // document declares — which needs the importing document's
+        // aliases. Callers that may meet one MUST use
+        // `LangCtx::default_expr`; the panic surfaces the routing bug at
+        // codegen time rather than emitting a default outside the type.
+        SceType::Enum(_) => unreachable!(
+            "kotlin_default called on SceType::Enum — use LangCtx::default_expr \
+             from a context built with the document's imports"
+        ),
     }
 }
 
@@ -17779,7 +17967,10 @@ fn rust_default(ty: &SceType) -> &'static str {
         SceType::String => "String::new()",
         SceType::Bytes => "Vec::new()",
         // Enum kind: see `kotlin_default`.
-        SceType::Enum(_) => "0",
+        SceType::Enum(_) => unreachable!(
+            "rust_default called on SceType::Enum — use LangCtx::default_expr \
+             from a context built with the document's imports"
+        ),
     }
 }
 
@@ -17793,7 +17984,10 @@ fn python_default(ty: &SceType) -> &'static str {
         SceType::String => "\"\"",
         SceType::Bytes => "b\"\"",
         // Enum kind: see `kotlin_default`.
-        SceType::Enum(_) => "0",
+        SceType::Enum(_) => unreachable!(
+            "python_default called on SceType::Enum — use LangCtx::default_expr \
+             from a context built with the document's imports"
+        ),
     }
 }
 
@@ -17822,7 +18016,7 @@ fn render_procedure_kotlin(
                 "id": f.id,
                 "kt_type": l.type_name(&f.sce_type),
                 "setter_name": filters::to_pascal_case(f.id.clone()),
-                "default_value": kotlin_default(&f.sce_type),
+                "default_value": l.default_expr(&f.sce_type),
             })
         })
         .collect();
@@ -17875,7 +18069,7 @@ fn render_procedure_kotlin(
         .map(|f| -> Result<serde_json::Value, ForgeError> {
             let expected = crate::forge::types::InferredType::from_sce_type(&f.sce_type);
             let default_val = match &f.expr {
-                None => kotlin_default(&f.sce_type).to_string(),
+                None => l.default_expr(&f.sce_type),
                 Some(e) => expr::transpile_typed(
                     e,
                     ExprTarget::Kotlin,
@@ -18074,7 +18268,7 @@ fn render_procedure_rust(
                 "setter_name": snake_id,
                 "setter_conv": setter_conv,
                 "param_name": snake_id,
-                "default_value": rust_default(&f.sce_type),
+                "default_value": l.default_expr(&f.sce_type),
             })
         })
         .collect();
@@ -18138,7 +18332,7 @@ fn render_procedure_rust(
             let snake_id = filters::to_snake_case(f.id.clone());
             let expected = crate::forge::types::InferredType::from_sce_type(&f.sce_type);
             let default_val = match &f.expr {
-                None => rust_default(&f.sce_type).to_string(),
+                None => l.default_expr(&f.sce_type),
                 Some(e) => expr::transpile_typed(
                     e,
                     ExprTarget::Rust,
@@ -18569,7 +18763,7 @@ fn render_procedure_python(
             serde_json::json!({
                 "snake_id": snake_id,
                 "py_type": l.type_name(&f.sce_type),
-                "default_value": python_default(&f.sce_type),
+                "default_value": l.default_expr(&f.sce_type),
             })
         })
         .collect();
@@ -18611,7 +18805,7 @@ fn render_procedure_python(
             let snake_id = filters::to_snake_case(f.id.clone());
             let expected = crate::forge::types::InferredType::from_sce_type(&f.sce_type);
             let default_val = match &f.expr {
-                None => python_default(&f.sce_type).to_string(),
+                None => l.default_expr(&f.sce_type),
                 Some(e) => expr::transpile_typed(
                     e,
                     ExprTarget::Python,
@@ -19286,7 +19480,11 @@ fn render_inline_codec_member(
                 "            if (!cursor.advance({min_bytes})) return std::nullopt;\n\
                  \x20           return value;\n        }}\n"
             ));
-            let encode_exprs = generate_encode_exprs(codec_fields, default_endian, Language::Cpp);
+            let encode_exprs = generate_encode_exprs(
+                codec_fields,
+                default_endian,
+                &LangCtx::primitive(Language::Cpp),
+            );
             code.push_str(
                 "\n        std::vector<uint8_t> encode() const {\n            return {\n",
             );
@@ -19331,8 +19529,11 @@ fn render_inline_codec_member(
                 "                if (!cursor.advance({min_bytes})) return null\n\
                  \x20               return value\n            }}\n        }}\n"
             ));
-            let encode_exprs =
-                generate_encode_exprs(codec_fields, default_endian, Language::Kotlin);
+            let encode_exprs = generate_encode_exprs(
+                codec_fields,
+                default_endian,
+                &LangCtx::primitive(Language::Kotlin),
+            );
             code.push_str("        fun encode(): ByteArray = byteArrayOf(\n");
             for (i, expr_str) in encode_exprs.iter().enumerate() {
                 let comma = if i < encode_exprs.len() - 1 { "," } else { "" };
@@ -19376,7 +19577,11 @@ fn render_inline_codec_member(
             type_def.push_str(&format!(
                 "        cursor.advance({min_bytes})?;\n        Ok(value)\n    }}\n\n"
             ));
-            let encode_exprs = generate_encode_exprs(codec_fields, default_endian, Language::Rust);
+            let encode_exprs = generate_encode_exprs(
+                codec_fields,
+                default_endian,
+                &LangCtx::primitive(Language::Rust),
+            );
             type_def.push_str(&format!(
                 "    pub const MAX_ENCODED_BYTES: usize = {min_bytes};\n\n"
             ));
@@ -19435,7 +19640,11 @@ fn render_inline_codec_member(
                 "\t}}\n\tif err := cursor.Advance({min_bytes}); err != nil {{\n\
                  \t\treturn nil, err\n\t}}\n\treturn value, nil\n}}\n\n"
             ));
-            let encode_exprs = generate_encode_exprs(codec_fields, default_endian, Language::Go);
+            let encode_exprs = generate_encode_exprs(
+                codec_fields,
+                default_endian,
+                &LangCtx::primitive(Language::Go),
+            );
             type_def.push_str(&format!(
                 "func (s *{struct_name}) Encode() []byte {{\n\treturn []byte{{\n"
             ));
@@ -19485,8 +19694,11 @@ fn render_inline_codec_member(
             code.push_str(&format!(
                 "            try:\n                cursor.advance({min_bytes})\n            except NeedMoreBytes:\n                return None\n            return value\n"
             ));
-            let encode_exprs =
-                generate_encode_exprs(codec_fields, default_endian, Language::Python);
+            let encode_exprs = generate_encode_exprs(
+                codec_fields,
+                default_endian,
+                &LangCtx::primitive(Language::Python),
+            );
             code.push_str("        def encode(self) -> bytes:\n            return bytes([\n");
             for (i, expr_str) in encode_exprs.iter().enumerate() {
                 let comma = if i < encode_exprs.len() - 1 { "," } else { "" };
@@ -19545,7 +19757,11 @@ fn render_inline_codec_member(
             // standalone codec.h.jinja2 shape — write each fixed-prefix
             // byte through `sce_forge_writer_write_u8` and propagate
             // overflow via `SCE_FORGE_TRY_WRITE`.
-            let encode_exprs = generate_encode_exprs(codec_fields, default_endian, Language::C11);
+            let encode_exprs = generate_encode_exprs(
+                codec_fields,
+                default_endian,
+                &LangCtx::primitive(Language::C11),
+            );
             code.push_str(&format!(
                 "static inline sce_forge_codec_status_t {encode_func}(const {struct_typedef} *self, sce_forge_writer_t *w) {{\n"
             ));
@@ -19592,11 +19808,36 @@ fn render_inline_codec_member(
 /// render that builds its context from a document's imports cannot ask
 /// for an unresolved field type, because there is no longer a method
 /// that returns one.
+/// One imported `sce:kind="enum"` document, as this language spells it.
+///
+/// The type alone is not enough for a codec field: the field is written and
+/// read as the enum's CARRIER, through the conversions the enum's own
+/// emission provides, and whether a value outside the declared set is a
+/// value of the type is the enum's decision (`sce:strict-variants`).
+struct EnumImport {
+    alias: String,
+    /// The type as this backend spells it.
+    qualified: String,
+    /// The document's own name in snake case — C11 prefixes its conversion
+    /// functions with it, having no namespace to put them in.
+    snake: String,
+    /// Whether a value no variant declares is one of this type's values.
+    is_open: bool,
+    /// The imported document's own name, and the first variant it
+    /// declares — both UNCONVERTED, because
+    /// [`crate::forge::enum_naming`] owns every spelling derived from
+    /// them and a pre-converted copy here would pick one backend's for
+    /// all six. The first variant is the value a holder of this type
+    /// starts at when it must be constructed before a decode fills it.
+    source_name: String,
+    first_variant: String,
+}
+
 struct LangCtx {
     lang: crate::generator::Language,
-    /// `(alias, qualified type)` for every enum this document imports, in
-    /// this language's spelling. Empty for [`LangCtx::primitive`].
-    enum_types: Vec<(String, String)>,
+    /// Every enum this document imports, in this language's spelling.
+    /// Empty for [`LangCtx::primitive`].
+    enum_types: Vec<EnumImport>,
     /// Which constructor built this context — named in the panic when an
     /// enum reaches a context that was declared never to see one.
     origin: &'static str,
@@ -19618,7 +19859,20 @@ impl LangCtx {
                      validate_and_enrich_imports must populate it first",
                     imp.alias,
                 );
-                (imp.alias.clone(), imp.enum_qualified_type.clone())
+                EnumImport {
+                    alias: imp.alias.clone(),
+                    qualified: imp.enum_qualified_type.clone(),
+                    snake: filters::to_snake_case(imp.enum_source_name.clone()),
+                    is_open: imp.enum_is_open,
+                    source_name: imp.enum_source_name.clone(),
+                    // Empty when the caller built this import to ask a
+                    // type question only — which is a legitimate way to
+                    // build one, so the demand for a variant lives at
+                    // the one place that needs it
+                    // ([`enum_default_expr`](Self::enum_default_expr))
+                    // rather than here.
+                    first_variant: imp.enum_variants.first().cloned().unwrap_or_default(),
+                }
             })
             .collect();
         Self {
@@ -19649,8 +19903,8 @@ impl LangCtx {
     fn enum_type(&self, alias: &str) -> &str {
         self.enum_types
             .iter()
-            .find(|(a, _)| a == alias)
-            .map(|(_, qualified)| qualified.as_str())
+            .find(|imported| imported.alias == alias)
+            .map(|imported| imported.qualified.as_str())
             .unwrap_or_else(|| {
                 // The parser's `read_type_attr` refuses an `enum:<alias>`
                 // no `<sce:import kind="enum">` declares, so reaching here
@@ -19668,6 +19922,119 @@ impl LangCtx {
                     self.origin
                 )
             })
+    }
+
+    /// The imported enum `alias` names, with everything a codec field of
+    /// that type needs to reach its carrier.
+    fn enum_import(&self, alias: &str) -> &EnumImport {
+        let qualified = self.enum_type(alias);
+        self.enum_types
+            .iter()
+            .find(|imported| imported.qualified == qualified)
+            .expect("enum_type answered from this table")
+    }
+
+    /// `value` as the carrier the wire holds — the value itself for a
+    /// scalar field, the enum's own conversion for an enum-typed one.
+    fn codec_carrier_expr(&self, ty: &SceType, value: &str) -> String {
+        let SceType::Enum(r) = ty else {
+            return value.to_string();
+        };
+        let imported = self.enum_import(&r.alias);
+        match self.lang {
+            crate::generator::Language::Rust | crate::generator::Language::Python => {
+                format!("{value}.to_underlying()")
+            }
+            crate::generator::Language::Kotlin => format!("{value}.toUnderlying()"),
+            crate::generator::Language::Go => format!("{value}.ToUnderlying()"),
+            // Qualified rather than left to argument-dependent lookup:
+            // C++23 has a `std::to_underlying`, and a `using namespace std`
+            // in a consumer's translation unit would make the call
+            // ambiguous.
+            crate::generator::Language::Cpp => {
+                let namespace = imported
+                    .qualified
+                    .rsplit_once("::")
+                    .map_or("", |(namespace, _)| namespace);
+                format!("{namespace}::to_underlying({value})")
+            }
+            crate::generator::Language::C11 => {
+                format!("{}_to_underlying({value})", imported.snake)
+            }
+        }
+    }
+
+    /// The name of the enum's carrier-to-value conversion, as a template
+    /// writes it before an argument list. A closed enum's answers whether
+    /// the carrier is a value of the type at all, so each backend's decode
+    /// wraps this call in its own way — which is why the call is handed
+    /// over as a name rather than as a finished expression.
+    fn enum_from_underlying(&self, alias: &str) -> String {
+        use crate::generator::Language;
+        let imported = self.enum_import(alias);
+        let qualified = &imported.qualified;
+        match self.lang {
+            Language::Rust => format!("{qualified}::from_underlying"),
+            Language::Python => format!("{qualified}.from_underlying"),
+            Language::Kotlin => format!("{qualified}.fromUnderlying"),
+            Language::Go => format!("{qualified}FromUnderlying"),
+            Language::Cpp => {
+                let namespace = qualified.rsplit_once("::").map_or("", |(ns, _)| ns);
+                format!("{namespace}::from_underlying")
+            }
+            Language::C11 => format!("{}_from_underlying", imported.snake),
+        }
+    }
+
+    /// A value of the enum to start a holder at, for the backends whose
+    /// codec struct spells a per-field default.
+    ///
+    /// The first variant the document declares. The carrier's zero is
+    /// NOT that answer: a closed set does not hold a value it never
+    /// declared, and a default that is outside the type is the same
+    /// defect on the construction path that
+    /// [`enum_from_underlying`](Self::enum_from_underlying) refuses on
+    /// the decode path. Default construction exists so a holder can be
+    /// initialized before a decode fills it, so any declared value
+    /// serves and the first one is the one the document leads with.
+    fn enum_default_expr(&self, alias: &str) -> String {
+        let imported = self.enum_import(alias);
+        assert!(
+            !imported.first_variant.is_empty(),
+            "asked for the default of enum alias '{alias}', whose import carries no \
+             variants — `validate_and_enrich_imports` populates them, and \
+             `validation/enum-no-variants` refuses a document that declares none",
+        );
+        crate::forge::enum_naming::variant_ref(
+            self.lang,
+            &imported.qualified,
+            &imported.source_name,
+            &imported.first_variant,
+        )
+    }
+
+    /// The value a field of `ty` starts at, with an enum alias resolved
+    /// through this document's imports.
+    ///
+    /// The three backends that spell a default for EVERY field call
+    /// this. C++ spells one only for an enum-typed field — a brace init,
+    /// because a value-initialized member would hold the carrier's zero —
+    /// and C11 only on a gated field's absent branch; both ask
+    /// [`enum_default_expr`](Self::enum_default_expr) directly. Go has
+    /// only its language's zero value, which no emission can change.
+    fn default_expr(&self, ty: &SceType) -> String {
+        if let SceType::Enum(r) = ty {
+            return self.enum_default_expr(&r.alias);
+        }
+        match self.lang {
+            crate::generator::Language::Kotlin => kotlin_default(ty).to_string(),
+            crate::generator::Language::Rust => rust_default(ty).to_string(),
+            crate::generator::Language::Python => python_default(ty).to_string(),
+            other => unreachable!(
+                "LangCtx::default_expr called for {other:?} — only the backends \
+                 that spell a per-field default have one"
+            ),
+        }
     }
 
     /// The language-native type of `ty`, with an enum alias resolved
@@ -23357,6 +23724,8 @@ mod tests {
             enum_qualified_type: qualified.to_string(),
             enum_variants: Vec::new(),
             enum_source_name: String::new(),
+            enum_underlying: None,
+            enum_is_open: false,
         }
     }
 
@@ -23983,6 +24352,8 @@ mod tests {
                 enum_qualified_type: String::new(),
                 enum_variants: Vec::new(),
                 enum_source_name: String::new(),
+                enum_underlying: None,
+                enum_is_open: false,
             },
             ImportContext {
                 alias: "c".to_string(),
@@ -24017,6 +24388,8 @@ mod tests {
                 enum_qualified_type: String::new(),
                 enum_variants: Vec::new(),
                 enum_source_name: String::new(),
+                enum_underlying: None,
+                enum_is_open: false,
             },
         ];
         let (has, _all, _stateful) = build_template_imports(&imports);

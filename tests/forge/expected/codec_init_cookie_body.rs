@@ -31,10 +31,13 @@ pub struct CodecInitCookieBody<'a> {
 
 #[allow(dead_code)]
 impl<'a> CodecInitCookieBody<'a> {
-    /// Construct an instance with every field zero-initialized via
+    /// Construct an instance with every field at its own type's
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
-    /// initialize them before any `encode()` or `decode()` call.
+    /// initialize them before any `encode()` or `decode()` call. An
+    /// enum-typed field starts at the first variant its document
+    /// declares, not at the carrier's zero: a closed set does not hold
+    /// a value it never declared.
     pub fn new() -> Self {
         Self::default()
     }

@@ -57,6 +57,15 @@ var ErrTlvChainOverflow = errors.New("sce/codec: tlv chain overflow")
 // `*[]byte`) is effectively infallible.
 var ErrBufferOverflow = errors.New("sce/codec: buffer overflow")
 
+// ErrUndeclaredEnumValue is returned by Decode when an enum-typed field
+// carried a value its declared set does not hold. sce:strict-variants=
+// "true" (the default) closes the set, so a carrier value outside it is
+// not a value of that type and the frame does not decode. An open set
+// carries every value of its carrier and never returns this. Cpp +
+// Kotlin runtimes collapse this to their truncation sentinel (mirrors
+// the ErrInvalidUTF8 convention).
+var ErrUndeclaredEnumValue = errors.New("sce/codec: undeclared enum value")
+
 // SceCursor is a read-only cursor over a borrowed input slice. Decode
 // bodies use PeekSlice to bounds-check + read fixed-offset bytes
 // positionally, then Advance after the construction succeeds.

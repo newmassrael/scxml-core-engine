@@ -2720,6 +2720,18 @@ violation. Default is `true` (strict): an enum that does not set
 the attribute is checked as closed-set, matching the typed-
 vocabulary intent of `sce:kind="enum"`.
 
+The attribute also decides what the generated code does with a
+value no variant declares, because a codec field typed by an enum
+travels on the wire as that enum's carrier. A closed set refuses
+such a value at decode: the Rust, Go, Python and C11 runtimes
+report `UndeclaredEnumValue`, and C++ and Kotlin return the same
+truncation sentinel they return for malformed text. An open set's
+generated type carries the value instead, so it survives a decode
+and a re-encode unchanged. A holder of either kind that must be
+constructed before a decode fills it starts at the first variant
+the document declares, never at the carrier's zero — a closed set
+does not hold a value it never declared.
+
 ---
 
 ## Appendix — `DiagnosticCode` index (364 codes)

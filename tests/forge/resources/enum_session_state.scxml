@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Conformance fixture for `sce:kind="enum"` with a CLOSED declared set.
+
+  The counterpart to `enum_uds_nrc.scxml`, whose `sce:strict-variants="false"`
+  leaves its set open. Here the attribute is absent, so the default applies
+  and the set is closed: a carrier value no variant declares is not a value
+  of this type, and a codec field holding one does not decode.
+
+  Two things about the values are deliberate.
+
+  The set does not start at zero, so a default that reached for the carrier's
+  zero would be outside the type — the defect a zero default has, stated as a
+  fixture rather than as a comment.
+
+  The values are not consecutive either, so a conversion that dropped them and
+  let the language assign ordinals would produce 0,1,2 and still pass any check
+  that compared only variant count or ordering.
+
+  16 is the gap the decode-refusal case reads: it lies between two declared
+  values, so a refusal that only bounds-checked the range would let it through.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="enum" name="enum_session_state"
+       sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="defaultSession" value="1"/>
+      <sce:variant name="programming" value="2"/>
+      <sce:variant name="extendedDiagnostic" value="3"/>
+      <sce:variant name="safetySystem" value="64"/>
+    </data>
+  </datamodel>
+</scxml>

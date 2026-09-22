@@ -69,6 +69,16 @@ class BufferOverflow(CodecError):
     growable :class:`BytearraySink` is effectively infallible."""
 
 
+class UndeclaredEnumValue(CodecError):
+    """Raised when an enum-typed field carried a value its declared set
+    does not hold. ``sce:strict-variants="true"`` (the default) closes
+    the set, so a carrier value outside it is not a value of that type
+    and the frame does not decode. An open set carries every value of
+    its carrier and never raises this. The Cpp + Kotlin runtimes
+    collapse this to their truncation sentinel (mirrors the
+    :class:`InvalidUtf8` convention there)."""
+
+
 class SceCursor:
     """Read-only cursor over a borrowed input ``bytes`` / ``memoryview``.
 

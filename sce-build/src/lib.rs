@@ -4102,6 +4102,13 @@ fn validate_and_enrich_imports(
                 // UNCONVERTED — see `ImportContext::enum_variants`.
                 ctx.enum_variants = em.variants.iter().map(|v| v.name.clone()).collect();
                 ctx.enum_source_name = em.name.clone();
+                // The carrier and the membership rule ride along for the
+                // same reason the variants do: a codec field of this type
+                // is written and read as the carrier, and whether a value
+                // outside the declared set is legal is the enum's own
+                // decision, not the codec's.
+                ctx.enum_underlying = Some(em.underlying_type.clone());
+                ctx.enum_is_open = !em.strict_variants;
             }
             if !ctx.is_stateful {
                 // `ctx.namespace` was recomputed from `doc.name()` above, so

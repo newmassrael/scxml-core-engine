@@ -13,14 +13,46 @@
 #define {{ guard }}
 
 #include <cstdint>
+{% if not is_open %}
+#include <optional>
+{% endif %}
 
 namespace SCE::Generated::{{ namespace }} {
 
+{# An `enum class` holds every value of its carrier, so one shape serves an
+   open and a closed set; what differs is whether a value outside the
+   declared list is a value of the type, which `from_underlying` answers. #}
 enum class {{ enum_name }} : {{ underlying_type }} {
 {% for v in variants %}
     {{ v.name }} = {{ v.value }},
 {% endfor %}
 };
+
+/// The carrier value this holds.
+constexpr {{ underlying_type }} to_underlying({{ enum_name }} value) noexcept {
+    return static_cast<{{ underlying_type }}>(value);
+}
+
+{% if is_open %}
+/// The value `raw` stands for. Total: `sce:strict-variants="false"` leaves
+/// the declared set open, so every carrier value is one of this type's.
+constexpr {{ enum_name }} from_underlying({{ underlying_type }} raw) noexcept {
+    return static_cast<{{ enum_name }}>(raw);
+}
+{% else %}
+/// The variant `raw` declares, or `std::nullopt` — the declared set is
+/// closed, so a value outside it is not a value of this type.
+constexpr std::optional<{{ enum_name }}> from_underlying({{ underlying_type }} raw) noexcept {
+    switch (raw) {
+{% for v in variants %}
+    case {{ v.value }}:
+        return {{ enum_name }}::{{ v.name }};
+{% endfor %}
+    default:
+        return std::nullopt;
+    }
+}
+{% endif %}
 
 }  // namespace SCE::Generated::{{ namespace }}
 

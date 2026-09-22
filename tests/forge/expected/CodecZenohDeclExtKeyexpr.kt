@@ -14,8 +14,11 @@ import com.sce.generated.codec_zenoh_decl_ext_keyexpr_inner.*
 
 // Default-valued primary constructor: the generated procedure_l2 code
 // holds codec instances as owned members and initializes them with
-// `CodecZenohDeclExtKeyexpr()` before any encode()/decode() call. Defaults
-// mirror the zero-initialized shape that decode() fills in on success.
+// `CodecZenohDeclExtKeyexpr()` before any encode()/decode() call. Each default
+// is a value of that field's own type, which decode() then fills in on
+// success — the carrier's zero for a number, and for an enum the first
+// variant its document declares, since a closed set does not hold a
+// value it never declared.
 data class CodecZenohDeclExtKeyexpr(
     var outer_header: UByte = 0.toUByte(),
     var total_length: ULong = 0uL,

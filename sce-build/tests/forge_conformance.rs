@@ -16152,6 +16152,315 @@ fn validator_integer_extremes_compile_on_every_backend() {
         .unwrap_or_else(|e| panic!("Kotlin:\n{e}"));
 }
 
+// ── An enum-typed codec field travels as the enum's carrier ──────────
+//
+// The field's type is the enum and the wire's is its carrier, so decode
+// converts one way and encode the other. Before this, the emit named the
+// enum at the struct and then read and wrote the carrier raw: the Rust
+// struct declared `code: EnumUdsNrc` and its decode bound `raw[0]`, its
+// encode passed the enum to `write_u8`. Neither compiles — and
+// `sce-codegen check` reported `ok` for five backends, because it
+// generates without building.
+//
+// What the two declared sets differ in is one thing: `session` is closed,
+// so a carrier value it never declared is not a value of that type and
+// the frame does not decode; `nrc` is open, so it carries one.
+
+const ENUM_FIELDS_HARNESS: &str = r#"// Injected by forge_rust_codec_enum_fields_runtime.
+#[cfg(test)]
+mod tests {
+    use crate::codec_enum_fields::CodecEnumFields;
+    use crate::enum_session_state::EnumSessionState;
+    use crate::enum_uds_nrc::EnumUdsNrc;
+    use ::sce_forge_runtime::codec::{CodecError, SceCursor};
+
+    #[test]
+    fn declared_values_round_trip_byte_exact() {
+        let frame = [64u8, 120, 7];
+        let mut cursor = SceCursor::new(&frame);
+        let view = CodecEnumFields::decode(&mut cursor).expect("decode a declared frame");
+        assert_eq!(view.state, EnumSessionState::SafetySystem);
+        assert_eq!(view.code, EnumUdsNrc::ResponsePending);
+        assert_eq!(view.detail, 7);
+        assert_eq!(view.encode_to_vec().as_slice(), &frame);
+    }
+
+    #[test]
+    fn an_open_set_carries_a_value_no_variant_declares() {
+        // 250 is not in the UDS table; an ECU may still answer with it.
+        let frame = [1u8, 250, 0];
+        let mut cursor = SceCursor::new(&frame);
+        let view = CodecEnumFields::decode(&mut cursor).expect("decode an undeclared nrc");
+        assert_eq!(view.code.to_underlying(), 250);
+        // And it survives the way back out: carrying the value is the
+        // point, so re-encoding must not collapse it onto a declared one.
+        assert_eq!(view.encode_to_vec().as_slice(), &frame);
+    }
+
+    #[test]
+    fn a_closed_set_refuses_a_value_no_variant_declares() {
+        // 16 sits BETWEEN two declared values (3 and 64), so a refusal
+        // that only bounds-checked the range would let it through.
+        let frame = [16u8, 120, 0];
+        let mut cursor = SceCursor::new(&frame);
+        assert_eq!(
+            CodecEnumFields::decode(&mut cursor),
+            Err(CodecError::UndeclaredEnumValue)
+        );
+    }
+
+    #[test]
+    fn a_default_constructed_codec_holds_values_of_its_types() {
+        // The carrier's zero is not a value of either set — the closed
+        // one starts at 1 — so the default must be a declared variant.
+        let fresh = CodecEnumFields::new();
+        assert_eq!(fresh.state, EnumSessionState::DefaultSession);
+        assert_eq!(fresh.code, EnumUdsNrc::GeneralReject);
+    }
+}
+"#;
+
+#[test]
+fn forge_rust_codec_enum_fields_runtime() {
+    rustc_test_codec_set_with_extra(
+        &resource_dir(),
+        &[
+            "enum_session_state.scxml",
+            "enum_uds_nrc.scxml",
+            "codec_enum_fields.scxml",
+        ],
+        &[("enum_fields.rs", ENUM_FIELDS_HARNESS)],
+        "codec_enum_fields_runtime",
+    )
+    .expect("an enum-typed codec field must round-trip, and a closed set must refuse");
+}
+
+/// The C11 counterpart. Its conversion is the one shape that cannot
+/// return the value — C has no sum type — so a closed set writes through
+/// an out-parameter and answers `false`, and this is what proves the
+/// generated caller reads that answer rather than the written-through
+/// value.
+#[test]
+fn forge_c11_codec_enum_fields_runtime() {
+    run_codec_enum_fields_c11("codec_enum_fields_c11")
+        .unwrap_or_else(|e| panic!("the C11 codec must convert its enum fields\n{e}"));
+}
+
+fn run_codec_enum_fields_c11(test_id: &str) -> Result<(), String> {
+    if !toolchain_present("gcc") {
+        return require_all_or_warn(test_id, "gcc");
+    }
+    let proj_dir = cobs_proj_dir("c11", test_id)?;
+    let all_files = generate_files_for_codec_set(
+        &resource_dir(),
+        &[
+            "enum_session_state.scxml",
+            "enum_uds_nrc.scxml",
+            "codec_enum_fields.scxml",
+        ],
+        sce_build::generator::Language::C11,
+    )?;
+    write_flat_emit(&proj_dir, &all_files, "h").map_err(|e| format!("{test_id}: {e}"))?;
+
+    let driver = concat!(
+        "/* Driver: decode/encode an enum-typed codec field, and check\n",
+        " * that a closed set refuses a carrier value nobody declared. */\n",
+        "#include \"codec_enum_fields.h\"\n",
+        "#include <stdio.h>\n",
+        "#include <string.h>\n",
+        "\n",
+        "static int fail(const char *what) {\n",
+        "    printf(\"%s\\n\", what);\n",
+        "    return 1;\n",
+        "}\n",
+        "\n",
+        "int main(void) {\n",
+        "    int failed = 0;\n",
+        "    const uint8_t declared[3] = { 64u, 120u, 7u };\n",
+        "    sce_forge_cursor_t cursor =\n",
+        "        sce_forge_cursor_init(declared, sizeof declared);\n",
+        "    codec_enum_fields_t view;\n",
+        "    memset(&view, 0, sizeof view);\n",
+        "    if (codec_enum_fields_decode(&cursor, &view) != SCE_FORGE_CODEC_OK) {\n",
+        "        failed |= fail(\"a declared frame must decode\");\n",
+        "    }\n",
+        "    if (view.state != ENUM_SESSION_STATE_SAFETY_SYSTEM) {\n",
+        "        failed |= fail(\"state must be the variant its carrier declares\");\n",
+        "    }\n",
+        "    if (view.code != ENUM_UDS_NRC_RESPONSE_PENDING) {\n",
+        "        failed |= fail(\"code must be the variant its carrier declares\");\n",
+        "    }\n",
+        "    uint8_t buf[8];\n",
+        "    sce_forge_writer_t writer = sce_forge_writer_init_buf(buf, sizeof buf);\n",
+        "    if (codec_enum_fields_encode(&view, &writer) != SCE_FORGE_CODEC_OK) {\n",
+        "        failed |= fail(\"the decoded view must encode\");\n",
+        "    }\n",
+        "    if (writer.pos != sizeof declared\n",
+        "        || memcmp(buf, declared, sizeof declared) != 0) {\n",
+        "        failed |= fail(\"re-encode must be byte-exact\");\n",
+        "    }\n",
+        "\n",
+        "    /* 250 is outside the UDS table, and its set is open. */\n",
+        "    const uint8_t open_value[3] = { 1u, 250u, 0u };\n",
+        "    cursor = sce_forge_cursor_init(open_value, sizeof open_value);\n",
+        "    if (codec_enum_fields_decode(&cursor, &view) != SCE_FORGE_CODEC_OK) {\n",
+        "        failed |= fail(\"an open set must carry an undeclared value\");\n",
+        "    }\n",
+        "    if (enum_uds_nrc_to_underlying(view.code) != 250u) {\n",
+        "        failed |= fail(\"the undeclared value must survive the conversion\");\n",
+        "    }\n",
+        "\n",
+        "    /* 16 lies between two declared values of the closed set. */\n",
+        "    const uint8_t undeclared[3] = { 16u, 120u, 0u };\n",
+        "    cursor = sce_forge_cursor_init(undeclared, sizeof undeclared);\n",
+        "    if (codec_enum_fields_decode(&cursor, &view)\n",
+        "        != SCE_FORGE_CODEC_UNDECLARED_ENUM_VALUE) {\n",
+        "        failed |= fail(\"a closed set must refuse an undeclared value\");\n",
+        "    }\n",
+        "    return failed;\n",
+        "}\n",
+    );
+    std::fs::write(proj_dir.join("driver.c"), driver)
+        .map_err(|e| format!("write driver.c: {e}"))?;
+
+    let runtime_include = backend_runtime_dir("backends/c/forge-runtime")?.join("include");
+    let exe = proj_dir.join("driver");
+    let mut build = std::process::Command::new("gcc");
+    build
+        .arg("-std=c11")
+        .arg("-Wall")
+        .arg("-Wextra")
+        .arg("-Werror")
+        .arg(format!("-I{}", runtime_include.display()))
+        .arg(format!("-I{}", proj_dir.display()))
+        .arg("-o")
+        .arg(&exe)
+        .arg("driver.c");
+    run_cobs_driver(build, &proj_dir, test_id, "gcc-build")?;
+    run_cobs_driver(
+        std::process::Command::new(&exe),
+        &proj_dir,
+        test_id,
+        "c11-run",
+    )?;
+    let _ = std::fs::remove_dir_all(&proj_dir);
+    Ok(())
+}
+
+/// The other four backends compile the same fixture. Kotlin and Python
+/// are the ones this catches: their per-field default is spelled in the
+/// emitted source, so a carrier zero there is a value outside the type
+/// (Kotlin will not even compile it).
+#[test]
+fn codec_enum_fields_compile_on_every_backend() {
+    let dir = resource_dir();
+    let docs = [
+        "enum_session_state.scxml",
+        "enum_uds_nrc.scxml",
+        "codec_enum_fields.scxml",
+    ];
+    compile_codec_set_cpp(&dir, &docs, "codec_enum_fields_cpp")
+        .unwrap_or_else(|e| panic!("C++:\n{e}"));
+    compile_codec_set_go(&dir, &docs, "codec_enum_fields_go")
+        .unwrap_or_else(|e| panic!("Go:\n{e}"));
+    compile_codec_set_python(&dir, &docs, "codec_enum_fields_python")
+        .unwrap_or_else(|e| panic!("Python:\n{e}"));
+    compile_codec_set_kotlin(&dir, &docs, "codec_enum_fields_kotlin")
+        .unwrap_or_else(|e| panic!("Kotlin:\n{e}"));
+}
+
+// ── The same, on the streaming path ──────────────────────────────────
+//
+// A codec whose layout is not fixed at codegen time emits a second
+// decode and encode, and every field takes it — not only the gated one.
+// That emission reached for the bare per-language type functions instead
+// of the document's imports, so an enum-typed field aborted the
+// generator on C++ and C11 (`cpp_type` / `c_type` have no answer for an
+// alias) and, where it did emit, read and wrote the carrier raw.
+
+const ENUM_GATED_HARNESS: &str = r#"// Injected by forge_rust_codec_enum_gated_runtime.
+#[cfg(test)]
+mod tests {
+    use crate::codec_enum_gated::CodecEnumGated;
+    use crate::enum_session_state::EnumSessionState;
+    use crate::enum_uds_nrc::EnumUdsNrc;
+    use ::sce_forge_runtime::codec::{CodecError, SceCursor};
+
+    #[test]
+    fn the_gated_field_is_absent_when_its_flag_is_clear() {
+        let frame = [0u8, 34];
+        let mut cursor = SceCursor::new(&frame);
+        let view = CodecEnumGated::decode(&mut cursor).expect("decode without the gated field");
+        assert_eq!(view.code, EnumUdsNrc::ConditionsNotCorrect);
+        assert!(view.state.is_none());
+        assert_eq!(view.encode_to_vec().as_slice(), &frame);
+    }
+
+    #[test]
+    fn the_gated_field_round_trips_when_its_flag_is_set() {
+        let frame = [1u8, 34, 3];
+        let mut cursor = SceCursor::new(&frame);
+        let view = CodecEnumGated::decode(&mut cursor).expect("decode with the gated field");
+        assert_eq!(view.state, Some(EnumSessionState::ExtendedDiagnostic));
+        assert_eq!(view.encode_to_vec().as_slice(), &frame);
+    }
+
+    #[test]
+    fn a_closed_set_refuses_on_the_streaming_path_too() {
+        let frame = [1u8, 34, 16];
+        let mut cursor = SceCursor::new(&frame);
+        assert_eq!(
+            CodecEnumGated::decode(&mut cursor),
+            Err(CodecError::UndeclaredEnumValue)
+        );
+    }
+
+    #[test]
+    fn a_fresh_codec_leaves_the_gated_field_absent() {
+        // The ungated field starts at a declared variant; the gated one
+        // starts absent, because a default that held a value would claim
+        // the field had been on the wire.
+        let fresh = CodecEnumGated::new();
+        assert_eq!(fresh.code, EnumUdsNrc::GeneralReject);
+        assert!(fresh.state.is_none());
+    }
+}
+"#;
+
+#[test]
+fn forge_rust_codec_enum_gated_runtime() {
+    rustc_test_codec_set_with_extra(
+        &resource_dir(),
+        &[
+            "enum_session_state.scxml",
+            "enum_uds_nrc.scxml",
+            "codec_enum_gated.scxml",
+        ],
+        &[("enum_gated.rs", ENUM_GATED_HARNESS)],
+        "codec_enum_gated_runtime",
+    )
+    .expect("a gated enum field must round-trip, and a closed set must refuse");
+}
+
+#[test]
+fn codec_enum_gated_compiles_on_every_backend() {
+    let dir = resource_dir();
+    let docs = [
+        "enum_session_state.scxml",
+        "enum_uds_nrc.scxml",
+        "codec_enum_gated.scxml",
+    ];
+    compile_codec_set_c11(&dir, &docs, "codec_enum_gated_c11")
+        .unwrap_or_else(|e| panic!("C11:\n{e}"));
+    compile_codec_set_cpp(&dir, &docs, "codec_enum_gated_cpp")
+        .unwrap_or_else(|e| panic!("C++:\n{e}"));
+    compile_codec_set_go(&dir, &docs, "codec_enum_gated_go").unwrap_or_else(|e| panic!("Go:\n{e}"));
+    compile_codec_set_python(&dir, &docs, "codec_enum_gated_python")
+        .unwrap_or_else(|e| panic!("Python:\n{e}"));
+    compile_codec_set_kotlin(&dir, &docs, "codec_enum_gated_kotlin")
+        .unwrap_or_else(|e| panic!("Kotlin:\n{e}"));
+}
+
 /// The bounds inside the range keep their comparisons, and only those: the
 /// emitted C names each surviving bound once and no extreme at all.
 #[test]

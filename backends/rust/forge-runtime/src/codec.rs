@@ -83,6 +83,15 @@ pub enum CodecError {
     /// symbol; the Cpp/Kotlin truncation backends never construct it
     /// (their list storage is the heap-backed host container).
     TooManyElements,
+    /// An enum-typed field carried a value its declared set does not
+    /// hold. `sce:strict-variants="true"` (the default) closes the set,
+    /// so a carrier value outside it is not a value of that type and
+    /// the frame does not decode. An open set (`sce:strict-variants=
+    /// "false"`) carries every value of its carrier and never raises
+    /// this. The Rust + Go + Python runtimes construct it at decode;
+    /// Cpp + Kotlin collapse to the truncation sentinel
+    /// (`std::nullopt` / `null`), as they do for `InvalidUtf8`.
+    UndeclaredEnumValue,
 }
 
 /// Project an owned list into the bounded inline list

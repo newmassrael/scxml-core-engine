@@ -2,6 +2,26 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{#- One field of the positional prefix, bound to its own local. An
+    enum-typed field travels on the wire as the enum's carrier, so
+    `decode_expr` reads that carrier and the enum's own conversion
+    turns it into a value of the type; a closed set's conversion is
+    partial, and a carrier value it does not declare is not a value of
+    that type, so the frame does not decode — which this backend
+    reports as the truncation sentinel, as it does for malformed text.
+    The statement carries its own indentation because the three call
+    sites below share it. #}
+{% macro decode_field(field) %}
+{% if field.is_enum and field.enum_is_open %}
+        {{ field.cpp_type }} {{ field.id }} = {{ field.enum_from_underlying }}({{ field.decode_expr }});
+{%- elif field.is_enum %}
+        const auto _enum_{{ field.id }} = {{ field.enum_from_underlying }}({{ field.decode_expr }});
+        if (!_enum_{{ field.id }}.has_value()) return std::nullopt;
+        {{ field.cpp_type }} {{ field.id }} = *_enum_{{ field.id }};
+{%- else %}
+        {{ field.cpp_type }} {{ field.id }} = {{ field.decode_expr }};
+{%- endif %}
+{% endmacro %}
 {{ sce_map.source_marker(source_location, "cpp", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
@@ -55,7 +75,7 @@ using {{ struct_name }}Variant = std::variant<
 {% endif %}
 struct {{ struct_name }} {
 {% for field in fields %}
-    {{ field.cpp_type }} {{ field.id }}{% if field.cpp_flag_default_init is defined %}{{ field.cpp_flag_default_init }}{% endif %};
+    {{ field.cpp_type }} {{ field.id }}{% if field.cpp_default_init is defined %}{{ field.cpp_default_init }}{% endif %};
 {% endfor %}
 {% if has_variant %}
 {% if variant.default_arm_index is defined %}
@@ -133,7 +153,7 @@ struct {{ struct_name }} {
         const std::uint8_t* raw = cursor.peek_slice({{ min_bytes }});
         if (raw == nullptr) return std::nullopt;
 {% for field in fields %}
-        {{ field.cpp_type }} {{ field.id }} = {{ field.decode_expr }};
+{{ decode_field(field) }}
 {% endfor %}
         if (!cursor.advance({{ min_bytes }})) return std::nullopt;
 {% endif %}
@@ -204,7 +224,7 @@ struct {{ struct_name }} {
         const std::uint8_t* raw = cursor.peek_slice(_frame_len);
         if (raw == nullptr) return std::nullopt;
 {% for field in fields %}
-        {{ field.cpp_type }} {{ field.id }} = {{ field.decode_expr }};
+{{ decode_field(field) }}
 {% endfor %}
         {{ struct_name }} _decoded{
 {% for field in fields %}
@@ -217,7 +237,7 @@ struct {{ struct_name }} {
         const std::uint8_t* raw = cursor.peek_slice({{ min_bytes }});
         if (raw == nullptr) return std::nullopt;
 {% for field in fields %}
-        {{ field.cpp_type }} {{ field.id }} = {{ field.decode_expr }};
+{{ decode_field(field) }}
 {% endfor %}
         {{ struct_name }} _decoded{
 {% for field in fields %}

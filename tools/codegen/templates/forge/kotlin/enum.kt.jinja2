@@ -10,9 +10,44 @@
 
 package com.sce.generated.{{ package }}
 
+{% if is_open %}
+{# `sce:strict-variants="false"`: a value no variant declares is legal, and a
+   Kotlin enum class cannot hold one. The type therefore carries the value
+   and names the declared ones in its companion, spelled as every other
+   backend spells them. #}
+@JvmInline
+@OptIn(ExperimentalUnsignedTypes::class)
+value class {{ enum_name }}(val raw: {{ underlying_type }}) {
+    companion object {
+{% for v in variants %}
+        val {{ v.name }} = {{ enum_name }}({{ v.value }})
+{% endfor %}
+
+        /** The value [raw] stands for. Total: the declared set is open. */
+        fun fromUnderlying(raw: {{ underlying_type }}) = {{ enum_name }}(raw)
+    }
+
+    /** The carrier value this holds. */
+    fun toUnderlying(): {{ underlying_type }} = raw
+}
+{% else %}
 @OptIn(ExperimentalUnsignedTypes::class)
 enum class {{ enum_name }}(val raw: {{ underlying_type }}) {
 {% for v in variants %}
     {{ v.name }}({{ v.value }}),
 {% endfor %}
+    ;
+
+    /** The carrier value this variant declares. */
+    fun toUnderlying(): {{ underlying_type }} = raw
+
+    companion object {
+        /**
+         * The variant [raw] declares, or null — the declared set is closed,
+         * so a value outside it is not a value of this type.
+         */
+        fun fromUnderlying(raw: {{ underlying_type }}): {{ enum_name }}? =
+            entries.firstOrNull { it.raw == raw }
+    }
 }
+{% endif %}

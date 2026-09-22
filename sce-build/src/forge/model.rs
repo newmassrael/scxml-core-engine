@@ -1240,7 +1240,14 @@ pub struct EnumModel {
     /// open-set status vocabularies (UDS NRC, OEM-extensible response
     /// codes) where wire-side values outside the declared set are
     /// legal. Width narrowing remains active regardless of this opt-
-    /// out — only the membership check silent-skips when `false`.
+    /// out.
+    ///
+    /// It also decides what the generated code does with such a value.
+    /// A closed set's `from_underlying` is partial, so a codec field of
+    /// its type refuses an undeclared carrier value at decode; an open
+    /// set's is total, and its generated type carries the value — which
+    /// is why Rust and Kotlin, whose enums cannot hold an undeclared
+    /// value, emit a value-carrying type for an open set.
     pub strict_variants: bool,
     /// SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source
     /// position of the `<scxml sce:kind="enum">` root element.

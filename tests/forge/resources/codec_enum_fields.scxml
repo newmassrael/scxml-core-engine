@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Conformance fixture: a codec whose fields are typed by an imported enum.
+
+  An enum-typed field travels on the wire as the enum's carrier, so the
+  frame here is three plain bytes; what the fixture pins is that the
+  generated struct holds VALUES OF THE TYPE at both ends of that
+  conversion, and that the two kinds of declared set differ in exactly
+  one place — what a carrier value nobody declared means.
+
+  `session` is closed, so decoding 16 is a refusal: 16 is not a value of
+  that type. `nrc` is open, so decoding 250 is a value it carries, which
+  is what the protocol needs (an ECU may answer with a negative-response
+  code outside the table).
+
+  Both enums are imported rather than declared inline, which is the only
+  shape the kind has: an alias resolved per importing document is what
+  makes the generated type name differ from the document's own.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="codec" sce:default-endian="big" name="codec_enum_fields">
+  <sce:import src="enum_session_state.scxml" kind="enum" as="session"/>
+  <sce:import src="enum_uds_nrc.scxml" kind="enum" as="nrc"/>
+  <datamodel>
+    <sce:field id="state" sce:type="enum:session" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="code" sce:type="enum:nrc" sce:byte="1" sce:bit-size="8"/>
+    <sce:field id="detail" sce:type="uint8" sce:byte="2" sce:bit-size="8"/>
+  </datamodel>
+</scxml>

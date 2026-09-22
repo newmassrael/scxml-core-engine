@@ -67,6 +67,14 @@ typedef enum {
      * authors pre-reserve `{NAME}_MAX_ENCODED_BYTES` for the codec
      * being emitted, so a sized buffer never produces this status. */
     SCE_FORGE_CODEC_BUFFER_OVERFLOW = 5,
+    /* An enum-typed field carried a value its declared set does not
+     * hold. sce:strict-variants="true" (the default) closes the set, so
+     * a carrier value outside it is not a value of that type and the
+     * frame does not decode. An open set carries every value of its
+     * carrier and never raises this. Mirrors the typed
+     * `CodecError::UndeclaredEnumValue` (Rust / Go / Python); cpp /
+     * kotlin collapse to their `std::optional<T>` / `T?` sentinel. */
+    SCE_FORGE_CODEC_UNDECLARED_ENUM_VALUE = 6,
 } sce_forge_codec_status_t;
 
 /* Read-only cursor over a borrowed input buffer. Decode bodies bind a

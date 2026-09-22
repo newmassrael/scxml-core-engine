@@ -41,8 +41,11 @@ sealed class CodecZenohDeclarationVariant {
 
 // Default-valued primary constructor: the generated procedure_l2 code
 // holds codec instances as owned members and initializes them with
-// `CodecZenohDeclaration()` before any encode()/decode() call. Defaults
-// mirror the zero-initialized shape that decode() fills in on success.
+// `CodecZenohDeclaration()` before any encode()/decode() call. Each default
+// is a value of that field's own type, which decode() then fills in on
+// success — the carrier's zero for a number, and for an enum the first
+// variant its document declares, since a closed set does not hold a
+// value it never declared.
 data class CodecZenohDeclaration(
     var header: UByte = 0.toUByte(),
     // RFC variant-default-uniformity (Kotlin): pick the declared
