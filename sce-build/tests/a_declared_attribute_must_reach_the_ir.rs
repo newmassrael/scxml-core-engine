@@ -226,55 +226,12 @@ fn strip_prefix(s: &str) -> String {
 /// reports "no fixture writes it" about a directory it was never
 /// pointed at, and the report reads exactly like a corpus hole.
 ///
-/// ⚠⚠ And the CHECKOUT, not the disk. This used to walk the directory
-/// tree and skip a hand-written list — `target`, `.git`,
-/// `node_modules` — so it read every `.scxml` any process had left
-/// under the root. On 2026-09-22 that went red on 33 documents under a
-/// path `.gitignore` excludes — scratch no commit carries, using an
-/// element no committed document uses. The verdict was a property of
-/// what happened to be lying around, and it would have been green on a
-/// clean checkout of the same commit. The same list also never named
-/// `build/`, where the W3C converter writes.
-///
-/// So the population is what git says the repository holds: every
-/// tracked file, plus every untracked one git does not ignore — a
-/// fixture written but not yet staged is about to be committed and must
-/// be judged before it is. In CI the second set is empty and the two
-/// readings agree. What git ignores is excluded by the repository's
-/// own declaration rather than by a list here that has to guess it.
+/// ⚠⚠ And the CHECKOUT, not the disk — see
+/// [`common::repository::files_with_extension`] for why a walk of the
+/// directory tree judged whatever happened to be lying around. This
+/// suite is where that went red, on 2026-09-22.
 fn fixture_files() -> Vec<PathBuf> {
-    let root = repo_root();
-    let out = std::process::Command::new("git")
-        .arg("-C")
-        .arg(&root)
-        .args([
-            "ls-files",
-            "-z",
-            "--cached",
-            "--others",
-            "--exclude-standard",
-            "--",
-            "*.scxml",
-        ])
-        .output()
-        .expect("git ls-files runs in the repository");
-    assert!(
-        out.status.success(),
-        "git ls-files failed: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let mut files: Vec<PathBuf> = out
-        .stdout
-        .split(|b| *b == 0)
-        .filter(|s| !s.is_empty())
-        .map(|s| root.join(String::from_utf8_lossy(s).as_ref()))
-        // A tracked path the working tree has deleted is not a document
-        // to read; `--cached` still lists it until the deletion is staged.
-        .filter(|p| p.is_file())
-        .collect();
-    files.sort();
-    files.dedup();
-    files
+    common::repository::files_with_extension("scxml")
 }
 
 /// Which document to mutate for each declared pair.

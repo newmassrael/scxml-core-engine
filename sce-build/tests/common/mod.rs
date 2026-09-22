@@ -27,6 +27,7 @@ use std::process::{Command, Output};
 pub mod gate_selectors;
 pub mod hostile_document;
 pub mod ledger;
+pub mod repository;
 pub mod rust_source;
 pub mod source_lexing;
 pub mod template_registration;

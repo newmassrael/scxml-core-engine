@@ -53,17 +53,12 @@
 //! wrote correctly. Both are answers about the two halves; neither is
 //! answered by comparing less.
 
-use std::path::{Path, PathBuf};
+mod common;
+
+use std::path::PathBuf;
 
 use sce_build::forge::unpseudo;
 use sce_build::DocumentLabel;
-
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("sce-build's parent is the repo root")
-        .to_path_buf()
-}
 
 /// Every `.scxml` in the checkout.
 ///
@@ -83,35 +78,19 @@ fn repo_root() -> PathBuf {
 /// statecharts live in bulk — so the law was proven over 233 documents
 /// while the largest body of machines in the tree went unasked.
 ///
-/// `target/`, `.git/` and `node_modules/` are excluded because they are
-/// not documents anybody wrote. Symlinked directories are followed:
-/// `resources/403a`, `403b` and `403c` are one W3C fixture reached by
-/// three names, and a sweep that does not follow them is a sweep that
-/// silently drops it.
+/// The checkout is what git says the repository holds — see
+/// [`common::repository::files_with_extension`] — not whatever lies
+/// under the root.
+///
+/// ⚠ This note used to say symlinked directories had to be followed or
+/// `resources/403a`, `403b` and `403c` would silently drop a fixture.
+/// Measured 2026-09-22 they are the repository's only three directory
+/// links and all three point at `resources/403/`, which is tracked and
+/// holds `test403a/b/c.scxml`. Git lists those once, under their own
+/// directory; following the links read the same three documents four
+/// times each. Nothing was being protected.
 fn fixture_files() -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    collect(&repo_root(), &mut out);
-    out.sort();
-    out
-}
-
-fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for e in entries.flatten() {
-        let p = e.path();
-        if p.is_dir() {
-            if p.file_name()
-                .is_some_and(|n| n == "target" || n == ".git" || n == "node_modules")
-            {
-                continue;
-            }
-            collect(&p, out);
-        } else if p.extension().is_some_and(|x| x == "scxml") {
-            out.push(p);
-        }
-    }
+    common::repository::files_with_extension("scxml")
 }
 
 #[test]

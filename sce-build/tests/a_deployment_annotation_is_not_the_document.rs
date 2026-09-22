@@ -34,19 +34,14 @@
 //! comparing the stripped text against the authored one and by nothing
 //! else.
 
+mod common;
+
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use sce_build::forge::pseudo::{self, Deployment, Fact, DEPLOYMENT_SIGIL};
 use sce_build::forge::unpseudo;
 use sce_build::DocumentLabel;
-
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("sce-build's parent is the repo root")
-        .to_path_buf()
-}
 
 /// Every `.scxml` in the checkout — the same corpus the round-trip
 /// gate sweeps.
@@ -54,31 +49,10 @@ fn repo_root() -> PathBuf {
 /// ⚠ This list used to name four directories and, like the two gates
 /// beside it, said nothing about the rest while reading as though it
 /// had covered everything. The W3C corpus alone is 253 tracked
-/// documents that no list here named.
+/// documents that no list here named. What "the checkout" holds is
+/// [`common::repository::files_with_extension`]'s answer, not the disk's.
 fn fixture_files() -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    collect(&repo_root(), &mut out);
-    out.sort();
-    out
-}
-
-fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for e in entries.flatten() {
-        let p = e.path();
-        if p.is_dir() {
-            if p.file_name()
-                .is_some_and(|n| n == "target" || n == ".git" || n == "node_modules")
-            {
-                continue;
-            }
-            collect(&p, out);
-        } else if p.extension().is_some_and(|x| x == "scxml") {
-            out.push(p);
-        }
-    }
+    common::repository::files_with_extension("scxml")
 }
 
 /// Every document the renderer takes, as a model.

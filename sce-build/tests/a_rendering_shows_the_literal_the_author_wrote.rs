@@ -44,13 +44,6 @@ use sce_build::forge::model::ForgeDocument;
 use sce_build::forge::pseudo;
 use sce_build::DocumentLabel;
 
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("sce-build's parent is the repo root")
-        .to_path_buf()
-}
-
 /// Every `.scxml` in the checkout.
 ///
 /// ⚠ The whole checkout, not a list of fixture roots — the third gate
@@ -58,31 +51,11 @@ fn repo_root() -> PathBuf {
 /// `a_declared_attribute_must_reach_the_ir` and the round trip. **A
 /// hand-listed scope does not stay silent about the directories it was
 /// never pointed at; it reports that they are fine.** The W3C corpus
-/// is 253 tracked documents and was outside all three lists.
+/// is 253 tracked documents and was outside all three lists. What the
+/// checkout holds is [`common::repository::files_with_extension`]'s
+/// answer, not the disk's.
 fn fixture_files() -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    collect(&repo_root(), &mut out);
-    out.sort();
-    out
-}
-
-fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for e in entries.flatten() {
-        let p = e.path();
-        if p.is_dir() {
-            if p.file_name()
-                .is_some_and(|n| n == "target" || n == ".git" || n == "node_modules")
-            {
-                continue;
-            }
-            collect(&p, out);
-        } else if p.extension().is_some_and(|x| x == "scxml") {
-            out.push(p);
-        }
-    }
+    common::repository::files_with_extension("scxml")
 }
 
 /// The document this text parses to, whichever pipeline takes it.

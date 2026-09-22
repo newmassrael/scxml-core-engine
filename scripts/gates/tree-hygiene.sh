@@ -145,6 +145,13 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 cargo test -p sce-build --features cli,ffi \
     --test a_standard_named_in_code_is_one_sce_implements \
     --test a_declared_attribute_must_reach_the_ir \
+    --test a_deployment_annotation_is_not_the_document \
+    --test a_line_that_opens_a_block_carries_its_word \
+    --test a_page_in_any_shape_normalises_to_the_canonical_one \
+    --test a_rendering_reads_back_as_the_same_document \
+    --test a_rendering_shows_the_literal_the_author_wrote \
+    --test an_action_uses_only_the_fields_its_tag_declares \
+    --test the_analyzer_declares_which_fields_it_writes \
     --test an_identifier_is_checked_against_the_grammar_w3c_gives_it \
     --test a_name_the_generated_code_spells_is_a_code_identifier \
     --test non_latin_prose_declares_why_it_is_here \

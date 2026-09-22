@@ -40,43 +40,18 @@
 //! Both are answers about the pair, and neither is answered by
 //! measuring fewer documents.
 
-use std::path::{Path, PathBuf};
+mod common;
+
+use std::path::PathBuf;
 
 use sce_build::forge::page::{canonical, normalise_page, read_page, write_page, LEXICONS, SHAPES};
 use sce_build::forge::pseudo;
 use sce_build::DocumentLabel;
 
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("sce-build's parent is the repo root")
-        .to_path_buf()
-}
-
+/// Every `.scxml` the repository holds — see
+/// [`common::repository::files_with_extension`].
 fn fixture_files() -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    collect(&repo_root(), &mut out);
-    out.sort();
-    out
-}
-
-fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for e in entries.flatten() {
-        let p = e.path();
-        if p.is_dir() {
-            if p.file_name()
-                .is_some_and(|n| n == "target" || n == ".git" || n == "node_modules")
-            {
-                continue;
-            }
-            collect(&p, out);
-        } else if p.extension().is_some_and(|x| x == "scxml") {
-            out.push(p);
-        }
-    }
+    common::repository::files_with_extension("scxml")
 }
 
 #[test]
