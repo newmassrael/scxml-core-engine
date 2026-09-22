@@ -106,5 +106,92 @@ class ABindingCanSayItGuessed(Fixture):
         self.assertEqual({}, result.refuted)
 
 
+# --------------------------------------------- what a position keeps: hold_last
+
+HELD = """<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="transform" name="counted">
+  <datamodel>
+    <data id="count" sce:type="int32" sce:direction="in"/>
+    <!-- Which alarm is active: 1 or 2, and 0 when neither is. -->
+    <data id="which" sce:type="int32" sce:direction="out"
+          expr="count === 1 ? 1 : (count === 2 ? 2 : 0)"/>
+  </datamodel>
+</scxml>
+"""
+
+
+def held_binding(hold=True):
+    rule = {"address": "Plant.Out.Lamp", "field": "Value",
+            "map": {1: 11, 2: 22}}
+    if hold:
+        rule["hold_last"] = True
+    return {"version": 1, "document": "counted.scxml",
+            "inputs": {"count": {"address": "Plant.Input.Count", "number": True,
+                                 "when_absent": 0}},
+            "outputs": {"which": rule}}
+
+
+def at(count, **expect):
+    return {"given": {"Plant.Input.Count": count}, "drove": ["Plant.Input.Count"],
+            **({"expect": expect} if expect else {})}
+
+
+@unittest.skipUnless(_default_codegen().exists(),
+                     "the product's code generator is not built")
+class APositionKeepsWhatItHeld(Fixture):
+    """`hold_last`: a value with no map entry keeps the last one written.
+
+    Carried over from the oracle the first packs were measured with, which put
+    it in the binding on purpose -- the identifier beside an event says WHAT
+    turns off, so it outlives the condition; that is the address's structure,
+    not the specification's. The first authoring core never took it over, and
+    three components written against that oracle had every case unjudged,
+    because the document's "no alarm" value had no entry in the map.
+    """
+
+    def judge(self, rules, *cases, ordered=True):
+        (self.root / "counted.scxml").write_text(HELD, encoding="utf-8")
+        path = self.root / "counted.binding.yaml"
+        path.write_text(yaml.safe_dump(rules), encoding="utf-8")
+        (self.pack_dir / "examples.yaml").write_text(yaml.safe_dump({
+            "version": 1, "origin": "written for this test",
+            "independent_cases": True, "ordered": ordered,
+            "cases": list(cases)}), encoding="utf-8")
+        return verify(self.pack(), path)
+
+    def test_an_unmapped_value_keeps_the_last_one_written(self):
+        after_alarm = {"name": "the alarm clears", "before": [at(2)],
+                       **at(0, **{"Plant.Out.Lamp.Value": 22})}
+        result = self.judge(held_binding(), after_alarm)
+        self.assertTrue(result.ran, result.refusal)
+        self.assertEqual((1, 0, 0),
+                         (result.passed, result.failed, result.unjudged),
+                         [(c.name, c.refusal, c.failures) for c in result.results])
+
+    def test_before_anything_was_held_the_position_is_not_written(self):
+        """Not refused, and not given an invented value: nothing is there."""
+        cold = {"name": "no alarm yet", **at(0, **{"Plant.Out.Lamp.Value": 22})}
+        result = self.judge(held_binding(), cold)
+        case = result.results[0]
+        self.assertTrue(case.judged, case.refusal)
+        self.assertEqual(["Plant.Out.Lamp.Value"], case.unchecked)
+
+    def test_without_it_the_same_value_refuses_the_case(self):
+        """The discriminator: without `hold_last` the unmapped value is a
+        binding that cannot translate what the document produced."""
+        after_alarm = {"name": "the alarm clears", "before": [at(2)],
+                       **at(0, **{"Plant.Out.Lamp.Value": 22})}
+        result = self.judge(held_binding(hold=False), after_alarm)
+        self.assertEqual(1, result.unjudged)
+        self.assertIn("no entry", result.results[0].refusal)
+
+    def test_it_needs_an_order_to_have_a_last_value(self):
+        result = self.judge(held_binding(), at(1, **{"Plant.Out.Lamp.Value": 11}),
+                            ordered=False)
+        self.assertFalse(result.ran)
+        self.assertIn("which", result.refusal)
+
+
 if __name__ == "__main__":
     unittest.main()

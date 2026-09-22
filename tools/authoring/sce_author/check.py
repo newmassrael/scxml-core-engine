@@ -33,7 +33,34 @@ from dataclasses import dataclass
 import yaml
 
 from .errors import READ_ERRORS, PackError, describe_path
-from .pack import Pack, _validate
+from .pack import SCHEMA_DIR, Pack, _validate
+
+
+def _keys_that_hold_no_symbol() -> frozenset:
+    """Rule keys whose value is never a platform symbol, read from the schema.
+
+    The YAML-boolean guard exists for SYMBOLS: `equals: ON` silently becomes
+    True and stops being the name the platform uses. A key the schema types as
+    a boolean, or marks `x-sce-document-value` -- it carries the DOCUMENT's
+    own value, like `initial` for a boolean output -- holds a real boolean on
+    purpose, and refusing it tells the author a symbol was expected where none
+    was.
+
+    ⚠ Read from the schema rather than listed here. The list used to be
+    written by hand beside a comment saying "these four" while it held five;
+    the sixth, `hold_last`, was refused as a bare YES the first time a binding
+    used it, and then `initial: true` for a boolean output was refused the
+    same way. A guard that has to be told about each new key fails exactly
+    when a new key arrives.
+    """
+    schema = json.loads((SCHEMA_DIR / "binding.v1.schema.json").read_text(
+        encoding="utf-8"))
+    return frozenset(
+        key
+        for rule in (schema.get("$defs") or {}).values()
+        for key, spec in (rule.get("properties") or {}).items()
+        if isinstance(spec, dict)
+        and (spec.get("type") == "boolean" or spec.get("x-sce-document-value")))
 
 SCXML_NS = "{http://www.w3.org/2005/07/scxml}"
 SCE_NS = "{http://sce.dev/ext}"
@@ -267,9 +294,8 @@ def _refuse_yaml_booleans(doc, path: pathlib.Path) -> None:
             if not isinstance(rule, dict):
                 continue
             for key, value in rule.items():
-                # These four are genuinely booleans in the published schema.
-                if key in {"number", "absent", "passthrough", "internal",
-                           "clock"}:
+                # Never a symbol, per the published schema -- read from it.
+                if key in _keys_that_hold_no_symbol():
                     continue
                 walk(value, [side, name, key])
 

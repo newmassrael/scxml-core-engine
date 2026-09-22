@@ -724,6 +724,30 @@ _UNSEEN = object()
 _UNDETERMINED = object()
 # How many unresolved inputs a run will enumerate. Each doubles every case.
 MAX_OPEN_INPUTS = 6
+# A `hold_last` output with nothing held yet: the slot is not written.
+_NOT_WRITTEN = object()
+
+
+def _held(name: str, rule: dict, value, history) -> object:
+    """The value a `hold_last` rule writes this round.
+
+    ⚠ Carried over from the oracle the first packs were measured with, which
+    kept it in the binding on purpose: "the event slot says WHAT is turning
+    off, so its identifier keeps its last value when every condition is false
+    -- that is the slot's structure, not the specification's, so the binding
+    holds it". The first authoring core never took it over; three components
+    written against the oracle then had every case unjudged, because the
+    document's "no event" value had no entry in the map.
+    """
+    if "map" not in rule:
+        raise VerifyError(
+            f"output {name!r}: `hold_last` holds a MAPPED value, and this rule "
+            f"has no map -- there is nothing a value could fail to be found in")
+    table = {str(k) for k in rule["map"]}
+    wanted = str(int(value)) if isinstance(value, bool) else str(value)
+    if wanted in table:
+        return value
+    return history.held.get(name, _NOT_WRITTEN)
 
 
 class History:
@@ -748,6 +772,9 @@ class History:
     def __init__(self):
         self.inputs: dict[str, object] = {}
         self.outputs: dict[str, object] = {}
+        # Output name -> the last value a `hold_last` rule WROTE. A slot the
+        # component does not write keeps what it held; this is that slot.
+        self.held: dict[str, object] = {}
         self.started = False
 
     def earlier(self, name, rule, case, latches, model):
@@ -1525,11 +1552,12 @@ def verify(pack: Pack, binding_path: pathlib.Path,
 
     if not examples.ordered:
         needs_history = sorted(
-            n for n, r in inputs.items()
-            if r.get("previous_of") or r.get("state_of") or r.get("protocol"))
+            [n for n, r in inputs.items()
+             if r.get("previous_of") or r.get("state_of") or r.get("protocol")]
+            + [n for n, r in outputs.items() if r.get("hold_last")])
         if needs_history:
             return Verification(refusal=(
-                f"input(s) {', '.join(needs_history)} need the round before "
+                f"rule(s) {', '.join(needs_history)} need the round before "
                 f"them, and the examples do not declare themselves `ordered`. "
                 f"Without an order there is no previous round, and reading the "
                 f"file's order as a timeline would be reading a promise nobody "
@@ -1615,7 +1643,17 @@ def verify(pack: Pack, binding_path: pathlib.Path,
                     # the platform symbol it lands as -- mapping first would
                     # hand the document a word it never produced.
                     history.outputs[name] = computed if settled else _UNDETERMINED
-                written = [output_values(name, rule, r) for r in runs]
+                if rule.get("hold_last"):
+                    # ⚠ The slot, not the document, holds. A component that
+                    # does not write a slot leaves what it held, so a value
+                    # with no entry in `map` writes the last one this rule
+                    # wrote -- and, before there is one, writes nothing.
+                    runs = [_held(name, rule, r, history) for r in runs]
+                written = [{} if r is _NOT_WRITTEN else output_values(name, rule, r)
+                           for r in runs]
+                if (rule.get("hold_last") and runs[0] is not _NOT_WRITTEN
+                        and all(r == runs[0] for r in runs[1:])):
+                    history.held[name] = runs[0]
                 # ⚠ Per POSITION, not per output. An output that differs in
                 # its status field can still write the same identifier in
                 # every run, and that identifier is a thing the document got

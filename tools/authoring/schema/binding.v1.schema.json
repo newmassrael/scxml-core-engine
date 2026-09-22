@@ -58,6 +58,7 @@
           "description": "True when the address is not reporting at all. Absence is not a value the address takes, so it never belongs in a value space."
         },
         "when_absent": {
+          "x-sce-document-value": true,
           "description": "What a NUMBER reads as when its address is not reporting, or reports outside `range`. ⚠ Required for a numeric input whose address a case may not drive -- there is no safe silent answer. Folding absence into zero made seven cases on one corpus look as though the specification had been misread, when what had actually happened was that nothing was reporting. A symbol comparison needs no such declaration: an address that is not reporting is not any symbol, which is already the answer. Out of range counts as absent here because a reading the platform cannot represent is not a reading."
         },
         "previous_of": {
@@ -69,6 +70,7 @@
           "description": "An output this same document produced on the previous round, named by that output's own identifier."
         },
         "initial": {
+          "x-sce-document-value": true,
           "description": "What `previous_of` or `state_of` yields on the FIRST round, when there is no previous one. For `previous_of` it may be omitted, and then the first round reads the input's current value -- the assumption that nothing had changed before observation began, which is what edge detection means in practice. For `state_of` there is no current value to fall back on, so omitting it makes the first round a refusal rather than a guess: an output fed back before it has ever been produced is a number nobody computed."
         },
         "variant_is": {
@@ -171,6 +173,10 @@
         "assumed": {
           "type": "string",
           "description": "This rule decides something the specification does not say -- a `map` entry, an `also` field, a platform default -- and the string is why. The peer of the input rule's `assumed` and of the document's `sce:assumed`: a failure on a position this rule writes is reported as the assumption being refuted."
+        },
+        "hold_last": {
+          "type": "boolean",
+          "description": "A document value with no entry in `map` does not write this position: it keeps the last value this rule wrote, and before there is one it is not written at all. ⚠ This is the ADDRESS's behaviour, not the document's -- a position the component does not write keeps what it held -- which is why it lives in the binding and not as an extra input fed back into every document that needs it. The identifier beside an event's status is the usual case: it says WHAT is turning off, so it outlives the condition that set it. Needs `map` and ordered examples."
         },
         "note": {"type": "string"}
       }

@@ -684,6 +684,22 @@ should have signalled and did not is the failure most worth catching, and an
 output that merely vanishes from the produced set is reported as a position
 nobody looked at — which a reader takes for a clean run.
 
+`hold_last: true` on a mapped output: a document value with no entry in `map`
+does not write the position, which then keeps the last value the rule wrote —
+and before there is one, is not written at all. That is the ADDRESS's
+behaviour, not the document's: a position the component does not write keeps
+what it held. The identifier beside an event's status is the usual case — it
+says what is turning off, so it outlives the condition that set it. It lives in
+the binding rather than as an extra input fed back into every document that
+needs it, because the specification never says it; the address's structure
+does. Needs ordered examples.
+
+`assumed: "<why>"` on any input or output rule: this rule decides something the
+specification does not say, like a `when_absent` for a number nobody said the
+absence of. The binding's peer of the document's `sce:assumed` — a failure on a
+value resting on it is reported as that guess being refuted, not as the
+document being wrong.
+
 ⚠⚠ **There is no key for reading the datamodel back, and none for reading the
 active configuration**, though a statechart answers through both. Neither is
 missing vocabulary. `address` plus `map` already says which position a

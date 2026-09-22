@@ -407,6 +407,27 @@ class ABindingRefusesAYamlBoolean(unittest.TestCase):
             doc["outputs"]["bell"]["passthrough"] = True
         read_binding(self.binding(mutate))   # must not raise
 
+    def test_a_document_value_may_be_a_real_boolean(self):
+        """⚠ `initial` carries the DOCUMENT's value, and for a boolean output
+        that value is true or false. The guard used to refuse it as a symbol
+        written as a bare YES -- which named a fault the author had not made.
+        Marked in the schema as a document value, so the guard reads it."""
+        from sce_author.check import read_binding
+
+        def mutate(doc):
+            doc["inputs"]["wasBell"] = {"state_of": "bell", "initial": True,
+                                        "caller_keeps": "measuring the guard"}
+        read_binding(self.binding(mutate))   # must not raise
+
+    def test_a_new_boolean_key_needs_no_edit_to_the_guard(self):
+        """The discriminator for reading the list from the schema: the key
+        added most recently is exempt without the guard being touched."""
+        from sce_author.check import _keys_that_hold_no_symbol
+        self.assertIn("hold_last", _keys_that_hold_no_symbol())
+        self.assertIn("initial", _keys_that_hold_no_symbol())
+        self.assertNotIn("equals", _keys_that_hold_no_symbol(),
+                         "a symbol position must stay guarded")
+
 
 if __name__ == "__main__":
     unittest.main()
