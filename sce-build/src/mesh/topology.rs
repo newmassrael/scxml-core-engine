@@ -1507,6 +1507,17 @@ pub struct SendActionSummary {
     /// [`ResolvedTarget::invoke_sites`]. Absent targets yield an
     /// empty site list (i.e. a pure-`<send>` target).
     pub invoke_sites_by_target: BTreeMap<TargetId, Vec<MeshRpcInvokeSite>>,
+    /// Mesh-RPC invoke sites whose target is an `srcexpr`, which no
+    /// build-time lookup resolves to one key.
+    ///
+    /// They are carried apart from `invoke_sites_by_target` because they
+    /// belong to EVERY declared binding rather than to one: SCE_MESH.md
+    /// §9.5 defines the srcexpr target as "a static deploy.yaml binding
+    /// whose key the expression resolves to", and §9.5 again as a choice
+    /// "among already-declared bindings". [`contribute_srcexpr_partials`]
+    /// spreads them over the machine's bindings so the generated router
+    /// carries a dispatch entry for each one the expression could name.
+    pub srcexpr_sites: Vec<MeshRpcInvokeSite>,
 }
 
 /// Collect all `<send>` action data from an SCXML model in a single pass.
@@ -1559,16 +1570,37 @@ pub fn collect_send_summary(model: &SCXMLModel) -> SendActionSummary {
     // call, Zenoh get/reply) and the deadline binding supplies any
     // fallback for missing per-invoke deadlines (§mesh-9.5 precedence).
     let mut invoke_sites_by_target: BTreeMap<TargetId, Vec<MeshRpcInvokeSite>> = BTreeMap::new();
+    let mut srcexpr_sites: Vec<MeshRpcInvokeSite> = Vec::new();
     for invoke in &model.invokes {
         let Invoke::MeshRpc(info) = invoke else {
             continue;
         };
-        // Only the `Src` variant contributes a build-time-resolvable
-        // target. `SrcExpr` is evaluated at `<invoke>` entry; its target
-        // cannot be enumerated at build time and is looked up against
-        // the existing static topology at runtime — a miss raises
-        // `error.invoke.<id>` with `RpcStatus::Unavailable` (§mesh-9.5).
+        // Only the `Src` variant names ONE target at build time.
+        // `SrcExpr` is evaluated at `<invoke>` entry and looked up
+        // against the static topology, so its candidates are the
+        // machine's declared bindings — every one of them, since the
+        // expression decides at run time which it names. Carried to
+        // `contribute_srcexpr_partials`, which spreads the site over
+        // them; a name no binding carries is the §9.5 miss, and it
+        // stays a miss because the router has the others to compare it
+        // against.
+        //
+        // ⚠ Skipping the site here is what this used to do, and it left
+        // a document whose only mesh-rpc invoke is an `srcexpr` with an
+        // EMPTY router: `<machine>_transport.h` was not emitted at all,
+        // so `performMeshInvoke` returned false and every resolution
+        // missed — including the ones deploy.yaml had a binding for.
+        // Both srcexpr fixtures carried a static `src` invoke in an
+        // unreachable state to work around it (measured 2026-09-22).
         let Some(src_literal) = info.target.src_literal() else {
+            srcexpr_sites.push(MeshRpcInvokeSite {
+                state_name: info.base.state_name.clone(),
+                invoke_id: info.base.invoke_id.clone(),
+                field_suffix: info.base.field_suffix.clone(),
+                mesh_event: info.mesh_event.clone(),
+                deadline_ms: info.deadline_ms,
+                params: info.base.params.clone(),
+            });
             continue;
         };
         let Some(tid) = TargetId::new(src_literal) else {
@@ -1602,6 +1634,7 @@ pub fn collect_send_summary(model: &SCXMLModel) -> SendActionSummary {
         target_events,
         actions,
         invoke_sites_by_target,
+        srcexpr_sites,
     }
 }
 
@@ -1985,6 +2018,20 @@ pub fn build_resolved_targets(
         }
     }
 
+    // §9.5 srcexpr: the sites that name their target at run time reach
+    // every declared binding, so they contribute after the two above
+    // and merge into whatever those produced for the same key. A
+    // document whose only mesh-rpc invoke is an srcexpr has no partial
+    // from them at all, and this is what gives it a router to dispatch
+    // through.
+    for p in contribute_srcexpr_partials(
+        &contributions.send_summary.srcexpr_sites,
+        bindings,
+        machine_name,
+    ) {
+        merge_partial_into(&mut partials, p);
+    }
+
     let resolved = finalize_targets(partials, machine_name, external)?;
     validate_someip_event_fields(&resolved, machine_name)?;
     validate_pool_param_names(&resolved, machine_name)?;
@@ -2168,6 +2215,84 @@ pub(crate) fn contribute_subscription_partials(
         );
     }
     Ok(partials)
+}
+
+/// Spread every `srcexpr` mesh-rpc site over the machine's declared
+/// bindings, so the router can dispatch whichever one the expression
+/// names at run time.
+///
+/// SCE_MESH.md §9.5 defines the srcexpr target as "a static deploy.yaml
+/// binding whose key the expression resolves to", and says the
+/// construct "only allows the author to pick among already-declared
+/// bindings" — so the candidate set is exactly `bindings`, and a name
+/// outside it is the pre-envelope miss the same section spells as
+/// `error.execution` / `INVOKE_SRC_NOT_FOUND`.
+///
+/// ⚠ No deadline-override notice is raised here, unlike
+/// [`contribute_send_partials`]. A notice names the (state, target,
+/// invoke) triple whose per-invoke deadline overrode a binding's, and
+/// an srcexpr site has no one target — reporting it against every
+/// binding would name triples the author never wrote. The fallback
+/// itself still applies, per binding, which is what the runtime needs.
+pub(crate) fn contribute_srcexpr_partials(
+    sites: &[MeshRpcInvokeSite],
+    bindings: &std::collections::HashMap<TargetId, BindingConfig>,
+    _machine_name: &str,
+) -> Vec<PartialTarget> {
+    if sites.is_empty() {
+        return Vec::new();
+    }
+    let mut partials: Vec<PartialTarget> = Vec::new();
+    // Sorted so the emitted router is a function of the deployment and
+    // not of HashMap iteration order — the same reason
+    // `sorted_target_keys` exists.
+    for target in sorted_target_keys(bindings) {
+        let binding = &bindings[&target];
+        let invoke_sites: Vec<MeshRpcInvokeSite> = sites
+            .iter()
+            .cloned()
+            .map(|mut site| {
+                if site.deadline_ms.is_none() {
+                    site.deadline_ms = binding.deadline_ms;
+                }
+                site
+            })
+            .collect();
+        let mut event_patterns: Vec<EventPatternInfo> = Vec::new();
+        for site in &invoke_sites {
+            if site.mesh_event.is_empty()
+                || event_patterns.iter().any(|e| e.event == site.mesh_event)
+            {
+                continue;
+            }
+            let pattern = super::pattern::CommunicationPattern::ServiceRequest;
+            event_patterns.push(EventPatternInfo {
+                event: site.mesh_event.clone(),
+                pattern_kind_value: pattern.wire_value(),
+                reply_event: pattern.infer_reply_event(&site.mesh_event),
+            });
+        }
+        merge_partial_into(
+            &mut partials,
+            PartialTarget {
+                target: target.clone(),
+                events: Vec::new(),
+                transport: binding.transport.clone(),
+                extra: binding.extra.clone(),
+                event_patterns,
+                invoke_sites,
+                ordering: binding.ordering,
+                responders: responder_set(&target, binding),
+                retry: binding.retry,
+                auth: binding.auth.clone(),
+                instance_from: binding.instance_from.clone(),
+                instances: binding.instances.clone(),
+                members: binding.members.clone(),
+                subscription_events: Vec::new(),
+            },
+        );
+    }
+    partials
 }
 
 /// Deterministic ordering for the `available` field of the unbound

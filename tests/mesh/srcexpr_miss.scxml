@@ -35,15 +35,16 @@
      these attributes can be written. The fixture read `null` for as
      long as the attribute reached no decision.
 
-     The `phantom` state carries a static `src="#motor_srcexpr_stub"`
-     invoke whose sole purpose is codegen: without at least one
-     static-src invoke the generator emits no `*_transport.h` and
-     `TransportRouter::invokeMeshRpc` is absent, so the srcexpr
-     raise path would have nothing to route through. `phantom` is
-     unreachable from `idle` / `calling_miss`, so its invoke never
-     executes at runtime — it exists purely so `invoke_sites_by_target`
-     is non-empty and `#ghost_target` genuinely misses the match
-     loop rather than hitting a degenerate empty table. -->
+     ⚠ This document used to carry an unreachable `phantom` state whose
+     only job was a static `src="#motor_srcexpr"` invoke, because the
+     generator built the router's dispatch table from static sites alone
+     and emitted no `*_transport.h` at all for a document that had none.
+     The miss under test was therefore measured against a table that
+     existed only by that workaround. §9.5 makes the srcexpr candidate
+     set the machine's declared bindings, the generator now builds the
+     table from them, and `#ghost_target` misses a table that carries
+     `#motor_srcexpr` — the deployment's own binding, not a stub.
+     Removed 2026-09-22. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        version="1.0" datamodel="ecmascript" name="srcexpr_miss" initial="idle">
     <state id="idle">
@@ -69,15 +70,6 @@
         <transition event="error.execution" target="double_raise_detected"/>
         <transition event="error.invoke" target="invoke_raise_regression"/>
         <transition event="settle" target="handled"/>
-    </state>
-    <state id="phantom">
-        <!-- Unreachable at runtime. Static src populates the generated
-             router's invoke_sites_by_target so transport.h is emitted
-             and invokeMeshRpc has a non-empty match loop for
-             `#ghost_target` to genuinely miss against. -->
-        <invoke type="sce:mesh-rpc" src="#motor_srcexpr">
-            <param name="_mesh_event" expr="'service.request.ping'"/>
-        </invoke>
     </state>
     <final id="handled"/>
     <final id="double_raise_detected"/>

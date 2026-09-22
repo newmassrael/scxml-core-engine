@@ -6,12 +6,14 @@
 # L1340 / §10.7.1 error.execution raise path that the runtime test
 # asserts.
 #
-# `#motor_srcexpr` exists solely so the generator emits
-# `srcexpr_miss_transport.h` with a non-empty invoke_sites_by_target —
-# see the comment on `phantom` in srcexpr_miss.scxml. The binding
-# reuses the passive motor_srcexpr.scxml fixture because it only
-# needs to be a valid receiver; the static-src invoke that references
-# it never executes at runtime.
+# `#motor_srcexpr` is the binding the miss is measured against: §9.5
+# makes a srcexpr's candidate set the machine's declared bindings, so
+# this one is what the generated router carries and what
+# `#ghost_target` fails to match. The binding reuses the passive
+# motor_srcexpr.scxml fixture because it only needs to be a valid
+# receiver. Until 2026-09-22 the document also carried an unreachable
+# static-src invoke, because the router was built from static sites
+# alone and this binding reached it no other way.
 version: "1.0"
 topology:
   ecu1:
