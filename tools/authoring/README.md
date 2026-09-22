@@ -549,6 +549,13 @@ does not say something the platform does.
         given:  {plant/in/approach: APPROACHING, plant/in/power: OK}
         drove:  [plant/in/approach]     # what this entry SET, not what merely held
         expect: {plant/out/signal.value: FLASHING}
+      - name: the crossing clears once the train has passed
+        before:                  # the setup, driven in order and never judged
+          - given: {plant/in/approach: OCCUPIED, plant/in/power: OK}
+            drove: [plant/in/approach]
+        given:  {plant/in/approach: CLEAR, plant/in/power: OK}
+        drove:  [plant/in/approach]
+        expect: {plant/out/signal.value: DARK}
 
 ⚠ The four properties are separate because they answer separate questions, and
 each of them cost a measurement to separate:
@@ -570,6 +577,16 @@ place to live, no binding could read such a case at all.
 the situation does, and a record where it goes backwards is ordinary. Time is
 its own category: no address, no value space, nothing drives it, which is why
 it sits on the case rather than in `given`.
+
+`before` is the setup of a case, as the record states it: steps driven in order
+BEFORE the case, moving everything a round moves — a machine's state, a latch,
+a remembered previous value — and never judged. ⚠ `given` holds only where a
+case ENDED, so a record that says "from this, move to that" needs `before` to
+say where it moved FROM. Folding the setup into the final values lost exactly
+that: a document reading "A becomes B" literally was never shown the A and
+failed, while a document reading it as "not B, then B" passed — and the loose
+reading was the wrong one. A setup step that cannot be driven leaves its case
+unjudged, naming the step.
 
 ### binding — the third artefact
 

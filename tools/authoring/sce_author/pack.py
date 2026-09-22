@@ -423,6 +423,13 @@ class Case:
     # signal: nothing drives it and it has no value space, so it sits here
     # beside the clock rather than in `given`.
     variant: str = ""
+    # The steps that set the case up, driven in order BEFORE it and never
+    # judged -- each one a case with nothing expected of it. ⚠ A case that
+    # moves an input from one value to another has to say where it moved FROM,
+    # and `given` holds only where it ended. Folding the setup into the final
+    # values lost exactly that: a document reading "A becomes B" literally was
+    # never shown the A, failed, and a document reading it loosely passed.
+    before: tuple = ()
 
 
 @dataclass
@@ -488,14 +495,23 @@ def load_examples(paths: list[pathlib.Path]) -> Examples:
         ordered = ordered or bool(doc.get("ordered"))
         for case in doc["cases"]:
             count += 1
+            name = str(case.get("name") or "")
+            variant = str(case.get("variant") or "")
             given = dict(case.get("given") or {})
             expect = dict(case.get("expect") or {})
             driven |= set(given)
             expected |= set(expect)
-            cases.append(Case(str(case.get("name") or ""), given, expect,
+            before = []
+            for index, step in enumerate(case.get("before") or (), 1):
+                step_given = dict(step.get("given") or {})
+                driven |= set(step_given)
+                before.append(Case(f"{name} (before {index})", step_given, {},
+                                   step.get("elapsed_ms"),
+                                   tuple(step.get("drove") or ()), variant))
+            cases.append(Case(name, given, expect,
                               case.get("elapsed_ms"),
                               tuple(case.get("drove") or ()),
-                              str(case.get("variant") or "")))
+                              variant, tuple(before)))
     return Examples(origin, frozenset(driven), frozenset(expected), count,
                     tuple(cases), independent, ordered)
 

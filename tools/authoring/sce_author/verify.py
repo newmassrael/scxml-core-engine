@@ -902,6 +902,20 @@ def sent_value(name: str, rule: dict, requests):
     return request.event_name
 
 
+def rounds_of(cases):
+    """Every round the examples drive, in order, and whether it is judged.
+
+    A case's `before` steps come first and are driven like any round -- the
+    machine, the latches and the remembered values all move -- but nothing is
+    judged on them. They are the setup the record states, not a claim about
+    the result.
+    """
+    for case in cases:
+        for step in case.before:
+            yield step, case, False
+        yield case, case, True
+
+
 class StatechartRun:
     """One engine, driven through the cases in the order they happened.
 
@@ -1074,8 +1088,11 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
         return Verification(refusal=str(exc))
 
     previous: tuple = ()
-    for case in examples.cases:
-        result = CaseResult(name=case.name)
+    failed: set = set()
+    for case, owner, judged in rounds_of(examples.cases):
+        if id(owner) in failed:
+            continue
+        result = CaseResult(name=owner.name)
         # What this case ASSERTED, as the record states it: the addresses it
         # drove, at the values it drove them to. ⚠ Read rather than derived.
         # Comparing one case's whole `given` with the next one's would call a
@@ -1098,6 +1115,11 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
                     for rule in driving.values()
                     if rule.get("address") == address]
             if not any(sent):
+                if not judged:
+                    # A setup step that moves nothing this document listens
+                    # for leaves the machine as it was. That is a fact about
+                    # the setup, and nothing is claimed on it.
+                    continue
                 # ⚠ A case that drove nothing this document listens for is
                 # NOT a pass. Reading the machine afterwards would report
                 # whatever the previous case left, attributed to this one.
@@ -1111,6 +1133,10 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
             # machine in between, which is the whole point of it having one.
             run.observe(case, restated)
             requests = run.recorder.take()
+            if not judged:
+                # What the machine sent while being set up is not what the
+                # case is judged on: the case's own round starts clean.
+                continue
             produced: dict = {}
             for name, rule in outputs.items():
                 if rule.get("unresolved") or rule.get("internal"):
@@ -1133,8 +1159,11 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
                         f"document went on doing the same thing")
                 produced.update(output_values(name, rule, value))
         except VerifyError as exc:
-            result.refusal = str(exc)
+            # A setup step that cannot be driven leaves the case unjudgeable,
+            # and says which step it was.
+            result.refusal = str(exc) if judged else f"{case.name}: {exc}"
             verification.results.append(result)
+            failed.add(id(owner))
             continue
         for address, want in sorted(case.expect.items()):
             if address not in produced:
@@ -1272,8 +1301,11 @@ def verify(pack: Pack, binding_path: pathlib.Path,
                 f"file's order as a timeline would be reading a promise nobody "
                 f"made."))
 
-    for case in examples.cases:
-        result = CaseResult(name=case.name or "(unnamed)")
+    failed: set = set()
+    for case, owner, judged in rounds_of(examples.cases):
+        if id(owner) in failed:
+            continue
+        result = CaseResult(name=owner.name or "(unnamed)")
         # Two passes, because a rule about the previous round names ANOTHER
         # input, and on the first round it may have to fall back to what that
         # input reads now. One pass would have to evaluate them in an order
@@ -1298,9 +1330,12 @@ def verify(pack: Pack, binding_path: pathlib.Path,
                     got = values[target]
                 values[n] = got
         except VerifyError as exc:
-            # This case could not be driven. The next one still might.
-            result.refusal = str(exc)
+            # This case could not be driven. The next one still might. A setup
+            # step that cannot be driven leaves its case unjudgeable, and says
+            # which step it was.
+            result.refusal = str(exc) if judged else f"{case.name}: {exc}"
             verification.results.append(result)
+            failed.add(id(owner))
             continue
         kwargs = {_snake(n): v for n, v in values.items()}
         produced: dict = {}
@@ -1326,7 +1361,7 @@ def verify(pack: Pack, binding_path: pathlib.Path,
                     history.outputs[name] = computed
                 produced.update(output_values(name, rule, computed))
             except VerifyError as exc:
-                result.refusal = str(exc)
+                result.refusal = str(exc) if judged else f"{case.name}: {exc}"
                 break
             except TypeError as exc:
                 return Verification(refusal=(
@@ -1334,6 +1369,7 @@ def verify(pack: Pack, binding_path: pathlib.Path,
                     f"the bound inputs ({exc})"))
         if result.refusal:
             verification.results.append(result)
+            failed.add(id(owner))
             continue
         for address, want in sorted(case.expect.items()):
             if address not in produced:
@@ -1349,7 +1385,10 @@ def verify(pack: Pack, binding_path: pathlib.Path,
         if history is not None:
             history.inputs = dict(values)
             history.started = True
-        verification.results.append(result)
+        # A setup step moved what it moves -- the remembered values above --
+        # and nothing is claimed on it.
+        if judged:
+            verification.results.append(result)
     return verification
 
 

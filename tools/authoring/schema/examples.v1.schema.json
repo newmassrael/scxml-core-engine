@@ -52,6 +52,31 @@
             "type": "object",
             "additionalProperties": {},
             "description": "Addresses this case reads back, to the values it requires."
+          },
+          "before": {
+            "type": "array",
+            "description": "The steps that set this case up, driven in order BEFORE it and never judged -- the precondition of a record that says 'from this, move to that'. ⚠ `given` holds only where a case ENDED. A case that moves an input from one value to another has to state where it moved from, or a document that reads 'A becomes B' literally is never shown the A and fails, while a document that reads it loosely passes. Measured: folding a record's precondition into its final values made exactly that happen, and the loose reading was the wrong one.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "given": {
+                  "type": "object",
+                  "additionalProperties": {},
+                  "description": "Addresses this step drives, to the values it drives them to."
+                },
+                "drove": {
+                  "type": "array",
+                  "items": {"type": "string"},
+                  "description": "Addresses this step actually SET, as on a case."
+                },
+                "elapsed_ms": {
+                  "type": "number",
+                  "description": "How long the situation had held when this step was taken, as on a case."
+                }
+              }
+            },
+            "default": []
           }
         }
       }
