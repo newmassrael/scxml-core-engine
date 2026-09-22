@@ -77,6 +77,6 @@ PY
 
 mutation_case "the sweep stops reaching the corpus" <<'PY'
 edit("sce-build/tests/diagnostic_fix_is_applicable.rs",
-     '        .args(["ls-files", "-z", "*.scxml"])',
-     '        .args(["ls-files", "-z", "sce-build/tests/fixtures/enum"])')
+     '    common::repository::paths_git_tracks(&["*.scxml"])',
+     '    common::repository::paths_git_tracks(&["sce-build/tests/fixtures/enum/*.scxml"])')
 PY

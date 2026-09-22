@@ -62,6 +62,6 @@ PY
 
 mutation_case "a runtime tree stops contributing its extensions" <<'PY'
 edit("sce-build/tests/ledger_symbol_axis_reach.rs",
-     "    let mut out = BTreeSet::new();\n    walk(&root.join(dir), &mut out);\n    out",
-     "    let mut out = BTreeSet::new();\n    let _ = dir;\n    let _ = root;\n    walk(Path::new(\"/nonexistent\"), &mut out);\n    out")
+     "fn source_extensions(dir: &str) -> BTreeSet<String> {\n    common::repository::paths_git_tracks(&[dir])",
+     "fn source_extensions(dir: &str) -> BTreeSet<String> {\n    let _ = dir;\n    common::repository::paths_git_tracks(&[\"no-such-runtime-tree\"])")
 PY
