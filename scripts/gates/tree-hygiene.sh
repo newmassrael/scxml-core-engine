@@ -152,6 +152,7 @@ cargo test -p sce-build --features cli,ffi \
     --test a_rendering_shows_the_literal_the_author_wrote \
     --test an_action_uses_only_the_fields_its_tag_declares \
     --test the_analyzer_declares_which_fields_it_writes \
+    --test transition_action_annotations \
     --test an_identifier_is_checked_against_the_grammar_w3c_gives_it \
     --test a_name_the_generated_code_spells_is_a_code_identifier \
     --test non_latin_prose_declares_why_it_is_here \

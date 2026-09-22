@@ -269,15 +269,16 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // the tree with `read_dir` before 2026-09-22, which this registry's
     // detector does not see, so it ran tree-wide without being listed.
     "a_declared_attribute_must_reach_the_ir",
-    // Seven more sweeps of every `*.scxml` the repository holds, each
+    // Eight more sweeps of every `*.scxml` the repository holds, each
     // holding a property of the whole corpus — a rendering reads back, a
     // deployment annotation stays out of the document, a line opening a
     // block carries its word, every page shape normalises to one, a
     // rendering keeps the author's literal, an action touches only its
-    // declared fields, the analyzer declares what it writes. Each walked
-    // the directory tree with the same hand-written skip list before
-    // 2026-09-22, which this registry's detector could not see; they now
-    // read through `common::repository`, which it can.
+    // declared fields, the analyzer declares what it writes, and every
+    // `sce:req` a document declares reaches the requirement walk. Each
+    // walked the directory tree with the same hand-written skip list
+    // before 2026-09-22, which this registry's detector could not see;
+    // they now read through `common::repository`, which it can.
     "a_deployment_annotation_is_not_the_document",
     "a_line_that_opens_a_block_carries_its_word",
     "a_page_in_any_shape_normalises_to_the_canonical_one",
@@ -285,6 +286,7 @@ const UNFILTERABLE_GATES: &[&str] = &[
     "a_rendering_shows_the_literal_the_author_wrote",
     "an_action_uses_only_the_fields_its_tag_declares",
     "the_analyzer_declares_which_fields_it_writes",
+    "transition_action_annotations",
     "test_result_gating",
     // Asks `git ls-files` for every tracked `*.sh` under `scripts/` and for
     // every `mnemosyne.toml`, and holds the Mnemosyne revision to one shell

@@ -31,6 +31,8 @@
 //! `sce:req` annotations — small, and a silent wrong answer rather
 //! than a crash.
 
+mod common;
+
 use sce_build::parser::SCXMLParser;
 use sce_build::requirement_manifest::{classify, Outcome, RequirementManifest};
 use sce_build::requirements_report::emit_requirements_ndjson;
@@ -308,19 +310,14 @@ fn the_command_reports_a_transitions_own_action() {
 /// yet.
 #[test]
 fn the_walk_reaches_every_annotation_any_document_declares() {
-    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("sce-build has a parent")
-        .to_path_buf();
-
-    let mut documents = Vec::new();
-    collect_scxml(&root, &mut documents);
+    // What the repository holds, not what lies under the root — see
+    // `common::repository` for the scratch a disk walk used to judge.
+    let documents = common::repository::files_with_extension("scxml");
     assert!(
         documents.len() >= 400,
-        "found only {} .scxml under {}; the scan resolved far less than \
-         the tree holds and would pass while checking almost nothing",
+        "found only {} .scxml the repository holds; the scan resolved far \
+         less than the tree holds and would pass while checking almost nothing",
         documents.len(),
-        root.display(),
     );
 
     let mut files_with_ids = 0usize;
@@ -433,26 +430,6 @@ fn the_walk_reaches_every_annotation_any_document_declares() {
         unreachable.len(),
         unreachable.join("\n  "),
     );
-}
-
-/// Every `.scxml` under `dir`, skipping build and VCS directories.
-fn collect_scxml(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if path.is_dir() {
-            if name == "target" || name == ".git" || name == "node_modules" {
-                continue;
-            }
-            collect_scxml(&path, out);
-        } else if path.extension().is_some_and(|e| e == "scxml") {
-            out.push(path);
-        }
-    }
 }
 
 /// The `sce:req` tokens a document's TEXT declares, read without the
