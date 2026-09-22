@@ -7306,9 +7306,9 @@ fn parse_algorithm_stmt(
                         },
                     ));
                 }
-                String::new()
+                None
             } else {
-                require_attr(node, "init", "<sce:var>", doc_name)?
+                Some(require_attr(node, "init", "<sce:var>", doc_name)?)
             };
             Ok(AlgorithmStmt::Var {
                 name,

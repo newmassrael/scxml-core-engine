@@ -487,6 +487,14 @@ fn eval_stmt(
             init,
             ..
         } => {
+            // Only a bytes buffer lacks an initializer, and a build-time
+            // fold computes scalar values — there is nothing to fold a
+            // buffer into.
+            let init = init.as_deref().ok_or_else(|| {
+                ConstFoldKind::NotFoldable(format!(
+                    "local '{name}' is a bytes buffer, and a build-time fold computes scalars"
+                ))
+            })?;
             let value = eval_expr_typed(init, scope, sce_type)?;
             scope.declare(name, value);
             Ok(())
@@ -965,7 +973,7 @@ mod tests {
             body: vec![AlgorithmStmt::Var {
                 name: "doubled".into(),
                 sce_type: SceType::Uint16,
-                init: "i + i".into(),
+                init: Some("i + i".into()),
                 capacity: None,
             }],
             yield_expr: "doubled".into(),
@@ -998,13 +1006,13 @@ mod tests {
                 AlgorithmStmt::Var {
                     name: "c".into(),
                     sce_type: SceType::Uint16,
-                    init: "i << 8".into(),
+                    init: Some("i << 8".into()),
                     capacity: None,
                 },
                 AlgorithmStmt::Var {
                     name: "bit".into(),
                     sce_type: SceType::Uint16,
-                    init: "0".into(),
+                    init: Some("0".into()),
                     capacity: None,
                 },
                 AlgorithmStmt::While {

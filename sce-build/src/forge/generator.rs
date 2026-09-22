@@ -21466,6 +21466,12 @@ fn lower_algorithm_stmt_unplaced(
                 out.push_str(&line);
                 return Ok(());
             }
+            let init = init.as_deref().ok_or_else(|| {
+                GenerateError::InvalidConfig(format!(
+                    "algorithm local '{name}' has no initializer — the parser requires \
+                     one on every local that is not a bytes buffer"
+                ))
+            })?;
             let init_lowered = expr::transpile_typed(
                 init,
                 l.expr_target(),

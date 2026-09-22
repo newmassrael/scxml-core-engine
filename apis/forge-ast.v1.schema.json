@@ -368,7 +368,7 @@
       "description": "One statement in an algorithm body. Lowered to language-idiomatic constructs by each backend (RFC §synth-5-J-5 emitter table).",
       "oneOf": [
         {
-          "description": "`<sce:var name=... type=... init=... capacity=.../>` — local mutable binding. `capacity` is the fixed buffer bound, in bytes, and is required for — and only meaningful on — `type=\"bytes\"` locals: the growable byte buffer that `<sce:append>` ([`AlgorithmStmt::Append`]) fills (SCE byte-buffer-build, SCE_FORGE.md §4.12). It is `None` for scalar locals.",
+          "description": "`<sce:var name=... type=... init=... capacity=.../>` — local mutable binding. `capacity` is the fixed buffer bound, in bytes, and is required for — and only meaningful on — `type=\"bytes\"` locals: the growable byte buffer that `<sce:append>` ([`AlgorithmStmt::Append`]) fills (SCE byte-buffer-build, SCE_FORGE.md §4.12). It is `None` for scalar locals.\n\n`init` is the other half of the same split, the other way round: a scalar local starts at its initializer, so the parser requires one, and a bytes buffer starts empty, so the parser refuses one — absent on a bytes buffer, present on every other local.",
           "properties": {
             "capacity": {
               "format": "uint32",
@@ -379,7 +379,10 @@
               ]
             },
             "init": {
-              "type": "string"
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "name": {
               "type": "string"
@@ -395,7 +398,6 @@
             }
           },
           "required": [
-            "init",
             "name",
             "stmt",
             "type"

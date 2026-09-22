@@ -134,12 +134,7 @@ impl Names {
             match stmt {
                 AlgorithmStmt::Var { sce_type, init, .. } => {
                     self.ty(sce_type);
-                    // A bytes buffer starts empty and has no initializer,
-                    // which the parser records as an empty `init`; the
-                    // generator branches on the type the same way.
-                    if !matches!(sce_type, SceType::Bytes) {
-                        self.expr(init)?;
-                    }
+                    self.opt_expr(init.as_deref())?;
                 }
                 // A target is an lvalue in expression syntax — `x`,
                 // `buf[i]` — so it is read the way an expression is.

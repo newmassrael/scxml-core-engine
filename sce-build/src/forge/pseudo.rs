@@ -941,12 +941,19 @@ fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out<'_>) {
                 Some(n) => format!(" cap {n}"),
                 None => String::new(),
             };
+            // A bytes buffer starts empty: there is no initializer to
+            // show, so the line ends at its declaration rather than at a
+            // dangling `=`.
+            let init = match init {
+                Some(init) => format!(" = {}", text(init)),
+                None => String::new(),
+            };
             out.line(&format!(
-                "var {}: {}{} = {}",
+                "var {}: {}{}{}",
                 text(name),
                 sce_type.as_attr(),
                 cap,
-                text(init)
+                init
             ));
         }
         AlgorithmStmt::Assign { target, expr } => {

@@ -3459,11 +3459,22 @@ pub enum AlgorithmStmt {
     /// growable byte buffer that `<sce:append>` ([`AlgorithmStmt::Append`])
     /// fills (SCE byte-buffer-build, SCE_FORGE.md §4.12). It is `None` for
     /// scalar locals.
+    ///
+    /// `init` is the other half of the same split, the other way round: a
+    /// scalar local starts at its initializer, so the parser requires one,
+    /// and a bytes buffer starts empty, so the parser refuses one — absent
+    /// on a bytes buffer, present on every other local.
     Var {
         name: String,
         #[serde(rename = "type")]
         sce_type: SceType,
-        init: String,
+        // ⚠ This was an empty string for "no initializer", which gave the
+        // absence and a value one type: every reader had to know to branch
+        // on `sce_type` first, and one that did not read `""` as an
+        // expression and refused a valid document on every backend
+        // (measured 2026-09-22, `algorithm_cobs_encode`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        init: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         capacity: Option<u32>,
     },

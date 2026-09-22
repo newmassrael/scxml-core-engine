@@ -90,7 +90,7 @@ fn an_algorithm_renders_every_form_it_can_carry() {
                     body: vec![AlgorithmStmt::Var {
                         name: "acc".to_string(),
                         sce_type: SceType::Uint16,
-                        init: "i".to_string(),
+                        init: Some("i".to_string()),
                         capacity: None,
                     }],
                     yield_expr: "acc".to_string(),
@@ -103,7 +103,7 @@ fn an_algorithm_renders_every_form_it_can_carry() {
             AlgorithmStmt::Var {
                 name: "out".to_string(),
                 sce_type: SceType::Bytes,
-                init: "\"\"".to_string(),
+                init: None,
                 capacity: Some(32),
             },
             AlgorithmStmt::Assign {
@@ -158,7 +158,7 @@ algorithm crc(data: bytes, seed: uint16) -> bytes returns-max 64
   const TABLE: array<uint16, 4> = fold i in 0..4 -> uint16:
     var acc: uint16 = i
     yield acc
-  var out: bytes cap 32 = \"\"
+  var out: bytes cap 32
   crc = seed
   append out <- crc
   if crc > 0:

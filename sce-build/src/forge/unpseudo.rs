@@ -1501,23 +1501,42 @@ fn parse_stmt(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<AlgorithmStmt, Pars
             line: line.number,
             why: "a var needs `<name>: <type>`".to_string(),
         })?;
-        let (decl, init) = after.split_once(" = ").ok_or_else(|| ParseError {
-            line: line.number,
-            why: "a var needs `= <expr>`".to_string(),
-        })?;
+        // A bytes buffer is written without `= <expr>` — it starts empty —
+        // and every other local with one, the split the parser enforces.
+        let (decl, init) = match after.split_once(" = ") {
+            Some((decl, init)) => (decl, Some(init)),
+            None => (after, None),
+        };
         let mut w = decl.split_whitespace();
         let type_word = w.next().unwrap_or("");
         let capacity = match (w.next(), w.next()) {
             (Some("cap"), Some(n)) => n.parse().ok(),
             _ => None,
         };
+        let sce_type = SceType::from_attr(type_word).ok_or_else(|| ParseError {
+            line: line.number,
+            why: format!("`{type_word}` is not an sce:type"),
+        })?;
+        let init = match (init, matches!(sce_type, SceType::Bytes)) {
+            (Some(init), false) => Some(undo(init, line.number)?),
+            (None, true) => None,
+            (Some(_), true) => {
+                return Err(ParseError {
+                    line: line.number,
+                    why: "a bytes var starts empty and has no `= <expr>`".to_string(),
+                })
+            }
+            (None, false) => {
+                return Err(ParseError {
+                    line: line.number,
+                    why: "a var needs `= <expr>`".to_string(),
+                })
+            }
+        };
         return Ok(AlgorithmStmt::Var {
             name: undo(name, line.number)?,
-            sce_type: SceType::from_attr(type_word).ok_or_else(|| ParseError {
-                line: line.number,
-                why: format!("`{type_word}` is not an sce:type"),
-            })?,
-            init: undo(init, line.number)?,
+            sce_type,
+            init,
             capacity,
         });
     }

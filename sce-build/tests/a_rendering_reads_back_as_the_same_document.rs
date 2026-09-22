@@ -292,3 +292,90 @@ fn every_field_clause_survives_the_round_trip() {
         "a clause was lost between the renderer and the reader:\n{rendered}"
     );
 }
+
+/// A local reads back with exactly the initializer its type allows: none
+/// for a bytes buffer, which starts empty, and one for every other type —
+/// the split the parser enforces on the document.
+///
+/// The model used to spell "no initializer" as an empty string, so the
+/// buffer rendered as `var out: bytes cap 4 = ` and read back as the same
+/// empty string: the round trip held while the page showed a reviewer a
+/// dangling `=`. The rendered line is therefore asserted whole, and each
+/// half of the split is refused when it is written the other way.
+#[test]
+fn a_local_reads_back_with_exactly_the_initializer_its_type_allows() {
+    use sce_build::forge::model::{
+        AlgorithmModel, AlgorithmParam, AlgorithmSignature, AlgorithmStmt, ForgeDocument, SceType,
+    };
+
+    let document = ForgeDocument::Algorithm(AlgorithmModel {
+        name: "pack".to_string(),
+        signature: AlgorithmSignature {
+            params: vec![AlgorithmParam {
+                name: "b".to_string(),
+                sce_type: SceType::Uint8,
+            }],
+            return_type: Some(SceType::Bytes),
+            returns_max_size: Some(4),
+        },
+        consts: Vec::new(),
+        body: vec![
+            AlgorithmStmt::Var {
+                name: "out".to_string(),
+                sce_type: SceType::Bytes,
+                init: None,
+                capacity: Some(4),
+            },
+            AlgorithmStmt::Var {
+                name: "n".to_string(),
+                sce_type: SceType::Uint8,
+                init: Some("b".to_string()),
+                capacity: None,
+            },
+            AlgorithmStmt::Append {
+                target: "out".to_string(),
+                expr: "n".to_string(),
+            },
+            AlgorithmStmt::Return {
+                expr: Some("out".to_string()),
+            },
+        ],
+        test_vectors: Vec::new(),
+        source_location: None,
+    });
+
+    let rendered =
+        sce_build::forge::pseudo::render(&document).expect("the renderer covers an algorithm");
+    assert!(
+        rendered
+            .lines()
+            .any(|line| line.trim_end() == "  var out: bytes cap 4"),
+        "a bytes buffer must render without an initializer:\n{rendered}"
+    );
+    let read_back = unpseudo::parse(&rendered).unwrap_or_else(|e| {
+        panic!("the reader refused a rendering of its own renderer:\n{rendered}\n{e:?}")
+    });
+    assert_eq!(
+        unpseudo::ir_for_comparison(&document).expect("a model serialises"),
+        unpseudo::ir_for_comparison(&read_back).expect("a model serialises"),
+        "a local's initializer was lost between the renderer and the reader:\n{rendered}"
+    );
+
+    let buffer_with_init = rendered.replace("var out: bytes cap 4\n", "var out: bytes cap 4 = b\n");
+    assert_ne!(
+        buffer_with_init, rendered,
+        "the buffer line must be rewritten"
+    );
+    let refusal = unpseudo::parse(&buffer_with_init)
+        .expect_err("a bytes buffer written with an initializer must be refused");
+    assert!(refusal.why.contains("bytes"), "{refusal:?}");
+
+    let scalar_without_init = rendered.replace("var n: uint8 = b\n", "var n: uint8\n");
+    assert_ne!(
+        scalar_without_init, rendered,
+        "the scalar line must be rewritten"
+    );
+    let refusal = unpseudo::parse(&scalar_without_init)
+        .expect_err("a scalar local written without an initializer must be refused");
+    assert!(refusal.why.contains("= <expr>"), "{refusal:?}");
+}
