@@ -2935,7 +2935,7 @@ fn expr_children_mut(expr: &mut TypedExpr) -> Vec<&mut TypedExpr> {
 }
 
 /// Every sub-expression of `expr`, in source order.
-fn expr_children(expr: &TypedExpr) -> Vec<&TypedExpr> {
+pub(crate) fn expr_children(expr: &TypedExpr) -> Vec<&TypedExpr> {
     match &expr.kind {
         ExprKind::Binary { left, right, .. } => vec![left, right],
         ExprKind::Unary { operand, .. } => vec![operand],

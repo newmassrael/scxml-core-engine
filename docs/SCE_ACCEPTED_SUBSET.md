@@ -672,11 +672,16 @@ general tool — the same reason `sce:req` ids are never normalised. What
 a label means, and whether that store exists, is the deployment's
 business.
 
-⚠⚠⚠ **Each attribute requires the other**, and both orphans are refused
-as `validation/attribute-rule-violated` with the missing partner named. A
-retained field with no initial value is undefined on its first run; an
-initial value on a field that is not retained is read by nothing,
-because an ordinary field is computed afresh every cycle. No new
+⚠⚠⚠ **A retained field needs an initial value, and an initial value
+needs a reader.** Both orphans are refused as
+`validation/attribute-rule-violated` with the missing partner named. A
+retained field with no initial value is undefined on its first run. An
+initial value is read by a store (`sce:retain`) or, on a transform, by
+`previous(<field>)` on the first activation (§3.4.1); a field with
+neither is computed afresh every cycle, so nothing reads it. That second
+rule is decided in validation rather than while parsing, because whether
+a field is read through `previous()` is known only once the expressions
+are, and the refusal carries the row `sce:initial` is written on. No new
 diagnostic code: this is the orphan shape `sce:quantity` / `sce:scale` /
 `sce:offset` already established.
 
@@ -1270,6 +1275,21 @@ exactly four names without the document registering them:
 | `eq(a, b)` | bytes comparison |
 | `round(x)` | nearest whole number, **half away from zero** |
 | `floor(x)` | largest whole number not greater than `x`, **toward −∞** |
+
+**And, in a transform's output expressions only, `previous(x)`** — the
+value field `x` of the same document held at the end of the previous
+activation. `x` is an input or an output of that document and nothing
+else; any other argument is refused as `expression/parse-mismatch`, and
+an unknown name as `expression/unknown-identifier`. On the first
+activation `previous(x)` is `x`'s `sce:initial`, which is therefore
+required on any field read this way (`validation/missing-attribute`,
+with the attribute to add as the fix). A read through `previous()` is not
+a dependency, so it cannot close an output cycle: `x = previous(x) + 1`
+is legal where `x = x + 1` is `validation/transform-output-cycle`.
+⚠ **No backend lowers `previous()` yet.** A document that uses it is
+valid and is refused by every language with `generate/unsupported-feature`,
+before any renderer runs — the shape `<sce:action>` took while its
+lowering reached one backend at a time.
 
 Everything else callable reaches a forge expression by being REGISTERED —
 a stateless cross-file import, an `<sce:helper>`, or a stateful import's
@@ -2189,7 +2209,11 @@ never walked (measured 2026-09-21). Three codes remain on this axis:
   shape that lowering cannot serve — the emitted functions would call
   each other until the stack ends — so it is refused before any language
   is rendered. ⚠ Before this pair existed, a sibling read of ANY kind
-  emitted an identifier the signature never bound, with exit 0.
+  emitted an identifier the signature never bound, with exit 0. The
+  reads are taken from the parsed expression, not its text: a string
+  literal that spells an output's name is not a read, and neither is
+  `previous(<output>)`, which reads the activation before this one and
+  so cannot be part of a cycle (§3.4.1).
 
 The `validation/cross-kind-*` codes are emitted by the statechart's
 event-schema check and the physical-quantity check; the import graph's

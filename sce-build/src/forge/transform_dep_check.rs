@@ -24,7 +24,6 @@
 //! rendered so the refusal cannot depend on which backend was asked for.
 
 use std::collections::{HashMap, HashSet};
-use std::ops::Range;
 
 use crate::forge::error::{ForgeError, Located, ValidationError};
 use crate::forge::model::{ForgeDocument, ParsedForge, TransformModel};
@@ -49,76 +48,55 @@ pub fn check(parsed: &ParsedForge, source_name: &str) -> Result<(), Located<Forg
     Ok(())
 }
 
-/// Which sibling outputs an expression reads, in declaration order.
+/// Which outputs an expression reads THIS activation, in declaration order
+/// (so a reported cycle starts where it always has), or `None` when it does
+/// not parse.
 ///
-/// ⚠ Word-boundary matching over the expression TEXT, not the AST. The
-/// dependency graph has to be known BEFORE `transpile_typed` runs — the
-/// rename map it is handed is built from this very graph — so an AST is
-/// not available yet. Erring wide is the safe direction here: a name
-/// that appears inside a string literal would add an edge that is not
-/// real, which can only turn a legal document into a refusal, never the
-/// reverse. Transform expressions carrying string literals that happen
-/// to spell an output id are not a shape this grammar produces today,
-/// and if one ever appears the refusal says exactly which ids collided.
-pub fn sibling_reads<'a>(expr: &str, outputs: &'a [String], exclude: &str) -> Vec<&'a str> {
-    outputs
-        .iter()
-        .map(String::as_str)
-        .filter(|id| *id != exclude && mentions(expr, id))
-        .collect()
-}
-
-fn mentions(expr: &str, id: &str) -> bool {
-    first_mention(expr, id).is_some()
-}
-
-/// Where `expr` first reads `id` as a whole word, as a byte range of
-/// `expr`, or `None` when it does not.
+/// ⚠ Read from the parsed tree, not the TEXT. This was a whole-word search
+/// over the expression string, on the reading that no tree exists before
+/// `transpile_typed`; but the untyped parse that step starts from
+/// (`parse_to_ast`) needs no types, and the text search had two ways to
+/// be wrong that the tree does not. A string literal spelling an output's
+/// name was an edge that is not there. And a read through `previous(x)` —
+/// which reads the activation BEFORE this one and so cannot be part of a
+/// cycle — was an edge that must not be there: `x = previous(x) + 1`
+/// would have been refused as `x → x`.
 ///
-/// ⚠ A near miss — `id` found inside a longer word — resumes the search
-/// one CHARACTER on, not one byte. Resuming one byte into a first letter
-/// several UTF-8 bytes wide sliced the expression inside it and panicked.
-/// Measured 2026-09-22: a transform whose output was named by two Hangul
-/// letters, beside an input named by the same two letters and a `2`,
-/// stopped `sce-codegen check` with exit 101. The parser now refuses such
-/// a name first (`docs/SCE_ACCEPTED_SUBSET.md` §2.14), but a model is not
-/// only built by the parser, and this search answers for any `&str` rather
-/// than for the names one caller happens to admit.
-fn first_mention(expr: &str, id: &str) -> Option<Range<usize>> {
-    let first = id.chars().next()?;
-    let is_word = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
-    let mut from = 0;
-    while let Some(rel) = expr[from..].find(id) {
-        let start = from + rel;
-        let end = start + id.len();
-        let before_ok = !expr[..start].chars().next_back().is_some_and(is_word);
-        let after_ok = !expr[end..].chars().next().is_some_and(is_word);
-        if before_ok && after_ok {
-            return Some(start..end);
-        }
-        from = start + first.len_utf8();
-    }
-    None
+/// `None` is left to the expression stage, which refuses an expression
+/// that does not parse with its own diagnostic; reporting a cycle in text
+/// nobody can parse would name the wrong fault.
+fn reads_now<'a>(expr: &str, outputs: &'a [String]) -> Option<Vec<&'a str>> {
+    let read = crate::forge::previous_value::reads(expr)?.ok()?;
+    Some(
+        outputs
+            .iter()
+            .filter(|id| read.now.contains(id))
+            .map(String::as_str)
+            .collect(),
+    )
 }
 
 /// First cycle in the output dependency graph, as a path that starts and
 /// ends with the same id. `None` when the graph is acyclic.
 ///
 /// ⚠ A self-reference (`<data id="a" expr="a + 1"/>`) is a cycle of
-/// length one and is reported as `a → a`. It is caught here rather than
-/// left to the general walk because `sibling_reads` excludes the node's
-/// own id — that exclusion is what lets a legal document mention nothing
-/// of itself, so the self case needs its own question.
+/// length one and is reported as `a → a`. It is asked about on its own
+/// rather than left to the general walk, which is handed every OTHER output
+/// an expression reads — the per-output rename map excludes the output's
+/// own id, so a self-read has no lowering at all.
 fn first_cycle(m: &TransformModel) -> Option<Vec<String>> {
     let ids: Vec<String> = m.outputs.iter().map(|o| o.id.clone()).collect();
 
     let mut deps: HashMap<&str, Vec<&str>> = HashMap::new();
     for out in &m.outputs {
-        let expr = out.expr.as_deref().unwrap_or("");
-        if mentions(expr, &out.id) {
+        let reads = reads_now(out.expr.as_deref().unwrap_or(""), &ids).unwrap_or_default();
+        if reads.contains(&out.id.as_str()) {
             return Some(vec![out.id.clone(), out.id.clone()]);
         }
-        deps.insert(out.id.as_str(), sibling_reads(expr, &ids, &out.id));
+        deps.insert(
+            out.id.as_str(),
+            reads.into_iter().filter(|id| *id != out.id).collect(),
+        );
     }
 
     let mut done: HashSet<&str> = HashSet::new();
@@ -167,47 +145,62 @@ mod tests {
         v.iter().map(|s| s.to_string()).collect()
     }
 
+    fn now(expr: &str, outs: &[String]) -> Vec<String> {
+        reads_now(expr, outs)
+            .expect("the expression parses")
+            .into_iter()
+            .map(str::to_string)
+            .collect()
+    }
+
     #[test]
-    fn a_word_boundary_separates_a_read_from_a_prefix() {
+    fn a_prefix_is_a_different_name() {
         let outs = ids(&["warn", "warnLatched"]);
-        // `warnLatched` contains `warn`; only the whole word is a read.
-        assert_eq!(
-            sibling_reads("warnLatched && x", &outs, "other"),
-            ["warnLatched"]
-        );
-        assert_eq!(sibling_reads("warn && x", &outs, "other"), ["warn"]);
+        assert_eq!(now("warnLatched && x", &outs), ["warnLatched"]);
+        assert_eq!(now("warn && x", &outs), ["warn"]);
     }
 
     #[test]
-    fn an_underscore_or_digit_does_not_end_a_word() {
+    fn an_underscore_or_digit_makes_a_different_name() {
         let outs = ids(&["a"]);
-        // `a1` and `a_b` are different identifiers, not a read of `a`.
-        assert!(sibling_reads("a1 + 2", &outs, "other").is_empty());
-        assert!(sibling_reads("a_b + 2", &outs, "other").is_empty());
-        assert_eq!(sibling_reads("(a) + 2", &outs, "other"), ["a"]);
+        assert!(now("a1 + 2", &outs).is_empty());
+        assert!(now("a_b + 2", &outs).is_empty());
+        assert_eq!(now("(a) + 2", &outs), ["a"]);
     }
 
     #[test]
-    fn the_excluded_id_is_never_a_read() {
+    fn reads_come_back_in_declaration_order() {
         let outs = ids(&["a", "b"]);
-        assert_eq!(sibling_reads("a + b", &outs, "a"), ["b"]);
+        assert_eq!(now("b + a", &outs), ["a", "b"]);
+    }
+
+    #[test]
+    fn a_string_that_spells_an_output_is_not_a_read() {
+        // The text search this replaced took `'b'` for a read of `b`, which
+        // is an edge that is not there.
+        let outs = ids(&["b"]);
+        assert!(now("x === 'b' ? 1 : 0", &outs).is_empty());
+    }
+
+    #[test]
+    fn a_read_through_previous_is_not_an_edge() {
+        let outs = ids(&["shown"]);
+        assert!(now("latched ? latched : previous(shown)", &outs).is_empty());
     }
 
     /// An output id whose first letter is three UTF-8 bytes wide, and an input
-    /// id that extends it — the pair whose near miss sliced inside a letter.
+    /// id that extends it — the pair whose near miss once sliced the text
+    /// inside a letter and stopped `sce-codegen check` with exit 101.
     const WIDE: &str = "\u{c628}\u{b3c4}";
     const WIDER: &str = "\u{c628}\u{b3c4}2";
 
-    /// An id whose first character is wider than a byte is searched past a
-    /// near miss rather than sliced inside that character.
+    /// Whatever the tokenizer makes of such names, the question is answered
+    /// without panicking: there is no text left to slice.
     #[test]
-    fn a_multibyte_id_is_searched_past_a_near_miss() {
+    fn a_multibyte_id_is_answered_without_panicking() {
         assert_eq!(WIDE.chars().next().map(char::len_utf8), Some(3));
         let outs = ids(&[WIDE, WIDER]);
-        let near_miss = format!("{WIDER} + 1");
-        assert_eq!(sibling_reads(&near_miss, &outs, "other"), [WIDER]);
-        let both = format!("{WIDER} + {WIDE}");
-        assert_eq!(sibling_reads(&both, &outs, "other"), [WIDE, WIDER]);
-        assert_eq!(first_mention(&both, WIDE), Some(10..16));
+        let _ = reads_now(&format!("{WIDER} + 1"), &outs);
+        let _ = reads_now(&format!("{WIDER} + {WIDE}"), &outs);
     }
 }

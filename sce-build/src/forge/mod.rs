@@ -37,6 +37,7 @@ pub mod ownership_contract;
 pub mod page;
 pub mod parser;
 pub mod pool_registry;
+pub mod previous_value;
 pub mod provenance;
 pub mod pseudo;
 pub mod quantity;

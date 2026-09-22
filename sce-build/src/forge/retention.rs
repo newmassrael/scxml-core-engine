@@ -1,10 +1,13 @@
-//! Is a retained field's initial value one its type can hold?
+//! Is a field's initial value read by anything, and one its type can hold?
 //!
-//! `sce:retain="<scope>"` with `sce:initial="<value>"` says a field's
-//! value outlives the program. SCE cannot implement that — where a value
-//! is kept between runs belongs to the host — so what is left is the one
-//! question SCE can answer: **could that initial value ever be this
-//! field's value?**
+//! `sce:initial="<value>"` is a field's value before anything has ever
+//! written it. Two things ask for it. A store does: `sce:retain="<scope>"`
+//! says the value outlives the program, and SCE cannot implement that —
+//! where a value is kept between runs belongs to the host. And
+//! `previous(<field>)` does, on a transform's first activation
+//! ([`crate::forge::previous_value`]). An initial value neither of them
+//! reads is refused as an orphan; one that is read leaves the question SCE
+//! can answer: **could that initial value ever be this field's value?**
 //!
 //! ⚠ WHY THIS IS WORTH A PASS OF ITS OWN. The initial value is the one
 //! a system takes on the day it is first switched on, and on no other
@@ -25,11 +28,12 @@
 //! way to see. Saying so is the point: the gap is stated rather than
 //! left for a reader to assume the check is wider than it is.
 
+use std::collections::HashSet;
 use std::path::Path;
 
 use crate::forge::error::{ForgeError, Located, ValidationError};
-use crate::forge::import_source;
 use crate::forge::model::{ForgeDocument, ForgeField, ParsedForge, SceType};
+use crate::forge::{import_source, previous_value};
 
 /// Every field of a document, whatever kind it is.
 ///
@@ -50,12 +54,21 @@ fn fields_of(doc: &ForgeDocument) -> Vec<&ForgeField> {
     }
 }
 
-/// Refuse an initial value the field's type could never hold.
+/// Refuse an initial value nothing reads, or one the field's type could
+/// never hold.
 pub fn check(
     parsed: &ParsedForge,
     base_dir: &Path,
     document: &str,
 ) -> Result<(), Located<ForgeError>> {
+    // `None` when a transform's expression cannot be read: whether it reads
+    // a field through `previous()` is then unknown, and the expression's own
+    // refusal is the one that names the fault. Every other kind reads no
+    // field that way.
+    let read_previously = match &parsed.document {
+        ForgeDocument::Transform(m) => previous_value::fields_read_previously(m),
+        _ => Some(HashSet::new()),
+    };
     for field in fields_of(&parsed.document) {
         let Some(value) = field.initial.as_deref() else {
             continue;
@@ -69,6 +82,33 @@ pub fn check(
             .initial_spelling
             .as_ref()
             .map_or((None, None), |s| (Some(s.row()), Some(s.col())));
+        // ⚠ The orphan rule moved here from the parser, unchanged for every
+        // field that is not read through `previous()`. An ordinary field is
+        // computed afresh every cycle, so an initial value that no store and
+        // no `previous()` asks for is read by nothing.
+        let unread = field.retain.is_none()
+            && read_previously
+                .as_ref()
+                .is_some_and(|read| !read.contains(&field.id));
+        if unread {
+            return Err(Located::new(
+                ValidationError::AttributeRuleViolated {
+                    element,
+                    attr: "sce:initial".into(),
+                    value: value.to_string(),
+                    rule: "an initial value is read by `sce:retain=\"<scope>\"` on the same \
+                           element, as the store's first value, or by `previous(<field>)` in a \
+                           transform's expression, on its first activation — this field has \
+                           neither, and a field that is not retained is computed afresh every \
+                           cycle, so nothing reads it"
+                        .into(),
+                }
+                .into(),
+                document,
+                line,
+                col,
+            ));
+        }
         // A closed set where the type has one — an enum's variants, a
         // bool's two literals — so the record offers them as candidates;
         // an integer's range is a rule no list states.

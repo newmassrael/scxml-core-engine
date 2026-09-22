@@ -9298,8 +9298,8 @@ const KNOWN_SCE_ATTRS: &[&str] = &[
     "event-name",
     "exhaustive",
     "filter",
-    // The retention pair — a field whose value outlives the program.
-    // Each requires the other; see `parse_retention_attrs`.
+    // A field's value before anything has written it — read by the store
+    // `retain` names, or by `previous(<field>)`; see `parse_retention_attrs`.
     "initial",
     "input",
     "interpolation",
@@ -9611,17 +9611,22 @@ fn parse_forge_field(
 
 /// Retention surface — parse the `sce:retain` / `sce:initial` pair.
 ///
-/// ⚠ EACH REQUIRES THE OTHER, and both orphans are refused. A retained
-/// field with no initial value is undefined on the first run, before
-/// anything has ever been stored; an initial value on a field that is
-/// not retained is read by nothing, because an ordinary field is
-/// computed afresh every cycle. Neither is a state an author means to
-/// be in, and both are silent if accepted.
+/// ⚠ A retained field with no initial value is refused HERE: it is
+/// undefined on the first run, before anything has ever been stored, and
+/// nothing else about the document can change that.
 ///
-/// ⚠⚠ Reuses `validation/attribute-rule-violated` rather than minting
-/// codes, exactly as [`parse_quantity_attrs`] does for the same orphan
-/// shape one screen below. The rule names the missing partner, which is
-/// the whole repair.
+/// ⚠⚠ An initial value with no retention is NOT refused here, and that is
+/// deliberate. Whether it is an orphan depends on whether anything reads
+/// the field's value from before it was first written — a store does, and
+/// so does `previous(<field>)` in a transform's expression — and this
+/// parse has not read the expressions. The relation is decided in one
+/// place that has, [`crate::forge::retention::check`], exactly as
+/// `sce:default-covers` is parsed here and judged by `forge::coverage`.
+///
+/// Reuses `validation/attribute-rule-violated` rather than minting codes,
+/// exactly as [`parse_quantity_attrs`] does for the same orphan shape one
+/// screen below. The rule names the missing partner, which is the whole
+/// repair.
 ///
 /// The SCOPE is not validated here or anywhere: it is an opaque label
 /// (see the Retention section of [`crate::forge::model`]). What IS
@@ -9629,8 +9634,7 @@ fn parse_forge_field(
 /// needs the imported enum's variants, so it lives in
 /// [`crate::forge::retention::check`] rather than in this parse.
 ///
-/// Returns `(sce:retain, sce:initial)`, each trimmed, both `None` or both
-/// `Some`.
+/// Returns `(sce:retain, sce:initial)`, each trimmed.
 fn parse_retention_attrs(
     node: &roxmltree::Node,
     doc_name: &str,
@@ -9658,12 +9662,12 @@ fn parse_retention_attrs(
             "a retained field also needs `sce:initial=\"<value>\"` on the same element — \
              without it the field has no value on the first run, before anything has been stored",
         ),
-        (None, Some(i)) => orphan(
-            "sce:initial",
-            i,
-            "an initial value needs `sce:retain=\"<scope>\"` on the same element — \
-             a field that is not retained is computed afresh every cycle, so nothing reads it",
-        ),
+        (None, Some(i)) => {
+            if i.trim().is_empty() {
+                return orphan("sce:initial", i, "a non-empty value");
+            }
+            Ok((None, Some(i.trim().to_string())))
+        }
         (Some(s), Some(i)) => {
             if s.trim().is_empty() {
                 return orphan("sce:retain", s, "a non-empty scope label");

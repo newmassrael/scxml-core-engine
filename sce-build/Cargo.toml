@@ -753,6 +753,11 @@ path = "tests/transform_reads_a_sibling_output.rs"
 required-features = ["cli"]
 
 [[test]]
+name = "a_transform_reads_its_previous_value"
+path = "tests/a_transform_reads_its_previous_value.rs"
+required-features = ["cli"]
+
+[[test]]
 name = "value_space_coverage"
 path = "tests/value_space_coverage.rs"
 required-features = ["cli"]

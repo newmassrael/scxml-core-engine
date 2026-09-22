@@ -2521,6 +2521,38 @@ pub fn compile_forge_from_parsed(
     // prompted both halves.
     forge::transform_dep_check::check(parsed, label.diagnostic_label)?;
 
+    // `previous(x)` reads x from the activation before this one: x must be
+    // a field of this document and must say what it was before the first
+    // one (`sce:initial`). Refused here, before any language, for the same
+    // reason as the cycle above. Whether a bare `sce:initial` has a reader
+    // at all is decided by `forge::retention` below, which asks this
+    // module which fields are read that way.
+    forge::previous_value::check(parsed, label.diagnostic_label)?;
+
+    // ⚠ And no backend LOWERS `previous()` yet, so a document that uses it
+    // is refused for every language here, once, rather than left to each
+    // renderer — where the expression layer would call `previous` an
+    // unknown function, which is a false sentence about a valid document.
+    // This is the shape `<sce:action>` took while its lowering reached one
+    // backend at a time; it retires when all six lower it.
+    if let forge::model::ForgeDocument::Transform(m) = &parsed.document {
+        if let Some(read) = forge::previous_value::first_read(m) {
+            return Err(Located::new(
+                forge::error::GenerateError::unsupported(format!(
+                    "`previous({})` in output '{}' of transform '{}' has no {:?} codegen \
+                     path: no backend lowers `previous()` yet. The document is valid; \
+                     generating it waits on that lowering, which lands for every backend \
+                     together",
+                    read.field, read.output, m.name, language
+                ))
+                .into(),
+                label.diagnostic_label,
+                read.line,
+                read.col,
+            ));
+        }
+    }
+
     // `sce:default-covers` is the author's answer to the value-space
     // coverage report — "these variants reach the default on purpose".
     // The REPORT runs only when asked (`sce-codegen coverage`); the
