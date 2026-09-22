@@ -45,7 +45,7 @@ def binding(count_rule=None, lamp_rule=None):
     return {
         "version": 1,
         "document": "counted.scxml",
-        "inputs": {"count": {"address": "Plant.Input.Count", "number": True,
+        "inputs": {"count": {"address": "Plant.Input.Count",
                              "when_absent": 0, **(count_rule or {})}},
         "outputs": {"lamp": {"address": "Plant.Out.Lamp", "field": "Stat",
                              "map": {0: "OFF", 1: "ON"}, **(lamp_rule or {})}},
@@ -127,7 +127,7 @@ def held_binding(hold=True):
     if hold:
         rule["hold_last"] = True
     return {"version": 1, "document": "counted.scxml",
-            "inputs": {"count": {"address": "Plant.Input.Count", "number": True,
+            "inputs": {"count": {"address": "Plant.Input.Count",
                                  "when_absent": 0}},
             "outputs": {"which": rule}}
 

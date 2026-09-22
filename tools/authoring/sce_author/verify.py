@@ -37,6 +37,7 @@ import sys
 import tempfile
 from dataclasses import dataclass, field
 
+from . import delivery
 from .check import imports_of, read_binding
 from .errors import AuthoringError
 from .pack import Pack
@@ -820,13 +821,18 @@ class History:
 
 
 def input_value(name: str, rule: dict, case, latches: Latches | None = None,
-                model=None, history: History | None = None, conv=None):
+                model=None, history: History | None = None, conv=None,
+                sce_type: str | None = None, variants: dict | None = None):
     """One of the document's inputs, from what the case drove.
 
     Every branch here is a key the binding schema publishes. A rule using a
     key this cannot evaluate raises rather than defaulting: an input silently
     read as False is a document that was run on inputs nobody supplied, and
     the verdict would be about that run rather than about the document.
+
+    `sce_type` is what the document declares this input to be, and `variants`
+    the enumeration it names, if it names one. A rule naming an address and
+    nothing else is read as that type -- see `delivery`.
     """
     if rule.get("internal"):
         raise VerifyError(f"input {name!r}: 'internal' is an output key")
@@ -912,38 +918,16 @@ def input_value(name: str, rule: dict, case, latches: Latches | None = None,
         return any(_same(value, v, field_) for v in rule["equals_any"])
     if "not_equals" in rule:
         return not _same(value, rule["not_equals"], field_)
-    if rule.get("number") or "range" in rule:
-        # ⚠ A number has no "not any symbol" to fall back on the way a symbol
-        # comparison does, so absence has to be DECLARED. Folding it into zero
-        # made seven cases on one corpus look as though the specification had
-        # been misread, when nothing had been reporting at all.
-        has_absent = "when_absent" in rule
-        if value is None:
-            if has_absent:
-                return rule["when_absent"]
-            raise VerifyError(
-                f"input {name!r}: the case drives no value at {address}, and a "
-                f"number was wanted. Say what absence reads as with "
-                f"`when_absent`; there is no safe silent answer.")
-        try:
-            number = float(value)
-        except (TypeError, ValueError) as exc:
-            if has_absent:
-                return rule["when_absent"]
-            raise VerifyError(f"input {name!r}: {value!r} at {address} is not "
-                              f"a number") from exc
-        low, high = rule.get("range", (None, None))
-        if low is not None and not (low <= number <= high):
-            # A reading the platform cannot represent is not a reading.
-            if has_absent:
-                return rule["when_absent"]
-            raise VerifyError(
-                f"input {name!r}: {number} at {address} is outside the "
-                f"declared range {low}..{high}, which is a different fact from "
-                f"any value in it")
-        return int(number) if number.is_integer() else number
-    raise VerifyError(f"input {name!r}: the binding says nothing about how to "
-                      f"read {address}")
+    # ⚠ Nothing left but the address itself, so it hands the document its own
+    # value, read as the document's declared type. This used to raise "the
+    # binding says nothing about how to read" unless the rule restated the
+    # type as `number: true` -- and a text input had no key at all.
+    try:
+        return delivery.read_as_is(
+            name, rule, value, address in case.given, sce_type, field_,
+            getattr(conv, "absence_tokens", None) or (), variants)
+    except delivery.DeliveryError as exc:
+        raise VerifyError(str(exc)) from exc
 
 
 def output_values(name: str, rule: dict, computed) -> dict:
@@ -1015,34 +999,10 @@ def written_positions(outputs: dict) -> tuple[set, dict]:
 def _field_at(model, key: str):
     """The model's field for an `address` or `address.field` key.
 
-    ⚠ The named field is tried FIRST. Looking for the unnamed one first
-    returned nothing for every address that has named fields, so the value
-    space was never found and a document computing the right answer everywhere
-    was reported as failing every case.
-
-    ⚠⚠ And the split is tried at EVERY dot, not just the last one. A field
-    name can itself contain a dot -- `LinkedSound.Type` is one field of an
-    event record, not a field `Type` of an address ending in `LinkedSound` --
-    and splitting only at the last dot looked for a pair that does not exist.
-    That single wrong split accounted for 121 of 259 failures on one corpus:
-    the document had produced `REPEAT_COUNT` where the record said `1`, which
-    are the same value, and the report blamed the document.
+    The lookup is the model's (`Model.field_at`), so `check` asks the same
+    question with the same answer.
     """
-    parts = key.split(".")
-    for cut in range(len(parts) - 1, 0, -1):
-        address, wanted = ".".join(parts[:cut]), ".".join(parts[cut:])
-        entry = model.owning(address)
-        if entry is None:
-            continue
-        field_ = entry.field(wanted)
-        if field_ is not None:
-            return field_
-    entry = model.owning(key)
-    if entry is not None:
-        for field_ in entry.fields:
-            if not field_.name:
-                return field_
-    return None
+    return model.field_at(key)
 
 
 def _same(want, got, field_=None) -> bool:
@@ -1702,24 +1662,31 @@ def verify(pack: Pack, binding_path: pathlib.Path,
     # a refusal belongs to the smallest thing it is actually about.
     #
     # What still refuses, and why:
-    #   a NUMBER     has no two values to try; any choice would be invented
+    #   not a BOOL   a number or a text has no two values to try; any choice
+    #                would be invented
     #   a MEMORY     (`previous_of` / `state_of` of it) would carry an unknown
     #                forward into rounds that never read it
     #   too many     every one doubles the runs; past the cap the report would
     #                be a cost nobody asked for
     #
-    # An unresolved OUTPUT was already narrower and still is: the rest runs,
-    # and only the positions that output would have written go unchecked.
+    # ⚠ "Not a bool" is read from the DOCUMENT's declaration. It was read from
+    # the binding's `number: true`, so an open input feeding a text was run as
+    # though it were False and then True -- two values the document's own
+    # declaration says it can never receive.
+    #
+    # An unresolved OUTPUT is narrower: the rest runs, and only the positions
+    # it could have written are withheld (`CaseJudge`).
     open_inputs = verification.unresolved
-    numbers = sorted(n for n in open_inputs if inputs[n].get("number"))
+    numbers = sorted(n for n in open_inputs
+                     if delivery.document_class(declared.types.get(n)) != "bool")
     remembered = sorted(n for n, r in inputs.items()
                         if r.get("previous_of") in open_inputs
                         or r.get("state_of") in open_inputs
                         or (n in open_inputs
                             and (r.get("previous_of") or r.get("state_of"))))
     if numbers or remembered or len(open_inputs) > MAX_OPEN_INPUTS:
-        why = (f"{', '.join(numbers)} would be read as a number, which has no "
-               f"two values to try" if numbers else
+        why = (f"the document declares {', '.join(numbers)} as something other "
+               f"than a truth value, which has no two values to try" if numbers else
                f"{', '.join(remembered)} would carry an unresolved value into "
                f"a later round" if remembered else
                f"{len(open_inputs)} unresolved inputs would need "
@@ -1769,13 +1736,15 @@ def verify(pack: Pack, binding_path: pathlib.Path,
                      if not (r.get("previous_of") or r.get("state_of"))
                      and n not in open_inputs}
             values = {n: input_value(n, r, case, latches, pack.model, history,
-                                     pack.conventions)
+                                     pack.conventions, declared.types.get(n),
+                                     declared.variants_of(n))
                       for n, r in plain.items()}
             for n, r in inputs.items():
                 if n in values or n in open_inputs:
                     continue
                 got = input_value(n, r, case, latches, pack.model, history,
-                                  pack.conventions)
+                                  pack.conventions, declared.types.get(n),
+                                  declared.variants_of(n))
                 if got is _UNSEEN:
                     target = r["previous_of"]
                     if target not in values:

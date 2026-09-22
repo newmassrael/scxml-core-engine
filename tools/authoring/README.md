@@ -605,8 +605,8 @@ the model's addresses the document's names are.
       notClear:    {address: plant/in/state, not_equals: CLEAR,
                     note: "a negation stays right when the enum grows"}
       silent:      {address: plant/in/state, absent: true}
-      level:       {address: plant/in/level, number: true, range: [0, 255],
-                    when_absent: 0}
+      level:       {address: plant/in/level, range: [0, 255], when_absent: 0}
+      caption:     {address: plant/in/caption, when_absent: ""}
       onMainline:  {variant_is: [MAINLINE, BRANCH]}
       sinceRise:   {clock: true, when_absent: 0}
       wasDown:     {previous_of: approaching,
@@ -673,6 +673,27 @@ the one a real platform receives. Four keys say so:
 | `becomes` | the value the address must take first; omitted, any change drives it |
 | `sent` | this output leaves as a send, optionally narrowed to one `processor`, its value taken from a `param` or the `content` and otherwise being the event name itself |
 | `when_nothing_sent` | what the output reads as in a case where no matching send occurred |
+
+An address named with nothing that compares it — `level`, `caption` — hands
+the document that address's OWN value, read as the type the document declares
+for the input and checked against what the interface model says the address
+carries:
+
+| document declares | address carries | the document receives |
+|---|---|---|
+| a number type (`int32`, `float64`, …) | a number, or an enumeration | the number (an enumeration's through the model) |
+| `string` | a text | the text |
+| `bool` | a truth value | the truth value |
+| `enum:<alias>` | an enumeration, or a number | the number, which must be one of the imported enumeration's variants |
+
+Any other pairing is refused by `check`, and by `verify` in the same words, and
+a comparison (`equals`, `absent`, …) into an input not declared `bool` is
+refused the same way. ⚠ There is no key saying "read this as a number": the
+document and the model already say what it is, and `number: true` — which
+said it a third time — fed an `int32` input in all 24 of its uses on one corpus
+while nothing compared the two, and left a text input no way to be read at all.
+An enumeration meets the platform on the NUMBER, so where both sides name a
+value they must give it the same one.
 
 ⚠ `becomes` is not a spelling of `equals`. `equals` asks what an address IS
 and answers every round; `becomes` asks what it CHANGED TO and answers once. A
@@ -751,11 +772,13 @@ in a way a missing one never is. The document's `sce:unresolved` has stopped
 exactly this for VALUES since before this package existed; this is its peer for
 addresses.
 
-⚠ `when_absent` is required for a NUMBER whose address a case may not drive: a
-symbol comparison needs no such declaration, because an address that is not
-reporting is not any symbol and that is already the answer — but a number has
-no such fallback, and folding absence into zero made seven cases on one corpus
-look as though the specification had been misread.
+⚠ `when_absent` is required for an address handed over as it is — a number, a
+text, a truth value — whose address a case may not drive, or may drive with a
+token the conventions list as absence: a symbol comparison needs no such
+declaration, because an address that is not reporting is not any symbol and
+that is already the answer — but a value read as it is has no such fallback,
+and folding absence into zero made seven cases on one corpus look as though the
+specification had been misread.
 
 ⚠⚠ Quote every symbol. YAML 1.1 reads a bare `ON`, `OFF`, `YES`, `NO`, `TRUE`
 and `FALSE` as booleans, so `equals: ON` becomes `equals: true` and a map of

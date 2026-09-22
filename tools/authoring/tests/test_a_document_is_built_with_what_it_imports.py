@@ -140,8 +140,7 @@ class ADocumentTypedByAnImportRuns(Fixture):
         binding = {
             "version": 1,
             "document": "importing.scxml",
-            "inputs": {"mode": {"address": "Plant.Input.SupplyMode",
-                                "number": True}},
+            "inputs": {"mode": {"address": "Plant.Input.SupplyMode"}},
             "outputs": BINDING["outputs"],
         }
         path = self.root / "importing.binding.yaml"

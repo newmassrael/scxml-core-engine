@@ -174,14 +174,23 @@ class AnUnknownCostsOnlyWhatTurnsOnIt(Fixture):
         self.assertNotIn("not a pass", said)
 
     def test_an_unknown_number_still_refuses(self):
-        """A number has no two values to try; any one chosen is invented."""
-        binding = {**BINDING, "inputs": {
-            **BINDING["inputs"],
-            "guard": {"unresolved": UNKNOWN, "number": True, "when_absent": 0}}}
-        result = self.run_with(DEPENDS, HIGH, binding=binding)
+        """A number has no two values to try; any one chosen is invented.
+
+        ⚠ What makes it a number is the DOCUMENT's declaration. It used to be
+        the binding's `number: true`, so the same binding into a document
+        declaring the guard `int32` ran it as False and then True -- two values
+        the document says it can never receive.
+        """
+        counted = DEPENDS.replace('id="guard" sce:type="bool"',
+                                  'id="guard" sce:type="int32"').replace(
+            "(mode &amp;&amp; guard)", "(mode &amp;&amp; guard &gt; 0)")
+        self.assertNotEqual(counted, DEPENDS, "the premise: the guard is a number")
+        result = self.run_with(counted, HIGH)
         self.assertFalse(result.ran)
-        self.assertIn("number", result.refusal)
+        self.assertIn("truth value", result.refusal)
         self.assertIn(UNKNOWN, result.refusal)
+        # The discriminator: the same binding into the `bool` guard runs.
+        self.assertTrue(self.run_with(DEPENDS, HIGH).ran)
 
 
 # ------------------------------------------------ one layer down: the document

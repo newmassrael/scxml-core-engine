@@ -198,7 +198,7 @@ class APreviousValueComesFromTheSetup(Fixture):
         inputs = {**FIXTURE_BINDING["inputs"],
                   "wasMode": {"previous_of": "mode",
                               "caller_keeps": "the edge is a fact about two rounds"},
-                  "count": {"address": "Plant.Input.Count", "number": True}}
+                  "count": {"address": "Plant.Input.Count"}}
         binding = {**FIXTURE_BINDING, "document": "edge.scxml", "inputs": inputs}
         path = self.root / "edge.binding.yaml"
         path.write_text(yaml.safe_dump(binding), encoding="utf-8")

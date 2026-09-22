@@ -31,7 +31,10 @@
       },
       "x-sce-deliberately-absent": "There is no form for comparing SEVERAL addresses at once, and that is a measured decision rather than an oversight. One platform's own rule format has two such keys; measured 2026-09-20 across 499 files of a real corpus, they appear 4 times each, both in ONE of 28 hand-written bindings, against 490 uses of the one-address form in 106 files. The component that binding is for reaches a full pass without the shape when its binding is written in this vocabulary instead, so what the multi-address form buys is brevity in one file. An input rule here stays one address to one name; grouping is what the DOCUMENT is for, and a binding that could group would be deciding logic in the dictionary.",
       "properties": {
-        "address": {"type": "string"},
+        "address": {
+          "type": "string",
+          "description": "The platform address this input reads. Named with nothing that compares it, it hands the document the address's own value, read as the type the document declares for this input (`sce:type`) and checked against what the interface model says the address carries -- a number, a text, a truth value, or an enumeration's number. ⚠ There is no key restating that type. The document and the model already say it, and a third statement is a third place to disagree: `number: true` was one, and measured 2026-09-22 over 24 bindings its 24 uses all fed `int32` inputs while nothing compared the two, and a text input had no key at all."
+        },
         "unresolved": {
           "type": "string",
           "description": "Written INSTEAD of `address`, when the platform's own list is not available yet and nobody has said which address this is. The string is the reason, for whoever can answer it. ⚠ This exists because absence has to be WRITABLE or it does not get written: a document is already platform-free -- it uses its own identifiers and the binding is the dictionary -- so the logic can be authored long before the addresses are known. Without a way to say 'not known yet', that gap gets filled with a plausible address instead, and a plausible wrong address is invisible. It is the peer of the document's `sce:unresolved`, which has stopped exactly this for VALUES since before this file existed."
@@ -42,16 +45,12 @@
           "type": "string",
           "$comment": "Kept distinct from equals_any on purpose: a negation stays correct when the enumeration grows, and a positive list silently narrows."
         },
-        "number": {
-          "type": "boolean",
-          "description": "Pass the number itself rather than a truth value."
-        },
         "range": {
           "type": "array",
           "items": {"type": "number"},
           "minItems": 2,
           "maxItems": 2,
-          "description": "Admissible bounds for a number. A value outside them is out of range, which is a different fact from zero and must not be folded into it silently."
+          "description": "Admissible bounds for the number an address hands a numeric input. A value outside them is out of range, which is a different fact from zero and must not be folded into it silently. Refused on an input the document does not declare numeric."
         },
         "absent": {
           "type": "boolean",
@@ -59,7 +58,7 @@
         },
         "when_absent": {
           "x-sce-document-value": true,
-          "description": "What a NUMBER reads as when its address is not reporting, or reports outside `range`. ⚠ Required for a numeric input whose address a case may not drive -- there is no safe silent answer. Folding absence into zero made seven cases on one corpus look as though the specification had been misread, when what had actually happened was that nothing was reporting. A symbol comparison needs no such declaration: an address that is not reporting is not any symbol, which is already the answer. Out of range counts as absent here because a reading the platform cannot represent is not a reading."
+          "description": "What an address handed over as it is -- a number, a text, a truth value, an enumeration's number -- reads as when it is not reporting: the case drives no value there, or a token the conventions list as absence, or (for a number) one outside `range`. ⚠ Required for such an input whose address a case may not drive -- there is no safe silent answer. Folding absence into zero made seven cases on one corpus look as though the specification had been misread, when what had actually happened was that nothing was reporting. A symbol comparison needs no such declaration: an address that is not reporting is not any symbol, which is already the answer. Out of range counts as absent here because a reading the platform cannot represent is not a reading."
         },
         "previous_of": {
           "type": "string",

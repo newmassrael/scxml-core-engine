@@ -122,6 +122,38 @@ class Model:
                 return entry
         return None
 
+    def field_at(self, key: str) -> Field | None:
+        """The field an `address` or `address.field` key names.
+
+        ⚠ The named field is tried FIRST. Looking for the unnamed one first
+        returned nothing for every address that has named fields, so the value
+        space was never found and a document computing the right answer
+        everywhere was reported as failing every case.
+
+        ⚠⚠ And the split is tried at EVERY dot, not just the last one. A field
+        name can itself contain a dot -- `LinkedSound.Type` is one field of an
+        event record, not a field `Type` of an address ending in
+        `LinkedSound` -- and splitting only at the last dot looked for a pair
+        that does not exist. That single wrong split accounted for 121 of 259
+        failures on one corpus: the document had produced `REPEAT_COUNT` where
+        the record said `1`, which are the same value, and the report blamed
+        the document.
+        """
+        parts = key.split(".")
+        for cut in range(len(parts) - 1, 0, -1):
+            entry = self.owning(".".join(parts[:cut]))
+            if entry is None:
+                continue
+            found = entry.field(".".join(parts[cut:]))
+            if found is not None:
+                return found
+        entry = self.owning(key)
+        if entry is not None:
+            for found in entry.fields:
+                if not found.name:
+                    return found
+        return None
+
     def resolve(self, name: str) -> list[Entry]:
         """Entries the prose could mean by this name.
 

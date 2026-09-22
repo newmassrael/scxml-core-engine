@@ -32,6 +32,7 @@ from dataclasses import dataclass
 
 import yaml
 
+from . import delivery
 from .errors import READ_ERRORS, PackError, describe_path
 from .pack import SCHEMA_DIR, Pack, _validate
 
@@ -106,6 +107,20 @@ class Document:
     # (W3C SCXML 5.10). A state with no id is keyed `None`, because nothing
     # can ask whether it is active.
     listeners: dict = dataclasses.field(default_factory=dict)
+    # Input and output identifier -> the `sce:type` the document declares for
+    # it. What a binding hands an input is read as this type (`delivery`).
+    types: dict = dataclasses.field(default_factory=dict)
+    # Import alias -> the variants an imported enumeration declares, each to
+    # its number. An `enum:<alias>` input takes the platform's number, and
+    # this is what says which variant that number is.
+    enums: dict = dataclasses.field(default_factory=dict)
+
+    def variants_of(self, ident: str) -> dict | None:
+        """The enumeration an `enum:` input or output names, if one is imported."""
+        declared = self.types.get(ident) or ""
+        if not declared.startswith("enum:"):
+            return None
+        return self.enums.get(declared[len("enum:"):])
 
     def listens_for(self, event_name: str) -> bool:
         """Whether any transition would be selected by this event."""
@@ -196,7 +211,7 @@ def read_document(path: pathlib.Path) -> Document:
             f"a double hyphen, which is the way this usually happens."
         ) from exc
     inputs, outputs = [], []
-    assumed, reads, unresolved = {}, {}, {}
+    assumed, reads, unresolved, types = {}, {}, {}, {}
     for data in root.iter(f"{SCXML_NS}data"):
         ident = data.get("id")
         direction = data.get(f"{SCE_NS}direction")
@@ -204,6 +219,8 @@ def read_document(path: pathlib.Path) -> Document:
             inputs.append(ident)
         elif direction == "out":
             outputs.append(ident)
+        if direction in ("in", "out") and data.get(f"{SCE_NS}type"):
+            types[ident] = data.get(f"{SCE_NS}type")
         # ⚠ The author's own record of what they had to decide without being
         # told. `sce:assumed` is the product's non-blocking marker -- the pair
         # of `sce:unresolved`, which refuses the build. An assumption compiles,
@@ -250,7 +267,38 @@ def read_document(path: pathlib.Path) -> Document:
         sends=tuple(sends),
         events=frozenset(events),
         listeners=_listeners(root),
+        types=types,
+        enums=_imported_enums(root, path),
     )
+
+
+def _imported_enums(root, path: pathlib.Path) -> dict:
+    """Import alias -> {variant: number} for every enumeration this imports.
+
+    Resolved against the importing document, as the generator resolves it. An
+    enumeration that cannot be read is refused here, naming it, for the reason
+    `imports_of` gives: the alternative is a type nobody can say the numbers of.
+    """
+    found = {}
+    for node in root.iter(f"{SCE_NS}import"):
+        if node.get("kind") != "enum" or not node.get("as") or not node.get("src"):
+            continue
+        source = (pathlib.Path(path).parent / node.get("src")).resolve()
+        try:
+            enum_root = ET.parse(source).getroot()
+        except (ET.ParseError, OSError) as exc:
+            raise PackError(f"{path}: imports the enumeration {node.get('as')!r} "
+                            f"from {source}, which cannot be read ({exc})") from exc
+        variants = {}
+        for variant in enum_root.iter(f"{SCE_NS}variant"):
+            try:
+                variants[variant.get("name")] = int(variant.get("value"), 0)
+            except (TypeError, ValueError) as exc:
+                raise PackError(
+                    f"{source}: variant {variant.get('name')!r} declares no "
+                    f"number, and an enumeration input takes one") from exc
+        found[node.get("as")] = variants
+    return found
 
 
 def imports_of(path: pathlib.Path) -> list[pathlib.Path]:
@@ -542,6 +590,24 @@ def check(pack: Pack, binding_path: pathlib.Path) -> list[Finding]:
                 f"plus something that remembers, and the kind does not say so.",
             )
         )
+
+    # ⚠ The document says what type each input is and the model says what
+    # each address carries, so a rule is checked against BOTH -- by the same
+    # judgement `verify` reads with, so the two cannot disagree about which
+    # bindings are well formed. Nothing did this before: `number: true`
+    # restated the type, and a binding saying "number" into a `bool` input,
+    # or a comparison into an `int32` one, was found only when a run failed.
+    for name, rule in sorted(declared_inputs.items()):
+        if name not in document.types or rule.get("unresolved"):
+            continue
+        remembered = rule.get("previous_of") or rule.get("state_of")
+        why = delivery.refusal(
+            name, rule, document.types[name],
+            model.field_at(rule["address"]) if rule.get("address") else None,
+            remembered_type=document.types.get(remembered) if remembered else None,
+            variants=document.variants_of(name))
+        if why:
+            out.append(Finding(f"input {name}", why))
 
     for ident in document.inputs:
         if ident not in declared_inputs:
