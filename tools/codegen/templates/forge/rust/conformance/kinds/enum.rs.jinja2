@@ -2,7 +2,12 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
 
 {# Enum kind — see the C++ fragment for why the oracle compares VALUES and
-   keys on the source spelling. #}
+   keys on the source spelling.
+
+   The value is read through `to_underlying`, the conversion both Rust shapes
+   define, and never with `as`: an open enum is a transparent struct holding
+   associated consts, and `as` casts only a fieldless enum — so a cast
+   compiled for every closed fixture and refused the first open one. #}
     {
         let spec = &reference["{{ f.ref_section }}"]["{{ f.name }}"];
         let variants = spec["variants"].as_array().unwrap();
@@ -23,7 +28,7 @@
             "{{ f.name }} variant {{ loop.index0 }} name"
         );
         assert_eq!(
-            fixtures::{{ f.name }}::{{ f.name | to_pascal_case }}::{{ v.name | to_pascal_case }} as i64,
+            fixtures::{{ f.name }}::{{ f.name | to_pascal_case }}::{{ v.name | to_pascal_case }}.to_underlying() as i64,
             variants[{{ loop.index0 }}]["value"].as_i64().unwrap(),
             "{{ f.name }}::{{ v.name }}"
         );
