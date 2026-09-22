@@ -399,6 +399,40 @@ def verification_source(document: pathlib.Path, declared,
     return target
 
 
+def assumption_behind(writer: str | None, declared, binding: dict) -> str:
+    """What a failure at a position `writer` writes rests on, if its author
+    wrote it down as a guess: the document's `sce:assumed` first, then the
+    binding's `assumed` on that output's rule, then on any input it reads.
+
+    ⚠ The binding half is new. A decision made in the binding -- reading a
+    number's absence as 0, choosing a symbol for a platform default -- could
+    only be written in `note`, which nothing reads, so a case refuting it read
+    as "the document is wrong". Walked over the same `reads` graph the
+    document's own assumptions are, because the input a guess sits on is
+    usually a step upstream of the value that failed.
+    """
+    if not writer:
+        return ""
+    found = declared.rests_on_an_assumption(writer)
+    if found:
+        return found
+    inputs = binding.get("inputs") or {}
+    rule = (binding.get("outputs") or {}).get(writer) or {}
+    if rule.get("assumed"):
+        return f"the binding's rule for {writer}: {rule['assumed']}"
+    seen, stack = set(), [writer]
+    while stack:
+        current = stack.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        held = inputs.get(current) or {}
+        if held.get("assumed"):
+            return f"the binding's rule for {current}: {held['assumed']}"
+        stack.extend(declared.reads.get(current, ()))
+    return ""
+
+
 def withheld_outputs(declared) -> dict:
     """Every output a verdict may not rest on: {output: why}.
 
@@ -1333,9 +1367,8 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
                 continue
             if not _same(want, produced[address], _field_at(pack.model, address)):
                 result.failures.append((address, want, produced[address]))
-                writer = writes.get(address)
-                rests_on = (declared.rests_on_an_assumption(writer)
-                            if writer else "")
+                rests_on = assumption_behind(writes.get(address), declared,
+                                             binding)
                 if rests_on:
                     verification.refuted.setdefault(address, rests_on)
         verification.results.append(result)
@@ -1613,9 +1646,8 @@ def verify(pack: Pack, binding_path: pathlib.Path,
                 continue
             if not _same(want, produced[address], _field_at(pack.model, address)):
                 result.failures.append((address, want, produced[address]))
-                writer = writes.get(address)
-                rests_on = (declared.rests_on_an_assumption(writer)
-                            if writer else "")
+                rests_on = assumption_behind(writes.get(address), declared,
+                                             binding)
                 if rests_on:
                     verification.refuted.setdefault(address, rests_on)
         # ⚠ A case with ANY withheld position is not a pass. The first version

@@ -101,6 +101,10 @@
           "type": "string",
           "description": "Why the CALLER holds this value between rounds instead of the document. ⚠ REQUIRED beside `previous_of` and `state_of`, and the string is the reason. Generated code takes one round's inputs and returns; a rule naming a previous round is therefore an obligation on whoever calls it, inherited by every caller and, until this key, written down nowhere. ⚠⚠ It is required rather than optional because the alternative is usually available and rarely considered: a document that declares a memory-bearing kind can hold the value ITSELF, and then no caller owes anything. The other legitimate answer is that the platform publishes the earlier value at an address of its own — in which case this rule should name that address and stop being a `previous_of` at all. Writing the reason is what makes the author meet those two before defaulting to the third."
         },
+        "assumed": {
+          "type": "string",
+          "description": "This rule decides something the specification does not say, and the string is why the author decided it this way -- typically a `when_absent` for a number nobody said the absence of, or an `equals` chosen between two plausible symbols. ⚠ The binding's peer of the document's `sce:assumed`. Without it such a decision could only live in `note`, which nothing reads: measured 2026-09-22, an author reading a number's absence as 0 wrote that it CHANGES the outcome and had nowhere to say so but a comment. A case that fails on a value resting on this rule is reported as this assumption being refuted, not as the document being wrong."
+        },
         "note": {"type": "string"}
       }
     },
@@ -163,6 +167,10 @@
         },
         "when_nothing_sent": {
           "description": "What this output reads as in a case where no matching send occurred. ⚠ REQUIRED beside `sent`, for the reason `when_absent` is required for a number: there is no safe silent answer. A machine that should have signalled and did not is the failure most worth catching, and an output that merely vanishes from the produced set is reported as a position nobody looked at -- which a reader takes for a clean run."
+        },
+        "assumed": {
+          "type": "string",
+          "description": "This rule decides something the specification does not say -- a `map` entry, an `also` field, a platform default -- and the string is why. The peer of the input rule's `assumed` and of the document's `sce:assumed`: a failure on a position this rule writes is reported as the assumption being refuted."
         },
         "note": {"type": "string"}
       }
