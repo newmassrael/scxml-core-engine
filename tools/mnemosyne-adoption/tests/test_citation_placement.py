@@ -34,7 +34,6 @@ Run:  python3 -m unittest discover -s tools/mnemosyne-adoption/tests
 
 import os
 import re
-import subprocess
 import sys
 import unittest
 
@@ -47,6 +46,7 @@ from migrate_citations import (  # noqa: E402
     MIGRATED_TOKEN_RE,
     docstring_spans,
     hash_comment_mask,
+    tracked_paths,
 )
 
 CONFIG = os.path.join(REPO_ROOT, "docs", "spec", "scxml", "mnemosyne.toml")
@@ -71,9 +71,7 @@ def enrolled_prefixes():
 
 
 def enrolled_python_files():
-    listing = subprocess.run(
-        ["git", "-C", REPO_ROOT, "ls-files"], capture_output=True, text=True, check=True
-    ).stdout.splitlines()
+    listing = tracked_paths()
     prefixes = enrolled_prefixes()
     return [
         rel

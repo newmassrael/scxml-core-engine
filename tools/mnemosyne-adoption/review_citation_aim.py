@@ -43,9 +43,10 @@ import argparse
 import json
 import os
 import re
-import subprocess
 import sys
 from pathlib import Path
+
+from migrate_citations import tracked_paths
 
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parent.parent
@@ -73,10 +74,7 @@ def element_titled_sections():
 
 
 def tracked_sources():
-    out = subprocess.run(
-        ["git", "-C", str(REPO_ROOT), "ls-files"], capture_output=True, text=True
-    )
-    for rel in out.stdout.split():
+    for rel in tracked_paths():
         if rel.endswith(SOURCE_EXT) and not rel.startswith("docs/"):
             yield rel
 

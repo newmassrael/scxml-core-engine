@@ -923,6 +923,27 @@ def _plan_tokens(text, mask, token_ledgers, lineno):
     return skipped
 
 
+def tracked_paths():
+    """Repo-relative paths git tracks, as git stores them.
+
+    `-z`, always. Without it git's default `core.quotePath` writes a path
+    holding any byte outside printable ASCII as a quoted octal escape, which
+    names no file on disk, and a caller splitting on whitespace also cuts a
+    path with a space in two — either way the file is skipped in silence.
+
+    A git that cannot answer raises. The one caller with an honest fallback,
+    `_tracked_files`, catches it; every other caller must not read an empty
+    list as an empty tree.
+    """
+    out = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "ls-files", "-z"],
+        capture_output=True,
+        timeout=60,
+        check=True,
+    )
+    return [p.decode("utf-8", "surrogateescape") for p in out.stdout.split(b"\0") if p]
+
+
 def _tracked_files():
     """Repo-relative paths git tracks, or None when that cannot be determined.
 
@@ -932,17 +953,9 @@ def _tracked_files():
     nothing.
     """
     try:
-        out = subprocess.run(
-            ["git", "-C", REPO_ROOT, "ls-files"],
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
+        return set(tracked_paths())
     except (OSError, subprocess.SubprocessError):
         return None
-    if out.returncode != 0:
-        return None
-    return {line for line in out.stdout.splitlines() if line}
 
 
 # Exit status for "this check could not run", kept distinct from 1 ("the

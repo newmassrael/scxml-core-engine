@@ -1697,6 +1697,24 @@ def swept_globs(src: str) -> list[str]:
     return out
 
 
+def tracked_paths(repo_root: Path, *pathspecs: str) -> list[str]:
+    """Every path git tracks that matches one of `pathspecs` — every tracked
+    path when there are none — repository-relative, as git stores it.
+
+    `-z`, always. Without it git's default `core.quotePath` writes a path
+    holding any byte outside printable ASCII as a quoted octal escape,
+    which names no file on disk, and a caller splitting on whitespace also
+    cuts a path with a space in two — either way the file is skipped in
+    silence. A git that fails is an error, not an empty tree: an empty list
+    here reads as "nothing to judge" to every caller.
+    """
+    proc = subprocess.run(
+        ["git", "-C", str(repo_root), "ls-" + "files", "-z", "--", *pathspecs],
+        capture_output=True, check=True,
+    )
+    return [p.decode("utf-8", "surrogateescape") for p in proc.stdout.split(b"\0") if p]
+
+
 def tracked_matching(repo_root: Path, glob: str) -> list[str]:
     """Tracked paths a sweep glob actually yields, asked of git itself.
 
@@ -1704,11 +1722,7 @@ def tracked_matching(repo_root: Path, glob: str) -> list[str]:
     containment rule between two glob dialects. The tree answers the
     question directly and without a rule to get wrong.
     """
-    proc = subprocess.run(
-        ["git", "-C", str(repo_root), "ls-" + "files", glob],
-        capture_output=True, text=True, check=False,
-    )
-    return [line for line in proc.stdout.splitlines() if line]
+    return tracked_paths(repo_root, glob)
 
 
 def script_read_paths(body: str, tracked: set) -> tuple[set, set]:
@@ -2686,12 +2700,7 @@ def self_test(repo_root: Path) -> int:
     # Three of the four gates this finds are `ci_only`, so declaring their
     # inputs costs a push nothing and buys the report its answer.
     cases += 1
-    tracked_all = set(
-        subprocess.run(
-            ["git", "-C", str(repo_root), "ls-files"],
-            capture_output=True, text=True, check=False,
-        ).stdout.split()
-    )
+    tracked_all = set(tracked_paths(repo_root))
     scripts_seen = 0
     quoted_seen = 0
     bare_seen = 0
