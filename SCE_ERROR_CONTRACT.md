@@ -679,8 +679,11 @@ UPDATE_EXPECT=1 cargo test -p sce-build error_contract_catalog
 ```
 
 The `Stage` column is the record's `stage` field, which is **not** the
-code's prefix — 250 of the 346 codes differ, so a consumer must branch
-on `stage` rather than on the text before the slash.
+code's prefix — for most codes the two differ, so a consumer must branch
+on `stage` rather than on the text before the slash. The table is the
+count; a number written here would be a second one nothing re-measures,
+which is how this sentence came to say 250 of 346 while the table held
+252 of 376 (measured 2026-09-22).
 
 The `Fix?` column names the `fix.kind` the code's golden carries, or
 `no` where the record has none. A code emitted from sites that name
@@ -884,6 +887,7 @@ references against a real document and drift silently.
 | `validation/invalid-attribute` | `validation` | `replace_one_of` |  |
 | `validation/invalid-direction` | `validation` | `replace_one_of` | SCE Forge §3.3 |
 | `validation/invalid-reference` | `validation` | `replace_one_of` |  |
+| `validation/malformed-code-identifier` | `validation` | no | SCE Accepted Subset §2.14 |
 | `validation/malformed-identifier` | `validation` | no | W3C SCXML §3.3.1 |
 | `validation/mesh-rpc-duplicate-target` | `validation` | no | SCE Mesh §9.5 |
 | `validation/mesh-rpc-missing-target` | `validation` | no | SCE Mesh §9.5 |

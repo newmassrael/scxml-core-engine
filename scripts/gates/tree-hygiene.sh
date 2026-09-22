@@ -108,6 +108,12 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # commit never started. That is precisely the case the gate exists for,
 # which is why it runs from this unfiltered workflow instead.
 #
+# `a_name_the_generated_code_spells_is_a_code_identifier` is that sweep for
+# the names SCE owns — `SCE_ACCEPTED_SUBSET.md` §2.14 — and is here for the
+# same reason: it proves each row of its table reachable from whichever
+# committed document carries that attribute, and the carrier of the next row
+# can arrive in any directory.
+#
 # `non_latin_prose_declares_why_it_is_here` decodes every tracked file and
 # refuses a line of prose written in a script this tree does not write prose
 # in, unless the file argues in one line that the characters are what it
@@ -139,6 +145,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 cargo test -p sce-build --features cli,ffi \
     --test a_standard_named_in_code_is_one_sce_implements \
     --test an_identifier_is_checked_against_the_grammar_w3c_gives_it \
+    --test a_name_the_generated_code_spells_is_a_code_identifier \
     --test non_latin_prose_declares_why_it_is_here \
     --test ffi_header_parity \
     --test roadmap_marker_gate \

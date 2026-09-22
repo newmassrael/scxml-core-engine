@@ -96,10 +96,32 @@
 //! a test that calls into one inherits its input set while the detector
 //! follows only the module tree a test declares. Writing the command back
 //! into this paragraph reddens that gate — measured 2026-09-14, by doing it.
+//!
+//! # A third grammar: the names the generated code spells
+//!
+//! W3C's table covers W3C's elements. An `sce:` element names things too —
+//! a codec field, an import alias, an enum variant, an algorithm variable —
+//! and those names reach generated source verbatim, in all six languages,
+//! and are read by name in forge expressions, whose lexer is ASCII. So is a
+//! forge document's `<data id>` ([`Dialect`] says why a statechart's is
+//! not). They are held to [`Grammar::CodeIdentifier`] — no `-`, no `.`,
+//! since both are operators in every target — and a reference through a
+//! record to [`Grammar::CodePath`], listed in [`SCE_IDENTIFIER_ATTRIBUTES`].
+//!
+//! ⚠ The forge pipeline ran no sweep at all until 2026-09-22, measured
+//! twice: a transform whose `<data id>` was two Hangul letters passed the
+//! parse and was refused by the expression lexer with no line, and one
+//! whose `<data id>` was `raw-value` passed `check` in all six languages
+//! and generated C++ that does not compile. Both parsers now run the same
+//! sweep, each under its own [`Dialect`], and the refusal is
+//! `validation/malformed-code-identifier` on the attribute's own line —
+//! the ASCII boundary W3C's table already draws, drawn for the names SCE
+//! owns.
 
 use crate::forge::error::{ForgeError, Located, ValidationError};
 
-/// The grammar W3C gives one attribute.
+/// The grammar one attribute is held to — W3C's, or SCE's for a name the
+/// generated code spells verbatim.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Grammar {
     /// An XML Schema `ID`: exactly one XML Name, declaring it.
@@ -110,6 +132,40 @@ pub enum Grammar {
     EventDescriptors,
     /// §3.12.1 event name — one event, so no wildcard spelling is legal.
     EventName,
+    /// A name the generated code spells as it is written — a forge field,
+    /// an import alias, a codec member: [`is_code_identifier`].
+    CodeIdentifier,
+    /// A reference to such a name through the records that hold it —
+    /// `header.S`, `telemetry.reset`: code identifiers joined by `.`.
+    CodePath,
+}
+
+/// Which pipeline reads the document, and so which grammar its `<data id>`
+/// is held to.
+///
+/// The two share every row but that one. A statechart's `<data id>` names
+/// a data-model location, and W3C types it `xs:ID`. A forge document's
+/// names a value its own expressions read by that name and its generated
+/// code declares under it, so it is a [`Grammar::CodeIdentifier`]: an XML
+/// Name admits `raw-value`, and measured 2026-09-22 a transform declaring
+/// it passed `check` in all six languages and generated the C++ parameter
+/// `int32_t raw - value`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Dialect {
+    Statechart,
+    Forge,
+}
+
+impl Dialect {
+    /// The dialect of the document `root` is the root element of: a forge
+    /// document names its kind on the root, a statechart names none or
+    /// names `statechart`.
+    pub fn of(root: &roxmltree::Node) -> Self {
+        match root.attribute((crate::forge::model::SCE_NAMESPACE, "kind")) {
+            Some(kind) if kind != "statechart" => Dialect::Forge,
+            _ => Dialect::Statechart,
+        }
+    }
 }
 
 /// Every identifier-bearing attribute of W3C SCXML, with the grammar its
@@ -146,6 +202,54 @@ pub const IDENTIFIER_ATTRIBUTES: &[(&str, &str, Grammar)] = &[
     ("send", "event", Grammar::EventName),              // §6.2.1
 ];
 
+/// Every `sce:` element attribute whose value is a name the generated code
+/// spells, with the grammar it is held to — in a statechart's `sce:`
+/// elements and a forge document's alike.
+///
+/// ⚠ The membership rule is what the VALUE becomes, as it is for W3C's
+/// table: a name this document declares, or refers to, that reaches
+/// generated source as an identifier. A name of ANOTHER document — a
+/// pool's, a framer's, a machine's `ref` — is that document's name, whose
+/// grammar is the document's, and is not here. Neither is a key or a value
+/// (`<sce:entry key>`), which the code holds as data.
+///
+/// Measured 2026-09-22 over every tracked `.scxml` document: each row's
+/// values already satisfy its grammar, including the four dotted
+/// references (`header.S`, `telemetry.reset`) that are why the reference
+/// rows are paths.
+pub const SCE_IDENTIFIER_ATTRIBUTES: &[(&str, &str, Grammar)] = &[
+    // ── Declarations: the name the generated code declares. ──────
+    ("import", "as", Grammar::CodeIdentifier),
+    ("context", "id", Grammar::CodeIdentifier),
+    ("field", "id", Grammar::CodeIdentifier),
+    ("peek-byte", "id", Grammar::CodeIdentifier),
+    ("flags", "id", Grammar::CodeIdentifier),
+    ("flag", "name", Grammar::CodeIdentifier),
+    ("flag-input", "name", Grammar::CodeIdentifier),
+    ("repeat", "id", Grammar::CodeIdentifier),
+    ("tlv-chain", "id", Grammar::CodeIdentifier),
+    ("embed", "id", Grammar::CodeIdentifier),
+    ("variant", "name", Grammar::CodeIdentifier),
+    ("cycle", "id", Grammar::CodeIdentifier),
+    ("var", "name", Grammar::CodeIdentifier),
+    ("const", "name", Grammar::CodeIdentifier),
+    ("fold", "as", Grammar::CodeIdentifier),
+    ("helper", "name", Grammar::CodeIdentifier),
+    ("extern", "name", Grammar::CodeIdentifier),
+    ("action", "name", Grammar::CodeIdentifier),
+    ("arg", "name", Grammar::CodeIdentifier),
+    // ── References to one name of this document or its imports. ──
+    ("flag-bind", "input", Grammar::CodeIdentifier),
+    ("decoded", "field", Grammar::CodeIdentifier),
+    ("cycle", "of", Grammar::CodeIdentifier),
+    ("step", "name", Grammar::CodeIdentifier),
+    // ── References through a record: dotted paths. ────────────────
+    ("flag-bind", "source", Grammar::CodePath),
+    ("assign", "target", Grammar::CodePath),
+    ("append", "target", Grammar::CodePath),
+    ("call", "target", Grammar::CodePath),
+];
+
 /// Whether `name` is an XML Name in the ASCII form SCE accepts — the
 /// grammar W3C's `ID` and `IDREF` defer to XML Schema for.
 ///
@@ -177,6 +281,25 @@ fn is_ncname_token(token: &str) -> bool {
     }
 }
 
+/// Whether `name` is a code identifier: an ASCII letter or `_`, then ASCII
+/// letters, digits or `_` — the spelling C, C++, Kotlin, Rust, Go and
+/// Python all accept as an unquoted identifier, and the one the forge
+/// expression language lexes.
+///
+/// Deliberately narrower than any one of those languages, which admit `$`
+/// or Unicode letters in some form: the value is emitted verbatim into all
+/// six, so the grammar is their intersection, not what one compiler takes.
+/// The narrowing is registered in `docs/SCE_ACCEPTED_SUBSET.md` §2.14.
+pub fn is_code_identifier(name: &str) -> bool {
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(first) if first.is_ascii_alphabetic() || first == '_' => {
+            chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+        }
+        _ => false,
+    }
+}
+
 /// The production name a rejection reports in `expected`.
 ///
 /// A grammar production, not a repair candidate: `SCE_ERROR_CONTRACT.md` §3.2
@@ -193,6 +316,8 @@ fn production(grammar: Grammar) -> &'static str {
         Grammar::IdRefs => "xs:IDREF",
         Grammar::EventDescriptors => "event descriptor",
         Grammar::EventName => "event name",
+        Grammar::CodeIdentifier => "code identifier",
+        Grammar::CodePath => "code identifier path",
     }
 }
 
@@ -214,11 +339,53 @@ pub fn offending_token(grammar: Grammar, value: &str) -> Option<&str> {
         Grammar::EventDescriptors => value
             .split_whitespace()
             .find_map(crate::event_descriptor::malformed_token),
+        Grammar::CodeIdentifier => (!is_code_identifier(value)).then_some(value),
+        // The segment that offends, as a list reports its token: in
+        // `header.S-1` it is `S-1`, and an empty segment (`a..b`) is
+        // reported as the empty name it is.
+        Grammar::CodePath => value
+            .split('.')
+            .find(|segment| !is_code_identifier(segment)),
+    }
+}
+
+/// The grammar `dialect` holds `node`'s unqualified attribute `attr` to, or
+/// `None` when that attribute carries no name.
+fn grammar_of(dialect: Dialect, node: &roxmltree::Node, attr: &str) -> Option<Grammar> {
+    let element = node.tag_name().name();
+    let table = match node.tag_name().namespace() {
+        Some(crate::model::SCXML_NAMESPACE) => {
+            if dialect == Dialect::Forge && element == "data" && attr == "id" {
+                return Some(Grammar::CodeIdentifier);
+            }
+            IDENTIFIER_ATTRIBUTES
+        }
+        Some(crate::forge::model::SCE_NAMESPACE) => SCE_IDENTIFIER_ATTRIBUTES,
+        _ => return None,
+    };
+    table
+        .iter()
+        .find(|(tag, name, _)| *tag == element && *name == attr)
+        .map(|&(_, _, grammar)| grammar)
+}
+
+/// `node`'s tag as the document spells it — `sce:field`, `state` — so a
+/// refusal names the element the author wrote.
+fn spelled_tag(node: &roxmltree::Node) -> String {
+    let local = node.tag_name().name();
+    match node
+        .tag_name()
+        .namespace()
+        .and_then(|namespace| node.lookup_prefix(namespace))
+    {
+        Some(prefix) if !prefix.is_empty() => format!("{prefix}:{local}"),
+        _ => local.to_string(),
     }
 }
 
 /// Refuse a document whose identifier-bearing attributes do not satisfy the
-/// grammar W3C gives them.
+/// grammar W3C gives them — or, for an `sce:` element's name and a forge
+/// document's `<data id>`, the code identifier grammar SCE gives them.
 ///
 /// The first violation in document order, with the attribute value's own
 /// line and column — `SCE_ERROR_CONTRACT.md` §3.1.1 requires the value in
@@ -226,48 +393,64 @@ pub fn offending_token(grammar: Grammar, value: &str) -> Option<&str> {
 /// its element's line.
 ///
 /// `root` must be the post-expansion tree; see the module header.
-pub fn reject_malformed(root: &roxmltree::Node, doc_name: &str) -> Result<(), Located<ForgeError>> {
+pub fn reject_malformed(
+    root: &roxmltree::Node,
+    doc_name: &str,
+    dialect: Dialect,
+) -> Result<(), Located<ForgeError>> {
     for node in root.descendants() {
-        if !node.is_element() || node.tag_name().namespace() != Some(crate::model::SCXML_NAMESPACE)
-        {
+        if !node.is_element() {
             continue;
         }
-        let element = node.tag_name().name();
         for attribute in node.attributes() {
-            // Unprefixed only. `conf:id` and `sce:*` share a local name with
-            // an attribute in this table and are governed by whoever owns
-            // that namespace, not by W3C's clause.
+            // Unprefixed only. `conf:id` and `sce:*` attributes share a
+            // local name with a row here and are governed by whoever owns
+            // that namespace, not by these grammars.
             if attribute.namespace().is_some() {
                 continue;
             }
-            let Some(&(_, _, grammar)) = IDENTIFIER_ATTRIBUTES
-                .iter()
-                .find(|(tag, attr, _)| *tag == element && *attr == attribute.name())
-            else {
+            let Some(grammar) = grammar_of(dialect, &node, attribute.name()) else {
                 continue;
             };
             let Some(token) = offending_token(grammar, attribute.value()) else {
                 continue;
             };
 
-            let pos = node.document().text_pos_at(attribute.range_value().start);
+            let document = node.document();
+            let pos = document.text_pos_at(attribute.range_value().start);
+            let element = spelled_tag(&node);
+            let attr = attribute.name().to_string();
+            // As the document spells it, which is what a consumer finds on
+            // the row: `a&amp;b` there, where the reader decoded `a&b`.
+            let value = document.input_text()[attribute.range_value()].to_string();
+            let token = token.to_string();
+            let expected = production(grammar);
             let error: ValidationError = match grammar {
                 Grammar::EventDescriptors | Grammar::EventName => {
                     ValidationError::EventNameGrammar {
-                        element: element.to_string(),
-                        attr: attribute.name().to_string(),
-                        value: attribute.value().to_string(),
-                        token: token.to_string(),
-                        expected: production(grammar),
+                        element,
+                        attr,
+                        value,
+                        token,
+                        expected,
                     }
                 }
                 Grammar::Id | Grammar::IdRefs => ValidationError::MalformedIdentifier {
-                    element: element.to_string(),
-                    attr: attribute.name().to_string(),
-                    value: attribute.value().to_string(),
-                    token: token.to_string(),
-                    expected: production(grammar),
+                    element,
+                    attr,
+                    value,
+                    token,
+                    expected,
                 },
+                Grammar::CodeIdentifier | Grammar::CodePath => {
+                    ValidationError::MalformedCodeIdentifier {
+                        element,
+                        attr,
+                        value,
+                        token,
+                        expected,
+                    }
+                }
             };
             return Err(Located::new(
                 error.into(),

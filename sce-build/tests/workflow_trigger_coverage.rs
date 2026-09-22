@@ -64,6 +64,13 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // enumerates the documents already known to pass and by construction
     // cannot start on the arrival it was built to refuse.
     "an_identifier_is_checked_against_the_grammar_w3c_gives_it",
+    // The same sweep for the names SCE owns: it finds, in every committed
+    // `*.scxml`, a document carrying each `sce:` identifier attribute and
+    // feeds it a hostile name. A row's carrier can be any document in the
+    // tree, and the one that proves a NEW row reachable does not exist yet,
+    // so a filter written over today's fixture trees names the carriers it
+    // already has and cannot start on the arrival.
+    "a_name_the_generated_code_spells_is_a_code_identifier",
     // Asks `git ls-files` for every tracked file and decodes each one,
     // refusing a line of prose written in a script this tree does not write
     // prose in unless the file argues for it. What it exists for is a

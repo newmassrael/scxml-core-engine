@@ -108,7 +108,9 @@ this repository commits — `git ls-files '*.scxml'`, the enumeration the
 corpus test uses — the narrowing costs nothing here: no document uses a
 Unicode or `:`-bearing identifier. But it is a boundary SCE draws and
 not one W3C drew, which is why it is written here rather than left for
-a rejected author to find.
+a rejected author to find. The names SCE's own elements carry, and a
+forge document's `<data id>`, are held to a narrower grammar still —
+§2.14.
 
 ⚠ The enumeration is named because the number alone rotted once. This
 paragraph read "794 documents" until 2026-09-14, a count taken by
@@ -2114,6 +2116,37 @@ pins on the static path is that evaluation happens and that
 `done.invoke` arrives in order. What it cannot pin is the thing it was
 written to test.
 
+### §2.14 Names the generated code spells
+
+A name an `sce:` element declares or refers to — a codec field, an
+import alias, an enum variant, an algorithm variable, a native action —
+and a forge document's `<data id>` reach generated source verbatim, in
+C, C++, Kotlin, Rust, Go and Python, and forge expressions read them by
+name. Each is held to one grammar, the **code identifier**: an ASCII
+letter or `_`, then ASCII letters, digits or `_`. A reference through a
+record (`header.S`, `telemetry.reset`) is code identifiers joined by
+`.`. A violation is refused at parse, on the attribute's own line, as
+`validation/malformed-code-identifier`.
+
+This is the narrowing §1 draws for W3C's identifiers, drawn for the
+names SCE owns, and it is narrower than an XML Name in the same
+direction for the same reason: `-` and `.` are operators in every target
+language and in the forge expression language, and non-ASCII letters are
+not spelled alike by all six. A statechart's `<data id>` stays §1's
+`xs:ID`; a forge document's is a code identifier because its own
+expressions and generated code use it as one. Which attributes are
+covered is `SCE_IDENTIFIER_ATTRIBUTES` in
+`sce-build/src/scxml_identifier.rs`, and a name of another document — a
+pool's or a framer's `ref` — is that document's name and is not among
+them.
+
+Measured 2026-09-22, before the rule existed, the forge pipeline checked
+none of these: a transform whose `<data id>` was two Hangul letters
+passed the parse and was refused by the expression lexer with no line,
+and one whose `<data id>` was `raw-value` passed `check` in all six
+languages and generated the C++ parameter `int32_t raw - value`. Over
+every tracked `.scxml` document the rule refuses none.
+
 ### Cross-kind typed binding (NL→IR Mapping Roadmap Item 2)
 
 When a forge expression reads an imported kind's member via
@@ -2742,6 +2775,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/duplicate-id` | Validation |
 | `validation/malformed-identifier` | Validation |
 | `validation/event-name-grammar` | Validation |
+| `validation/malformed-code-identifier` | Validation |
 | `validation/duplicate-context-object` | Validation |
 | `validation/reserved-context-id` | Validation |
 | `validation/empty-collection` | Validation |

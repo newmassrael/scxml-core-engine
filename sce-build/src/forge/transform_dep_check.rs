@@ -76,12 +76,14 @@ fn mentions(expr: &str, id: &str) -> bool {
 /// `expr`, or `None` when it does not.
 ///
 /// ⚠ A near miss — `id` found inside a longer word — resumes the search
-/// one CHARACTER on, not one byte. An id is a W3C NCName, which admits a
-/// letter several UTF-8 bytes wide, and resuming one byte into such a first
-/// letter sliced the expression inside it and panicked. Measured
-/// 2026-09-22: a transform whose output was named by two Hangul letters,
-/// beside an input named by the same two letters and a `2`, stopped
-/// `sce-codegen check` with exit 101.
+/// one CHARACTER on, not one byte. Resuming one byte into a first letter
+/// several UTF-8 bytes wide sliced the expression inside it and panicked.
+/// Measured 2026-09-22: a transform whose output was named by two Hangul
+/// letters, beside an input named by the same two letters and a `2`,
+/// stopped `sce-codegen check` with exit 101. The parser now refuses such
+/// a name first (`docs/SCE_ACCEPTED_SUBSET.md` §2.14), but a model is not
+/// only built by the parser, and this search answers for any `&str` rather
+/// than for the names one caller happens to admit.
 fn first_mention(expr: &str, id: &str) -> Option<Range<usize>> {
     let first = id.chars().next()?;
     let is_word = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
@@ -207,31 +209,5 @@ mod tests {
         let both = format!("{WIDER} + {WIDE}");
         assert_eq!(sibling_reads(&both, &outs, "other"), [WIDE, WIDER]);
         assert_eq!(first_mention(&both, WIDE), Some(10..16));
-    }
-
-    /// The document that stopped `sce-codegen check` with a panic passes
-    /// the check: an output named inside another field's name is no read.
-    #[test]
-    fn a_transform_with_multibyte_ids_is_checked() {
-        let source = format!(
-            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
-       xmlns:sce="http://sce.dev/ext"
-       sce:kind="transform"
-       name="non_ascii_output"
-       version="1.0">
-  <datamodel>
-    <data id="{WIDER}" sce:type="int32" sce:direction="in"/>
-    <data id="{WIDE}" sce:type="int32" sce:direction="out" expr="{WIDER} + 1"/>
-  </datamodel>
-</scxml>"#
-        );
-        let label = crate::DocumentLabel {
-            identifier: "non_ascii_output",
-            diagnostic_label: "non_ascii_output.scxml",
-        };
-        let parsed = crate::forge::parser::parse_forge_with_imports(&source, label)
-            .expect("the document parses")
-            .expect("a forge document");
-        assert!(check(&parsed, "non_ascii_output.scxml").is_ok());
     }
 }

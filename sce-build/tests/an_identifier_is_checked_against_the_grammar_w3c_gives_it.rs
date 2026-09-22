@@ -172,6 +172,11 @@ fn every_row_of_the_table_is_reachable_from_a_document() {
         let expected = match grammar {
             Grammar::Id | Grammar::IdRefs => "\"validation/malformed-identifier\"",
             Grammar::EventDescriptors | Grammar::EventName => "\"validation/event-name-grammar\"",
+            // SCE's grammars have their own table and their own file,
+            // `a_name_the_generated_code_spells_is_a_code_identifier.rs`.
+            Grammar::CodeIdentifier | Grammar::CodePath => {
+                panic!("{element}@{attr}: W3C's table carries SCE's grammar {grammar:?}")
+            }
         };
         match refusal_code(&document, &label) {
             Some(code) if code == expected => {}
@@ -458,9 +463,14 @@ fn no_document_in_this_tree_is_refused_by_the_grammar() {
         };
         examined += 1;
         let relative = path.strip_prefix(&root).unwrap_or(path);
+        // Each document under the dialect its own pipeline reads it in, so
+        // a forge document's names are held to the code identifier rule
+        // its parser enforces.
+        let root_element = document.root_element();
         if let Err(error) = sce_build::scxml_identifier::reject_malformed(
-            &document.root_element(),
+            &root_element,
             &relative.display().to_string(),
+            sce_build::scxml_identifier::Dialect::of(&root_element),
         ) {
             refused.push(format!("  {}: {}", relative.display(), error.error));
         }

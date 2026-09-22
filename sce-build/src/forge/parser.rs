@@ -288,6 +288,17 @@ pub fn parse_forge_with_imports_and_plugin(
     // two lists, and only one of them has been measured.
     reject_unknown_sce_attrs(content, diag)?;
 
+    // The names this document declares and refers to, against the grammar
+    // the generated code needs of them — the sweep the statechart parser
+    // runs, under the forge dialect. Before any kind-specific parse, for
+    // the reason the statechart parser gives: the tree is still in hand,
+    // so the refusal names the attribute's own row.
+    crate::scxml_identifier::reject_malformed(
+        &root,
+        diag,
+        crate::scxml_identifier::Dialect::Forge,
+    )?;
+
     let imports = parse_imports(&root, diag)?;
     let mut externs = parse_externs(&root, diag, plugin)?;
     let document = parse_forge_from_node(&root, label, kind)?;
@@ -1828,55 +1839,20 @@ fn parse_flag_binds(
         // `validate_cross_codec_flag_bind` raises it beside its sibling
         // flag-bind codes. This site used to refuse it with the generic
         // attribute code while the typed variant was raised nowhere.
-        // Resolve source shape via the dotted-form rule.
-        let source_kind = if let Some((carrier, flag)) = source.split_once('.') {
-            let carrier = carrier.trim();
-            let flag = flag.trim();
-            if carrier.is_empty() || flag.is_empty() {
-                return Err(located(
-                    &child,
-                    doc_name,
-                    ValidationError::AttributeRuleViolated {
-                        element: format!("<sce:flag-bind input=\"{}\">", input),
-                        attr: "source".into(),
-                        value: source.clone(),
-                        rule: "dotted form requires both sides non-empty: \
-                                   <carrier>.<flag>"
-                            .into(),
-                    },
-                ));
-            }
-            FlagBindSource::Carrier {
+        // Resolve source shape via the dotted-form rule. Both forms' grammar
+        // — a code identifier, or two joined by `.` — was enforced on this
+        // attribute by `scxml_identifier::reject_malformed` before any
+        // kind was parsed, so neither side can be empty or malformed here.
+        let source_kind = match source.split_once('.') {
+            Some((carrier, flag)) => FlagBindSource::Carrier {
                 carrier: carrier.to_string(),
                 flag: flag.to_string(),
-            }
-        } else {
+            },
             // Bare identifier — references this codec's own flag-input
             // (chain-forwarder pattern). Existence is verified at
             // cross-doc validator stage when the codec's own flag-inputs
             // list is available.
-            let is_ident = source.chars().enumerate().all(|(i, c)| {
-                if i == 0 {
-                    c.is_ascii_alphabetic() || c == '_'
-                } else {
-                    c.is_ascii_alphanumeric() || c == '_'
-                }
-            });
-            if !is_ident {
-                return Err(located(
-                    &child,
-                    doc_name,
-                    ValidationError::AttributeRuleViolated {
-                        element: format!("<sce:flag-bind input=\"{}\">", input),
-                        attr: "source".into(),
-                        value: source.clone(),
-                        rule: "bare-name form must be a valid identifier \
-                                   (alphanumeric + underscore, no leading digit)"
-                            .into(),
-                    },
-                ));
-            }
-            FlagBindSource::Input { name: source }
+            None => FlagBindSource::Input { name: source },
         };
         binds.push(FlagBind {
             input,
@@ -3172,16 +3148,7 @@ fn parse_present_if_predicate(
         Some(rest) => (true, rest.trim_start()),
         None => (false, head_trim),
     };
-    let is_ident = |s: &str| {
-        !s.is_empty()
-            && s.chars().enumerate().all(|(i, c)| {
-                if i == 0 {
-                    c.is_ascii_alphabetic() || c == '_'
-                } else {
-                    c.is_ascii_alphanumeric() || c == '_'
-                }
-            })
-    };
+    let is_ident = crate::scxml_identifier::is_code_identifier;
     // Flag-input bare-name form (Input scope) — when the clause has
     // no dot, treat the whole body as the leaf-declared flag-input name.
     // Cross-codec carrier/bit-position assertions live on the parent's
@@ -5387,27 +5354,14 @@ fn parse_procedure(
     Ok(model)
 }
 
-/// Validate that `name` matches `[A-Za-z_][A-Za-z0-9_]*` — the common
-/// C-family identifier grammar every target language (Rust / C++ / Python /
-/// Kotlin / Go) accepts as an unquoted identifier. Helper names flow
-/// verbatim into `format!` strings that emit generated source code,
-/// per-language error messages, and rename-map keys, so any character
-/// outside this grammar (quote, backslash, space, non-ASCII, leading digit,
-/// etc.) would break the generator and has no legitimate use case.
-fn is_ident(name: &str) -> bool {
-    let mut chars = name.chars();
-    let Some(first) = chars.next() else {
-        return false;
-    };
-    if !(first.is_ascii_alphabetic() || first == '_') {
-        return false;
-    }
-    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
-}
-
 /// Parse `<sce:helper name="..." args="bytes,uint32" returns="bytes"/>`.
 /// Zero-arg helpers use `args=""`. Both `args` and `returns` accept the full
 /// `SceType::from_attr` vocabulary.
+///
+/// The name flows verbatim into generated source, per-language error
+/// messages and rename-map keys, so it must be a code identifier — which
+/// `scxml_identifier::reject_malformed` enforced on this attribute, empty
+/// value included, before any kind was parsed.
 fn parse_procedure_helper(
     node: &roxmltree::Node,
     doc_name: &str,
@@ -5425,29 +5379,6 @@ fn parse_procedure_helper(
             )
         })?
         .to_string();
-    if helper_name.is_empty() {
-        return Err(located(
-            node,
-            doc_name,
-            ValidationError::EmptyValue {
-                element: "<sce:helper>".into(),
-                attr: "name".into(),
-            },
-        ));
-    }
-    if !is_ident(&helper_name) {
-        return Err(located(
-            node,
-            doc_name,
-            ValidationError::AttributeRuleViolated {
-                element: "<sce:helper>".into(),
-                attr: "name".into(),
-                value: helper_name,
-                rule: "[A-Za-z_][A-Za-z0-9_]* (valid identifier for 5-language generated source)"
-                    .into(),
-            },
-        ));
-    }
     let args_raw = node.attribute("args").unwrap_or("");
     let mut args = Vec::new();
     for part in args_raw

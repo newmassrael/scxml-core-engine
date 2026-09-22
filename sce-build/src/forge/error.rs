@@ -665,6 +665,29 @@ pub enum ValidationError {
         expected: &'static str,
     },
 
+    /// A name the generated code spells verbatim — an `sce:` element's
+    /// field, alias, variant or variable, a forge document's `<data id>` —
+    /// that is not a code identifier.
+    ///
+    /// Separate from [`ValidationError::MalformedIdentifier`] because the
+    /// rule is SCE's, not W3C's, and narrower: an XML Name admits `-` and
+    /// `.`, both operators in every target language and in the forge
+    /// expression language. Raised by
+    /// [`crate::scxml_identifier::reject_malformed`]; that module's header
+    /// states which attributes are covered.
+    #[error(
+        "<{element} {attr}=\"{value}\">: '{token}' is not a valid {expected} \
+         — a name the generated code spells starts with an ASCII letter or \
+         '_' and continues with ASCII letters, digits or '_'"
+    )]
+    MalformedCodeIdentifier {
+        element: String,
+        attr: String,
+        value: String,
+        token: String,
+        expected: &'static str,
+    },
+
     /// An `event` attribute whose descriptor is not a legal token sequence.
     ///
     /// Separate from [`ValidationError::MalformedIdentifier`] because W3C

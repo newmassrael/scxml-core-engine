@@ -1735,7 +1735,11 @@ impl SCXMLParser {
         // of over this function's call graph. It runs after
         // `reject_unexpanded_directives` because a pre-expansion
         // placeholder (`id="s_{$id}"`) is not an identifier yet.
-        crate::scxml_identifier::reject_malformed(&root, diag_label)?;
+        crate::scxml_identifier::reject_malformed(
+            &root,
+            diag_label,
+            crate::scxml_identifier::Dialect::Statechart,
+        )?;
 
         // §scxml-3.6: Get initial attribute
         let mut initial = root.attribute("initial").unwrap_or("").to_string();
@@ -5528,10 +5532,10 @@ fn classify_on_sample_callback_path(raw: &str) -> Option<crate::forge::error::Ca
             return Some(CallbackPathReason::MalformedPath);
         }
         // `crate` / `self` / `super` are Rust path keywords, not C
-        // identifiers; `is_c_identifier` admits the plain-identifier
-        // subset both languages share and nothing else.
+        // identifiers; a code identifier is the plain-identifier subset
+        // both languages share and nothing else.
         let accepted = match prefix {
-            "c" => is_c_identifier(segment),
+            "c" => crate::scxml_identifier::is_code_identifier(segment),
             _ => is_rust_path_segment(segment),
         };
         if !accepted {
@@ -5543,42 +5547,15 @@ fn classify_on_sample_callback_path(raw: &str) -> Option<crate::forge::error::Ca
     None
 }
 
-/// True iff `seg` is a C identifier: an ASCII letter or `_` followed by
-/// ASCII alphanumerics or `_`.
-///
-/// Deliberately narrower than C's own grammar, which admits `$` on some
-/// implementations and universal character names on all of them. The
-/// value here is emitted verbatim into generated C, so the subset is
-/// the portable intersection rather than what any one compiler accepts.
-fn is_c_identifier(seg: &str) -> bool {
-    let mut chars = seg.chars();
-    match chars.next() {
-        Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
-        _ => return false,
-    }
-    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
-}
-
 /// True iff `seg` is a valid Rust path segment per the accepted
 /// subset: either one of the path keywords (`crate` / `self` /
-/// `super`) or an NCName-equivalent identifier (ASCII letter or `_`,
-/// then letters / digits / `_`). The Rust language admits `r#`-raw
+/// `super`) or a code identifier. The Rust language admits `r#`-raw
 /// identifiers and Unicode identifiers; the validator keeps the subset narrow
 /// because `<sce:on-sample callback>` author input rarely needs them
 /// and the wider grammar amplifies the validator's surface for no
 /// observed authoring benefit.
 fn is_rust_path_segment(seg: &str) -> bool {
-    if matches!(seg, "crate" | "self" | "super") {
-        return true;
-    }
-    let mut chars = seg.chars();
-    let Some(first) = chars.next() else {
-        return false;
-    };
-    if !(first.is_ascii_alphabetic() || first == '_') {
-        return false;
-    }
-    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+    matches!(seg, "crate" | "self" | "super") || crate::scxml_identifier::is_code_identifier(seg)
 }
 
 /// SCE Protocol-Synthesis RFC §synth-5-E `<sce:on-sample>` cross-ref

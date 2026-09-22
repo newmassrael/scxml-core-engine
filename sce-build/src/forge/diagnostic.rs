@@ -620,6 +620,12 @@ pub enum DiagnosticCode {
     ValidationMalformedIdentifier,
     #[serde(rename = "validation/event-name-grammar")]
     ValidationEventNameGrammar,
+    // ── A name the generated code spells verbatim — an `sce:`
+    //    element's, or a forge `<data id>` — held to SCE's code
+    //    identifier grammar, which is narrower than an XML Name and not
+    //    W3C's to state. ──────────────────────────────────────────
+    #[serde(rename = "validation/malformed-code-identifier")]
+    ValidationMalformedCodeIdentifier,
     #[serde(rename = "validation/duplicate-context-object")]
     ValidationDuplicateContextObject,
     #[serde(rename = "validation/reserved-context-id")]
@@ -3035,6 +3041,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationDuplicateId,
         ValidationMalformedIdentifier,
         ValidationEventNameGrammar,
+        ValidationMalformedCodeIdentifier,
         ValidationDuplicateContextObject,
         ValidationReservedContextId,
         ValidationEmptyCollection,
@@ -3709,6 +3716,9 @@ impl DiagnosticCode {
             //    that carries a name. ────────────────────────────────
             ValidationMalformedIdentifier => Some("W3C SCXML §3.3.1"),
             ValidationEventNameGrammar => Some("W3C SCXML §3.12.1"),
+            // The code identifier grammar is SCE's narrowing, registered
+            // where the accepted subset registers the names SCE owns.
+            ValidationMalformedCodeIdentifier => Some("SCE Accepted Subset §2.14"),
 
             // ── Algorithm kind (SCE Protocol-Synthesis RFC §synth-5-A) ──────────
             AlgorithmLocalShadowsParam
@@ -4337,6 +4347,7 @@ impl DiagnosticCode {
             ValidationDuplicateId => "validation/duplicate-id",
             ValidationMalformedIdentifier => "validation/malformed-identifier",
             ValidationEventNameGrammar => "validation/event-name-grammar",
+            ValidationMalformedCodeIdentifier => "validation/malformed-code-identifier",
             ValidationDuplicateContextObject => "validation/duplicate-context-object",
             ValidationReservedContextId => "validation/reserved-context-id",
             ValidationEmptyCollection => "validation/empty-collection",
@@ -5558,6 +5569,23 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             stage: Stage::Validation,
             expected: Some(vec![(*expected).to_string()]),
             actual: Some(value.clone()),
+            fix: None,
+            key_fragments: vec![element.clone(), attr.clone(), token.clone()],
+        },
+        // The grammar rides `expected`, as for the two W3C codes above; a
+        // name has no closed set of replacements, so there is no fix. An
+        // empty name is refused too, and has no token to report.
+        ValidationError::MalformedCodeIdentifier {
+            element,
+            attr,
+            value,
+            token,
+            expected,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationMalformedCodeIdentifier,
+            stage: Stage::Validation,
+            expected: Some(vec![(*expected).to_string()]),
+            actual: (!value.is_empty()).then(|| value.clone()),
             fix: None,
             key_fragments: vec![element.clone(), attr.clone(), token.clone()],
         },
@@ -9691,6 +9719,20 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:2ca78e103b7c0bd0","code":"validation/event-name-grammar","stage":"validation","spec":"W3C SCXML §3.12.1","message":"<transition event=\"go*/Y\">: 'go*/Y' is not a valid event descriptor — a token starts with a letter, digit or '_' and continues with letters, digits, '_' or '-', with '.' separating tokens","expected":["event descriptor"],"actual":"go*/Y"}"#,
+            ),
+            (
+                // An XML Name, and so a legal W3C `id` — but the generated
+                // code would spell it as the subtraction `raw - value`.
+                "forge/malformed-code-identifier",
+                ValidationError::MalformedCodeIdentifier {
+                    element: "sce:field".into(),
+                    attr: "id".into(),
+                    value: "raw-value".into(),
+                    token: "raw-value".into(),
+                    expected: "code identifier",
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:400657f6658c5060","code":"validation/malformed-code-identifier","stage":"validation","spec":"SCE Accepted Subset §2.14","message":"<sce:field id=\"raw-value\">: 'raw-value' is not a valid code identifier — a name the generated code spells starts with an ASCII letter or '_' and continues with ASCII letters, digits or '_'","expected":["code identifier"],"actual":"raw-value"}"#,
             ),
             (
                 "forge/invalid-reference",
@@ -14411,14 +14453,15 @@ mod tests {
             // this node actually came from, and SCE never reads spec
             // documents (RFC §4.3), so it cannot offer a candidate.
             | ValidationProvenanceMalformed
-            // The two identifier-grammar codes: `expected` is the
-            // production W3C gives the position (`xs:ID`, `event
-            // descriptor`). No candidate set exists — a name is the
+            // The identifier-grammar codes: `expected` is the production
+            // the position is held to (`xs:ID`, `event descriptor`,
+            // `code identifier`). No candidate set exists — a name is the
             // author's word for the thing, and inventing one would put
             // SCE's spelling into their document — so `fix` is absent
             // and the grammar rides `expected` as metadata.
             | ValidationMalformedIdentifier
             | ValidationEventNameGrammar
+            | ValidationMalformedCodeIdentifier
             // The rule a legal value satisfies — "positive integer" —
             // describes the position and names no replacement, which is
             // exactly why it left `invalid-attribute`'s candidate list.
@@ -15319,6 +15362,7 @@ mod tests {
                 | ValidationDefaultCoversNotAValueSpace
                 | ValidationUnsupportedKind | ValidationDuplicateId
                 | ValidationMalformedIdentifier | ValidationEventNameGrammar
+                | ValidationMalformedCodeIdentifier
                 | ValidationDuplicateContextObject | ValidationReservedContextId
                 | ValidationEmptyCollection
                 | ValidationCountMismatch | ValidationIncompatibleAttributes
@@ -15644,9 +15688,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            375,
+            376,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 375 distinct variants to match the DiagnosticCode \
+             expected 376 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -16252,6 +16296,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             // neighbour does.
             | ValidationMalformedIdentifier
             | ValidationEventNameGrammar
+            | ValidationMalformedCodeIdentifier
             | ValidationDuplicateContextObject
             | ValidationReservedContextId
             | ValidationEmptyCollection
