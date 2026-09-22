@@ -125,6 +125,35 @@ BINDING = {
     },
 }
 
+# A machine that answers only once it has heard BOTH of two inputs. Each event
+# only records what it heard; the answer waits for the pair.
+BOTH = """<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" datamodel="ecmascript" initial="waiting" sce:kind="statechart">
+  <datamodel>
+    <data id="train" expr="false"/>
+    <data id="clear" expr="false"/>
+  </datamodel>
+  <state id="waiting">
+    <transition event="train.approaching">
+      <assign location="train" expr="true"/>
+      <raise event="heard"/>
+    </transition>
+    <transition event="obstacle.none">
+      <assign location="clear" expr="true"/>
+      <raise event="heard"/>
+    </transition>
+    <transition event="heard" cond="train &amp;&amp; clear" target="flashing"/>
+  </state>
+  <state id="flashing">
+    <onentry>
+      <send event="signal.flashing" type="x-sce-host"/>
+    </onentry>
+  </state>
+</scxml>
+"""
+
 EXAMPLES = {
     "version": 1,
     "origin": "written for this test",
@@ -225,6 +254,57 @@ class AStatechartIsDrivenNotCalled(unittest.TestCase):
         result = self.run_with()
         self.assertTrue(result.ran, result.refusal)
         self.assertEqual((2, 0, 0),
+                         (result.passed, result.failed, result.unjudged),
+                         [(r.name, r.refusal, r.failures) for r in result.results])
+
+    def test_a_record_that_writes_codes_drives_the_same_events(self):
+        """⚠ The spelling the record keeps is not the binding's business.
+
+        A platform's records write the CODE (`1`) where the binding names the
+        symbol (`APPROACHING`). `becomes` compared the two spellings, so no
+        event was ever sent and every case of such a document came back
+        "could not be judged" -- first met on a component whose every input is
+        an enumeration, which is the ordinary case. The model says which code
+        a symbol is, as it already does for `equals`.
+        """
+        examples = {**EXAMPLES, "cases": [
+            {**case, "given": {"plant/in/train-approach":
+                               {"APPROACHING": "1", "CLEAR": "0"}[
+                                   case["given"]["plant/in/train-approach"]]}}
+            for case in EXAMPLES["cases"]]}
+        result = self.run_with(examples)
+        self.assertTrue(result.ran, result.refusal)
+        self.assertEqual((2, 0, 0),
+                         (result.passed, result.failed, result.unjudged),
+                         [(r.name, r.refusal, r.failures) for r in result.results])
+
+    def test_a_case_that_drove_two_addresses_sends_both_events(self):
+        """⚠ One event per driven address, in the order the record drove them.
+
+        The driver stopped at the first rule that sent, so a case that moved
+        two inputs told the machine about one. This document answers only once
+        BOTH have been heard, which is the shape of any rule written over two
+        signals moving together -- a pair of switches, a pair of sensors.
+        """
+        (self.tmp / "signal.scxml").write_text(BOTH, encoding="utf-8")
+        binding = {**BINDING, "inputs": {
+            "approaching": {"address": "plant/in/train-approach",
+                            "becomes": "APPROACHING",
+                            "event": "train.approaching"},
+            "clearOfObstacles": {"address": "plant/in/obstacle",
+                                 "becomes": "NONE",
+                                 "event": "obstacle.none"},
+        }}
+        examples = {**EXAMPLES, "cases": [
+            {"name": "a train, and nothing on the crossing",
+             "given": {"plant/in/train-approach": "APPROACHING",
+                       "plant/in/obstacle": "NONE"},
+             "drove": ["plant/in/obstacle", "plant/in/train-approach"],
+             "expect": {"plant/out/road-signal.value": "FLASHING"}},
+        ]}
+        result = self.run_with(examples, binding)
+        self.assertTrue(result.ran, result.refusal)
+        self.assertEqual((1, 0, 0),
                          (result.passed, result.failed, result.unjudged),
                          [(r.name, r.refusal, r.failures) for r in result.results])
 

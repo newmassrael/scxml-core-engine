@@ -739,6 +739,33 @@ def output_values(name: str, rule: dict, computed) -> dict:
     return out
 
 
+def written_positions(outputs: dict) -> tuple[set, dict]:
+    """Every position the binding writes, and which output writes it.
+
+    ⚠ Counted the way `output_values` WRITES, fields `also` and `when` carry
+    included. Both run paths used to count only `address.field`, so a binding
+    that wrote an event's ID beside its status was reported as never writing
+    the ID -- "the examples read N address(es) the binding never writes" --
+    while the very same run produced and judged it. A report that contradicts
+    the run beside it is read as the run being wrong. And the count lived in
+    two copies, so the two paths could not even disagree consistently.
+    """
+    bound: set = set()
+    writes: dict = {}
+    for name, rule in outputs.items():
+        if rule.get("unresolved") or rule.get("internal") or not rule.get("address"):
+            continue
+        address = rule["address"]
+        keys = [address + (f".{rule['field']}" if rule.get("field") else "")]
+        for fields in (rule.get("when") or {}).values():
+            keys += [f"{address}.{fname}" for fname in fields]
+        keys += [f"{address}.{fname}" for fname in (rule.get("also") or {})]
+        for key in keys:
+            bound.add(key)
+            writes.setdefault(key, name)
+    return bound, writes
+
+
 def _field_at(model, key: str):
     """The model's field for an `address` or `address.field` key.
 
@@ -884,7 +911,10 @@ class StatechartRun:
     verify a machine that forgets, and that is a different document.
     """
 
-    def __init__(self, module, build: Build):
+    def __init__(self, module, build: Build, model=None):
+        # The interface model, so `becomes` is compared as the position means
+        # it rather than as the record happens to spell it.
+        self.model = model
         self.recorder = SendRecorder()
         self.engine = module.create_engine()
         for processor in build.declared:
@@ -909,7 +939,12 @@ class StatechartRun:
         if address is None or address not in (case.drove or ()):
             return False
         becomes = rule.get("becomes")
-        if becomes is not None and case.given.get(address) != becomes:
+        # ⚠ Through the value space, as `equals` already is on the computation
+        # side. A record writes `1` where the binding names `LOCK`; comparing
+        # the spellings sent no event for any case of a document whose inputs
+        # are enumerations, and every case came back "could not be judged".
+        field_ = _field_at(self.model, address) if self.model is not None else None
+        if becomes is not None and not _same(case.given.get(address), becomes, field_):
             return False
         self.engine.send_event(self.event(rule["event"]))
         return True
@@ -1024,14 +1059,7 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
             "machine. Every case would be judged against a document sitting "
             "in its initial configuration, which is a verdict about nothing."))
 
-    bound, writes = set(), {}
-    for name, rule in outputs.items():
-        if rule.get("unresolved") or rule.get("internal"):
-            continue
-        if rule.get("address"):
-            key = rule["address"] + (f".{rule['field']}" if rule.get("field") else "")
-            bound.add(key)
-            writes[key] = name
+    bound, writes = written_positions(outputs)
 
     verification = Verification()
     expected = {a for case in examples.cases for a in case.expect}
@@ -1041,7 +1069,7 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
     verification.assumed_preconditions = assumed_preconditions_of(pack.conventions)
 
     try:
-        run = StatechartRun(module, build)
+        run = StatechartRun(module, build, pack.model)
     except VerifyError as exc:
         return Verification(refusal=str(exc))
 
@@ -1057,7 +1085,19 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
                                  for a in (case.drove or ())))
         restated, previous = bool(signature) and signature == previous, signature
         try:
-            if not any(run.drive(rule, case) for rule in driving.values()):
+            # ⚠ EVERY driven address, in the order the record drove them. This
+            # was `any(run.drive(...) for rule in ...)`, which stops at the
+            # first rule that sends -- so a case that drove two addresses told
+            # the machine about one, in the order the BINDING happened to list
+            # them. Every case this suite had drove a single address, so it
+            # never showed; the first real document whose rule needs two
+            # inputs to move together failed each such case with the second
+            # event never sent.
+            sent = [run.drive(rule, case)
+                    for address in dict.fromkeys(case.drove or ())
+                    for rule in driving.values()
+                    if rule.get("address") == address]
+            if not any(sent):
                 # ⚠ A case that drove nothing this document listens for is
                 # NOT a pass. Reading the machine afterwards would report
                 # whatever the previous case left, attributed to this one.
@@ -1177,15 +1217,7 @@ def verify(pack: Pack, binding_path: pathlib.Path,
 
     inputs = dict(binding.get("inputs") or {})
     outputs = dict(binding.get("outputs") or {})
-    bound = set()
-    writes = {}
-    for name, rule in outputs.items():
-        if rule.get("unresolved"):
-            continue
-        if not rule.get("internal") and rule.get("address"):
-            key = rule["address"] + (f".{rule['field']}" if rule.get("field") else "")
-            bound.add(key)
-            writes[key] = name
+    bound, writes = written_positions(outputs)
 
     verification = Verification(backend=backend)
     expected = {a for case in examples.cases for a in case.expect}
