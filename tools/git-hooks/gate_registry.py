@@ -2396,12 +2396,28 @@ def self_test(repo_root: Path) -> int:
                         f"'{path}', which no trigger of its own selects — "
                         f"the gate reads a path that never starts it")
                     break
-    # Lower bound: a sweep extractor that stops matching would leave this
-    # case reading nothing and still passing.
-    if sweeps_seen < 1:
+    # A sweep extractor that stopped matching would leave the loop above
+    # reading nothing and still passing, so the extractor answers for
+    # itself here rather than being taken on the tree's word.
+    #
+    # ⚠ THIS USED TO REQUIRE A LIVE GATE TO CARRY ONE (`sweeps_seen >= 1`),
+    # and that is a lower bound a repair can break: on 2026-09-22 the last
+    # such loop left `example-codegen` for `sce-build/tests/cli_lint_sweep.rs`,
+    # where the same sweep is derived and runs on every push rather than in
+    # one workflow — and this case failed, reporting a broken extractor for
+    # a tree that had simply stopped containing the shape. The four gates
+    # that do enumerate the tree (`tree-hygiene`, `mutation-cases`,
+    # `mutation-rounds`, `ledger-citations`) reach it through forms this
+    # extractor deliberately does not read, and they are registered
+    # unfilterable instead, which is the other half of the same contract.
+    probe = "git ls-" + "files 'examples/*.scxml' 'integration_resources/*/*.scxml'"
+    extracted = swept_globs(probe)
+    cases += 1
+    if extracted != ["examples/*.scxml", "integration_resources/*/*.scxml"]:
         failures.append(
-            "trigger: no gate script was seen sweeping tracked files — "
-            "the extractor is broken, not the gates")
+            "trigger: the sweep extractor no longer reads a quoted-glob "
+            f"`ls-files` call — it answered {extracted} for a call carrying "
+            "two globs, so the loop above says nothing about any gate")
 
     # The push budget, held as a number rather than as an intention.
     #

@@ -24,6 +24,7 @@
 
 use std::process::{Command, Output};
 
+pub mod corpus;
 pub mod gate_selectors;
 pub mod hostile_document;
 pub mod ledger;

@@ -188,6 +188,7 @@ cargo test -p sce-build --features cli,ffi \
     --test cli_expression_refusal \
     --test cli_feature_gating \
     --test cli_guard_emission \
+    --test cli_lint_sweep \
     --test mutation_rounds_selection \
     --test mutation_corpus_fits_its_lane \
     --test mutation_round_survives_the_next_push \

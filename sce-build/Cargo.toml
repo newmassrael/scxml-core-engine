@@ -591,6 +591,11 @@ path = "tests/cli_generate_w3c_output_dir.rs"
 required-features = ["cli"]
 
 [[test]]
+name = "cli_lint_sweep"
+path = "tests/cli_lint_sweep.rs"
+required-features = ["cli"]
+
+[[test]]
 name = "cli_guard_emission"
 path = "tests/cli_guard_emission.rs"
 required-features = ["cli"]

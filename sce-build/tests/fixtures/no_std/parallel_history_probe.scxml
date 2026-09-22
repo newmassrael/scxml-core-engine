@@ -23,11 +23,21 @@
   All send/data is static (no expr/namelist/targetexpr) since dynamic forms
   require the script engine, which no_std rejects.
 -->
-<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="top" name="parallel_history_probe">
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="top" name="parallel_history_probe">
   <parallel id="top">
     <state id="ra" initial="a1">
       <history id="ha_deep" type="deep"><transition target="a1"/></history>
-      <state id="a1">
+      <!-- ⚠ Every `sce:unhandled` below declares a gap this document is
+           MADE of. The transitions here exist to reach codegen paths
+           (a history restore, a cancel, a same-source pair, an external
+           send) and not to cover a protocol, so a sibling handling an
+           event another ignores is the fixture working as intended.
+           Declared per child, which is the grain the claim is true at
+           (docs/SCE_ACCEPTED_SUBSET.md §non-exhaustive-event-handling).
+           Until 2026-09-22 the gaps were undeclared and this document
+           was one of two authored statecharts the lint sweep refused. -->
+      <state id="a1" sce:unhandled="back">
         <onentry>
           <raise event="e1"/>
           <send event="ev_internal" target="#_internal"/>
@@ -40,19 +50,25 @@
         <transition event="ev_internal" target="a2"/>
         <transition event="error.communication" target="a3"/>
       </state>
-      <state id="a2">
+      <state id="a2" sce:unhandled="e2 error.communication ev_internal">
         <onentry><cancel sendid="d_delayed"/></onentry>
         <transition event="e1" target="a1"/><transition event="back" target="ha_deep"/>
       </state>
-      <state id="a3"><transition event="e1" target="a1"/></state>
+      <state id="a3" sce:unhandled="back e2 error.communication ev_internal">
+        <transition event="e1" target="a1"/>
+      </state>
     </state>
     <state id="rb" initial="b1">
       <history id="hb_shallow" type="shallow"><transition target="b1"/></history>
-      <state id="b1"><transition event="e1" target="b2"/></state>
-      <state id="b2"><transition event="e2" target="b1"/><transition event="back" target="hb_shallow"/></state>
+      <state id="b1" sce:unhandled="back e2"><transition event="e1" target="b2"/></state>
+      <state id="b2" sce:unhandled="e1"><transition event="e2" target="b1"/><transition event="back" target="hb_shallow"/></state>
     </state>
     <state id="rc">
       <parallel id="pc">
+        <!-- No `sce:unhandled` here: `pc` is a `<parallel>`, whose
+             regions run concurrently, so an event one region reads and
+             another ignores is not a gap. The declaration is refused as
+             stale on this pair, which is how the rule says so. -->
         <state id="c1"><transition event="e1" target="c1"/><transition event="ev_external" target="c1"/></state>
         <state id="c2"><transition event="e2" target="c2"/><transition event="ev_delayed" target="c2"/></state>
       </parallel>

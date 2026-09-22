@@ -168,6 +168,14 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // and a document carrying the shape it exists for is exactly what a
     // `paths:` filter over today's trees would stop it seeing.
     "cli_guard_emission",
+    // Lints every authored machine, deriving that population from the
+    // tree: tracked statecharts, less the W3C corpus, less the ones
+    // another document includes. A document added anywhere changes what
+    // it reads, and an included fragment added anywhere changes what it
+    // leaves out — neither is a path a filter written today could name.
+    // It is also where `scripts/gates/example-codegen.sh` kept its lint
+    // sweep until 2026-09-22, and that gate has no push-time trigger.
+    "cli_lint_sweep",
     // Runs the CLI over every committed *.scxml and performs the repair
     // each rejection proposes, so a document added anywhere changes both
     // what it reads and what it replays.
