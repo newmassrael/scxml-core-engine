@@ -144,6 +144,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # found in seconds.
 cargo test -p sce-build --features cli,ffi \
     --test a_standard_named_in_code_is_one_sce_implements \
+    --test a_declared_attribute_must_reach_the_ir \
     --test an_identifier_is_checked_against_the_grammar_w3c_gives_it \
     --test a_name_the_generated_code_spells_is_a_code_identifier \
     --test non_latin_prose_declares_why_it_is_here \

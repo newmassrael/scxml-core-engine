@@ -226,32 +226,55 @@ fn strip_prefix(s: &str) -> String {
 /// reports "no fixture writes it" about a directory it was never
 /// pointed at, and the report reads exactly like a corpus hole.
 ///
-/// `target/` is excluded because it is build output, not a document
-/// anybody wrote.
+/// ⚠⚠ And the CHECKOUT, not the disk. This used to walk the directory
+/// tree and skip a hand-written list — `target`, `.git`,
+/// `node_modules` — so it read every `.scxml` any process had left
+/// under the root. On 2026-09-22 that went red on 33 documents under a
+/// path `.gitignore` excludes — scratch no commit carries, using an
+/// element no committed document uses. The verdict was a property of
+/// what happened to be lying around, and it would have been green on a
+/// clean checkout of the same commit. The same list also never named
+/// `build/`, where the W3C converter writes.
+///
+/// So the population is what git says the repository holds: every
+/// tracked file, plus every untracked one git does not ignore — a
+/// fixture written but not yet staged is about to be committed and must
+/// be judged before it is. In CI the second set is empty and the two
+/// readings agree. What git ignores is excluded by the repository's
+/// own declaration rather than by a list here that has to guess it.
 fn fixture_files() -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    collect(&repo_root(), &mut out);
-    out.sort();
-    out
-}
-
-fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for e in entries.flatten() {
-        let p = e.path();
-        if p.is_dir() {
-            if p.file_name()
-                .is_some_and(|n| n == "target" || n == ".git" || n == "node_modules")
-            {
-                continue;
-            }
-            collect(&p, out);
-        } else if p.extension().is_some_and(|x| x == "scxml") {
-            out.push(p);
-        }
-    }
+    let root = repo_root();
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&root)
+        .args([
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "--",
+            "*.scxml",
+        ])
+        .output()
+        .expect("git ls-files runs in the repository");
+    assert!(
+        out.status.success(),
+        "git ls-files failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let mut files: Vec<PathBuf> = out
+        .stdout
+        .split(|b| *b == 0)
+        .filter(|s| !s.is_empty())
+        .map(|s| root.join(String::from_utf8_lossy(s).as_ref()))
+        // A tracked path the working tree has deleted is not a document
+        // to read; `--cached` still lists it until the deletion is staged.
+        .filter(|p| p.is_file())
+        .collect();
+    files.sort();
+    files.dedup();
+    files
 }
 
 /// Which document to mutate for each declared pair.

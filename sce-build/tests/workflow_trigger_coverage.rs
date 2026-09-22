@@ -260,6 +260,15 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // the answers it already knows and by construction miss the fourth, which
     // is the only case that matters.
     "every_annotated_document_is_accounted_for",
+    // Asks `git ls-files` for every `*.scxml` the repository holds and
+    // checks that each declared `sce:` attribute reaches the IR and each
+    // `sce:` element a document carries is one the grammar names. The
+    // arrival it exists for is a document added anywhere — a new
+    // attribute's first writer, or an element nobody declared — which a
+    // `paths:` filter over today's fixture roots cannot enumerate. It read
+    // the tree with `read_dir` before 2026-09-22, which this registry's
+    // detector does not see, so it ran tree-wide without being listed.
+    "a_declared_attribute_must_reach_the_ir",
     "test_result_gating",
     // Asks `git ls-files` for every tracked `*.sh` under `scripts/` and for
     // every `mnemosyne.toml`, and holds the Mnemosyne revision to one shell
