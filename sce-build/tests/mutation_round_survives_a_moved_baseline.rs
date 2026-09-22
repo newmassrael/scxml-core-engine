@@ -432,25 +432,48 @@ fn a_build_that_is_reproducible_never_retakes_the_baseline() {
 /// libraries this pinned script sources makes it undrivable, that is a decision
 /// for a person — retire the control deliberately — and not something the test
 /// may take silently.
-/// ⚠⚠ This pin was re-keyed on 2026-09-13 when the history was rewritten to
-/// take a downstream consumer's identifiers out of four commit messages. The
-/// rewrite changed no file content — the trees are byte-identical — but every
-/// commit from 2026-05-23 onward received a new hash, and a pinned hash is
-/// exactly the kind of reference that goes dangling under one. It previously
-/// read `79f1bf284d`.
-const DEFECT_REVISION: &str = "0fc4da0837f1f7ff478ff692ba51fc056b8b5769";
+/// ⚠⚠ What is pinned is the SCRIPT, by the hash of its content — the
+/// `scripts/mutate` blob of "feat: Let a killed round say what it left
+/// mutated and where to find it", the last harness before the repair.
+///
+/// It used to be that commit's hash, and a commit hash did not survive this
+/// repository's history rewrites: 2026-09-13 and 2026-09-21 each changed only
+/// commit messages, left every tree byte-identical, and gave every later
+/// commit a new hash. The first re-key (`79f1bf284d` → `0fc4da0837`) was
+/// orphaned by the second, and the test kept passing on the machine that did
+/// the rewrite — its object store still held the orphan — while every fresh
+/// clone failed it (CI run 35599075323). A blob is named by content alone, so
+/// a rewrite that keeps content cannot move it.
+const DEFECT_HARNESS_BLOB: &str = "4eff562aa53e18cf8d95255197559a566a7a20ba";
 
 #[test]
 fn the_harness_this_replaces_ends_the_casefile_at_its_first_case() {
-    let older = Command::new("git")
-        .arg("show")
-        .arg(format!("{DEFECT_REVISION}:scripts/mutate"))
+    // Reachable from HEAD first, because existing is not enough: an object
+    // this checkout alone still holds reads fine here and nowhere else. A
+    // commit that adds or removes the blob at this path proves a fresh clone
+    // carries it too.
+    let reached = Command::new("git")
+        .args(["log", "--format=%H", "--find-object"])
+        .arg(DEFECT_HARNESS_BLOB)
+        .args(["HEAD", "--", "scripts/mutate"])
         .current_dir(repo_root())
         .output()
-        .expect("git show scripts/mutate");
+        .expect("git log --find-object");
+    assert!(
+        reached.status.success() && !reached.stdout.is_empty(),
+        "the pinned pre-repair harness {DEFECT_HARNESS_BLOB} is not in this history, so \
+         this control measured nothing — a content change to it is a decision to retire \
+         the control, not something to re-pin around:\n{}",
+        String::from_utf8_lossy(&reached.stderr)
+    );
+    let older = Command::new("git")
+        .args(["cat-file", "blob", DEFECT_HARNESS_BLOB])
+        .current_dir(repo_root())
+        .output()
+        .expect("git cat-file blob");
     assert!(
         older.status.success(),
-        "the pinned pre-repair harness {DEFECT_REVISION} could not be read, so this \
+        "the pinned pre-repair harness {DEFECT_HARNESS_BLOB} could not be read, so this \
          control measured nothing:\n{}",
         String::from_utf8_lossy(&older.stderr)
     );
