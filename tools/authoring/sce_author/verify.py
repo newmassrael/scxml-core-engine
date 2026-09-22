@@ -180,6 +180,12 @@ class Verification:
     # positions that come out different are withheld. Printed whenever
     # non-empty, with how much it blocked -- a declared unknown that blocks
     # everything should be as visible as one that blocks nothing.
+    #
+    # A statechart asks the same question another way, because its cases share
+    # one run and two answers to one case would be two machines for every case
+    # after it: an unresolved input there is an EVENT nobody can say was sent,
+    # and the run is judged for as long as no active state could act on it.
+    # See `verify_statechart`.
     unresolved: dict = field(default_factory=dict)
     # Outputs the DOCUMENT leaves `sce:unresolved`, and every output that reads
     # one, to why. They are built with a placeholder so the rest can run, and
@@ -1186,6 +1192,29 @@ class StatechartRun:
         self.engine.send_event(self.event(rule["event"]))
         return True
 
+    def acting_on(self, event_name: str, declared) -> str | None:
+        """An active state that could act on this event now, if any.
+
+        ⚠ The one place the active configuration is asked, and it is asked
+        only to WITHHOLD. `declared_value` explains why a state is never
+        asserted on; nothing here asserts on one either. A state named here
+        makes no case pass or fail -- it stops a verdict from being claimed
+        about a run whose next move nobody can say. Renaming a state changes
+        which name this returns and nothing about what is judged.
+
+        ⚠⚠ Through `is_state_active`, the predicate W3C SCXML 5.9.2 gives the
+        document itself as `In()`, rather than a walk of the engine's
+        configuration. A state with no id cannot be asked about, so it is
+        taken to be active: the question is whether the event COULD matter,
+        and not knowing is a yes.
+        """
+        for state in declared.states_acting_on(event_name):
+            if state is None:
+                return "(a state with no id)"
+            if self.engine.policy.is_state_active(state, self.engine):
+                return state
+        return None
+
     def declared_value(self, name: str):
         """What one of the document's own declared outputs is holding now.
 
@@ -1305,6 +1334,47 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
     verification.host_memory = host_memory_of(inputs, pack.conventions)
     verification.assumed_preconditions = assumed_preconditions_of(pack.conventions)
 
+    # ⚠ An unresolved input that names an event is one whose SENDING nobody
+    # can say: a case may have driven the address it turns out to be, or not.
+    # It used to be dropped without a word -- `drive` sends nothing for a rule
+    # with no address -- so every case was judged on a machine that had simply
+    # never been told, and the run exited green on a binding that cannot ship.
+    #
+    # The computation path answers an unknown by running both values and
+    # keeping what agrees. That cannot be done here: the cases share one run,
+    # so two answers to one case are two machines for every case after it,
+    # doubling each round. What CAN be asked is narrower and exact -- whether
+    # the event could have changed anything. W3C SCXML 3.13 selects
+    # transitions from the active configuration only, so while no active state
+    # acts on the event, sending it and not sending it leave the same machine
+    # and the case is judged either way. From the first moment one could, the
+    # run's next configuration is unknown, and every case from there -- that
+    # one included -- is withheld rather than judged on a machine that may be
+    # somewhere no record drove it.
+    open_events = {n: r["event"] for n, r in sorted(inputs.items())
+                   if r.get("unresolved") and r.get("event")}
+    verification.unresolved = {n: r["unresolved"] for n, r in sorted(inputs.items())
+                               if r.get("unresolved")}
+    # Why the run stopped being knowable, once it has.
+    lost = ""
+
+    def could_have_moved(where: str) -> str:
+        for name, event in open_events.items():
+            state = run.acting_on(event, declared)
+            if state is not None:
+                return (f"input {name!r} has no address yet, and from {where} "
+                        f"on its event {event!r} could have reached the "
+                        f"machine: state {state!r} was active and acts on it. "
+                        f"Whether it was sent depends on the address nobody "
+                        f"has named, and the cases share one run, so none "
+                        f"from that point is judged")
+        return ""
+
+    def withhold(result: CaseResult, case) -> None:
+        result.undetermined = sorted(case.expect)
+        result.refusal = lost
+        verification.results.append(result)
+
     try:
         run = StatechartRun(module, build, pack.model)
     except VerifyError as exc:
@@ -1316,6 +1386,10 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
         if id(owner) in failed:
             continue
         result = CaseResult(name=owner.name)
+        if lost:
+            if judged:
+                withhold(result, case)
+            continue
         # What this case ASSERTED, as the record states it: the addresses it
         # drove, at the values it drove them to. ⚠ Read rather than derived.
         # Comparing one case's whole `given` with the next one's would call a
@@ -1333,11 +1407,27 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
             # never showed; the first real document whose rule needs two
             # inputs to move together failed each such case with the second
             # event never sent.
-            sent = [run.drive(rule, case)
-                    for address in dict.fromkeys(case.drove or ())
-                    for rule in driving.values()
-                    if rule.get("address") == address]
-            if not any(sent):
+            #
+            # ⚠ An open event can only have been sent at an address this case
+            # DROVE, so a case that drove nothing sent none. Where among them
+            # is unknown -- so the machine is asked at every configuration it
+            # passes through while being driven: before the first send and
+            # after each one.
+            where = f"case {owner.name or '(unnamed)'!r}"
+            lost = could_have_moved(where) if case.drove else ""
+            moved = False
+            for address in dict.fromkeys(case.drove or ()):
+                for rule in driving.values():
+                    if lost:
+                        break
+                    if rule.get("address") == address and run.drive(rule, case):
+                        moved = True
+                        lost = could_have_moved(where)
+            if lost:
+                if judged:
+                    withhold(result, case)
+                continue
+            if not moved:
                 if not judged:
                     # A setup step that moves nothing this document listens
                     # for leaves the machine as it was. That is a fact about

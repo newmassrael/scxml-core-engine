@@ -98,20 +98,23 @@ class Document:
     sends: tuple = ()
     # Every event descriptor any transition listens for.
     events: frozenset = frozenset()
+    # State id -> every descriptor an event reaching that state could be
+    # acted on through, while it is active. `*` stands for a state that acts
+    # on ANY event: one forwarding to an invoked child (W3C SCXML 6.4
+    # `autoforward`), or one with an eventless transition whose condition may
+    # read `_event` -- which every dequeued event rebinds, selected or not
+    # (W3C SCXML 5.10). A state with no id is keyed `None`, because nothing
+    # can ask whether it is active.
+    listeners: dict = dataclasses.field(default_factory=dict)
 
     def listens_for(self, event_name: str) -> bool:
-        """Whether any transition would be selected by this event.
+        """Whether any transition would be selected by this event."""
+        return any(descriptor_matches(d, event_name) for d in self.events)
 
-        ⚠ W3C SCXML 3.12.1 matches a descriptor against a PREFIX of the event
-        name, so `error` selects `error.execution` and an equality test would
-        report a document that plainly answers the event as ignoring it.
-        """
-        for descriptor in self.events:
-            token = descriptor[:-2] if descriptor.endswith(".*") else descriptor
-            if (token == "*" or event_name == token
-                    or event_name.startswith(token + ".")):
-                return True
-        return False
+    def states_acting_on(self, event_name: str) -> list:
+        """Every state that could act on this event while it is active."""
+        return [state for state, descriptors in self.listeners.items()
+                if any(descriptor_matches(d, event_name) for d in descriptors)]
 
     def rests_on_an_assumption(self, ident: str) -> str:
         """The assumption this output depends on, transitively, if any."""
@@ -125,6 +128,59 @@ class Document:
                 return self.assumed[current]
             stack.extend(self.reads.get(current, ()))
         return ""
+
+
+def descriptor_matches(descriptor: str, event_name: str) -> bool:
+    """Whether one transition descriptor selects this event name.
+
+    ⚠ W3C SCXML 3.12.1 matches a descriptor against a PREFIX of the event
+    name, token by token, so `error` selects `error.execution` and an equality
+    test would report a document that plainly answers the event as ignoring
+    it. `error`, `error.` and `error.*` are the same descriptor there.
+    """
+    token = descriptor[:-2] if descriptor.endswith(".*") else descriptor.rstrip(".")
+    return (token == "*" or event_name == token
+            or event_name.startswith(token + "."))
+
+
+def _listeners(root) -> dict:
+    """State id -> the descriptors an event could be acted on through there.
+
+    Read for `verify`, which has to know whether an event nobody can say was
+    sent could have changed anything -- so this errs toward ACTING. A state
+    listed here is one where the event might matter; one left out is one
+    where, by W3C SCXML, it cannot.
+    """
+    # ⚠ A condition can call a function a script defines, so a script that
+    # reads `_event` makes every eventless condition a possible reader of it.
+    scripts_read_event = any(
+        script.get("src") or "_event" in "".join(script.itertext())
+        for script in root.iter(f"{SCXML_NS}script"))
+    found: dict = {}
+
+    def walk(element) -> None:
+        descriptors: set = set()
+        for child in element:
+            if child.tag == f"{SCXML_NS}invoke":
+                # ⚠ Not descended into. An inline child document is another
+                # session, which sees this one's events only when they are
+                # forwarded -- and a forwarding state acts on every event.
+                if child.get("autoforward") == "true":
+                    descriptors.add("*")
+                continue
+            if child.tag == f"{SCXML_NS}transition":
+                if child.get("event"):
+                    descriptors.update(child.get("event").split())
+                elif child.get("cond") and ("_event" in child.get("cond")
+                                            or scripts_read_event):
+                    descriptors.add("*")
+            walk(child)
+        if descriptors and element.tag in (f"{SCXML_NS}state",
+                                           f"{SCXML_NS}parallel"):
+            found.setdefault(element.get("id"), set()).update(descriptors)
+
+    walk(root)
+    return {state: frozenset(d) for state, d in found.items()}
 
 
 def read_document(path: pathlib.Path) -> Document:
@@ -193,6 +249,7 @@ def read_document(path: pathlib.Path) -> Document:
         reads=reads,
         sends=tuple(sends),
         events=frozenset(events),
+        listeners=_listeners(root),
     )
 
 

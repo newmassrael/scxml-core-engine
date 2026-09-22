@@ -151,9 +151,13 @@ def cmd_verify(args) -> int:
     if result.unresolved or result.unresolved_outputs:
         blocked = sum(1 for c in result.results if c.undetermined)
         if result.unresolved:
+            # ⚠ Worded for both paths. A computation is run under each value
+            # an open input could take; a statechart's cases share one run and
+            # are judged only while an open event could not have acted. What
+            # the two have in common is the claim, and the claim is the line.
             print(f"  {len(result.unresolved)} input(s) the binding leaves "
-                  f"UNRESOLVED; every case ran under each value they could "
-                  f"take:")
+                  f"UNRESOLVED; a position is judged only where it cannot "
+                  f"depend on them:")
             for name, why in result.unresolved.items():
                 print(f"          {name}: {why}")
         if result.unresolved_outputs:
