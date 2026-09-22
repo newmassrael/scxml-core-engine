@@ -1,7 +1,36 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
-{# Transform kind — pure free function(s), single or compound output. #}
+{# Transform kind — pure free function(s), single or compound output; or,
+   for a document that reads a field through previous(), its holder driven
+   through the oracle's sequence twice: from a new holder, then after
+   reset(). Both passes are held to the same oracle, which is what says
+   reset() restores every kept value. #}
+{% if f.holder %}
+        val steps = ref["{{ f.ref_section }}"]!!.jsonObject["{{ f.name }}"]!!.jsonObject["sequence"]!!.jsonArray
+        val holder = com.sce.generated.{{ f.name }}.{{ f.holder.new }}()
+        for (pass in 0 until 2) {
+            if (pass == 1) {
+                holder.{{ f.holder.reset }}()
+            }
+            steps.forEachIndexed { i, step ->
+                val args = step.jsonObject["args"]!!.jsonArray
+{% for arg_ty in f.args %}
+                val arg{{ loop.index0 }} = {{ ("args[" ~ loop.index0 ~ "]") | kt_unmarshal(arg_ty) }}
+{% endfor %}
+                val expected = step.jsonObject["expected"]!!.jsonObject
+                val out = holder.{{ f.holder.update }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+{% for co in f.compound_outputs %}
+                val expected_{{ co.key }} = {{ ("expected[\"" ~ co.key ~ "\"]!!") | kt_unmarshal(co["type"]) }}
+{% if co.compare == "tolerance" %}
+                assertClose(out.{{ co.field }}, expected_{{ co.key }}, "{{ f.name }} pass $pass step $i {{ co.key }}")
+{% else %}
+                assertEquals(expected_{{ co.key }}, out.{{ co.field }}, "{{ f.name }} pass $pass step $i {{ co.key }}")
+{% endif %}
+{% endfor %}
+            }
+        }
+{% else %}
         val cases = ref["{{ f.ref_section }}"]!!.jsonObject["{{ f.name }}"]!!.jsonObject["cases"]!!.jsonArray
         for (case in cases) {
             val args = case.jsonObject["args"]!!.jsonArray
@@ -34,3 +63,4 @@
 {% endfor %}
 {% endif %}
         }
+{% endif %}

@@ -1352,6 +1352,61 @@
       ]
     }
   },
+  "stateful_transforms": {
+    "transform_previous_value": {
+      "fixture": "PreviousValue holder: update(sample, pressed) -> {total, delta, rising}",
+      "signature": "update(sample: i32, pressed: bool) -> {total: i32, delta: i32, rising: bool}",
+      "formula": "total = previous(total) + sample; delta = sample - previous(sample); rising = pressed && !previous(pressed); first activation reads total = 0, sample = 0x10, pressed = false",
+      "description": "One activation per step, in order. The harness runs the sequence from a new holder, then calls reset() and runs it again; both passes must match, which is what says reset() restores every kept value to its sce:initial.",
+      "sequence": [
+        {
+          "args": [3, false],
+          "expected": {
+            "total": 3,
+            "delta": -13,
+            "rising": false
+          },
+          "note": "kept values at sce:initial: total 0, sample 16, pressed false"
+        },
+        {
+          "args": [5, true],
+          "expected": {
+            "total": 8,
+            "delta": 2,
+            "rising": true
+          },
+          "note": "pressed goes false -> true"
+        },
+        {
+          "args": [5, true],
+          "expected": {
+            "total": 13,
+            "delta": 0,
+            "rising": false
+          },
+          "note": "pressed stays true; a holder that committed before computing answers delta 0 at EVERY step, not only here"
+        },
+        {
+          "args": [-2, false],
+          "expected": {
+            "total": 11,
+            "delta": -7,
+            "rising": false
+          },
+          "note": "negative sample; pressed released"
+        },
+        {
+          "args": [10, true],
+          "expected": {
+            "total": 21,
+            "delta": 12,
+            "rising": true
+          },
+          "note": "pressed rises a second time"
+        }
+      ]
+    }
+  },
   "validators": {
     "validator_range_only": {
       "fixture": "ValidatorRangeOnly::validate",

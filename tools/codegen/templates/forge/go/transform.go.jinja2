@@ -50,3 +50,53 @@ func {{ func.name }}({{ func.params }}) {{ func.ret_type }} {
 	return {{ func.expr }}
 }
 {% endfor %}
+{% if holder %}
+
+// {{ holder.symbols.outputs }} is every output of one activation.
+type {{ holder.symbols.outputs }} struct {
+{% for o in holder.outputs %}
+	{{ o.field }} {{ o.type }}
+{% endfor %}
+}
+
+// {{ holder.symbols.holder }} keeps the values previous() reads from one
+// activation to the next. {{ holder.symbols.update }} is one activation: every
+// output is computed from this activation's inputs and the kept values, and
+// only then is each kept value replaced by what its field holds now.
+type {{ holder.symbols.holder }} struct {
+{% for c in holder.cells %}
+	{{ c.name }} {{ c.type }}
+{% endfor %}
+}
+
+{% set this = holder.self_name %}
+// {{ holder.symbols.new }} returns a holder whose kept values are at their
+// fields' sce:initial.
+func {{ holder.symbols.new }}() *{{ holder.symbols.holder }} {
+	{{ this }} := &{{ holder.symbols.holder }}{}
+	{{ this }}.{{ holder.symbols.reset }}()
+	return {{ this }}
+}
+
+// {{ holder.symbols.reset }} returns every kept value to its field's sce:initial.
+func ({{ this }} *{{ holder.symbols.holder }}) {{ holder.symbols.reset }}() {
+{% for c in holder.cells %}
+{% if c.is_string %}
+	{{ this }}.{{ c.name }} = "{{ c.initial_text }}"
+{% else %}
+	{{ this }}.{{ c.name }} = {{ c.initial }}
+{% endif %}
+{% endfor %}
+}
+
+// {{ holder.symbols.update }} is one activation.
+func ({{ this }} *{{ holder.symbols.holder }}) {{ holder.symbols.update }}({{ holder.input_params }}) {{ holder.symbols.outputs }} {
+{% for o in holder.outputs %}
+	{{ o.name }} := {{ o.fn }}({{ holder.input_args }}{% for c in holder.cells %}{% if holder.input_args or not loop.first %}, {% endif %}{{ this }}.{{ c.name }}{% endfor %})
+{% endfor %}
+{% for c in holder.cells %}
+	{{ this }}.{{ c.name }} = {{ c.source }}
+{% endfor %}
+	return {{ holder.symbols.outputs }}{ {%- for o in holder.outputs %}{{ o.field }}: {{ o.name }}{% if not loop.last %}, {% endif %}{% endfor -%} }
+}
+{% endif %}

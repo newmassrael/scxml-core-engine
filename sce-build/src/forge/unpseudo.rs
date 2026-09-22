@@ -553,23 +553,31 @@ fn parse_field(line: &Line<'_>) -> Result<ForgeField, ParseError> {
                 });
                 i += 4;
             }
-            // `retain <scope> initial <value>` — the keyword between the
-            // two values is the renderer's, so its absence means the
-            // line is not one this renderer wrote and a guess would be
-            // worse than the error.
+            // `retain <scope>` and `initial <value>` — each attribute its
+            // own clause, as the renderer writes them. A retained field
+            // carries both (`retain nvm initial 7`); a field a transform
+            // reads through `previous()` carries `initial` alone.
+            //
+            // ⚠ This reader used to take `initial` only as the second half
+            // of `retain`, so the page of a document whose field declared
+            // a first value for `previous()` could not be read back — its
+            // own renderer's output, refused. Whether a pair is COMPLETE
+            // (a retained field with no first value) is validation's to
+            // say, and it does; a reader that decides it too refuses
+            // pages rather than documents.
             "retain" => {
-                let scope = undo_word(rest.get(i + 1).copied().unwrap_or(""), line.number)?;
-                if rest.get(i + 2).copied() != Some("initial") {
-                    return Err(ParseError {
-                        line: line.number,
-                        why: "a `retain <scope>` clause is followed by `initial <value>`"
-                            .to_string(),
-                    });
-                }
-                let initial = undo_word(rest.get(i + 3).copied().unwrap_or(""), line.number)?;
-                f.retain = Some(scope);
-                f.initial = Some(initial);
-                i += 4;
+                f.retain = Some(undo_word(
+                    rest.get(i + 1).copied().unwrap_or(""),
+                    line.number,
+                )?);
+                i += 2;
+            }
+            "initial" => {
+                f.initial = Some(undo_word(
+                    rest.get(i + 1).copied().unwrap_or(""),
+                    line.number,
+                )?);
+                i += 2;
             }
             // `default-covers <a> <b> ...` — variadic, so it runs to the
             // end of the word-shaped clauses. It is written last among

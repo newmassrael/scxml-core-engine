@@ -104,6 +104,12 @@ pub struct CompoundOutput {
     #[serde(rename = "type")]
     pub ty: CanonicalType,
     pub compare: CompareMode,
+    /// Symbol-name SSOT: the field this output has in a transform holder's
+    /// outputs record, derived at harness-rendering time from
+    /// `forge_transform_output_field` — and only for a transform that has a
+    /// holder. Never present in fixtures.json.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field: Option<String>,
 }
 
 /// Canonical deterministic implementations that the conformance harness can
@@ -278,6 +284,19 @@ pub enum FixtureSpec {
         output: Option<ScalarOutput>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         compound_outputs: Vec<CompoundOutput>,
+        /// Derived at harness-rendering time from the SCXML: present iff
+        /// the document reads a field through `previous()`, which is the one
+        /// question that decides whether `render_transform` emits a holder.
+        /// It is asked of the forge parser and `previous_value::cells` — the
+        /// calls the generator makes — so the harness cannot answer it
+        /// differently from the product. The names come from
+        /// `forge_transform_holder_symbols`. Never present in fixtures.json.
+        ///
+        /// A fixture with a holder is driven through it: `args` are the
+        /// inputs `update` takes, and every output is compared from the
+        /// record one activation returns, by its `compound_outputs` key.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        holder: Option<crate::forge::generator::TransformHolderSymbols>,
     },
     Condition {
         function: String,
@@ -921,12 +940,28 @@ impl Manifest {
                 FixtureSpec::Transform {
                     output,
                     compound_outputs,
+                    holder,
                     ..
                 } => {
                     if output.is_none() && compound_outputs.is_empty() {
                         return Err(format!(
                             "fixture {}: transform needs `output` or `compound_outputs`",
                             f.name
+                        ));
+                    }
+                    if holder.is_some() {
+                        return Err(format!(
+                            "fixture {}: transform `holder` is derived from the \
+                             SCXML (whether it reads a field through previous()); \
+                             remove it from fixtures.json",
+                            f.name
+                        ));
+                    }
+                    if let Some(co) = compound_outputs.iter().find(|co| co.field.is_some()) {
+                        return Err(format!(
+                            "fixture {}: compound output `{}` names its `field`, which \
+                             is derived from the output id; remove it from fixtures.json",
+                            f.name, co.key
                         ));
                     }
                 }
@@ -1650,6 +1685,32 @@ pub fn codec_has_mcu_only_features(scxml_path: &Path) -> Result<bool, String> {
     Ok(walk(doc.root_element(), sce_ns))
 }
 
+/// The oracle section a transform with a holder is judged under.
+const STATEFUL_TRANSFORMS: &str = "stateful_transforms";
+
+/// Whether a transform fixture reads any field through `previous()` — the
+/// question `render_transform` answers with `previous_value::cells` to
+/// decide whether to emit a holder. Asked here with the same parse and the
+/// same call, not a scan of the XML, so the harness and the product cannot
+/// answer it differently.
+fn read_transform_has_holder(scxml_path: &Path, fixture_name: &str) -> Result<bool, String> {
+    let text = crate::load_forge_source(scxml_path, &[])
+        .map_err(|e| format!("cannot read {}: {e}", scxml_path.display()))?
+        .text;
+    match crate::forge::parser::parse_forge(&text, crate::DocumentLabel::symmetric(fixture_name))
+        .map_err(|e| format!("{}: {e}", scxml_path.display()))?
+    {
+        Some(crate::forge::model::ForgeDocument::Transform(m)) => {
+            Ok(!crate::forge::previous_value::cells(&m).is_empty())
+        }
+        _ => Err(format!(
+            "fixture {fixture_name}: the manifest says `transform`, and {} is not a \
+             transform document",
+            scxml_path.display()
+        )),
+    }
+}
+
 fn read_validator_has_state(scxml_path: &Path) -> Result<bool, String> {
     let text = std::fs::read_to_string(scxml_path)
         .map_err(|e| format!("cannot read {}: {e}", scxml_path.display()))?;
@@ -1967,8 +2028,46 @@ pub fn render_harness(
             FixtureSpec::Transform {
                 output,
                 compound_outputs,
+                holder,
                 ..
             } => {
+                let scxml_path = resource_dir.join(format!("{}.scxml", fixture_name));
+                if read_transform_has_holder(&scxml_path, &fixture_name)? {
+                    // A holder is driven by a sequence and compared from the
+                    // record its update returns — so the oracle is the
+                    // stateful section, and every output has a key there.
+                    if f.ref_section != STATEFUL_TRANSFORMS {
+                        return Err(format!(
+                            "fixture {fixture_name}: the document reads a field through \
+                             previous(), so it is driven through its holder and its \
+                             oracle belongs under ref_section \"{STATEFUL_TRANSFORMS}\", \
+                             not \"{}\"",
+                            f.ref_section
+                        ));
+                    }
+                    if output.is_some() || compound_outputs.is_empty() {
+                        return Err(format!(
+                            "fixture {fixture_name}: a holder returns every output in \
+                             one record, so declare each as a `compound_outputs` entry \
+                             keyed by its id, and no scalar `output`"
+                        ));
+                    }
+                    *holder = Some(crate::forge::generator::forge_transform_holder_symbols(
+                        &fixture_name,
+                        language,
+                    ));
+                    for co in compound_outputs.iter_mut() {
+                        co.field = Some(crate::forge::generator::forge_transform_output_field(
+                            &co.key, language,
+                        ));
+                    }
+                } else if f.ref_section == STATEFUL_TRANSFORMS {
+                    return Err(format!(
+                        "fixture {fixture_name}: ref_section \"{STATEFUL_TRANSFORMS}\" is \
+                         for a transform that reads a field through previous(), and \
+                         this document reads none"
+                    ));
+                }
                 // Symbol-name SSOT: lower each output accessor to the exact
                 // symbol render_transform defines — the bare call-base plus the
                 // C11 flat prefix, via the same two helpers the codegen uses

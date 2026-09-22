@@ -4,7 +4,7 @@
   "description": "Cross-language conformance fixture catalog. NOTE: the $schema above is editor/IDE only — sce-build/src/conformance.rs hand-rolls runtime validation; the JSON schema is never consulted at codegen time. Each entry declares a fixture's structural metadata (kind, arg types, output shape) so sce-codegen can render per-language test harnesses from a single source. The oracle values — expected outputs — live in numerical_reference.json. Adding a new fixture requires (1) an SCXML file under tests/forge/resources/, (2) an entry here, and (3) an expected-value entry in numerical_reference.json. No language-specific test code should ever need to be hand-written.",
   "kinds": {
     "interpolation": "Pure lookup table with numeric interpolation. Struct::lookup(args) -> scalar. Reference section: pure_functions.",
-    "transform": "Pure value transform. Free function(s) compute_*(args) -> scalar or multi-output. Reference section: pure_functions.",
+    "transform": "Value transform. Free function(s) compute_*(args) -> scalar or multi-output. Reference section: pure_functions. A transform that reads a field through previous() is driven through its holder instead: the harness derives that from the document, runs the oracle's `sequence` of activations from a new holder and again after reset(), and compares every output of each activation by its compound_outputs key. Reference section: stateful_transforms.",
     "condition": "Pure boolean predicate. Free function <name>(args) -> bool. Reference section: pure_functions.",
     "filter": "Stateful signal filter. Instance::update(input) -> output, one output per sequence step. Reference section: stateful_filters.",
     "observer": "Stateful event observer. Instance::update(input) -> event queue, zero-or-more events per step. Reference section: observers.",
@@ -159,6 +159,35 @@
           "function": "compute_kelvin",
           "type": "f64",
           "compare": "tolerance"
+        }
+      ]
+    },
+    {
+      "name": "transform_previous_value",
+      "kind": "transform",
+      "ref_section": "stateful_transforms",
+      "args": [
+        "i32",
+        "bool"
+      ],
+      "compound_outputs": [
+        {
+          "key": "total",
+          "function": "compute_total",
+          "type": "i32",
+          "compare": "equality"
+        },
+        {
+          "key": "delta",
+          "function": "compute_delta",
+          "type": "i32",
+          "compare": "equality"
+        },
+        {
+          "key": "rising",
+          "function": "compute_rising",
+          "type": "bool",
+          "compare": "equality"
         }
       ]
     },

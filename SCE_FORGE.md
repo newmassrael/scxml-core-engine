@@ -504,7 +504,10 @@ The existing W3C SCXML statechart. No changes to current codegen.
 
 ### 4.2 transform
 
-Pure mathematical formula. No state. Input → computation → output.
+Mathematical formula. Input → computation → output. Every output is a
+pure function; the one way a transform remembers anything is
+`previous(x)`, below, and even then the memory is kept beside the
+functions, not inside them.
 
 ```xml
 <scxml sce:kind="transform">
@@ -529,6 +532,61 @@ pub fn compute_temperature(raw: u16) -> f64 {
     raw as f64 * 0.1 - 40.0
 }
 ```
+
+**`previous(x)` — the value of a field one activation ago.** `x` is an
+input or output of the same document, and it must declare `sce:initial`,
+which is what `previous(x)` reads on the first activation. A read through
+`previous()` is not a dependency, so `count = previous(count) + step` is
+legal where `count = count + step` is a cycle:
+
+```xml
+<scxml sce:kind="transform">
+  <datamodel>
+    <data id="step" sce:type="int32" sce:direction="in"/>
+    <data id="count" sce:type="int32" sce:direction="out" sce:initial="0"
+          expr="previous(count) + step"/>
+  </datamodel>
+</scxml>
+```
+
+Each output function takes the kept value as one more parameter, and a
+**holder** keeps it between activations: `update` computes every output
+from this activation's inputs and the kept values, and only then replaces
+each kept value.
+
+**Codegen** (C++):
+```cpp
+inline int32_t computeCount(int32_t step, int32_t previous_count) {
+    return previous_count + step;
+}
+
+struct CounterOutputs {
+    int32_t count;
+};
+
+class Counter {
+public:
+    Counter() {
+        reset();
+    }
+
+    void reset() {
+        previous_count_ = 0;
+    }
+
+    CounterOutputs update(int32_t step) {
+        const int32_t count = computeCount(step, previous_count_);
+        previous_count_ = count;
+        return CounterOutputs{count};
+    }
+
+private:
+    int32_t previous_count_{};
+};
+```
+
+The holder's names on every backend, and the cells no backend lowers yet,
+are in [SCE_ACCEPTED_SUBSET.md §3.4.1](docs/SCE_ACCEPTED_SUBSET.md).
 
 ### 4.3 lookup
 

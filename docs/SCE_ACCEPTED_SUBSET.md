@@ -1294,10 +1294,50 @@ required on any field read this way (`validation/missing-attribute`,
 with the attribute to add as the fix). A read through `previous()` is not
 a dependency, so it cannot close an output cycle: `x = previous(x) + 1`
 is legal where `x = x + 1` is `validation/transform-output-cycle`.
-⚠ **No backend lowers `previous()` yet.** A document that uses it is
-valid and is refused by every language with `generate/unsupported-feature`,
-before any renderer runs — the shape `<sce:action>` took while its
-lowering reached one backend at a time.
+
+**How every backend lowers it.** Each output stays a pure function. A
+field read through `previous()` adds one parameter, `previous_<x>`, to
+every output function, after the inputs and in the order inputs then
+outputs — so a field of the document spelled `previous_<x>` collides
+with it and is refused as `validation/duplicate-id`. Beside the
+functions, the transform gains a **holder**: the object that keeps each
+of those values between activations. It has three operations and one
+record type, named `<Name>` and `<Name>Outputs` for the document's
+PascalCase name:
+
+| | C++ / Kotlin / Python | Rust | Go | C11 |
+|---|---|---|---|---|
+| a holder at every `sce:initial` | `<Name>()` | `<Name>::new()` | `New<Name>()` | `<name>_init(&h)` on a `<name>_state_t` |
+| back to every `sce:initial` | `reset()` | `reset()` | `Reset()` | `<name>_reset(&h)` |
+| one activation | `update(inputs…)` | `update(inputs…)` | `Update(inputs…)` | `<name>_update(&h, inputs…)` |
+
+One activation computes EVERY output from this activation's inputs and
+the kept values, and only then replaces each kept value — an input's
+with this activation's input, an output's with what it just computed —
+and returns every output in the record (`<name>_outputs_t` on C11). No
+field a document declares can take a name the holder introduces for
+itself: a field named `holder`, `out` or `self` is legal, and the
+holder's own name moves out of its way.
+
+⚠ **Three cells are refused**, each as `generate/unsupported-feature`
+pointing at the read, before any renderer runs: a `bytes` field on every
+backend (a buffer kept between activations needs a capacity no cell
+declares); a `string` field on C11 (a string is a pointer into the
+caller's buffer, which the next activation may overwrite); and a
+`string` field on Rust (a Rust transform returns its string output as
+borrowed text from a function declared to return `String`, so a string
+transform does not compile there with or without `previous()` — a
+defect of its own, fixed on its own).
+
+⚠ **A transform that reads `previous()` cannot be called through an
+import yet.** An `<sce:import kind="transform">` stands for a pure
+function the importing document calls with its own values, and such a
+transform's functions also take the values its holder keeps — which the
+importer has nowhere to keep. A document that names such an import is
+refused as `generate/unsupported-feature` on the `<sce:import>`
+element's own line, rather than emitted as a call with too few
+arguments. One that only declares it depends on nothing (§2.4) and
+passes.
 
 Everything else callable reaches a forge expression by being REGISTERED —
 a stateless cross-file import, an `<sce:helper>`, or a stateful import's
@@ -2213,7 +2253,7 @@ never walked (measured 2026-09-21). Three codes remain on this axis:
   specification routinely names an intermediate value that several
   outputs consume, and the generator lowers such a read to a call of the
   sibling's own `compute_*` function, which is sound because every one
-  of them is a pure function of the same inputs. A cycle is the one
+  of them is a pure function of the same parameters. A cycle is the one
   shape that lowering cannot serve — the emitted functions would call
   each other until the stack ends — so it is refused before any language
   is rendered. ⚠ Before this pair existed, a sibling read of ANY kind

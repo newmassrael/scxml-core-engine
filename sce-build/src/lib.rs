@@ -2529,20 +2529,50 @@ pub fn compile_forge_from_parsed(
     // module which fields are read that way.
     forge::previous_value::check(parsed, label.diagnostic_label)?;
 
-    // ⚠ And no backend LOWERS `previous()` yet, so a document that uses it
-    // is refused for every language here, once, rather than left to each
-    // renderer — where the expression layer would call `previous` an
-    // unknown function, which is a false sentence about a valid document.
-    // This is the shape `<sce:action>` took while its lowering reached one
-    // backend at a time; it retires when all six lower it.
+    // ⚠ Every backend lowers `previous()` of a number, a bool or an enum.
+    // The cells it does not lower are refused here, once, named — never left
+    // to a renderer, where they would either not compile or keep a pointer
+    // into memory the caller reuses:
+    //
+    //   bytes   on every backend: a buffer kept between activations needs a
+    //           capacity, and no cell declares one.
+    //   string  on C11: a `const char *` kept between activations points into
+    //           the caller's buffer.
+    //   string  on Rust: a transform's string output is returned as borrowed
+    //           text from a function declared to return `String`, so a string
+    //           transform does not compile on Rust with or without
+    //           `previous()`. That is its own defect, fixed on its own.
+    //
+    // C++, Go, Kotlin and Python hold an owned string and lower it.
     if let forge::model::ForgeDocument::Transform(m) = &parsed.document {
-        if let Some(read) = forge::previous_value::first_read(m) {
+        for cell in forge::previous_value::cells(m) {
+            let why = match (&cell.param.sce_type, language) {
+                (forge::model::SceType::Bytes, _) => {
+                    "a `bytes` field is not lowered for `previous()`: a buffer kept between \
+                     activations needs a capacity, and no cell declares one"
+                }
+                (forge::model::SceType::String, generator::Language::C11) => {
+                    "C11 keeps a `string` as a `const char *` into the caller's buffer, which \
+                     the next activation may overwrite; C++, Go, Kotlin and Python hold an \
+                     owned string and lower it"
+                }
+                (forge::model::SceType::String, generator::Language::Rust) => {
+                    "Rust returns a transform's string output as borrowed text from a \
+                     function declared to return `String`, so a string transform does not \
+                     compile on Rust yet, with or without `previous()`; C++, Go, Kotlin and \
+                     Python lower it"
+                }
+                _ => continue,
+            };
+            // A cell exists only because an output reads it, so the read is
+            // there to point at.
+            let Some(read) = forge::previous_value::first_read(m, |f| f == cell.of) else {
+                continue;
+            };
             return Err(Located::new(
                 forge::error::GenerateError::unsupported(format!(
                     "`previous({})` in output '{}' of transform '{}' has no {:?} codegen \
-                     path: no backend lowers `previous()` yet. The document is valid; \
-                     generating it waits on that lowering, which lands for every backend \
-                     together",
+                     path: {why}",
                     read.field, read.output, m.name, language
                 ))
                 .into(),
@@ -2657,6 +2687,33 @@ pub fn compile_forge_from_parsed(
     let named = forge::import_use::named_aliases(document, &parsed.cycles, &parsed.imports)
         .map_err(|e| Located::in_file(e.into(), label.diagnostic_label))?;
     import_ctx.retain(|imp| named.contains(&imp.alias));
+
+    // A transform that reads a field through `previous()` is not callable as
+    // the pure function a stateless import stands for: each of its output
+    // functions also takes the values its holder keeps, and a caller passing
+    // its own values alone has nowhere to keep them. The call would be
+    // emitted with too few arguments, and exit 0 — so a document that NAMES
+    // such an import is refused, at the import, until an import can hold a
+    // transform's state the way a stateful import holds a filter's. One that
+    // only declares it depends on nothing, and passes.
+    if let Some((imp, read)) = import_ctx
+        .iter()
+        .find_map(|imp| imp.transform_state_read.as_ref().map(|read| (imp, read)))
+    {
+        return Err(Located::new(
+            forge::error::GenerateError::unsupported(format!(
+                "import '{}' names transform '{}', which reads `previous({})` in output \
+                 '{}' and so keeps a value from one activation to the next; a transform \
+                 is imported as a pure function, and one that keeps state cannot be \
+                 called as one yet",
+                imp.alias, imp.document_name, read.field, read.output
+            ))
+            .into(),
+            label.diagnostic_label,
+            imp.line,
+            None,
+        ));
+    }
 
     let output = match language {
         generator::Language::Cpp => forge::generator::generate_cpp_with_imports_and_externs(
@@ -4151,6 +4208,12 @@ fn validate_and_enrich_imports(
                 // decision, not the codec's.
                 ctx.enum_underlying = Some(em.underlying_type.clone());
                 ctx.enum_is_open = !em.strict_variants;
+            }
+            // Whether the imported transform keeps state is recorded here,
+            // where its model is in hand, and judged once the importing
+            // document's use of it is known — see `transform_state_read`.
+            if let forge::model::ForgeDocument::Transform(tm) = &doc {
+                ctx.transform_state_read = forge::previous_value::first_read(tm, |_| true);
             }
             if !ctx.is_stateful {
                 // `ctx.namespace` was recomputed from `doc.name()` above, so

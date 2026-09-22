@@ -38,7 +38,9 @@ import com.sce.generated.{{ f.name }}.ForgeDomainTag as {{ f.name | to_pascal_ca
 {% if f.kind == "event-schema" %}
 import com.sce.generated.{{ f.name }}.{{ f.name | to_pascal_case }}Payload
 {% endif %}
-{% if f.kind == "transform" %}
+{# A transform with a holder is driven through it, and its fragment names
+   the holder by its qualified name — the output functions are not called. #}
+{% if f.kind == "transform" and not f.holder %}
 {% if f.output %}
 import com.sce.generated.{{ f.name }}.{{ f.output.function | to_camel_case }}
 {% else %}

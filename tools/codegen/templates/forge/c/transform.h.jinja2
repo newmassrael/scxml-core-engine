@@ -43,8 +43,62 @@
 {% endif %}
 {% endif %}
 static inline {{ func.ret_type }} {{ func.name }}({{ func.params }}) {
+{# Every output takes the same parameters; one this output does not read is
+   unread on purpose, and C11 has no attribute that says so. #}
+{% for p in func.unread %}
+    (void){{ p }};
+{% endfor %}
     return {{ func.expr }};
 }
 {% endfor %}
+{% if holder %}
+
+/* Every output of one activation. */
+typedef struct {
+{% for o in holder.outputs %}
+    {{ o.type }} {{ o.field }};
+{% endfor %}
+} {{ holder.symbols.outputs }};
+
+/* The values `previous()` reads, kept from one activation to the next.
+ * `{{ holder.symbols.update }}` is one activation: every output is computed
+ * from this activation's inputs and the kept values, and only then is each
+ * kept value replaced by what its field holds now. */
+typedef struct {
+{% for c in holder.cells %}
+    {{ c.type }} {{ c.name }};
+{% endfor %}
+} {{ holder.symbols.holder }};
+
+{% set this = holder.self_name %}
+{% set out = holder.out_name %}
+/* Every kept value back to its field's `sce:initial`. */
+static inline void {{ holder.symbols.reset }}({{ holder.symbols.holder }} *{{ this }}) {
+{% for c in holder.cells %}
+    {{ this }}->{{ c.name }} = {{ c.initial }};
+{% endfor %}
+}
+
+/* A holder whose kept values are at their fields' `sce:initial`. */
+static inline void {{ holder.symbols.new }}({{ holder.symbols.holder }} *{{ this }}) {
+    {{ holder.symbols.reset }}({{ this }});
+}
+
+/* One activation. */
+static inline {{ holder.symbols.outputs }} {{ holder.symbols.update }}({{ holder.symbols.holder }} *{{ this }}{% if holder.input_params %}, {{ holder.input_params }}{% endif %}) {
+    {{ holder.symbols.outputs }} {{ out }};
+{% for o in holder.outputs %}
+    {{ out }}.{{ o.field }} = {{ o.fn }}({{ holder.input_args }}{% for c in holder.cells %}{% if holder.input_args or not loop.first %}, {% endif %}{{ this }}->{{ c.name }}{% endfor %});
+{% endfor %}
+{% for c in holder.cells %}
+{% if c.from_output %}
+    {{ this }}->{{ c.name }} = {{ out }}.{{ c.source_field }};
+{% else %}
+    {{ this }}->{{ c.name }} = {{ c.source }};
+{% endif %}
+{% endfor %}
+    return {{ out }};
+}
+{% endif %}
 
 #endif  /* {{ guard }} */

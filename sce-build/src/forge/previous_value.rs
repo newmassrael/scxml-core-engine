@@ -20,13 +20,16 @@
 //!   is legal, where `x = x + 1` is a cycle
 //!   ([`crate::forge::transform_dep_check`]).
 //!
-//! ⚠ WHAT THIS MODULE DOES NOT DO YET. It validates. No backend lowers
-//! `previous()` today, so a document that uses it is refused by every
-//! backend's codegen with `generate/unsupported-feature`
-//! ([`first_read`]) — the same shape `<sce:action>` took while its lowering
-//! reached one backend at a time. A document the validator accepts and a
-//! generator silently mis-emits is the outcome that refusal exists to rule
-//! out.
+//! This module owns the law and the shape every backend lowers it to: each
+//! value read this way is a [`Cell`], which is one more parameter of every
+//! output function (`previous_<x>`, [`param_name`]) and one kept value of
+//! the transform's holder. The rendering itself is `render_transform`'s.
+//!
+//! ⚠ The cells no backend lowers — `bytes` anywhere, `string` on C11 and on
+//! Rust — are refused before rendering, at the read [`first_read`] finds,
+//! as `generate/unsupported-feature`. A document the validator accepts and
+//! a generator silently mis-emits is the outcome that refusal exists to
+//! rule out.
 
 use std::collections::HashSet;
 use std::ops::Range;
@@ -139,22 +142,75 @@ pub(crate) fn fields_read_previously(m: &TransformModel) -> Option<HashSet<Strin
     Some(found)
 }
 
-/// The first `previous()` any output of `m` writes — what code generation
-/// names when it refuses the document.
-pub(crate) struct FirstRead {
+/// A field some output reads through `previous()`, and the parameter that
+/// carries its previous value into every output function.
+///
+/// ⚠ The parameter IS the field, renamed: same type, same quantity, same
+/// `sce:initial`, direction `in`. So everything downstream of the lowering —
+/// typing, the unit checker, the sibling-call rename, every emitter, the
+/// parameter list — treats it as one more input, which is what it is to the
+/// function that reads it. Only the holder knows it is a memory.
+#[derive(Debug, Clone)]
+pub struct Cell {
+    /// The field `previous(<of>)` names.
+    pub of: String,
+    /// The parameter every output function takes for it.
+    pub param: ForgeField,
+}
+
+/// The parameter a read of `previous(<of>)` lowers to.
+pub fn param_name(of: &str) -> String {
+    format!("previous_{of}")
+}
+
+/// The cells of `m`: inputs first, then outputs, each in declaration order.
+///
+/// Empty when nothing is read through `previous()` — and when an expression
+/// cannot be read, which `check` and the expression stage refuse before any
+/// of this is asked.
+pub fn cells(m: &TransformModel) -> Vec<Cell> {
+    let Some(read) = fields_read_previously(m) else {
+        return Vec::new();
+    };
+    m.inputs
+        .iter()
+        .chain(m.outputs.iter())
+        .filter(|f| read.contains(&f.id))
+        .map(|f| {
+            let mut param = f.clone();
+            param.id = param_name(&f.id);
+            param.direction = crate::forge::model::Direction::In;
+            param.expr = None;
+            param.expr_spelling = None;
+            Cell {
+                of: f.id.clone(),
+                param,
+            }
+        })
+        .collect()
+}
+
+/// The first `previous()` read in a transform — what a refusal names and
+/// points at.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FirstRead {
+    /// The output whose expression reads it.
     pub output: String,
+    /// The field it reads.
     pub field: String,
+    /// Where in the transform's own document, when known.
     pub line: Option<u32>,
     pub col: Option<u32>,
 }
 
-/// See [`FirstRead`].
-pub(crate) fn first_read(m: &TransformModel) -> Option<FirstRead> {
+/// See [`FirstRead`]. `which` chooses the fields asked about; `|_| true`
+/// asks about any.
+pub(crate) fn first_read(m: &TransformModel, which: impl Fn(&str) -> bool) -> Option<FirstRead> {
     for out in &m.outputs {
         let Some(Ok(read)) = reads(out.expr.as_deref().unwrap_or("")) else {
             continue;
         };
-        if let Some(p) = read.previous.into_iter().next() {
+        if let Some(p) = read.previous.into_iter().find(|p| which(&p.name)) {
             let (line, col, _) = locate(out, p.span);
             return Some(FirstRead {
                 output: out.id.clone(),
@@ -226,6 +282,32 @@ pub fn check(parsed: &ParsedForge, label: &str) -> Result<(), Located<ForgeError
                     label,
                     line,
                     col,
+                ));
+            }
+            // The read lowers to a parameter with a name of its own, and a
+            // field already spelled that way would be bound twice in every
+            // output function's signature.
+            //
+            // ⚠ No row, as `forge::namespace` reports every duplicate: the
+            // record's `actual` is the colliding NAME, which is spelled on
+            // the other field's element and nowhere near this read — and a
+            // record without a row is found by the one place that name is
+            // written.
+            let param = param_name(&field.id);
+            if fields.iter().any(|f| f.id == param) {
+                return Err(Located::new(
+                    ValidationError::DuplicateId {
+                        kind: crate::forge::model::ForgeKind::Transform,
+                        what: format!(
+                            "name (field, and the parameter `previous({})` lowers to)",
+                            field.id
+                        ),
+                        id: param,
+                    }
+                    .into(),
+                    label,
+                    None,
+                    None,
                 ));
             }
         }

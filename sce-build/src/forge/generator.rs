@@ -339,6 +339,15 @@ pub struct ImportContext {
     /// with outside the table).
     #[serde(skip)]
     pub enum_is_open: bool,
+    /// For an imported transform that reads a field through `previous()`,
+    /// its first such read. A stateless import stands for a pure function
+    /// the importer calls with its own values, and this transform's
+    /// functions also take the values its holder keeps — so a document
+    /// that NAMES this import is refused (`compile_forge_from_parsed`), and
+    /// one that only declares it is not: an import nothing names emits
+    /// nothing. `None` for every other import. Not template context.
+    #[serde(skip)]
+    pub transform_state_read: Option<crate::forge::previous_value::FirstRead>,
 }
 
 /// Resolve a list of `ForgeImport` into template-ready `ImportContext`.
@@ -633,6 +642,7 @@ fn resolve_single_import(
         enum_source_name: String::new(),
         enum_underlying: None,
         enum_is_open: false,
+        transform_state_read: None,
     }
 }
 
@@ -1127,12 +1137,64 @@ fn render_transform(
     use crate::generator::Language;
     let l = LangCtx::new(lang, imports);
 
-    let go_renames = l.go_rename_pairs(m.inputs.iter().map(|f| f.id.as_str()));
+    // ── A field read through `previous()` is one more PARAMETER ────
+    //
+    // Each cell's parameter follows the inputs, in cell order, in EVERY
+    // output function's list — so the list stays one list, and the sibling
+    // call below still forwards the caller's own parameters unchanged. With
+    // no cells this is exactly the inputs, and the output is byte-identical
+    // to a transform that never heard of `previous()`.
+    let cells = crate::forge::previous_value::cells(m);
+    let param_fields: Vec<ForgeField> = m
+        .inputs
+        .iter()
+        .cloned()
+        .chain(cells.iter().map(|c| c.param.clone()))
+        .collect();
 
-    let type_ctx = crate::forge::type_ctx::transform(m, imports);
-    // An `enum:<alias>` input resolves through `l`, which carries this
-    // document's imports — see `LangCtx`.
-    let params = l.param_str(&m.inputs);
+    let go_renames = l.go_rename_pairs(param_fields.iter().map(|f| f.id.as_str()));
+
+    let type_ctx = crate::forge::type_ctx::transform(m, &cells, imports);
+
+    // ── A parameter an output does not read is unread ON PURPOSE ──
+    //
+    // Every output function takes the same parameters, so that the sibling
+    // call below can forward its own list unchanged — and an output rarely
+    // reads all of them: a value read through `previous()` is a parameter
+    // of every output and read by one, and two outputs of one document may
+    // read different inputs. A compiler that warns on an unused parameter
+    // (rustc always; C, C++ and Kotlin under warnings a product commonly
+    // makes errors) would then reject generated code for doing what it was
+    // designed to, so each parameter an output does not read is marked
+    // unread in its language's own way.
+    //
+    // `None` is "every parameter is read": an output that reads a sibling
+    // forwards all of them to it, and an expression that does not parse
+    // was refused before rendering — were one to arrive, nothing is
+    // marked, which can cost a warning but never a wrong program.
+    let params_read = |out: &ForgeField| -> Option<std::collections::HashSet<String>> {
+        let reads =
+            crate::forge::previous_value::reads(out.expr.as_deref().unwrap_or("0"))?.ok()?;
+        let reads_a_sibling = reads
+            .now
+            .iter()
+            .any(|n| *n != out.id && m.outputs.iter().any(|o| o.id == *n));
+        if reads_a_sibling {
+            return None;
+        }
+        Some(
+            reads
+                .now
+                .into_iter()
+                .chain(
+                    reads
+                        .previous
+                        .iter()
+                        .map(|p| crate::forge::previous_value::param_name(&p.name)),
+                )
+                .collect(),
+        )
+    };
 
     // ── A sibling output is a CALL, not a bare name ───────────────
     //
@@ -1153,8 +1215,7 @@ fn render_transform(
     // fragment while leaving the inferred type intact, which is exactly
     // what a call-shaped replacement needs (and is how C11 already
     // lowers `_st->member.field`).
-    let args = m
-        .inputs
+    let args = param_fields
         .iter()
         .map(|f| l.local_id(&f.id))
         .collect::<Vec<_>>()
@@ -1210,8 +1271,9 @@ fn render_transform(
     // annotations once so every `compute_<out>` doc-comment block
     // describes the same input set. Output's own quantity (if present)
     // also surfaces in the doc.
-    let param_quantities: Vec<serde_json::Value> = m
-        .inputs
+    // A cell is a parameter like any other, so its quantity is documented
+    // beside the inputs' — it carries its field's.
+    let param_quantities: Vec<serde_json::Value> = param_fields
         .iter()
         .filter_map(|inp| {
             inp.quantity.map(|q| {
@@ -1265,10 +1327,22 @@ fn render_transform(
             let fn_name =
                 forge_stateless_def_symbol(&m.name, &forge_transform_symbol(&out.id, lang), lang);
 
+            let read = params_read(out);
+            let is_read = |id: &str| read.as_ref().is_none_or(|r| r.contains(id));
+            // An `enum:<alias>` input resolves through `l`, which carries
+            // this document's imports — see `LangCtx`.
+            let params = l.param_str_reading(&param_fields, is_read);
+            let unread: Vec<String> = param_fields
+                .iter()
+                .filter(|f| !is_read(&f.id))
+                .map(|f| l.local_id(&f.id))
+                .collect();
+
             let mut obj = serde_json::Map::new();
             obj.insert("ret_type".into(), l.type_name(&out.sce_type).into());
             obj.insert("name".into(), fn_name.into());
-            obj.insert("params".into(), params.clone().into());
+            obj.insert("params".into(), params.into());
+            obj.insert("unread".into(), unread.into());
             obj.insert("expr".into(), expr_val.into());
             if matches!(lang, Language::Go) {
                 obj.insert("orig_name".into(), out.id.clone().into());
@@ -1306,8 +1380,160 @@ fn render_transform(
     let mut ctx = l.base_context(&m.name);
     ctx.insert("functions".into(), serde_json::json!(functions));
     l.insert_imports(&mut ctx, imports);
+    if !cells.is_empty() {
+        ctx.insert("holder".into(), transform_holder(&l, m, &cells, lang));
+    }
 
     l.render(env, "transform", ctx)
+}
+
+/// What a transform's HOLDER needs: the object that keeps its cells between
+/// activations, shaped like `filter` and `validator` — construct, `reset`,
+/// and `update`, which computes every output from this activation's inputs
+/// and the cells, then commits (an input cell takes this activation's input,
+/// an output cell this activation's output).
+///
+/// Every name here is one the rest of the transform already uses — the same
+/// `local_id` spelling, the same output functions — so the holder is only a
+/// caller of the pure functions above it, never a second copy of them.
+fn transform_holder(
+    l: &LangCtx,
+    m: &TransformModel,
+    cells: &[crate::forge::previous_value::Cell],
+    lang: crate::generator::Language,
+) -> serde_json::Value {
+    let is_string = |ty: &SceType| matches!(ty, SceType::String);
+    let symbols = forge_transform_holder_symbols(&m.name, lang);
+    let output_fn =
+        |id: &str| forge_stateless_def_symbol(&m.name, &forge_transform_symbol(id, lang), lang);
+
+    // ── Every name the holder introduces is one nothing else spells ──
+    //
+    // Inside `update` the holder's own names — Go's receiver, C11's holder
+    // parameter and record local, Python's instance, C++'s member for each
+    // kept value, and a local per output — share one scope with the input
+    // parameters and with every name the body reaches unqualified: the
+    // output functions, the holder's types and methods, the cells. A field
+    // id is any XML Name, so a document may spell any of those, and the
+    // failure is not always loud: a C++ parameter spelled like a member
+    // takes the commit that belongs to the member, and a Python output
+    // spelled like a sibling's function turns the next call into a call of
+    // a number. So each introduced name takes the first of `base`, `base_`,
+    // `base__`, … that nothing here spells.
+    //
+    // ⚠ The input parameters are not renamed: they are the signature a host
+    // calls, and the pure functions above already spell them this way.
+    let mut taken: std::collections::HashSet<String> = m
+        .inputs
+        .iter()
+        .map(|f| l.local_id(&f.id))
+        .chain(cells.iter().map(|c| l.local_id(&c.param.id)))
+        .chain(m.outputs.iter().map(|o| output_fn(&o.id)))
+        .chain([
+            symbols.holder.clone(),
+            symbols.outputs.clone(),
+            symbols.new.clone(),
+            symbols.reset.clone(),
+            symbols.update.clone(),
+        ])
+        .collect();
+    let mut fresh = |base: String| {
+        let mut name = base;
+        while !taken.insert(name.clone()) {
+            name.push('_');
+        }
+        name
+    };
+    let self_name = fresh(
+        match lang {
+            crate::generator::Language::Python => "self",
+            _ => "holder",
+        }
+        .to_string(),
+    );
+    let out_name = fresh("out".to_string());
+    let members: Vec<String> = cells
+        .iter()
+        .map(|c| fresh(format!("{}_", l.local_id(&c.param.id))))
+        .collect();
+    let output_locals: std::collections::HashMap<&str, String> = m
+        .outputs
+        .iter()
+        .map(|o| (o.id.as_str(), fresh(l.local_id(&o.id))))
+        .collect();
+
+    let inputs: Vec<serde_json::Value> = m
+        .inputs
+        .iter()
+        .map(|f| {
+            serde_json::json!({
+                "name": l.local_id(&f.id),
+                "is_string": is_string(&f.sce_type),
+            })
+        })
+        .collect();
+    let outputs: Vec<serde_json::Value> = m
+        .outputs
+        .iter()
+        .map(|o| {
+            serde_json::json!({
+                "name": output_locals[o.id.as_str()],
+                "field": forge_transform_output_field(&o.id, lang),
+                "type": l.type_name(&o.sce_type),
+                "is_string": is_string(&o.sce_type),
+                "fn": output_fn(&o.id),
+            })
+        })
+        .collect();
+    let holder_cells: Vec<serde_json::Value> = cells
+        .iter()
+        .zip(&members)
+        .map(|(c, member)| {
+            let string = is_string(&c.param.sce_type);
+            let from_output = output_locals.get(c.of.as_str());
+            serde_json::json!({
+                "name": l.local_id(&c.param.id),
+                // C++ keeps a value in a member it reaches unqualified.
+                "member": member,
+                "type": l.type_name(&c.param.sce_type),
+                "is_string": string,
+                "initial": if string { String::new() } else { l.initial_expr(&c.param) },
+                "initial_text": c.param.initial.clone().unwrap_or_default(),
+                // What the cell takes at commit: this activation's input, or
+                // the local its output was computed into.
+                "source": from_output.cloned().unwrap_or_else(|| l.local_id(&c.of)),
+                // C11 computes each output straight into the record, so an
+                // output cell reads it from there.
+                "source_field": forge_transform_output_field(&c.of, lang),
+                "from_output": from_output.is_some(),
+            })
+        })
+        .collect();
+    // Rust's derive lines have one owner, `rust_derive_policy`.
+    let derives = |category: crate::rust_derive_policy::RustDeriveCategory| {
+        if matches!(lang, crate::generator::Language::Rust) {
+            category.derives_attr()
+        } else {
+            String::new()
+        }
+    };
+    serde_json::json!({
+        "input_params": l.param_str(&m.inputs),
+        "input_args": inputs
+            .iter()
+            .filter_map(|i| i["name"].as_str().map(str::to_string))
+            .collect::<Vec<_>>()
+            .join(", "),
+        "inputs": inputs,
+        "outputs": outputs,
+        "cells": holder_cells,
+        "self_name": self_name,
+        "out_name": out_name,
+        "symbols": symbols,
+        "derives_attr": derives(crate::rust_derive_policy::RustDeriveCategory::TransformHolder),
+        "outputs_derives_attr":
+            derives(crate::rust_derive_policy::RustDeriveCategory::TransformOutputs),
+    })
 }
 
 // ── Lookup rendering (unified) ────────────────────────────────
@@ -20072,11 +20298,40 @@ impl LangCtx {
 
     /// Format a full parameter list string from fields.
     fn param_str(&self, fields: &[ForgeField]) -> String {
+        self.param_str_reading(fields, |_| true)
+    }
+
+    /// [`param_str`](Self::param_str), with every parameter `reads` says
+    /// the function does not read marked as unread on purpose — in the
+    /// signature where the language has a way to say so.
+    fn param_str_reading(&self, fields: &[ForgeField], reads: impl Fn(&str) -> bool) -> String {
         fields
             .iter()
-            .map(|f| self.format_param(&f.id, &f.sce_type))
+            .map(|f| {
+                let param = self.format_param(&f.id, &f.sce_type);
+                if reads(&f.id) {
+                    param
+                } else {
+                    format!("{}{param}", self.unread_param_prefix())
+                }
+            })
             .collect::<Vec<_>>()
             .join(", ")
+    }
+
+    /// How a signature says a parameter is unread on purpose, written
+    /// before it. Empty on Go and Python, which do not warn about one, and
+    /// on C11, which has no such attribute before C23 and says it in the
+    /// body instead (`(void)name;`, from the function's `unread` list).
+    fn unread_param_prefix(&self) -> &'static str {
+        match self.lang {
+            crate::generator::Language::Rust => "#[allow(unused_variables)] ",
+            crate::generator::Language::Cpp => "[[maybe_unused]] ",
+            crate::generator::Language::Kotlin => "@Suppress(\"UNUSED_PARAMETER\") ",
+            crate::generator::Language::Go
+            | crate::generator::Language::Python
+            | crate::generator::Language::C11 => "",
+        }
     }
 
     /// Format a single parameter: handles language-specific id casing, type
@@ -20113,13 +20368,7 @@ impl LangCtx {
 
     /// Language-specific identifier for local variables / parameters.
     fn local_id(&self, id: &str) -> String {
-        match self.lang {
-            crate::generator::Language::Rust
-            | crate::generator::Language::Python
-            | crate::generator::Language::C11 => filters::to_snake_case(id.to_string()),
-            crate::generator::Language::Go => go_escape_builtin(id),
-            _ => id.to_string(),
-        }
+        forge_local_id(id, self.lang)
     }
 
     fn template_ext(&self) -> &'static str {
@@ -20216,6 +20465,56 @@ impl LangCtx {
             crate::generator::Language::Go => go_literal(val, ty),
             crate::generator::Language::Python => python_literal(val, ty),
             crate::generator::Language::C11 => c_literal(val, ty),
+        }
+    }
+
+    /// A cell's first value — its field's `sce:initial` — as this language
+    /// spells a constant of the field's type.
+    ///
+    /// ⚠ One renderer, and every arm reuses the spelling that already has an
+    /// owner: an enum's variant through [`crate::forge::enum_naming`], a
+    /// number through `NumericLiteral::to_source` and then [`Self::literal`]
+    /// (so `0b101` reaches C11 as `5`, which it has a spelling for), a bool as
+    /// the language's literal. `forge::retention` has already refused an
+    /// initial value the type cannot hold, so none of these is asked to
+    /// render one.
+    ///
+    /// ⚠⚠ A STRING is not rendered here. Its template writes the text inside
+    /// a quoted literal, where `crate::literal_text` escapes it at the one door
+    /// every string literal in generated source passes through; escaping it
+    /// here as well would be a second encoder for the same bytes.
+    fn initial_expr(&self, field: &ForgeField) -> String {
+        let text = field.initial.as_deref().unwrap_or_default().trim();
+        match &field.sce_type {
+            SceType::Enum(r) => {
+                let imported = self.enum_import(&r.alias);
+                crate::forge::enum_naming::variant_ref(
+                    self.lang,
+                    &imported.qualified,
+                    &imported.source_name,
+                    text,
+                )
+            }
+            SceType::Bool => {
+                let value = text == "true";
+                match (self.lang, value) {
+                    (crate::generator::Language::Python, true) => "True".into(),
+                    (crate::generator::Language::Python, false) => "False".into(),
+                    (_, true) => "true".into(),
+                    (_, false) => "false".into(),
+                }
+            }
+            ty if ty.is_numeric() => {
+                let source = ty
+                    .numeric_literal(text)
+                    .map(|n| n.to_source())
+                    .unwrap_or_else(|_| text.to_string());
+                self.literal(&source, ty)
+            }
+            other => unreachable!(
+                "initial_expr for a {other:?} cell — a string's text is written by \
+                 its template, and a bytes cell is refused before any renderer runs"
+            ),
         }
     }
 
@@ -22086,6 +22385,96 @@ pub(crate) fn forge_transform_symbol(
     }
 }
 
+/// W1 symbol-name SSOT for a transform's HOLDER — the object that keeps the
+/// values `previous()` reads from one activation to the next. Two parties
+/// spell these names: `render_transform`, which defines the holder, and the
+/// conformance harness, which drives it. Neither restates a casing rule.
+///
+/// The call SHAPE still differs by language — a method on five backends, a
+/// free function taking the holder's address on C11 — and that is the
+/// fragment's to write. What each name is, is not.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct TransformHolderSymbols {
+    /// The holder's type.
+    pub holder: String,
+    /// The record one activation returns: every output, by name.
+    pub outputs: String,
+    /// What makes a holder whose kept values are at their fields'
+    /// `sce:initial`: the type itself where a constructor is spelled by its
+    /// type's name (C++, Kotlin, Python), the associated `new` on Rust,
+    /// `New<Type>` on Go, and on C11 `<prefix>_init`, which fills a holder
+    /// the caller owns.
+    pub new: String,
+    /// Every kept value back to its field's `sce:initial`.
+    pub reset: String,
+    /// One activation.
+    pub update: String,
+}
+
+pub(crate) fn forge_transform_holder_symbols(
+    name: &str,
+    language: crate::generator::Language,
+) -> TransformHolderSymbols {
+    use crate::generator::Language;
+    let pascal = filters::to_pascal_case(name.to_string());
+    match language {
+        Language::C11 => TransformHolderSymbols {
+            holder: forge_c11_flat(name, "state_t"),
+            outputs: forge_c11_flat(name, "outputs_t"),
+            new: forge_c11_flat(name, "init"),
+            reset: forge_c11_flat(name, "reset"),
+            update: forge_c11_flat(name, "update"),
+        },
+        Language::Go => TransformHolderSymbols {
+            outputs: format!("{pascal}Outputs"),
+            new: format!("New{pascal}"),
+            reset: "Reset".to_string(),
+            update: "Update".to_string(),
+            holder: pascal,
+        },
+        Language::Rust => TransformHolderSymbols {
+            outputs: format!("{pascal}Outputs"),
+            new: "new".to_string(),
+            reset: "reset".to_string(),
+            update: "update".to_string(),
+            holder: pascal,
+        },
+        Language::Cpp | Language::Kotlin | Language::Python => TransformHolderSymbols {
+            outputs: format!("{pascal}Outputs"),
+            new: pascal.clone(),
+            reset: "reset".to_string(),
+            update: "update".to_string(),
+            holder: pascal,
+        },
+    }
+}
+
+/// The spelling a field id takes as a local variable or parameter.
+pub(crate) fn forge_local_id(id: &str, language: crate::generator::Language) -> String {
+    use crate::generator::Language;
+    match language {
+        Language::Rust | Language::Python | Language::C11 => filters::to_snake_case(id.to_string()),
+        Language::Go => go_escape_builtin(id),
+        Language::Cpp | Language::Kotlin => id.to_string(),
+    }
+}
+
+/// W1 symbol-name SSOT for one field of a transform holder's outputs
+/// record, keyed on the output id. Go exports a struct field by its case,
+/// and a host reads the record from another package, so the field is
+/// PascalCase there; on every other backend it is the field id's local
+/// spelling ([`forge_local_id`]).
+pub(crate) fn forge_transform_output_field(
+    output_id: &str,
+    language: crate::generator::Language,
+) -> String {
+    match language {
+        crate::generator::Language::Go => filters::to_pascal_case(output_id.to_string()),
+        _ => forge_local_id(output_id, language),
+    }
+}
+
 /// W1 symbol-name SSOT for the `interpolation` kind: the bare accessor
 /// member, the constant `lookup` (exported as `Lookup` on Go). This is the
 /// def≠call kind: `render_interpolation` defines it as a member of a
@@ -23728,6 +24117,7 @@ mod tests {
             enum_source_name: String::new(),
             enum_underlying: None,
             enum_is_open: false,
+            transform_state_read: None,
         }
     }
 
@@ -24356,6 +24746,7 @@ mod tests {
                 enum_source_name: String::new(),
                 enum_underlying: None,
                 enum_is_open: false,
+                transform_state_read: None,
             },
             ImportContext {
                 alias: "c".to_string(),
@@ -24392,6 +24783,7 @@ mod tests {
                 enum_source_name: String::new(),
                 enum_underlying: None,
                 enum_is_open: false,
+                transform_state_read: None,
             },
         ];
         let (has, _all, _stateful) = build_template_imports(&imports);

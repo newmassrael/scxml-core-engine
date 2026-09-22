@@ -7,6 +7,9 @@
 # SCE Forge: Auto-generated from Extended SCXML (sce:kind="transform")
 # Runtime: {{ runtime_dep }}
 # Do not edit — regenerate from the source SCXML file.
+{% if holder %}
+from dataclasses import dataclass
+{% endif %}
 {% if all_imports %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}
@@ -33,3 +36,46 @@ def {{ func.name }}({{ func.params }}) -> {{ func.ret_type }}:
 {% endif %}
     return {{ func.expr }}
 {% endfor %}
+{% if holder %}
+
+
+{% set this = holder.self_name %}
+@dataclass(frozen=True)
+class {{ holder.symbols.outputs }}:
+    """Every output of one activation."""
+
+{% for o in holder.outputs %}
+    {{ o.field }}: {{ o.type }}
+{% endfor %}
+
+
+class {{ holder.symbols.holder }}:
+    """The values `previous()` reads, kept from one activation to the next.
+
+    ``{{ holder.symbols.update }}`` is one activation: every output is
+    computed from this activation's inputs and the kept values, and only then
+    is each kept value replaced by what its field holds now.
+    """
+
+    def __init__({{ this }}) -> None:
+        {{ this }}.{{ holder.symbols.reset }}()
+
+    def {{ holder.symbols.reset }}({{ this }}) -> None:
+        """Every kept value back to its field's ``sce:initial``."""
+{% for c in holder.cells %}
+{% if c.is_string %}
+        {{ this }}.{{ c.name }}: {{ c.type }} = "{{ c.initial_text }}"
+{% else %}
+        {{ this }}.{{ c.name }}: {{ c.type }} = {{ c.initial }}
+{% endif %}
+{% endfor %}
+
+    def {{ holder.symbols.update }}({{ this }}{% if holder.input_params %}, {{ holder.input_params }}{% endif %}) -> {{ holder.symbols.outputs }}:
+{% for o in holder.outputs %}
+        {{ o.name }} = {{ o.fn }}({{ holder.input_args }}{% for c in holder.cells %}{% if holder.input_args or not loop.first %}, {% endif %}{{ this }}.{{ c.name }}{% endfor %})
+{% endfor %}
+{% for c in holder.cells %}
+        {{ this }}.{{ c.name }} = {{ c.source }}
+{% endfor %}
+        return {{ holder.symbols.outputs }}({% for o in holder.outputs %}{{ o.field }}={{ o.name }}{% if not loop.last %}, {% endif %}{% endfor %})
+{% endif %}

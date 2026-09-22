@@ -302,9 +302,11 @@
 //! `monitor` are blocks and why `= <expr>` ends its line.
 //!
 //! A `<field-clause>` is any of `max-size <n>`,
-//! `quantity <scale> <offset> <unit>`, `retain <scope> initial <value>`,
+//! `quantity <scale> <offset> <unit>`, `retain <scope>`, `initial <value>`,
 //! `default-covers <a> <b> ...`, `= <expr>`, each written only when the
-//! model carries it, always in that order.
+//! model carries it, always in that order. A retained field carries both
+//! of the middle two (`retain nvm initial 7`); a field a transform reads
+//! through `previous()` carries `initial` alone.
 //!
 //! ⚠ `= <expr>` comes LAST because of the rule above: it is the line's
 //! one free-text value, so anything after it is unreachable to a reader.

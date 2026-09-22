@@ -9591,7 +9591,8 @@ fn parse_forge_field(
         .map(|s| s.split_whitespace().map(str::to_string).collect())
         .unwrap_or_default();
 
-    let (retain, initial) = parse_retention_attrs(data, doc_name, &format!("field '{id}'"))?;
+    let (retain, initial) =
+        parse_retention_attrs(data, doc_name, &format!("field '{id}'"), &sce_type)?;
     let initial_spelling = AttributeSpelling::of(data, Some(SCE_NAMESPACE), "initial");
 
     Ok(ForgeField {
@@ -9634,14 +9635,22 @@ fn parse_forge_field(
 /// needs the imported enum's variants, so it lives in
 /// [`crate::forge::retention::check`] rather than in this parse.
 ///
-/// Returns `(sce:retain, sce:initial)`, each trimmed.
+/// ⚠ A `string` or `bytes` field's initial value is its TEXT: an empty one
+/// is the empty value, which is how a latch that shows nothing yet starts,
+/// and surrounding spaces are part of it. Every other type's is a literal,
+/// for which empty means "not written" and spaces mean nothing.
+///
+/// Returns `(sce:retain, sce:initial)`: the scope trimmed, the initial value
+/// trimmed unless it is text.
 fn parse_retention_attrs(
     node: &roxmltree::Node,
     doc_name: &str,
     owner_label: &str,
+    sce_type: &SceType,
 ) -> Result<(Option<String>, Option<String>), Located<ForgeError>> {
     let scope = sce_attr(node, "retain");
-    let initial = sce_attr(node, "initial");
+    let is_text = matches!(sce_type, SceType::String | SceType::Bytes);
+    let initial = sce_attr(node, "initial").map(|i| if is_text { i } else { i.trim().to_string() });
     let orphan = |attr: &str, value: String, rule: &str| {
         Err(located(
             node,
@@ -9663,19 +9672,19 @@ fn parse_retention_attrs(
              without it the field has no value on the first run, before anything has been stored",
         ),
         (None, Some(i)) => {
-            if i.trim().is_empty() {
+            if i.is_empty() && !is_text {
                 return orphan("sce:initial", i, "a non-empty value");
             }
-            Ok((None, Some(i.trim().to_string())))
+            Ok((None, Some(i)))
         }
         (Some(s), Some(i)) => {
             if s.trim().is_empty() {
                 return orphan("sce:retain", s, "a non-empty scope label");
             }
-            if i.trim().is_empty() {
+            if i.is_empty() && !is_text {
                 return orphan("sce:initial", i, "a non-empty value");
             }
-            Ok((Some(s.trim().to_string()), Some(i.trim().to_string())))
+            Ok((Some(s.trim().to_string()), Some(i)))
         }
     }
 }

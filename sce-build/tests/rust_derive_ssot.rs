@@ -21,6 +21,8 @@
 //!     SSOT trio (transitive closure for `body: NameVariant`).
 //!   * EventSchema payload, ForgeEnum, BoundedCollectionHandle +
 //!     OverflowError — one fixture each.
+//!   * Transform holder + outputs record (a document reading
+//!     `previous()`) → SSOT trio on both.
 //!   * Forge procedure `State` / `Event` enums → SSOT defaults,
 //!     byte-identical to the pre-SSOT hardcoded line.
 //!
@@ -252,6 +254,36 @@ fn observer_domain_tag_emits_forge_enum_set() {
         has,
         "ForgeDomainTag must carry the ForgeEnum set via SSOT; got:\n{src}"
     );
+}
+
+/// A transform that reads `previous()` gains a holder and an outputs
+/// record, and both carry the SSOT set — the holder and its record are
+/// compared and cloned by hosts, so a template that dropped the
+/// injected line would still compile and silently lose both.
+#[test]
+fn transform_holder_and_outputs_emit_ssot_trio() {
+    let out = scratch("transform_holder");
+    run_generate(
+        &out,
+        &repo_root().join("tests/forge/resources/transform_previous_value.scxml"),
+    );
+    let src = read_emitted_rs(&out);
+    for item in [
+        "pub struct TransformPreviousValueOutputs {",
+        "pub struct TransformPreviousValue {",
+    ] {
+        let before = src
+            .split(item)
+            .next()
+            .filter(|b| b.len() < src.len())
+            .unwrap_or_else(|| panic!("`{item}` not emitted; got:\n{src}"));
+        assert!(
+            before
+                .trim_end()
+                .ends_with("#[derive(Debug, Clone, PartialEq)]"),
+            "`{item}` must carry the SSOT trio; got:\n{src}"
+        );
+    }
 }
 
 /// Validator `ValidationResult` flows through the SSOT (Debug-only).

@@ -127,6 +127,16 @@ pub enum RustDeriveCategory {
     /// and not `Copy` (owns a `String reason`), so `Debug` alone is
     /// the natural set; a consumer that needs more derives it locally.
     ValidatorResult,
+    /// `transform.rs.jinja2` — the holder a transform reading `previous()`
+    /// keeps its cells in between activations (named by
+    /// `forge_transform_holder_symbols`). `Clone` lets a host snapshot it,
+    /// `PartialEq` lets a test compare two; not `Copy`, because a string
+    /// cell owns its `String`.
+    TransformHolder,
+    /// `transform.rs.jinja2` — the record of every output of one
+    /// activation, returned by the holder's `update`. The same set as the
+    /// holder, for the same reasons.
+    TransformOutputs,
 }
 
 impl RustDeriveCategory {
@@ -168,6 +178,7 @@ impl RustDeriveCategory {
                 &["Debug", "Clone", "Copy", "PartialEq", "Eq"]
             }
             Self::ValidatorResult => &["Debug"],
+            Self::TransformHolder | Self::TransformOutputs => &["Debug", "Clone", "PartialEq"],
         }
     }
 
@@ -283,6 +294,8 @@ mod tests {
             RustDeriveCategory::ProcedureState,
             RustDeriveCategory::ProcedureEvent,
             RustDeriveCategory::ValidatorResult,
+            RustDeriveCategory::TransformHolder,
+            RustDeriveCategory::TransformOutputs,
         ] {
             assert!(
                 cat.derives().contains(&"Debug"),

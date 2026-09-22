@@ -1,8 +1,39 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
-{# Transform kind — pure free function(s), single or compound output. #}
+{# Transform kind — pure free function(s), single or compound output; or,
+   for a document that reads a field through previous(), its holder driven
+   through the oracle's sequence twice: from a new holder, then after
+   reset(). Both passes are held to the same oracle, which is what says
+   reset() restores every kept value. #}
     const auto &spec = ref["{{ f.ref_section }}"]["{{ f.name }}"];
+{% if f.holder %}
+    auto holder = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.holder.new }}();
+    for (int pass = 0; pass < 2; ++pass) {
+        if (pass == 1) {
+            holder.{{ f.holder.reset }}();
+        }
+        std::size_t i = 0;
+        for (const auto &step : spec["sequence"]) {
+{% for arg_ty in f.args %}
+            auto arg{{ loop.index0 }} = step["args"][{{ loop.index0 }}].get<{{ arg_ty | cpp_type }}>();
+{% endfor %}
+            const auto out = holder.{{ f.holder.update }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+{% for co in f.compound_outputs %}
+            auto expected_{{ co.key }} = step["expected"]["{{ co.key }}"].get<{{ co["type"] | cpp_type }}>();
+{% if co.compare == "tolerance" %}
+            assert_close(out.{{ co.field }}, expected_{{ co.key }}, tol, "{{ f.name }} {{ co.key }}");
+{% else %}
+            CHECK(out.{{ co.field }} == expected_{{ co.key }},
+                  "{{ f.name }} pass %d step %zu {{ co.key }}: actual=%lld expected=%lld",
+                  pass, i, static_cast<long long>(out.{{ co.field }}),
+                  static_cast<long long>(expected_{{ co.key }}));
+{% endif %}
+{% endfor %}
+            ++i;
+        }
+    }
+{% else %}
     for (const auto &c : spec["cases"]) {
 {% for arg_ty in f.args %}
         auto arg{{ loop.index0 }} = c["args"][{{ loop.index0 }}].get<{{ arg_ty | cpp_type }}>();
@@ -39,3 +70,4 @@
 {% endfor %}
 {% endif %}
     }
+{% endif %}

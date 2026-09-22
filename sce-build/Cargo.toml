@@ -758,6 +758,11 @@ path = "tests/a_transform_reads_its_previous_value.rs"
 required-features = ["cli"]
 
 [[test]]
+name = "a_parameter_an_output_does_not_read_is_unread_on_purpose"
+path = "tests/a_parameter_an_output_does_not_read_is_unread_on_purpose.rs"
+required-features = ["cli"]
+
+[[test]]
 name = "value_space_coverage"
 path = "tests/value_space_coverage.rs"
 required-features = ["cli"]

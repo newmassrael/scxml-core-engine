@@ -706,6 +706,14 @@ pub struct TypeCtx<'a> {
     /// [`RecordShape::Closed`] record's members are exactly its registered
     /// `"<record>.<member>"` fields and methods, and anything else is refused.
     pub records: HashMap<&'a str, RecordShape>,
+    /// A transform's cells: the field `previous(<field>)` names → the
+    /// parameter that read lowers to (`forge::previous_value::Cell`).
+    ///
+    /// ⚠ Empty everywhere but a transform whose outputs read through
+    /// `previous()`, and emptiness is what keeps every other context's
+    /// `previous(…)` exactly what it was: a call of a name the context does
+    /// not carry.
+    pub previous_cells: HashMap<&'a str, &'a str>,
 }
 
 /// Whether a record's members are known to the expression that reads it.
@@ -733,6 +741,7 @@ impl<'a> TypeCtx<'a> {
             enums: HashMap::new(),
             member_len_fields: HashMap::new(),
             records: HashMap::new(),
+            previous_cells: HashMap::new(),
         }
     }
 

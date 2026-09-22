@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE Forge conformance: transform kind — a field read through `previous()`.
+
+  A transform that reads `previous(x)` is driven through its HOLDER: the
+  object that keeps each value read this way from one activation to the
+  next. The harness runs one sequence of activations from a new holder, then
+  calls `reset()` and runs the same sequence again, and both passes must
+  match the oracle. What each output here is for:
+
+    total   an OUTPUT read through `previous()` — a running sum. Its cell
+            takes the value this activation computed, so a holder that
+            committed the input instead, or never committed, diverges at
+            the second step.
+    delta   an INPUT read through `previous()`, with a hex `sce:initial`,
+            so the first activation reads 0x10 rather than 0. A holder that
+            committed a cell BEFORE computing the outputs answers 0 at
+            every step.
+    rising  a bool cell: true exactly on the activation where `pressed`
+            goes from false to true.
+
+  No output is a conditional expression: Go does not lower one, and a
+  fixture every backend cannot generate would not be a conformance fixture.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="transform" name="previous_value">
+  <datamodel>
+    <data id="sample" sce:type="int32" sce:direction="in" sce:initial="0x10"/>
+    <data id="pressed" sce:type="bool" sce:direction="in" sce:initial="false"/>
+
+    <data id="total" sce:type="int32" sce:direction="out" sce:initial="0"
+          expr="previous(total) + sample"/>
+    <data id="delta" sce:type="int32" sce:direction="out"
+          expr="sample - previous(sample)"/>
+    <data id="rising" sce:type="bool" sce:direction="out"
+          expr="pressed &amp;&amp; !previous(pressed)"/>
+  </datamodel>
+</scxml>

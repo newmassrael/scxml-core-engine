@@ -1,7 +1,48 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
-{# Transform kind — pure free function(s), single or compound output. #}
+{# Transform kind — pure free function(s), single or compound output; or,
+   for a document that reads a field through previous(), its holder driven
+   through the oracle's sequence twice: from a new holder, then after
+   Reset(). Both passes are held to the same oracle, which is what says
+   Reset() restores every kept value.
+   ⚠ A tolerance output is compared inline rather than through
+   assertClose: every message names the pass and the step, and a label
+   built for assertClose would need "fmt", which this scaffold imports only
+   for the timer kind. #}
+{% if f.holder %}
+	steps := ref.transformSteps(t, "{{ f.ref_section }}", "{{ f.name }}")
+	holder := {{ f.name }}.{{ f.holder.new }}()
+	for pass := 0; pass < 2; pass++ {
+		if pass == 1 {
+			holder.{{ f.holder.reset }}()
+		}
+		for i, step := range steps {
+{% for arg_ty in f.args %}
+			var arg{{ loop.index0 }} {{ arg_ty | go_type }}
+			unmarshalOrFatal(t, step.Args[{{ loop.index0 }}], &arg{{ loop.index0 }}, "{{ f.name }} arg{{ loop.index0 }}")
+{% endfor %}
+			var expected struct {
+{% for co in f.compound_outputs %}
+				{{ co.key | to_pascal_case }} {{ co["type"] | go_type }} `json:"{{ co.key }}"`
+{% endfor %}
+			}
+			unmarshalOrFatal(t, step.Expected, &expected, "{{ f.name }} expected")
+			out := holder.{{ f.holder.update }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+{% for co in f.compound_outputs %}
+{% if co.compare == "tolerance" %}
+			if diff := math.Abs(float64(out.{{ co.field }}) - float64(expected.{{ co.key | to_pascal_case }})); diff > ref.FloatTolerance {
+				t.Errorf("{{ f.name }} pass %d step %d {{ co.key }}: actual=%v expected=%v diff=%v tol=%v", pass, i, out.{{ co.field }}, expected.{{ co.key | to_pascal_case }}, diff, ref.FloatTolerance)
+			}
+{% else %}
+			if out.{{ co.field }} != expected.{{ co.key | to_pascal_case }} {
+				t.Errorf("{{ f.name }} pass %d step %d {{ co.key }}: actual=%v expected=%v", pass, i, out.{{ co.field }}, expected.{{ co.key | to_pascal_case }})
+			}
+{% endif %}
+{% endfor %}
+		}
+	}
+{% else %}
 	cases := ref.pureCases(t, "{{ f.ref_section }}", "{{ f.name }}")
 	for _, c := range cases {
 {% for arg_ty in f.args %}
@@ -48,3 +89,4 @@
 {% endfor %}
 {% endif %}
 	}
+{% endif %}

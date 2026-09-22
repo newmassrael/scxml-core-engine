@@ -55,6 +55,52 @@ inline {{ func.ret_type }} {{ func.name }}({{ func.params }}) {
     return {{ func.expr }};
 }
 {% endfor %}
+{% if holder %}
+
+// Every output of one activation.
+struct {{ holder.symbols.outputs }} {
+{% for o in holder.outputs %}
+    {{ o.type }} {{ o.field }};
+{% endfor %}
+};
+
+// The values `previous()` reads, kept from one activation to the next.
+//
+// `{{ holder.symbols.update }}` is one activation: every output is computed
+// from this activation's inputs and the kept values, and only then is each
+// kept value replaced by what its field holds now.
+class {{ holder.symbols.holder }} {
+public:
+    {{ holder.symbols.holder }}() { {{ holder.symbols.reset }}(); }
+
+    // Every kept value back to its field's `sce:initial`.
+    void {{ holder.symbols.reset }}() {
+{% for c in holder.cells %}
+{% if c.is_string %}
+        {{ c.member }} = "{{ c.initial_text }}";
+{% else %}
+        {{ c.member }} = {{ c.initial }};
+{% endif %}
+{% endfor %}
+    }
+
+    // One activation.
+    {{ holder.symbols.outputs }} {{ holder.symbols.update }}({{ holder.input_params }}) {
+{% for o in holder.outputs %}
+        const {{ o.type }} {{ o.name }} = {{ o.fn }}({{ holder.input_args }}{% for c in holder.cells %}{% if holder.input_args or not loop.first %}, {% endif %}{{ c.member }}{% endfor %});
+{% endfor %}
+{% for c in holder.cells %}
+        {{ c.member }} = {{ c.source }};
+{% endfor %}
+        return {{ holder.symbols.outputs }}{ {%- for o in holder.outputs %}{{ o.name }}{% if not loop.last %}, {% endif %}{% endfor -%} };
+    }
+
+private:
+{% for c in holder.cells %}
+    {{ c.type }} {{ c.member }}{};
+{% endfor %}
+};
+{% endif %}
 
 }  // namespace SCE::Generated::{{ namespace }}
 

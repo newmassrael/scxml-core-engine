@@ -78,6 +78,13 @@
         "compare": {
           "$ref": "#/definitions/CompareMode"
         },
+        "field": {
+          "description": "Symbol-name SSOT: the field this output has in a transform holder's outputs record, derived at harness-rendering time from `forge_transform_output_field` — and only for a transform that has a holder. Never present in fixtures.json.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "function": {
           "type": "string"
         },
@@ -185,6 +192,17 @@
               "items": {
                 "$ref": "#/definitions/CompoundOutput"
               }
+            },
+            "holder": {
+              "description": "Derived at harness-rendering time from the SCXML: present iff the document reads a field through `previous()`, which is the one question that decides whether `render_transform` emits a holder. It is asked of the forge parser and `previous_value::cells` — the calls the generator makes — so the harness cannot answer it differently from the product. The names come from `forge_transform_holder_symbols`. Never present in fixtures.json.\n\nA fixture with a holder is driven through it: `args` are the inputs `update` takes, and every output is compared from the record one activation returns, by its `compound_outputs` key.",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/TransformHolderSymbols"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "kind": {
               "type": "string",
@@ -666,6 +684,39 @@
           }
         }
       ]
+    },
+    "TransformHolderSymbols": {
+      "description": "W1 symbol-name SSOT for a transform's HOLDER — the object that keeps the values `previous()` reads from one activation to the next. Two parties spell these names: `render_transform`, which defines the holder, and the conformance harness, which drives it. Neither restates a casing rule.\n\nThe call SHAPE still differs by language — a method on five backends, a free function taking the holder's address on C11 — and that is the fragment's to write. What each name is, is not.",
+      "type": "object",
+      "required": [
+        "holder",
+        "new",
+        "outputs",
+        "reset",
+        "update"
+      ],
+      "properties": {
+        "holder": {
+          "description": "The holder's type.",
+          "type": "string"
+        },
+        "new": {
+          "description": "What makes a holder whose kept values are at their fields' `sce:initial`: the type itself where a constructor is spelled by its type's name (C++, Kotlin, Python), the associated `new` on Rust, `New<Type>` on Go, and on C11 `<prefix>_init`, which fills a holder the caller owns.",
+          "type": "string"
+        },
+        "outputs": {
+          "description": "The record one activation returns: every output, by name.",
+          "type": "string"
+        },
+        "reset": {
+          "description": "Every kept value back to its field's `sce:initial`.",
+          "type": "string"
+        },
+        "update": {
+          "description": "One activation.",
+          "type": "string"
+        }
+      }
     }
   }
 }

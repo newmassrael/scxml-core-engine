@@ -31,3 +31,76 @@ pub fn {{ func.name }}({{ func.params }}) -> {{ func.ret_type }} {
     {{ func.expr }}
 }
 {% endfor %}
+{% if holder %}
+
+/// Every output of one activation.
+{{ holder.outputs_derives_attr }}
+pub struct {{ holder.symbols.outputs }} {
+{% for o in holder.outputs %}
+    pub {{ o.field }}: {{ o.type }},
+{% endfor %}
+}
+
+/// The values `previous()` reads, kept from one activation to the next.
+///
+/// `{{ holder.symbols.update }}` is one activation: every output is computed
+/// from this activation's inputs and the kept values, and only then is each
+/// kept value replaced by what its field holds now.
+{{ holder.derives_attr }}
+pub struct {{ holder.symbols.holder }} {
+{% for c in holder.cells %}
+    {{ c.name }}: {{ c.type }},
+{% endfor %}
+}
+
+impl Default for {{ holder.symbols.holder }} {
+    fn default() -> Self {
+        Self::{{ holder.symbols.new }}()
+    }
+}
+
+impl {{ holder.symbols.holder }} {
+    /// Every kept value at its field's `sce:initial`.
+    pub fn {{ holder.symbols.new }}() -> Self {
+        Self {
+{% for c in holder.cells %}
+{% if c.is_string %}
+            {{ c.name }}: String::from("{{ c.initial_text }}"),
+{% else %}
+            {{ c.name }}: {{ c.initial }},
+{% endif %}
+{% endfor %}
+        }
+    }
+
+    /// Every kept value back to its field's `sce:initial`.
+    pub fn {{ holder.symbols.reset }}(&mut self) {
+        *self = Self::{{ holder.symbols.new }}();
+    }
+
+    /// One activation.
+    pub fn {{ holder.symbols.update }}(&mut self{% if holder.input_params %}, {{ holder.input_params }}{% endif %}) -> {{ holder.symbols.outputs }} {
+{% for o in holder.outputs %}
+        let {{ o.name }} = {{ o.fn }}({{ holder.input_args }}{% for c in holder.cells %}{% if holder.input_args or not loop.first %}, {% endif %}{% if c.is_string %}&{% endif %}self.{{ c.name }}{% endfor %});
+{% endfor %}
+{% for c in holder.cells %}
+{% if c.is_string and c.from_output %}
+        self.{{ c.name }} = {{ c.source }}.clone();
+{% elif c.is_string %}
+        self.{{ c.name }} = {{ c.source }}.to_string();
+{% else %}
+        self.{{ c.name }} = {{ c.source }};
+{% endif %}
+{% endfor %}
+        {{ holder.symbols.outputs }} {
+{% for o in holder.outputs %}
+{% if o.field == o.name %}
+            {{ o.name }},
+{% else %}
+            {{ o.field }}: {{ o.name }},
+{% endif %}
+{% endfor %}
+        }
+    }
+}
+{% endif %}

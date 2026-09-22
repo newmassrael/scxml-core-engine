@@ -67,6 +67,7 @@ type reference struct {
 	// RawMessage into the kind-specific spec type.
 	PureFunctions   map[string]json.RawMessage `json:"pure_functions"`
 	StatefulFilters map[string]filterSpec      `json:"stateful_filters"`
+	StatefulTransforms map[string]transformSequenceSpec `json:"stateful_transforms"`
 	Observers       map[string]observerSpec    `json:"observers"`
 	Validators      map[string]validatorSpec   `json:"validators"`
 	Codecs          map[string]codecSpec       `json:"codecs"`
@@ -111,6 +112,17 @@ type filterSpec struct {
 type filterStep struct {
 	Input    json.RawMessage `json:"input"`
 	Expected json.RawMessage `json:"expected"`
+}
+
+// transformSequenceSpec / transformStep: a transform that reads a field
+// through previous() is driven through its holder, one activation per step.
+type transformSequenceSpec struct {
+	Sequence []transformStep `json:"sequence"`
+}
+
+type transformStep struct {
+	Args     []json.RawMessage `json:"args"`
+	Expected json.RawMessage   `json:"expected"`
 }
 
 type observerSpec struct {
@@ -309,6 +321,19 @@ func (r *reference) filterSteps(t *testing.T, section, fixture string) []filterS
 	spec, ok := r.StatefulFilters[fixture]
 	if !ok {
 		t.Fatalf("fixture %q: missing entry in stateful_filters", fixture)
+	}
+	return spec.Sequence
+}
+
+// transformSteps — see filterSteps for the drift-detection contract.
+func (r *reference) transformSteps(t *testing.T, section, fixture string) []transformStep {
+	t.Helper()
+	if section != "stateful_transforms" {
+		t.Fatalf("fixture %q: a transform with a holder requires ref_section=stateful_transforms, got %q", fixture, section)
+	}
+	spec, ok := r.StatefulTransforms[fixture]
+	if !ok {
+		t.Fatalf("fixture %q: missing entry in stateful_transforms", fixture)
 	}
 	return spec.Sequence
 }

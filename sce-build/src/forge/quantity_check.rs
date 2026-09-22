@@ -33,7 +33,7 @@
 
 use crate::attribute_spelling::AttributeSpelling;
 use crate::forge::error::{Located, ValidationError};
-use crate::forge::expr::{infer_types, parse_to_ast, BinOp, ExprKind, TypedExpr};
+use crate::forge::expr::{infer_types, lower_previous, parse_to_ast, BinOp, ExprKind, TypedExpr};
 use crate::forge::model::{
     ConditionModel, ForgeDocument, ForgeKind, ParsedForge, TransformModel, ValidatorModel,
 };
@@ -78,7 +78,10 @@ fn check_transform(
     imports: &[crate::forge::generator::ImportContext],
     label: &str,
 ) -> Result<(), Located<crate::forge::error::ForgeError>> {
-    let ctx = type_ctx::transform(m, imports);
+    // A cell carries its field's quantity, so `previous(celsius) + kelvin`
+    // is the same mismatch `celsius + kelvin` is.
+    let cells = crate::forge::previous_value::cells(m);
+    let ctx = type_ctx::transform(m, &cells, imports);
     for out in &m.outputs {
         let Some(expr_src) = out.expr.as_ref() else {
             continue;
@@ -156,6 +159,9 @@ fn check_expression(
     let Ok(mut ast) = parse_to_ast(trimmed) else {
         return Ok(());
     };
+    // The same lowering the codegen path runs first, so the walker sees the
+    // tree codegen would.
+    lower_previous(&mut ast, ctx);
     infer_types(&mut ast, ctx);
 
     if let Some(mismatch) = find_unit_mismatch(&ast) {

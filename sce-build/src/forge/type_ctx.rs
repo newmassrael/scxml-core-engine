@@ -194,9 +194,23 @@ fn close_the_scope(ctx: &mut TypeCtx<'_>) {
 /// intermediate values that several outputs consume — see
 /// [`crate::forge::transform_dep_check`], which refuses the one shape
 /// lowering cannot serve.
-pub fn transform<'a>(m: &'a TransformModel, imports: &'a [ImportContext]) -> TypeCtx<'a> {
+///
+/// `cells` are the fields read through `previous()`
+/// ([`crate::forge::previous_value::cells`]): each one's parameter is
+/// readable like an input — it IS one, to the function that reads it — and
+/// `previous(<field>)` is lowered to it before anything else runs.
+pub fn transform<'a>(
+    m: &'a TransformModel,
+    cells: &'a [crate::forge::previous_value::Cell],
+    imports: &'a [ImportContext],
+) -> TypeCtx<'a> {
     let mut ctx = TypeCtx::new();
     insert_fields(&mut ctx, &m.inputs);
+    for cell in cells {
+        ctx.insert_var(cell.param.id.as_str(), forge_field_type(&cell.param));
+        ctx.previous_cells
+            .insert(cell.of.as_str(), cell.param.id.as_str());
+    }
     // Outputs AFTER inputs: an id declared on both sides is the author's
     // own collision, and the input spelling is the one a reader expects
     // to win because it is what the signature binds.

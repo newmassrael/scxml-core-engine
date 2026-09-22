@@ -293,6 +293,8 @@ pub(crate) fn transpile_typed_with_import_lowering(
 /// with a stateful import would have skipped both — found while adding
 /// them, 2026-09-21. The order:
 ///
+/// 0. `previous(<field>)` lowered to its cell's parameter, FIRST, so every
+///    pass after it sees an ordinary identifier the context binds.
 /// 1. [`infer_types`] BEFORE anything renames, because `ctx` is keyed by
 ///    the names the author wrote and a renamed node is a `Raw` it can no
 ///    longer look up (see [`transpile_typed`]).
@@ -307,6 +309,7 @@ fn resolve_then_rename(
     renames: &HashMap<&str, &str>,
     target: ExprTarget,
 ) -> Result<(), ExprError> {
+    lower_previous(ast, ctx);
     infer_types(ast, ctx);
     reject_unknown_callees(ast, ctx)?;
     reject_unknown_names(ast, ctx)?;
@@ -2931,6 +2934,45 @@ fn expr_children_mut(expr: &mut TypedExpr) -> Vec<&mut TypedExpr> {
             None => vec![&mut **source],
         },
         _ => Vec::new(),
+    }
+}
+
+/// `previous(<field>)` → the identifier of that field's cell, for every
+/// field `ctx` holds a cell for (`TypeCtx::previous_cells`).
+///
+/// ⚠ ON THE TREE, not the text. `<sce:cycle>` calls are expanded as text
+/// before rendering, which is sound there because they are replaced by
+/// conditionals the author never sees an error in; a `previous()` read sits
+/// inside the author's own expression, and a textual rename of a different
+/// length would put every later diagnostic in that expression at a column
+/// the author did not write. Rewriting the NODE keeps its span, so a type
+/// error in `previous(x) + "s"` still points at `previous(x)`.
+///
+/// A `previous(…)` this does not rewrite — no cell for its argument, or no
+/// cells at all, as in every context but a transform's — is left as the
+/// call it is, and the callee check refuses it by that name.
+pub(crate) fn lower_previous(ast: &mut TypedExpr, ctx: &TypeCtx<'_>) {
+    if ctx.previous_cells.is_empty() {
+        return;
+    }
+    let cell = match &ast.kind {
+        ExprKind::Call { callee, args } => match (&callee.kind, args.as_slice()) {
+            (ExprKind::Ident(name), [arg]) if name == crate::forge::previous_value::PREVIOUS => {
+                match &arg.kind {
+                    ExprKind::Ident(field) => ctx.previous_cells.get(field.as_str()).copied(),
+                    _ => None,
+                }
+            }
+            _ => None,
+        },
+        _ => None,
+    };
+    if let Some(param) = cell {
+        ast.kind = ExprKind::Ident(param.to_string());
+        return;
+    }
+    for child in expr_children_mut(ast) {
+        lower_previous(child, ctx);
     }
 }
 

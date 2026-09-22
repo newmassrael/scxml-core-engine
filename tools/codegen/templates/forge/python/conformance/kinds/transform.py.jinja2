@@ -1,7 +1,27 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
-{# Transform kind — pure free function(s), single or compound output. #}
+{# Transform kind — pure free function(s), single or compound output; or,
+   for a document that reads a field through previous(), its holder driven
+   through the oracle's sequence twice: from a new holder, then after
+   reset(). Both passes are held to the same oracle, which is what says
+   reset() restores every kept value. #}
+{% if f.holder %}
+        holder = {{ f.name }}.{{ f.holder.new }}()
+        for pass_index in range(2):
+            if pass_index:
+                holder.{{ f.holder.reset }}()
+            for i, step in enumerate(spec["sequence"]):
+                out = holder.{{ f.holder.update }}(*step["args"])
+                expected = step["expected"]
+{% for co in f.compound_outputs %}
+{% if co.compare == "tolerance" %}
+                self.assert_close(out.{{ co.field }}, expected["{{ co.key }}"], f"{{ f.name }} pass {pass_index} step {i} {{ co.key }}")
+{% else %}
+                self.assertEqual(out.{{ co.field }}, expected["{{ co.key }}"], f"{{ f.name }} pass {pass_index} step {i} {{ co.key }}")
+{% endif %}
+{% endfor %}
+{% else %}
         for case in spec["cases"]:
             args = case["args"]
 {% if f.output %}
@@ -22,4 +42,5 @@
             self.assertEqual(actual_{{ co.key }}, expected["{{ co.key }}"], "{{ f.name }} {{ co.key }}")
 {% endif %}
 {% endfor %}
+{% endif %}
 {% endif %}
