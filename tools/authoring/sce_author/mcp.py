@@ -321,6 +321,7 @@ def verification_payload(result) -> dict:
         # only the positions that genuinely turn on it, or it goes back to
         # guessing an address that passes.
         "unresolved": {"inputs": result.unresolved,
+                       "outputs": result.unresolved_outputs,
                        "withheld_positions": result.undetermined},
         "cases": [
             {"name": case.name,

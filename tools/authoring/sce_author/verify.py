@@ -181,6 +181,11 @@ class Verification:
     # non-empty, with how much it blocked -- a declared unknown that blocks
     # everything should be as visible as one that blocks nothing.
     unresolved: dict = field(default_factory=dict)
+    # Outputs the DOCUMENT leaves `sce:unresolved`, and every output that reads
+    # one, to why. They are built with a placeholder so the rest can run, and
+    # no position any of them writes is judged. The document itself is
+    # untouched and its shipping build still refuses.
+    unresolved_outputs: dict = field(default_factory=dict)
 
     @property
     def undetermined(self) -> int:
@@ -313,6 +318,106 @@ def _emit(document: pathlib.Path, codegen: pathlib.Path, into: pathlib.Path,
     return Build(refusal=(
         f"the code generator built {document.name} and printed no manifest, "
         f"so nothing says which host processors the document sends to"))
+
+
+# The value a VERIFICATION build gives an output its author left
+# `sce:unresolved`, by the start of its declared type. It is never read: every
+# position such an output writes, and every output whose expression mentions
+# it, is withheld from the verdict. It exists only so the rest can be built.
+# A type not listed here keeps the product's own refusal -- a placeholder
+# nobody is sure compiles would turn a clear refusal into a confusing one.
+_PLACEHOLDERS = (("bool", "false"), ("int", "0"), ("uint", "0"),
+                 ("float", "0"), ("double", "0"))
+
+
+def verification_source(document: pathlib.Path, declared,
+                        scratch: pathlib.Path) -> pathlib.Path:
+    """The document to BUILD for a verification run.
+
+    ⚠ The product refuses to build a document holding an open decision, and
+    for SHIPPING that is exactly right -- a value nobody has decided cannot be
+    shipped. But the refusal used to end the verification too, which
+    made declaring an unknown cost every case: measured 2026-09-22, five
+    documents written from prose left the same one value open, and all five
+    lost verification entirely although their decision logic, checked by hand,
+    was as right as the documents that had guessed. That is the incentive the
+    binding's `unresolved` had until the same day, one layer down.
+
+    So verification builds a COPY in which each open output carries a
+    placeholder, and then withholds everything that placeholder could reach.
+    The author's document is not changed and the shipping build still refuses.
+
+    Returns the document itself -- to be refused by the product in its own
+    words -- whenever the copy cannot be made safely: an open decision that is
+    not a datamodel output, or one of a type this has no placeholder for.
+    """
+    if not declared.unresolved:
+        return document
+    text = document.read_text(encoding="utf-8")
+    placed = 0
+
+    def placeholder(match: re.Match) -> str:
+        nonlocal placed
+        tag = match.group(0)
+        ident = re.search(r'\bid="([^"]+)"', tag)
+        if not ident or ident.group(1) not in declared.unresolved:
+            return tag
+        if re.search(r'\sexpr="', tag):
+            placed += 1
+            return tag
+        kind = (re.search(r'\bsce:type="([^"]+)"', tag) or [None, ""])[1]
+        value = next((v for prefix, v in _PLACEHOLDERS if kind.startswith(prefix)),
+                     None)
+        if value is None:
+            return tag
+        placed += 1
+        return tag.replace("<data", f'<data expr="{value}"', 1)
+
+    copy = re.sub(r"<data\b[^>]*>", placeholder, text, flags=re.S)
+    # ⚠ Counted against EVERY open marker in the text, not only the declared
+    # outputs: a marker on a state or a transition is an open decision this
+    # copy cannot withhold, and building around it would claim a verdict
+    # about a machine nobody has finished.
+    # Counted with comments stripped: an author explaining a marker in a
+    # comment is not a second marker.
+    markers = re.sub(r"<!--.*?-->", "", copy, flags=re.S).count('sce:unresolved="')
+    if placed != len(declared.unresolved) or placed != markers:
+        return document
+    # The copy lives elsewhere, so every import it names is made absolute
+    # against the ORIGINAL's directory -- where the generator would have
+    # resolved it.
+    base = document.resolve().parent
+
+    def absolute(match: re.Match) -> str:
+        return re.sub(r'\bsrc="([^"]+)"',
+                      lambda m: f'src="{(base / m.group(1)).resolve()}"',
+                      match.group(0))
+
+    copy = re.sub(r"<sce:import\b[^>]*>", absolute, copy, flags=re.S)
+    target = scratch / document.name
+    target.write_text(copy, encoding="utf-8")
+    return target
+
+
+def withheld_outputs(declared) -> dict:
+    """Every output a verdict may not rest on: {output: why}.
+
+    The ones the author left open, and -- transitively -- every output whose
+    expression mentions one of them, since its value was computed from the
+    placeholder.
+    """
+    why = {name: reason for name, reason in declared.unresolved.items()}
+    grew = True
+    while grew:
+        grew = False
+        for name, mentions in declared.reads.items():
+            if name in why:
+                continue
+            upstream = sorted(mentions & set(why))
+            if upstream:
+                why[name] = f"reads {', '.join(upstream)}, which is unresolved"
+                grew = True
+    return why
 
 
 def pseudo_page(document: pathlib.Path, codegen: pathlib.Path | None,
@@ -1281,7 +1386,14 @@ def verify(pack: Pack, binding_path: pathlib.Path,
 
     codegen = pathlib.Path(codegen) if codegen else _default_codegen()
     into = pathlib.Path(tempfile.mkdtemp(prefix="sce_verify_"))
-    build = generate(document, codegen, into, backend)
+    # A statechart's open decisions sit on states and transitions, which a
+    # placeholder cannot stand in for; it is built as written and refused by
+    # the product in its own words, as before.
+    source = (document if declared.kind in STATECHART_KINDS else
+              verification_source(document, declared,
+                                  pathlib.Path(tempfile.mkdtemp(prefix="sce_verify_src_"))))
+    withheld = withheld_outputs(declared) if source != document else {}
+    build = generate(source, codegen, into, backend)
     if build.refusal:
         return Verification(refusal=build.refusal)
     # ⚠ The generated module imports each `<sce:import>` as a sibling, and the
@@ -1306,6 +1418,7 @@ def verify(pack: Pack, binding_path: pathlib.Path,
     bound, writes = written_positions(outputs)
 
     verification = Verification(backend=backend)
+    verification.unresolved_outputs = dict(sorted(withheld.items()))
     expected = {a for case in examples.cases for a in case.expect}
     verification.unbound = sorted(expected - bound)
     verification.unasserted = sorted(bound - expected)
@@ -1440,6 +1553,15 @@ def verify(pack: Pack, binding_path: pathlib.Path,
                 # It has nowhere to land yet. The document still computes it,
                 # and saying so would be reporting a gap the author declared.
                 continue
+            if name in withheld:
+                # ⚠ Built from a placeholder so the rest could run. Its value
+                # is not the document's answer and is never compared -- every
+                # position it writes is withheld, and a later round reading it
+                # back is withheld too.
+                if history is not None:
+                    history.outputs[name] = _UNDETERMINED
+                undetermined.update(written_positions({name: rule})[0])
+                continue
             fn = getattr(module, "compute_" + _snake(name), None)
             if fn is None:
                 if not rule.get("internal"):
@@ -1508,11 +1630,12 @@ def verify(pack: Pack, binding_path: pathlib.Path,
         # A wrong answer on a position that WAS settled is still a failure:
         # withholding the unknown does not excuse what was known.
         if result.undetermined and not result.failures:
+            open_values = unknown + sorted(withheld)
             result.refusal = (
                 f"{len(result.undetermined)} position(s) this case expects "
-                f"depend on unresolved input(s) {', '.join(unknown)} and come "
-                f"out different under their possible values; the rest agreed, "
-                f"but a case is not passed on part of what it asserts")
+                f"depend on unresolved value(s) {', '.join(open_values)}; the "
+                f"rest agreed, but a case is not passed on part of what it "
+                f"asserts")
         if history is not None:
             history.inputs = dict(values)
             history.started = True

@@ -48,6 +48,9 @@ CARRIES = {
     # likeliest reader, and it will only keep declaring unknowns if it can see
     # that doing so now costs just the positions that turn on them.
     "unresolved": "unresolved",
+    # Carried under the same key: an open value is one question whether the
+    # binding or the document is the one that left it open.
+    "unresolved_outputs": "unresolved",
 }
 
 
@@ -101,9 +104,12 @@ class TheTransportCarriesTheWholeAnswer(unittest.TestCase):
                           undetermined=["plant/out/a.value"])
         payload = verification_payload(
             Verification(backend="python", results=[case],
-                         unresolved={"override": "nobody has said"}))
+                         unresolved={"override": "nobody has said"},
+                         unresolved_outputs={"chime": "no play mode given"}))
         self.assertEqual({"override": "nobody has said"},
                          payload["unresolved"]["inputs"])
+        self.assertEqual({"chime": "no play mode given"},
+                         payload["unresolved"]["outputs"])
         self.assertEqual(1, payload["unresolved"]["withheld_positions"])
         self.assertEqual(["plant/out/a.value"],
                          payload["cases"][0]["undetermined"])

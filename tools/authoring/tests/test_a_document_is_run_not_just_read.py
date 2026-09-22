@@ -111,17 +111,27 @@ class ADocumentIsRunNotJustRead(unittest.TestCase):
 
     # ------------------------------------------------------------ refusing
 
-    def test_an_open_decision_is_refused_with_the_reason_its_author_wrote(self):
-        """The generator's own words reach the caller unaltered.
+    def test_an_open_decision_reaches_the_caller_with_its_authors_reason(self):
+        """The placeholder AND the sentence the author wrote beside it reach
+        the caller -- the feedback that says what to go and ask.
 
-        The refusal names the placeholder AND the sentence the author wrote
-        beside it, which is the feedback that says what to go and ask. Putting
-        it in this tool's words instead would lose the reason.
+        ⚠ This used to assert a REFUSAL, because the refusal was how those
+        words travelled. The run now builds a copy that withholds the open
+        value and judges the rest, so the words travel in the report beside
+        the counts instead. What is asserted is the part that mattered: the
+        handle and the reason both arrive, and nothing is judged on the value
+        the copy had to stand in with.
         """
         result = verify(self.pack, OPEN_BINDING)
-        self.assertFalse(result.ran)
-        self.assertIn("CROSSING_TRAIN_SIGNAL_UNDECIDED", result.refusal)
-        self.assertIn("never says what the train signal shows", result.refusal)
+        self.assertTrue(result.ran, result.refusal)
+        said = "\n".join(result.unresolved_outputs.values())
+        self.assertIn("CROSSING_TRAIN_SIGNAL_UNDECIDED", said)
+        self.assertIn("never says what the train signal shows", said)
+        # Arity floor: the open value is written somewhere the cases look.
+        self.assertGreater(result.undetermined, 0)
+        for case in result.results:
+            if case.undetermined:
+                self.assertFalse(case.passed, case.name)
 
     def test_a_kind_this_cannot_drive_is_refused_by_name(self):
         """Driving another kind means driving a different generated shape."""

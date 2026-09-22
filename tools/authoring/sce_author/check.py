@@ -55,6 +55,11 @@ class Document:
     # Output identifier -> what its author wrote down as an assumption. See
     # `read_document` for why this is carried at all.
     assumed: dict = dataclasses.field(default_factory=dict)
+    # Output identifier -> the reason its author gave for leaving it
+    # `sce:unresolved`: a value nobody has decided, written as a question
+    # rather than a guess. The product refuses to BUILD such a document for
+    # shipping, which is right; `verify` builds a copy that withholds it.
+    unresolved: dict = dataclasses.field(default_factory=dict)
     # Output identifier -> the identifiers its expression mentions. ⚠ Needed
     # because an assumption is rarely on the value that lands at an address:
     # it is usually a step upstream, and attributing only to the direct writer
@@ -108,7 +113,7 @@ def read_document(path: pathlib.Path) -> Document:
             f"a double hyphen, which is the way this usually happens."
         ) from exc
     inputs, outputs = [], []
-    assumed, reads = {}, {}
+    assumed, reads, unresolved = {}, {}, {}
     for data in root.iter(f"{SCXML_NS}data"):
         ident = data.get("id")
         direction = data.get(f"{SCE_NS}direction")
@@ -125,6 +130,12 @@ def read_document(path: pathlib.Path) -> Document:
         if data.get(f"{SCE_NS}assumed"):
             assumed[ident] = (data.get(f"{SCE_NS}assumed-reason")
                               or data.get(f"{SCE_NS}assumed"))
+        if direction == "out" and data.get(f"{SCE_NS}unresolved"):
+            # Both halves: the marker is the question's handle, the reason is
+            # what to go and ask. The product's refusal named both.
+            marker = data.get(f"{SCE_NS}unresolved")
+            reason = data.get(f"{SCE_NS}unresolved-reason")
+            unresolved[ident] = f"{marker} -- {reason}" if reason else marker
         if data.get("expr"):
             reads[ident] = frozenset(re.findall(r"[A-Za-z_][A-Za-z0-9_]*",
                                                 data.get("expr")))
@@ -151,6 +162,7 @@ def read_document(path: pathlib.Path) -> Document:
         outputs=tuple(outputs),
         kind=root.get(f"{SCE_NS}kind", ""),
         assumed=assumed,
+        unresolved=unresolved,
         reads=reads,
         sends=tuple(sends),
         events=frozenset(events),

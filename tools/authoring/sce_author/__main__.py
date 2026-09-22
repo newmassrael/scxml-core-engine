@@ -148,14 +148,25 @@ def cmd_verify(args) -> int:
     # an unknown that withholds every position must be exactly as visible as
     # one that withholds none, or `unresolved` becomes the way to make a hard
     # case disappear.
-    if result.unresolved:
+    if result.unresolved or result.unresolved_outputs:
         blocked = sum(1 for c in result.results if c.undetermined)
-        print(f"  {len(result.unresolved)} input(s) the binding leaves "
-              f"UNRESOLVED; every case ran under each value they could take, "
-              f"and {result.undetermined} position(s) in {blocked} case(s) "
-              f"came out different, so were not judged:")
-        for name, why in result.unresolved.items():
-            print(f"          {name}: {why}")
+        if result.unresolved:
+            print(f"  {len(result.unresolved)} input(s) the binding leaves "
+                  f"UNRESOLVED; every case ran under each value they could "
+                  f"take:")
+            for name, why in result.unresolved.items():
+                print(f"          {name}: {why}")
+        if result.unresolved_outputs:
+            # ⚠ The product's refusal named these and their reasons; that
+            # feedback is the point of the marker, so it is repeated here
+            # rather than lost with the refusal.
+            print(f"  {len(result.unresolved_outputs)} output(s) the document "
+                  f"leaves UNRESOLVED or computes from one; built with a "
+                  f"placeholder for this run only, and never judged:")
+            for name, why in result.unresolved_outputs.items():
+                print(f"          {name}: {why}")
+        print(f"  {result.undetermined} position(s) in {blocked} case(s) "
+              f"rest on them and were not judged")
     # ⚠ Unjudged is reported beside the other two and never folded into either.
     # Counting it as a pass claims a run that did not happen; counting it as a
     # failure blames a document for a case nobody could drive.
@@ -166,6 +177,18 @@ def cmd_verify(args) -> int:
     print(f"  {result.passed} passed, {result.failed} failed, "
           f"{result.unjudged} could not be judged "
           f"(the {result.backend} lowering)")
+    # ⚠ An open value is not a failure of the document, and it is not a pass
+    # either: a pipeline that gates on this status must not read "incomplete"
+    # as "verified". Before open values were run rather than refused, the
+    # refusal carried status 1 and that was the protection; running them
+    # instead kept the counts honest and, for one change, let the status
+    # become 0 -- so the status now says so explicitly.
+    if result.unresolved or result.unresolved_outputs:
+        print(f"  not a pass: {len(result.unresolved) + len(result.unresolved_outputs)} "
+              f"value(s) are still unresolved, so the status is non-zero even "
+              f"though {'nothing' if not result.failed else 'more than that'} "
+              f"failed")
+        return 1
     return 1 if result.failed else 0
 
 
