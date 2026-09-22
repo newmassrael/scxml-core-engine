@@ -55,6 +55,8 @@
 //! having never been asked -- the same false-clean, one level below where the
 //! gate was looking for it.
 
+mod common;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -103,17 +105,7 @@ fn repo_root() -> PathBuf {
 /// `scope_obligation` gives: a corpus narrowed to authored examples would
 /// exclude the W3C documents, and those are most of the population.
 fn corpus() -> Vec<PathBuf> {
-    let out = std::process::Command::new("git")
-        .args(["ls-files", "*.scxml"])
-        .current_dir(repo_root())
-        .output()
-        .expect("git ls-files");
-    assert!(out.status.success(), "git ls-files failed");
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .map(|line| repo_root().join(line))
-        .filter(|p| p.is_file())
-        .collect()
+    common::repository::files_git_tracks(&["*.scxml"])
 }
 
 /// Parse and analyze one document, or `None` when it does not parse.

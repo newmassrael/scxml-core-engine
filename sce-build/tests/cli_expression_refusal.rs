@@ -44,6 +44,8 @@
 //      be checked without the other: closing the namespace would refuse
 //      a registered conformance fixture.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -613,25 +615,10 @@ fn a_literal_written_as_a_call_is_reported_with_neither_a_choice_nor_a_fix() {
 /// of its own, rather than one workflow deciding it alone.
 #[test]
 fn every_authored_document_is_free_of_refused_expressions() {
-    let root = repo_root();
-    let listed = Command::new("git")
-        .args([
-            "ls-files",
-            "-z",
-            "examples/*.scxml",
-            "integration_resources/*/*.scxml",
-        ])
-        .current_dir(&root)
-        .output()
-        .expect("git ls-files");
-    assert!(listed.status.success());
-
-    let documents: Vec<String> = listed
-        .stdout
-        .split(|b| *b == 0)
-        .filter(|s| !s.is_empty())
-        .map(|s| String::from_utf8_lossy(s).into_owned())
-        .collect();
+    let documents: Vec<String> = common::repository::paths_git_tracks(&[
+        "examples/*.scxml",
+        "integration_resources/*/*.scxml",
+    ]);
     // The corpus was 35 documents when this bound was set; a discovery
     // bug that swept nothing would otherwise read as a pass.
     assert!(

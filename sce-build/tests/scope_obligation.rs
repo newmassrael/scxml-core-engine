@@ -40,6 +40,8 @@
 // being observable, `every_stage_boundary_is_observable` fails and the
 // census is never read as an answer.
 
+mod common;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -83,17 +85,7 @@ fn repo_root() -> PathBuf {
 /// are where `<script>` declarations and late `<assign>` targets actually
 /// live.
 fn corpus() -> Vec<PathBuf> {
-    let out = std::process::Command::new("git")
-        .args(["ls-files", "*.scxml"])
-        .current_dir(repo_root())
-        .output()
-        .expect("git ls-files");
-    assert!(out.status.success(), "git ls-files failed");
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .map(|line| repo_root().join(line))
-        .filter(|p| p.is_file())
-        .collect()
+    common::repository::files_git_tracks(&["*.scxml"])
 }
 
 /// Parse one document, or `None` when it does not parse — this corpus

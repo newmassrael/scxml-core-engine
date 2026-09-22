@@ -32,6 +32,8 @@
 // reader, because the shell consumers — the gate, the installer, the MCP
 // launcher — are the ones that fill and judge the root together.
 
+mod common;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -48,19 +50,10 @@ fn repo_root() -> PathBuf {
 /// Enumerated from the tree rather than from a list here: a list would be a
 /// third place to forget, which is the shape of the defect this file is about.
 fn shell_scripts(root: &Path) -> Vec<(String, String)> {
-    let out = std::process::Command::new("git")
-        .current_dir(root)
-        .args(["ls-files", "scripts/*.sh", "scripts/**/*.sh"])
-        .output()
-        .expect("git ls-files");
     let mut found = Vec::new();
-    for rel in String::from_utf8_lossy(&out.stdout).lines() {
-        let rel = rel.trim();
-        if rel.is_empty() {
-            continue;
-        }
-        if let Ok(text) = fs::read_to_string(root.join(rel)) {
-            found.push((rel.to_string(), text));
+    for rel in common::repository::paths_git_tracks(&["scripts/*.sh", "scripts/**/*.sh"]) {
+        if let Ok(text) = fs::read_to_string(root.join(&rel)) {
+            found.push((rel, text));
         }
     }
     found
@@ -174,16 +167,7 @@ fn every_workspace_pin_names_the_procured_revision() {
     assert_eq!(rev.len(), 40, "MNEMOSYNE_REV is a 40-hex revision: {rev:?}");
     let short = &rev[..8];
 
-    let out = std::process::Command::new("git")
-        .current_dir(&root)
-        .args(["ls-files", "*mnemosyne.toml"])
-        .output()
-        .expect("git ls-files");
-    let configs: Vec<String> = String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .map(|l| l.trim().to_string())
-        .filter(|l| !l.is_empty())
-        .collect();
+    let configs: Vec<String> = common::repository::paths_git_tracks(&["*mnemosyne.toml"]);
 
     // A floor, because "every pin matches" is trivially true of no pins at
     // all — and an enumeration that stopped finding the workspaces is exactly

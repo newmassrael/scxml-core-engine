@@ -131,17 +131,8 @@ fn is_under(rel: &str, dir: &str) -> bool {
 /// Generated files are skipped: their cite came from a template, so the tree
 /// that owns it is the template tree.
 fn citing_files(root: &Path, dir: &str) -> Vec<String> {
-    let out = Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .arg("ls-files")
-        .arg(dir)
-        .output()
-        .expect("git ls-files");
-    assert!(out.status.success(), "git ls-files {dir} failed");
-
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
+    common::repository::paths_git_tracks(&[dir])
+        .into_iter()
         .filter(|rel| {
             let Ok(text) = fs::read_to_string(root.join(rel)) else {
                 return false;
@@ -155,7 +146,6 @@ fn citing_files(root: &Path, dir: &str) -> Vec<String> {
             }
             text.contains("§scxml-")
         })
-        .map(str::to_string)
         .collect()
 }
 

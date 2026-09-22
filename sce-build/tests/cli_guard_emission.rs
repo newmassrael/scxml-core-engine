@@ -21,6 +21,8 @@
 // compile error. `every_guard_the_backends_emit_natively_has_a_value`
 // walks the repository's own documents to say so.
 
+mod common;
+
 use sce_build::generator::Language;
 use sce_build::parser::SCXMLParser;
 use std::path::{Path, PathBuf};
@@ -498,24 +500,11 @@ fn a_native_guard_lowers_the_same_on_both_doors() {
 #[test]
 fn every_guard_the_backends_emit_natively_has_a_value() {
     let root = repo_root();
-    let listed = Command::new("git")
-        .args([
-            "ls-files",
-            "-z",
-            "resources/*/*.scxml",
-            "integration_resources/*/*.scxml",
-            "examples/*/*.scxml",
-        ])
-        .current_dir(&root)
-        .output()
-        .expect("git ls-files");
-    assert!(listed.status.success());
-    let documents: Vec<String> = listed
-        .stdout
-        .split(|b| *b == 0)
-        .filter(|s| !s.is_empty())
-        .map(|s| String::from_utf8_lossy(s).into_owned())
-        .collect();
+    let documents: Vec<String> = common::repository::paths_git_tracks(&[
+        "resources/*/*.scxml",
+        "integration_resources/*/*.scxml",
+        "examples/*/*.scxml",
+    ]);
     // The corpus was 240 documents when this bound was set; a discovery
     // bug that swept nothing would otherwise read as a pass.
     assert!(

@@ -28,6 +28,8 @@
 // does not exist. That would be a compile failure in generated code — loud,
 // but late and far from its cause. Here it fails at its cause.
 
+mod common;
+
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -642,20 +644,7 @@ fn no_committed_document_declares_a_typed_variable_without_an_engine() {
 /// Every `.scxml` the repository tracks, asked of git rather than of the
 /// filesystem so build output and scratch trees cannot join the scan set.
 fn committed_scxml() -> Vec<PathBuf> {
-    let out = std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo_root())
-        .args(["ls-files", "*.scxml"])
-        .output()
-        .expect("git ls-files");
-    assert!(
-        out.status.success(),
-        "git ls-files failed, so this sweep has no scan set to measure"
-    );
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .map(|rel| repo_root().join(rel))
-        .collect()
+    common::repository::files_git_tracks(&["*.scxml"])
 }
 
 /// Every backend emits the accessor, and none of them keeps the shadow.

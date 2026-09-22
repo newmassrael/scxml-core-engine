@@ -44,6 +44,8 @@
 // prose said it was inert. `acceptance_doc_states_the_naming_rule`
 // below is what keeps that from drifting back.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -198,17 +200,8 @@ fn the_root_name_attribute_does_not_name_the_compiled_model() {
 /// Every committed forge document whose root `name` disagrees with its file
 /// stem, and the kind it declares.
 fn documents_whose_declared_name_differs() -> Vec<(PathBuf, String, String, String)> {
-    let root = repo_root();
-    let listing = Command::new("git")
-        .args(["ls-files", "*.scxml"])
-        .current_dir(&root)
-        .output()
-        .expect("git ls-files");
-    assert!(listing.status.success(), "git ls-files failed: {listing:?}");
-
     let mut out = Vec::new();
-    for rel in String::from_utf8_lossy(&listing.stdout).split_whitespace() {
-        let path = root.join(rel);
+    for path in common::repository::files_git_tracks(&["*.scxml"]) {
         let Ok(text) = std::fs::read_to_string(&path) else {
             continue;
         };

@@ -75,8 +75,26 @@ pub fn paths_git_holds(pathspecs: &[&str]) -> Vec<String> {
 /// A tracked path the working tree has deleted is left out: `--cached`
 /// still lists it until the deletion is staged, and nobody can read it.
 pub fn files_with_extension(extension: &str) -> Vec<PathBuf> {
+    readable_files(paths_git_holds(&[&format!("*.{extension}")]))
+}
+
+/// Every file git TRACKS that matches one of `pathspecs`, as absolute
+/// paths, sorted — [`paths_git_tracks`] for a caller that opens what it
+/// lists.
+///
+/// For a claim about the tree as COMMITTED, where a document written but
+/// not yet added must not change the verdict; a sweep that should judge
+/// such a document before it is committed reads [`files_with_extension`].
+/// A tracked path the working tree has deleted is left out, as there.
+pub fn files_git_tracks(pathspecs: &[&str]) -> Vec<PathBuf> {
+    readable_files(paths_git_tracks(pathspecs))
+}
+
+/// Repository-relative `paths` as absolute paths to files the working tree
+/// has, sorted and each once.
+fn readable_files(paths: Vec<String>) -> Vec<PathBuf> {
     let root = root();
-    let mut files: Vec<PathBuf> = paths_git_holds(&[&format!("*.{extension}")])
+    let mut files: Vec<PathBuf> = paths
         .into_iter()
         .map(|p| root.join(p))
         .filter(|p| p.is_file())

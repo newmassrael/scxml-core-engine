@@ -24,7 +24,9 @@
 //!    and must be refused for that row. A row nothing can reach reads as
 //!    protection and is none.
 
-use std::path::{Path, PathBuf};
+mod common;
+
+use std::path::PathBuf;
 
 use sce_build::forge::diagnostic::ToDiagnostics;
 use sce_build::forge::error::{ForgeError, Located, ValidationError};
@@ -174,8 +176,7 @@ fn every_row_of_the_sce_table_is_reachable_from_a_committed_document() {
     // merely W3C's.
     const HOSTILE: &str = "x-y";
 
-    let root = repo_root();
-    let documents: Vec<(PathBuf, String)> = scxml_documents(&root)
+    let documents: Vec<(PathBuf, String)> = scxml_documents()
         .into_iter()
         .filter_map(|path| {
             let text = std::fs::read_to_string(&path).ok()?;
@@ -248,29 +249,9 @@ fn with_value_replaced(text: &str, element: &str, attr: &str, value: &str) -> Op
     Some(mutated)
 }
 
-fn repo_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("sce-build sits under the repository root")
-        .to_path_buf()
-}
-
-/// Every `.scxml` document this repository commits — `git ls-files`, for
-/// the reason `an_identifier_is_checked_against_the_grammar_w3c_gives_it`
+/// Every `.scxml` document this repository commits, asked of git for the
+/// reason `an_identifier_is_checked_against_the_grammar_w3c_gives_it`
 /// gives: what a build writes is not this tree's documents.
-fn scxml_documents(root: &Path) -> Vec<PathBuf> {
-    let out = std::process::Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(["ls-files", "-z", "*.scxml"])
-        .output()
-        .expect("git ls-files runs");
-    assert!(out.status.success(), "git ls-files must succeed");
-    let mut documents: Vec<PathBuf> = String::from_utf8_lossy(&out.stdout)
-        .split('\0')
-        .filter(|p| !p.is_empty())
-        .map(|p| root.join(p))
-        .collect();
-    documents.sort();
-    documents
+fn scxml_documents() -> Vec<PathBuf> {
+    common::repository::files_git_tracks(&["*.scxml"])
 }

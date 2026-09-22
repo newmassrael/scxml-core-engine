@@ -282,16 +282,7 @@ fn declared_runner(casefile: &str) -> String {
 }
 
 fn casefiles() -> Vec<String> {
-    let out = Command::new("git")
-        .args(["ls-files", "sce-build/tests/mutations/*.cases"])
-        .current_dir(repo_root())
-        .output()
-        .expect("git ls-files");
-    assert!(out.status.success(), "git ls-files failed");
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .map(str::to_string)
-        .collect()
+    common::repository::paths_git_tracks(&["sce-build/tests/mutations/*.cases"])
 }
 
 /// A change that touches no declared target selects nothing, and says so.

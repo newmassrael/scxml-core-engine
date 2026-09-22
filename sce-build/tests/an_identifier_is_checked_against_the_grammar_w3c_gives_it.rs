@@ -34,6 +34,8 @@
 //!    grammar refuses nothing here" is re-measured against the tree rather
 //!    than carried as a number in a document.
 
+mod common;
+
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
@@ -431,8 +433,8 @@ fn a_star_outside_the_two_positions_the_clause_defines_is_refused_at_parse() {
 /// hand-written list of them would rot the first time one moved.
 #[test]
 fn no_document_in_this_tree_is_refused_by_the_grammar() {
-    let root = repo_root();
-    let documents = scxml_documents(&root);
+    let root = common::repository::root();
+    let documents = scxml_documents();
     assert!(
         documents.len() > 600,
         "found only {} SCXML documents under {}; an empty sweep passes for \
@@ -489,13 +491,6 @@ fn no_document_in_this_tree_is_refused_by_the_grammar() {
     );
 }
 
-fn repo_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("sce-build sits under the repository root")
-        .to_path_buf()
-}
-
 /// Every `.scxml` document this repository COMMITS.
 ///
 /// `git ls-files` is the enumeration source, the way `roadmap_marker_gate`
@@ -520,25 +515,8 @@ fn repo_root() -> PathBuf {
 /// whose answer no other checkout could reproduce. A hostile id emitted into
 /// a synthesized document would have reddened this case on a developer's
 /// machine and stayed green in CI.
-fn scxml_documents(root: &Path) -> Vec<PathBuf> {
-    let out = std::process::Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(["ls-files", "-z", "*.scxml"])
-        .output()
-        .expect("git ls-files runs");
-    assert!(
-        out.status.success(),
-        "git ls-files must succeed; without it this case cannot say which \
-         documents the tree has and must not guess"
-    );
-    let mut documents: Vec<PathBuf> = String::from_utf8_lossy(&out.stdout)
-        .split('\0')
-        .filter(|p| !p.is_empty())
-        .map(|p| root.join(p))
-        .collect();
-    documents.sort();
-    documents
+fn scxml_documents() -> Vec<PathBuf> {
+    common::repository::files_git_tracks(&["*.scxml"])
 }
 
 /// The files other documents pull in — template bodies and XInclude

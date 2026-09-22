@@ -51,6 +51,8 @@
 //! are considered, because CMake variable scope is per directory while
 //! targets are global.
 
+mod common;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
@@ -137,17 +139,8 @@ struct Doc {
 /// to red the gate.
 fn documents() -> Vec<Doc> {
     let root = repo_root();
-    let out = std::process::Command::new("git")
-        .arg("-C")
-        .arg(&root)
-        .args(["ls-files", "-z", "*CMakeLists.txt", "*.cmake"])
-        .output()
-        .expect("git ls-files runs");
-    assert!(out.status.success(), "git ls-files must succeed");
-
-    let docs: Vec<Doc> = String::from_utf8_lossy(&out.stdout)
-        .split('\0')
-        .filter(|p| !p.is_empty())
+    let docs: Vec<Doc> = common::repository::paths_git_tracks(&["*CMakeLists.txt", "*.cmake"])
+        .iter()
         .filter(|p| !p.starts_with("third_party/") && !p.starts_with("vendor/"))
         .map(|p| {
             let text =

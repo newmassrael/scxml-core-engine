@@ -28,6 +28,8 @@
 //! `nil` and `false`. Nothing failed — the guard just took the other
 //! branch. The table's "truthiness" group is that defect, pinned.
 
+mod common;
+
 use sce_build::ecmascript::{
     to_lua_condition, to_lua_script, to_lua_value, DocumentScope, ExprError,
 };
@@ -596,20 +598,7 @@ fn repo_root() -> std::path::PathBuf {
 }
 
 fn committed_documents() -> Vec<std::path::PathBuf> {
-    let out = std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo_root())
-        .args(["ls-files", "*.scxml", "*.txml"])
-        .output()
-        .expect("git ls-files");
-    assert!(
-        out.status.success(),
-        "git ls-files failed, so this sweep has no scan set to measure"
-    );
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .map(|rel| repo_root().join(rel))
-        .collect()
+    common::repository::files_git_tracks(&["*.scxml", "*.txml"])
 }
 
 fn strip_xml_comments(text: &str) -> String {

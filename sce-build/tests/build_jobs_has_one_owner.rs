@@ -24,6 +24,8 @@
 //! ARITHMETIC — `/proc/loadavg` subtracted from `nproc` — which is the rule
 //! itself and nothing else.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 
 /// The file that owns the rule. Exempt from its own check.
@@ -52,17 +54,7 @@ fn repo_root() -> PathBuf {
 
 /// Tracked files under `scripts/`, as git sees them.
 fn scripts() -> Vec<String> {
-    let out = std::process::Command::new("git")
-        .args(["ls-files", "scripts"])
-        .current_dir(repo_root())
-        .output()
-        .expect("git ls-files scripts");
-    assert!(out.status.success(), "git ls-files failed: {out:?}");
-    String::from_utf8(out.stdout)
-        .expect("utf-8")
-        .lines()
-        .map(str::to_string)
-        .collect()
+    common::repository::paths_git_tracks(&["scripts"])
 }
 
 /// Source with whole-line comments removed.

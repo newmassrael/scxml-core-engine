@@ -31,6 +31,8 @@
 // `an_unresolved_id_that_resolves_is_a_retired_fixture` fails when the reason
 // stops being true, so the carve-out cannot outlive what it describes.
 
+mod common;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -113,21 +115,13 @@ fn registry(root: &Path) -> Registry {
 /// document that does not exist yet — which is exactly what a list written
 /// over today's tree cannot name.
 fn annotated_documents(root: &Path) -> Vec<String> {
-    let out = std::process::Command::new("git")
-        .current_dir(root)
-        .args(["ls-files", "*.scxml"])
-        .output()
-        .expect("git ls-files");
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .map(str::trim)
-        .filter(|rel| !rel.is_empty())
+    common::repository::paths_git_tracks(&["*.scxml"])
+        .into_iter()
         .filter(|rel| {
             fs::read_to_string(root.join(rel))
                 .map(|text| text.contains(ANNOTATION))
                 .unwrap_or(false)
         })
-        .map(str::to_string)
         .collect()
 }
 
