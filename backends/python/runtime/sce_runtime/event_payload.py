@@ -5,7 +5,7 @@ natively lowered guards read. One producer fills it: the generated
 `raise_<event>` inject seam. Every other producer — `<send>` with `<param>`,
 namelist or `<content>`, an invoke forwarding an event either way, autoforward,
 BasicHTTP, mesh — fills `EventMetadata.data`, the wire W3C SCXML 5.10 describes
-and §scxml-B-2-8-1 reads.
+and W3C SCXML B.2.8.1 reads.
 
 Until this module the two never met. A native guard could only fire on an event
 the inject seam produced, so the same guard answered differently depending on
@@ -54,6 +54,7 @@ def _decode(data: Any) -> dict:
     session at all, and reaching into the script engine to read a payload would
     hand the session back.
     """
+    # §scxml-B-2-8-1: Read structured event data before projecting schema fields.
     if isinstance(data, dict):
         return data
     if data is None or data == "":

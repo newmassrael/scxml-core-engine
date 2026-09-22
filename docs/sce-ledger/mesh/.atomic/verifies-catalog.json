@@ -14,6 +14,12 @@
       ]
     },
     {
+      "file": "sce-build/tests/mesh_srcexpr_reaches_declared_bindings.rs",
+      "section_ids": [
+        "mesh-9.5"
+      ]
+    },
+    {
       "file": "tests/mesh/AuthClassifierTest.cpp",
       "section_ids": [
         "mesh-16.7"

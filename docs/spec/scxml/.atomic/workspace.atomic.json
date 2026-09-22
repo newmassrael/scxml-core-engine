@@ -12877,6 +12877,11 @@
           "file": "backends/rust/runtime/src/event_payload.rs",
           "symbol": "decode",
           "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/event_payload.py",
+          "symbol": "_decode",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
