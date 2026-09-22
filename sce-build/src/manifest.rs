@@ -321,6 +321,22 @@ pub struct Manifest<'a> {
     /// its registrations has two lists to check.
     #[serde(skip_serializing_if = "<[_]>::is_empty")]
     pub host_invoker_types: &'a [String],
+    /// The object a transform keeps its `previous()` values in, by the
+    /// names the target backend gave it. Present exactly when the run
+    /// generated one; omitted otherwise, and omitted on a run spanning
+    /// several backends, whose names differ.
+    ///
+    /// A transform is pure functions unless an output reads a field
+    /// through `previous()`, and then the host must drive it through the
+    /// holder — construct one, call `update` once per activation, `reset`
+    /// to start again — because only the holder keeps what the next
+    /// activation reads. Which of the two a document is follows from its
+    /// content, not its kind, so a host cannot tell from `sce:kind`; this
+    /// says it, with the names to call. Decided by
+    /// [`crate::forge::generator::transform_holder`], the call the
+    /// generator itself makes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub holder: Option<crate::forge::generator::TransformHolderSymbols>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rejected: Option<RejectedInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -516,6 +532,7 @@ mod tests {
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
+            holder: None,
             rejected: None,
             deploy: None,
             languages: None,
@@ -540,6 +557,7 @@ mod tests {
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
+            holder: None,
             rejected: Some(RejectedInfo {
                 spec: "W3C SCXML 5.8",
                 name: "untestable_doc".to_string(),
@@ -567,6 +585,7 @@ mod tests {
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
+            holder: None,
             rejected: None,
             deploy: None,
             languages: Some(vec![
@@ -618,6 +637,7 @@ mod tests {
             host_processor_causes: &causes,
             host_processor_types: &[],
             host_invoker_types: &[],
+            holder: None,
             rejected: None,
             deploy: None,
             languages: None,
@@ -654,6 +674,7 @@ mod tests {
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
+            holder: None,
             rejected: None,
             deploy: None,
             languages: None,
@@ -698,6 +719,7 @@ mod tests {
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
+            holder: None,
             rejected: None,
             deploy: None,
             languages: None,
@@ -726,6 +748,7 @@ mod tests {
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
+            holder: None,
             rejected: None,
             deploy: None,
             languages: None,
@@ -764,6 +787,7 @@ mod tests {
             // together on a real build and a record carrying only one
             // would never exercise both fields on the wire at once.
             host_invoker_types: &declared,
+            holder: None,
             rejected: None,
             deploy: None,
             languages: None,
@@ -778,6 +802,50 @@ mod tests {
             line.contains("\"host_invoker_types\":[\"x-example-host\"]"),
             "{line}"
         );
+    }
+
+    /// A transform that keeps state names its holder, and the schema holds
+    /// the record to every name a host has to call — a holder missing one
+    /// would tell the host to drive an object it cannot reach.
+    #[test]
+    fn generate_manifest_with_holder_validates_against_schema() {
+        let m = Manifest {
+            v: MANIFEST_SCHEMA_VERSION,
+            kind: ManifestKind::Generate.as_str(),
+            generator: "deadbeefcafe",
+            artifacts: Vec::new(),
+            needs_script_engine: false,
+            script_engine_causes: &[],
+            script_engine_language: None,
+            needs_event_scheduler: false,
+            needs_host_processor: false,
+            host_processor_causes: &[],
+            host_processor_types: &[],
+            host_invoker_types: &[],
+            holder: Some(crate::forge::generator::TransformHolderSymbols {
+                holder: "Counter".to_string(),
+                outputs: "CounterOutputs".to_string(),
+                new: "new".to_string(),
+                reset: "reset".to_string(),
+                update: "update".to_string(),
+                restored: Some("restored".to_string()),
+            }),
+            rejected: None,
+            deploy: None,
+            languages: None,
+        };
+        let line = m.to_line();
+        assert_valid(&line);
+        assert!(
+            line.contains("\"holder\":{\"holder\":\"Counter\""),
+            "{line}"
+        );
+        let without_update = line.replace(",\"update\":\"update\"", "");
+        assert_ne!(
+            without_update, line,
+            "the fixture must carry the name it drops"
+        );
+        assert_invalid(&without_update, "a holder with no `update` is refused");
     }
 
     /// A malformed record must be rejected, otherwise the positive

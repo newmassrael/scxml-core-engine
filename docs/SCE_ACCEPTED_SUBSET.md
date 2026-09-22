@@ -1310,6 +1310,15 @@ PascalCase name:
 | a holder at every `sce:initial` | `<Name>()` | `<Name>::new()` | `New<Name>()` | `<name>_init(&h)` on a `<name>_state_t` |
 | back to every `sce:initial` | `reset()` | `reset()` | `Reset()` | `<name>_reset(&h)` |
 | one activation | `update(inputs…)` | `update(inputs…)` | `Update(inputs…)` | `<name>_update(&h, inputs…)` |
+| a holder from stored values ¹ | `<Name>.restored(stored…)` ² | `<Name>::restored(stored…)` | `Restored<Name>(stored…)` | `<name>_restore(&h, stored…)` |
+
+¹ Only when a field read through `previous()` is also `sce:retain`. A
+retained value outlives the program, keeping it is the host's, and this
+is where the host hands it back: each retained field's stored value, in
+cell order, while every other kept value starts at its `sce:initial`.
+`reset()` still returns every one to `sce:initial` — the value of the
+first day, not of the last boot. ² A static member on C++, a companion
+function on Kotlin, a classmethod on Python.
 
 One activation computes EVERY output from this activation's inputs and
 the kept values, and only then replaces each kept value — an input's
@@ -1317,7 +1326,10 @@ with this activation's input, an output's with what it just computed —
 and returns every output in the record (`<name>_outputs_t` on C11). No
 field a document declares can take a name the holder introduces for
 itself: a field named `holder`, `out` or `self` is legal, and the
-holder's own name moves out of its way.
+holder's own name moves out of its way. A host learns that a document has
+a holder, and the names to call, from the `holder` object in
+`sce-codegen generate`'s manifest (`SCE_ERROR_CONTRACT.md` §10.1) —
+whether a transform keeps state is its content, not its `sce:kind`.
 
 ⚠ **Two cells are refused**, each as `generate/unsupported-feature`
 pointing at the read, before any renderer runs: a `bytes` field on every

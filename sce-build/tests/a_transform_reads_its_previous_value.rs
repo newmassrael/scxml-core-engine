@@ -63,14 +63,18 @@ struct Run {
 }
 
 impl Run {
-    /// The artifacts a successful `generate` lists in its manifest line.
-    fn artifacts(&self) -> Vec<PathBuf> {
-        let manifest: serde_json::Value = self
-            .stdout
+    /// The manifest line a successful run writes.
+    fn manifest(&self) -> serde_json::Value {
+        self.stdout
             .lines()
             .find(|l| l.trim_start().starts_with('{'))
             .map(|l| serde_json::from_str(l).expect("manifest line is one JSON object"))
-            .unwrap_or_else(|| panic!("no manifest line:\n{}", self.stdout));
+            .unwrap_or_else(|| panic!("no manifest line:\n{}", self.stdout))
+    }
+
+    /// The artifacts a successful `generate` lists in its manifest line.
+    fn artifacts(&self) -> Vec<PathBuf> {
+        let manifest = self.manifest();
         manifest["artifacts"]
             .as_array()
             .unwrap_or_else(|| panic!("manifest lists no artifacts: {manifest}"))
@@ -241,9 +245,45 @@ const LANGUAGES: [&str; 6] = ["python", "cpp", "rust", "go", "kotlin", "c"];
 fn every_backend_generates_a_holder_for_a_document_that_reads_previous() {
     let t = Tmp::new("counter");
     let doc = t.write("counter.scxml", &counter());
+    let pure = t.write(
+        "doubled.scxml",
+        &transform(
+            "doubled",
+            r#"    <data id="step" sce:type="int32" sce:direction="in"/>
+    <data id="twice" sce:type="int32" sce:direction="out" expr="step * 2"/>"#,
+        ),
+    );
     for lang in LANGUAGES {
         let run = generated(&doc, &t.dir(lang), lang);
-        assert!(!run.artifacts().is_empty(), "{lang}: no artifacts");
+        // The manifest tells the host it must drive a holder, and names
+        // it — and every name it gives is one the generated code defines,
+        // or the host would be told to call something that is not there.
+        let manifest = run.manifest();
+        let holder = manifest["holder"]
+            .as_object()
+            .unwrap_or_else(|| panic!("{lang}: no `holder` in {manifest}"));
+        let code: String = run
+            .artifacts()
+            .iter()
+            .map(|p| std::fs::read_to_string(p).expect("read artifact"))
+            .collect();
+        for key in ["holder", "outputs", "new", "reset", "update"] {
+            let name = holder[key]
+                .as_str()
+                .unwrap_or_else(|| panic!("{lang}: holder.{key} in {manifest}"));
+            assert!(
+                code.contains(name),
+                "{lang}: the manifest names `{name}` as holder.{key}, which the \
+                 generated code does not define"
+            );
+        }
+        // A transform that reads nothing through `previous()` is pure
+        // functions, and says so by carrying no holder.
+        let pure_run = generated(&pure, &t.dir(&format!("{lang}_pure")), lang);
+        assert!(
+            pure_run.manifest().get("holder").is_none(),
+            "{lang}: a pure transform's manifest names a holder"
+        );
     }
 }
 
@@ -631,6 +671,201 @@ fn a_field_spelled_like_a_holders_own_name_does_not_take_it_go() {
     )
     .expect("write main.go");
     assert_eq!(run_ok(&go, &["run", "."], &module), CROWDED_TOTALS);
+}
+
+/// A retained count read through `previous()` beside a level that is not
+/// retained. A holder `restored` from a stored 10 counts on from it while
+/// the level starts at its `sce:initial` (so it rises at once); `reset()`
+/// is the first day again.
+fn stored() -> String {
+    transform(
+        "stored",
+        r#"    <data id="step" sce:type="int32" sce:direction="in"/>
+    <data id="level" sce:type="bool" sce:direction="in" sce:initial="false"/>
+    <data id="count" sce:type="int32" sce:direction="out" sce:retain="nvm"
+          sce:initial="0" expr="previous(count) + step"/>
+    <data id="rising" sce:type="bool" sce:direction="out"
+          expr="level &amp;&amp; !previous(level)"/>"#,
+    )
+}
+
+/// `restored(10)` then one activation, then `reset()` and one more:
+/// 10 + 1, a rise from the initial `false`, then 0 + 1.
+const STORED_RUN: &str = "11 1 1\n";
+
+#[test]
+fn a_retained_field_starts_from_what_the_host_stored() {
+    let t = Tmp::new("stored");
+    let doc = t.write("stored.scxml", &stored());
+    // The manifest names the extra constructor exactly when a retained
+    // field is read through `previous()`.
+    for lang in LANGUAGES {
+        let run = generated(&doc, &t.dir(&format!("{lang}_manifest")), lang);
+        assert!(
+            run.manifest()["holder"]["restored"].is_string(),
+            "{lang}: no `restored` in {}",
+            run.manifest()
+        );
+    }
+    let counted = t.write("counter.scxml", &counter());
+    let run = generated(&counted, &t.dir("unretained"), "rust");
+    assert!(
+        run.manifest()["holder"].get("restored").is_none(),
+        "a holder with no retained field names `restored`"
+    );
+
+    if let Some(cc) = toolchain::require_any_or_skip(&["gcc", "cc"], "run a restored holder") {
+        let out = t.dir("c");
+        let header = generated(&doc, &out, "c").artifact(".h");
+        std::fs::write(
+            out.join("main.c"),
+            format!(
+                "#include <stdio.h>\n#include \"{}\"\n\
+                 int main(void) {{\n\
+                 \tstored_state_t h;\n\
+                 \tstored_restore(&h, 10);\n\
+                 \tstored_outputs_t a = stored_update(&h, 1, true);\n\
+                 \tstored_reset(&h);\n\
+                 \tstored_outputs_t b = stored_update(&h, 1, false);\n\
+                 \tprintf(\"%d %d %d\\n\", a.count, a.rising ? 1 : 0, b.count);\n\
+                 \treturn 0;\n\
+                 }}\n",
+                header.file_name().unwrap().to_str().unwrap()
+            ),
+        )
+        .expect("write main.c");
+        run_ok(
+            &cc,
+            &[
+                "-std=c11", "-Wall", "-Wextra", "-Werror", "-o", "main", "main.c",
+            ],
+            &out,
+        );
+        assert_eq!(run_ok(&out.join("main"), &[], &out), STORED_RUN, "c");
+    }
+
+    if let Some(cxx) = toolchain::require_or_skip("g++", "run a restored holder") {
+        let out = t.dir("cpp");
+        let header = generated(&doc, &out, "cpp").artifact(".h");
+        std::fs::write(
+            out.join("main.cpp"),
+            format!(
+                "#include <cstdio>\n#include \"{}\"\n\
+                 int main() {{\n\
+                 \tauto h = SCE::Generated::Stored::Stored::restored(10);\n\
+                 \tconst auto a = h.update(1, true);\n\
+                 \th.reset();\n\
+                 \tconst auto b = h.update(1, false);\n\
+                 \tstd::printf(\"%d %d %d\\n\", a.count, a.rising ? 1 : 0, b.count);\n\
+                 \treturn 0;\n\
+                 }}\n",
+                header.file_name().unwrap().to_str().unwrap()
+            ),
+        )
+        .expect("write main.cpp");
+        run_ok(
+            &cxx,
+            &[
+                "-std=c++17",
+                "-Wall",
+                "-Wextra",
+                "-Werror",
+                "-o",
+                "main",
+                "main.cpp",
+            ],
+            &out,
+        );
+        assert_eq!(run_ok(&out.join("main"), &[], &out), STORED_RUN, "cpp");
+    }
+
+    if let Some(python) = toolchain::require_or_skip("python3", "run a restored holder") {
+        let module = generated(&doc, &t.dir("py"), "python").artifact(".py");
+        let stem = module.file_stem().unwrap().to_str().unwrap().to_string();
+        let printed = run_ok(
+            &python,
+            &[
+                "-c",
+                &format!(
+                    "import {stem}\n\
+                     h = {stem}.Stored.restored(10)\n\
+                     a = h.update(1, True)\n\
+                     h.reset()\n\
+                     b = h.update(1, False)\n\
+                     print(a.count, int(a.rising), b.count)"
+                ),
+            ],
+            module.parent().unwrap(),
+        );
+        assert_eq!(printed, STORED_RUN, "python");
+    }
+
+    if let Some(go) = toolchain::require_or_skip("go", "run a restored holder") {
+        let module = t.dir("gomod");
+        let package = module.join("stored");
+        std::fs::create_dir_all(&package).expect("create package dir");
+        generated(&doc, &package, "go");
+        std::fs::write(module.join("go.mod"), "module probe\n\ngo 1.21\n").expect("write go.mod");
+        std::fs::write(
+            module.join("main.go"),
+            "package main\n\n\
+             import (\n\t\"fmt\"\n\n\t\"probe/stored\"\n)\n\n\
+             func main() {\n\
+             \th := stored.RestoredStored(10)\n\
+             \ta := h.Update(1, true)\n\
+             \th.Reset()\n\
+             \tb := h.Update(1, false)\n\
+             \trose := 0\n\
+             \tif a.Rising {\n\
+             \t\trose = 1\n\
+             \t}\n\
+             \tfmt.Printf(\"%d %d %d\\n\", a.Count, rose, b.Count)\n\
+             }\n",
+        )
+        .expect("write main.go");
+        assert_eq!(run_ok(&go, &["run", "."], &module), STORED_RUN, "go");
+    }
+
+    if let Some(rustc) = toolchain::require_or_skip("rustc", "run a restored holder") {
+        let out = t.dir("rs");
+        let module = generated(&doc, &out, "rust").artifact(".rs");
+        std::fs::write(
+            out.join("main.rs"),
+            format!(
+                "#[path = \"{}\"]\nmod stored;\n\n\
+                 fn main() {{\n\
+                 \tlet mut h = stored::Stored::restored(10);\n\
+                 \tlet a = h.update(1, true);\n\
+                 \th.reset();\n\
+                 \tlet b = h.update(1, false);\n\
+                 \tprintln!(\"{{}} {{}} {{}}\", a.count, a.rising as i32, b.count);\n\
+                 }}\n",
+                module.file_name().unwrap().to_str().unwrap()
+            ),
+        )
+        .expect("write main.rs");
+        run_ok(
+            &rustc,
+            &["--edition=2021", "-D", "warnings", "-o", "main", "main.rs"],
+            &out,
+        );
+        assert_eq!(run_ok(&out.join("main"), &[], &out), STORED_RUN, "rust");
+    }
+
+    if let Some(kotlinc) = toolchain::require_or_skip("kotlinc", "compile a restored holder") {
+        let out = t.dir("kt");
+        let file = generated(&doc, &out, "kotlin").artifact(".kt");
+        run_ok(
+            &kotlinc,
+            &[
+                "-Werror",
+                file.file_name().unwrap().to_str().unwrap(),
+                "-d",
+                "classes",
+            ],
+            &out,
+        );
+    }
 }
 
 #[test]

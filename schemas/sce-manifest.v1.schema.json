@@ -77,6 +77,10 @@
       "minItems": 1,
       "items": { "type": "string", "minLength": 1 }
     },
+    "holder": {
+      "description": "The object a transform keeps its previous() values in, by the names the target backend gave it. Present exactly when the run generated one; omitted otherwise, and omitted on a run spanning several backends, whose names differ. A transform is pure functions unless an output reads a field through previous(), and then the host must drive it through the holder — construct one, call update once per activation, reset to start again — because only the holder keeps what the next activation reads. Which of the two a document is follows from its content, not its sce:kind.",
+      "$ref": "#/definitions/holder"
+    },
     "rejected": {
       "description": "Present only when the input triggered a W3C-spec rejection and stub files were written in place of generated code. Absence means clean generation.",
       "$ref": "#/definitions/rejected"
@@ -155,6 +159,43 @@
           "type": "string"
         },
         "location": { "$ref": "#/definitions/location" }
+      }
+    },
+    "holder": {
+      "type": "object",
+      "required": ["holder", "outputs", "new", "reset", "update"],
+      "additionalProperties": false,
+      "properties": {
+        "holder": {
+          "description": "The holder's type.",
+          "type": "string",
+          "minLength": 1
+        },
+        "outputs": {
+          "description": "The record one activation returns: every output, by name.",
+          "type": "string",
+          "minLength": 1
+        },
+        "new": {
+          "description": "What makes a holder whose kept values are at their fields' sce:initial: the type itself where a constructor is spelled by its type's name (C++, Kotlin, Python), the associated `new` on Rust, `New<Type>` on Go, and on C11 `<prefix>_init`, which fills a holder the caller owns.",
+          "type": "string",
+          "minLength": 1
+        },
+        "reset": {
+          "description": "Every kept value back to its field's sce:initial.",
+          "type": "string",
+          "minLength": 1
+        },
+        "update": {
+          "description": "One activation.",
+          "type": "string",
+          "minLength": 1
+        },
+        "restored": {
+          "description": "What makes a holder whose kept values of RETAINED fields are the ones the host stored, and every other at its field's sce:initial. It takes the stored values in the holder's cell order: inputs, then outputs, each in declaration order. Present only when a field read through previous() is also sce:retain: a value that outlives the program is the host's to keep, and this is where the host hands it back.",
+          "type": "string",
+          "minLength": 1
+        }
       }
     },
     "rejected": {

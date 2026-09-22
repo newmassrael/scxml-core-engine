@@ -194,7 +194,7 @@
               }
             },
             "holder": {
-              "description": "Derived at harness-rendering time from the SCXML: present iff the document reads a field through `previous()`, which is the one question that decides whether `render_transform` emits a holder. It is asked of the forge parser and `previous_value::cells` — the calls the generator makes — so the harness cannot answer it differently from the product. The names come from `forge_transform_holder_symbols`. Never present in fixtures.json.\n\nA fixture with a holder is driven through it: `args` are the inputs `update` takes, and every output is compared from the record one activation returns, by its `compound_outputs` key.",
+              "description": "Derived at harness-rendering time from the SCXML: present iff the document reads a field through `previous()`. It is asked of `forge::generator::transform_holder` — the call the generator itself makes to decide whether to emit a holder — so the harness cannot answer it differently from the product. Never present in fixtures.json.\n\nA fixture with a holder is driven through it: `args` are the inputs `update` takes, and every output is compared from the record one activation returns, by its `compound_outputs` key.",
               "anyOf": [
                 {
                   "$ref": "#/definitions/TransformHolderSymbols"
@@ -711,6 +711,13 @@
         "reset": {
           "description": "Every kept value back to its field's `sce:initial`.",
           "type": "string"
+        },
+        "restored": {
+          "description": "What makes a holder whose kept values of RETAINED fields are the ones the host stored, and every other at its field's `sce:initial`. It takes the stored values in the holder's cell order: inputs, then outputs, each in declaration order. Present only when a field read through `previous()` is also `sce:retain`: a value that outlives the program is the host's to keep, and this is where the host hands it back. Named `restored` where it is a member (C++, Kotlin, Python, Rust), `Restored<Type>` on Go, and `<prefix>_restore` on C11.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "update": {
           "description": "One activation.",

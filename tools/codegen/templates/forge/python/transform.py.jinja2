@@ -69,6 +69,20 @@ class {{ holder.symbols.holder }}:
         {{ this }}.{{ c.name }}: {{ c.type }} = {{ c.initial }}
 {% endif %}
 {% endfor %}
+{% if holder.symbols.restored %}
+
+    @classmethod
+    def {{ holder.symbols.restored }}({{ holder.cls_name }}, {{ holder.restore_params }}) -> "{{ holder.symbols.holder }}":
+        """A holder whose kept values of retained fields are the ones the
+        host stored, and every other at its field's ``sce:initial``."""
+        {{ this }} = {{ holder.cls_name }}()
+{% for c in holder.cells %}
+{% if c.restored_arg %}
+        {{ this }}.{{ c.name }} = {{ c.restored_arg }}
+{% endif %}
+{% endfor %}
+        return {{ this }}
+{% endif %}
 
     def {{ holder.symbols.update }}({{ this }}{% if holder.input_params %}, {{ holder.input_params }}{% endif %}) -> {{ holder.symbols.outputs }}:
 {% for o in holder.outputs %}

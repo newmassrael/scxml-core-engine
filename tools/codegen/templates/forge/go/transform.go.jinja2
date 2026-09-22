@@ -88,6 +88,21 @@ func ({{ this }} *{{ holder.symbols.holder }}) {{ holder.symbols.reset }}() {
 {% endif %}
 {% endfor %}
 }
+{% if holder.symbols.restored %}
+
+// {{ holder.symbols.restored }} returns a holder whose kept values of retained
+// fields are the ones the host stored, and every other at its field's
+// sce:initial.
+func {{ holder.symbols.restored }}({{ holder.restore_params }}) *{{ holder.symbols.holder }} {
+	{{ this }} := {{ holder.symbols.new }}()
+{% for c in holder.cells %}
+{% if c.restored_arg %}
+	{{ this }}.{{ c.name }} = {{ c.restored_arg }}
+{% endif %}
+{% endfor %}
+	return {{ this }}
+}
+{% endif %}
 
 // {{ holder.symbols.update }} is one activation.
 func ({{ this }} *{{ holder.symbols.holder }}) {{ holder.symbols.update }}({{ holder.input_params }}) {{ holder.symbols.outputs }} {

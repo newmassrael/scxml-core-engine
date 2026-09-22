@@ -77,6 +77,20 @@ impl {{ holder.symbols.holder }} {
     pub fn {{ holder.symbols.reset }}(&mut self) {
         *self = Self::{{ holder.symbols.new }}();
     }
+{% if holder.symbols.restored %}
+
+    /// A holder whose kept values of retained fields are the ones the host
+    /// stored, and every other at its field's `sce:initial`.
+    pub fn {{ holder.symbols.restored }}({{ holder.restore_params }}) -> Self {
+        let mut {{ holder.self_name }} = Self::{{ holder.symbols.new }}();
+{% for c in holder.cells %}
+{% if c.restored_arg %}
+        {{ holder.self_name }}.{{ c.name }} = {{ c.restored_arg }}{% if c.is_string %}.to_string(){% endif %};
+{% endif %}
+{% endfor %}
+        {{ holder.self_name }}
+    }
+{% endif %}
 
     /// One activation.
     pub fn {{ holder.symbols.update }}(&mut self{% if holder.input_params %}, {{ holder.input_params }}{% endif %}) -> {{ holder.symbols.outputs }} {

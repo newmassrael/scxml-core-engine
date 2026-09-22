@@ -285,12 +285,11 @@ pub enum FixtureSpec {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         compound_outputs: Vec<CompoundOutput>,
         /// Derived at harness-rendering time from the SCXML: present iff
-        /// the document reads a field through `previous()`, which is the one
-        /// question that decides whether `render_transform` emits a holder.
-        /// It is asked of the forge parser and `previous_value::cells` — the
-        /// calls the generator makes — so the harness cannot answer it
-        /// differently from the product. The names come from
-        /// `forge_transform_holder_symbols`. Never present in fixtures.json.
+        /// the document reads a field through `previous()`. It is asked of
+        /// `forge::generator::transform_holder` — the call the generator
+        /// itself makes to decide whether to emit a holder — so the harness
+        /// cannot answer it differently from the product. Never present in
+        /// fixtures.json.
         ///
         /// A fixture with a holder is driven through it: `args` are the
         /// inputs `update` takes, and every output is compared from the
@@ -1688,12 +1687,15 @@ pub fn codec_has_mcu_only_features(scxml_path: &Path) -> Result<bool, String> {
 /// The oracle section a transform with a holder is judged under.
 const STATEFUL_TRANSFORMS: &str = "stateful_transforms";
 
-/// Whether a transform fixture reads any field through `previous()` — the
-/// question `render_transform` answers with `previous_value::cells` to
-/// decide whether to emit a holder. Asked here with the same parse and the
-/// same call, not a scan of the XML, so the harness and the product cannot
-/// answer it differently.
-fn read_transform_has_holder(scxml_path: &Path, fixture_name: &str) -> Result<bool, String> {
+/// The holder a transform fixture generates on `language`, if it has one —
+/// asked of `forge::generator::transform_holder` with the same parse the
+/// generator reads, not a scan of the XML, so the harness and the product
+/// cannot answer it differently.
+fn read_transform_holder(
+    scxml_path: &Path,
+    fixture_name: &str,
+    language: Language,
+) -> Result<Option<crate::forge::generator::TransformHolderSymbols>, String> {
     let text = crate::load_forge_source(scxml_path, &[])
         .map_err(|e| format!("cannot read {}: {e}", scxml_path.display()))?
         .text;
@@ -1701,7 +1703,7 @@ fn read_transform_has_holder(scxml_path: &Path, fixture_name: &str) -> Result<bo
         .map_err(|e| format!("{}: {e}", scxml_path.display()))?
     {
         Some(crate::forge::model::ForgeDocument::Transform(m)) => {
-            Ok(!crate::forge::previous_value::cells(&m).is_empty())
+            Ok(crate::forge::generator::transform_holder(&m, language))
         }
         _ => Err(format!(
             "fixture {fixture_name}: the manifest says `transform`, and {} is not a \
@@ -2032,7 +2034,8 @@ pub fn render_harness(
                 ..
             } => {
                 let scxml_path = resource_dir.join(format!("{}.scxml", fixture_name));
-                if read_transform_has_holder(&scxml_path, &fixture_name)? {
+                if let Some(symbols) = read_transform_holder(&scxml_path, &fixture_name, language)?
+                {
                     // A holder is driven by a sequence and compared from the
                     // record its update returns — so the oracle is the
                     // stateful section, and every output has a key there.
@@ -2052,10 +2055,7 @@ pub fn render_harness(
                              keyed by its id, and no scalar `output`"
                         ));
                     }
-                    *holder = Some(crate::forge::generator::forge_transform_holder_symbols(
-                        &fixture_name,
-                        language,
-                    ));
+                    *holder = Some(symbols);
                     for co in compound_outputs.iter_mut() {
                         co.field = Some(crate::forge::generator::forge_transform_output_field(
                             &co.key, language,

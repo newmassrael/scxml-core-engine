@@ -1382,11 +1382,36 @@ fn render_transform(
     let mut ctx = l.base_context(&m.name);
     ctx.insert("functions".into(), serde_json::json!(functions));
     l.insert_imports(&mut ctx, imports);
-    if !cells.is_empty() {
-        ctx.insert("holder".into(), transform_holder(&l, m, &cells, lang));
+    if let Some(symbols) = transform_holder(m, lang) {
+        ctx.insert(
+            "holder".into(),
+            transform_holder_context(&l, m, &cells, symbols, lang),
+        );
     }
 
     l.render(env, "transform", ctx)
+}
+
+/// The holder `m` generates on `language`, if it has one — the one answer to
+/// "is this transform driven through a holder, and by which names".
+///
+/// A transform has a holder exactly when some output reads a field through
+/// `previous()`; one that reads none is pure functions and nothing else.
+/// Three parties ask: `render_transform`, which emits the holder; the
+/// conformance harness, which drives it; and `sce-codegen generate`, which
+/// tells the host in its manifest. Each asks here, so none can decide it
+/// differently from the others.
+pub fn transform_holder(
+    m: &TransformModel,
+    language: crate::generator::Language,
+) -> Option<TransformHolderSymbols> {
+    let cells = crate::forge::previous_value::cells(m);
+    (!cells.is_empty()).then(|| {
+        // A kept value can be handed back by the host only if its field
+        // outlives the program — `sce:retain`, §5.6 of the design.
+        let restorable = cells.iter().any(|c| c.param.retain.is_some());
+        forge_transform_holder_symbols(&m.name, language, restorable)
+    })
 }
 
 /// What a transform's HOLDER needs: the object that keeps its cells between
@@ -1398,14 +1423,14 @@ fn render_transform(
 /// Every name here is one the rest of the transform already uses — the same
 /// `local_id` spelling, the same output functions — so the holder is only a
 /// caller of the pure functions above it, never a second copy of them.
-fn transform_holder(
+fn transform_holder_context(
     l: &LangCtx,
     m: &TransformModel,
     cells: &[crate::forge::previous_value::Cell],
+    symbols: TransformHolderSymbols,
     lang: crate::generator::Language,
 ) -> serde_json::Value {
     let is_string = |ty: &SceType| matches!(ty, SceType::String);
-    let symbols = forge_transform_holder_symbols(&m.name, lang);
     let output_fn =
         |id: &str| forge_stateless_def_symbol(&m.name, &forge_transform_symbol(id, lang), lang);
 
@@ -1424,12 +1449,20 @@ fn transform_holder(
     // `base__`, … that nothing here spells.
     //
     // ⚠ The input parameters are not renamed: they are the signature a host
-    // calls, and the pure functions above already spell them this way.
+    // calls, and the pure functions above already spell them this way. Nor
+    // are the parameters of `restored`, which are the retained fields' own
+    // names, for the same reason.
+    //
+    // A cell is RETAINED when its field outlives the program; `restored`
+    // takes the host's stored value for each, in cell order (§5.6).
+    let retained: Vec<&crate::forge::previous_value::Cell> =
+        cells.iter().filter(|c| c.param.retain.is_some()).collect();
     let mut taken: std::collections::HashSet<String> = m
         .inputs
         .iter()
         .map(|f| l.local_id(&f.id))
         .chain(cells.iter().map(|c| l.local_id(&c.param.id)))
+        .chain(retained.iter().map(|c| l.local_id(&c.of)))
         .chain(m.outputs.iter().map(|o| output_fn(&o.id)))
         .chain([
             symbols.holder.clone(),
@@ -1438,6 +1471,7 @@ fn transform_holder(
             symbols.reset.clone(),
             symbols.update.clone(),
         ])
+        .chain(symbols.restored.clone())
         .collect();
     let mut fresh = |base: String| {
         let mut name = base;
@@ -1454,6 +1488,9 @@ fn transform_holder(
         .to_string(),
     );
     let out_name = fresh("out".to_string());
+    // Python's `restored` is a classmethod, whose first parameter is the
+    // class.
+    let cls_name = fresh("cls".to_string());
     let members: Vec<String> = cells
         .iter()
         .map(|c| fresh(format!("{}_", l.local_id(&c.param.id))))
@@ -1508,7 +1545,20 @@ fn transform_holder(
                 // output cell reads it from there.
                 "source_field": forge_transform_output_field(&c.of, lang),
                 "from_output": from_output.is_some(),
+                // The parameter of `restored` this cell starts from, when
+                // its field is retained; absent, it starts at `sce:initial`.
+                "restored_arg": c.param.retain.is_some().then(|| l.local_id(&c.of)),
             })
+        })
+        .collect();
+    // `restored`'s parameters: each retained field under its own name and
+    // type, in cell order.
+    let restore_fields: Vec<ForgeField> = retained
+        .iter()
+        .map(|c| {
+            let mut f = c.param.clone();
+            f.id = c.of.clone();
+            f
         })
         .collect();
     // Rust's derive lines have one owner, `rust_derive_policy`.
@@ -1531,6 +1581,8 @@ fn transform_holder(
         "cells": holder_cells,
         "self_name": self_name,
         "out_name": out_name,
+        "cls_name": cls_name,
+        "restore_params": l.param_str(&restore_fields),
         "symbols": symbols,
         "derives_attr": derives(crate::rust_derive_policy::RustDeriveCategory::TransformHolder),
         "outputs_derives_attr":
@@ -22418,14 +22470,28 @@ pub struct TransformHolderSymbols {
     pub reset: String,
     /// One activation.
     pub update: String,
+    /// What makes a holder whose kept values of RETAINED fields are the
+    /// ones the host stored, and every other at its field's `sce:initial`.
+    /// It takes the stored values in the holder's cell order: inputs, then
+    /// outputs, each in declaration order. Present only when a field read
+    /// through `previous()` is also `sce:retain`: a value that outlives the
+    /// program is the host's to keep, and this is where the host hands it
+    /// back. Named `restored` where it is a member (C++, Kotlin, Python,
+    /// Rust), `Restored<Type>` on Go, and `<prefix>_restore` on C11.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub restored: Option<String>,
 }
 
+/// The names of `name`'s holder on `language`; `restorable` says whether it
+/// also has [`TransformHolderSymbols::restored`].
 pub(crate) fn forge_transform_holder_symbols(
     name: &str,
     language: crate::generator::Language,
+    restorable: bool,
 ) -> TransformHolderSymbols {
     use crate::generator::Language;
     let pascal = filters::to_pascal_case(name.to_string());
+    let restored = |spelling: String| restorable.then_some(spelling);
     match language {
         Language::C11 => TransformHolderSymbols {
             holder: forge_c11_flat(name, "state_t"),
@@ -22433,12 +22499,14 @@ pub(crate) fn forge_transform_holder_symbols(
             new: forge_c11_flat(name, "init"),
             reset: forge_c11_flat(name, "reset"),
             update: forge_c11_flat(name, "update"),
+            restored: restored(forge_c11_flat(name, "restore")),
         },
         Language::Go => TransformHolderSymbols {
             outputs: format!("{pascal}Outputs"),
             new: format!("New{pascal}"),
             reset: "Reset".to_string(),
             update: "Update".to_string(),
+            restored: restored(format!("Restored{pascal}")),
             holder: pascal,
         },
         Language::Rust => TransformHolderSymbols {
@@ -22446,6 +22514,7 @@ pub(crate) fn forge_transform_holder_symbols(
             new: "new".to_string(),
             reset: "reset".to_string(),
             update: "update".to_string(),
+            restored: restored("restored".to_string()),
             holder: pascal,
         },
         Language::Cpp | Language::Kotlin | Language::Python => TransformHolderSymbols {
@@ -22453,6 +22522,7 @@ pub(crate) fn forge_transform_holder_symbols(
             new: pascal.clone(),
             reset: "reset".to_string(),
             update: "update".to_string(),
+            restored: restored("restored".to_string()),
             holder: pascal,
         },
     }

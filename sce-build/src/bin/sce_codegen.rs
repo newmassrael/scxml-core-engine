@@ -738,6 +738,9 @@ struct GenerateReport {
     /// The `--host-invoker` declarations, echoed for the same reason as
     /// the line above: the build's half of a two-place contract.
     host_invoker_types: Vec<String>,
+    /// The holder the generated transform keeps its `previous()` values
+    /// in, when it has one — see `Manifest::holder`.
+    holder: Option<sce_build::forge::generator::TransformHolderSymbols>,
     rejected: Option<RejectedDocument>,
     /// Descriptive deploy declarations, present only on a `--deploy`
     /// run. `None` for every deploy-unaware invocation, which is what
@@ -820,6 +823,9 @@ fn build_manifest<'a>(
         host_processor_causes: &report.host_processor_causes,
         host_processor_types: &report.host_processor_types,
         host_invoker_types: &report.host_invoker_types,
+        // The TARGET's names, like the engine language above: a run that
+        // spans backends has several and reports none.
+        holder: target.and(report.holder.clone()),
         rejected: report.rejected.as_ref().map(|rd| RejectedInfo {
             spec: rd.spec,
             name: rd.name.clone(),
@@ -3465,9 +3471,12 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                 .map(|_| ());
                 record_backend_outcome(&mut verdicts, *lang, explicit, error_format, outcome);
             }
-            // Forge kinds are stateless by construction — no script
-            // engine is reachable from them, and nothing schedules or
-            // drives a child session, so `step()` suffices.
+            // No script engine is reachable from a forge kind, and nothing
+            // in one schedules or drives a child session, so `step()`
+            // suffices. ⚠ That is not "stateless": a transform reading
+            // `previous()` keeps values between activations in its holder,
+            // which `generate` reports as `holder`. `check` sweeps several
+            // backends, whose holder names differ, so it reports none.
             report.needs_script_engine = Some(false);
             report.needs_event_scheduler = Some(false);
         }
@@ -3908,6 +3917,12 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                 &forge_opts,
             ) {
                 Ok(output) => {
+                    // Whether the host drives this document through a holder
+                    // is decided by the call the generator made while
+                    // rendering it, not re-derived here.
+                    if let sce_build::forge::model::ForgeDocument::Transform(m) = &parsed.document {
+                        report.holder = sce_build::forge::generator::transform_holder(m, lang);
+                    }
                     // Preprocessor inputs ahead of the import closure.
                     // Both are files this compile read, and a template
                     // edit has to trigger a rebuild exactly as an edit to

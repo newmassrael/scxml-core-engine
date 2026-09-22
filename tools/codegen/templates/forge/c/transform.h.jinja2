@@ -83,6 +83,19 @@ static inline void {{ holder.symbols.reset }}({{ holder.symbols.holder }} *{{ th
 static inline void {{ holder.symbols.new }}({{ holder.symbols.holder }} *{{ this }}) {
     {{ holder.symbols.reset }}({{ this }});
 }
+{% if holder.symbols.restored %}
+
+/* A holder whose kept values of retained fields are the ones the host
+ * stored, and every other at its field's `sce:initial`. */
+static inline void {{ holder.symbols.restored }}({{ holder.symbols.holder }} *{{ this }}, {{ holder.restore_params }}) {
+    {{ holder.symbols.reset }}({{ this }});
+{% for c in holder.cells %}
+{% if c.restored_arg %}
+    {{ this }}->{{ c.name }} = {{ c.restored_arg }};
+{% endif %}
+{% endfor %}
+}
+{% endif %}
 
 /* One activation. */
 static inline {{ holder.symbols.outputs }} {{ holder.symbols.update }}({{ holder.symbols.holder }} *{{ this }}{% if holder.input_params %}, {{ holder.input_params }}{% endif %}) {
