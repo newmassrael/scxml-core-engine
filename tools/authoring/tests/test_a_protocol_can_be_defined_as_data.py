@@ -163,6 +163,82 @@ class AProtocolCanBeDefinedAsData(unittest.TestCase):
         self.assertFalse(rung(ladder[2], only_the_first),
                          "a longer reading has not passed yet")
 
+    def test_a_rung_below_the_one_reached_turns_the_longer_reading_off(self):
+        """⚠ The half of the idiom that says NO, left out of the first build.
+
+        `cumulative` was a one-way lift: reaching a later rung turned every
+        earlier one on, and nothing ever turned a later one off again. But a
+        record that asserts the ladder at a LOW rung is not silence -- it is
+        the ladder starting again from down there, and the longer reading has
+        stopped holding. Without this an input asking about the longer reading
+        stayed true for rounds the record calls false, and the DOCUMENT was
+        blamed for the output that followed.
+
+        The oracle this idiom was measured from reads it the same way:
+        `rung(last asserted) >= rung(wanted) > 0`, recomputed every round
+        rather than latched upward.
+        """
+        ladder = ["plant/count/on0", "plant/count/on500", "plant/count/on3500"]
+        protocols = {"ladder": {**LADDER,
+                                "latch": {**LADDER["latch"],
+                                          "cumulative": ladder}}}
+        latches = Latches(Conventions(protocols))
+
+        def rung(which, case):
+            rule = {"protocol": "ladder",
+                    "parameters": {"on_counter": which,
+                                   "off_counter": "plant/count/off"}}
+            return input_value(f"gate:{which}", rule, case, latches)
+
+        given = {**dict.fromkeys(ladder, 1), "plant/count/off": 0}
+        long_reading = Case(given, drove=[ladder[2]])
+        self.assertTrue(rung(ladder[2], long_reading))
+
+        # The record asserts the BOTTOM rung. Nothing names the longest
+        # counter this round, and the old code read that as "unchanged".
+        again = Case(given, drove=[ladder[0]])
+        self.assertFalse(rung(ladder[2], again),
+                         "the ladder started again below this rung")
+        self.assertTrue(rung(ladder[0], again),
+                        "the rung the record actually asserted is on")
+
+    def test_the_ladder_is_read_on_every_round_not_only_when_asked(self):
+        """⚠⚠ The discriminator for the one above, and its own defect.
+
+        Where the ladder stands is a GLOBAL observation, not a conclusion of
+        whichever input happens to be asking. The reading used to be taken
+        only on rounds where the asking input had not already latched -- so
+        every round that moved the ladder UP also set that input directly and
+        never looked, and the recorded position stayed behind. A later round
+        then handed a DIFFERENT input a stale answer.
+
+        It cannot be caught by watching one input: the round that goes wrong
+        is the one where input A sets itself and input B asks afterwards.
+        """
+        ladder = ["plant/count/on0", "plant/count/on500", "plant/count/on3500"]
+        protocols = {"ladder": {**LADDER,
+                                "latch": {**LADDER["latch"],
+                                          "cumulative": ladder}}}
+        latches = Latches(Conventions(protocols))
+
+        def rung(which, case):
+            rule = {"protocol": "ladder",
+                    "parameters": {"on_counter": which,
+                                   "off_counter": "plant/count/off"}}
+            return input_value(f"gate:{which}", rule, case, latches)
+
+        given = {**dict.fromkeys(ladder, 1), "plant/count/off": 0}
+        # Round one: the longest counter moves, so the input NAMING it sets
+        # from its own parameter and never consults the ladder.
+        self.assertTrue(rung(ladder[2], Case(given, drove=[ladder[2]])))
+
+        # Round two moves nothing on the ladder. A lower rung asks for the
+        # first time and must be told where the ladder stands.
+        quiet = Case(given, drove=["plant/in/unrelated"])
+        self.assertTrue(rung(ladder[0], quiet),
+                        "the ladder stood at the longest reading; an input "
+                        "asking for the first time must be told so")
+
     def test_a_reading_restated_unchanged_is_still_a_statement(self):
         """⚠⚠ The assumption that cost a whole component.
 

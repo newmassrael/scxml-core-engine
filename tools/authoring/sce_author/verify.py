@@ -498,14 +498,39 @@ class Latches:
         # describe. The ladder is watched globally rather than per input,
         # because a rung this input does not name is still a rung it includes.
         rungs = latch.get("cumulative")
+        # ⚠ Read the ladder on EVERY round, not only on the rounds where this
+        # input has not already been set. Where the ladder stands is a global
+        # observation, not this input's conclusion, and skipping it whenever
+        # the latch happens to set leaves the reading stale: measured
+        # 2026-09-22, an input was still told the ladder sat at the bottom
+        # rung several rounds after the record had stepped it up, because
+        # every round that moved it up had also set the latch and so never
+        # looked. The guard below used to wrap this call, which is what made
+        # the reading depend on the asker.
+        reached = self._ladder_changes(rungs, case) if rungs else []
+        # ⚠ A rung BELOW this input's own is the ladder being asserted again
+        # from lower down, and that is not silence -- it is a statement that
+        # the longer reading has stopped holding. Without this the latch only
+        # ever rose: an input asking "has the longer reading passed" stayed
+        # true after the record put the ladder back at the bottom, because
+        # nothing that round named its own counter and a held latch looked
+        # like the honest answer. Measured 2026-09-22 on an output whose
+        # record steps the ladder down between cases: it stayed on for a round
+        # the record calls off, and the DOCUMENT was blamed for it.
+        # ⚠⚠ The oracle this pack was derived from reads the ladder the same
+        # way -- `rung(last asserted) >= rung(wanted) > 0`, recomputed every
+        # round rather than latched upward. Only the upward half was carried
+        # over, and the half that was dropped is the one that says "no".
+        lowered = False
         if rungs and not sets:
             mine = parameters.get(latch["set_when_changed"])
             if mine in rungs:
-                for reached in self._ladder_changes(rungs, case):
-                    if rungs.index(reached) >= rungs.index(mine):
-                        sets, set_by = True, reached
+                for rung in reached:
+                    if rungs.index(rung) >= rungs.index(mine):
+                        sets, set_by = True, rung
                         break
-        clears = latch["clear_when_changed"] in changed
+                    lowered = True
+        clears = latch["clear_when_changed"] in changed or lowered
         if sets and clears:
             both = latch.get("both", "clear")
             order = list(case.drove)
