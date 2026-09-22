@@ -32,7 +32,7 @@ from dataclasses import dataclass
 
 import yaml
 
-from . import delivery
+from . import delivery, landing
 from .errors import READ_ERRORS, PackError, describe_path
 from .pack import SCHEMA_DIR, Pack, _validate
 
@@ -71,6 +71,27 @@ SCE_NS = "{http://sce.dev/ext}"
 # keep none. Either way a binding that reads an earlier round is memory the
 # document does not declare, and the only place that shows is the binding.
 STATELESS_KINDS = frozenset({"transform", "lookup", "condition", "interpolation"})
+
+# Kinds that are DRIVEN by events rather than called with their inputs (W3C
+# SCXML 3.12). `verify` drives these, and the rules a binding for one may use
+# are judged here, once, for both (`driving_refusals`).
+STATECHART_KINDS = frozenset({"statechart"})
+
+# What `verify`'s statechart driver reads off an input rule: the event it
+# sends, the address whose driving fires it, and the value that address must
+# take first (`StatechartRun.drive`). The annotations beside them say nothing
+# to the machine. ⚠ Listed as what IS read rather than as what is not, so a
+# key the vocabulary grows later is refused on a statechart until the driver
+# learns it, instead of being dropped the way every value key was.
+_STATECHART_DRIVER_READS = frozenset({"event", "address", "becomes"})
+_ANNOTATIONS = frozenset({"unresolved", "assumed", "note"})
+
+# `previous(<field>)` in a transform output's expression, as the product reads
+# it (`forge::previous_value::reads`): one bare name, in a call nothing
+# qualifies. String literals are removed first so a text that spells the call
+# is not read as one.
+_PREVIOUS_READ = re.compile(r"(?<![\w.])previous\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)")
+_STRING_LITERAL = re.compile(r"'(?:[^'\\]|\\.)*'|\"(?:[^\"\\]|\\.)*\"")
 
 
 @dataclass
@@ -115,6 +136,12 @@ class Document:
     # its number. An `enum:<alias>` input takes the platform's number, and
     # this is what says which variant that number is.
     enums: dict = dataclasses.field(default_factory=dict)
+    # Every field a transform reads through `previous()`: what it keeps from
+    # one activation to the next. Empty for any other kind, as the product
+    # has it -- only a transform has a holder. `verify` asks the product
+    # itself (the manifest's `holder`); this is the same answer read without
+    # building, so `check` can ask the binding for what such a document needs.
+    keeps: frozenset = frozenset()
 
     def variants_of(self, ident: str) -> dict | None:
         """The enumeration an `enum:` input or output names, if one is imported."""
@@ -213,6 +240,7 @@ def read_document(path: pathlib.Path) -> Document:
         ) from exc
     inputs, outputs = [], []
     assumed, reads, unresolved, types = {}, {}, {}, {}
+    kept: set = set()
     for data in root.iter(f"{SCXML_NS}data"):
         ident = data.get("id")
         direction = data.get(f"{SCE_NS}direction")
@@ -220,6 +248,8 @@ def read_document(path: pathlib.Path) -> Document:
             inputs.append(ident)
         elif direction == "out":
             outputs.append(ident)
+            kept.update(_PREVIOUS_READ.findall(
+                _STRING_LITERAL.sub("''", data.get("expr") or "")))
         if direction in ("in", "out") and data.get(f"{SCE_NS}type"):
             types[ident] = data.get(f"{SCE_NS}type")
         # ⚠ The author's own record of what they had to decide without being
@@ -257,17 +287,19 @@ def read_document(path: pathlib.Path) -> Document:
     events = {name
               for transition in root.iter(f"{SCXML_NS}transition")
               for name in (transition.get("event") or "").split()}
+    # ⚠ No `sce:kind` is a STATECHART, as the product reads it: a forge kind
+    # is opt-in, and a plain SCXML document goes the statechart way
+    # (`forge::parser::parse_forge` answers "not a forge document"). This read
+    # an absent kind as '' -- measured 2026-09-22, an author writing plain
+    # SCXML from a brief had a document `check` accepted and `verify` then
+    # refused as a kind it could not drive.
+    kind = root.get(f"{SCE_NS}kind") or "statechart"
     return Document(
         path=path,
         inputs=tuple(inputs),
         outputs=tuple(outputs),
-        # ⚠ No `sce:kind` is a STATECHART, as the product reads it: a forge
-        # kind is opt-in, and a plain SCXML document goes the statechart way
-        # (`forge::parser::parse_forge` answers "not a forge document"). This
-        # read an absent kind as '' -- measured 2026-09-22, an author writing
-        # plain SCXML from a brief had a document `check` accepted and
-        # `verify` then refused as a kind it could not drive.
-        kind=root.get(f"{SCE_NS}kind") or "statechart",
+        kind=kind,
+        keeps=frozenset(kept) if kind == "transform" else frozenset(),
         assumed=assumed,
         unresolved=unresolved,
         reads=reads,
@@ -412,6 +444,101 @@ def _refuse_yaml_booleans(doc, path: pathlib.Path) -> None:
                 walk(value, [side, name, key])
 
 
+def driving_refusals(document: Document, inputs: dict) -> list[tuple[str, str]]:
+    """What stops a run before its first case, as `(where, why)` pairs.
+
+    Rules no case could get past, judged from the binding's inputs against the
+    document alone. `check` reports each one, and `verify` refuses the run in
+    the same words before building anything, so the two cannot disagree about
+    which bindings can be run.
+
+    A COMPUTATION is called with its inputs by name, so a rule naming an input
+    the document does not declare has nothing to hand its value to.
+
+    A STATECHART is handed nothing but events (W3C SCXML 3.12). The driver
+    sends a rule's `event` when the case drove its `address` -- to the value
+    `becomes` names, if it names one -- and sends it BARE. So:
+
+      a declared input   nothing outside the machine writes its datamodel;
+                         the generated code offers the host a reader for each
+                         variable and a writer for none
+      a value key        (`equals`, `protocol`, `when_absent`, ...) computes
+                         something no part of the machine receives
+      no event           reaches no part of the machine at all
+
+    ⚠ The first two used to be DROPPED by the run rather than refused, so a
+    guard comparing a level compared the value it was declared with, and the
+    case failed as though the document were wrong. Measured 2026-09-22 on a
+    machine that flashes only above a level of 3: driven at 5, it stayed dark,
+    and `verify` reported "expected FLASHING, got DARK" against the document.
+    """
+    out: list[tuple[str, str]] = []
+    if document.kind not in STATECHART_KINDS:
+        for name in sorted(inputs):
+            if name not in document.inputs:
+                out.append((f"input {name}",
+                            f"the document declares no input {name!r}, so this "
+                            f"rule has nothing to hand its value to -- the "
+                            f"document is called with the inputs it declares, "
+                            f"by name"))
+        return out
+
+    for ident in document.inputs:
+        out.append((
+            f"document {document.path.name}",
+            f"declares {ident!r} `sce:direction=\"in\"`, and nothing outside a "
+            f"statechart writes its datamodel: the generated machine offers "
+            f"the host a reader for each variable and a writer for none, so "
+            f"every guard reading {ident!r} reads the value it was declared "
+            f"with, whatever a case drove. What reaches a statechart from "
+            f"outside is an event, and a value travels as that event's data "
+            f"(`_event.data`), which a binding cannot attach yet. A component "
+            f"that compares levels is a transform, which is handed its inputs "
+            f"every activation and keeps what it needs with `previous()`."))
+    drives = any(rule.get("event") for rule in inputs.values())
+    if not drives:
+        out.append(("binding",
+                    "no input rule names an `event`, so no case can drive the "
+                    "machine. Every case would be judged against a document "
+                    "sitting in its initial configuration, which is a verdict "
+                    "about nothing."))
+    for name, rule in sorted(inputs.items()):
+        if not rule.get("event"):
+            # A rule still waiting for its address is reported as such, and
+            # with no rule driving at all the sentence above covers this one.
+            if drives and not rule.get("unresolved"):
+                out.append((f"input {name}",
+                            "names no `event`, and a statechart is handed "
+                            "nothing but events: this rule would reach no part "
+                            "of the machine in any case"))
+            continue
+        extra = sorted(k for k in rule
+                       if k not in _STATECHART_DRIVER_READS | _ANNOTATIONS)
+        if extra:
+            keys = ", ".join(f"`{k}`" for k in extra)
+            one = len(extra) == 1
+            out.append((
+                f"input {name}",
+                f"{keys} {'computes' if one else 'compute'} a value for the "
+                f"machine to read, and a statechart is handed only the event "
+                f"{rule['event']!r}, with no data: what "
+                f"{'it computes' if one else 'they compute'} reaches no part of "
+                f"the machine, so a guard comparing it compares whatever the "
+                f"variable started as"))
+    return out
+
+
+def activation_unsaid(document_name: str) -> str:
+    """Why a binding for a document that keeps values is incomplete without
+    `activation`. `check` reports it, and `verify` refuses in these words."""
+    return (f"{document_name} keeps values from one activation to the next (it "
+            f"reads previous()), and the binding does not say how the host runs "
+            f"it. What `previous(x)` means is the value one ACTIVATION ago, so "
+            f"it depends on the host's schedule: say `activation: on-change` "
+            f"(once each time its inputs change) or `activation: periodic` "
+            f"(once per period).")
+
+
 @dataclass
 class Finding:
     where: str
@@ -467,6 +594,12 @@ def check(pack: Pack, binding_path: pathlib.Path) -> list[Finding]:
         if rule.get("state_of"):
             if rule["state_of"] not in declared_outputs:
                 out.append(Finding(f"input {name}", f"state_of names {rule['state_of']!r}, which is not an output — it would read a default every round"))
+            continue
+        # ⚠ Read off the CASE, not off an address -- the schema says so of
+        # both, and `verify` reads them that way. This refused them as "no
+        # address and no protocol", so a binding `verify` ran was one `check`
+        # would not pass.
+        if rule.get("clock") or "variant_is" in rule:
             continue
         if address is None:
             out.append(Finding(f"input {name}", "no address and no protocol"))
@@ -642,7 +775,9 @@ def check(pack: Pack, binding_path: pathlib.Path) -> list[Finding]:
         if why:
             out.append(Finding(f"input {name}", why))
 
-    for ident in document.inputs:
+    # A statechart's declared inputs are refused as such below: asking for a
+    # binding would send the author to write a rule nothing can deliver.
+    for ident in (() if document.kind in STATECHART_KINDS else document.inputs):
         if ident not in declared_inputs:
             out.append(Finding(f"document {document.path.name}", f"input {ident!r} has no binding — it would be a default every round"))
     for ident in document.outputs:
@@ -665,6 +800,36 @@ def check(pack: Pack, binding_path: pathlib.Path) -> list[Finding]:
             continue
         if name not in document.outputs:
             out.append(Finding(f"output {name}", "the document does not compute it"))
+
+    # ⚠ Each of the next three was refused by `verify` alone, so a binding this
+    # command had passed came back with every case unjudged, or not run at
+    # all. Measured 2026-09-22 by writing each shape into a binding this
+    # fixture otherwise accepts: nothing here, and `verify` stopped on every
+    # one. Each is now one judgement both commands make.
+    #
+    # Where an output lands, and whether it can land every value the document
+    # says it can produce (`landing`).
+    for name, rule in sorted(declared_outputs.items()):
+        why = landing.form_refusal(rule)
+        if why:
+            out.append(Finding(f"output {name}", why))
+            continue
+        values = landing.produces(rule, document.types.get(name), document.sends)
+        missing = landing.unmapped(rule, values)
+        if missing:
+            out.append(Finding(
+                f"output {name}",
+                f"the map has no entry for {', '.join(map(repr, missing))}, "
+                f"which the document can produce, so a case producing it has "
+                f"nowhere to land"))
+
+    # Whether a run can start at all (`driving_refusals`).
+    for where, why in driving_refusals(document, declared_inputs):
+        out.append(Finding(where, why))
+
+    # What a document that keeps values needs the binding to say.
+    if document.keeps and not binding.get("activation"):
+        out.append(Finding("binding", activation_unsaid(document.path.name)))
 
     # ⚠ An event nothing answers is the statechart shape of a silent pass. The
     # case would send it, the machine would ignore it, every later reading

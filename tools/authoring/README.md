@@ -630,10 +630,11 @@ the model's addresses the document's names are.
 inputs change (`on-change`), or once per period whatever changed (`periodic`).
 It decides what `previous(x)` means, the value one ACTIVATION ago, and an edge
 detector means different things under the two, so it is a deployment fact and
-it lives here beside the addresses. `verify` replays one activation per
-recorded case, which is the on-change reading: a document that reads
-`previous()` is refused without the key and refused under `periodic`, which
-records of changes cannot replay. A document that reads none needs no answer.
+it lives here beside the addresses. A binding for a document that reads
+`previous()` is incomplete without the key, and `check` and `verify` both
+refuse it. `verify` replays one activation per recorded case, which is the
+on-change reading, so it also refuses `periodic`, which records of changes
+cannot replay. A document that reads none needs no answer.
 
 **Memory belongs in the document.** A transform that needs the round before
 says so itself — `previous(x)` is the value field `x` held one activation ago,
@@ -695,6 +696,19 @@ the one a real platform receives. Four keys say so:
 | `sent` | this output leaves as a send, optionally narrowed to one `processor`, its value taken from a `param` or the `content` and otherwise being the event name itself |
 | `when_nothing_sent` | what the output reads as in a case where no matching send occurred |
 
+⚠⚠ **A statechart is handed the event and nothing else.** The driver reads
+`event`, `address` and `becomes` off an input rule and sends the event bare, so
+any other key on a statechart's input rule — `equals`, `protocol`,
+`when_absent` — computes a value no part of the machine receives, and `check`
+and `verify` both refuse it in the same words. A `sce:direction="in"`
+declaration in a statechart is refused for the same reason: nothing outside the
+machine writes its datamodel, and the generated code offers the host a reader
+for each variable and a writer for none. A value reaches a statechart as an
+event's data (`_event.data`), which no key here attaches yet, so a component
+that compares levels is written as a transform. Measured 2026-09-22: these
+were DROPPED rather than refused, and a machine that flashes above a level of
+3, driven at 5, stayed dark — reported as a correct document failing.
+
 An address named with nothing that compares it — `level`, `caption` — hands
 the document that address's OWN value, read as the type the document declares
 for the input and checked against what the interface model says the address
@@ -734,7 +748,17 @@ what it held. The identifier beside an event's status is the usual case — it
 says what is turning off, so it outlives the condition that set it. It lives in
 the binding rather than as an extra input fed back into every document that
 needs it, because the specification never says it; the address's structure
-does. Needs ordered examples.
+does. Needs a `map` and ordered examples.
+
+**Every output rule is asked before a run what each case asks of it.** `check`
+refuses a rule that neither maps nor passes through, `hold_last` with no map,
+and a map that names no entry for a value the document says it can produce:
+either case of a `bool` output, and, for a rule reading a send's event name,
+every name the document sends to that processor and the `when_nothing_sent`.
+A number has no such list, so a value its map lacks is found by the case that
+produces it — and under `hold_last` a value with no entry is the one that holds.
+These are the same functions `verify` lands values with (`landing.py`), so the
+two cannot disagree about which rules are well formed.
 
 `assumed: "<why>"` on any input or output rule: this rule decides something the
 specification does not say, like a `when_absent` for a number nobody said the

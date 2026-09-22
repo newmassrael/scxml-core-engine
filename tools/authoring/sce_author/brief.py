@@ -154,8 +154,8 @@ of the previous activation; `x` is one of its inputs or outputs:
   not.
 - The binding says when the host runs the document: `activation: on-change`
   (once each time its inputs change) or `activation: periodic` (once per
-  period). What "previous" means depends on it, and `verify` refuses a
-  document that reads `previous()` until the binding says.
+  period). What "previous" means depends on it, and `check` and `verify`
+  refuse the binding of a document that reads `previous()` until it says.
 
 Do not make the BINDING remember instead (`previous_of`, `state_of`). Memory
 the binding keeps is memory the document does not declare, so the document

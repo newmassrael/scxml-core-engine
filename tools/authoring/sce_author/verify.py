@@ -37,8 +37,9 @@ import sys
 import tempfile
 from dataclasses import dataclass, field
 
-from . import delivery
-from .check import imports_of, read_binding
+from . import delivery, landing
+from .check import (STATECHART_KINDS, activation_unsaid, driving_refusals,
+                    imports_of, read_binding)
 from .errors import AuthoringError
 from .pack import Pack
 
@@ -766,39 +767,6 @@ MAX_OPEN_INPUTS = 6
 _NOT_WRITTEN = object()
 
 
-def _names_value(key, value) -> bool:
-    """Whether a binding key -- in a `map` or a `when` -- names the value the
-    document produced.
-
-    ⚠ A document output declared `bool` arrives as True or False, and a
-    binding writes its two cases as `0`/`1`, as `true`/`false`, or as YAML's
-    own booleans: three spellings of the same two cases, all of which the
-    schema admits and `check` accepts. Matching one spelling made a boolean
-    output unmappable under the other two. Measured 2026-09-22: two authors
-    writing from a brief both wrote `true`/`false`, `check` passed both
-    bindings, and every case of both was then unjudged with "the binding's
-    map has no entry" -- a verdict about the verifier, reported as one about
-    the binding.
-    """
-    if isinstance(value, bool):
-        if isinstance(key, bool):
-            return key is value
-        return str(key).strip().lower() in (("1", "true") if value else ("0", "false"))
-    if isinstance(key, bool):
-        # A truth value names no number and no symbol.
-        return False
-    return str(key) == str(value)
-
-
-def _mapped(table: dict, value) -> tuple[bool, object]:
-    """The entry of a binding's `map` that names `value`: (True, what it
-    writes), or (False, None) when no key names it."""
-    for key, written in table.items():
-        if _names_value(key, value):
-            return True, written
-    return False, None
-
-
 def _held(name: str, rule: dict, value, history) -> object:
     """The value a `hold_last` rule writes this round.
 
@@ -810,11 +778,10 @@ def _held(name: str, rule: dict, value, history) -> object:
     written against the oracle then had every case unjudged, because the
     document's "no event" value had no entry in the map.
     """
-    if "map" not in rule:
-        raise VerifyError(
-            f"output {name!r}: `hold_last` holds a MAPPED value, and this rule "
-            f"has no map -- there is nothing a value could fail to be found in")
-    if _mapped(rule["map"], value)[0]:
+    why = landing.form_refusal(rule)
+    if why:
+        raise VerifyError(f"output {name!r}: {why}")
+    if landing.mapped(rule["map"], value)[0]:
         return value
     return history.held.get(name, _NOT_WRITTEN)
 
@@ -982,6 +949,10 @@ def output_values(name: str, rule: dict, computed) -> dict:
     address = rule.get("address")
     if not address:
         raise VerifyError(f"output {name!r}: the binding gives it no address")
+    # The judgement `check` makes of this rule before any case runs.
+    why = landing.form_refusal(rule)
+    if why:
+        raise VerifyError(f"output {name!r}: {why}")
     out = {}
     key = address + (f".{rule['field']}" if rule.get("field") else "")
     if "map" in rule:
@@ -990,23 +961,19 @@ def output_values(name: str, rule: dict, computed) -> dict:
         # booleans. Those are the same two cases, and comparing spellings made
         # a boolean output unmappable -- reported as "the binding's map has no
         # entry", which sends a reader to edit a binding that was right. One
-        # reading for every site, `_names_value`.
-        found, written = _mapped(rule["map"], computed)
+        # reading for every site, `landing.names_value`.
+        found, written = landing.mapped(rule["map"], computed)
         if not found:
             raise VerifyError(
                 f"output {name!r}: the document produced {computed!r} and the "
                 f"binding's map has no entry for it")
         out[key] = written
-    elif rule.get("passthrough"):
-        out[key] = computed
     else:
-        raise VerifyError(f"output {name!r}: the binding says neither 'map' "
-                          f"nor 'passthrough', so where its value goes is "
-                          f"undefined")
+        out[key] = computed
     # `when` first and `also` after, which is the order the schema states: a
     # default in `also` fills what `when` left alone rather than replacing it.
     for value, fields in (rule.get("when") or {}).items():
-        if _names_value(value, computed):
+        if landing.names_value(value, computed):
             for fname, fvalue in fields.items():
                 out[f"{address}.{fname}"] = fvalue
     for fname, fvalue in (rule.get("also") or {}).items():
@@ -1100,8 +1067,9 @@ def _same(want, got, field_=None) -> bool:
 # A statechart is not READ, it is DRIVEN: events go in, and what it produces
 # for anything outside leaves as a `<send>` (W3C SCXML 6.2). Nothing about the
 # calling convention above survives that, which is why this is its own path
-# rather than a branch inside the one below.
-STATECHART_KINDS = frozenset({"statechart"})
+# rather than a branch inside the one below. Which kinds those are is
+# `check.STATECHART_KINDS`, because `check` judges their bindings by the same
+# rule (`check.driving_refusals`).
 
 
 class SendRecorder:
@@ -1450,12 +1418,9 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
 
     inputs = dict(binding.get("inputs") or {})
     outputs = dict(binding.get("outputs") or {})
+    # Never empty: `verify` refused a binding naming no event before building
+    # anything (`driving_refusals`).
     driving = {n: r for n, r in inputs.items() if r.get("event")}
-    if not driving:
-        return Verification(refusal=(
-            "no input rule names an `event`, so no case can drive the "
-            "machine. Every case would be judged against a document sitting "
-            "in its initial configuration, which is a verdict about nothing."))
 
     verification, bound, writes = open_frame(pack, inputs, outputs)
     judge = CaseJudge(verification, pack, binding, declared, outputs, bound, writes)
@@ -1638,6 +1603,15 @@ def verify(pack: Pack, binding_path: pathlib.Path,
             f"{', '.join(sorted(STATECHART_KINDS))}, which it drives by events. "
             f"Another kind is another calling convention, and guessing at one "
             f"would produce a verdict about something that was never run."))
+    # ⚠ Before anything is built, and in `check`'s own words. Each of these
+    # is a rule no case could get past -- and on a statechart, one the run
+    # used to get past SILENTLY: a value an input rule computed was dropped
+    # and the event sent bare, so a guard comparing it compared what the
+    # variable started as, and the verdict blamed the document.
+    stopped = driving_refusals(declared, dict(binding.get("inputs") or {}))
+    if stopped:
+        return Verification(refusal="\n".join(f"{where}: {why}"
+                                              for where, why in stopped))
 
     examples = pack.examples
     if not (examples and examples.present and examples.cases):
@@ -1762,17 +1736,19 @@ def verify(pack: Pack, binding_path: pathlib.Path,
     holder = build.holder
     if holder:
         activation = binding.get("activation")
+        if activation is None:
+            # An incomplete binding, which `check` refuses in these words.
+            return Verification(refusal=activation_unsaid(document.name))
         if activation != "on-change":
-            said = (f"says it runs {activation!r}" if activation else
-                    "does not say how the host runs it")
+            # A complete binding this verifier cannot replay: its own refusal.
             return Verification(refusal=(
                 f"{document.name} keeps values from one activation to the next "
-                f"(it reads previous()), and the binding {said}. What "
-                f"`previous(x)` means is the value one ACTIVATION ago, and these "
-                f"records can replay only one kind: one activation per recorded "
-                f"case, which is `activation: on-change`. Say which the host "
-                f"does; under `periodic` the records cannot stand in for the "
-                f"activations that happened between them."))
+                f"(it reads previous()), and the binding says it runs "
+                f"{activation!r}. What `previous(x)` means is the value one "
+                f"ACTIVATION ago, and these records can replay only one kind: "
+                f"one activation per recorded case, which is `activation: "
+                f"on-change`. Under `periodic` the records cannot stand in for "
+                f"the activations that happened between them."))
         if not examples.ordered:
             return Verification(refusal=(
                 f"{document.name} keeps values from one activation to the next "
