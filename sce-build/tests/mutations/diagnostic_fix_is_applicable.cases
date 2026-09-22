@@ -26,16 +26,25 @@ mutation_runtime_targets sce-build/src/forge/event_schema_check.rs \
                          sce-build/src/forge/diagnostic.rs \
                          sce-build/src/model.rs
 
+# Re-aimed 2026-09-22: `located_on_param` took the literal the document
+# wrote as a second argument, so the anchor that quoted the old argument
+# list matched nothing and would have read as SURVIVED. The unknown-field
+# site passes `None` there — it names a field, not a literal.
 mutation_case "a param rejection anchors on the element that encloses it" <<'PY'
 edit("sce-build/src/forge/event_schema_check.rs",
-     "        return Err(located_on_param(\n            param,\n            action,\n            diag_label,\n            ValidationError::EventPayloadFieldUnknown {",
+     "        return Err(located_on_param(\n            param,\n            None,\n            action,\n            diag_label,\n            ValidationError::EventPayloadFieldUnknown {",
      "        return Err(located_at(\n            action.source_location.as_ref(),\n            diag_label,\n            ValidationError::EventPayloadFieldUnknown {")
 PY
 
+# Re-aimed 2026-09-22: the resolution moved out of the method into the
+# free `resolve_authored`, which a parse-time remap shares with the
+# model, so `self.expanded` / `self.map` became parameters and the indent
+# dropped to 4. `expanded` joins the discarded tuple because the mutant
+# no longer reads it and an unused parameter is a warning the tree denies.
 mutation_case "recorded rows reach the wire in expanded coordinates" <<'PY'
 edit("sce-build/src/model.rs",
-     "        let (line, col) = (line?, col.unwrap_or(1));\n        let offset = crate::position_map::rowcol_to_offset(&self.expanded, line, col);\n        let pos = self.map.lookup(offset);\n        Some((pos.file.display().to_string(), pos.row, pos.col))",
-     "        let _ = (line, col);\n        None")
+     "    let (line, col) = (line?, col.unwrap_or(1));\n    let offset = crate::position_map::rowcol_to_offset(expanded, line, col);\n    let pos = map.lookup(offset);\n    Some((pos.file.display().to_string(), pos.row, pos.col))",
+     "    let _ = (line, col, expanded);\n    None")
 PY
 
 mutation_case "a synthesised value still carries a substitution proposal" <<'PY'

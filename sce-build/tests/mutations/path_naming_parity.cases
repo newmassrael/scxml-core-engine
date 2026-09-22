@@ -42,9 +42,12 @@ edit("sce-build/src/bin/sce_codegen.rs",
             .unwrap_or_else(|| std::path::PathBuf::from(".")),""")
 PY
 
+# Re-aimed 2026-09-22: the closure became the function itself
+# (`clippy::redundant_closure`) when the root moved to the first document,
+# so the anchor that quoted the closure matched nothing.
 mutation_case "orchestrate infers its source-set root lexically again" <<'PY'
 edit("sce-build/src/bin/sce_codegen.rs",
-     "        .map(|p| containing_dir(p))",
+     "        .map(containing_dir)",
      "        .and_then(|p| p.parent().map(|x| x.to_path_buf()))")
 PY
 
