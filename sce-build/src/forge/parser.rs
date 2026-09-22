@@ -9330,7 +9330,7 @@ const KNOWN_SCE_ATTRS: &[&str] = &[
     // `retain` names the store a field's value outlives the program in.
     // The label is OPAQUE — SCE compares it for equality and never
     // interprets it, so one domain's vocabulary stays out of a general
-    // tool. See `model::Retention`.
+    // tool. See the Retention section of `forge::model`.
     "retain",
     "returns-max-size",
     "sample-interval",
@@ -9591,7 +9591,8 @@ fn parse_forge_field(
         .map(|s| s.split_whitespace().map(str::to_string).collect())
         .unwrap_or_default();
 
-    let retain = parse_retention_attrs(data, doc_name, &format!("field '{id}'"))?;
+    let (retain, initial) = parse_retention_attrs(data, doc_name, &format!("field '{id}'"))?;
+    let initial_spelling = AttributeSpelling::of(data, Some(SCE_NAMESPACE), "initial");
 
     Ok(ForgeField {
         id,
@@ -9603,6 +9604,8 @@ fn parse_forge_field(
         max_size,
         default_covers,
         retain,
+        initial,
+        initial_spelling,
     })
 }
 
@@ -9621,15 +9624,18 @@ fn parse_forge_field(
 /// the whole repair.
 ///
 /// The SCOPE is not validated here or anywhere: it is an opaque label
-/// (see [`crate::forge::model::Retention`]). What IS checked — that
-/// `initial` names a value the field's type can hold — needs the
-/// imported enum's variants, so it lives in
+/// (see the Retention section of [`crate::forge::model`]). What IS
+/// checked — that `initial` names a value the field's type can hold —
+/// needs the imported enum's variants, so it lives in
 /// [`crate::forge::retention::check`] rather than in this parse.
+///
+/// Returns `(sce:retain, sce:initial)`, each trimmed, both `None` or both
+/// `Some`.
 fn parse_retention_attrs(
     node: &roxmltree::Node,
     doc_name: &str,
     owner_label: &str,
-) -> Result<Option<crate::forge::model::Retention>, Located<ForgeError>> {
+) -> Result<(Option<String>, Option<String>), Located<ForgeError>> {
     let scope = sce_attr(node, "retain");
     let initial = sce_attr(node, "initial");
     let orphan = |attr: &str, value: String, rule: &str| {
@@ -9645,7 +9651,7 @@ fn parse_retention_attrs(
         ))
     };
     match (scope, initial) {
-        (None, None) => Ok(None),
+        (None, None) => Ok((None, None)),
         (Some(s), None) => orphan(
             "sce:retain",
             s,
@@ -9665,10 +9671,7 @@ fn parse_retention_attrs(
             if i.trim().is_empty() {
                 return orphan("sce:initial", i, "a non-empty value");
             }
-            Ok(Some(crate::forge::model::Retention {
-                scope: s.trim().to_string(),
-                initial: i.trim().to_string(),
-            }))
+            Ok((Some(s.trim().to_string()), Some(i.trim().to_string())))
         }
     }
 }

@@ -1136,13 +1136,15 @@ fn render_field(f: &ForgeField, out: &mut Out<'_>) {
             word(&q.unit.to_string())
         );
     }
-    if let Some(r) = &f.retain {
-        let _ = write!(
-            line,
-            " retain {} initial {}",
-            word(&r.scope),
-            word(&r.initial)
-        );
+    // Each attribute as its own clause, so a retained field reads
+    // `retain <scope> initial <value>` exactly as it always has, and a
+    // field carrying only one of the two is shown with that one rather
+    // than dropped from the page.
+    if let Some(scope) = &f.retain {
+        let _ = write!(line, " retain {}", word(scope));
+    }
+    if let Some(initial) = &f.initial {
+        let _ = write!(line, " initial {}", word(initial));
     }
     if !f.default_covers.is_empty() {
         let covers: Vec<String> = f.default_covers.iter().map(|c| word(c)).collect();

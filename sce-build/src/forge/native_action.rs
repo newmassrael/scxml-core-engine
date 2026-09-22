@@ -1117,6 +1117,8 @@ mod tests {
                     max_size: Some(64),
                     default_covers: Vec::new(),
                     retain: None,
+                    initial: None,
+                    initial_spelling: None,
                 },
                 ForgeField {
                     id: "offset".to_string(),
@@ -1128,6 +1130,8 @@ mod tests {
                     max_size: None,
                     default_covers: Vec::new(),
                     retain: None,
+                    initial: None,
+                    initial_spelling: None,
                 },
             ],
             source_location: None,

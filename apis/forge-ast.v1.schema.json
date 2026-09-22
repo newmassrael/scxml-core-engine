@@ -3471,6 +3471,13 @@
         "id": {
           "type": "string"
         },
+        "initial": {
+          "description": "`sce:initial` — the value this field holds before anything has ever written it. Verbatim as the author wrote it; membership in the field's value space is checked by [`crate::forge::retention::check`], which is the one question SCE can answer about it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "max_size": {
           "description": "Per-slot capacity for `bytes`-typed fields, declared via `sce:max-size=\"N\"`. `None` ⇒ fall back to [`crate::forge::limits::BYTES_DEFAULT_MAX`]. Ignored for non-bytes types.",
           "format": "uint32",
@@ -3492,15 +3499,11 @@
           "description": "Physical-quantity annotation (`sce:quantity`). `Some({ scale, offset, unit })` when the field carries a `sce:quantity=\"…\"` attribute. Drives type checking (units that disagree across an arithmetic operator are rejected) and codegen (raw + physical accessor pair emitted on numeric fields). Absent quantity declarations preserve the dimensionless baseline."
         },
         "retain": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/Retention"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "`sce:retain` / `sce:initial` — this field's value outlives the program. See [`Retention`] for what SCE does with it and why the scope label is opaque."
+          "description": "`sce:retain` — this field's value outlives the program, kept by the host in the store this label names. The label is opaque: SCE compares scopes for equality and never interprets them, so what a label means is a domain adapter's to decide.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "sce_type": {
           "$ref": "#/definitions/SceType"
@@ -5105,24 +5108,6 @@
     "Rational": {
       "pattern": "^-?\\d+(/\\d+)?$",
       "type": "string"
-    },
-    "Retention": {
-      "description": "A field whose value OUTLIVES the program that computes it — `sce:retain=\"<scope>\"` with `sce:initial=\"<value>\"`.\n\n⚠ WHAT SCE DOES AND DOES NOT DO HERE. SCE cannot implement persistence: where a value is kept between runs is the host's business (an EEPROM page, a config file, a key-value store). What SCE does is DECLARE it, CHECK the one thing it can check, and CARRY it into the AST so the host knows what to provision. The same division `sce:quantity` already uses: the document states the physics, the tree checks the arithmetic, the platform supplies the sensor.\n\n⚠⚠ THE SCOPE IS OPAQUE, AND THAT IS THE GENERAL PART. The measurement that prompted this surface is automotive — a value that survives ignition-off, and one that survives battery removal — but `sce:retain=\"battery\"` would put one domain's vocabulary in a general tool. So SCE never interprets the scope: it records the label, and a domain adapter decides what labels mean, exactly as `sce:req` keeps requirement ids opaque because two spellings that normalise together are two requirements to the document that issued them.\n\n⚠⚠⚠ THE PAIR IS REQUIRED IN BOTH DIRECTIONS, and that is the part worth the most. A retained field with no initial value has undefined behaviour on the first run, before anything has ever been stored — exactly the silent gap this tree refuses elsewhere. An initial value with no retention is meaningless: an ordinary field is computed afresh every cycle, so nothing ever reads it. Both orphans are refused, reusing `validation/attribute-rule-violated` rather than minting a code, which is what `parse_quantity_attrs` does for the same shape.",
-      "properties": {
-        "initial": {
-          "description": "`sce:initial` — the value before the store has ever been written. Verbatim as the author wrote it; membership in the field's value space is checked by [`crate::forge::retention::check`], which is the one question SCE can answer about it.",
-          "type": "string"
-        },
-        "scope": {
-          "description": "`sce:retain` — an opaque label naming the store this field is kept in. SCE compares scopes for equality and nothing else.",
-          "type": "string"
-        }
-      },
-      "required": [
-        "initial",
-        "scope"
-      ],
-      "type": "object"
     },
     "SceType": {
       "description": "Canonical SCE type — used in `sce:type` attributes. Language-specific mappings are in the generator module (SRP).",

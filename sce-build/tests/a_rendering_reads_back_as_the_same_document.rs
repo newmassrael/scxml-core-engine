@@ -247,9 +247,7 @@ fn every_covered_kind_survives_the_round_trip() {
 /// the line reads back as a different field or as none.
 #[test]
 fn every_field_clause_survives_the_round_trip() {
-    use sce_build::forge::model::{
-        Direction, ForgeDocument, ForgeField, Retention, SceType, TransformModel,
-    };
+    use sce_build::forge::model::{Direction, ForgeDocument, ForgeField, SceType, TransformModel};
     use sce_build::forge::quantity::{Quantity, Rational, UnitTag};
 
     let loaded = ForgeField {
@@ -270,10 +268,9 @@ fn every_field_clause_survives_the_round_trip() {
         // members is what the clause needs to prove it is read as a
         // list rather than a single word; what they spell is nothing.
         default_covers: vec!["FIRST_VARIANT".to_string(), "SECOND_VARIANT".to_string()],
-        retain: Some(Retention {
-            scope: "battery backed store".to_string(),
-            initial: "hello world".to_string(),
-        }),
+        retain: Some("battery backed store".to_string()),
+        initial: Some("hello world".to_string()),
+        initial_spelling: None,
     };
 
     let document = ForgeDocument::Transform(TransformModel {

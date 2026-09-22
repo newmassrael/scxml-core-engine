@@ -867,49 +867,41 @@ pub struct CycleStep {
 }
 
 // ── Retention ──────────────────────────────────────────────────
-
-/// A field whose value OUTLIVES the program that computes it —
-/// `sce:retain="<scope>"` with `sce:initial="<value>"`.
-///
-/// ⚠ WHAT SCE DOES AND DOES NOT DO HERE. SCE cannot implement
-/// persistence: where a value is kept between runs is the host's
-/// business (an EEPROM page, a config file, a key-value store). What SCE
-/// does is DECLARE it, CHECK the one thing it can check, and CARRY it
-/// into the AST so the host knows what to provision. The same division
-/// `sce:quantity` already uses: the document states the physics, the
-/// tree checks the arithmetic, the platform supplies the sensor.
-///
-/// ⚠⚠ THE SCOPE IS OPAQUE, AND THAT IS THE GENERAL PART. The
-/// measurement that prompted this surface is automotive — a value that
-/// survives ignition-off, and one that survives battery removal — but
-/// `sce:retain="battery"` would put one domain's vocabulary in a
-/// general tool. So SCE never interprets the scope: it records the
-/// label, and a domain adapter decides what labels mean, exactly as
-/// `sce:req` keeps requirement ids opaque because two spellings that
-/// normalise together are two requirements to the document that issued
-/// them.
-///
-/// ⚠⚠⚠ THE PAIR IS REQUIRED IN BOTH DIRECTIONS, and that is the part
-/// worth the most. A retained field with no initial value has undefined
-/// behaviour on the first run, before anything has ever been stored —
-/// exactly the silent gap this tree refuses elsewhere. An initial value
-/// with no retention is meaningless: an ordinary field is computed
-/// afresh every cycle, so nothing ever reads it. Both orphans are
-/// refused, reusing `validation/attribute-rule-violated` rather than minting a
-/// code, which is what `parse_quantity_attrs` does for the same shape.
-#[derive(Debug, Clone, Serialize)]
-#[cfg_attr(test, derive(schemars::JsonSchema))]
-pub struct Retention {
-    /// `sce:retain` — an opaque label naming the store this field is
-    /// kept in. SCE compares scopes for equality and nothing else.
-    pub scope: String,
-    /// `sce:initial` — the value before the store has ever been
-    /// written. Verbatim as the author wrote it; membership in the
-    /// field's value space is checked by
-    /// [`crate::forge::retention::check`], which is the one question
-    /// SCE can answer about it.
-    pub initial: String,
-}
+//
+// A field whose value OUTLIVES the program that computes it is written
+// `sce:retain="<scope>"` with `sce:initial="<value>"`. The two are
+// carried as two fields of [`ForgeField`], each the attribute as the
+// author wrote it, rather than as one record: `sce:initial` is the
+// field's value before anything has ever written it, which is a fact
+// about the FIELD, and a store is only one of the things that can ask
+// for it.
+//
+// ⚠ WHAT SCE DOES AND DOES NOT DO HERE. SCE cannot implement
+// persistence: where a value is kept between runs is the host's
+// business (an EEPROM page, a config file, a key-value store). What SCE
+// does is DECLARE it, CHECK the one thing it can check, and CARRY it
+// into the AST so the host knows what to provision. The same division
+// `sce:quantity` already uses: the document states the physics, the
+// tree checks the arithmetic, the platform supplies the sensor.
+//
+// ⚠⚠ THE SCOPE IS OPAQUE, AND THAT IS THE GENERAL PART. The
+// measurement that prompted this surface is automotive — a value that
+// survives ignition-off, and one that survives battery removal — but
+// `sce:retain="battery"` would put one domain's vocabulary in a
+// general tool. So SCE never interprets the scope: it records the
+// label, and a domain adapter decides what labels mean, exactly as
+// `sce:req` keeps requirement ids opaque because two spellings that
+// normalise together are two requirements to the document that issued
+// them.
+//
+// ⚠⚠⚠ THE PAIR IS REQUIRED IN BOTH DIRECTIONS, and that is the part
+// worth the most. A retained field with no initial value has undefined
+// behaviour on the first run, before anything has ever been stored —
+// exactly the silent gap this tree refuses elsewhere. An initial value
+// with no retention is meaningless: an ordinary field is computed
+// afresh every cycle, so nothing ever reads it. Both orphans are
+// refused, reusing `validation/attribute-rule-violated` rather than minting a
+// code, which is what `parse_quantity_attrs` does for the same shape.
 
 // ── Field direction ────────────────────────────────────────────
 
@@ -990,11 +982,24 @@ pub struct ForgeField {
     /// conditions test for. See `coverage::check`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub default_covers: Vec<String>,
-    /// `sce:retain` / `sce:initial` — this field's value outlives the
-    /// program. See [`Retention`] for what SCE does with it and why the
-    /// scope label is opaque.
+    /// `sce:retain` — this field's value outlives the program, kept by the
+    /// host in the store this label names. The label is opaque: SCE
+    /// compares scopes for equality and never interprets them, so what a
+    /// label means is a domain adapter's to decide.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub retain: Option<Retention>,
+    pub retain: Option<String>,
+    /// `sce:initial` — the value this field holds before anything has ever
+    /// written it. Verbatim as the author wrote it; membership in the
+    /// field's value space is checked by [`crate::forge::retention::check`],
+    /// which is the one question SCE can answer about it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initial: Option<String>,
+    /// Where `sce:initial` is written, so a refusal of it names the row
+    /// that holds it rather than no row at all. Skipped from
+    /// serialization, as every position on this model is. See
+    /// [`crate::attribute_spelling`].
+    #[serde(skip)]
+    pub initial_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
 }
 
 // ── Transform kind ─────────────────────────────────────────────

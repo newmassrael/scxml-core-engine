@@ -1904,6 +1904,8 @@ mod tests {
             max_size: None,
             default_covers: Vec::new(),
             retain: None,
+            initial: None,
+            initial_spelling: None,
         }
     }
 

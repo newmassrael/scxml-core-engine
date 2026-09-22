@@ -23516,6 +23516,8 @@ mod tests {
             max_size,
             default_covers: Vec::new(),
             retain: None,
+            initial: None,
+            initial_spelling: None,
         };
         // Bytes with no annotation → default-capacity buffer + length sibling.
         assert_eq!(

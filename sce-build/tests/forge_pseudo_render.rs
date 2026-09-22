@@ -23,8 +23,8 @@ use sce_build::forge::model::{
     LinkInboundEvent, LinkModel, LinkOutboundEvent, LookupEntry, LookupModel, MissPolicy,
     ObserverModel, OutOfBounds, OverflowPolicy, PeekByteSpec, PresentIfPredicate, PresentIfScope,
     ProcedureAssign, ProcedureDoneParam, ProcedureHelper, ProcedureModel, ProcedureSendAction,
-    ProcedureState, ProcedureTransition, RangeRule, RateOfChangeRule, ReassemblyConfig, Retention,
-    SceType, TestVector, TestVectorValue, ThresholdMonitor, TimerModel, TlvOverflowPolicy,
+    ProcedureState, ProcedureTransition, RangeRule, RateOfChangeRule, ReassemblyConfig, SceType,
+    TestVector, TestVectorValue, ThresholdMonitor, TimerModel, TlvOverflowPolicy,
     TlvTerminateStrategy, TransformModel, ValidatorModel, ValidatorRules, VariantArm, WorkerModel,
 };
 use sce_build::forge::pseudo::{render, Unsupported};
@@ -41,6 +41,8 @@ fn field(id: &str, t: SceType, dir: Direction) -> ForgeField {
         max_size: None,
         default_covers: Vec::new(),
         retain: None,
+        initial: None,
+        initial_spelling: None,
     }
 }
 
@@ -184,10 +186,8 @@ fn a_procedure_renders_every_form_it_can_carry() {
 
     let mut counter = field("counter", SceType::Uint16, Direction::Internal);
     counter.expr = Some("0".to_string());
-    counter.retain = Some(Retention {
-        scope: "nvm".to_string(),
-        initial: "7".to_string(),
-    });
+    counter.retain = Some("nvm".to_string());
+    counter.initial = Some("7".to_string());
     counter.default_covers = vec!["A".to_string(), "B".to_string()];
 
     let m = ProcedureModel {

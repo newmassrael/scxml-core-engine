@@ -511,6 +511,8 @@ fn parse_field(line: &Line<'_>) -> Result<ForgeField, ParseError> {
         max_size: None,
         default_covers: Vec::new(),
         retain: None,
+        initial: None,
+        initial_spelling: None,
     };
 
     // ⚠ The expression is taken from the LINE, not rebuilt from its
@@ -565,7 +567,8 @@ fn parse_field(line: &Line<'_>) -> Result<ForgeField, ParseError> {
                     });
                 }
                 let initial = undo_word(rest.get(i + 3).copied().unwrap_or(""), line.number)?;
-                f.retain = Some(crate::forge::model::Retention { scope, initial });
+                f.retain = Some(scope);
+                f.initial = Some(initial);
                 i += 4;
             }
             // `default-covers <a> <b> ...` — variadic, so it runs to the

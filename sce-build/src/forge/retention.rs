@@ -15,7 +15,7 @@
 //! time either until a factory-fresh unit boots.
 //!
 //! ⚠⚠ WHAT IT DELIBERATELY DOES NOT CHECK: the scope label. That is
-//! opaque by design (see [`crate::forge::model::Retention`]) — SCE
+//! opaque by design (see [`crate::forge::model::ForgeField::retain`]) — SCE
 //! records it and a domain adapter gives it meaning. Checking it here
 //! would mean holding a list of legal scopes, which is the automotive
 //! vocabulary this surface exists to keep out of a general tool.
@@ -57,11 +57,18 @@ pub fn check(
     document: &str,
 ) -> Result<(), Located<ForgeError>> {
     for field in fields_of(&parsed.document) {
-        let Some(retain) = &field.retain else {
+        let Some(value) = field.initial.as_deref() else {
             continue;
         };
-        let value = retain.initial.as_str();
         let element = format!("field '{}'", field.id);
+        // ⚠ On the attribute's own row. This used to carry no location at
+        // all, which the wire then answers by searching the whole document
+        // for `actual` — and an initial value is usually a `0` or a `false`,
+        // the least findable token a document holds.
+        let (line, col) = field
+            .initial_spelling
+            .as_ref()
+            .map_or((None, None), |s| (Some(s.row()), Some(s.col())));
         // A closed set where the type has one — an enum's variants, a
         // bool's two literals — so the record offers them as candidates;
         // an integer's range is a rule no list states.
@@ -75,8 +82,8 @@ pub fn check(
                 }
                 .into(),
                 document,
-                None,
-                None,
+                line,
+                col,
             ))
         };
         match &field.sce_type {
@@ -115,8 +122,8 @@ pub fn check(
                         }
                         .into(),
                         document,
-                        None,
-                        None,
+                        line,
+                        col,
                     ));
                 }
             }
