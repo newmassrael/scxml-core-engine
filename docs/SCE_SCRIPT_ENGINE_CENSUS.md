@@ -98,10 +98,10 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 235
-native-prefix-documents 1
+engine-documents 234
+native-prefix-documents 2
 datamodel-variable-init 248
-transition-guard 210
+transition-guard 209
 assign-action 206
 child-invoke-needs-script-engine 46
 log-expr 45
@@ -111,7 +111,7 @@ foreach-action 15
 static-invoke-namelist 9
 donedata-param 9
 donedata-content 9
-inline-script-action 7
+inline-script-action 2
 send-namelist 5
 if-condition 3
 global-script 3
@@ -139,7 +139,14 @@ never spelled correctly.
   either would be written against no evidence.
 - **The escape hatch is essentially unused in SCE's own corpus: 1
   document.** That is the baseline the ADR's escape-hatch column
-  ratchets against. A consumer pairing `cond="cpp:…"` with
+  ratchets against. ⚠ **2 since 2026-09-22, deliberately:**
+  `tests/integration/test_thermostat.scxml` now carries a `cpp:` guard,
+  because it is the one document a test EXECUTES one from —
+  `examples/smart_light` is generated and never run. The same commit took
+  that document off the engine: its five `<script>` calls to undeclared
+  functions and its script guard became `<sce:action>`s and the native
+  guard, which is what `engine-documents`, `transition-guard` and
+  `inline-script-action` fell by. A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.
 - **49% of judged documents need an engine** (233 of 475). The remaining

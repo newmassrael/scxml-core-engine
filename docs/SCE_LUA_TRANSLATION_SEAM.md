@@ -3185,10 +3185,15 @@ answers `rc=0`:
 ```sh
 cargo build --bin sce-codegen --features cli -p sce-build
 for L in kotlin cpp rust go python c11; do
-  ./target/debug/sce-codegen generate tests/integration/test_thermostat.scxml \
+  ./target/debug/sce-codegen generate examples/widget_patterns/button.scxml \
       -o /tmp/seam -l "$L" --script-engine lua >/dev/null 2>&1; echo "$L rc=$?"
 done
 ```
+
+⚠ This loop used to read `tests/integration/test_thermostat.scxml`. That
+document now carries a native `cpp:` guard, which only C++ lowers, so it can no
+longer answer for six backends. The document the section above uses answers
+`rc=0` on all six (re-measured 2026-09-22).
 
 ### The three shapes the migration scan could not see
 

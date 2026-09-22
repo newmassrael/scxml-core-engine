@@ -1,170 +1,155 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
-// Integration test for static code generation
-// Tests the complete workflow: SCXML -> Generated C++ -> Compilation -> Execution
+// A host guard deciding a transition, in code the generator emits.
+//
+// Fixture: tests/integration/test_thermostat.scxml, compiled for C++ by
+// `tests/CMakeLists.txt`. The guard is a native `cond="cpp:…"` on an
+// `<sce:context>` object and every effect is an `<sce:action>`, so the machine
+// needs no script engine and the host is the only thing that decides or acts.
+//
+// ⚠ This test used to include a header kept by hand, written for an API the
+// generator no longer emits (`ThermostatBase<Derived>`, reached through
+// `derived()`), while the document beside it called functions it never
+// declared. The build compiled the header and never ran the generator, so the
+// workflow this file names was not the one it exercised. Nothing else runs a
+// native guard: `examples/smart_light` is the only other document writing one,
+// and it is generated, not executed.
+//
+// What the cases measure:
+//
+//   * the guard is asked on the event that names it, and its answer alone
+//     decides whether the machine moves;
+//   * W3C SCXML 3.13: a transition's effects run in document order — the
+//     source's `<onexit>`, the transition's own content, the target's
+//     `<onentry>` (Appendix D `microstep`);
+//   * an event no transition names asks no guard and runs no effect.
+
+#include "test_thermostat_sm.h"
 
 #include <gtest/gtest.h>
 #include <string>
 #include <vector>
 
-#include "Thermostat_sm.h"
+namespace SCE::Tests {
 
-using namespace SCE::Generated;
+namespace {
 
-// User implementation using CRTP pattern
-class ThermostatLogic : public ThermostatBase<ThermostatLogic> {
-public:
-    // Track action calls for testing
-    std::vector<std::string> actionLog;
+namespace G = SCE::Generated::test_thermostat;
+
+/// One record for both halves of the host, so a case can assert the order in
+/// which the machine asked the guard and ran the effects.
+using Log = std::vector<std::string>;
+
+/// The `<sce:context id="climate">` object the native guard reads.
+struct Climate {
+    Log *log = nullptr;
     bool coolDecision = true;
 
-    // Guard method
     bool shouldCool() {
-        actionLog.push_back("shouldCool()");
+        log->push_back("shouldCool");
         return coolDecision;
     }
+};
 
-    // Action methods
-    void onEnterIdle() {
-        actionLog.push_back("onEnterIdle()");
+using Machine = G::test_thermostat<Climate>;
+
+/// Host implementation of the generated operations.
+class Host : public G::TestThermostatActions {
+public:
+    explicit Host(Log &log) : log_(log) {}
+
+    void onEnterIdle() override {
+        log_.push_back("onEnterIdle");
     }
 
-    void onEnterCooling() {
-        actionLog.push_back("onEnterCooling()");
+    void onEnterCooling() override {
+        log_.push_back("onEnterCooling");
     }
 
-    void onExitCooling() {
-        actionLog.push_back("onExitCooling()");
+    void onExitCooling() override {
+        log_.push_back("onExitCooling");
     }
 
-    void startCooling() {
-        actionLog.push_back("startCooling()");
+    void startCooling() override {
+        log_.push_back("startCooling");
     }
 
-    void stopCooling() {
-        actionLog.push_back("stopCooling()");
+    void stopCooling() override {
+        log_.push_back("stopCooling");
     }
 
-    // Friend declaration for CRTP access
-    friend class ThermostatBase<ThermostatLogic>;
+private:
+    Log &log_;
 };
 
 class StaticCodegenIntegrationTest : public ::testing::Test {
 protected:
-    ThermostatLogic thermostat;
+    Log log;
+    Climate climate{&log};
+    Host host{log};
+    // The host and the context are CONSTRUCTOR arguments: `idle`'s `<onentry>`
+    // acts on the initial entry, so either one installed afterwards would
+    // arrive one act too late.
+    Machine sm{host, climate};
 
-    void SetUp() override {
-        thermostat.actionLog.clear();
+    void send(G::Event event) {
+        sm.raiseExternal(event);
+        sm.step();
     }
 };
 
-TEST_F(StaticCodegenIntegrationTest, InitializeCallsInitialStateOnentry) {
-    // Act
-    thermostat.initialize();
+}  // namespace
 
-    // Assert
-    ASSERT_EQ(thermostat.actionLog.size(), 1);
-    EXPECT_EQ(thermostat.actionLog[0], "onEnterIdle()");
-    EXPECT_EQ(thermostat.getCurrentState(), State::Idle);
+TEST_F(StaticCodegenIntegrationTest, InitialEntryRunsTheInitialStatesOnentry) {
+    sm.initialize();
+
+    EXPECT_EQ(log, (Log{"onEnterIdle"}));
+    EXPECT_EQ(sm.getCurrentState(), G::State::Idle);
 }
 
-TEST_F(StaticCodegenIntegrationTest, TransitionWithGuardTrue) {
-    // Arrange
-    thermostat.initialize();
-    thermostat.actionLog.clear();
-    thermostat.coolDecision = true;
+TEST_F(StaticCodegenIntegrationTest, AGuardThatHoldsTakesTheTransition) {
+    sm.initialize();
+    log.clear();
+    climate.coolDecision = true;
 
-    // Act: Trigger transition with guard
-    thermostat.processEvent(Event::Temp_high);
+    send(G::Event::Temp_high);
 
-    // Assert: Guard checked, transition actions executed, state changed
-    ASSERT_EQ(thermostat.actionLog.size(), 3);
-    EXPECT_EQ(thermostat.actionLog[0], "shouldCool()");      // Guard check
-    EXPECT_EQ(thermostat.actionLog[1], "startCooling()");    // Transition action
-    EXPECT_EQ(thermostat.actionLog[2], "onEnterCooling()");  // Target state onentry
-    EXPECT_EQ(thermostat.getCurrentState(), State::Cooling);
+    EXPECT_EQ(log, (Log{"shouldCool", "startCooling", "onEnterCooling"}));
+    EXPECT_EQ(sm.getCurrentState(), G::State::Cooling);
 }
 
-TEST_F(StaticCodegenIntegrationTest, TransitionWithGuardFalse) {
-    // Arrange
-    thermostat.initialize();
-    thermostat.actionLog.clear();
-    thermostat.coolDecision = false;
+TEST_F(StaticCodegenIntegrationTest, AGuardThatFailsLeavesTheMachineWhereItWas) {
+    sm.initialize();
+    log.clear();
+    climate.coolDecision = false;
 
-    // Act: Trigger transition with guard that fails
-    thermostat.processEvent(Event::Temp_high);
+    send(G::Event::Temp_high);
 
-    // Assert: Guard checked, but no transition
-    ASSERT_EQ(thermostat.actionLog.size(), 1);
-    EXPECT_EQ(thermostat.actionLog[0], "shouldCool()");    // Guard check only
-    EXPECT_EQ(thermostat.getCurrentState(), State::Idle);  // Still in idle
+    EXPECT_EQ(log, (Log{"shouldCool"})) << "only the guard may run when it refuses the transition";
+    EXPECT_EQ(sm.getCurrentState(), G::State::Idle);
 }
 
-TEST_F(StaticCodegenIntegrationTest, TransitionWithExitAndEntryActions) {
-    // Arrange: Get to cooling state
-    thermostat.initialize();
-    thermostat.coolDecision = true;
-    thermostat.processEvent(Event::Temp_high);
-    thermostat.actionLog.clear();
+TEST_F(StaticCodegenIntegrationTest, EffectsRunExitThenTransitionThenEntry) {
+    sm.initialize();
+    climate.coolDecision = true;
+    send(G::Event::Temp_high);
+    log.clear();
 
-    // Act: Trigger transition back to idle
-    thermostat.processEvent(Event::Temp_normal);
+    send(G::Event::Temp_normal);
 
-    // Assert: Correct action execution order
-    ASSERT_EQ(thermostat.actionLog.size(), 3);
-    EXPECT_EQ(thermostat.actionLog[0], "onExitCooling()");  // Source state onexit
-    EXPECT_EQ(thermostat.actionLog[1], "stopCooling()");    // Transition action
-    EXPECT_EQ(thermostat.actionLog[2], "onEnterIdle()");    // Target state onentry
-    EXPECT_EQ(thermostat.getCurrentState(), State::Idle);
+    EXPECT_EQ(log, (Log{"onExitCooling", "stopCooling", "onEnterIdle"}));
+    EXPECT_EQ(sm.getCurrentState(), G::State::Idle);
 }
 
-TEST_F(StaticCodegenIntegrationTest, CompleteStateMachineScenario) {
-    // Scenario: Idle -> Cooling -> Idle cycle
+TEST_F(StaticCodegenIntegrationTest, AnEventNoTransitionNamesAsksNothing) {
+    sm.initialize();
+    log.clear();
 
-    // Step 1: Initialize
-    thermostat.initialize();
-    EXPECT_EQ(thermostat.getCurrentState(), State::Idle);
-    thermostat.actionLog.clear();
+    send(G::Event::Temp_normal);
 
-    // Step 2: Temperature goes high, should start cooling
-    thermostat.coolDecision = true;
-    thermostat.processEvent(Event::Temp_high);
-    EXPECT_EQ(thermostat.getCurrentState(), State::Cooling);
-    EXPECT_EQ(thermostat.actionLog[0], "shouldCool()");
-    EXPECT_EQ(thermostat.actionLog[1], "startCooling()");
-    EXPECT_EQ(thermostat.actionLog[2], "onEnterCooling()");
-    thermostat.actionLog.clear();
-
-    // Step 3: Temperature normalizes, should stop cooling
-    thermostat.processEvent(Event::Temp_normal);
-    EXPECT_EQ(thermostat.getCurrentState(), State::Idle);
-    EXPECT_EQ(thermostat.actionLog[0], "onExitCooling()");
-    EXPECT_EQ(thermostat.actionLog[1], "stopCooling()");
-    EXPECT_EQ(thermostat.actionLog[2], "onEnterIdle()");
+    EXPECT_TRUE(log.empty()) << "an event idle has no transition for ran " << log.size() << " host call(s)";
+    EXPECT_EQ(sm.getCurrentState(), G::State::Idle);
 }
 
-TEST_F(StaticCodegenIntegrationTest, IgnoresIrrelevantEvents) {
-    // Arrange
-    thermostat.initialize();
-    thermostat.actionLog.clear();
-
-    // Act: Send event that has no transition from idle
-    thermostat.processEvent(Event::Temp_normal);
-
-    // Assert: No action taken, still in idle
-    EXPECT_EQ(thermostat.actionLog.size(), 0);
-    EXPECT_EQ(thermostat.getCurrentState(), State::Idle);
-}
-
-// Test that demonstrates zero-overhead: no virtual functions, all inline
-TEST_F(StaticCodegenIntegrationTest, VerifyCRTPPatternZeroOverhead) {
-    // CRTP pattern compilation check: if this compiles, pattern works
-    // Friend declaration allows derived class to access base class private members
-    thermostat.initialize();
-
-    // Verify zero-overhead: no vtable pointer
-    // Expected size: sizeof(State) = 1 byte enum + padding = 4 bytes typical
-    // If virtual functions exist, vtable pointer adds 8 bytes (on 64-bit)
-    EXPECT_LE(sizeof(ThermostatBase<ThermostatLogic>), 8);
-}
+}  // namespace SCE::Tests

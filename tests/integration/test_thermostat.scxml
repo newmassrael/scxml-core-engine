@@ -1,23 +1,46 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" name="Thermostat" initial="idle">
+<!--
+  A host guard deciding a transition, with every effect a host call.
+
+  `climate.shouldCool()` is a native C++ guard (`cond="cpp:…"`) on the
+  `<sce:context>` object the host passes in, and the five effects are
+  `<sce:action>`s, so nothing here reaches a script engine: the host alone
+  decides and acts. StaticCodegenIntegrationTest drives it for C++.
+
+  ⚠ C++ only, by construction: a `cpp:` guard is target source that no other
+  backend lowers, which is also why this document sits beside its test rather
+  than under `integration_resources/`, whose stems every channel generates.
+
+  It used to call `onEnterIdle()`, `shouldCool()` and four more as ECMAScript
+  functions it never declared — six `expression/unknown-identifier` refusals —
+  while the test beside it compiled a header kept by hand for an API the
+  generator no longer emits. Measured 2026-09-22.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       name="test_thermostat"
+       initial="idle"
+       datamodel="null">
+  <sce:context id="climate"/>
   <state id="idle">
     <onentry>
-      <script>onEnterIdle()</script>
+      <sce:action name="on_enter_idle"/>
     </onentry>
-    <transition event="temp_high" cond="shouldCool()" target="cooling">
-      <script>startCooling()</script>
+    <transition event="temp_high" cond="cpp:climate.shouldCool()" target="cooling">
+      <sce:action name="start_cooling"/>
     </transition>
   </state>
 
   <state id="cooling">
     <onentry>
-      <script>onEnterCooling()</script>
+      <sce:action name="on_enter_cooling"/>
     </onentry>
     <onexit>
-      <script>onExitCooling()</script>
+      <sce:action name="on_exit_cooling"/>
     </onexit>
     <transition event="temp_normal" target="idle">
-      <script>stopCooling()</script>
+      <sce:action name="stop_cooling"/>
     </transition>
   </state>
 </scxml>
