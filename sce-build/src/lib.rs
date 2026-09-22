@@ -842,23 +842,14 @@ fn compile_scxml_configured(
             .and_then(|s| s.to_str())
             .expect("Invalid SCXML filename");
 
-        // The Rust arm always emits exactly one file (`{stem}_sm.rs`);
-        // destructuring the single entry makes the contract explicit.
-        // Multi-file backends (C++/C11) route through
-        // `compile_scxml_lang_typed_with_section` directly, not this
-        // Rust-only build.rs facade.
-        let (_filename, code) = output
-            .files
-            .into_iter()
-            .next()
-            .expect("compile_scxml(Rust) must emit exactly one file");
-
+        // Inline kinds produce sibling modules alongside the machine.
+        // Build scripts must write every artifact the compiler reports.
+        for (filename, code) in &output.files {
+            let path = Path::new(&out_dir).join(filename);
+            std::fs::write(&path, generator::with_trailing_newline(code).as_ref())
+                .unwrap_or_else(|e| panic!("Cannot write {}: {e}", path.display()));
+        }
         let out_path = Path::new(&out_dir).join(format!("{stem}_sm.rs"));
-        // Same file-boundary contract the `sce-codegen` writers apply:
-        // this facade writes its own artefact, so it must guarantee the
-        // trailing newline itself rather than inherit it.
-        std::fs::write(&out_path, generator::with_trailing_newline(&code).as_ref())
-            .unwrap_or_else(|e| panic!("Cannot write {}: {e}", out_path.display()));
 
         // The consumption route, written beside the artifact because
         // `build.rs` is the only place that knows `OUT_DIR` as a value.
@@ -979,15 +970,8 @@ pub fn compile_from_string_lang_typed(
 ) -> Result<generator::GeneratedOutput, CompileError> {
     let model = compile_model_from_string(scxml_content, scxml_name)?;
 
-    // `from_string` callers have no filesystem-anchored preprocessor
-    // pipeline — `parse_string` leaves `preprocessor_deps` empty by
-    // construction (parser.rs docstring). So every branch returns a
-    // `GeneratedOutput` whose `deps` defaults to the empty vec
-    // populated by `..Default::default()` (or by the C++/C11 helper
-    // returns, which already default `deps` via the derive). This
-    // is intentional, not a leak — there is no dep channel to
-    // forward.
-    match language {
+    // The in-memory entry emits the same sibling artifacts as the file entry.
+    let mut output = match language {
         generator::Language::Rust => {
             let code = generator::generate_with_templates(&model, templates, false)
                 .map_err(|e| locate_codegen_error(e, scxml_name, &model))?;
@@ -1028,7 +1012,18 @@ pub fn compile_from_string_lang_typed(
             generator::generate_c11_with_templates(&model, templates, scxml_name)
                 .map_err(|e| locate_codegen_error(e, scxml_name, &model))
         }
-    }
+    }?;
+    emit_inline_kind_siblings(
+        &model,
+        scxml_name,
+        language,
+        &ForgeCompileOptions {
+            embedded_templates: true,
+            ..Default::default()
+        },
+        &mut output,
+    )?;
+    Ok(output)
 }
 
 /// Compile SCXML content string for a specific language (WASM-compatible).
@@ -1213,46 +1208,201 @@ fn compile_scxml_lang_typed_mutated(
     // (single-file Rust/Kotlin/Go/Python + multi-file C++/C11) gets
     // the same dep channel without each `generate_*` learning about
     // build-system metadata it doesn't otherwise touch.
+    let mut output = emit_model_artifacts(
+        &model,
+        template_dir,
+        input_stem,
+        scxml_path,
+        language,
+        &ModelEmitOptions {
+            codegen: Some(options),
+            ..ModelEmitOptions::default()
+        },
+    )?;
+    output.deps.extend(preprocessor_deps);
+    output.deps.sort();
+    output.deps.dedup();
+    Ok(output)
+}
+
+/// The backend knobs a caller sets when emitting one model's artifacts.
+///
+/// Every field is a naming or lowering decision the model itself cannot
+/// answer, so each one is the caller's to make; the defaults are what a
+/// caller that makes none gets, and they reproduce the pre-existing
+/// library behaviour byte-for-byte.
+#[derive(Default)]
+pub struct ModelEmitOptions<'a> {
+    /// Import and rendering options for kinds declared inside the machine.
+    pub forge: Option<&'a ForgeCompileOptions>,
+    /// Rust-backend codegen decisions (`no_std`, extra derives, and the
+    /// host-served surfaces). See [`generator::StatechartCodegenOptions`].
+    /// `None` is that type's own default.
+    pub codegen: Option<&'a generator::StatechartCodegenOptions>,
+    /// The script engine the C++ / Kotlin backends lower expressions
+    /// for. `None` takes the backend's own default, which is what every
+    /// caller that does not offer the choice wants.
+    pub script_engine: Option<generator::ScriptEngineTarget>,
+    /// Prefix for the emitted C++ namespace (`--cpp-namespace-prefix`).
+    pub cpp_namespace_prefix: Option<&'a str>,
+    /// Prefix for the emitted Kotlin package (`--kotlin-package-prefix`).
+    pub kotlin_package_prefix: Option<&'a str>,
+    /// Prefix for the emitted C11 symbol names (`--c-symbol-prefix`).
+    pub c_symbol_prefix: Option<&'a str>,
+}
+
+/// Emit every artifact one analysed model produces for one language.
+///
+/// ⚠ ONE SITE, on purpose, and the reason is what an inline kind cost
+/// before it existed. A kind declared inside a `<data>` element is a
+/// standalone kind (see [`forge::model::InlineKind`]) whose sibling
+/// artifact has to be emitted next to the machine's own — and the
+/// predecessor of that emission, `render_inline_kinds`, was called from
+/// five places and reached one backend of six, so the same document
+/// compiled to a machine that could not call its own lookup on five of
+/// them. Putting the backend dispatch and the sibling emission in one
+/// function means a caller cannot have one without the other.
+///
+/// `source_name` is the document's path: it names the file in
+/// diagnostics and it is the directory a sibling kind's imports resolve
+/// against.
+pub fn emit_model_artifacts(
+    model: &SCXMLModel,
+    template_dir: &Path,
+    input_stem: &str,
+    source_name: &str,
+    language: generator::Language,
+    options: &ModelEmitOptions<'_>,
+) -> Result<generator::GeneratedOutput, CompileError> {
+    let engine_for = |lang: generator::Language| {
+        options
+            .script_engine
+            .unwrap_or_else(|| lang.default_script_engine_target())
+    };
     let mut output = match language {
         generator::Language::Rust => {
-            let code = generator::generate_with_options(&model, template_dir, options)
-                .map_err(|e| locate_codegen_error(e, scxml_path, &model))?;
+            let code = generator::generate_with_options(
+                model,
+                template_dir,
+                options
+                    .codegen
+                    .unwrap_or(&generator::StatechartCodegenOptions::default()),
+            )
+            .map_err(|e| locate_codegen_error(e, source_name, model))?;
             generator::GeneratedOutput {
                 files: vec![(format!("{input_stem}_sm.rs"), code)],
                 deps: Vec::new(),
             }
         }
-        generator::Language::Cpp => generator::generate_cpp(&model, template_dir, input_stem, None)
-            .map_err(|e| locate_codegen_error(e, scxml_path, &model))?,
+        generator::Language::Cpp => generator::generate_cpp_for_engine(
+            model,
+            template_dir,
+            input_stem,
+            options.cpp_namespace_prefix,
+            engine_for(generator::Language::Cpp),
+        )
+        .map_err(|e| locate_codegen_error(e, source_name, model))?,
         generator::Language::Kotlin => {
-            let code = generator::generate_kotlin(&model, template_dir, None)
-                .map_err(|e| locate_codegen_error(e, scxml_path, &model))?;
+            let code = generator::generate_kotlin_for_engine(
+                model,
+                template_dir,
+                options.kotlin_package_prefix,
+                engine_for(generator::Language::Kotlin),
+            )
+            .map_err(|e| locate_codegen_error(e, source_name, model))?;
             generator::GeneratedOutput {
                 files: vec![(format!("{input_stem}Sm.kt"), code)],
                 deps: Vec::new(),
             }
         }
         generator::Language::Go => {
-            let code = generator::generate_go(&model, template_dir)
-                .map_err(|e| locate_codegen_error(e, scxml_path, &model))?;
+            let code = generator::generate_go(model, template_dir)
+                .map_err(|e| locate_codegen_error(e, source_name, model))?;
             generator::GeneratedOutput {
                 files: vec![(format!("{input_stem}_sm.go"), code)],
                 deps: Vec::new(),
             }
         }
         generator::Language::Python => {
-            let code = generator::generate_python(&model, template_dir)
-                .map_err(|e| locate_codegen_error(e, scxml_path, &model))?;
+            let code = generator::generate_python(model, template_dir)
+                .map_err(|e| locate_codegen_error(e, source_name, model))?;
             generator::GeneratedOutput {
                 files: vec![(format!("{input_stem}_sm.py"), code)],
                 deps: Vec::new(),
             }
         }
-        generator::Language::C11 => generator::generate_c11(&model, template_dir, input_stem, None)
-            .map_err(|e| locate_codegen_error(e, scxml_path, &model))?,
+        generator::Language::C11 => {
+            generator::generate_c11(model, template_dir, input_stem, options.c_symbol_prefix)
+                .map_err(|e| locate_codegen_error(e, source_name, model))?
+        }
     };
-    output.deps = preprocessor_deps;
+    emit_inline_kind_siblings(
+        model,
+        source_name,
+        language,
+        options.forge.unwrap_or(&ForgeCompileOptions::default()),
+        &mut output,
+    )?;
     Ok(output)
+}
+
+/// Emit one sibling artifact per kind the statechart declares in place.
+///
+/// A kind declared inside a `<data>` element is a standalone kind, so it
+/// is compiled by the standalone path and its files are added beside the
+/// machine's. The name is `<machine>_<data id>`, which the parser
+/// already built and the document carries.
+///
+/// Shared by the filesystem and in-memory artifact entry points.
+fn emit_inline_kind_siblings(
+    model: &SCXMLModel,
+    scxml_path: &str,
+    language: generator::Language,
+    options: &ForgeCompileOptions,
+    output: &mut generator::GeneratedOutput,
+) -> Result<(), CompileError> {
+    if model.inline_kinds.is_empty() {
+        return Ok(());
+    }
+    let base_dir = Path::new(scxml_path)
+        .parent()
+        .unwrap_or_else(|| Path::new("."));
+    for inline in &model.inline_kinds {
+        let sibling = compile_forge_from_parsed(
+            &inline.forge,
+            DocumentLabel {
+                // Read, never rebuilt. The parser already composed
+                // `<machine>_<id>` and every symbol in the document was
+                // derived from it; a second `format!` here would be a
+                // second spelling of one name, and the two would agree
+                // only until one of them was edited.
+                identifier: inline.forge.document.name(),
+                diagnostic_label: scxml_path,
+            },
+            language,
+            base_dir,
+            options,
+        )?;
+        for (name, code) in sibling.files {
+            // A sibling that would overwrite the machine's own file is
+            // refused rather than silently winning: `<data id="sm">`
+            // names `<machine>_sm`, which is the statechart's own stem
+            // on four of the six backends.
+            if output.files.iter().any(|(existing, _)| *existing == name) {
+                return Err(CompileError::from(forge::error::Located::in_file(
+                    forge::error::ForgeError::from(forge::error::ValidationError::DuplicateId {
+                        kind: forge::model::ForgeKind::Statechart,
+                        what: "generated file".into(),
+                        id: name,
+                    }),
+                    scxml_path,
+                )));
+            }
+            output.files.push((name, code));
+        }
+        output.deps.extend(sibling.deps);
+    }
+    Ok(())
 }
 
 /// Compile SCXML file for a specific language (filesystem-based).
@@ -2188,6 +2338,8 @@ pub type ElementFieldSchema = Vec<(String, forge::model::SceType, Option<String>
 /// itself never grows a second parameter.
 #[derive(Default, Clone, Debug)]
 pub struct ForgeCompileOptions {
+    /// Render from the compiled-in template registry without reading template files.
+    pub embedded_templates: bool,
     /// §scxml-6.2.5: Event I/O Processor `type` values this build's host
     /// serves, mirroring `generate --host-processor`.
     ///

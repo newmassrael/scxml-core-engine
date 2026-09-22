@@ -887,6 +887,7 @@ references against a real document and drift silently.
 | `validation/invalid-attribute` | `validation` | `replace_one_of` |  |
 | `validation/invalid-direction` | `validation` | `replace_one_of` | SCE Forge §3.3 |
 | `validation/invalid-reference` | `validation` | `replace_one_of` |  |
+| `validation/kind-not-inline-eligible` | `validation` | `replace_one_of` | SCE Accepted Subset §2.1 |
 | `validation/malformed-code-identifier` | `validation` | no | SCE Accepted Subset §2.14 |
 | `validation/malformed-identifier` | `validation` | no | W3C SCXML §3.3.1 |
 | `validation/mesh-rpc-duplicate-target` | `validation` | no | SCE Mesh §9.5 |

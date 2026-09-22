@@ -110,11 +110,6 @@ class {{ machine_name }}StateMachine(
         com.sce.runtime.DatamodelRead.read{{ KT_READ_FN[var.type] }}(scriptEngine, scriptSessionId, "{{ var.id }}")
 {% endfor %}
 {% endif %}
-{% if inline_kind_code %}
-
-    // ── SCE Forge: Inline kind member functions ──────────────
-{{ inline_kind_code }}
-{% endif %}
 {% if event_payload_active %}
 
     // NL→IR Item C1 Path A: the current event's typed `_event.data` payload(s),

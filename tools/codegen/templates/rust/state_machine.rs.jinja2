@@ -174,11 +174,6 @@ impl {{ machine_name }}Event {
     ];
 }
 
-{% if inline_kind_types %}
-// ── SCE Forge: Inline kind type definitions ──────────────
-{{ inline_kind_types }}
-
-{% endif %}
 {% if event_payload_defs %}
 // ── NL→IR Item C1 Path A: EventSchema typed `_event.data` payload ──
 {{ event_payload_defs }}
@@ -478,11 +473,6 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
         }
     }
 
-{% if inline_kind_fns %}
-    // ── SCE Forge: Inline kind member functions ──────────────
-{{ inline_kind_fns }}
-
-{% endif %}
 {% include 'utility_methods.rs.jinja2' %}
 {% include 'scriptengine_helpers.rs.jinja2' %}
 {% include 'invoke_methods.rs.jinja2' %}

@@ -3232,40 +3232,29 @@ pub struct ForgeManifest {
 
 // ── Inline kind (within statechart) ────────────────────────────
 
-/// Inline kind data — embedded within a statechart `<data>` element.
-/// Derived values (unique_values, entries_by_value) are computed by the
-/// generator at render time, not stored in the model (state normalization).
-#[derive(Debug, Clone, Serialize)]
-#[cfg_attr(test, derive(schemars::JsonSchema))]
-#[serde(tag = "kind")]
-pub enum InlineKindData {
-    #[serde(rename = "lookup")]
-    Lookup {
-        input_id: String,
-        entries: Vec<LookupEntry>,
-        default_value: String,
-    },
-    #[serde(rename = "condition")]
-    Condition { expr: String },
-    #[serde(rename = "codec")]
-    Codec {
-        fields: Vec<CodecField>,
-        default_endian: Endian,
-    },
-    #[serde(rename = "transform")]
-    Transform {
-        inputs: Vec<ForgeField>,
-        expr: String,
-        output_type: SceType,
-    },
-}
-
-/// An inline kind declaration within a statechart.
+/// A kind declared in place, inside a statechart's `<data>` element.
+///
+/// ⚠ IT IS A STANDALONE KIND, AND THE MODEL SAYS SO. The owner's
+/// decision (2026-09-22) is that the `<data>` element takes the role a
+/// `<scxml>` root takes in a standalone document, so this carries the
+/// same [`ParsedForge`] a file would — the same per-kind parsers, the
+/// same validators, the same renderers, and a sibling artifact named
+/// `<machine>_<id>`.
+///
+/// What it replaced was an `InlineKindData` enum understanding four of
+/// the eighteen kinds, filled by a 200-line reader beside the document
+/// one and emitted by 750 lines of hand-written code beside the
+/// templates. Measured 2026-09-22: those two readers disagreed about
+/// three of the four kinds they both claimed to support, and the hand
+/// emitters covered one backend of six.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct InlineKind {
+    /// The `<data id>`, which is what a guard or action names and what
+    /// the sibling artifact's name is built from.
     pub id: String,
-    pub data: InlineKindData,
+    /// The kind as a document, parsed by the standalone path.
+    pub forge: ParsedForge,
 }
 
 // ── Algorithm kind (RFC §synth-5-A) ──────────────────────────────────

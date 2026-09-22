@@ -1,13 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: inline codec within a statechart -->
+<!-- SCE Forge conformance: a codec declared in place.
+
+     The `<data sce:kind="codec">` element carries what a standalone
+     codec document carries — `sce:default-endian` on the element that
+     takes the root's role, and the fields inside its `<datamodel>`. The
+     artifact is the sibling `inline_codec_test_frame`.
+
+     ⚠ The fields used to sit directly under the `<data>`, read by a
+     walk of their own. They are read by `parse_codec_field_from_node`'s
+     own caller now, which is what every other codec goes through.
+     Rewritten 2026-09-22. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        name="inline_codec_test" initial="idle">
   <datamodel>
     <data id="frame" sce:kind="codec" sce:default-endian="big">
-      <sce:field id="msgId" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
-      <sce:field id="length" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
-      <sce:field id="payload" sce:type="uint16" sce:byte="2" sce:bit-size="16"/>
+      <datamodel>
+        <sce:field id="msgId" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+        <sce:field id="length" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
+        <sce:field id="payload" sce:type="uint16" sce:byte="2" sce:bit-size="16"/>
+      </datamodel>
     </data>
   </datamodel>
   <state id="idle">

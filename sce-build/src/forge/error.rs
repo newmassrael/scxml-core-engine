@@ -656,6 +656,27 @@ pub enum ValidationError {
     #[error("unsupported sce:kind value: '{0}'")]
     UnsupportedKind(String),
 
+    /// An `sce:kind` on a statechart's `<data>` element that cannot be a
+    /// kind declared in place.
+    ///
+    /// ⚠ TWO REASONS, ONE REPAIR, AND THAT IS WHY THEY SHARE A CODE. The
+    /// value is either not a kind at all or a kind that keeps state, and
+    /// either way the author picks from the four this site admits. The
+    /// general `UnsupportedKind` offers every kind, which at an inline
+    /// site proposes fourteen edits that would be refused again.
+    ///
+    /// ⚠⚠ Until 2026-09-22 neither reason was reported: both fell
+    /// through to "this `<data>` is an ordinary variable", so a document
+    /// that opted into a kind got a datamodel variable with the same id
+    /// and the guard reading it answered from the datamodel instead.
+    #[error("sce:kind '{value}' cannot be declared inline: {why}")]
+    KindNotInlineEligible {
+        /// The `sce:kind` the document wrote.
+        value: String,
+        /// Which of the two it is, as the author would recognise it.
+        why: String,
+    },
+
     /// A name, key, or state id appears more than once.
     /// e.g. "duplicate state id: 'armed'"
     #[error("{kind}: duplicate {what}: '{id}'")]

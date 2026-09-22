@@ -2123,16 +2123,27 @@ impl SCXMLParser {
                     continue;
                 }
 
-                // SCE Forge: detect inline kind on <data sce:kind="..."> — classify
-                // as InlineKind instead of Variable (single XML parse, no re-parsing).
+                // SCE Forge: a `<data sce:kind="...">` is a kind declared
+                // in place, parsed by the same path a standalone document
+                // takes.
+                //
+                // ⚠ A kind this site cannot admit is REFUSED, not demoted.
+                // Until 2026-09-22 an unknown value and a stateful kind
+                // both fell through to "ordinary variable", so a document
+                // that opted into `sce:kind` got a datamodel variable
+                // carrying the same id — and every guard naming it read
+                // the variable, which is the silent half of the failure
+                // `sce:kind` exists to make loud.
                 if let Some(kind_attr) = data.attribute((SCE_NAMESPACE, "kind")) {
-                    // Unknown/non-inline kind — fall through to variable.
-                    if let Some(inline) =
-                        Self::try_parse_inline_kind(&data, kind_attr, source_name)?
-                    {
-                        model.inline_kinds.push(inline);
-                        continue;
-                    }
+                    let inline = Self::parse_inline_kind(
+                        &data,
+                        kind_attr,
+                        source_name,
+                        &model.name,
+                        model.forge_imports.clone(),
+                    )?;
+                    model.inline_kinds.push(inline);
+                    continue;
                 }
 
                 let var_id = data.attribute("id").unwrap_or("").to_string();
@@ -2161,48 +2172,51 @@ impl SCXMLParser {
         Ok(())
     }
 
-    /// SCE Forge: attempt to parse a <data sce:kind="..."> element as an inline kind.
-    /// Returns `Ok(Some(kind))` on success, `Ok(None)` for unknown/non-inline kinds
-    /// (fall through to variable), `Err` for recognized inline kinds with invalid content.
+    /// SCE Forge: read a `<data sce:kind="...">` as a kind declared in
+    /// place — a standalone kind whose `<data>` element takes the role a
+    /// `<scxml>` root takes in a document of its own.
     ///
-    /// Errors are fatal: a document that opted into `sce:kind=...` has
-    /// asserted intent about the shape of this `<data>`, so silently
-    /// demoting a malformed inline kind to an ECMAScript variable
-    /// would mask the author's intent and hand the generator a type
-    /// the rest of the pipeline was never told about (see the
-    /// `feedback_silently_broken_hooks` memory). Errors flow through
-    /// `Located<ForgeError>` with roxmltree-derived row/col so consumers
-    /// receive the same precision the codec-field parser already
-    /// delivers; the already-located codec-field error is propagated
-    /// unchanged (no `.map_err(|l| l.error)` unwrap).
-    fn try_parse_inline_kind(
+    /// The whole reader is [`crate::forge::parser::parse_inline_forge`],
+    /// which is the document path. What stood here was a second reader:
+    /// 200 lines that understood four of the eighteen kinds, and
+    /// understood three of those four differently from the document form
+    /// — `sce:input` instead of `sce:direction="in"` on a transform, no
+    /// `<sce:import>` resolution, no cycle declarations, and a codec
+    /// whose fields were read by a different walk than
+    /// `parse_codec_field_from_node`'s callers use.
+    ///
+    /// The refusals are this function's own, because they are about the
+    /// SITE rather than the kind: which kinds a statechart may declare
+    /// inline is a statement about the SCXML surface.
+    fn parse_inline_kind(
         data: &roxmltree::Node,
         kind_attr: &str,
         source_name: &str,
+        machine_name: &str,
+        imports: Vec<crate::forge::model::ForgeImport>,
     ) -> Result<
-        Option<crate::forge::model::InlineKind>,
+        crate::forge::model::InlineKind,
         crate::forge::error::Located<crate::forge::error::ForgeError>,
     > {
-        use crate::forge::error::{Located, ValidationError};
-        use crate::forge::model::*;
+        use crate::forge::error::ValidationError;
+        use crate::forge::model::{ForgeKind, InlineKind};
 
-        // Lift a leaf `ValidationError` into a `Located<ForgeError>`
-        // anchored at the given node — through the forge parser's own
-        // `located`, so an inline kind's refusal is placed by the same
-        // rule as a forge document's, attribute and all.
-        let locate_at = |node: &roxmltree::Node,
-                         err: ValidationError|
-         -> Located<crate::forge::error::ForgeError> {
-            crate::forge::parser::located(node, source_name, err)
-        };
-        let locate = |err: ValidationError| locate_at(data, err);
+        let locate = |err: ValidationError| crate::forge::parser::located(data, source_name, err);
 
-        let kind = match ForgeKind::from_attr(kind_attr) {
-            Some(k) => k,
-            None => return Ok(None), // Unknown kind — treat as regular variable
-        };
+        let kind = ForgeKind::from_attr(kind_attr).ok_or_else(|| {
+            locate(ValidationError::KindNotInlineEligible {
+                value: kind_attr.to_string(),
+                why: "no kind goes by that name".to_string(),
+            })
+        })?;
         if !kind.is_inline_eligible() {
-            return Ok(None); // Stateful kind — cannot be inline, treat as variable
+            return Err(locate(ValidationError::KindNotInlineEligible {
+                value: kind_attr.to_string(),
+                why: format!(
+                    "'{kind}' requires its own document; only transform, lookup, condition \
+                     and codec may be declared in a statechart's datamodel"
+                ),
+            }));
         }
 
         let id = data
@@ -2215,167 +2229,21 @@ impl SCXMLParser {
             })?
             .to_string();
 
-        let sce_attr = |local: &str| -> Option<String> {
-            data.attribute((SCE_NAMESPACE, local))
-                .map(|s| s.to_string())
-        };
+        // The sibling artifact's name, and the name the emitted symbols
+        // carry: one machine may declare two kinds, and two machines may
+        // each declare one called `frame`.
+        let identifier = format!("{machine_name}_{id}");
+        let forge = crate::forge::parser::parse_inline_forge(
+            data,
+            crate::DocumentLabel {
+                identifier: &identifier,
+                diagnostic_label: source_name,
+            },
+            kind,
+            imports,
+        )?;
 
-        let inline_data = match kind {
-            ForgeKind::Lookup => {
-                let input_id = sce_attr("input").unwrap_or_default();
-                let default_value = sce_attr("default").unwrap_or_default();
-
-                let mut entries = Vec::new();
-                for child in data.children().filter(|n| n.is_element()) {
-                    if child.tag_name().name() == "entry"
-                        && child.tag_name().namespace() == Some(SCE_NAMESPACE)
-                    {
-                        let key = child
-                            .attribute("key")
-                            .ok_or_else(|| {
-                                locate_at(
-                                    &child,
-                                    ValidationError::MissingAttribute {
-                                        element: format!("<sce:entry> in inline lookup '{id}'"),
-                                        attr: "key".to_string(),
-                                    },
-                                )
-                            })?
-                            .to_string();
-                        let value = child
-                            .attribute("value")
-                            .ok_or_else(|| {
-                                locate_at(
-                                    &child,
-                                    ValidationError::MissingAttribute {
-                                        element: format!("<sce:entry> in inline lookup '{id}'"),
-                                        attr: "value".to_string(),
-                                    },
-                                )
-                            })?
-                            .to_string();
-                        // Row G3, and through the same reader as the
-                        // standalone lookup document: `<sce:entry>` has
-                        // two authoring sites — inline in a statechart's
-                        // datamodel and as its own document — and a row
-                        // that claimed a requirement in one spelling and
-                        // not the other would make the review artefact
-                        // depend on where the table was written.
-                        let requirements = collect_sce_req(
-                            &child,
-                            || format!("<sce:entry> in inline lookup '{id}'"),
-                            source_name,
-                        )?;
-                        entries.push(LookupEntry {
-                            key,
-                            value,
-                            requirements,
-                        });
-                    }
-                }
-                if entries.is_empty() {
-                    return Err(locate(ValidationError::EmptyCollection {
-                        kind: ForgeKind::Lookup,
-                        what: format!("<sce:entry> (inline lookup '{id}')"),
-                    }));
-                }
-
-                let final_default = if default_value.is_empty() {
-                    entries[0].value.clone()
-                } else {
-                    default_value
-                };
-
-                InlineKindData::Lookup {
-                    input_id,
-                    entries,
-                    default_value: final_default,
-                }
-            }
-            ForgeKind::Condition => {
-                let expr = data
-                    .attribute("expr")
-                    .ok_or_else(|| {
-                        locate(ValidationError::MissingAttribute {
-                            element: format!("inline condition '{id}' <data>"),
-                            attr: "expr".to_string(),
-                        })
-                    })?
-                    .to_string();
-                InlineKindData::Condition { expr }
-            }
-            ForgeKind::Codec => {
-                let default_endian = sce_attr("default-endian")
-                    .and_then(|s| Endian::from_attr(&s))
-                    .unwrap_or(Endian::Big);
-
-                let mut fields = Vec::new();
-                for child in data.children().filter(|n| n.is_element()) {
-                    if child.tag_name().name() == "field"
-                        && child.tag_name().namespace() == Some(SCE_NAMESPACE)
-                    {
-                        // `parse_codec_field_from_node` already returns
-                        // `Located<ForgeError>`. Propagate it through
-                        // `?` so the codec parser's row/col data
-                        // reaches the wire contract; unwrapping it
-                        // here would discard location information
-                        // the leaf already computed.
-                        fields.push(crate::forge::parser::parse_codec_field_from_node(
-                            &child,
-                            "<inline codec>",
-                        )?);
-                    }
-                }
-                if fields.is_empty() {
-                    return Err(locate(ValidationError::EmptyCollection {
-                        kind: ForgeKind::Codec,
-                        what: format!("<sce:field> (inline codec '{id}')"),
-                    }));
-                }
-
-                InlineKindData::Codec {
-                    fields,
-                    default_endian,
-                }
-            }
-            ForgeKind::Transform => {
-                let expr = data
-                    .attribute("expr")
-                    .ok_or_else(|| {
-                        locate(ValidationError::MissingAttribute {
-                            element: format!("inline transform '{id}' <data>"),
-                            attr: "expr".to_string(),
-                        })
-                    })?
-                    .to_string();
-                let type_str = sce_attr("type").ok_or_else(|| {
-                    locate(ValidationError::MissingAttribute {
-                        element: format!("inline transform '{id}' <data>"),
-                        attr: "sce:type".to_string(),
-                    })
-                })?;
-                let output_type = crate::forge::parser::read_type_attr(
-                    data,
-                    source_name,
-                    crate::forge::parser::TypeGrammar::ScalarOrEnumRef,
-                    format!("inline transform '{id}' <data>"),
-                    "sce:type",
-                    &type_str,
-                )?;
-
-                InlineKindData::Transform {
-                    inputs: Vec::new(),
-                    expr,
-                    output_type,
-                }
-            }
-            _ => return Ok(None),
-        };
-
-        Ok(Some(InlineKind {
-            id,
-            data: inline_data,
-        }))
+        Ok(InlineKind { id, forge })
     }
 
     /// Returns `Err` when a global `<script>`'s own traceability is

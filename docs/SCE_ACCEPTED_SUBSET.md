@@ -445,9 +445,28 @@ buffer-pool  bounded-collection      enum         event-schema
 Omitting `sce:kind` defaults to `Statechart`. Values outside this set
 are rejected as `validation/unsupported-kind`. The phase 2/3 runtime
 packages for the stateful kinds (Validator, Filter, Timer, Observer)
-are described in `forge_phase3_complete.md`; inline-eligible kinds
-(`is_inline_eligible()` → true) may be embedded in a `<data>` element
-of an outer statechart.
+are described in `forge_phase3_complete.md`.
+
+**A kind may also be declared IN PLACE**, on a `<data>` element of an
+outer statechart's `<datamodel>`. The element takes the role the
+`<scxml>` root takes in a document of its own, so the content is a
+standalone kind's content and the same parsers, validators and
+renderers read it; the artifact is a sibling named
+`<machine>_<data id>`. Only a kind that keeps no state between calls
+can be declared this way (`is_inline_eligible()` → true): transform,
+lookup, condition, codec.
+
+These declarations emit companion artifacts for the host to call. They do
+not bind the declaration id to a script-engine function or datamodel value;
+automatic invocation from a guard or action is not supplied by this syntax.
+
+An `sce:kind` on a `<data>` that this site cannot admit — a value no
+kind goes by, or a kind requiring a standalone document — is rejected as
+`validation/kind-not-inline-eligible`, whose `fix.candidates` are the
+four above rather than all eighteen. ⚠ Until 2026-09-22 both were
+accepted and the `<data>` became an ordinary datamodel variable
+carrying the same id, so a guard naming it read the variable and the
+document's `sce:kind` decided nothing.
 
 **Document name — the file stem, not the `name` attribute, except for
 `sce:kind="algorithm"`.** The compiled model's name, which every
@@ -2858,7 +2877,7 @@ does not hold a value it never declared.
 
 ---
 
-## Appendix — `DiagnosticCode` index (364 codes)
+## Appendix — `DiagnosticCode` index (378 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -2909,6 +2928,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/default-covers-tested-variant` | Validation |
 | `validation/default-covers-not-a-value-space` | Validation |
 | `validation/unsupported-kind` | Validation |
+| `validation/kind-not-inline-eligible` | Validation |
 | `validation/duplicate-id` | Validation |
 | `validation/malformed-identifier` | Validation |
 | `validation/event-name-grammar` | Validation |

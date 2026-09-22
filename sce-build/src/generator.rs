@@ -2312,19 +2312,6 @@ fn render_rust(
 ) -> Result<String, GenerateError> {
     let machine_name = filters::to_pascal_case(model.name.clone());
 
-    // SCE Forge: render inline kind declarations as Rust code fragments.
-    let (inline_kind_types, inline_kind_fns) = if !model.inline_kinds.is_empty() {
-        let code = crate::forge::generator::render_inline_kinds(
-            &model.inline_kinds,
-            Language::Rust,
-            &machine_name,
-        )
-        .map_err(|e| GenerateError::TemplateRender(e.to_string()))?;
-        (code.type_defs, code.member_fns)
-    } else {
-        (String::new(), String::new())
-    };
-
     // EventSchema MCU native lowering (step 2) —
     // the typed `_event.data` payload sum, its `type Payload` spelling, and
     // the per-transition native `matches!(…)` guards. The per-machine defs /
@@ -2412,8 +2399,6 @@ fn render_rust(
         model => minijinja::Value::from_serialize(&model_lowered),
         machine_name => machine_name,
         license_config => minijinja::Value::from_serialize(license_config()),
-        inline_kind_types => &inline_kind_types,
-        inline_kind_fns => &inline_kind_fns,
         no_std => options.no_std,
         state_derives_attr => &state_derives_attr,
         event_derives_attr => &event_derives_attr,
@@ -2504,20 +2489,6 @@ fn render_cpp(
     // the parent directory of the SCXML file (set by analyzer::compute_scxml_base_path).
     let base_path = model.scxml_base_path.clone();
 
-    // SCE Forge: render inline kind declarations as C++ code fragment.
-    let inline_kind_code = if !model.inline_kinds.is_empty() {
-        let machine_name = filters::to_pascal_case(model.name.clone());
-        crate::forge::generator::render_inline_kinds(
-            &model.inline_kinds,
-            Language::Cpp,
-            &machine_name,
-        )
-        .map_err(|e| GenerateError::TemplateRender(e.to_string()))?
-        .member_fns
-    } else {
-        String::new()
-    };
-
     // EventSchema native lowering — the C++ typed
     // `_event.data` payload channel: a tag enum + per-event payload structs,
     // the policy fields / `populateTypedPayload` hook that lift the dequeued
@@ -2572,7 +2543,6 @@ fn render_cpp(
         base_path => &base_path,
         license_config => &license_val,
         inl_filename => &inl_filename,
-        inline_kind_code => &inline_kind_code,
         event_payload_defs => &payload.defs,
         event_payload_active => payload.active,
         event_payload_policy_members => &payload.policy_members,
@@ -2666,24 +2636,6 @@ fn render_c11(
     reject_liveliness_without_handler(model)?;
     let base_path = model.scxml_base_path.clone();
 
-    // SCE Forge: render inline kind declarations as C11 code fragment.
-    // Mirrors cpp/Kotlin's single-block emit (no top-level type_defs split
-    // because C11 has no nested types — enum typedefs and `static inline`
-    // functions both flow into member_fns and inject after the policy
-    // typedef in state_machine.h.jinja2).
-    let inline_kind_code = if !model.inline_kinds.is_empty() {
-        let machine_name = filters::to_pascal_case(model.name.clone());
-        crate::forge::generator::render_inline_kinds(
-            &model.inline_kinds,
-            Language::C11,
-            &machine_name,
-        )
-        .map_err(|e| GenerateError::TemplateRender(e.to_string()))?
-        .member_fns
-    } else {
-        String::new()
-    };
-
     // EventSchema MCU native lowering — the C11 typed `_event.data`
     // payload channel: a tagged
     // union `<name>_payload_t`, the per-transition native guard
@@ -2744,7 +2696,6 @@ fn render_c11(
         model => &model_val,
         base_path => &base_path,
         license_config => &license_val,
-        inline_kind_code => &inline_kind_code,
         event_payload_defs => &payload.defs,
         event_payload_type => &payload.type_name,
         event_payload_active => payload.active,
@@ -2959,19 +2910,6 @@ fn render_kotlin(
     let event_members =
         kotlin::render_event_tree(&event_tree, &format!("{machine_name}Event"), "    ");
 
-    // SCE Forge: render inline kind declarations as Kotlin code fragment.
-    let inline_kind_code = if !model.inline_kinds.is_empty() {
-        crate::forge::generator::render_inline_kinds(
-            &model.inline_kinds,
-            Language::Kotlin,
-            &machine_name,
-        )
-        .map_err(|e| GenerateError::TemplateRender(e.to_string()))?
-        .member_fns
-    } else {
-        String::new()
-    };
-
     let tmpl = env
         .get_template("state_machine.kt.jinja2")
         .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?;
@@ -2998,7 +2936,6 @@ fn render_kotlin(
         process_event_needs_else => process_event_needs_else,
         process_null_event_needs_else => process_null_event_needs_else,
         transition_actions_needs_else => transition_actions_needs_else,
-        inline_kind_code => &inline_kind_code,
         event_payload_active => payload.active,
         event_payload_defs => &payload.defs,
         event_payload_policy_fields => &payload.policy_fields,
@@ -3302,19 +3239,6 @@ fn render_python(env: &mut Environment, model: &SCXMLModel) -> Result<String, Ge
 fn render_go(env: &mut Environment, model: &SCXMLModel) -> Result<String, GenerateError> {
     let machine_name = filters::to_pascal_case(model.name.clone());
 
-    // SCE Forge: render inline kind declarations as Go code fragments.
-    let (inline_kind_types, inline_kind_fns) = if !model.inline_kinds.is_empty() {
-        let code = crate::forge::generator::render_inline_kinds(
-            &model.inline_kinds,
-            Language::Go,
-            &machine_name,
-        )
-        .map_err(|e| GenerateError::TemplateRender(e.to_string()))?;
-        (code.type_defs, code.member_fns)
-    } else {
-        (String::new(), String::new())
-    };
-
     // EventSchema MCU native lowering — the Go typed
     // `_event.data` payload channel: a tag enum + per-event payload structs,
     // the policy fields / populate type-switch that lift the dequeued event's
@@ -3347,8 +3271,6 @@ fn render_go(env: &mut Environment, model: &SCXMLModel) -> Result<String, Genera
         model => minijinja::Value::from_serialize(model),
         machine_name => machine_name,
         license_config => minijinja::Value::from_serialize(license_config()),
-        inline_kind_types => &inline_kind_types,
-        inline_kind_fns => &inline_kind_fns,
         event_payload_defs => &payload.defs,
         event_payload_active => payload.active,
         event_payload_policy_fields => &payload.policy_fields,

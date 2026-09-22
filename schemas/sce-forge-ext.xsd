@@ -286,8 +286,12 @@
 
   <xs:attribute name="unit" type="xs:string"/>
   <xs:attribute name="default" type="xs:string"/>
-  <xs:attribute name="input" type="xs:string"/>
-  <xs:attribute name="input-type" type="sce:sceType"/>
+  <!-- `sce:input` / `sce:input-type` are gone (2026-09-22). They existed
+       for the inline dialect alone: a transform or lookup declared in a
+       statechart named its single input with them, while the same kinds
+       written as documents used `sce:direction="in"` and admitted
+       several. An inline kind now carries a standalone kind's body, so
+       there is one spelling. -->
 
   <!-- NL→IR Mapping Roadmap Item 4: physical-quantity annotation. The
        triple `sce:quantity` / `sce:scale` / `sce:offset` declares a

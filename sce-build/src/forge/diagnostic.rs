@@ -611,6 +611,12 @@ pub enum DiagnosticCode {
     ValidationDefaultCoversNotAValueSpace,
     #[serde(rename = "validation/unsupported-kind")]
     ValidationUnsupportedKind,
+    /// An `sce:kind` on a statechart `<data>` that cannot be declared in
+    /// place — not a kind at all, or one that keeps state. Distinct from
+    /// `validation/unsupported-kind` because the repair is a choice from
+    /// the four kinds an inline site admits, not from all eighteen.
+    #[serde(rename = "validation/kind-not-inline-eligible")]
+    ValidationKindNotInlineEligible,
     #[serde(rename = "validation/duplicate-id")]
     ValidationDuplicateId,
     // ── NL→IR closure ledger row C1: identifier-bearing attributes
@@ -3044,6 +3050,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationDefaultCoversTestedVariant,
         ValidationDefaultCoversNotAValueSpace,
         ValidationUnsupportedKind,
+        ValidationKindNotInlineEligible,
         ValidationDuplicateId,
         ValidationMalformedIdentifier,
         ValidationEventNameGrammar,
@@ -3611,6 +3618,10 @@ impl DiagnosticCode {
 
             // ── Forge kind system (SCE_FORGE.md) ─────────────────
             ValidationUnsupportedKind => Some("SCE Forge §3.2"),
+            // The inline form is the accepted subset's clause: which
+            // kinds a statechart may declare in place is a statement
+            // about the SCXML surface, not about the kind system.
+            ValidationKindNotInlineEligible => Some("SCE Accepted Subset §2.1"),
             // The vocabulary an `sce:` attribute may come from is the
             // accepted-subset document's business, same as the kinds.
             ValidationUnknownSceAttribute => Some("SCE Accepted Subset §2.2"),
@@ -4354,6 +4365,7 @@ impl DiagnosticCode {
             ValidationDefaultCoversTestedVariant => "validation/default-covers-tested-variant",
             ValidationDefaultCoversNotAValueSpace => "validation/default-covers-not-a-value-space",
             ValidationUnsupportedKind => "validation/unsupported-kind",
+            ValidationKindNotInlineEligible => "validation/kind-not-inline-eligible",
             ValidationDuplicateId => "validation/duplicate-id",
             ValidationMalformedIdentifier => "validation/malformed-identifier",
             ValidationEventNameGrammar => "validation/event-name-grammar",
@@ -5549,6 +5561,30 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: Some(Fix::ReplaceOneOf {
                 candidates: crate::forge::model::ForgeKind::ALL_ATTR_NAMES
                     .iter()
+                    .map(|s| (*s).to_string())
+                    .collect(),
+            }),
+            key_fragments: vec![value.clone()],
+        },
+        ValidationError::KindNotInlineEligible { value, .. } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationKindNotInlineEligible,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(value.clone()),
+            // The four this site admits, derived from the eligibility
+            // rule rather than listed: a kind that becomes inline-
+            // eligible tomorrow appears here without an edit, and one
+            // that stops being eligible disappears. Offering all
+            // eighteen — which `unsupported-kind` does, correctly, for a
+            // document root — would propose fourteen edits that this
+            // site refuses again.
+            fix: Some(Fix::ReplaceOneOf {
+                candidates: crate::forge::model::ForgeKind::ALL_ATTR_NAMES
+                    .iter()
+                    .filter(|name| {
+                        crate::forge::model::ForgeKind::from_attr(name)
+                            .is_some_and(|k| k.is_inline_eligible())
+                    })
                     .map(|s| (*s).to_string())
                     .collect(),
             }),
@@ -9818,6 +9854,14 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:5f500ed01d12c1bb","code":"import/kind-mismatch","stage":"import","message":"<sce:import src=\"peer.scxml\" kind=\"validator\">: actual kind is 'codec' (mismatch)","actual":"validator","fix":{"kind":"replace_with","to":"codec"}}"#,
+            ),
+            (
+                "forge/kind-not-inline-eligible",
+                ValidationError::KindNotInlineEligible {
+                    value: "timer".into(),
+                    why: "declare it as a standalone document".into(),
+                }.into(),
+                r#"{"v":1,"id":"fnv1a:2a5c6e1c210b95f6","code":"validation/kind-not-inline-eligible","stage":"validation","spec":"SCE Accepted Subset §2.1","message":"sce:kind 'timer' cannot be declared inline: declare it as a standalone document","actual":"timer","fix":{"kind":"replace_one_of","candidates":["transform","lookup","condition","codec"]}}"#,
             ),
             (
                 "forge/unsupported-kind",
@@ -14259,6 +14303,7 @@ mod tests {
             | ValidationInvalidReference
             | ValidationRequireEither
             | ValidationUnsupportedKind
+            | ValidationKindNotInlineEligible
             | ValidationInvalidDirection
             | LinkLinkClassUnknown
             | LinkClassUnsupportedOnTarget
@@ -15404,7 +15449,8 @@ mod tests {
                 | ValidationDefaultCoversUnknownVariant
                 | ValidationDefaultCoversTestedVariant
                 | ValidationDefaultCoversNotAValueSpace
-                | ValidationUnsupportedKind | ValidationDuplicateId
+                | ValidationUnsupportedKind | ValidationKindNotInlineEligible
+                | ValidationDuplicateId
                 | ValidationMalformedIdentifier | ValidationEventNameGrammar
                 | ValidationMalformedCodeIdentifier
                 | ValidationDuplicateContextObject | ValidationReservedContextId
@@ -15732,9 +15778,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            377,
+            378,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 377 distinct variants to match the DiagnosticCode \
+             expected 378 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -16332,6 +16378,9 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationDefaultCoversTestedVariant
             | ValidationDefaultCoversNotAValueSpace
             | ValidationUnsupportedKind
+            // Same position as its sibling above: the inline form of
+            // the same refusal, raised where the `<data>` element sits.
+            | ValidationKindNotInlineEligible
             // Raised in `parse_impl`, before `anchor_index` is built —
             // the sweep runs on the roxmltree tree so it can name the
             // attribute's own column, and the index that answers "which

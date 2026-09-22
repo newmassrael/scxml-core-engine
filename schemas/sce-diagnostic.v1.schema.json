@@ -58,6 +58,7 @@
         "validation/default-covers-tested-variant",
         "validation/default-covers-not-a-value-space",
         "validation/unsupported-kind",
+        "validation/kind-not-inline-eligible",
         "validation/duplicate-id",
         "validation/malformed-identifier",
         "validation/event-name-grammar",

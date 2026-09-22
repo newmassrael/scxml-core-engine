@@ -810,5 +810,10 @@ name = "one_wording_for_an_invoke_expression_failure"
 path = "tests/one_wording_for_an_invoke_expression_failure.rs"
 required-features = ["cli"]
 
+[[test]]
+name = "cli_inline_kind_siblings"
+path = "tests/cli_inline_kind_siblings.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true

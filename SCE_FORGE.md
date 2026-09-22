@@ -230,55 +230,57 @@ Declared on the `<scxml>` root element. The entire file is a single kind. Produc
 
 #### Inline Kind
 
-Declared on `<data>` elements inside a `sce:kind="statechart"` document. Generates helper functions/types co-located with the statechart code. **Only stateless kinds** may be inlined — kinds with runtime dependencies or persistent state must be standalone files.
+A kind declared IN PLACE, on a `<data>` element inside a `sce:kind="statechart"` document. **The `<data>` element takes the role the `<scxml>` root takes in a document of its own**: its content is a standalone kind's content, read by the same parsers, checked by the same validators, and rendered by the same templates. The artifact is a sibling of the statechart's, named `<machine>_<data id>`.
+
+**Only a kind that keeps no state between calls** may be declared this way — transform, lookup, condition, codec. A kind with persistent state or a runtime dependency has nowhere to keep it inside a datamodel, and is rejected as `validation/kind-not-inline-eligible`, as is a value no kind goes by.
 
 ```xml
 <!-- Inline-eligible (stateless): -->
-<data id="engineStatus" sce:kind="lookup" .../>
-<data id="canProgram" sce:kind="condition" .../>
-<data id="response" sce:kind="codec" .../>
-<data id="temperature" sce:kind="transform" .../>
+<data id="engineStatus" sce:kind="lookup">...</data>
+<data id="canProgram" sce:kind="condition">...</data>
+<data id="response" sce:kind="codec">...</data>
+<data id="temperature" sce:kind="transform">...</data>
 
-<!-- NOT inline-eligible (stateful or runtime-dependent): -->
-<!-- procedure, filter, validator, timer, observer → must be standalone files -->
+<!-- NOT inline-eligible: procedure, filter, validator, timer, observer,
+     algorithm, link, worker, buffer-pool, bounded-collection, enum,
+     event-schema → declared as their own documents and imported. -->
 ```
 
-**Inline transform example** — generates a helper function within the parent statechart:
+**Inline transform example** — the body is exactly what the standalone document's `<datamodel>` would carry:
 
 ```xml
-<scxml sce:kind="statechart" initial="idle">
+<scxml sce:kind="statechart" initial="idle" name="climate">
   <datamodel>
-    <!-- Inline transform: raw sensor value → physical temperature -->
-    <data id="temperature" sce:kind="transform"
-          sce:input="rawTemp" sce:input-type="uint16"
-          sce:output-type="float64" expr="rawTemp * 0.1 - 40.0"/>
-
-    <!-- Used in guard expressions -->
-    <data id="rawTemp" sce:type="uint16" sce:direction="in"/>
+    <data id="temperature" sce:kind="transform">
+      <datamodel>
+        <data id="rawTemp" sce:type="uint16" sce:direction="in"/>
+        <data id="celsius" sce:type="float64" sce:direction="out"
+              expr="rawTemp * 0.1 - 40.0"/>
+      </datamodel>
+    </data>
   </datamodel>
 
   <state id="idle">
-    <transition cond="temperature &gt; 95.0" target="overheating"/>
+    <transition event="overheated" target="overheating"/>
   </state>
   <state id="overheating">...</state>
 </scxml>
 ```
 
-```cpp
-// Generated inline helper within statechart namespace
-inline double computeTemperature(uint16_t rawTemp) {
-    return rawTemp * 0.1 - 40.0;
-}
-```
+The host can call the sibling transform and deliver `overheated` when its result exceeds the threshold. Declaring a kind in place does not register a script-engine function or a datamodel value: automatic calls from guards and actions remain a separate integration requirement.
+
+The generated sibling is the transform `climate_temperature`, in whatever shape the target language gives a transform — the same shape `climate_temperature.scxml` would have produced as a file.
+
+⚠ **This replaced a second grammar, and the replacement is why `sce:input` / `sce:input-type` are gone.** Until 2026-09-22 an inline kind was read by a parser of its own: a transform named its single input with `sce:input`, a lookup with `sce:input`, and neither admitted `<sce:import>`, `<sce:cycle>` or more than one input — while the same four kinds, written as documents, used `sce:direction="in"` and admitted all of it. Two grammars for one kind system is what made "inline" a dialect rather than a place.
 
 #### Codegen Discovery Order
 
 ```
 1. Read <scxml sce:kind="...">  → select document-level template
 2. If kind == "statechart":
-   a. Scan <data sce:kind="..."> elements → generate inline helpers
+   a. Scan <data sce:kind="..."> elements → generate sibling Forge artifacts
    b. Scan <invoke> elements → resolve references to standalone kind files
-   c. Generate statechart class that uses inline helpers and standalone references
+   c. Generate the statechart artifact alongside those siblings
 3. If kind != "statechart":
    a. Generate standalone codegen unit (function, struct, or class)
 ```
@@ -290,8 +292,6 @@ sce:type="uint8 | uint16 | uint32 | uint64 | int8 | int16 | int32 | int64 | floa
 sce:direction="in | out | internal"
 sce:unit="celsius | rpm | ms | percent | ..."   <!-- documentation only, no codegen effect -->
 sce:default-endian="big | little | native"  <!-- document-level default, big if omitted -->
-sce:input="<signal-name>"       <!-- inline kind: names the external signal mapped to this kind's input -->
-sce:input-type="<sce:type>"    <!-- inline kind: type of the input signal (uses same types as sce:type) -->
 sce:length="<integer>"          <!-- codec input: expected frame length in bytes (validation hint) -->
 sce:bit-offset="<integer>"      <!-- codec field: bit offset within the byte, default 0 if omitted -->
 ```
@@ -405,21 +405,12 @@ This ensures that `a & (b === c)` (ECMAScript semantics: equality before bitwise
 
 #### Kind Reference Resolution
 
-Method calls on `<data>` ids are resolved by matching the id against inline kind declarations:
-
-```xml
-<!-- SCXML source -->
-<data id="securityResponse" sce:kind="codec">...</data>
-<assign location="writeResult" expr="securityResponse.decode(_event.data)"/>
-
-<!-- Codegen resolves "securityResponse" as inline codec,
-     generates a call to the codec's decode method -->
-```
-
-```cpp
-// Generated C++
-auto writeResult = SecurityResponse::decode(event.data(), event.dataLen());
-```
+An inline declaration produces a sibling artifact with the standalone kind's
+API. The host imports that artifact and calls its functions or codec methods.
+The declaration does not currently register its id with the statechart's
+script engine. Expressions such as `securityResponse.decode(_event.data)`
+therefore require a separate host binding; automatic guard/action lowering
+for these names remains a separate integration requirement.
 
 #### External Function References
 
@@ -687,20 +678,20 @@ Named boolean guard expression, reusable across multiple transitions. Supports b
 
 **Inline** (within a statechart's `<datamodel>`):
 ```xml
-<data id="canEnterProgramming" sce:kind="condition"
-      expr="engineStatus === 'STOP' &amp;&amp; ignition === true"/>
-
-<!-- Referenced in multiple transitions -->
-<transition cond="canEnterProgramming" target="programmingSession"/>
-<transition cond="canEnterProgramming &amp;&amp; securityUnlocked" target="flashMode"/>
+<data id="canEnterProgramming" sce:kind="condition">
+  <datamodel>
+    <data id="engineStatus" sce:type="string" sce:direction="in"/>
+    <data id="ignition" sce:type="bool" sce:direction="in"/>
+    <data id="allowed" sce:type="bool" sce:direction="out"
+          expr="engineStatus === 'STOP' &amp;&amp; ignition === true"/>
+  </datamodel>
+</data>
 ```
 
-**Codegen** (C++):
-```cpp
-inline bool canEnterProgramming(const std::string& engineStatus, bool ignition) {
-    return engineStatus == "STOP" && ignition;
-}
-```
+This emits a condition sibling named `<machine>_canEnterProgramming`.
+The host supplies its inputs through the generated condition API. Using
+`canEnterProgramming` directly as a transition guard is not an automatic
+binding; see **Kind Reference Resolution** above.
 
 ### 4.5 procedure
 
@@ -1349,35 +1340,59 @@ The procedure SCXML reaches a `<final>` state with `<donedata>` containing the r
 
 ### 5.3 Composition Example
 
-A diagnostic session manager that combines statechart (document-level), lookup + condition + codec (inline), and procedure (standalone via invoke):
+The following design sketch combines statechart (document-level), lookup +
+condition + codec (inline), and procedure (standalone via invoke). Its direct
+inline-kind calls and the hand-written C++ illustration below describe the
+intended host integration, not code currently emitted by the generator.
+The declaration syntax emits sibling artifacts; guard/action binding remains
+subject to **Kind Reference Resolution** above.
 
 ```xml
 <scxml xmlns:sce="http://sce.dev/ext"
        sce:kind="statechart" initial="defaultSession">
 
   <datamodel>
-    <!-- Inline lookup: external signal ENG_EngSta → engine status -->
-    <data id="engineStatus" sce:kind="lookup"
-          sce:input="ENG_EngSta" sce:input-type="uint8" sce:default="STOP">
+    <!-- Inline lookup: external signal ENG_EngSta → engine status.
+         The body is the standalone lookup's body: an input, an output,
+         and the table. -->
+    <data id="engineStatus" sce:kind="lookup">
+      <datamodel>
+        <data id="ENG_EngSta" sce:type="uint8" sce:direction="in"/>
+        <data id="status" sce:type="string" sce:direction="out"
+              sce:default="STOP"/>
+      </datamodel>
       <sce:entry key="0x00" value="STOP"/>
       <sce:entry key="0x03" value="RUNNING"/>
       <sce:entry key="0x07" value="FAULT"/>
     </data>
 
     <!-- Inline condition: named composite guard -->
-    <data id="canEnterProgramming" sce:kind="condition"
-          expr="engineStatus === 'STOP' &amp;&amp; ignition === true"/>
+    <data id="canEnterProgramming" sce:kind="condition">
+      <datamodel>
+        <data id="engineState" sce:type="string" sce:direction="in"/>
+        <data id="ignition" sce:type="bool" sce:direction="in"/>
+        <data id="allowed" sce:type="bool" sce:direction="out"
+              expr="engineState === 'STOP' &amp;&amp; ignition === true"/>
+      </datamodel>
+    </data>
 
     <!-- Inline codec: response parser -->
     <data id="securityResponse" sce:kind="codec">
-      <sce:field id="result" sce:byte="0" sce:bit-size="8"/>
-      <sce:field id="seed" sce:byte="1" sce:bit-size="32" sce:endian="big"/>
+      <datamodel>
+        <sce:field id="result" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+        <sce:field id="seed" sce:type="uint32" sce:byte="1" sce:bit-size="32"
+                   sce:endian="big"/>
+      </datamodel>
     </data>
 
     <!-- Inline codec: write request encoder -->
     <data id="writeDataRequest" sce:kind="codec">
-      <sce:field id="did" sce:byte="0" sce:bit-size="16" sce:endian="big"/>
-      <sce:field id="payload" sce:byte="2" sce:bit-size="tail" sce:max-size="255"/>
+      <datamodel>
+        <sce:field id="did" sce:type="uint16" sce:byte="0" sce:bit-size="16"
+                   sce:endian="big"/>
+        <sce:field id="payload" sce:type="bytes" sce:byte="2"
+                   sce:bit-size="tail" sce:max-size="255"/>
+      </datamodel>
     </data>
 
     <data id="writeData" sce:type="bytes" sce:direction="in"/>

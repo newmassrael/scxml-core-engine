@@ -963,6 +963,29 @@ fn inject_source_location_global(env: &mut minijinja::Environment, doc: &ForgeDo
     env.add_global("source_location", value);
 }
 
+/// The same template scope from disk or the embedded registry.
+fn load_forge_templates(
+    env: &mut minijinja::Environment<'_>,
+    directory: &Path,
+    language: crate::generator::Language,
+    options: &crate::ForgeCompileOptions,
+) -> Result<(), crate::forge::error::GenerateError> {
+    if !options.embedded_templates {
+        return generator::load_templates(env, directory, language);
+    }
+    let prefix = format!("forge/{}/", language.forge_template_subdir());
+    for &(name, content) in crate::template_registry::EMBEDDED_TEMPLATES {
+        let scoped = name
+            .strip_prefix(&prefix)
+            .or_else(|| name.starts_with("_macros/").then_some(name));
+        if let Some(scoped) = scoped {
+            generator::register_template(env, scoped.to_string(), content, language)
+                .map_err(|e| crate::forge::error::GenerateError::TemplateLoad(e.to_string()))?;
+        }
+    }
+    Ok(())
+}
+
 // ── Public API ─────────────────────────────────────────────────
 
 /// Generate code from a ForgeDocument for C++ using Jinja2 templates.
@@ -1001,7 +1024,12 @@ pub fn generate_cpp_with_imports_and_externs(
     crate::forge::codegen_matrix::check(doc.kind(), crate::generator::Language::Cpp)?;
     let forge_dir = template_dir.join("forge/cpp");
     let mut env = generator::new_env();
-    generator::load_templates(&mut env, &forge_dir, crate::generator::Language::Cpp)?;
+    load_forge_templates(
+        &mut env,
+        &forge_dir,
+        crate::generator::Language::Cpp,
+        options,
+    )?;
     inject_runtime_dep_global(&mut env, doc);
     inject_source_location_global(&mut env, doc);
 
@@ -14730,7 +14758,12 @@ pub fn generate_kotlin_with_imports(
     crate::forge::codegen_matrix::check(doc.kind(), crate::generator::Language::Kotlin)?;
     let forge_dir = template_dir.join("forge/kotlin");
     let mut env = generator::new_env();
-    generator::load_templates(&mut env, &forge_dir, crate::generator::Language::Kotlin)?;
+    load_forge_templates(
+        &mut env,
+        &forge_dir,
+        crate::generator::Language::Kotlin,
+        options,
+    )?;
     inject_runtime_dep_global(&mut env, doc);
     inject_source_location_global(&mut env, doc);
 
@@ -14901,7 +14934,12 @@ pub fn generate_rust_with_imports_and_externs(
     crate::forge::codegen_matrix::check(doc.kind(), crate::generator::Language::Rust)?;
     let forge_dir = template_dir.join("forge/rust");
     let mut env = generator::new_env();
-    generator::load_templates(&mut env, &forge_dir, crate::generator::Language::Rust)?;
+    load_forge_templates(
+        &mut env,
+        &forge_dir,
+        crate::generator::Language::Rust,
+        options,
+    )?;
     inject_runtime_dep_global(&mut env, doc);
     inject_source_location_global(&mut env, doc);
 
@@ -16716,7 +16754,12 @@ pub fn generate_go_with_imports(
     crate::forge::codegen_matrix::check(doc.kind(), crate::generator::Language::Go)?;
     let forge_dir = template_dir.join("forge/go");
     let mut env = generator::new_env();
-    generator::load_templates(&mut env, &forge_dir, crate::generator::Language::Go)?;
+    load_forge_templates(
+        &mut env,
+        &forge_dir,
+        crate::generator::Language::Go,
+        options,
+    )?;
     inject_runtime_dep_global(&mut env, doc);
     inject_source_location_global(&mut env, doc);
 
@@ -16866,7 +16909,12 @@ pub fn generate_python_with_imports(
     crate::forge::codegen_matrix::check(doc.kind(), crate::generator::Language::Python)?;
     let forge_dir = template_dir.join("forge/python");
     let mut env = generator::new_env();
-    generator::load_templates(&mut env, &forge_dir, crate::generator::Language::Python)?;
+    load_forge_templates(
+        &mut env,
+        &forge_dir,
+        crate::generator::Language::Python,
+        options,
+    )?;
     inject_runtime_dep_global(&mut env, doc);
     inject_source_location_global(&mut env, doc);
 
@@ -17025,7 +17073,12 @@ pub fn generate_c11_with_imports_and_externs(
     crate::forge::codegen_matrix::check(doc.kind(), crate::generator::Language::C11)?;
     let forge_dir = template_dir.join("forge/c");
     let mut env = generator::new_env();
-    generator::load_templates(&mut env, &forge_dir, crate::generator::Language::C11)?;
+    load_forge_templates(
+        &mut env,
+        &forge_dir,
+        crate::generator::Language::C11,
+        options,
+    )?;
     inject_runtime_dep_global(&mut env, doc);
     inject_source_location_global(&mut env, doc);
 
@@ -19792,900 +19845,15 @@ fn render_procedure_python(
     Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
-// ── Inline kind rendering (policy struct member functions) ─────
+// ── Inline kinds are standalone kinds, so nothing renders them here ──
 //
-// Inline kinds live inside the policy struct — they access datamodel
-// member variables directly via `this->`. This is distinct from standalone
-// kinds, which are namespace-scoped free functions with explicit parameters.
-
-/// Output of inline kind rendering: type definitions and member functions.
-/// Rust and Go require types (enums, structs) at module/package level,
-/// while C++ and Kotlin support nested types inside a class/struct body.
-pub struct InlineKindCode {
-    /// Top-level type definitions (enums, structs) — populated for Rust/Go
-    /// where types cannot be nested inside impl/struct blocks.
-    /// Empty for C++ and Kotlin.
-    pub type_defs: String,
-    /// Member functions and (for C++/Kotlin) nested type definitions.
-    pub member_fns: String,
-}
-
-/// Render all inline kinds for a given target language.
-/// `machine_name` is the PascalCase policy name (needed for Go receiver types).
-pub fn render_inline_kinds(
-    kinds: &[InlineKind],
-    lang: crate::generator::Language,
-    machine_name: &str,
-) -> Result<InlineKindCode, ForgeError> {
-    // A statechart hands its inline kinds no import table, so an inline
-    // kind's types are primitive by construction until one is threaded
-    // through; an `enum:<alias>` here panics naming this constructor.
-    let l = LangCtx::primitive(lang);
-    let mut type_defs = Vec::new();
-    let mut member_fns = Vec::new();
-
-    for kind in kinds {
-        let (td, mf) = render_single_inline_kind(kind, &l, machine_name)?;
-        if !td.is_empty() {
-            type_defs.push(td);
-        }
-        member_fns.push(mf);
-    }
-
-    Ok(InlineKindCode {
-        type_defs: type_defs.join("\n"),
-        member_fns: member_fns.join("\n"),
-    })
-}
-
-/// Dispatch a single inline kind to its type-specific renderer.
-fn render_single_inline_kind(
-    kind: &InlineKind,
-    l: &LangCtx,
-    machine_name: &str,
-) -> Result<(String, String), ForgeError> {
-    match &kind.data {
-        InlineKindData::Transform {
-            inputs: _,
-            expr,
-            output_type,
-        } => render_inline_transform_member(&kind.id, expr, output_type, l, machine_name),
-        InlineKindData::Lookup {
-            input_id,
-            entries,
-            default_value,
-        } => {
-            render_inline_lookup_member(&kind.id, input_id, entries, default_value, l, machine_name)
-        }
-        InlineKindData::Condition { expr } => {
-            render_inline_condition_member(&kind.id, expr, l, machine_name)
-        }
-        InlineKindData::Codec {
-            fields,
-            default_endian,
-        } => render_inline_codec_member(&kind.id, fields, *default_endian, l, machine_name),
-    }
-}
-
-/// Build identifier→member-access renames for languages that require explicit
-/// `self.` (Rust) or `p.` (Go) prefixes when accessing policy struct fields.
-/// C++ and Kotlin use implicit member access, so no renames are needed.
-fn build_member_renames(raw_expr: &str, l: &LangCtx) -> Result<Vec<(String, String)>, ForgeError> {
-    use crate::generator::Language;
-    match l.lang {
-        Language::Cpp | Language::Kotlin | Language::Python => Ok(Vec::new()),
-        Language::Rust => {
-            let idents = expr::extract_free_idents(raw_expr)?;
-            Ok(idents
-                .into_iter()
-                .map(|id| {
-                    let target = format!("self.{}", filters::to_snake_case(id.clone()));
-                    (id, target)
-                })
-                .collect())
-        }
-        Language::Go => {
-            let idents = expr::extract_free_idents(raw_expr)?;
-            Ok(idents
-                .into_iter()
-                .map(|id| {
-                    let target = format!(
-                        "p.{}",
-                        go_escape_builtin(&filters::to_camel_case(id.clone()))
-                    );
-                    (id, target)
-                })
-                .collect())
-        }
-        Language::C11 => {
-            // C11 inline-kind member access mirrors the
-            // standalone procedure D14a pattern — free-standing `static inline`
-            // functions take a `const <sm>_policy_t *_st` parameter and rewrite
-            // bare datamodel identifiers to `_st->{snake}`. Identical to
-            // `procedure_security_access`'s sce:helper-imported state access
-            // (e.g. `seed` → `_st->seed`).
-            let idents = expr::extract_free_idents(raw_expr)?;
-            Ok(idents
-                .into_iter()
-                .map(|id| {
-                    let target = format!("_st->{}", filters::to_snake_case(id.clone()));
-                    (id, target)
-                })
-                .collect())
-        }
-    }
-}
-
-/// Inline transform: member function returning computed value from policy fields.
-///
-/// Inline kinds reference the enclosing statechart's member variables. For C++
-/// and Kotlin, implicit member access works directly. For Rust and Go, we build
-/// identifier renames to insert `self.` / `p.` prefixes. The empty TypeCtx
-/// means we rely on the host compiler for final type checking.
-fn render_inline_transform_member(
-    id: &str,
-    raw_expr: &str,
-    output_type: &SceType,
-    l: &LangCtx,
-    machine_name: &str,
-) -> Result<(String, String), ForgeError> {
-    use crate::generator::Language;
-    let empty_ctx = crate::forge::type_ctx::empty();
-    let expected = crate::forge::types::InferredType::from_sce_type(output_type);
-
-    let member_renames = build_member_renames(raw_expr, l)?;
-    let renames = rename_map(&member_renames);
-
-    let transpiled =
-        expr::transpile_typed(raw_expr, l.expr_target(), &empty_ctx, &renames, expected)?;
-
-    let ret_type = l.type_name(output_type);
-
-    let code = match l.lang {
-        Language::Cpp => {
-            let func_name = format!("compute{}", filters::to_pascal_case(id.to_string()));
-            format!(
-                "    // SCE Forge: Inline transform '{id}'\n\
-                 \x20   [[nodiscard]] {ret_type} {func_name}() const {{\n\
-                 \x20       return {transpiled};\n\
-                 \x20   }}"
-            )
-        }
-        Language::Kotlin => {
-            let func_name = format!("compute{}", filters::to_pascal_case(id.to_string()));
-            format!(
-                "    // SCE Forge: Inline transform '{id}'\n\
-                 \x20   fun {func_name}(): {ret_type} = {transpiled}"
-            )
-        }
-        Language::Rust => {
-            let func_name = format!("compute_{}", filters::to_snake_case(id.to_string()));
-            format!(
-                "    // SCE Forge: Inline transform '{id}'\n\
-                 \x20   pub fn {func_name}(&self) -> {ret_type} {{\n\
-                 \x20       {transpiled}\n\
-                 \x20   }}"
-            )
-        }
-        Language::Go => {
-            let func_name = format!("Compute{}", filters::to_pascal_case(id.to_string()));
-            format!(
-                "// SCE Forge: Inline transform '{id}'\n\
-                 func (p *{machine_name}Policy) {func_name}() {ret_type} {{\n\
-                 \treturn {transpiled}\n\
-                 }}"
-            )
-        }
-        Language::Python => {
-            let func_name = format!("compute_{}", filters::to_snake_case(id.to_string()));
-            format!(
-                "    # SCE Forge: Inline transform '{id}'\n\
-                 \x20   def {func_name}(self) -> {ret_type}:\n\
-                 \x20       return {transpiled}"
-            )
-        }
-        Language::C11 => {
-            // Free-standing `static inline` function with
-            // `const <sm>_policy_t *_st` first parameter. Mirrors cpp's
-            // `[[nodiscard]] T compute<Id>() const` — the C11 `_st` parameter
-            // expresses the same const-receiver contract.
-            let sm_snake = filters::to_snake_case(machine_name.to_string());
-            let id_snake = filters::to_snake_case(id.to_string());
-            let func_name = format!("{sm_snake}_compute_{id_snake}");
-            format!(
-                "/* SCE Forge: Inline transform '{id}' */\n\
-                 static inline {ret_type} {func_name}(const {sm_snake}_policy_t *_st) {{\n\
-                 \x20   return {transpiled};\n\
-                 }}"
-            )
-        }
-    };
-
-    Ok((String::new(), code))
-}
-
-/// Inline lookup: enum type + lookup function with switch/match/when.
-/// For C++/Kotlin the enum is nested inside the member code. For Rust/Go
-/// the enum goes to type_defs (module/package level).
-fn render_inline_lookup_member(
-    id: &str,
-    input_id: &str,
-    entries: &[LookupEntry],
-    default_value: &str,
-    l: &LangCtx,
-    machine_name: &str,
-) -> Result<(String, String), ForgeError> {
-    use crate::generator::Language;
-    let enum_name = filters::to_pascal_case(id.to_string());
-
-    // Collect unique values preserving order
-    let mut seen = std::collections::BTreeSet::new();
-    let mut unique_values = Vec::new();
-    for entry in entries {
-        if seen.insert(entry.value.clone()) {
-            unique_values.push(entry.value.clone());
-        }
-    }
-
-    // Group entries by value for switch/match arms
-    let mut map: std::collections::BTreeMap<String, Vec<String>> =
-        std::collections::BTreeMap::new();
-    for entry in entries {
-        map.entry(entry.value.clone())
-            .or_default()
-            .push(entry.key.clone());
-    }
-
-    match l.lang {
-        Language::Cpp => {
-            let func_name = format!("lookup{}", filters::to_pascal_case(id.to_string()));
-            let mut code = String::new();
-            code.push_str(&format!(
-                "    // SCE Forge: Inline lookup '{id}'\n\
-                 \x20   enum class {enum_name} {{ {} }};\n\n",
-                unique_values.join(", ")
-            ));
-            code.push_str(&format!(
-                "    static {enum_name} {func_name}(uint32_t {input_id}) {{\n\
-                 \x20       switch ({input_id}) {{\n"
-            ));
-            for (value, keys) in &map {
-                for key in keys {
-                    code.push_str(&format!("        case {key}:\n"));
-                }
-                code.push_str(&format!("            return {enum_name}::{value};\n"));
-            }
-            code.push_str(&format!(
-                "        default: return {enum_name}::{default_value};\n\
-                 \x20       }}\n\
-                 \x20   }}"
-            ));
-            Ok((String::new(), code))
-        }
-
-        Language::Kotlin => {
-            let func_name = format!("lookup{}", filters::to_pascal_case(id.to_string()));
-            let mut code = String::new();
-            code.push_str(&format!(
-                "    // SCE Forge: Inline lookup '{id}'\n\
-                 \x20   enum class {enum_name} {{ {} }}\n\n",
-                unique_values.join(", ")
-            ));
-            code.push_str(&format!(
-                "    fun {func_name}({input_id}: Int): {enum_name} = when ({input_id}) {{\n"
-            ));
-            for (value, keys) in &map {
-                let keys_str = keys.join(", ");
-                code.push_str(&format!("        {keys_str} -> {enum_name}.{value}\n"));
-            }
-            code.push_str(&format!(
-                "        else -> {enum_name}.{default_value}\n\
-                 \x20   }}"
-            ));
-            Ok((String::new(), code))
-        }
-
-        Language::Rust => {
-            // Rust enum variants use PascalCase (e.g. OFF → Off)
-            let rust_variant = |v: &str| -> String {
-                let mut chars = v.chars();
-                match chars.next() {
-                    Some(c) => {
-                        let rest: String = chars.collect::<String>().to_lowercase();
-                        format!("{}{rest}", c.to_uppercase().next().unwrap_or(c))
-                    }
-                    None => String::new(),
-                }
-            };
-
-            let func_name = format!("lookup_{}", filters::to_snake_case(id.to_string()));
-
-            // Type definition (module level)
-            let mut type_def = String::new();
-            type_def.push_str(&format!(
-                "// SCE Forge: Inline lookup '{id}'\n\
-                 #[derive(Debug, Clone, Copy, PartialEq)]\n\
-                 pub enum {enum_name} {{\n"
-            ));
-            for v in &unique_values {
-                type_def.push_str(&format!("    {},\n", rust_variant(v)));
-            }
-            type_def.push('}');
-
-            // Function (impl block)
-            let input_snake = filters::to_snake_case(input_id.to_string());
-            let mut code = String::new();
-            code.push_str(&format!(
-                "    // SCE Forge: Inline lookup '{id}'\n\
-                 \x20   pub fn {func_name}({input_snake}: u32) -> {enum_name} {{\n\
-                 \x20       match {input_snake} {{\n"
-            ));
-            for (value, keys) in &map {
-                let keys_str = keys.join(" | ");
-                code.push_str(&format!(
-                    "            {keys_str} => {enum_name}::{},\n",
-                    rust_variant(value)
-                ));
-            }
-            code.push_str(&format!(
-                "            _ => {enum_name}::{},\n\
-                 \x20       }}\n\
-                 \x20   }}",
-                rust_variant(default_value)
-            ));
-            Ok((type_def, code))
-        }
-
-        Language::Go => {
-            let func_name = format!("Lookup{}", filters::to_pascal_case(id.to_string()));
-
-            // Type + const block (package level)
-            let mut type_def = String::new();
-            type_def.push_str(&format!(
-                "// SCE Forge: Inline lookup '{id}'\n\
-                 type {enum_name} int\n\n\
-                 const (\n"
-            ));
-            for (i, v) in unique_values.iter().enumerate() {
-                if i == 0 {
-                    type_def.push_str(&format!("\t{enum_name}{v} {enum_name} = iota\n"));
-                } else {
-                    type_def.push_str(&format!("\t{enum_name}{v}\n"));
-                }
-            }
-            type_def.push(')');
-
-            // Package-level function (no receiver — pure lookup)
-            let input_camel = go_escape_builtin(&filters::to_camel_case(input_id.to_string()));
-            let mut code = String::new();
-            code.push_str(&format!(
-                "// SCE Forge: Inline lookup '{id}'\n\
-                 func {func_name}({input_camel} uint32) {enum_name} {{\n\
-                 \tswitch {input_camel} {{\n"
-            ));
-            for (value, keys) in &map {
-                for key in keys {
-                    code.push_str(&format!("\tcase {key}:\n"));
-                }
-                code.push_str(&format!("\t\treturn {enum_name}{value}\n"));
-            }
-            code.push_str(&format!(
-                "\tdefault:\n\
-                 \t\treturn {enum_name}{default_value}\n\
-                 \t}}\n\
-                 }}"
-            ));
-            Ok((type_def, code))
-        }
-
-        Language::Python => {
-            let func_name = format!("lookup_{}", filters::to_snake_case(id.to_string()));
-            let input_snake = filters::to_snake_case(input_id.to_string());
-            let mut code = String::new();
-            code.push_str(&format!(
-                "    # SCE Forge: Inline lookup '{id}'\n\
-                 \x20   class {enum_name}:\n"
-            ));
-            for (i, v) in unique_values.iter().enumerate() {
-                code.push_str(&format!("        {v} = {i}\n"));
-            }
-            code.push_str(&format!(
-                "\n    @staticmethod\n\
-                 \x20   def {func_name}({input_snake}: int) -> '{enum_name}':\n\
-                 \x20       _map = {{"
-            ));
-            for (value, keys) in &map {
-                for key in keys {
-                    code.push_str(&format!("{key}: {enum_name}.{value}, "));
-                }
-            }
-            code.push_str(&format!(
-                "}}\n\
-                 \x20       return _map.get({input_snake}, {enum_name}.{default_value})"
-            ));
-            Ok((String::new(), code))
-        }
-        Language::C11 => {
-            // Top-level enum typedef + free `static
-            // inline` lookup function. C11 has no namespacing, so enum
-            // constants are prefixed `<SM_UPPER>_<ID_UPPER>_<VALUE>`
-            // (mirrors procedure_security_access's
-            // `PROCEDURE_SECURITY_ACCESS_STATE_*` pattern). The lookup
-            // function is pure (no `_st` parameter) — the input arrives
-            // explicitly via `input_id`.
-            let sm_snake = filters::to_snake_case(machine_name.to_string());
-            let sm_upper = sm_snake.to_uppercase();
-            let id_snake = filters::to_snake_case(id.to_string());
-            let id_upper = id_snake.to_uppercase();
-            let typedef = format!("{sm_snake}_{id_snake}_t");
-            let func_name = format!("{sm_snake}_lookup_{id_snake}");
-            let input_snake = filters::to_snake_case(input_id.to_string());
-            let const_name =
-                |v: &str| -> String { format!("{sm_upper}_{id_upper}_{}", v.to_uppercase()) };
-
-            let mut code = String::new();
-            code.push_str(&format!(
-                "/* SCE Forge: Inline lookup '{id}' */\n\
-                 typedef enum {{\n"
-            ));
-            for v in &unique_values {
-                code.push_str(&format!("    {},\n", const_name(v)));
-            }
-            code.push_str(&format!("}} {typedef};\n\n"));
-
-            code.push_str(&format!(
-                "static inline {typedef} {func_name}(uint32_t {input_snake}) {{\n\
-                 \x20   switch ({input_snake}) {{\n"
-            ));
-            for (value, keys) in &map {
-                for key in keys {
-                    code.push_str(&format!("    case {key}:\n"));
-                }
-                code.push_str(&format!("        return {};\n", const_name(value)));
-            }
-            code.push_str(&format!(
-                "    default: return {};\n\
-                 \x20   }}\n\
-                 }}",
-                const_name(default_value)
-            ));
-            Ok((String::new(), code))
-        }
-    }
-}
-
-/// Inline condition: member function returning bool from policy fields.
-fn render_inline_condition_member(
-    id: &str,
-    raw_expr: &str,
-    l: &LangCtx,
-    machine_name: &str,
-) -> Result<(String, String), ForgeError> {
-    use crate::generator::Language;
-    let empty_ctx = crate::forge::type_ctx::empty();
-
-    let member_renames = build_member_renames(raw_expr, l)?;
-    let renames = rename_map(&member_renames);
-
-    let transpiled = expr::transpile_typed(
-        raw_expr,
-        l.expr_target(),
-        &empty_ctx,
-        &renames,
-        crate::forge::types::InferredType::Bool,
-    )?;
-
-    let code = match l.lang {
-        Language::Cpp => {
-            let func_name = filters::to_camel_case(id.to_string());
-            format!(
-                "    // SCE Forge: Inline condition '{id}'\n\
-                 \x20   [[nodiscard]] bool {func_name}() const {{\n\
-                 \x20       return {transpiled};\n\
-                 \x20   }}"
-            )
-        }
-        Language::Kotlin => {
-            let func_name = filters::to_camel_case(id.to_string());
-            format!(
-                "    // SCE Forge: Inline condition '{id}'\n\
-                 \x20   fun {func_name}(): Boolean = {transpiled}"
-            )
-        }
-        Language::Rust => {
-            let func_name = filters::to_snake_case(id.to_string());
-            format!(
-                "    // SCE Forge: Inline condition '{id}'\n\
-                 \x20   pub fn {func_name}(&self) -> bool {{\n\
-                 \x20       {transpiled}\n\
-                 \x20   }}"
-            )
-        }
-        Language::Go => {
-            let func_name = filters::to_pascal_case(id.to_string());
-            format!(
-                "// SCE Forge: Inline condition '{id}'\n\
-                 func (p *{machine_name}Policy) {func_name}() bool {{\n\
-                 \treturn {transpiled}\n\
-                 }}"
-            )
-        }
-        Language::Python => {
-            let func_name = filters::to_snake_case(id.to_string());
-            format!(
-                "    # SCE Forge: Inline condition '{id}'\n\
-                 \x20   def {func_name}(self) -> bool:\n\
-                 \x20       return {transpiled}"
-            )
-        }
-        Language::C11 => {
-            // Free `static inline bool` function with
-            // `const <sm>_policy_t *_st` first parameter. Mirror of cpp's
-            // `[[nodiscard]] bool isReady() const` — same const-receiver
-            // contract expressed via the `_st` pointer.
-            let sm_snake = filters::to_snake_case(machine_name.to_string());
-            let id_snake = filters::to_snake_case(id.to_string());
-            let func_name = format!("{sm_snake}_{id_snake}");
-            format!(
-                "/* SCE Forge: Inline condition '{id}' */\n\
-                 static inline bool {func_name}(const {sm_snake}_policy_t *_st) {{\n\
-                 \x20   return {transpiled};\n\
-                 }}"
-            )
-        }
-    };
-
-    Ok((String::new(), code))
-}
-
-/// Inline codec: struct with decode/encode methods.
-/// For C++/Kotlin, the struct is nested inside member code.
-/// For Rust/Go, the struct and its methods go to type_defs.
-fn render_inline_codec_member(
-    id: &str,
-    codec_fields: &[CodecField],
-    default_endian: Endian,
-    l: &LangCtx,
-    machine_name: &str,
-) -> Result<(String, String), ForgeError> {
-    use crate::generator::Language;
-    let struct_name = filters::to_pascal_case(id.to_string());
-
-    // Compute min frame bytes
-    let mut min_bytes = 0u32;
-    for f in codec_fields {
-        if let Some(bits) = f.fixed_bits() {
-            let end = f.byte_offset + bits.div_ceil(8);
-            min_bytes = min_bytes.max(end);
-        }
-    }
-
-    match l.lang {
-        Language::Cpp => {
-            let mut code = String::new();
-            code.push_str(&format!("    // SCE Forge: Inline codec '{id}'\n"));
-            code.push_str(&format!("    struct {struct_name} {{\n"));
-            for f in codec_fields {
-                code.push_str(&format!("        {} {};\n", cpp_type(&f.sce_type), f.id));
-            }
-            code.push_str(&format!(
-                "\n        static std::optional<{struct_name}> decode(::SCE::Forge::SceCursor& cursor) {{\n\
-                 \x20           const std::uint8_t* raw = cursor.peek_slice({min_bytes});\n\
-                 \x20           if (raw == nullptr) return std::nullopt;\n"
-            ));
-            for f in codec_fields {
-                let decode = generate_decode_expr(f, default_endian, Language::Cpp, codec_fields);
-                code.push_str(&format!(
-                    "            {} {} = {};\n",
-                    cpp_type(&f.sce_type),
-                    f.id,
-                    decode
-                ));
-            }
-            code.push_str(&format!("            {struct_name} value{{\n"));
-            for f in codec_fields {
-                code.push_str(&format!("                .{} = {},\n", f.id, f.id));
-            }
-            code.push_str("            };\n");
-            code.push_str(&format!(
-                "            if (!cursor.advance({min_bytes})) return std::nullopt;\n\
-                 \x20           return value;\n        }}\n"
-            ));
-            let encode_exprs = generate_encode_exprs(
-                codec_fields,
-                default_endian,
-                &LangCtx::primitive(Language::Cpp),
-            );
-            code.push_str(
-                "\n        std::vector<uint8_t> encode() const {\n            return {\n",
-            );
-            for (i, expr_str) in encode_exprs.iter().enumerate() {
-                let comma = if i < encode_exprs.len() - 1 { "," } else { "" };
-                code.push_str(&format!("                {expr_str}{comma}\n"));
-            }
-            code.push_str("            };\n        }\n");
-            code.push_str("    };");
-            Ok((String::new(), code))
-        }
-
-        Language::Kotlin => {
-            let mut code = String::new();
-            code.push_str(&format!("    // SCE Forge: Inline codec '{id}'\n"));
-            code.push_str(&format!("    data class {struct_name}(\n"));
-            for (i, f) in codec_fields.iter().enumerate() {
-                let comma = if i < codec_fields.len() - 1 { "," } else { "" };
-                code.push_str(&format!(
-                    "        val {}: {}{comma}\n",
-                    f.id,
-                    kotlin_type(&f.sce_type)
-                ));
-            }
-            code.push_str("    ) {\n        companion object {\n");
-            code.push_str(&format!(
-                "            fun decode(cursor: com.sce.forge.runtime.SceCursor): {struct_name}? {{\n\
-                 \x20               val raw = cursor.peekSlice({min_bytes}) ?: return null\n"
-            ));
-            for f in codec_fields {
-                let decode =
-                    generate_decode_expr(f, default_endian, Language::Kotlin, codec_fields);
-                code.push_str(&format!("                val {} = {}\n", f.id, decode));
-            }
-            code.push_str(&format!("                val value = {struct_name}(\n"));
-            for (i, f) in codec_fields.iter().enumerate() {
-                let comma = if i < codec_fields.len() - 1 { "," } else { "" };
-                code.push_str(&format!("                    {} = {}{comma}\n", f.id, f.id));
-            }
-            code.push_str("                )\n");
-            code.push_str(&format!(
-                "                if (!cursor.advance({min_bytes})) return null\n\
-                 \x20               return value\n            }}\n        }}\n"
-            ));
-            let encode_exprs = generate_encode_exprs(
-                codec_fields,
-                default_endian,
-                &LangCtx::primitive(Language::Kotlin),
-            );
-            code.push_str("        fun encode(): ByteArray = byteArrayOf(\n");
-            for (i, expr_str) in encode_exprs.iter().enumerate() {
-                let comma = if i < encode_exprs.len() - 1 { "," } else { "" };
-                code.push_str(&format!("            {expr_str}{comma}\n"));
-            }
-            code.push_str("        )\n    }");
-            Ok((String::new(), code))
-        }
-
-        Language::Rust => {
-            let mut type_def = String::new();
-            type_def.push_str(&format!("// SCE Forge: Inline codec '{id}'\n"));
-            type_def.push_str(&format!(
-                "#[derive(Debug, Clone)]\npub struct {struct_name} {{\n"
-            ));
-            for f in codec_fields {
-                let field_id = filters::to_snake_case(f.id.clone());
-                type_def.push_str(&format!(
-                    "    pub {}: {},\n",
-                    field_id,
-                    rust_type(&f.sce_type)
-                ));
-            }
-            type_def.push_str("}\n\n");
-            type_def.push_str(&format!("impl {struct_name} {{\n"));
-            type_def.push_str(&format!(
-                "    pub fn decode(cursor: &mut ::sce_forge_runtime::codec::SceCursor<'_>) -> Result<Self, ::sce_forge_runtime::codec::CodecError> {{\n\
-                 \x20       let raw = cursor.peek_slice({min_bytes})?;\n"
-            ));
-            for f in codec_fields {
-                let decode = generate_decode_expr(f, default_endian, Language::Rust, codec_fields);
-                let field_id = filters::to_snake_case(f.id.clone());
-                type_def.push_str(&format!("        let {field_id} = {decode};\n"));
-            }
-            type_def.push_str("        let value = Self {\n");
-            for f in codec_fields {
-                let field_id = filters::to_snake_case(f.id.clone());
-                type_def.push_str(&format!("            {field_id},\n"));
-            }
-            type_def.push_str("        };\n");
-            type_def.push_str(&format!(
-                "        cursor.advance({min_bytes})?;\n        Ok(value)\n    }}\n\n"
-            ));
-            let encode_exprs = generate_encode_exprs(
-                codec_fields,
-                default_endian,
-                &LangCtx::primitive(Language::Rust),
-            );
-            type_def.push_str(&format!(
-                "    pub const MAX_ENCODED_BYTES: usize = {min_bytes};\n\n"
-            ));
-            type_def.push_str(
-                "    pub fn encode<S: ::sce_forge_runtime::codec::SceSink>(&self, w: &mut S) -> Result<(), ::sce_forge_runtime::codec::CodecError> {\n",
-            );
-            for expr_str in &encode_exprs {
-                type_def.push_str(&format!("        w.write_u8({expr_str})?;\n"));
-            }
-            type_def.push_str("        Ok(())\n    }\n\n");
-            type_def.push_str(
-                "    pub fn encode_to_vec(&self) -> Vec<u8> {\n        \
-                 let mut _sce_v: Vec<u8> = Vec::with_capacity(Self::MAX_ENCODED_BYTES);\n        \
-                 let mut _sce_sink = ::sce_forge_runtime::codec::VecSink::new(&mut _sce_v);\n        \
-                 self.encode(&mut _sce_sink).expect(\"VecSink is infallible\");\n        \
-                 _sce_v\n    }\n}",
-            );
-            Ok((type_def, String::new()))
-        }
-
-        Language::Go => {
-            let mut type_def = String::new();
-            type_def.push_str(&format!("// SCE Forge: Inline codec '{id}'\n"));
-            type_def.push_str(&format!("type {struct_name} struct {{\n"));
-            for f in codec_fields {
-                let field_id = filters::to_pascal_case(f.id.clone());
-                type_def.push_str(&format!("\t{} {}\n", field_id, go_type(&f.sce_type)));
-            }
-            type_def.push_str("}\n\n");
-            // Inline-codec import path: emitted by state_machine.go
-            // codegen, which doesn't share the standalone codec.go.jinja2
-            // import block. Hard-code the codec runtime package import
-            // here so the inline emit compiles without a separate go.mod
-            // dependency surface from the host statechart file.
-            type_def
-                .push_str("// codec runtime import for cursor-based decode (RFC §5.B L494-519)\n");
-            type_def.push_str("// import \"github.com/newmassrael/sce-forge-runtime/codec\"\n");
-            type_def.push_str(&format!(
-                "func Decode{struct_name}(cursor *codec.SceCursor) (*{struct_name}, error) {{\n\
-                 \traw, err := cursor.PeekSlice({min_bytes})\n\
-                 \tif err != nil {{\n\
-                 \t\treturn nil, err\n\
-                 \t}}\n"
-            ));
-            for f in codec_fields {
-                let decode = generate_decode_expr(f, default_endian, Language::Go, codec_fields);
-                let field_id = filters::to_pascal_case(f.id.clone());
-                type_def.push_str(&format!("\t{field_id} := {decode}\n"));
-            }
-            type_def.push_str(&format!("\tvalue := &{struct_name}{{\n"));
-            for f in codec_fields {
-                let field_id = filters::to_pascal_case(f.id.clone());
-                type_def.push_str(&format!("\t\t{field_id}: {field_id},\n"));
-            }
-            type_def.push_str(&format!(
-                "\t}}\n\tif err := cursor.Advance({min_bytes}); err != nil {{\n\
-                 \t\treturn nil, err\n\t}}\n\treturn value, nil\n}}\n\n"
-            ));
-            let encode_exprs = generate_encode_exprs(
-                codec_fields,
-                default_endian,
-                &LangCtx::primitive(Language::Go),
-            );
-            type_def.push_str(&format!(
-                "func (s *{struct_name}) Encode() []byte {{\n\treturn []byte{{\n"
-            ));
-            for (i, expr_str) in encode_exprs.iter().enumerate() {
-                let comma = if i < encode_exprs.len() - 1 { "," } else { "" };
-                type_def.push_str(&format!("\t\t{expr_str}{comma}\n"));
-            }
-            type_def.push_str("\t}\n}");
-            Ok((type_def, String::new()))
-        }
-
-        Language::Python => {
-            let mut code = String::new();
-            code.push_str(&format!("    # SCE Forge: Inline codec '{id}'\n"));
-            code.push_str(&format!("    class {struct_name}:\n"));
-            code.push_str("        def __init__(self");
-            for f in codec_fields {
-                let field_id = filters::to_snake_case(f.id.clone());
-                code.push_str(&format!(", {field_id}: {}", python_type(&f.sce_type)));
-            }
-            code.push_str("):\n");
-            for f in codec_fields {
-                let field_id = filters::to_snake_case(f.id.clone());
-                code.push_str(&format!("            self.{field_id} = {field_id}\n"));
-            }
-            code.push_str(&format!(
-                "\n        @staticmethod\n\
-                 \x20       def decode(cursor) -> '{struct_name} | None':\n\
-                 \x20           from sce_forge_runtime.codec import NeedMoreBytes\n\
-                 \x20           try:\n\
-                 \x20               raw = cursor.peek_slice({min_bytes})\n\
-                 \x20           except NeedMoreBytes:\n\
-                 \x20               return None\n"
-            ));
-            for f in codec_fields {
-                let decode =
-                    generate_decode_expr(f, default_endian, Language::Python, codec_fields);
-                let field_id = filters::to_snake_case(f.id.clone());
-                code.push_str(&format!("            {field_id} = {decode}\n"));
-            }
-            code.push_str(&format!("            value = {struct_name}(\n"));
-            for f in codec_fields {
-                let field_id = filters::to_snake_case(f.id.clone());
-                code.push_str(&format!("                {field_id}={field_id},\n"));
-            }
-            code.push_str("            )\n");
-            code.push_str(&format!(
-                "            try:\n                cursor.advance({min_bytes})\n            except NeedMoreBytes:\n                return None\n            return value\n"
-            ));
-            let encode_exprs = generate_encode_exprs(
-                codec_fields,
-                default_endian,
-                &LangCtx::primitive(Language::Python),
-            );
-            code.push_str("        def encode(self) -> bytes:\n            return bytes([\n");
-            for (i, expr_str) in encode_exprs.iter().enumerate() {
-                let comma = if i < encode_exprs.len() - 1 { "," } else { "" };
-                code.push_str(&format!("                {expr_str}{comma}\n"));
-            }
-            code.push_str("            ])");
-            Ok((String::new(), code))
-        }
-        Language::C11 => {
-            // Free-standing inline codec emit. Mirrors
-            // the standalone `forge/c/codec.h.jinja2` shape (typedef struct
-            // + encoded buffer struct + static inline decode/encode pair)
-            // but injects without #ifndef guards or #include — those are
-            // already provided by the enclosing state_machine.h. Naming
-            // prefix `<sm>_<id>_*` avoids collisions with peer fixtures
-            // sharing the same enclosing translation unit, mirroring the
-            // standalone codec's `<file_stem>_*` convention.
-            let sm_snake = filters::to_snake_case(machine_name.to_string());
-            let sm_upper = sm_snake.to_uppercase();
-            let id_snake = filters::to_snake_case(id.to_string());
-            let id_upper = id_snake.to_uppercase();
-            let struct_typedef = format!("{sm_snake}_{id_snake}_t");
-            let decode_func = format!("{sm_snake}_{id_snake}_decode");
-            let encode_func = format!("{sm_snake}_{id_snake}_encode");
-            let min_macro = format!("{sm_upper}_{id_upper}_MIN_BYTES");
-            let max_macro = format!("{sm_upper}_{id_upper}_MAX_BYTES");
-
-            let mut code = String::new();
-            code.push_str(&format!("/* SCE Forge: Inline codec '{id}' */\n"));
-            code.push_str(&format!("#define {min_macro} {min_bytes}\n"));
-            code.push_str(&format!("#define {max_macro} {min_bytes}\n\n"));
-
-            code.push_str("typedef struct {\n");
-            for f in codec_fields {
-                let field_id = filters::to_snake_case(f.id.clone());
-                code.push_str(&format!("    {} {};\n", c_type(&f.sce_type), field_id));
-            }
-            code.push_str(&format!("}} {struct_typedef};\n\n"));
-
-            code.push_str(&format!(
-                "static inline sce_forge_codec_status_t {decode_func}(sce_forge_cursor_t *cursor, {struct_typedef} *out) {{\n\
-                 \x20   const uint8_t *raw = sce_forge_cursor_peek(cursor, {min_macro});\n\
-                 \x20   if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n"
-            ));
-            for f in codec_fields {
-                let field_id = filters::to_snake_case(f.id.clone());
-                let decode = generate_decode_expr(f, default_endian, Language::C11, codec_fields);
-                code.push_str(&format!("    out->{field_id} = {decode};\n"));
-            }
-            code.push_str(&format!(
-                "    if (!sce_forge_cursor_advance(cursor, {min_macro})) return SCE_FORGE_CODEC_NEED_MORE_BYTES;\n\
-                 \x20   return SCE_FORGE_CODEC_OK;\n}}\n\n"
-            ));
-
-            // RFC §synth-5-B item B1: writer-based inline encode mirrors the
-            // standalone codec.h.jinja2 shape — write each fixed-prefix
-            // byte through `sce_forge_writer_write_u8` and propagate
-            // overflow via `SCE_FORGE_TRY_WRITE`.
-            let encode_exprs = generate_encode_exprs(
-                codec_fields,
-                default_endian,
-                &LangCtx::primitive(Language::C11),
-            );
-            code.push_str(&format!(
-                "static inline sce_forge_codec_status_t {encode_func}(const {struct_typedef} *self, sce_forge_writer_t *w) {{\n"
-            ));
-            for expr_str in encode_exprs.iter() {
-                code.push_str(&format!(
-                    "    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, {expr_str}));\n"
-                ));
-            }
-            code.push_str("    return SCE_FORGE_CODEC_OK;\n}");
-            Ok((String::new(), code))
-        }
-    }
-}
+// What stood here was ~900 lines that emitted four of the eighteen kinds
+// as members of the policy struct, in ONE backend's shape per kind, and
+// reached C++ alone for a lookup. A kind declared inside a `<data>`
+// element is now compiled by the standalone path and emitted as a
+// sibling artifact (`sce_build::compile_forge_from_parsed`, wired in
+// `lib.rs::emit_inline_kind_siblings`), so every backend gets the kind
+// its own templates already knew how to write. Removed 2026-09-22.
 
 // ══════════════════════════════════════════════════════════════
 // ── Unified render functions (language-parameterized) ──

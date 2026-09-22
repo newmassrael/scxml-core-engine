@@ -427,3 +427,25 @@ fn the_shim_compiles_when_only_a_test_reaches_the_machine() {
          this whole route replaced:\n{shim}"
     );
 }
+
+#[test]
+fn the_build_script_writes_the_inline_sibling_modules() {
+    let _guard = OUT_DIR_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = tempdir().unwrap();
+    std::env::set_var("OUT_DIR", dir.path());
+    let fixture = repo_root().join("tests/forge/resources/inline_mixed.scxml");
+    let output = sce_build::compile_scxml_lang_typed(
+        fixture.to_str().unwrap(),
+        &sce_build::find_template_dir(),
+        sce_build::generator::Language::Rust,
+    )
+    .unwrap();
+    assert!(output.files.len() > 1);
+    sce_build::compile_scxml(&[fixture.to_str().unwrap()]);
+    for (name, _) in output.files {
+        assert!(
+            dir.path().join(&name).is_file(),
+            "build script omitted {name}"
+        );
+    }
+}

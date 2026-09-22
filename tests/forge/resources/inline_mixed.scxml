@@ -1,18 +1,52 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: inline kinds within a statechart -->
+<!-- SCE Forge conformance: three kinds declared in place.
+
+     Each `<data sce:kind>` carries what the standalone document of that
+     kind carries, because that is what an inline kind IS: the element
+     takes the role the `<scxml>` root takes in a file of its own
+     (SCE_FORGE.md §Inline Kind, owner's decision 2026-09-22). The
+     artifacts are siblings — `inline_mixed_test_rpmStatus`,
+     `_isReady`, `_toFahrenheit`.
+
+     ⚠ It used to write a dialect: `sce:input="raw"` named a lookup's
+     single input, `sce:type` on the `<data>` named a transform's single
+     output, and a condition put its expression on the element. The same
+     four kinds, written as documents, said `sce:direction="in"` /
+     `"out"` and admitted several of each. Rewritten 2026-09-22 when the
+     second grammar was removed. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        name="inline_mixed_test" initial="idle">
   <datamodel>
     <data id="rpm" expr="0"/>
-    <data id="rpmStatus" sce:kind="lookup" sce:input="raw" sce:default="OFF">
-      <sce:entry key="0" value="OFF"/>
-      <sce:entry key="1" value="RUNNING"/>
+
+    <data id="rpmStatus" sce:kind="lookup">
+      <datamodel>
+        <data id="raw" sce:type="int32" sce:direction="in"/>
+        <data id="status" sce:type="string" sce:direction="out"/>
+        <data id="mapping" sce:default="OFF">
+          <sce:entry key="0" value="OFF"/>
+          <sce:entry key="1" value="RUNNING"/>
+        </data>
+      </datamodel>
     </data>
-    <data id="isReady" sce:kind="condition"
-          expr="speed === 0 &amp;&amp; engineOff === true"/>
-    <data id="toFahrenheit" sce:kind="transform" sce:type="float64"
-          expr="celsius * 1.8 + 32"/>
+
+    <data id="isReady" sce:kind="condition">
+      <datamodel>
+        <data id="speed" sce:type="float64" sce:direction="in"/>
+        <data id="engineOff" sce:type="bool" sce:direction="in"/>
+        <data id="result" sce:type="bool" sce:direction="out"
+              expr="speed === 0 &amp;&amp; engineOff === true"/>
+      </datamodel>
+    </data>
+
+    <data id="toFahrenheit" sce:kind="transform">
+      <datamodel>
+        <data id="celsius" sce:type="float64" sce:direction="in"/>
+        <data id="fahrenheit" sce:type="float64" sce:direction="out"
+              expr="celsius * 1.8 + 32"/>
+      </datamodel>
+    </data>
   </datamodel>
   <state id="idle">
     <transition event="go" target="active"/>

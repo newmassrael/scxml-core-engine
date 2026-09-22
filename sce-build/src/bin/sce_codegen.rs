@@ -3629,46 +3629,27 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                         }
                     };
                 let template_dir = sce_build::find_template_dir_for(*lang);
-                let outcome = match lang {
-                    Language::Rust => {
-                        sce_build::generator::generate(&model, &template_dir, no_std).map(|_| ())
-                    }
-                    Language::Cpp => sce_build::generator::generate_cpp_for_engine(
-                        &model,
-                        &template_dir,
-                        input_stem,
-                        None,
-                        selected_engine
-                            .unwrap_or_else(|| Language::Cpp.default_script_engine_target()),
-                    )
-                    .map(|_| ()),
-                    Language::Kotlin => sce_build::generator::generate_kotlin_for_engine(
-                        &model,
-                        &template_dir,
-                        None,
-                        selected_engine
-                            .unwrap_or_else(|| Language::Kotlin.default_script_engine_target()),
-                    )
-                    .map(|_| ()),
-                    Language::Go => {
-                        sce_build::generator::generate_go(&model, &template_dir).map(|_| ())
-                    }
-                    Language::Python => {
-                        sce_build::generator::generate_python(&model, &template_dir).map(|_| ())
-                    }
-                    Language::C11 => {
-                        sce_build::generator::generate_c11(&model, &template_dir, input_stem, None)
-                            .map(|_| ())
-                    }
-                }
-                .map_err(|e| {
-                    sce_build::forge::error::Located::new(
-                        ForgeError::from(e),
-                        scxml_path,
-                        None,
-                        None,
-                    )
-                });
+                let outcome = sce_build::emit_model_artifacts(
+                    &model,
+                    &template_dir,
+                    input_stem,
+                    scxml_path,
+                    *lang,
+                    &sce_build::ModelEmitOptions {
+                        forge: Some(&sce_build::ForgeCompileOptions {
+                            go_module_prefix: go_module_prefix.clone(),
+                            const_fold_budget,
+                            ..Default::default()
+                        }),
+                        codegen: Some(&sce_build::generator::StatechartCodegenOptions {
+                            no_std,
+                            ..Default::default()
+                        }),
+                        script_engine: selected_engine,
+                        ..Default::default()
+                    },
+                )
+                .map(|_| ());
                 record_backend_outcome(&mut verdicts, *lang, explicit, error_format, outcome);
             }
         }
@@ -3678,6 +3659,54 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
         "{}",
         build_manifest(&report, ManifestKind::Check, Some(verdicts), None).to_line()
     );
+}
+
+/// Re-address a synth-invoke child's package header to its parent's.
+///
+/// Mirrors `generate-w3c`'s `KotlinBackend::process_child`. A child
+/// derives its package from its own name — `<prefix>.{child}` in Kotlin,
+/// `package {child}` in Go — while the parent refers to the child's
+/// state machine unqualified, so the two have to land in one compilation
+/// unit. The `<prefix>` mirrors whatever `--kotlin-package-prefix`
+/// selected (defaults to `com.sce.generated` for W3C,
+/// `com.sce.integration` for the integration tree).
+///
+/// Only the child's own machine artifact is re-addressed. A sibling
+/// forge artifact carries a package derived from ITS name, and a
+/// substring replace over every file would re-address any file whose
+/// package merely starts with the child's.
+fn rewrite_child_package(
+    output: &mut GeneratedOutput,
+    lang: Language,
+    stem: &str,
+    parent: &str,
+    kotlin_package_prefix: Option<&str>,
+) {
+    let child_pkg = sce_build::filters::to_snake_case(stem.to_string());
+    let (machine_file, from, to) = match lang {
+        Language::Kotlin => {
+            let prefix = kotlin_package_prefix.unwrap_or("com.sce.generated");
+            (
+                format!("{stem}Sm.kt"),
+                format!("package {prefix}.{child_pkg}"),
+                format!("package {prefix}.{parent}"),
+            )
+        }
+        Language::Go => (
+            format!("{stem}_sm.go"),
+            format!("package {child_pkg}"),
+            format!("package {parent}"),
+        ),
+        // The other four backends carry no package header to re-address:
+        // C++ and C11 scope by namespace/prefix argument, Rust by module
+        // path at the consuming crate, Python by file location.
+        Language::Rust | Language::Cpp | Language::Python | Language::C11 => return,
+    };
+    for (name, code) in output.files.iter_mut() {
+        if *name == machine_file {
+            *code = code.replace(&from, &to);
+        }
+    }
 }
 
 fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
@@ -4427,10 +4456,6 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         }
     }
 
-    let locate_codegen = |e: sce_build::forge::error::GenerateError| -> Located<ForgeError> {
-        Located::new(ForgeError::from(e), scxml_path, None, None)
-    };
-
     // mesh_open_issues.md Issue 2: when --transport-only is set, skip
     // the state-machine backend emit + its side-product files
     // (sourcemap, children manifest, static-invoke copy, hybrid stubs).
@@ -4440,6 +4465,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
     // `fs::create_dir_all` ran above (before the synth-SCXML emit + the
     // mesh injection chain) — the dir already exists at this point.
     let mut output_paths: Vec<PathBuf> = Vec::new();
+    let mut artifact_deps = parser.preprocessor_deps().to_vec();
 
     if !transport_only {
         // Closure-extracted per-language emit. Used for the parent model
@@ -4463,107 +4489,56 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         // collection aliases across the sub-templates
         // (send.rs.jinja2 / process_transition.rs.jinja2 /
         // invoke_methods.rs.jinja2).
+        //
+        // The backend dispatch itself is not here: it is
+        // `sce_build::emit_model_artifacts`, which the library entries
+        // call too. That function emits the machine AND the sibling
+        // artifact of every kind the document declares in place, and a
+        // second copy of the dispatch here would be a copy that forgets
+        // the siblings — which is exactly what this CLI did until the
+        // two met. What stays here is the one thing the library cannot
+        // decide: the `--as-child` package rewrite, below.
         let emit_for_model = |m: &SCXMLModel,
                               stem: &str,
                               m_as_child: bool,
                               m_parent_stem: Option<&str>|
          -> GeneratedOutput {
-            match lang {
-                Language::Rust => {
-                    let code = sce_build::generator::generate(m, &template_dir, no_std)
-                        .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)));
-                    GeneratedOutput {
-                        files: vec![(format!("{stem}_sm.rs"), code)],
-                        // CLI threads `Parser::preprocessor_deps()` directly to
-                        // the depfile sink (see `--write-deps` handling below);
-                        // populating `GeneratedOutput.deps` here would
-                        // duplicate the channel without a consumer.
+            // The engine target is the run's selection, or the backend's
+            // default when the caller did not ask — resolved and refused
+            // already, so reaching here means the backend can emit it.
+            let mut output = sce_build::emit_model_artifacts(
+                m,
+                &template_dir,
+                stem,
+                scxml_path,
+                lang,
+                &sce_build::ModelEmitOptions {
+                    forge: Some(&sce_build::ForgeCompileOptions {
+                        go_module_prefix: go_module_prefix.map(str::to_owned),
+                        const_fold_budget,
                         ..Default::default()
-                    }
-                }
-                Language::Cpp => {
-                    // The run's selection, or this backend's default when the
-                    // caller did not ask — resolved and refused already, so
-                    // reaching here means the backend can emit it.
-                    sce_build::generator::generate_cpp_for_engine(
-                        m,
-                        &template_dir,
-                        stem,
-                        cpp_namespace_prefix,
-                        script_engine_target
-                            .unwrap_or_else(|| Language::Cpp.default_script_engine_target()),
-                    )
-                    .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)))
-                }
-                Language::Kotlin => {
-                    // The run's selection, or this backend's default when the
-                    // caller did not ask — resolved and refused already, so
-                    // reaching here means the backend can emit it.
-                    let mut code = sce_build::generator::generate_kotlin_for_engine(
-                        m,
-                        &template_dir,
-                        kotlin_package_prefix,
-                        script_engine_target
-                            .unwrap_or_else(|| Language::Kotlin.default_script_engine_target()),
-                    )
-                    .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)));
-                    // Mirror `generate-w3c`'s KotlinBackend::process_child: the
-                    // child's self-derived package (`<prefix>.{child}`) is
-                    // rewritten to the parent's package so the parent's
-                    // unqualified reference to the child `StateMachine` class
-                    // resolves within one compilation unit. The `<prefix>` mirrors
-                    // whatever `--kotlin-package-prefix` selected (defaults to
-                    // `com.sce.generated` for W3C, `com.sce.integration` for the
-                    // integration tree).
-                    if m_as_child {
-                        if let Some(parent) = m_parent_stem {
-                            let prefix = kotlin_package_prefix.unwrap_or("com.sce.generated");
-                            let child_pkg = sce_build::filters::to_snake_case(stem.to_string());
-                            code = code.replace(
-                                &format!("package {prefix}.{child_pkg}"),
-                                &format!("package {prefix}.{parent}"),
-                            );
-                        }
-                    }
-                    GeneratedOutput {
-                        files: vec![(format!("{stem}Sm.kt"), code)],
+                    }),
+                    codegen: Some(&sce_build::generator::StatechartCodegenOptions {
+                        no_std,
                         ..Default::default()
-                    }
-                }
-                Language::Go => {
-                    let mut code = sce_build::generator::generate_go(m, &template_dir)
-                        .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)));
-                    // Same rewrite as Kotlin, for the Go `package <child>` header.
-                    if m_as_child {
-                        if let Some(parent) = m_parent_stem {
-                            let child_pkg = sce_build::filters::to_snake_case(stem.to_string());
-                            code = code.replace(
-                                &format!("package {child_pkg}"),
-                                &format!("package {parent}"),
-                            );
-                        }
-                    }
-                    GeneratedOutput {
-                        files: vec![(format!("{stem}_sm.go"), code)],
-                        ..Default::default()
-                    }
-                }
-                Language::Python => {
-                    let code = sce_build::generator::generate_python(m, &template_dir)
-                        .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)));
-                    GeneratedOutput {
-                        files: vec![(format!("{stem}_sm.py"), code)],
-                        ..Default::default()
-                    }
-                }
-                Language::C11 => {
-                    sce_build::generator::generate_c11(m, &template_dir, stem, c_symbol_prefix)
-                        .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)))
+                    }),
+                    script_engine: script_engine_target,
+                    cpp_namespace_prefix,
+                    kotlin_package_prefix,
+                    c_symbol_prefix,
+                },
+            )
+            .unwrap_or_else(|e| error_format.emit_forge_and_exit(&e));
+            if m_as_child {
+                if let Some(parent) = m_parent_stem {
+                    rewrite_child_package(&mut output, lang, stem, parent, kotlin_package_prefix);
                 }
             }
+            output
         };
 
         let output = emit_for_model(&model, input_stem, as_child, parent_stem);
+        artifact_deps.extend(output.deps);
 
         let files = maybe_format_files(output.files, &cpp_formatter);
         for (filename, code) in &files {
@@ -4628,6 +4603,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
             // `--as-child` flow that staged the synth child on disk.
             child_model.scxml_source_path = synthetic_path.to_string_lossy().into_owned();
             let child_output = emit_for_model(&child_model, child_stem, true, Some(input_stem));
+            artifact_deps.extend(child_output.deps);
             let child_files = maybe_format_files(child_output.files, &cpp_formatter);
             for (filename, code) in &child_files {
                 let file_path = out_path.join(filename);
@@ -4780,7 +4756,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                 template_dir: &template_dir,
                 lang,
                 scxml_input: Path::new(scxml_path),
-                preprocessor_deps: parser.preprocessor_deps(),
+                preprocessor_deps: &artifact_deps,
                 source_set: &drift_ctx.sources,
                 self_written: &self_written,
             },

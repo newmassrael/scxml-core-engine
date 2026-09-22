@@ -330,6 +330,47 @@ pub fn parse_forge_with_imports_and_plugin(
     }))
 }
 
+/// Parse an INLINE kind: a `<data>` element inside a statechart that
+/// takes the role a `<scxml>` root takes in a standalone forge document.
+///
+/// The owner's decision, 2026-09-22: an inline kind is a standalone kind
+/// declared in place. So it reaches the same per-kind parsers through
+/// [`parse_forge_from_node`] rather than a parallel reader — the one this
+/// replaced was 200 lines that understood four kinds, and understood
+/// three of them differently from the document form.
+///
+/// `imports` comes from the statechart root, because the statechart is
+/// where an author declares them and an inline kind is part of that
+/// document. `compile_forge_from_parsed` narrows the list to the aliases
+/// the kind actually names (`forge::import_use`), so an inline kind does
+/// not drag its host's other imports into its emitted code.
+pub fn parse_inline_forge(
+    element: &roxmltree::Node,
+    label: DocumentLabel<'_>,
+    kind: ForgeKind,
+    imports: Vec<crate::forge::model::ForgeImport>,
+) -> Result<ParsedForge, Located<ForgeError>> {
+    let diag = label.diagnostic_label;
+    crate::parser::reject_unexpanded_directives(element, diag)?;
+    reject_unknown_sce_attrs_below(element, diag)?;
+    crate::scxml_identifier::reject_malformed(
+        element,
+        diag,
+        crate::scxml_identifier::Dialect::Forge,
+    )?;
+
+    let externs = parse_externs(element, diag, &[])?;
+    let document = parse_forge_from_node(element, label, kind)?;
+    let cycles = parse_cycles(element, diag)?;
+
+    Ok(ParsedForge {
+        document,
+        imports,
+        externs,
+        cycles,
+    })
+}
+
 /// Parse `<sce:cycle>` declarations from the document root.
 ///
 /// ⚠ The ORDER is what this element exists to carry, and it is the
@@ -9301,7 +9342,12 @@ const KNOWN_SCE_ATTRS: &[&str] = &[
     // A field's value before anything has written it — read by the store
     // `retain` names, or by `previous(<field>)`; see `parse_retention_attrs`.
     "initial",
-    "input",
+    // ⚠ `input` left this roster on 2026-09-22 with the inline dialect
+    // that was its only reader. `sce:input-type`, the attribute beside
+    // it in the schema and in SCE_FORGE.md's example, was never ON the
+    // roster — so a document following that example was refused as an
+    // unknown `sce:` attribute, which is how long a second grammar can
+    // sit in a spec without anyone writing it.
     "interpolation",
     "kind",
     "leave",
@@ -9370,7 +9416,22 @@ use crate::near_miss::edit_distance;
 pub fn reject_unknown_sce_attrs(content: &str, doc_name: &str) -> Result<(), Located<ForgeError>> {
     let doc = roxmltree::Document::parse(content)
         .map_err(|e| Located::new(XmlError::Parse(e.to_string()).into(), doc_name, None, None))?;
-    for node in doc.descendants().filter(|n| n.is_element()) {
+    reject_unknown_sce_attrs_below(&doc.root_element(), doc_name)
+}
+
+/// The same walk, from a node that is already parsed.
+///
+/// An inline kind is a forge document whose root is a `<data>` element
+/// inside a statechart, so it reaches this check with a node rather than
+/// a file — and the statechart around it carries the other `sce:`
+/// vocabulary (`sce:req`, the datamodel families), which this list does
+/// not describe. Walking from the element is what keeps the forge rule
+/// on forge content.
+pub fn reject_unknown_sce_attrs_below(
+    root: &roxmltree::Node,
+    doc_name: &str,
+) -> Result<(), Located<ForgeError>> {
+    for node in root.descendants().filter(|n| n.is_element()) {
         for attr in node.attributes() {
             if attr.namespace() != Some(SCE_NAMESPACE) {
                 continue;

@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "2e661cef46",
+  "embed_version": "d70a2b4a83",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 291,
+  "symbol_count": 292,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -167,6 +167,12 @@
       "kind": "class",
       "members": [],
       "name": "SCE::EventDataHelper"
+    },
+    {
+      "header": "common/EventPayloadLift.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Common::EventPayloadFields"
     },
     {
       "header": "common/EventTypeHelper.h",

@@ -3769,126 +3769,26 @@
       ]
     },
     "InlineKind": {
-      "description": "An inline kind declaration within a statechart.",
+      "description": "A kind declared in place, inside a statechart's `<data>` element.\n\n⚠ IT IS A STANDALONE KIND, AND THE MODEL SAYS SO. The owner's decision (2026-09-22) is that the `<data>` element takes the role a `<scxml>` root takes in a standalone document, so this carries the same [`ParsedForge`] a file would — the same per-kind parsers, the same validators, the same renderers, and a sibling artifact named `<machine>_<id>`.\n\nWhat it replaced was an `InlineKindData` enum understanding four of the eighteen kinds, filled by a 200-line reader beside the document one and emitted by 750 lines of hand-written code beside the templates. Measured 2026-09-22: those two readers disagreed about three of the four kinds they both claimed to support, and the hand emitters covered one backend of six.",
       "properties": {
-        "data": {
-          "$ref": "#/definitions/InlineKindData"
+        "forge": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ParsedForge"
+            }
+          ],
+          "description": "The kind as a document, parsed by the standalone path."
         },
         "id": {
+          "description": "The `<data id>`, which is what a guard or action names and what the sibling artifact's name is built from.",
           "type": "string"
         }
       },
       "required": [
-        "data",
+        "forge",
         "id"
       ],
       "type": "object"
-    },
-    "InlineKindData": {
-      "description": "Inline kind data — embedded within a statechart `<data>` element. Derived values (unique_values, entries_by_value) are computed by the generator at render time, not stored in the model (state normalization).",
-      "oneOf": [
-        {
-          "properties": {
-            "default_value": {
-              "type": "string"
-            },
-            "entries": {
-              "items": {
-                "$ref": "#/definitions/LookupEntry"
-              },
-              "type": "array"
-            },
-            "input_id": {
-              "type": "string"
-            },
-            "kind": {
-              "enum": [
-                "lookup"
-              ],
-              "type": "string"
-            }
-          },
-          "required": [
-            "default_value",
-            "entries",
-            "input_id",
-            "kind"
-          ],
-          "type": "object"
-        },
-        {
-          "properties": {
-            "expr": {
-              "type": "string"
-            },
-            "kind": {
-              "enum": [
-                "condition"
-              ],
-              "type": "string"
-            }
-          },
-          "required": [
-            "expr",
-            "kind"
-          ],
-          "type": "object"
-        },
-        {
-          "properties": {
-            "default_endian": {
-              "$ref": "#/definitions/Endian"
-            },
-            "fields": {
-              "items": {
-                "$ref": "#/definitions/CodecField"
-              },
-              "type": "array"
-            },
-            "kind": {
-              "enum": [
-                "codec"
-              ],
-              "type": "string"
-            }
-          },
-          "required": [
-            "default_endian",
-            "fields",
-            "kind"
-          ],
-          "type": "object"
-        },
-        {
-          "properties": {
-            "expr": {
-              "type": "string"
-            },
-            "inputs": {
-              "items": {
-                "$ref": "#/definitions/ForgeField"
-              },
-              "type": "array"
-            },
-            "kind": {
-              "enum": [
-                "transform"
-              ],
-              "type": "string"
-            },
-            "output_type": {
-              "$ref": "#/definitions/SceType"
-            }
-          },
-          "required": [
-            "expr",
-            "inputs",
-            "kind",
-            "output_type"
-          ],
-          "type": "object"
-        }
-      ]
     },
     "InterpolationAxis": {
       "description": "Axis definition for interpolation (breakpoints for one dimension).",

@@ -152,11 +152,6 @@
 {% if model.invokes | mesh_rpc | selectattr('srcexpr') | list | length > 0 %}
 #include <regex>  // SCE_MESH.md §9.5 srcexpr shape check.
 {% endif %}
-{% if inline_kind_code %}
-#include <optional>
-#include <vector>
-#include <cstring>
-{% endif %}
 // W3C SCXML B.1: every generated SM exposes setScriptEngine(IScriptEngine&)
 // (no-op when NEEDS_SCRIPT_ENGINE=false) so generic callers — mesh worker
 // hosts, invoke child instantiation, test fixtures — can inject without
@@ -167,9 +162,7 @@
 {% if model.needs_script_engine %}
 #include "common/DataModelInitHelper.h"
 #include "common/EventTypeHelper.h"
-{% if not inline_kind_code %}
 #include <optional>
-{% endif %}
 #include "common/Logger.h"
 {% if model.invokes %}
 // W3C SCXML B.1: invoke child needs the build-configured engine handle
@@ -399,11 +392,6 @@ struct {{ model.name }}Policy {
     }
     {% endfor %}
     {% endif %}
-{% if inline_kind_code %}
-
-    // ── SCE Forge: Inline kind member functions ──────────────
-{{ inline_kind_code }}
-{% endif %}
     {% if model.needs_parent_template %}
 
     // W3C SCXML 6.2: Parent state machine pointer for #_parent support

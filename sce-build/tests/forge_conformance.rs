@@ -218,445 +218,182 @@ fn assert_no_codec_sidecar_until_closure(
     );
 }
 
-/// Strip path-dependent comment lines for comparison.
-/// Handles `// From: ...` (C++/Rust/Go) and `// Source: ...` (Kotlin).
-fn normalize_for_comparison(code: &str) -> String {
+// ── Inline kind conformance ────────────────────────────────────
+//
+// An inline kind IS a standalone kind (owner's decision, 2026-09-22):
+// the `<data sce:kind>` element takes the role a `<scxml>` root takes in
+// a document of its own, and the statechart emits its artifact as a
+// sibling named `<machine>_<id>`. The tests below are that sentence as a
+// predicate — each sibling is compared against what the DOCUMENT path
+// emits for the same body under the same name, on all six backends.
+//
+// What they replaced was three layers over a second renderer: fragment
+// goldens, per-language assertions describing the shape that renderer
+// produced, and a full-file C++ golden. Measured 2026-09-22, the
+// renderer understood four of the eighteen kinds and emitted for one
+// backend of six, so five backends silently got nothing while the
+// goldens stayed green. A golden pins what a renderer did; this pins
+// what the decision says, so the two forms cannot drift apart without
+// the drift itself being the failure.
+
+/// The sce: extension namespace, as the fixtures and the parser spell it.
+const SCE_EXT_NAMESPACE: &str = "http://sce.dev/ext";
+
+/// Every kind a statechart fixture declares in place, as the standalone
+/// document it is.
+///
+/// The body is SLICED from the same bytes the statechart parser read and
+/// rewrapped in the `<scxml sce:kind>` root a document of that kind
+/// carries, so the tree holds one copy of it. A hand-kept second copy
+/// would let this comparison pass while the two forms said different
+/// things, which is the drift the inline/standalone split cost before.
+fn inline_kinds_as_documents(fixture_text: &str) -> Vec<(String, String)> {
+    let doc = roxmltree::Document::parse(fixture_text).expect("fixture parses as XML");
+    let mut out = Vec::new();
+    for data in doc
+        .descendants()
+        .filter(|n| n.is_element() && n.tag_name().name() == "data")
+    {
+        let Some(kind) = data.attribute((SCE_EXT_NAMESPACE, "kind")) else {
+            continue;
+        };
+        let id = data
+            .attribute("id")
+            .expect("a kind declared in place carries an id");
+        let body = data
+            .children()
+            .filter(|n| n.is_element())
+            .map(|n| &fixture_text[n.range()])
+            .collect::<Vec<_>>()
+            .join("\n");
+        out.push((
+            id.to_string(),
+            format!(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+                 <scxml xmlns=\"http://www.w3.org/2005/07/scxml\"\n\
+                 \x20      xmlns:sce=\"{SCE_EXT_NAMESPACE}\"\n\
+                 \x20      sce:kind=\"{kind}\" version=\"1.0\">\n\
+                 {body}\n\
+                 </scxml>\n"
+            ),
+        ));
+    }
+    out
+}
+
+/// Drop the lines that say WHERE the code came from and WHEN.
+///
+/// Two documents carrying the same body do not carry the same bytes:
+/// the source hash is over the text, and the SCE-MAP markers carry the
+/// file name and the line the element sits on. Those lines are the
+/// difference this comparison is not about — what the markers say is
+/// pinned by the standalone suite's own goldens, per document.
+fn strip_provenance(code: &str) -> String {
     code.lines()
-        .filter(|line| !line.starts_with("// From:") && !line.starts_with("// Source:"))
+        .filter(|line| {
+            let line = line.trim();
+            !(line.contains("SCE-MAP:")
+                || line.contains("source-hash:")
+                || line.contains("generated-at:")
+                || line.contains("From:")
+                || line.contains("Source:"))
+        })
         .collect::<Vec<_>>()
         .join("\n")
 }
 
-/// Generate C++ from a statechart with inline kinds and verify against full-file golden.
-///
-/// Inline-kind C++ codegen emits a `.h` + `.inl` pair (header + inline
-/// definitions split for the include-once linking pattern used by the
-/// state_machine.h.jinja2 template). Both members of the pair are
-/// byte-compared against committed goldens — earlier behaviour only
-/// verified `output.files[0]` (the `.h`), which left the `.inl`
-/// silently stale and let a missing committed `.inl` persist even
-/// though the `.h` `#include "<stem>_sm.inl"` line referenced it
-/// (broken include observable only at C++ compile time, never from
-/// inside this test suite).
-fn assert_inline_kinds_cpp(scxml_name: &str) {
+/// Every kind a statechart declares in place reaches `language` as the
+/// artifact its document form would have produced.
+fn assert_inline_kinds_are_standalone(scxml_name: &str, language: sce_build::generator::Language) {
     let scxml_path = resource_dir().join(format!("{scxml_name}.scxml"));
-    let tdir = sce_build::find_template_dir_for(sce_build::generator::Language::Cpp);
-
-    let output = sce_build::compile_scxml_lang(
-        scxml_path.to_str().unwrap(),
-        &tdir,
-        sce_build::generator::Language::Cpp,
-    )
-    .unwrap_or_else(|e| panic!("Statechart codegen (Cpp) failed for {scxml_name}: {e}"));
-
-    let header = &output.files[0].1;
+    let fixture_text = std::fs::read_to_string(&scxml_path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", scxml_path.display()));
+    let declared = inline_kinds_as_documents(&fixture_text);
     assert!(
-        header.contains("SCE Forge: Inline"),
-        "Inline kind code missing in {scxml_name} (Cpp) output"
+        !declared.is_empty(),
+        "{scxml_name} declares no kind in place, so it measures nothing here"
     );
 
-    let absolute = scxml_path.to_string_lossy().into_owned();
-    let relative = format!("tests/forge/resources/{scxml_name}.scxml");
-    let update_golden = std::env::var("UPDATE_GOLDEN").is_ok();
+    let tdir = sce_build::find_template_dir_for(language);
+    let emitted =
+        sce_build::compile_scxml_lang_typed(scxml_path.to_str().unwrap(), &tdir, language)
+            .unwrap_or_else(|e| {
+                panic!("statechart codegen ({language:?}) failed for {scxml_name}: {e}")
+            });
+    let emitted_names: Vec<&str> = emitted.files.iter().map(|(n, _)| n.as_str()).collect();
 
-    for (filename, content) in &output.files {
-        let normalized = content.replace(&absolute, &relative);
-        let expected_path = expected_dir().join(filename);
-        if update_golden {
-            std::fs::write(&expected_path, &normalized)
-                .unwrap_or_else(|e| panic!("Cannot write {}: {e}", expected_path.display()));
-            continue;
-        }
-        let expected = std::fs::read_to_string(&expected_path).unwrap_or_else(|e| {
-            panic!(
-                "Expected golden missing: {} — run forge_conformance with UPDATE_GOLDEN=1 to create. {e}",
-                expected_path.display()
-            )
+    let mut sibling_count = 0usize;
+    for (id, document) in &declared {
+        // The name the parser composed, spelled here the one way the
+        // contract states it: `<machine>_<id>`, where `<machine>` is the
+        // statechart's own artifact label.
+        let identifier = format!("{scxml_name}_{id}");
+        let want = sce_build::compile_forge_from_string(
+            document,
+            sce_build::DocumentLabel::asymmetric(&identifier, &format!("{identifier}.scxml")),
+            language,
+        )
+        .unwrap_or_else(|e| {
+            panic!("the document form of '{id}' does not compile ({language:?}): {e}")
         });
-        assert_eq!(
-            normalize_for_comparison(&normalized).trim(),
-            normalize_for_comparison(&expected).trim(),
-            "Output mismatch for {scxml_name} {} (Cpp)\n--- expected: {}\n+++ generated",
-            filename,
-            expected_path.display()
-        );
-    }
-}
 
-// ── Inline kind multi-language test infrastructure ──────────────
-//
-// Three-layer verification:
-//   1. Fragment golden — render_inline_kinds() output compared against
-//      small, stable golden files (~15 lines). Decoupled from template
-//      changes; only breaks when the inline kind renderer itself changes.
-//   2. Structural assertions — language-specific pattern checks that
-//      verify idiomatic output (e.g. Rust `self.` prefix, Go receiver).
-//   3. Compile gate — syn::parse_file() on the full generated Rust
-//      statechart proves the rendered code is syntactically valid when
-//      embedded in a real file context.
-
-/// Render inline kinds directly and compare against fragment goldens,
-/// then verify structural correctness and template integration.
-fn assert_inline_kinds_lang(scxml_name: &str, lang: sce_build::generator::Language) {
-    use sce_build::forge::generator::{render_inline_kinds, InlineKindCode};
-
-    let scxml_path = resource_dir().join(format!("{scxml_name}.scxml"));
-
-    // ── Parse model ────────────────────────────────────────────
-    let mut parser = sce_build::parser::SCXMLParser::new();
-    let model = parser
-        .parse_file(scxml_path.to_str().unwrap())
-        .unwrap_or_else(|e| panic!("Parse failed for {scxml_name}: {e}"));
-
-    let machine_name = sce_build::filters::to_pascal_case(model.name.clone());
-
-    assert!(
-        !model.inline_kinds.is_empty(),
-        "{scxml_name} must have inline kinds for this test"
-    );
-
-    // ── Layer 1: Fragment golden ───────────────────────────────
-    let InlineKindCode {
-        type_defs,
-        member_fns,
-    } = render_inline_kinds(&model.inline_kinds, lang, &machine_name)
-        .unwrap_or_else(|e| panic!("render_inline_kinds({lang:?}) failed: {e}"));
-
-    let lang_tag = match lang {
-        sce_build::generator::Language::Kotlin => "kt",
-        sce_build::generator::Language::Rust => "rs",
-        sce_build::generator::Language::Go => "go",
-        sce_build::generator::Language::C11 => "c",
-        _ => panic!("unsupported language for inline kind lang test"),
-    };
-
-    // Member functions golden (always present)
-    let fns_golden_path = expected_dir().join(format!("{scxml_name}_inline_fns.{lang_tag}.golden"));
-    if std::env::var("UPDATE_GOLDEN").is_ok() {
-        std::fs::write(&fns_golden_path, member_fns.trim().to_string() + "\n")
-            .unwrap_or_else(|e| panic!("Cannot write {}: {e}", fns_golden_path.display()));
-    } else if fns_golden_path.exists() {
-        let expected = std::fs::read_to_string(&fns_golden_path).unwrap();
-        assert_eq!(
-            member_fns.trim(),
-            expected.trim(),
-            "Fragment mismatch: member_fns ({lang:?})\n--- expected: {}\n+++ generated",
-            fns_golden_path.display()
-        );
-    } else {
-        panic!(
-            "Fragment golden not found: {}  (run with UPDATE_GOLDEN=1)",
-            fns_golden_path.display()
-        );
-    }
-
-    // Type definitions golden (Rust/Go only)
-    if !type_defs.is_empty() {
-        let types_golden_path =
-            expected_dir().join(format!("{scxml_name}_inline_types.{lang_tag}.golden"));
-        if std::env::var("UPDATE_GOLDEN").is_ok() {
-            std::fs::write(&types_golden_path, type_defs.trim().to_string() + "\n")
-                .unwrap_or_else(|e| panic!("Cannot write {}: {e}", types_golden_path.display()));
-        } else if types_golden_path.exists() {
-            let expected = std::fs::read_to_string(&types_golden_path).unwrap();
+        for (name, want_code) in &want.files {
+            let (_, got_code) = emitted
+                .files
+                .iter()
+                .find(|(n, _)| n == name)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{scxml_name} ({language:?}) emitted no sibling '{name}' for the kind \
+                         declared as '{id}'. It emitted: {emitted_names:?}"
+                    )
+                });
+            let want_body = strip_provenance(want_code);
+            // What is left after the provenance lines go must still be
+            // the code. A normalizer that ate the body would make any
+            // two artifacts equal, and this comparison would then pass
+            // for a backend that emitted a header and nothing else.
+            assert!(
+                want_body.lines().filter(|l| !l.trim().is_empty()).count() > 4,
+                "nothing is left of '{name}' ({language:?}) once provenance is stripped, so the \
+                 comparison below would hold for any two files"
+            );
             assert_eq!(
-                type_defs.trim(),
-                expected.trim(),
-                "Fragment mismatch: type_defs ({lang:?})\n--- expected: {}\n+++ generated",
-                types_golden_path.display()
+                strip_provenance(got_code),
+                want_body,
+                "the sibling '{name}' {scxml_name} emits for '{id}' ({language:?}) is not what \
+                 the same kind emits as a document"
             );
-        } else {
-            panic!(
-                "Fragment golden not found: {}  (run with UPDATE_GOLDEN=1)",
-                types_golden_path.display()
-            );
+            sibling_count += 1;
         }
     }
 
-    // ── Layer 2: Structural assertions ─────────────────────────
-    assert_inline_structural(&member_fns, &type_defs, lang, scxml_name);
-
-    // ── Layer 3: Template integration + compile gate ───────────
-    let tdir = sce_build::find_template_dir_for(lang);
-    let output = sce_build::compile_scxml_lang(scxml_path.to_str().unwrap(), &tdir, lang)
-        .unwrap_or_else(|e| panic!("Statechart codegen ({lang:?}) failed for {scxml_name}: {e}"));
-
-    let full_code = &output.files[0].1;
-
-    // Verify fragments are actually embedded in the generated statechart
+    // One file per declared kind is the floor, not the expectation: a
+    // kind may emit a pair. Zero is what a silent-skip looks like, and
+    // it is what every backend but C++ used to produce.
     assert!(
-        full_code.contains("SCE Forge: Inline"),
-        "Inline kind marker missing in full statechart ({lang:?})"
+        sibling_count >= declared.len(),
+        "{scxml_name} ({language:?}) declares {} kind(s) in place and only {sibling_count} \
+         sibling artifact(s) were compared",
+        declared.len()
     );
 
-    // Compile gate: Rust only (syn is available; Go/Kotlin would need external toolchains)
-    if matches!(lang, sce_build::generator::Language::Rust) {
-        syn::parse_file(full_code).unwrap_or_else(|e| {
-            panic!("Generated Rust statechart with inline kinds fails syn parse: {e}")
-        });
-    }
-}
+    assert!(
+        emitted.files.len() > sibling_count,
+        "{scxml_name} ({language:?}) emitted {} file(s), all of them siblings — the machine's \
+         own artifact is missing",
+        emitted.files.len()
+    );
 
-/// Language-specific structural assertions on inline kind output.
-/// Verifies idiomatic patterns that byte-comparison alone cannot catch
-/// (e.g. a missing `self.` prefix would still match a stale golden).
-fn assert_inline_structural(
-    member_fns: &str,
-    type_defs: &str,
-    lang: sce_build::generator::Language,
-    scxml_name: &str,
-) {
-    match scxml_name {
-        "inline_mixed" => assert_inline_mixed_structural(member_fns, type_defs, lang),
-        "inline_codec" => assert_inline_codec_structural(member_fns, type_defs, lang),
-        _ => {} // Other fixtures rely on byte-golden comparison alone.
-    }
-}
-
-fn assert_inline_mixed_structural(
-    member_fns: &str,
-    type_defs: &str,
-    lang: sce_build::generator::Language,
-) {
-    use sce_build::generator::Language;
-    match lang {
-        Language::Kotlin => {
-            // Nested enum
-            assert!(
-                member_fns.contains("enum class RpmStatus"),
-                "Kotlin: missing nested enum class"
-            );
-            // when expression
-            assert!(
-                member_fns.contains("= when ("),
-                "Kotlin: missing when expression in lookup"
-            );
-            // Kotlin-idiomatic function signatures
-            assert!(
-                member_fns.contains("fun isReady(): Boolean ="),
-                "Kotlin: missing condition function"
-            );
-            assert!(
-                member_fns.contains("fun computeToFahrenheit(): Double ="),
-                "Kotlin: missing transform function"
-            );
+    // Rust is the backend this suite can hold to a grammar without an
+    // external toolchain, so it is where "the pair compiles together" is
+    // asked: a sibling that parses alone but leaves the machine
+    // unparseable is the failure a per-file check cannot see.
+    if matches!(language, sce_build::generator::Language::Rust) {
+        for (name, code) in &emitted.files {
+            syn::parse_file(code)
+                .unwrap_or_else(|e| panic!("generated Rust '{name}' fails syn parse: {e}"));
         }
-        Language::Rust => {
-            // Module-level enum in type_defs
-            assert!(
-                type_defs.contains("pub enum RpmStatus"),
-                "Rust: missing enum in type_defs"
-            );
-            assert!(
-                type_defs.contains("#[derive(Debug, Clone, Copy, PartialEq)]"),
-                "Rust: missing derives on enum"
-            );
-            // self. prefix for member access
-            assert!(
-                member_fns.contains("self."),
-                "Rust: missing self. prefix for member access"
-            );
-            // Idiomatic signatures
-            assert!(
-                member_fns.contains("pub fn is_ready(&self) -> bool"),
-                "Rust: missing condition function signature"
-            );
-            assert!(
-                member_fns.contains("pub fn compute_to_fahrenheit(&self) -> f64"),
-                "Rust: missing transform function signature"
-            );
-            // match expression in lookup
-            assert!(
-                member_fns.contains("match raw"),
-                "Rust: missing match in lookup"
-            );
-        }
-        Language::Go => {
-            // Package-level type in type_defs
-            assert!(
-                type_defs.contains("type RpmStatus int"),
-                "Go: missing type in type_defs"
-            );
-            assert!(
-                type_defs.contains("RpmStatus = iota"),
-                "Go: missing iota const block"
-            );
-            // p. receiver prefix for member access
-            assert!(
-                member_fns.contains("p."),
-                "Go: missing p. receiver prefix for member access"
-            );
-            // Exported method with receiver
-            assert!(
-                member_fns.contains("func (p *"),
-                "Go: missing receiver method"
-            );
-            // Package-level lookup (no receiver)
-            assert!(
-                member_fns.contains("func LookupRpmStatus("),
-                "Go: missing package-level lookup function"
-            );
-        }
-        Language::C11 => {
-            // Verifies idiomatic C11 emit shape that
-            // byte-comparison alone cannot catch (e.g. a missing `_st->`
-            // prefix or wrong typedef shape would still match a stale
-            // golden written from a buggy renderer).
-
-            // Top-level enum typedef (no nesting in C)
-            assert!(
-                member_fns.contains("typedef enum"),
-                "C11: missing typedef enum for lookup"
-            );
-            assert!(
-                member_fns.contains("} inline_mixed_rpm_status_t;"),
-                "C11: missing snake_case typedef name"
-            );
-            // Prefixed enum constants (no namespacing in C)
-            assert!(
-                member_fns.contains("INLINE_MIXED_RPM_STATUS_OFF"),
-                "C11: missing prefixed enum constant"
-            );
-            assert!(
-                member_fns.contains("INLINE_MIXED_RPM_STATUS_RUNNING"),
-                "C11: missing prefixed enum constant"
-            );
-            // _st-> member access (procedure D14a mirror)
-            assert!(
-                member_fns.contains("_st->"),
-                "C11: missing _st-> prefix for policy member access"
-            );
-            // Free-standing static inline functions
-            assert!(
-                member_fns.contains("static inline bool inline_mixed_is_ready("),
-                "C11: missing condition function signature"
-            );
-            assert!(
-                member_fns.contains("static inline double inline_mixed_compute_to_fahrenheit("),
-                "C11: missing transform function signature"
-            );
-            assert!(
-                member_fns.contains(
-                    "static inline inline_mixed_rpm_status_t inline_mixed_lookup_rpm_status("
-                ),
-                "C11: missing lookup function signature"
-            );
-            // const policy pointer parameter
-            assert!(
-                member_fns.contains("(const inline_mixed_policy_t *_st)"),
-                "C11: missing const policy pointer parameter"
-            );
-        }
-        _ => {}
-    }
-}
-
-/// Structural assertions for `inline_codec.scxml`. The codec
-/// inline kind emits a payload struct + (de)serialization pair — these
-/// idiomatic patterns differ enough across languages that byte-compare
-/// alone would miss e.g. a forgotten `companion object` in Kotlin or a
-/// missing `_encoded_t` envelope in C11.
-fn assert_inline_codec_structural(
-    member_fns: &str,
-    type_defs: &str,
-    lang: sce_build::generator::Language,
-) {
-    use sce_build::generator::Language;
-    match lang {
-        Language::Kotlin => {
-            assert!(
-                member_fns.contains("data class Frame("),
-                "Kotlin: missing data class for inline codec"
-            );
-            assert!(
-                member_fns.contains("companion object"),
-                "Kotlin: missing companion object hosting decode"
-            );
-            assert!(
-                member_fns.contains("fun decode(cursor: com.sce.forge.runtime.SceCursor): Frame?"),
-                "Kotlin: missing cursor-based decode signature"
-            );
-            assert!(
-                member_fns.contains("fun encode(): ByteArray = byteArrayOf("),
-                "Kotlin: missing encode signature"
-            );
-        }
-        Language::Rust => {
-            assert!(
-                type_defs.contains("pub struct Frame"),
-                "Rust: missing pub struct in type_defs"
-            );
-            assert!(
-                type_defs.contains("#[derive(Debug, Clone)]"),
-                "Rust: missing derives on codec struct"
-            );
-            assert!(
-                type_defs.contains(
-                    "pub fn decode(cursor: &mut ::sce_forge_runtime::codec::SceCursor<'_>) -> \
-                 Result<Self, ::sce_forge_runtime::codec::CodecError>"
-                ),
-                "Rust: missing cursor-based decode signature"
-            );
-            assert!(
-                type_defs.contains(
-                    "pub fn encode<S: ::sce_forge_runtime::codec::SceSink>(&self, w: &mut S) -> \
-                 Result<(), ::sce_forge_runtime::codec::CodecError>"
-                ),
-                "Rust: missing sink-based encode signature"
-            );
-            assert!(
-                type_defs.contains("pub fn encode_to_vec(&self) -> Vec<u8>"),
-                "Rust: missing encode_to_vec facade"
-            );
-        }
-        Language::Go => {
-            assert!(
-                type_defs.contains("type Frame struct"),
-                "Go: missing struct in type_defs"
-            );
-            assert!(
-                type_defs.contains("func DecodeFrame(cursor *codec.SceCursor) (*Frame, error)"),
-                "Go: missing cursor-based exported Decode function"
-            );
-            assert!(
-                type_defs.contains("func (s *Frame) Encode() []byte"),
-                "Go: missing receiver Encode method"
-            );
-        }
-        Language::C11 => {
-            assert!(
-                member_fns.contains("#define INLINE_CODEC_FRAME_MIN_BYTES 4"),
-                "C11: missing min-bytes macro"
-            );
-            assert!(
-                member_fns.contains("} inline_codec_frame_t;"),
-                "C11: missing payload typedef"
-            );
-            assert!(
-                member_fns.contains(
-                    "static inline sce_forge_codec_status_t inline_codec_frame_decode(\
-                 sce_forge_cursor_t *cursor, inline_codec_frame_t *out)"
-                ),
-                "C11: missing cursor-based decode signature"
-            );
-            // RFC §synth-5-B writer-based encode: signature takes a
-            // caller-owned `sce_forge_writer_t *w` and returns
-            // `sce_forge_codec_status_t`; the legacy `_encoded_t`
-            // envelope typedef no longer exists.
-            assert!(
-                member_fns.contains(
-                    "static inline sce_forge_codec_status_t inline_codec_frame_encode(\
-                 const inline_codec_frame_t *self, sce_forge_writer_t *w)"
-                ),
-                "C11: missing writer-based encode signature"
-            );
-            // self->{snake} member access on encode side
-            assert!(
-                member_fns.contains("self->msg_id"),
-                "C11: missing self-> prefix on encode field access"
-            );
-        }
-        _ => {}
     }
 }
 
@@ -8769,64 +8506,71 @@ fn forge_crossfile_validator_interpolation_python() {
 }
 
 // ── Inline kind conformance ──────────────────────────────────
+//
+// Two fixtures, six backends each. `inline_mixed` declares a lookup, a
+// condition and a transform in one machine; `inline_codec` declares the
+// one kind that emits a payload type and its (de)serialization pair, so
+// the two cover both emit shapes. The predicate they share is in
+// `assert_inline_kinds_are_standalone`.
 
 #[test]
-fn forge_inline_mixed() {
-    assert_inline_kinds_cpp("inline_mixed");
+fn forge_inline_mixed_cpp() {
+    assert_inline_kinds_are_standalone("inline_mixed", sce_build::generator::Language::Cpp);
 }
 
 #[test]
 fn forge_inline_mixed_kotlin() {
-    assert_inline_kinds_lang("inline_mixed", sce_build::generator::Language::Kotlin);
+    assert_inline_kinds_are_standalone("inline_mixed", sce_build::generator::Language::Kotlin);
 }
 
 #[test]
 fn forge_inline_mixed_rust() {
-    assert_inline_kinds_lang("inline_mixed", sce_build::generator::Language::Rust);
+    assert_inline_kinds_are_standalone("inline_mixed", sce_build::generator::Language::Rust);
 }
 
 #[test]
 fn forge_inline_mixed_go() {
-    assert_inline_kinds_lang("inline_mixed", sce_build::generator::Language::Go);
+    assert_inline_kinds_are_standalone("inline_mixed", sce_build::generator::Language::Go);
+}
+
+#[test]
+fn forge_inline_mixed_python() {
+    assert_inline_kinds_are_standalone("inline_mixed", sce_build::generator::Language::Python);
 }
 
 #[test]
 fn forge_inline_mixed_c11() {
-    assert_inline_kinds_lang("inline_mixed", sce_build::generator::Language::C11);
+    assert_inline_kinds_are_standalone("inline_mixed", sce_build::generator::Language::C11);
 }
 
-// ── Inline codec conformance ───────────────────────────────────
-//
-// Separate fixture from inline_mixed because the codec DSL is the
-// only inline kind that emits both a payload struct and its
-// (de)serialization pair — co-locating it with lookup/transform/
-// condition would force the existing 4-language inline_mixed
-// goldens to absorb codec output, conflating two structurally
-// distinct emit shapes in one byte-compare.
-
 #[test]
-fn forge_inline_codec() {
-    assert_inline_kinds_cpp("inline_codec");
+fn forge_inline_codec_cpp() {
+    assert_inline_kinds_are_standalone("inline_codec", sce_build::generator::Language::Cpp);
 }
 
 #[test]
 fn forge_inline_codec_kotlin() {
-    assert_inline_kinds_lang("inline_codec", sce_build::generator::Language::Kotlin);
+    assert_inline_kinds_are_standalone("inline_codec", sce_build::generator::Language::Kotlin);
 }
 
 #[test]
 fn forge_inline_codec_rust() {
-    assert_inline_kinds_lang("inline_codec", sce_build::generator::Language::Rust);
+    assert_inline_kinds_are_standalone("inline_codec", sce_build::generator::Language::Rust);
 }
 
 #[test]
 fn forge_inline_codec_go() {
-    assert_inline_kinds_lang("inline_codec", sce_build::generator::Language::Go);
+    assert_inline_kinds_are_standalone("inline_codec", sce_build::generator::Language::Go);
+}
+
+#[test]
+fn forge_inline_codec_python() {
+    assert_inline_kinds_are_standalone("inline_codec", sce_build::generator::Language::Python);
 }
 
 #[test]
 fn forge_inline_codec_c11() {
-    assert_inline_kinds_lang("inline_codec", sce_build::generator::Language::C11);
+    assert_inline_kinds_are_standalone("inline_codec", sce_build::generator::Language::C11);
 }
 
 // ── Named Context typedef emission ─────────────────────────────

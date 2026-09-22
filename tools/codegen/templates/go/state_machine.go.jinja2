@@ -136,11 +136,6 @@ func (e {{ machine_name }}Event) String() string {
 	return "unknown"
 }
 
-{% if inline_kind_types %}
-// ── SCE Forge: Inline kind type definitions ──────────────
-{{ inline_kind_types }}
-
-{% endif %}
 {% if event_payload_active %}
 // ── NL→IR Item C1 Path A: typed `_event.data` payload channel ─────────
 {{ event_payload_defs }}
@@ -317,11 +312,6 @@ func (p *{{ machine_name }}Policy) {{ var.id | to_pascal_case }}() ({{ GO_READ_T
 {% include 'scriptengine_helpers.go.jinja2' %}
 {% include 'invoke_methods.go.jinja2' %}
 
-{% if inline_kind_fns %}
-// ── SCE Forge: Inline kind member functions ──────────────
-{{ inline_kind_fns }}
-
-{% endif %}
 // ======================================================================
 // StatePolicy interface implementation
 // ======================================================================
