@@ -198,4 +198,5 @@ cargo test -p sce-build --features cli,ffi \
     --test the_pin_is_read_from_one_place \
     --test every_annotated_document_is_accounted_for \
     --test script_engine_census \
+    --test hybrid_stubs_are_tracked_as_generated \
     || sce_gate_fail "tree-wide hygiene gates"

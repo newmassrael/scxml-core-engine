@@ -1313,6 +1313,39 @@ pub struct HybridInvokeInfo {
     pub candidates: Vec<InvokeCandidate>,
 }
 
+impl HybridInvokeInfo {
+    /// §scxml-6.4: the document an AOT backend instantiates in place of the
+    /// one the expression names at runtime — an immediate `<final>` named
+    /// `child_name` — or `None` when there is nothing to stand in for.
+    ///
+    /// The AOT backends evaluate `srcexpr` / `contentexpr` only to classify
+    /// errors, then start a pre-generated child; that child's compiled shape
+    /// is the stub's only runtime-observable contribution, so an immediate
+    /// `<final>` yields the W3C-correct `done.invoke` whatever the expression
+    /// would have named. Its `name` is the synthesized `child_name`, so the
+    /// parser emits matching symbols without a rename.
+    ///
+    /// `None` for an invoke that declared `sce:candidates` — its real
+    /// children are the documents it may start, and a stub would be a
+    /// machine nothing can reach — and for one with no `child_name`.
+    ///
+    /// One owner for the text: code generation writes it, and the tracked
+    /// W3C copies are held to it, so the two cannot drift apart.
+    pub fn stub_document(&self) -> Option<String> {
+        let child_name = &self.common.child_name;
+        if !self.candidates.is_empty() || child_name.is_empty() {
+            return None;
+        }
+        Some(format!(
+            "<?xml version=\"1.0\"?>\n\
+             <scxml xmlns=\"http://www.w3.org/2005/07/scxml\" \
+             name=\"{child_name}\" initial=\"final\" version=\"1.0\">\n\
+             \x20 <final id=\"final\"/>\n\
+             </scxml>\n"
+        ))
+    }
+}
+
 /// One document a hybrid `<invoke>` may start, as `sce:candidates` named it.
 ///
 /// `stem` is the identity: it is what the runtime compares the evaluated

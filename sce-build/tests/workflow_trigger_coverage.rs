@@ -178,6 +178,10 @@ const UNFILTERABLE_GATES: &[&str] = &[
     "forge_document_name_is_the_stem",
     "gate_registry_contract",
     "hook_ci_parity",
+    // Parses every tracked W3C resource for its hybrid invokes and holds the
+    // tracked stub children to what code generation writes — a document or a
+    // stub added anywhere under `resources/` changes what it reads.
+    "hybrid_stubs_are_tracked_as_generated",
     // Asks `git ls-files` which backends own a `tools/codegen/templates/mesh/
     // <dir>/` tree, and that answer IS the gate: a directory appearing there
     // is what lifts the mesh-rpc refusal, so SCE_MESH.md §9.5's roster has to

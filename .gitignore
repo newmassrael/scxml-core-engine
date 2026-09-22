@@ -261,18 +261,3 @@ MODULE.bazel.lock
 # from this file and confirmed with `git ls-remote`. It is a per-run scratch
 # artifact, not a tracked one (`*.log` above already covers its sibling).
 /push.rc
-
-# W3C SCXML 6.4: the immediate-`<final>` stub codegen writes for a hybrid
-# `<invoke>`. The C11 backend writes it beside the SCXML source rather than
-# into `-o`, because the W3C harness discovers children by globbing
-# RESOURCE_DIR at CMake configure time and a stub only in the output dir is
-# invisible to that glob on a first build. The W3C stubs are therefore
-# tracked, under `resources/<N>/`.
-#
-# The integration harness does not glob: `sce_generate_static_integration_test`
-# and its C11 sibling take `HYBRID_INVOKE_CHILDREN <stem>` and generate the
-# child from the output dir, so a fresh clone needs no committed copy here.
-# What lands under `integration_resources/` is then a build artefact that
-# nothing reads, and committing one is how a file nobody reads starts looking
-# load-bearing.
-integration_resources/*/*_hybrid[0-9]*.scxml

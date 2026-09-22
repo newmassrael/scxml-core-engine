@@ -4673,21 +4673,21 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         // and a candidate is declared relative to the document the author
         // wrote, not to wherever the build moved it.
         copy_static_invoke_children(&model, Path::new(scxml_path), &drift_input_root, out_path);
-        // §scxml-6.4 (test216/530): hybrid stub destination is backend-aware.
-        // cpp's CMake harness drives child codegen from OUTPUT_DIR (its
-        // `process_children_<N>.cmake` reads `<OUTPUT_DIR>/<child>.scxml`), so
-        // hybrid stubs land alongside the parent's generated files. c11 discovers
-        // children via RESOURCE_DIR GLOBs at CMake configure time — a stub
-        // emitted only into OUTPUT_DIR is invisible to that GLOB on the first
-        // build. Mirroring `process_static_invokes` for inline `<content>`,
-        // the c11 stub is written to the SCXML source directory so the same
-        // configure-time discovery flow picks it up.
-        let hybrid_dest = if lang == Language::C11 {
-            Path::new(scxml_path).parent().unwrap_or(Path::new("."))
-        } else {
-            out_path
-        };
-        self_written.extend(generate_hybrid_child_scxmls(&model, hybrid_dest));
+        // §scxml-6.4 (test216/530): the hybrid stub is output, so it goes where
+        // output goes — for every backend.
+        //
+        // ⚠ C11 used to write it beside the SCXML source instead, because the
+        // W3C C11 harness discovers children by globbing RESOURCE_DIR at
+        // configure time. That glob finds the TRACKED stubs under
+        // `resources/<N>/`, which `hybrid_stubs_are_tracked_as_generated`
+        // holds to `HybridInvokeInfo::stub_document`; a write into the source
+        // tree was never what made them visible. What the write did do was put
+        // an ignored `.scxml` into whatever directory a C11 generate was
+        // pointed at — and the §synth-6.2.6 source set reads every `.scxml`
+        // under the input root, so the next committed-tree regeneration there
+        // embedded a `source-hash` no clean checkout could reproduce
+        // (measured 2026-09-22 on `invoke_expression_failure_is_reported`).
+        self_written.extend(generate_hybrid_child_scxmls(&model, out_path));
     } // end of `if !transport_only` — mesh transport emit follows.
 
     // SCE Mesh: generate transport routing code when --deploy is provided.
@@ -4895,19 +4895,10 @@ fn copy_static_invoke_children(
     }
 }
 
-/// §scxml-6.4: Generate SCXML files for hybrid invoke children (srcexpr/contentexpr).
-///
-/// Hybrid invokes resolve their target expression (`srcexpr` / `contentexpr`)
-/// at runtime — the AOT backends that consume this stub (`emits_hybrid_child_stub
-/// == true`: Rust/Go/C++) evaluate the expression purely for error classification
-/// and then instantiate a pre-generated `_hybrid{idx}` policy. That policy's
-/// compiled shape is the only runtime-observable contribution of this file, so
-/// a trivial immediate-final stub produces the W3C-correct `done.invoke`
-/// sequence regardless of what the original SCXML expression would have named.
-///
-/// The stub's `<scxml name=...>` is aligned with the synthesized child_name so
-/// the parser emits matching PascalCase symbols without needing a post-parse
-/// rename.
+/// §scxml-6.4: Write the stub child for every hybrid invoke
+/// (srcexpr/contentexpr) into `output_dir` — see
+/// [`sce_build::model::HybridInvokeInfo::stub_document`] for what the stub is
+/// and when there is none.
 ///
 /// The stub is rewritten unconditionally (via `write_if_changed`) — the file
 /// is codegen-owned, so keeping a stale copy on disk hides generator-logic
@@ -4917,26 +4908,10 @@ fn copy_static_invoke_children(
 fn generate_hybrid_child_scxmls(model: &SCXMLModel, output_dir: &Path) -> Vec<PathBuf> {
     let mut written = Vec::new();
     for invoke in model.iter_hybrid_invokes() {
-        // An invoke that declared `sce:candidates` has real children — the
-        // documents it may start — so the stub would be a seventh machine
-        // nobody can reach. The stub exists only for the case where the
-        // build has no way to know what the expression will name.
-        if !invoke.candidates.is_empty() {
+        let Some(stub) = invoke.stub_document() else {
             continue;
-        }
-        if invoke.child_name.is_empty() {
-            continue;
-        }
-        let child_name = &invoke.child_name;
-        let dest = output_dir.join(format!("{child_name}.scxml"));
-
-        let stub = format!(
-            "<?xml version=\"1.0\"?>\n\
-             <scxml xmlns=\"http://www.w3.org/2005/07/scxml\" \
-             name=\"{child_name}\" initial=\"final\" version=\"1.0\">\n\
-             \x20 <final id=\"final\"/>\n\
-             </scxml>\n"
-        );
+        };
+        let dest = output_dir.join(format!("{}.scxml", invoke.child_name));
         write_if_changed(&dest, &stub);
         written.push(dest);
     }

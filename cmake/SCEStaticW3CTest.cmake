@@ -266,8 +266,9 @@ function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
     #
     # All three are discoverable at configure time from RESOURCE_DIR, which
     # is what makes declaring them possible: the synth-invoke and hybrid
-    # documents are committed there (`write_if_changed` in sce-build keeps
-    # them stable), exactly as the C11 path below has always relied on.
+    # documents are committed there, exactly as the C11 path below relies
+    # on (the hybrid stubs held to the generator by
+    # `hybrid_stubs_are_tracked_as_generated`).
     #
     # W3C SCXML 6.2/6.4: the parent header depends on child headers.
 
@@ -506,18 +507,18 @@ function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
     endforeach()
 
     # W3C SCXML 6.4 (test216/530): hybrid `<invoke srcexpr=...>` /
-    # `<invoke><content expr=...>` children. sce-build writes an
-    # immediate-final stub to RESOURCE_DIR for every hybrid invoke
-    # (see `generate_hybrid_child_scxmls`'s c11 backend dest in
-    # `sce-codegen`). The stubs follow `test${N}_hybrid*.scxml` —
-    # picked up by the configure-time GLOB below alongside the
-    # synth-invoke siblings. Each stub is staged into OUTPUT_DIR and
-    # codegen'd as a child SM the same way inline-content children
-    # are handled, so the parent's `_sm.h` `#include` resolves and the
-    # hybrid arm in `invoke_methods.jinja2`'s `execute_pending_invokes`
-    # has a real symbol to call into. The stubs are checked into the
-    # parent's resource directory under git on first run — `write_if_changed`
-    # in sce-build keeps the file stable across rebuilds.
+    # `<invoke><content expr=...>` children. Each hybrid invoke's
+    # immediate-final stub is TRACKED in RESOURCE_DIR as
+    # `test${N}_hybrid*.scxml`, which is what lets the configure-time GLOB
+    # below find it before anything is generated;
+    # `hybrid_stubs_are_tracked_as_generated` holds every tracked stub to
+    # `HybridInvokeInfo::stub_document`, the text code generation writes.
+    # Code generation itself writes the stub into its `-o` directory, never
+    # beside the source. Each stub is staged into OUTPUT_DIR and codegen'd
+    # as a child SM the same way inline-content children are handled, so
+    # the parent's `_sm.h` `#include` resolves and the hybrid arm in
+    # `invoke_methods.jinja2`'s `execute_pending_invokes` has a real symbol
+    # to call into.
     file(GLOB _HYBRID_STUB_FILES "${RESOURCE_DIR}/test${TEST_NUM}_hybrid*.scxml")
     foreach(_HYBRID_STUB ${_HYBRID_STUB_FILES})
         get_filename_component(_HYBRID_NAME "${_HYBRID_STUB}" NAME_WE)
