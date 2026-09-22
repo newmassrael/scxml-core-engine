@@ -44,6 +44,10 @@ CARRIES = {
     "host_memory": "host_memory",
     "assumed_preconditions": "assumed_preconditions",
     "refuted": "refuted_assumptions",
+    # ⚠ Carried, not left off: the model that wrote the binding is the
+    # likeliest reader, and it will only keep declaring unknowns if it can see
+    # that doing so now costs just the positions that turn on them.
+    "unresolved": "unresolved",
 }
 
 
@@ -66,6 +70,7 @@ class TheTransportCarriesTheWholeAnswer(unittest.TestCase):
                 "expression": "true",
                 "reason": "the controller only runs while energised"}},
             refuted={"plant/out/c.value": "the author called this a guess"},
+            unresolved={"override": "nobody has said which address this is"},
         )
         payload = verification_payload(result)
         for field, key in CARRIES.items():
@@ -86,6 +91,22 @@ class TheTransportCarriesTheWholeAnswer(unittest.TestCase):
             Verification(backend="python",
                          unasserted=["plant/out/b.value"]))
         self.assertEqual(["plant/out/b.value"], payload["unasserted"])
+
+    def test_an_unknown_travels_with_its_reason_and_its_cost(self):
+        """⚠ The reason is the message: it is what gets taken to whoever knows
+        the address. And the cost travels beside it, per case, so a client can
+        tell an unknown that blocked nothing from one that blocked everything.
+        """
+        case = CaseResult(name="a case", refusal="rests on the unknown",
+                          undetermined=["plant/out/a.value"])
+        payload = verification_payload(
+            Verification(backend="python", results=[case],
+                         unresolved={"override": "nobody has said"}))
+        self.assertEqual({"override": "nobody has said"},
+                         payload["unresolved"]["inputs"])
+        self.assertEqual(1, payload["unresolved"]["withheld_positions"])
+        self.assertEqual(["plant/out/a.value"],
+                         payload["cases"][0]["undetermined"])
 
     def test_a_refusal_is_sent_instead_of_counts_rather_than_beside_them(self):
         self.assertFalse(Verification(refusal="the pack has no examples").ran)

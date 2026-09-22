@@ -17,8 +17,17 @@ These cases assert the whole route:
 
     the binding may say it does not know      (the schema accepts it)
     `check` names the gap, not a bad name     (and still fails, honestly)
-    `verify` declines to run and says why     (rather than running on nothing)
+    `verify` never judges on the unknown      (and says why, and what it cost)
     filling it in changes only the binding    (the document is untouched)
+
+⚠ The third line used to read "`verify` declines to run". That was right
+about the premise -- no verdict may rest on a value nobody supplied -- and too
+wide in the conclusion. It made declaring an unknown cost every case of the
+component while a plausible wrong address cost nothing, and measured across
+thirty documents written from prose, the key was used zero times. `verify` now
+runs each case under every value the unknown could take and withholds only
+the positions that come out different. What the old assertion protected -- no
+verdict about an invented value -- is asserted directly below instead.
 """
 
 from __future__ import annotations
@@ -86,11 +95,29 @@ class ADocumentCanPrecedeItsAddresses(unittest.TestCase):
 
     @unittest.skipUnless(_default_codegen().exists(),
                          "the product's code generator is not built")
-    def test_verify_declines_to_run_on_an_input_nobody_supplied(self):
+    def test_verify_never_judges_what_depends_on_an_input_nobody_supplied(self):
+        """The property the old refusal protected, asserted directly.
+
+        No position whose value turns on the unknown may be counted either
+        way, and no case resting on one may count as passed. The author's
+        reason has to reach the reader, because the next step is to take it to
+        whoever knows the address.
+        """
         result = verify(self.pack, self.binding(self.open_input))
-        self.assertFalse(result.ran)
-        self.assertIn("override", result.refusal)
-        self.assertIn("platform list is not available", result.refusal)
+        self.assertTrue(result.ran, f"it would not run: {result.refusal}")
+        self.assertIn("override", result.unresolved)
+        self.assertIn("platform list is not available",
+                      result.unresolved["override"])
+        # ⚠ Arity floor. Without it the assertions below hold vacuously for a
+        # run that withheld nothing -- which is the old all-or-nothing run
+        # reached by a different road.
+        self.assertGreater(result.undetermined, 0,
+                           "the fixture's outputs depend on the override; "
+                           "some position must have been withheld")
+        for case in result.results:
+            if case.undetermined:
+                self.assertFalse(case.passed,
+                                 f"{case.name}: passed on part of what it asserts")
 
     @unittest.skipUnless(_default_codegen().exists(),
                          "the product's code generator is not built")
@@ -118,10 +145,14 @@ class ADocumentCanPrecedeItsAddresses(unittest.TestCase):
         """The whole promise of the two phases, asserted rather than claimed."""
         document = (self.tmp / "controller_resolved.scxml").read_bytes()
         before = verify(self.pack, self.binding(self.open_input))
-        self.assertFalse(before.ran)
+        self.assertGreater(before.undetermined, 0,
+                           "with the address open, something must be withheld")
 
         after = verify(self.pack, self.binding(lambda d: None))
         self.assertTrue(after.ran, f"it would not run: {after.refusal}")
+        self.assertEqual(0, after.undetermined,
+                         "filled in, nothing is left waiting on the unknown")
+        self.assertEqual({}, after.unresolved)
         self.assertEqual(
             document, (self.tmp / "controller_resolved.scxml").read_bytes(),
             "the document written in phase one must not need editing")

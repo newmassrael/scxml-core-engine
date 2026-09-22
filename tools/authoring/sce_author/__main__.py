@@ -103,6 +103,9 @@ def cmd_verify(args) -> int:
         if case.unchecked:
             print(f"  ----  {case.name}: nothing written at "
                   f"{', '.join(case.unchecked)}")
+        if case.undetermined and case.judged:
+            print(f"  ~~~~  {case.name}: depends on an unresolved input, not "
+                  f"judged at {', '.join(case.undetermined)}")
     for address, reason in sorted(result.refuted.items()):
         # ⚠ The most useful line in the report. The author wrote this value
         # down as a guess; a case has now refuted it, and that is a different
@@ -140,6 +143,19 @@ def cmd_verify(args) -> int:
         for phrase, held in result.assumed_preconditions.items():
             print(f"          {phrase!r} as {held['expression']!r}: "
                   f"{held['reason']}")
+    # ⚠ Printed whenever an input is unresolved, WITH what it cost. A declared
+    # unknown is the honest answer and the run no longer punishes it -- but
+    # an unknown that withholds every position must be exactly as visible as
+    # one that withholds none, or `unresolved` becomes the way to make a hard
+    # case disappear.
+    if result.unresolved:
+        blocked = sum(1 for c in result.results if c.undetermined)
+        print(f"  {len(result.unresolved)} input(s) the binding leaves "
+              f"UNRESOLVED; every case ran under each value they could take, "
+              f"and {result.undetermined} position(s) in {blocked} case(s) "
+              f"came out different, so were not judged:")
+        for name, why in result.unresolved.items():
+            print(f"          {name}: {why}")
     # ⚠ Unjudged is reported beside the other two and never folded into either.
     # Counting it as a pass claims a run that did not happen; counting it as a
     # failure blames a document for a case nobody could drive.

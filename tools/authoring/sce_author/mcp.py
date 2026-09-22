@@ -314,6 +314,14 @@ def verification_payload(result) -> dict:
         # draws a green bar from the counts alone draws it over these.
         "assumed_preconditions": result.assumed_preconditions,
         "refuted_assumptions": result.refuted,
+        # ⚠ What the binding declared it does NOT know, and what that cost.
+        # The client most likely to read this is the model that wrote the
+        # binding -- and the reason the key was never used is that declaring
+        # an unknown used to cost everything. It has to see the price is now
+        # only the positions that genuinely turn on it, or it goes back to
+        # guessing an address that passes.
+        "unresolved": {"inputs": result.unresolved,
+                       "withheld_positions": result.undetermined},
         "cases": [
             {"name": case.name,
              "passed": case.passed,
@@ -321,7 +329,8 @@ def verification_payload(result) -> dict:
              "refusal": case.refusal,
              "failures": [{"address": a, "expected": w, "got": g}
                           for a, w, g in case.failures],
-             "unchecked": case.unchecked}
+             "unchecked": case.unchecked,
+             "undetermined": case.undetermined}
             for case in result.results
         ],
     }

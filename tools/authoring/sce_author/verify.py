@@ -28,6 +28,7 @@ clean run for a document it never executed.
 from __future__ import annotations
 
 import importlib.util
+import itertools
 import json
 import pathlib
 import re
@@ -87,6 +88,12 @@ class CaseResult:
     # into "nothing can be judged". A refusal belongs to the smallest thing it
     # is actually about.
     refusal: str = ""
+    # ⚠ Positions whose value depends on an input the binding leaves
+    # UNRESOLVED. The case was run under every value that input could take,
+    # and these came out different -- so no answer is claimed for them. They
+    # are neither a pass nor a failure: the document may be right, and what it
+    # is right ABOUT is still being asked of whoever knows the address.
+    undetermined: list[str] = field(default_factory=list)
 
     @property
     def judged(self) -> bool:
@@ -158,6 +165,26 @@ class Verification:
     # value was a guess. Naming it turns the report into the one sentence
     # worth having: the guess you recorded is the thing that failed.
     refuted: dict = field(default_factory=dict)
+    # Inputs the binding declares UNRESOLVED, to the reason its author gave.
+    #
+    # ⚠ They used to stop the whole run, and that made honesty the expensive
+    # choice: writing "nobody has told me which address this is" cost every
+    # case of the component, while writing a plausible address cost nothing
+    # and passed. Measured 2026-09-22 across thirty documents written from
+    # prose, the unresolved key was used zero times -- and a plausible wrong
+    # address is invisible, which is the whole reason the key exists.
+    #
+    # So the run no longer invents a value and no longer refuses. It asks the
+    # only question that needs no value: does the answer change with it? Each
+    # such input is boolean, so every case is run under both, and only the
+    # positions that come out different are withheld. Printed whenever
+    # non-empty, with how much it blocked -- a declared unknown that blocks
+    # everything should be as visible as one that blocks nothing.
+    unresolved: dict = field(default_factory=dict)
+
+    @property
+    def undetermined(self) -> int:
+        return sum(len(r.undetermined) for r in self.results)
 
     @property
     def ran(self) -> bool:
@@ -553,6 +580,11 @@ class Latches:
 
 
 _UNSEEN = object()
+# An output whose value depended on an unresolved input on the round it was
+# remembered. A later round that reads it back cannot be judged either.
+_UNDETERMINED = object()
+# How many unresolved inputs a run will enumerate. Each doubles every case.
+MAX_OPEN_INPUTS = 6
 
 
 class History:
@@ -1290,23 +1322,54 @@ def verify(pack: Pack, binding_path: pathlib.Path,
     # PACK, knowable before a single case runs -- and it would refuse every
     # case identically. So it is said once, up front, rather than repeated as
     # many times as there are cases.
-    # ⚠ A binding with an unresolved INPUT cannot be run at all: the document
-    # would be driven from a value nobody supplied, and the verdict would be
-    # about that. Said once, naming every gap and the reason its author gave,
-    # because the next step is to take those reasons to whoever can answer
-    # them -- not to fix the document.
+    # ⚠ An unresolved INPUT must never be driven from a value nobody
+    # supplied -- a verdict would then be about that value. It used to stop
+    # the whole run for that reason, and that was right about the premise and
+    # too wide in the conclusion: a value nobody supplied is not needed to ask
+    # whether the answer DEPENDS on it. A boolean input has two values; every
+    # case runs under both, and a position that comes out the same either way
+    # is judged -- a stronger claim than a pass under one guessed address, not
+    # a weaker one. Only a position that differs is withheld.
     #
-    # An unresolved OUTPUT is narrower and does NOT stop the run: the rest
-    # still executes and only the positions that output would have written go
-    # unchecked, which the per-case report already says.
-    open_inputs = sorted((n, r["unresolved"]) for n, r in inputs.items()
-                         if r.get("unresolved"))
-    if open_inputs:
+    # This is the rule `CaseResult.refusal` already states, one level down:
+    # a refusal belongs to the smallest thing it is actually about.
+    #
+    # What still refuses, and why:
+    #   a NUMBER     has no two values to try; any choice would be invented
+    #   a MEMORY     (`previous_of` / `state_of` of it) would carry an unknown
+    #                forward into rounds that never read it
+    #   too many     every one doubles the runs; past the cap the report would
+    #                be a cost nobody asked for
+    #
+    # An unresolved OUTPUT was already narrower and still is: the rest runs,
+    # and only the positions that output would have written go unchecked.
+    open_inputs = {n: r["unresolved"] for n, r in inputs.items()
+                   if r.get("unresolved")}
+    verification.unresolved = dict(sorted(open_inputs.items()))
+    numbers = sorted(n for n in open_inputs if inputs[n].get("number"))
+    remembered = sorted(n for n, r in inputs.items()
+                        if r.get("previous_of") in open_inputs
+                        or r.get("state_of") in open_inputs
+                        or (n in open_inputs
+                            and (r.get("previous_of") or r.get("state_of"))))
+    if numbers or remembered or len(open_inputs) > MAX_OPEN_INPUTS:
+        why = (f"{', '.join(numbers)} would be read as a number, which has no "
+               f"two values to try" if numbers else
+               f"{', '.join(remembered)} would carry an unresolved value into "
+               f"a later round" if remembered else
+               f"{len(open_inputs)} unresolved inputs would need "
+               f"{2 ** len(open_inputs)} runs of every case (the cap is "
+               f"{MAX_OPEN_INPUTS})")
         return Verification(refusal=(
-            "the binding does not say which address feeds "
-            + ", ".join(n for n, _ in open_inputs)
-            + ". Nothing can be run until it does:\n  "
-            + "\n  ".join(f"{n}: {why}" for n, why in open_inputs)))
+            f"the binding does not say which address feeds "
+            f"{', '.join(sorted(open_inputs))}, and {why}. Nothing can be run "
+            f"until it does:\n  "
+            + "\n  ".join(f"{n}: {w}" for n, w in sorted(open_inputs.items()))))
+    unknown = sorted(open_inputs)
+    # Every value the unresolved inputs could jointly take. With none it is a
+    # single empty assignment, and the run below is exactly what it was.
+    assignments = [dict(zip(unknown, bits)) for bits in
+                   itertools.product((False, True), repeat=len(unknown))]
 
     # ⚠ There is deliberately NO monotonicity check on the clock. One was
     # written, on the reading that `elapsed_ms` is a moment on a timeline, and
@@ -1337,12 +1400,13 @@ def verify(pack: Pack, binding_path: pathlib.Path,
         # nothing declares.
         try:
             plain = {n: r for n, r in inputs.items()
-                     if not (r.get("previous_of") or r.get("state_of"))}
+                     if not (r.get("previous_of") or r.get("state_of"))
+                     and n not in open_inputs}
             values = {n: input_value(n, r, case, latches, pack.model, history,
                                      pack.conventions)
                       for n, r in plain.items()}
             for n, r in inputs.items():
-                if n in values:
+                if n in values or n in open_inputs:
                     continue
                 got = input_value(n, r, case, latches, pack.model, history,
                                   pack.conventions)
@@ -1354,6 +1418,12 @@ def verify(pack: Pack, binding_path: pathlib.Path,
                             f"{target!r}, which this binding does not declare"))
                     got = values[target]
                 values[n] = got
+            stale = sorted(n for n, v in values.items() if v is _UNDETERMINED)
+            if stale:
+                raise VerifyError(
+                    f"input(s) {', '.join(stale)} read back an earlier output "
+                    f"that depended on unresolved input(s) "
+                    f"{', '.join(unknown)}, so this round has no known input")
         except VerifyError as exc:
             # This case could not be driven. The next one still might. A setup
             # step that cannot be driven leaves its case unjudgeable, and says
@@ -1364,6 +1434,7 @@ def verify(pack: Pack, binding_path: pathlib.Path,
             continue
         kwargs = {_snake(n): v for n, v in values.items()}
         produced: dict = {}
+        undetermined: set = set()
         for name, rule in outputs.items():
             if rule.get("unresolved"):
                 # It has nowhere to land yet. The document still computes it,
@@ -1377,14 +1448,29 @@ def verify(pack: Pack, binding_path: pathlib.Path,
                         f"document does not produce it"))
                 continue
             try:
-                computed = fn(**kwargs)
+                # One run per joint value of the unresolved inputs -- a single
+                # run when there are none, which is the run as it always was.
+                runs = [fn(**kwargs, **{_snake(k): v for k, v in a.items()})
+                        for a in assignments]
+                computed = runs[0]
+                settled = all(r == computed for r in runs[1:])
                 if history is not None:
                     # ⚠ Remembered RAW, before the binding maps it. What a
                     # later round feeds back is the document's own value, not
                     # the platform symbol it lands as -- mapping first would
                     # hand the document a word it never produced.
-                    history.outputs[name] = computed
-                produced.update(output_values(name, rule, computed))
+                    history.outputs[name] = computed if settled else _UNDETERMINED
+                written = [output_values(name, rule, r) for r in runs]
+                # ⚠ Per POSITION, not per output. An output that differs in
+                # its status field can still write the same identifier in
+                # every run, and that identifier is a thing the document got
+                # right whatever the address turns out to be.
+                for address in set().union(*written):
+                    seen = [w.get(address, _UNSEEN) for w in written]
+                    if seen[0] is not _UNSEEN and all(v == seen[0] for v in seen):
+                        produced[address] = seen[0]
+                    else:
+                        undetermined.add(address)
             except VerifyError as exc:
                 result.refusal = str(exc) if judged else f"{case.name}: {exc}"
                 break
@@ -1397,6 +1483,9 @@ def verify(pack: Pack, binding_path: pathlib.Path,
             failed.add(id(owner))
             continue
         for address, want in sorted(case.expect.items()):
+            if address in undetermined:
+                result.undetermined.append(address)
+                continue
             if address not in produced:
                 result.unchecked.append(address)
                 continue
@@ -1407,6 +1496,23 @@ def verify(pack: Pack, binding_path: pathlib.Path,
                             if writer else "")
                 if rests_on:
                     verification.refuted.setdefault(address, rests_on)
+        # ⚠ A case with ANY withheld position is not a pass. The first version
+        # only refused one whose EVERY position was withheld, and it never
+        # fired: a case that expects an event also expects the identifier and
+        # sound the binding writes as constants, those come out identical under
+        # any input, and so a case whose whole point -- on or off -- depended
+        # on the unknown still counted as passed on the constants alone.
+        # Measured on the first probe: 4 passed, when 3 of the 4 had their
+        # status withheld. That is the loophole this change had to close --
+        # write `unresolved` wherever it is hard and watch the pass count hold.
+        # A wrong answer on a position that WAS settled is still a failure:
+        # withholding the unknown does not excuse what was known.
+        if result.undetermined and not result.failures:
+            result.refusal = (
+                f"{len(result.undetermined)} position(s) this case expects "
+                f"depend on unresolved input(s) {', '.join(unknown)} and come "
+                f"out different under their possible values; the rest agreed, "
+                f"but a case is not passed on part of what it asserts")
         if history is not None:
             history.inputs = dict(values)
             history.started = True
