@@ -264,6 +264,22 @@ type StatePolicy[S comparable, E comparable] interface {
 	// metadata (§scxml-5.10).
 	PopulateEventMetadata(meta *EventMetadata)
 
+	// LiftTypedPayload binds the typed `_event.data` view the natively lowered
+	// guards read (NL→IR Item C1 Path A), for the event being dequeued.
+	//
+	// The typed carrier `PopulateEventMetadata` reads is filled by ONE
+	// producer: the generated `Raise<Event>` inject seam. Every other producer
+	// fills `EventMetadata.Data`, so the fields are lifted out of that here and
+	// the same guard answers the same way whichever producer sent the event —
+	// including one on the far side of an invoke boundary.
+	//
+	// A non-nil error says the data cannot be read as this event's schema. The
+	// engine then raises error.execution and the guard does not fire, which is
+	// what §scxml-3.13 gives for a guard that cannot be evaluated, and what
+	// the script engine gives for the same guard on the same data. A policy
+	// with no typed payloads returns nil.
+	LiftTypedPayload(event E, meta *EventMetadata) error
+
 	// ClearEventMetadata clears pending event metadata after transition processing.
 	ClearEventMetadata()
 }

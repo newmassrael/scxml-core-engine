@@ -2124,6 +2124,16 @@ pub struct RustEventPayload {
     /// runtime primitive, but the generated safe API is per-event). `""`
     /// when no typed channel is active.
     pub entries: String,
+    /// The `lift_event_payload` override body: for the event being dequeued,
+    /// read its schema's fields out of `EventMetadata.data` — what every
+    /// producer but the inject seam fills — and bind the typed view the native
+    /// guards read. A refusal is returned for the engine to raise as
+    /// `error.execution`. `""` when no typed channel is active.
+    ///
+    /// ⚠ `std` only, like the wire it reads: a `no_std` build has no
+    /// `EventMetadata::data`, and no script engine whose answer this has to
+    /// match, so the typed carrier is the whole channel there.
+    pub lift: String,
 }
 
 /// Build the [`RustEventPayload`] for `model`.
@@ -2137,18 +2147,25 @@ pub struct RustEventPayload {
 /// but reads no typed guard keeps the schemaless `type Payload = ()`
 /// baseline. The set of emitted enum variants is exactly the set of
 /// events that own a lowered guard.
+/// `no_std` is the profile this emission is FOR, and it decides whether the
+/// wire half of the channel exists at all: `EventMetadata::data` is `std`-only,
+/// and a `no_std` build carries no script engine whose reading of the same
+/// event the lift would have to match. So under `no_std` the typed payload is
+/// the whole channel — the inject seam writes no wire and nothing lifts one.
 pub fn build_rust_event_payload(
     model: &crate::model::SCXMLModel,
     machine_name: &str,
     extra_payload_events: &std::collections::BTreeSet<String>,
     policy_generics_decl: &str,
     policy_generics_use: &str,
+    no_std: bool,
 ) -> RustEventPayload {
     let schemaless = || RustEventPayload {
         defs: String::new(),
         type_name: "()".to_string(),
         guard_writes: Vec::new(),
         entries: String::new(),
+        lift: String::new(),
     };
     let enum_name = format!("{machine_name}Payload");
 
@@ -2209,6 +2226,10 @@ pub fn build_rust_event_payload(
     let mut variant_lines = String::new();
     let mut entry_fns = String::new();
     let mut trait_methods = String::new();
+    // The `lift_event_payload` match arms — one per payload event, read out of
+    // `EventMetadata.data` when no typed payload rode with the event. Empty
+    // under no_std, which has no such wire.
+    let mut lift_arms = String::new();
     for event in &payload_events {
         let schema = &model.imported_event_schemas[event];
         let variant = filters::to_event_variant(event.clone());
@@ -2231,11 +2252,10 @@ pub fn build_rust_event_payload(
         trait_methods.push_str(&format!(
             "{doc}\n    fn {method}(&mut self, payload: {struct_name});\n"
         ));
-        entry_fns.push_str(&format!(
-            "    fn {method}(&mut self, payload: {struct_name}) {{\n        \
-self.raise_external_typed({machine_name}Event::{variant}, {enum_name}::{variant}(payload));\n    }}\n"
-        ));
         let mut field_lines = String::new();
+        let mut lift_fields = String::new();
+        let mut data_items = String::new();
+        let mut data_args = String::new();
         for f in &schema.fields {
             // Owned payload field types resolve through the runtime's
             // profile-resolving aliases so this one emission compiles on both
@@ -2262,7 +2282,78 @@ self.raise_external_typed({machine_name}Event::{variant}, {enum_name}::{variant}
                 _ => l.type_name(&f.sce_type).into_owned(),
             };
             field_lines.push_str(&format!("    pub {}: {ty},\n", f.id));
+            // What the lift reads back out of `data`, and what the inject seam
+            // writes into it beside the typed payload: the same fields, named
+            // once. The reader's width comes from the field's own declared
+            // type, so a field widened in its schema cannot keep being read at
+            // the old width — the generated call stops compiling instead.
+            let reader = match &f.sce_type {
+                SceType::Uint8 | SceType::Uint16 | SceType::Uint32 | SceType::Uint64 => {
+                    format!("fields.unsigned::<{ty}>(\"{}\")?", f.id)
+                }
+                SceType::Int8 | SceType::Int16 | SceType::Int32 | SceType::Int64 => {
+                    format!("fields.signed::<{ty}>(\"{}\")?", f.id)
+                }
+                SceType::Float32 => format!("fields.float32(\"{}\")?", f.id),
+                SceType::Float64 => format!("fields.float64(\"{}\")?", f.id),
+                SceType::Bool => format!("fields.truth(\"{}\")?", f.id),
+                SceType::String => format!("fields.text(\"{}\")?", f.id),
+                SceType::Bytes => format!("fields.bytes(\"{}\")?", f.id),
+                SceType::Enum(_) => unreachable!(
+                    "payload eligibility admits only primitive fields, so no \
+                     enum-typed field reaches the lift"
+                ),
+            };
+            lift_fields.push_str(&format!("                    {}: {reader},\n", f.id));
+            // ⚠ JSON has no byte string, so a `bytes` field rides as its
+            // byte-exact Latin-1 text (`PayloadFields::bytes` reads it back the
+            // same way), and a text is quoted and escaped.
+            let wire = match &f.sce_type {
+                SceType::Bytes => format!(
+                    "::sce_rust_runtime::event_payload::quote(\
+&::sce_rust_runtime::event_payload::bytes_as_payload_text(&payload.{}))",
+                    f.id
+                ),
+                SceType::String => format!(
+                    "::sce_rust_runtime::event_payload::quote(&payload.{})",
+                    f.id
+                ),
+                _ => format!("payload.{}", f.id),
+            };
+            if !data_items.is_empty() {
+                data_items.push_str(", ");
+            }
+            data_items.push_str(&format!("\\\"{}\\\":{{}}", f.id));
+            data_args.push_str(&format!(", {wire}"));
         }
+        // The inject seam fills both carriers under std: the typed payload a
+        // native guard reads, and the `data` wire the script engine binds
+        // `_event.data` from. Filling only the first left an
+        // `<assign expr="_event.data.x">` on this event reading nothing, on
+        // every backend alike. Under no_std there is no wire to fill, and
+        // nothing to lift one into.
+        let inject_body = if no_std {
+            format!(
+                "        self.raise_external_typed({machine_name}Event::{variant}, \
+{enum_name}::{variant}(payload));\n"
+            )
+        } else {
+            lift_arms.push_str(&format!(
+                "            {machine_name}Event::{variant} => {{\n                \
+let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;\n                \
+self.pending_payload = {enum_name}::{variant}({struct_name} {{\n{lift_fields}                \
+}});\n            }}\n"
+            ));
+            format!(
+                "        let data = ::sce_rust_runtime::payload_wire(format_args!(\n            \
+\"{{{{{data_items}}}}}\"{data_args}\n        ));\n        \
+self.raise_external_typed_with_data(\n            {machine_name}Event::{variant},\n            \
+{enum_name}::{variant}(payload),\n            &data,\n        );\n"
+            )
+        };
+        entry_fns.push_str(&format!(
+            "    fn {method}(&mut self, payload: {struct_name}) {{\n{inject_body}    }}\n"
+        ));
         structs.push_str(&format!(
             "#[derive(Clone, Debug, Default, PartialEq)]\npub struct {struct_name} {{\n{field_lines}}}\n\n"
         ));
@@ -2290,11 +2381,31 @@ EventSchema-imported events whose transition guards lowered natively.\n\
 pub trait {machine_name}Inject {{\n{trait_methods}}}\n\n\
 impl{policy_generics_decl} {machine_name}Inject for ::sce_rust_runtime::Engine<{machine_name}Policy{policy_generics_use}> {{\n{entry_fns}}}\n"
     );
+    // ⚠ The lift's refusal is `error.execution` and a guard that does not fire,
+    // which is what the SCRIPT ENGINE answers for the same guard on the same
+    // data (§scxml-3.13, measured 2026-09-22). A native lowering that
+    // answered differently would make the optimisation observable. The raise
+    // itself is the engine's (`bind_lifted_payload`), so every machine answers
+    // alike; this only reports.
+    let lift = if lift_arms.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "    fn lift_event_payload(\n        &mut self,\n        \
+event: Self::Event,\n        data: &str,\n    ) -> ::core::result::Result<(), \
+::sce_rust_runtime::event_payload::PayloadRefusal> {{\n        \
+// A typed payload already bound the view, so the producer was the inject\n        \
+// seam and there is nothing to read out of `data`.\n        \
+if self.pending_payload != {enum_name}::None {{\n            return Ok(());\n        }}\n        \
+match event {{\n{lift_arms}            _ => {{}}\n        }}\n        Ok(())\n    }}\n"
+        )
+    };
     RustEventPayload {
         defs,
         type_name: enum_name,
         guard_writes,
         entries,
+        lift,
     }
 }
 
@@ -2328,6 +2439,22 @@ pub struct C11EventPayload {
     pub entry_decls: String,
     /// The matching entry definitions (`.c`).
     pub entry_defs: String,
+    /// The machine-struct members the lift owns: one bounded buffer per
+    /// string-typed payload field.
+    ///
+    /// A C11 payload's `string` field is a `const char *`, so a value lifted
+    /// out of the event's `data` needs somewhere to live that outlives the pop
+    /// loop's `evt`. The machine owns it — one buffer per field, rewritten for
+    /// each event that lifts, which is exactly as long as the payload it
+    /// belongs to is read. ⚠ The alternative was making the field an owned
+    /// array, and that would change the inject seam every MCU consumer already
+    /// calls. `""` when no payload field is a string.
+    pub lift_storage: String,
+    /// The lift itself (`.c`): one reader per payload event, plus the
+    /// dispatcher the pop loop calls. `""` when no wire can be lifted.
+    pub lift_def: String,
+    /// The dispatcher's declaration for the pop loop's translation unit.
+    pub lift_decl: String,
 }
 
 /// The C identifier token for an event name: `.`/`-` collapse to `_`
@@ -2362,9 +2489,14 @@ fn c11_payload_field_decl(l: &LangCtx, f: &ForgeField) -> String {
 /// [`build_rust_event_payload`] for the shared design; this emits the C11
 /// tagged-union form. `model.name` is the C identifier stem (already
 /// snake-case; the C11 templates use it verbatim as the type prefix).
+/// `csym_prefix` is the suite symbol prefix (`"<prefix>_"`, empty when unset)
+/// that every emitted C symbol carries — the same one the templates prepend.
+/// The channel's own functions call the machine's (`<prefix><name>_raise_*`),
+/// so a prefixed build whose payload seams dropped it would not link.
 pub fn build_c11_event_payload(
     model: &crate::model::SCXMLModel,
     extra_payload_events: &std::collections::BTreeSet<String>,
+    csym_prefix: &str,
 ) -> C11EventPayload {
     let inactive = || C11EventPayload {
         defs: String::new(),
@@ -2373,11 +2505,18 @@ pub fn build_c11_event_payload(
         guard_writes: Vec::new(),
         entry_decls: String::new(),
         entry_defs: String::new(),
+        lift_storage: String::new(),
+        lift_def: String::new(),
+        lift_decl: String::new(),
     };
     let name = &model.name;
     let union_type = format!("{name}_payload_t");
     let tag_type = format!("{name}_payload_tag_t");
     let name_upper = name.to_uppercase();
+    // The machine's own symbols carry the suite prefix; the payload channel's
+    // types do not, and every reference to them here agrees on that.
+    let sm = format!("{csym_prefix}{name}");
+    let sm_upper = format!("{}{name_upper}", csym_prefix.to_uppercase());
 
     // Same SSOT selection as the Rust builder; lower each guard to a C
     // tag-check + field comparison. The set of events owning a lowered
@@ -2428,19 +2567,163 @@ pub fn build_c11_event_payload(
     let mut union_lines = String::new();
     let mut entry_decls = String::new();
     let mut entry_defs = String::new();
+    // The lift: one reader per payload event, the buffers a lifted string
+    // lives in, and the dispatcher arms the pop loop switches through.
+    let mut lift_storage = String::new();
+    let mut lift_readers = String::new();
+    let mut lift_arms = String::new();
+    let raises_error = model.events.iter().any(|e| e == "error.execution");
     for event in &guarded_events {
         let schema = &model.imported_event_schemas[event];
         let token = c11_event_token(event);
         let member = token.to_lowercase();
         let upper = token.to_uppercase();
         let struct_name = format!("{name}_{member}_payload_t");
-        let event_const = format!("{name_upper}_EVENT_{upper}");
+        let event_const = format!("{sm_upper}_EVENT_{upper}");
         let tag_const = format!("{name_upper}_PAYLOAD_{upper}");
-        let fn_name = format!("{name}_raise_{member}_typed");
+        let fn_name = format!("{sm}_raise_{member}_typed");
         let mut field_lines = String::new();
+        // What the lift reads back out of `data`, and what the inject seam
+        // writes into it beside the typed payload: the same fields, once.
+        let mut field_reads = String::new();
+        let mut wire_parts = String::new();
+        let mut wire_args = String::new();
+        let mut wire_locals = String::new();
         for f in &schema.fields {
+            let id = &f.id;
+            let read = match &f.sce_type {
+                SceType::Uint8 => format!("sce_payload_read_u8(&_fields, \"{id}\", &out->{id})"),
+                SceType::Uint16 => format!("sce_payload_read_u16(&_fields, \"{id}\", &out->{id})"),
+                SceType::Uint32 => format!("sce_payload_read_u32(&_fields, \"{id}\", &out->{id})"),
+                SceType::Uint64 => format!("sce_payload_read_u64(&_fields, \"{id}\", &out->{id})"),
+                SceType::Int8 => format!("sce_payload_read_i8(&_fields, \"{id}\", &out->{id})"),
+                SceType::Int16 => format!("sce_payload_read_i16(&_fields, \"{id}\", &out->{id})"),
+                SceType::Int32 => format!("sce_payload_read_i32(&_fields, \"{id}\", &out->{id})"),
+                SceType::Int64 => format!("sce_payload_read_i64(&_fields, \"{id}\", &out->{id})"),
+                SceType::Float32 => format!("sce_payload_read_f32(&_fields, \"{id}\", &out->{id})"),
+                SceType::Float64 => format!("sce_payload_read_f64(&_fields, \"{id}\", &out->{id})"),
+                SceType::Bool => format!("sce_payload_read_bool(&_fields, \"{id}\", &out->{id})"),
+                SceType::Bytes => format!(
+                    "sce_payload_read_bytes(&_fields, \"{id}\", out->{id}, sizeof(out->{id}), \
+&out->{id}_len)"
+                ),
+                // Payload eligibility keeps an enum-typed field out of this
+                // channel; `c_type` says the same thing by refusing to answer
+                // for one.
+                SceType::Enum(_) => unreachable!(
+                    "c11 payload lift called on SceType::Enum — payload \
+                     eligibility admits only primitive fields"
+                ),
+                SceType::String => {
+                    // The machine owns where a lifted text lives — see
+                    // `lift_storage`. Bounded by the field's own `sce:max-size`
+                    // when it declares one, else by the data buffer the text
+                    // arrived in, which nothing longer can have fitted.
+                    let cap = match f.max_size {
+                        Some(n) => format!("{}u", n + 1),
+                        None => "SCE_MAX_DATA_LEN".to_string(),
+                    };
+                    lift_storage.push_str(&format!(
+                        "    /* NL\u{2192}IR Item C1 Path A: where `{event}`'s lifted `{id}` lives \
+(the payload\n       field is a borrowed `const char *`). */\n    \
+char lifted_{member}_{id}[{cap}];\n"
+                    ));
+                    field_reads.push_str(&format!(
+                        "    _refusal = sce_payload_read_text(&_fields, \"{id}\", \
+sm->lifted_{member}_{id},\n                                     \
+sizeof(sm->lifted_{member}_{id}));\n    \
+if (_refusal != NULL) {{\n        \
+snprintf(_message, _message_cap, \"`{event}` payload: '{id}' %s\", _refusal);\n        \
+return false;\n    }}\n    \
+out->{id} = sm->lifted_{member}_{id};\n"
+                    ));
+                    String::new()
+                }
+            };
+            if !read.is_empty() {
+                field_reads.push_str(&format!(
+                    "    _refusal = {read};\n    if (_refusal != NULL) {{\n        \
+snprintf(_message, _message_cap, \"`{event}` payload: '{id}' %s\", _refusal);\n        \
+return false;\n    }}\n"
+                ));
+            }
+            // The inject seam's wire. ⚠ A `bytes` field rides as its
+            // byte-exact Latin-1 text and a `string` is quoted and escaped,
+            // both into a bounded local — this backend has no allocator.
+            if !wire_parts.is_empty() {
+                wire_parts.push(',');
+            }
+            match &f.sce_type {
+                SceType::Bytes => {
+                    wire_locals.push_str(&format!(
+                        "    char _wire_{id}[SCE_MAX_DATA_LEN] = \"\\\"\\\"\";\n    \
+{{\n        char _raw_{id}[SCE_MAX_DATA_LEN];\n        \
+if (sce_payload_bytes_as_text(payload->{id}, payload->{id}_len, _raw_{id},\n                                     \
+sizeof(_raw_{id}))) {{\n            \
+(void)sce_payload_quote(_raw_{id}, _wire_{id}, sizeof(_wire_{id}));\n        }}\n    }}\n"
+                    ));
+                    wire_parts.push_str(&format!("\\\"{id}\\\":%s"));
+                    wire_args.push_str(&format!(", _wire_{id}"));
+                }
+                SceType::String => {
+                    wire_locals.push_str(&format!(
+                        "    char _wire_{id}[SCE_MAX_DATA_LEN] = \"\\\"\\\"\";\n    \
+(void)sce_payload_quote(payload->{id} != NULL ? payload->{id} : \"\", _wire_{id},\n                            \
+sizeof(_wire_{id}));\n"
+                    ));
+                    wire_parts.push_str(&format!("\\\"{id}\\\":%s"));
+                    wire_args.push_str(&format!(", _wire_{id}"));
+                }
+                SceType::Bool => {
+                    wire_parts.push_str(&format!("\\\"{id}\\\":%s"));
+                    wire_args.push_str(&format!(", payload->{id} ? \"true\" : \"false\""));
+                }
+                SceType::Float32 | SceType::Float64 => {
+                    wire_parts.push_str(&format!("\\\"{id}\\\":%.17g"));
+                    wire_args.push_str(&format!(", (double)payload->{id}"));
+                }
+                SceType::Uint64 => {
+                    wire_parts.push_str(&format!("\\\"{id}\\\":%llu"));
+                    wire_args.push_str(&format!(", (unsigned long long)payload->{id}"));
+                }
+                SceType::Uint8 | SceType::Uint16 | SceType::Uint32 => {
+                    wire_parts.push_str(&format!("\\\"{id}\\\":%lu"));
+                    wire_args.push_str(&format!(", (unsigned long)payload->{id}"));
+                }
+                SceType::Int64 => {
+                    wire_parts.push_str(&format!("\\\"{id}\\\":%lld"));
+                    wire_args.push_str(&format!(", (long long)payload->{id}"));
+                }
+                SceType::Int8 | SceType::Int16 | SceType::Int32 => {
+                    wire_parts.push_str(&format!("\\\"{id}\\\":%ld"));
+                    wire_args.push_str(&format!(", (long)payload->{id}"));
+                }
+                SceType::Enum(_) => unreachable!(
+                    "payload eligibility admits only primitive fields, so no \
+                     enum-typed field reaches the C11 wire"
+                ),
+            }
             field_lines.push_str(&c11_payload_field_decl(&l, f));
         }
+        lift_readers.push_str(&format!(
+            "/* Read `{event}`'s schema fields out of the data it carries. Answers false\n   \
+with the sentence the caller raises as `error.execution`. */\n\
+static bool {sm}_lift_{member}({sm}_t *sm, const char *_data, {struct_name} *out,\n                                \
+char *_message, size_t _message_cap) {{\n    \
+sce_payload_fields_t _fields;\n    \
+const char *_refusal = sce_payload_decode(_data, &_fields);\n    \
+if (_refusal != NULL) {{\n        \
+snprintf(_message, _message_cap, \"`{event}` payload: %s\", _refusal);\n        \
+return false;\n    }}\n    (void)sm;\n{field_reads}    return true;\n}}\n\n"
+        ));
+        lift_arms.push_str(&format!(
+            "    case {event_const}: {{\n        \
+{struct_name} _payload;\n        memset(&_payload, 0, sizeof(_payload));\n        \
+if (!{sm}_lift_{member}(sm, evt->data, &_payload, _message, sizeof(_message))) {{\n            \
+break;\n        }}\n        \
+sm->pending_payload.tag = {tag_const};\n        \
+sm->pending_payload.as.{member} = _payload;\n        return;\n    }}\n"
+        ));
         structs.push_str(&format!(
             "typedef struct {name}_{member}_payload {{\n{field_lines}}} {struct_name};\n\n"
         ));
@@ -2455,17 +2738,22 @@ pub fn build_c11_event_payload(
 the event name, payload tag, and union member in one call (the name\u{2194}type\n   \
 pairing cannot be constructed inconsistently). A NULL `payload` injects the\n   \
 event with a zeroed payload. */\n\
-void {fn_name}({name}_t *sm, const {struct_name} *payload);\n\n"
+void {fn_name}({sm}_t *sm, const {struct_name} *payload);\n\n"
         ));
         entry_defs.push_str(&format!(
-            "SCE_SM_FN void {fn_name}({name}_t *sm, const {struct_name} *payload) {{\n    \
-{name}_event_with_meta_t evt = {{0}};\n    \
+            "SCE_SM_FN void {fn_name}({sm}_t *sm, const {struct_name} *payload) {{\n    \
+{sm}_event_with_meta_t evt = {{0}};\n    \
 evt.event = {event_const};\n    \
 evt.payload.tag = {tag_const};\n    \
 if (payload != NULL) {{\n        \
-evt.payload.as.{member} = *payload;\n    \
+evt.payload.as.{member} = *payload;\n        \
+/* Both carriers are filled: the typed payload a native guard reads, and\n           \
+`data`, which is what the script engine binds `_event.data` from.\n           \
+Filling only the first left an `<assign expr=\"_event.data.x\">` on this\n           \
+event reading nothing, on every backend alike. */\n{wire_locals}        \
+(void)snprintf(evt.data, sizeof(evt.data), \"{{{wire_parts}}}\"{wire_args});\n    \
 }}\n    \
-{name}_raise_external(sm, &evt);\n}}\n\n"
+{sm}_raise_external(sm, &evt);\n}}\n\n"
         ));
     }
     // Trim the trailing comma on the last tag enumerator (C is tolerant of
@@ -2482,6 +2770,36 @@ selects the live `as.<event>` member. The pop loop copies it into\n   \
 {structs}typedef enum {name}_payload_tag_e {{\n{tag_lines}\n}} {tag_type};\n\n\
 typedef struct {name}_payload {{\n    {tag_type} tag;\n    union {{\n{union_lines}    }} as;\n}} {union_type};\n"
     );
+    // ⚠ The lift's refusal is `error.execution` and a guard that does not fire,
+    // which is what the SCRIPT ENGINE answers for the same guard on the same
+    // data (§scxml-3.13, measured 2026-09-22). A native lowering that
+    // answered differently would make the optimisation observable. A document
+    // that declares no `error.execution` transition has nothing to answer with
+    // (§scxml-3.12.2) and the guard still does not fire, so the raise — and the
+    // message buffer it needs — are emitted only when the document has one.
+    let report = if raises_error {
+        format!(
+            "    if (_message[0] != '\\0') {{\n        \
+{sm}_raise_platform_error(sm, {sm_upper}_EVENT_ERROR_EXECUTION, _message);\n    }}\n"
+        )
+    } else {
+        "    (void)_message;\n".to_string()
+    };
+    let lift_decl = format!(
+        "/* NL\u{2192}IR Item C1 Path A: bind the dequeued event's typed `_event.data` view\n   \
+from the data it carries, when no typed payload rode with it. */\n\
+static void {sm}_lift_payload({sm}_t *sm, const {sm}_event_with_meta_t *evt);\n"
+    );
+    let lift_def = format!(
+        "{lift_readers}\
+/* The dispatcher the pop loop calls: the typed payload the inject seam fills\n   \
+is one producer, and every other producer fills `data`, so an event that\n   \
+arrived without a payload has its fields read out of that instead. */\n\
+static void {sm}_lift_payload({sm}_t *sm, const {sm}_event_with_meta_t *evt) {{\n    \
+char _message[SCE_MAX_DATA_LEN];\n    _message[0] = '\\0';\n    \
+if (sm->pending_payload.tag != {name_upper}_PAYLOAD_NONE) {{\n        return;\n    }}\n    \
+switch (evt->event) {{\n{lift_arms}    default:\n        return;\n    }}\n{report}}}\n"
+    );
     C11EventPayload {
         defs,
         type_name: union_type,
@@ -2489,6 +2807,9 @@ typedef struct {name}_payload {{\n    {tag_type} tag;\n    union {{\n{union_line
         guard_writes,
         entry_decls,
         entry_defs,
+        lift_storage,
+        lift_def,
+        lift_decl,
     }
 }
 
@@ -2519,8 +2840,61 @@ pub struct GoEventPayload {
     pub active: bool,
     pub policy_fields: String,
     pub populate: String,
+    /// The `LiftTypedPayload` body: for the event being dequeued, read its
+    /// schema's fields out of `EventMetadata.Data` — what every producer but
+    /// the inject seam fills — and bind the typed view the native guards read.
+    /// A refusal returns the error the engine raises as `error.execution`.
+    pub lift: String,
     pub clear: String,
     pub guard_writes: Vec<NativeGuardWrite>,
+}
+
+/// The Go runtime call that reads one EventSchema field out of a decoded
+/// `_event.data`, at the width the schema declares.
+///
+/// The width travels in the type argument rather than in the function name so
+/// a field that was widened in its schema cannot keep being read at the old
+/// width — the generated call stops compiling instead.
+fn go_payload_reader(f: &ForgeField, obj: &str) -> String {
+    let id = &f.id;
+    match &f.sce_type {
+        SceType::Uint8 | SceType::Uint16 | SceType::Uint32 | SceType::Uint64 => format!(
+            "sce.PayloadUnsigned[{}]({obj}, \"{id}\")",
+            go_type(&f.sce_type)
+        ),
+        SceType::Int8 | SceType::Int16 | SceType::Int32 | SceType::Int64 => format!(
+            "sce.PayloadSigned[{}]({obj}, \"{id}\")",
+            go_type(&f.sce_type)
+        ),
+        SceType::Float32 | SceType::Float64 => {
+            format!(
+                "sce.PayloadFloat[{}]({obj}, \"{id}\")",
+                go_type(&f.sce_type)
+            )
+        }
+        SceType::Bool => format!("sce.PayloadBool({obj}, \"{id}\")"),
+        SceType::String => format!("sce.PayloadString({obj}, \"{id}\")"),
+        SceType::Bytes => format!("sce.PayloadBytes({obj}, \"{id}\")"),
+        // Payload eligibility keeps an enum-typed field out of this channel;
+        // `go_type` says the same thing by refusing to answer for one.
+        SceType::Enum(_) => unreachable!(
+            "go_payload_reader called on SceType::Enum — payload eligibility \
+             admits only primitive fields"
+        ),
+    }
+}
+
+/// The Go expression that spells one EventSchema field for the inject seam's
+/// `Data`, the wire the script engine binds `_event.data` from.
+///
+/// ⚠ JSON has no byte string, so a `bytes` field rides as its byte-exact
+/// Latin-1 text and `sce.PayloadBytes` reads it back the same way.
+fn go_payload_data_value(f: &ForgeField) -> String {
+    if matches!(f.sce_type, SceType::Bytes) {
+        format!("sce.BytesAsPayloadText({})", f.id)
+    } else {
+        f.id.clone()
+    }
 }
 
 /// Build the [`GoEventPayload`] for `model`. Same SSOT guard selection
@@ -2540,6 +2914,7 @@ pub fn build_go_event_payload(
         active: false,
         policy_fields: String::new(),
         populate: String::new(),
+        lift: String::new(),
         clear: String::new(),
         guard_writes: Vec::new(),
     };
@@ -2596,6 +2971,9 @@ pub fn build_go_event_payload(
     let mut raise_fns = String::new();
     let mut tag_consts = format!("\t{tag_none} {tag_type} = iota\n");
     let mut policy_fields = format!("\tpendingPayloadTag {tag_type}\n");
+    // The `LiftTypedPayload` switch: one case per guarded event, reading that
+    // event's schema fields out of `Data` when no typed carrier arrived.
+    let mut lift_cases = String::new();
     // `switch v := ….(type)` resets the tag to None for every event (a nil /
     // untyped carrier matches no case), then binds the matching typed field.
     let mut populate =
@@ -2615,12 +2993,29 @@ pub fn build_go_event_payload(
         let mut field_lines = String::new();
         let mut params = String::new();
         let mut struct_lits = String::new();
+        // What the lift reads back out of `Data`, and what the inject seam
+        // writes into it beside the typed carrier: the same fields, named once.
+        let mut field_reads = String::new();
+        let mut data_items = String::new();
         for f in &schema.fields {
             let ty = l.type_name(&f.sce_type).into_owned();
             field_lines.push_str(&format!("\t{} {ty}\n", f.id));
             params.push_str(&format!(", {} {ty}", f.id));
             struct_lits.push_str(&format!("{}: {}, ", f.id, f.id));
+            field_reads.push_str(&format!(
+                "\t\tif payload.{}, err = {}; err != nil {{\n\t\t\treturn err\n\t\t}}\n",
+                f.id,
+                go_payload_reader(f, "fields")
+            ));
+            data_items.push_str(&format!("\"{}\": {}, ", f.id, go_payload_data_value(f)));
         }
+        lift_cases.push_str(&format!(
+            "\tcase {machine}Event{variant}:\n\t\t\
+fields, err := sce.LiftPayload(meta.Data)\n\t\t\
+if err != nil {{\n\t\t\treturn err\n\t\t}}\n\t\t\
+var payload {struct_name}\n{field_reads}\t\t\
+p.{field} = payload\n\t\tp.pendingPayloadTag = {tag_type}{variant}\n"
+        ));
         structs.push_str(&format!(
             "// {struct_name} is the NL\u{2192}IR Item C1 Path A typed `_event.data`\n\
 // payload for `{event}`. Internal to the package; consumers inject it via\n\
@@ -2648,11 +3043,32 @@ type {struct_name} struct {{\n{field_lines}}}\n\n"
 func Raise{variant}(e *sce.Engine[{machine}State, {machine}Event]{params}) {{\n\
 \te.RaiseExternalWithMeta(sce.EventWithMetadata[{machine}Event]{{\n\
 \t\tEvent:    {machine}Event{variant},\n\
-\t\tMetadata: sce.EventMetadata{{EventType: sce.EventTypeExternal, TypedPayload: {struct_name}{{{struct_lits}}}}},\n\
+\t\tMetadata: sce.EventMetadata{{\n\
+\t\t\tEventType:    sce.EventTypeExternal,\n\
+\t\t\tTypedPayload: {struct_name}{{{struct_lits}}},\n\
+\t\t\t// Both carriers are filled: the typed one a native guard reads,\n\
+\t\t\t// and `Data`, which is what the script engine binds `_event.data`\n\
+\t\t\t// from. Filling only the first left an `<assign expr=\"_event.data.x\">`\n\
+\t\t\t// on this event reading nothing, on every backend alike.\n\
+\t\t\tData: sce.PayloadJSON(map[string]any{{{data_items}}}),\n\
+\t\t}},\n\
 \t}})\n}}\n\n"
         ));
     }
     populate.push_str("\t}\n");
+
+    // ⚠ The lift's refusal is `error.execution` and a guard that does not
+    // fire, which is what the SCRIPT ENGINE answers for the same guard on the
+    // same data (§scxml-3.13, measured 2026-09-22). A native lowering that
+    // answered differently would make the optimisation observable. The raise
+    // itself is the engine's (`liftTypedPayload`), so every machine answers
+    // alike; this only reports.
+    let lift = format!(
+        "\t// A typed carrier already bound the view, so the producer was the\n\
+\t// inject seam and there is nothing to read out of `Data`.\n\
+\tif p.pendingPayloadTag != {tag_none} {{\n\t\treturn nil\n\t}}\n\
+\tswitch event {{\n{lift_cases}\t}}\n\treturn nil\n"
+    );
 
     let defs = format!(
         "// NL\u{2192}IR Item C1 Path A (EventSchema MCU native lowering): typed\n\
@@ -2668,6 +3084,7 @@ type {tag_type} int\n\nconst (\n{tag_consts})\n\n{structs}{raise_fns}"
         active: true,
         policy_fields,
         populate,
+        lift,
         clear,
         guard_writes,
     }
@@ -2713,6 +3130,37 @@ fn cpp_event_enum_value(event: &str) -> String {
         Some(first) => first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase(),
         None => token,
     }
+}
+
+/// The C++ runtime call that reads one EventSchema field out of a decoded
+/// `_event.data`, at the width the schema declares.
+///
+/// The width comes from the field's own declared type (the out-parameter), so a
+/// field that was widened in its schema cannot keep being read at the old
+/// width — the generated call stops compiling instead.
+fn cpp_payload_reader(f: &ForgeField, target: &str) -> String {
+    let id = &f.id;
+    let call = match &f.sce_type {
+        SceType::Uint8
+        | SceType::Uint16
+        | SceType::Uint32
+        | SceType::Uint64
+        | SceType::Int8
+        | SceType::Int16
+        | SceType::Int32
+        | SceType::Int64 => "readInteger",
+        SceType::Float32 | SceType::Float64 => "readFloating",
+        SceType::Bool => "readBool",
+        SceType::String => "readString",
+        SceType::Bytes => "readBytes",
+        // Payload eligibility keeps an enum-typed field out of this channel;
+        // `cpp_type` says the same thing by refusing to answer for one.
+        SceType::Enum(_) => unreachable!(
+            "cpp_payload_reader called on SceType::Enum — payload eligibility \
+             admits only primitive fields"
+        ),
+    };
+    format!("fields.{call}(\"{id}\", {target}.{id})")
 }
 
 /// Build the [`CppEventPayload`] for `model`. Same SSOT guard selection
@@ -2774,13 +3222,21 @@ pub fn build_cpp_event_payload(
     // `mutable` mirrors the existing `pendingEvent*_` fields — the transition
     // matcher reads them from a const policy method.
     let mut fields = format!("    mutable {tag_type} pendingPayloadTag_ = {tag_type}::None;\n");
+    // ⚠ The hook takes the WHOLE dequeued event, not just the carrier: the
+    // lift below needs the event's name to know which schema its data must
+    // read as, and its `data` to read. It answers with a sentence — empty
+    // when the view was bound — which the engine raises as `error.execution`,
+    // the same answer the script engine gives for a guard it cannot evaluate
+    // (§scxml-3.13, measured 2026-09-22).
     let mut populate = String::from(
-        "    // Lift the type-erased typed payload into the\n    \
-// matching typed field (any_cast misses leave the tag None → guard fails).\n    \
-void populateTypedPayload(const ::std::any &tp) {\n        \
+        "    // Bind this event's typed `_event.data` view: from the type-erased\n    \
+// carrier the inject seam fills, and otherwise by lifting the fields out of\n    \
+// `data`, which every other producer fills. Returns why it could not, or \"\".\n    \
+template <typename M> ::std::string populateTypedPayload(const M &meta) {\n        \
 pendingPayloadTag_ = {TAG}::None;\n",
     )
     .replace("{TAG}", &tag_type);
+    let mut lift_cases = String::new();
     let mut inject = String::new();
 
     for event in &guarded_events {
@@ -2793,15 +3249,45 @@ pendingPayloadTag_ = {TAG}::None;\n",
         let mut field_lines = String::new();
         let mut params = String::new();
         let mut struct_inits = String::new();
+        // What the lift reads back out of `data`, and what the inject seam
+        // writes into it beside the typed carrier: the same fields, named once.
+        let mut field_reads = String::new();
+        let mut data_items = String::new();
         for f in &schema.fields {
             let ty = l.type_name(&f.sce_type).into_owned();
             field_lines.push_str(&format!("    {ty} {};\n", f.id));
             if !params.is_empty() {
                 params.push_str(", ");
+                data_items.push_str(", ");
             }
             params.push_str(&format!("{ty} {}", f.id));
             struct_inits.push_str(&format!(".{} = {}, ", f.id, f.id));
+            field_reads.push_str(&format!(
+                "            refusal = {};\n            \
+if (!refusal.empty()) {{\n                return refusal;\n            }}\n",
+                cpp_payload_reader(f, "payload")
+            ));
+            // ⚠ The wire is built by the same header the lift reads it with,
+            // and by nothing else: a generated C++ machine LINKS against
+            // `sce/include` alone (`event_schema_bytes_guard.rs` builds one
+            // that way), so a call into the runtime library here would take
+            // that property away. Each field's spelling follows its declared
+            // type — a `bytes` field as its byte-exact Latin-1 text, because
+            // JSON has no byte string.
+            data_items.push_str(&format!(
+                "::SCE::Common::EventPayloadFields::field(\"{}\", {})",
+                f.id, f.id
+            ));
         }
+        lift_cases.push_str(&format!(
+            "        case Event::{event_enum}: {{\n            \
+::SCE::Common::EventPayloadFields fields;\n            \
+::std::string refusal = ::SCE::Common::EventPayloadFields::decode(meta.data, fields);\n            \
+if (!refusal.empty()) {{\n                return refusal;\n            }}\n            \
+{struct_name} payload{{}};\n{field_reads}            \
+{field} = payload;\n            pendingPayloadTag_ = {tag_type}::{variant};\n            \
+break;\n        }}\n"
+        ));
         structs.push_str(&format!(
             "// {struct_name} — typed `_event.data` payload for\n\
 // `{event}`. Consumers inject it via the engine's `raise{variant}` seam.\n\
@@ -2810,7 +3296,7 @@ struct {struct_name} {{\n{field_lines}}};\n\n"
         tag_values.push_str(&format!("    {variant},\n"));
         fields.push_str(&format!("    mutable {struct_name} {field}{{}};\n"));
         populate.push_str(&format!(
-            "        if (const auto *p = ::std::any_cast<{struct_name}>(&tp)) {{\n            \
+            "        if (const auto *p = ::std::any_cast<{struct_name}>(&meta.typedPayload)) {{\n            \
 pendingPayloadTag_ = {tag_type}::{variant};\n            \
 {field} = *p;\n        }}\n"
         ));
@@ -2824,10 +3310,23 @@ pendingPayloadTag_ = {tag_type}::{variant};\n            \
 void raise{variant}({params}) {{\n        \
 EventWithMetadata m(PolicyType::Event::{event_enum});\n        \
 m.typedPayload = {struct_name}{{{struct_inits}}};\n        \
+// Both carriers are filled: the typed one a native guard reads, and\n        \
+// `data`, which is what the script engine binds `_event.data` from.\n        \
+// Filling only the first left an `<assign expr=\"_event.data.x\">` on this\n        \
+// event reading nothing, on every backend alike.\n        \
+m.data = ::SCE::Common::EventPayloadFields::wire({{{data_items}}});\n        \
 this->raiseExternal(m);\n    }}\n"
         ));
     }
-    populate.push_str("    }\n");
+    // The carrier first, then the lift — an event the inject seam sent has its
+    // view bound already, and its `data` says the same thing.
+    populate.push_str(&format!(
+        "        if (pendingPayloadTag_ != {tag_type}::None) {{\n            \
+return {{}};\n        }}\n        switch (meta.event) {{\n"
+    ));
+    populate.push_str(&lift_cases);
+    populate
+        .push_str("        default:\n            break;\n        }\n        return {};\n    }\n");
 
     let defs = format!(
         "// EventSchema native lowering: typed `_event.data`\n\
@@ -2873,6 +3372,38 @@ pub struct KotlinEventPayload {
     pub populate: String,
     pub inject_methods: String,
     pub guard_writes: Vec<NativeGuardWrite>,
+}
+
+/// The Kotlin runtime call that reads one EventSchema field out of a decoded
+/// `_event.data`, at the width the schema declares.
+///
+/// The width is in the method name rather than in a cast, so a field that was
+/// widened in its schema cannot keep being read at the old width — the
+/// generated call stops compiling instead.
+fn kotlin_payload_reader(f: &ForgeField) -> String {
+    let id = &f.id;
+    let reader = match &f.sce_type {
+        SceType::Uint8 => "uint8",
+        SceType::Uint16 => "uint16",
+        SceType::Uint32 => "uint32",
+        SceType::Uint64 => "uint64",
+        SceType::Int8 => "int8",
+        SceType::Int16 => "int16",
+        SceType::Int32 => "int32",
+        SceType::Int64 => "int64",
+        SceType::Float32 => "float32",
+        SceType::Float64 => "float64",
+        SceType::Bool => "boolean",
+        SceType::String => "string",
+        SceType::Bytes => "bytes",
+        // Payload eligibility keeps an enum-typed field out of this channel;
+        // `kotlin_type` says the same thing by refusing to answer for one.
+        SceType::Enum(_) => unreachable!(
+            "kotlin_payload_reader called on SceType::Enum — payload \
+             eligibility admits only primitive fields"
+        ),
+    };
+    format!("fields.{reader}(\"{id}\")")
 }
 
 /// Build the [`KotlinEventPayload`] for `model`. Same SSOT guard selection
@@ -2950,6 +3481,9 @@ pub fn build_kotlin_event_payload(
     // matching field.
     let mut populate = String::new();
     let mut when_arms = String::new();
+    // The lift's `when (event)` arms — one per guarded event, read out of
+    // `metadata.data` when no typed carrier arrived.
+    let mut lift_arms = String::new();
     for event in &guarded_events {
         let variant = filters::to_event_variant(event.clone());
         populate.push_str(&format!("        pending{variant}Payload = null\n"));
@@ -2973,6 +3507,10 @@ pub fn build_kotlin_event_payload(
         let mut ctor_params = String::new();
         let mut call_params = String::new();
         let mut call_args = String::new();
+        // What the lift reads back out of `data`, and what the inject seam
+        // writes into it beside the typed carrier: the same fields, named once.
+        let mut lift_args = String::new();
+        let mut data_items = String::new();
         for f in &schema.fields {
             let ty = l.type_name(&f.sce_type).into_owned();
             if !ctor_params.is_empty() {
@@ -2985,9 +3523,33 @@ pub fn build_kotlin_event_payload(
             call_params.push_str(&format!("{}: {ty}", f.id));
             if !call_args.is_empty() {
                 call_args.push_str(", ");
+                lift_args.push_str(", ");
+                data_items.push_str(", ");
             }
             call_args.push_str(&f.id);
+            lift_args.push_str(&kotlin_payload_reader(f));
+            data_items.push_str(&format!("\"{}\" to {}", f.id, f.id));
         }
+        // ⚠ The decode is INSIDE the branch, not above the chain: an event
+        // whose name this document schema'd is the only one whose data must
+        // read as fields. Decoding first would refuse every ordinary event —
+        // one with no payload at all — and raise `error.execution` for each.
+        //
+        // ⚠ An `if` chain rather than a `when (event)`, because exhaustiveness
+        // would decide the shape: a document with ONE schema'd event has a
+        // `when` that covers its whole sealed event type, and the `else` a
+        // two-event document needs is then "redundant" — a warning, and this
+        // module compiles with -Werror. `if` asks no such question.
+        let kw = if lift_arms.is_empty() {
+            "if"
+        } else {
+            "} else if"
+        };
+        lift_arms.push_str(&format!(
+            "                {kw} (event == {event_ref}) {{\n                    \
+val fields = EventPayload.decode(metadata.data)\n                    \
+{field} = {class_name}({lift_args})\n"
+        ));
         data_classes.push_str(&format!(
             "// {class_name} is the NL\u{2192}IR Item C1 Path A typed `_event.data`\n\
 // payload for `{event}`. Consumers inject it via the `raise{variant}` seam\n\
@@ -3007,11 +3569,35 @@ data class {class_name}({ctor_params})\n\n"
 // `{event}` — binds the event name and the payload field values in one call.\n    \
 fun raise{variant}({call_params}) {{\n        \
 send(\n            {event_ref},\n            \
-EventMetadata(type = \"external\", typedPayload = {class_name}({call_args}))\n        )\n    }}\n"
+EventMetadata(\n                \
+type = \"external\",\n                \
+typedPayload = {class_name}({call_args}),\n                \
+// Both carriers are filled: the typed one a native guard reads, and\n                \
+// `data`, which is what the script engine binds `_event.data` from.\n                \
+// Filling only the first left an `<assign expr=\"_event.data.x\">` on\n                \
+// this event reading nothing, on every backend alike.\n                \
+data = EventPayload.encode(mapOf({data_items}))\n            \
+)\n        )\n    }}\n"
         ));
     }
     populate.push_str(&when_arms);
-    populate.push_str("            else -> {}\n        }\n");
+    // ⚠ The lift's refusal is `error.execution` and a guard that does not fire,
+    // which is what the SCRIPT ENGINE answers for the same guard on the same
+    // data (§scxml-3.13, measured 2026-09-22). A native lowering that
+    // answered differently would make the optimisation observable. The raise
+    // itself is the engine's (`bindTypedPayload`), which turns the refusal
+    // thrown here into the error event.
+    populate.push_str(
+        "            else -> {\n                \
+// No typed carrier, so the producer was not the inject seam: read the\n                \
+// fields out of `data`, which every other producer fills.\n",
+    );
+    populate.push_str(&lift_arms);
+    populate.push_str("                }\n            }\n        }\n");
+    debug_assert!(
+        populate.ends_with("}\n"),
+        "the populate body must close every block it opened"
+    );
 
     let defs = format!(
         "// NL\u{2192}IR Item C1 Path A (EventSchema MCU native lowering): typed\n\
@@ -3120,8 +3706,10 @@ pub fn build_python_event_payload(
     let mut data_classes = String::new();
     let mut init = String::new();
     let mut inject = String::new();
-    // `populate` resets every field to None first (a non-typed event clears a
-    // stale payload), then an `isinstance` cascade binds the matching field.
+    // `populate` resets every field to None first (a carrier for another event
+    // clears a stale payload), then binds each event's field: from the typed
+    // carrier the inject seam fills, and otherwise by LIFTING the fields out of
+    // `EventMetadata.data`, which every other producer fills.
     let mut populate = String::new();
     for event in &guarded_events {
         let snake = filters::to_snake_case(event.clone());
@@ -3144,14 +3732,29 @@ pub fn build_python_event_payload(
         let mut field_lines = String::new();
         let mut params = String::new();
         let mut call_args = String::new();
+        // What the lift reads the data as, and what the inject seam writes
+        // into `data` beside the typed carrier: the same fields, named once.
+        let mut lift_fields = String::new();
+        let mut data_items = String::new();
         for f in &schema.fields {
             let ty = l.type_name(&f.sce_type).into_owned();
             field_lines.push_str(&format!("    {}: {ty}\n", f.id));
             params.push_str(&format!(", {}: {ty}", f.id));
             if !call_args.is_empty() {
                 call_args.push_str(", ");
+                data_items.push_str(", ");
             }
             call_args.push_str(&f.id);
+            lift_fields.push_str(&format!("(\"{}\", {ty}), ", f.id));
+            // ⚠ JSON has no byte string, and `json.dumps` REFUSES one, so a
+            // `bytes` field rides the wire as its byte-exact Latin-1 text (the
+            // lift reads it back the same way). Printable ASCII — what a bytes
+            // guard compares — is the same characters either way.
+            if matches!(f.sce_type, SceType::Bytes) {
+                data_items.push_str(&format!("\"{}\": {}.decode(\"latin-1\")", f.id, f.id));
+            } else {
+                data_items.push_str(&format!("\"{}\": {}", f.id, f.id));
+            }
         }
         data_classes.push_str(&format!(
             "@dataclass\n\
@@ -3163,9 +3766,23 @@ name this class directly.\"\"\"\n\n{field_lines}\n\n"
         init.push_str(&format!("        self._pending_{snake}_payload = None\n"));
         let kw = if first { "if" } else { "elif" };
         first = false;
+        // The typed carrier first, then the lift. ⚠ The lift's refusal is
+        // `error.execution` and a guard that does not fire, which is what the
+        // SCRIPT ENGINE answers for the same guard on the same data (W3C SCXML
+        // 3.13, measured 2026-09-22). A native lowering that answered
+        // differently would make the optimisation observable.
         populate.push_str(&format!(
             "        {kw} isinstance(_tp, {class_name}):\n            \
-self._pending_{snake}_payload = _tp\n"
+self._pending_{snake}_payload = _tp\n        \
+elif event == {machine}Event.{event_const}:\n            \
+try:\n                \
+self._pending_{snake}_payload = {class_name}(*_lift_typed_payload(\n                    \
+metadata.data, ({lift_fields})))\n            \
+except _TypedPayloadError as _exc:\n                \
+_engine = getattr(self, \"_engine_ref\", None)\n                \
+if _engine is not None:\n                    \
+self._raise_error_execution(\n                        \
+_engine, \"`{event}` payload: \" + str(_exc))\n"
         ));
         // Per-event typed inject seam: a module-level free function (the Python
         // twin of the Go `Raise<Event>` func — the runtime `Engine` is a
@@ -3175,10 +3792,17 @@ self._pending_{snake}_payload = _tp\n"
         inject.push_str(&format!(
             "def raise_{snake}(engine{params}) -> None:\n    \
 \"\"\"NL\u{2192}IR Item C1 Path A typed `_event.data` inject seam for `{event}` —\n    \
-binds the event name and the payload field values in one call.\"\"\"\n    \
+binds the event name and the payload field values in one call.\n\n    \
+Both carriers are filled: the typed one a native guard reads, and `data`,\n    \
+which is what the script engine binds `_event.data` from. Filling only the\n    \
+first left an `<assign expr=\\\"_event.data.x\\\">` on this event reading\n    \
+nothing, on every backend alike.\"\"\"\n    \
 engine.send_event(\n        \
 {machine}Event.{event_const},\n        \
-EventMetadata(event_type=\"external\", typed_payload={class_name}({call_args})),\n    )\n\n\n"
+EventMetadata(\n            \
+event_type=\"external\",\n            \
+typed_payload={class_name}({call_args}),\n            \
+data={{{data_items}}},\n        ),\n    )\n\n\n"
         ));
     }
 
@@ -3189,6 +3813,13 @@ EventMetadata(event_type=\"external\", typed_payload={class_name}({call_args})),
 # The Python twin of the Rust `{machine}Payload` enum / Go per-event payload\n\
 # structs: one dataclass per guarded event, carried through the queue in the\n\
 # type-erased `EventMetadata.typed_payload` and lifted into a `_pending_*` field.\n\
+#\n\
+# The carrier is not the only source: `EventMetadata.data` is what every other\n\
+# producer fills -- `<send>` with `<param>`, an invoke forwarding either way,\n\
+# autoforward, BasicHTTP, mesh -- so the fields are lifted out of it when no\n\
+# typed carrier arrives (`sce_runtime.event_payload`).\n\
+from sce_runtime.event_payload import TypedPayloadError as _TypedPayloadError\n\
+from sce_runtime.event_payload import lift as _lift_typed_payload\n\n\n\
 {data_classes}"
     );
 

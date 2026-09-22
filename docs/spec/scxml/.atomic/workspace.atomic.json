@@ -1287,6 +1287,31 @@
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "error_cascade_events",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "liftTypedPayload",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "bindTypedPayload",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "bind_lifted_payload",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "build_c11_event_payload",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "bindTypedPayload",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -2257,6 +2282,55 @@
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "execute_transition_actions",
           "kind": "implements"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/event_payload.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/common/EventMetadataHelper.h",
+          "symbol": "populatePolicyFromMetadata",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/common/EventPayloadLift.h",
+          "symbol": "EventPayloadFields",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "bindTypedPayload",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "liftTypedPayload",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "build_c11_event_payload",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "build_cpp_event_payload",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "build_go_event_payload",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "build_kotlin_event_payload",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "build_rust_event_payload",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -5727,6 +5801,24 @@
           "file": "sce-build/src/forge/type_ctx.rs",
           "symbol": "procedure",
           "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/event_payload.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/common/EventPayloadLift.h",
+          "symbol": "EventPayloadFields",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/EventPayload.kt",
+          "symbol": "EventPayload",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/event_payload.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -6006,6 +6098,11 @@
         {
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "set_next_event_is_external",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "raise_external_typed_with_data",
           "kind": "references"
         }
       ],
@@ -12731,6 +12828,54 @@
         {
           "file": "backends/rust/runtime/src/scripting/i_script_engine.rs",
           "symbol": "set_current_event",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/event_payload.h",
+          "symbol": "sce_payload_decode",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/event_payload.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/EventPayload.kt",
+          "symbol": "EventPayload",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/event_payload.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "StatePolicy",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/common/EventPayloadLift.h",
+          "symbol": "EventPayloadFields",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/common/EventPayloadLift.h",
+          "symbol": "decode",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/event_payload.go",
+          "symbol": "LiftPayload",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/EventPayload.kt",
+          "symbol": "decode",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/event_payload.rs",
+          "symbol": "decode",
           "kind": "references"
         }
       ],

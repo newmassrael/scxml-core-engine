@@ -23,8 +23,10 @@
 
 use sce_rust_tests::integration::event_schema_native::{
     StatechartBytesInject, StatechartBytesPolicy, StatechartBytesSignalReceivedPayload,
-    StatechartBytesState, StatechartMinimalInject, StatechartMinimalJobCompletedPayload,
-    StatechartMinimalPolicy, StatechartMinimalState,
+    StatechartBytesState, StatechartLiftedEvent, StatechartLiftedInject,
+    StatechartLiftedJobCompletedPayload, StatechartLiftedPolicy, StatechartLiftedState,
+    StatechartMinimalInject, StatechartMinimalJobCompletedPayload, StatechartMinimalPolicy,
+    StatechartMinimalState,
 };
 
 #[test]
@@ -107,5 +109,114 @@ fn bytes_payload_guard_misses_on_nonmatch() {
         engine.get_current_state(),
         StatechartBytesState::Waiting,
         "raw == b\"no\" must leave the machine in `waiting`"
+    );
+}
+
+// ── The other carrier: the `data` wire every producer but the inject seam
+// fills ──────────────────────────────────────────────────────────────────
+//
+// NL→IR Item C1 Path A gave a schema'd event a typed payload, and until
+// 2026-09-22 a natively lowered guard could read NOTHING else — so the same
+// guard answered differently depending on which producer sent its event, and a
+// payload could not cross an invoke boundary at all. These drive
+// `statechart_lifted`, whose guard is the same comparison and whose
+// `error.execution` transition makes a refusal observable with no script
+// engine to ask.
+//
+// The refusals are not a policy chosen here: they are what the SCRIPT ENGINE
+// answers for the same guard on the same data (W3C SCXML 3.13, measured on
+// this document). A native lowering that answered differently would make the
+// optimisation observable, which is the one thing it may not be.
+
+/// The event as every producer but the inject seam delivers it: its fields on
+/// the `data` wire, with no typed payload riding along.
+fn deliver_lifted_data(engine: &mut sce_rust_runtime::Engine<StatechartLiftedPolicy>, data: &str) {
+    engine.raise(sce_rust_runtime::event::EventWithMetadata {
+        event: StatechartLiftedEvent::JobCompleted,
+        payload: Default::default(),
+        metadata: sce_rust_runtime::event::EventMetadata {
+            event_type: sce_rust_runtime::event::EventType::External,
+            data: data.to_string(),
+            ..Default::default()
+        },
+        target: String::new(),
+    });
+    engine.step();
+}
+
+#[test]
+fn a_payload_on_the_data_wire_fires_the_same_guard() {
+    let mut engine = sce_rust_runtime::Engine::new(StatechartLiftedPolicy::new());
+    engine.initialize();
+
+    deliver_lifted_data(&mut engine, r#"{"elapsed_ms": 0}"#);
+
+    assert_eq!(
+        engine.get_current_state(),
+        StatechartLiftedState::Done,
+        "a payload that arrived on the `data` wire must satisfy the same \
+         native guard the inject seam's typed payload does"
+    );
+}
+
+#[test]
+fn the_inject_seam_still_fires_its_own_guard() {
+    let mut engine = sce_rust_runtime::Engine::new(StatechartLiftedPolicy::new());
+    engine.initialize();
+
+    engine.raise_job_completed(StatechartLiftedJobCompletedPayload { elapsed_ms: 0 });
+    engine.step();
+
+    assert_eq!(
+        engine.get_current_state(),
+        StatechartLiftedState::Done,
+        "the typed inject seam must still fire the guard it was built for"
+    );
+}
+
+#[test]
+fn a_value_of_another_type_is_refused_as_the_script_engine_refuses_it() {
+    let mut engine = sce_rust_runtime::Engine::new(StatechartLiftedPolicy::new());
+    engine.initialize();
+
+    deliver_lifted_data(&mut engine, r#"{"elapsed_ms": "nought"}"#);
+
+    assert_eq!(
+        engine.get_current_state(),
+        StatechartLiftedState::Refused,
+        "a text where the schema declares a number must raise error.execution \
+         and leave the guard unfired"
+    );
+}
+
+#[test]
+fn an_event_with_no_data_is_refused_the_same_way() {
+    let mut engine = sce_rust_runtime::Engine::new(StatechartLiftedPolicy::new());
+    engine.initialize();
+
+    deliver_lifted_data(&mut engine, "");
+
+    assert_eq!(
+        engine.get_current_state(),
+        StatechartLiftedState::Refused,
+        "an event carrying no data cannot answer a guard that reads a field of \
+         it, and the script engine raises error.execution for exactly that"
+    );
+}
+
+#[test]
+fn a_payload_the_guard_rejects_is_not_an_error() {
+    let mut engine = sce_rust_runtime::Engine::new(StatechartLiftedPolicy::new());
+    engine.initialize();
+
+    // The payload reads perfectly; the comparison is simply false. Nothing
+    // failed, so nothing is raised — the machine waits.
+    deliver_lifted_data(&mut engine, r#"{"elapsed_ms": 5}"#);
+
+    assert_eq!(
+        engine.get_current_state(),
+        StatechartLiftedState::Waiting,
+        "a well-typed payload the guard rejects must leave the machine waiting, \
+         not route it to the error handler"
     );
 }

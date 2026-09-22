@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  NL→IR Item C1 Path A: the typed `_event.data` view has TWO sources, and
+  this document is where both are asked the same question.
+
+  `statechart_minimal.scxml` beside it drives the typed payload the generated
+  inject seam fills. Every other producer — `<send>` with `<param>`, an invoke
+  forwarding an event either way, autoforward, BasicHTTP, mesh — fills the
+  event's `data` instead, and until 2026-09-22 a natively lowered guard could
+  not see that at all: the same guard answered differently depending on where
+  its event came from.
+
+  So the guard here is the same comparison, and the gate delivers it both ways.
+  The `error.execution` transition is what makes the refusals observable: a
+  payload that does not read as its schema raises it and the guard does not
+  fire, which is what W3C SCXML 3.13 gives for a guard that cannot be evaluated
+  — and, measured on this document through the script engine, exactly what the
+  Lua path answers for no data, a missing field, or a value of another type.
+
+  No executable content, so `needs_script_engine` stays false: the lift is part
+  of the native path and needs no engine of its own.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="statechart_lifted"
+       version="1.0"
+       initial="waiting"
+       datamodel="ecmascript">
+  <sce:import src="schema_job_completed_minimal.scxml" kind="event-schema" as="JobCompletedSchema"/>
+  <state id="waiting">
+    <transition event="error.execution" target="refused"/>
+    <transition event="job.completed" cond="_event.data.elapsed_ms === 0" target="done"/>
+  </state>
+  <state id="done"/>
+  <state id="refused"/>
+</scxml>

@@ -87,16 +87,22 @@ template <typename P>
 struct has_pendingEventName<P, std::void_t<decltype(std::declval<P>().pendingEventName_)>> : std::true_type {};
 
 // NL→IR Item C1 Path A (EventSchema native lowering): detect the generated
-// policy's typed-payload populate hook. Present only on a policy whose
-// statechart reads a typed `_event.data.<field>` guard that lowered natively;
-// when absent the if-constexpr block below is a no-op, so every existing
-// policy is unaffected.
-template <typename P, typename = void> struct has_populateTypedPayload : std::false_type {};
+// policy's typed-payload bind hook. Present only on a policy whose statechart
+// reads a typed `_event.data.<field>` guard that lowered natively; when absent
+// the if-constexpr block below is a no-op, so every existing policy is
+// unaffected.
+//
+// ⚠ The hook takes the WHOLE dequeued event, not just its `std::any` carrier:
+// binding the typed view needs the event's name — to know which schema its data
+// must read as — and its `data`, which is what every producer but the generated
+// inject seam fills. It answers with the sentence saying why it could not bind,
+// empty when it did, and the ENGINE turns that into `error.execution`.
+template <typename P, typename M, typename = void> struct has_populateTypedPayload : std::false_type {};
 
-template <typename P>
+template <typename P, typename M>
 struct has_populateTypedPayload<
-    P, std::void_t<decltype(std::declval<P &>().populateTypedPayload(std::declval<const std::any &>()))>>
-    : std::true_type {};
+    P, M, std::void_t<decltype(std::declval<P &>().populateTypedPayload(std::declval<const M &>()))>> : std::true_type {
+};
 
 }  // namespace detail
 
@@ -241,15 +247,11 @@ public:
             }
         }
 
-        // NL→IR Item C1 Path A: lift the dequeued event's typed `_event.data`
-        // payload into the generated policy's typed channel (no script engine).
-        // The hook resets its tag and any_casts the carrier into the matching
-        // pending<Event>Payload_ field; the native transition guards read it.
-        // Twin of the Go policy's PopulateEventMetadata type-switch and the
-        // C11 pop loop's `sm->pending_payload = evt.payload`.
-        if constexpr (detail::has_populateTypedPayload<Policy>::value) {
-            policy.populateTypedPayload(metadata.typedPayload);
-        }
+        // NL→IR Item C1 Path A: binding the typed `_event.data` view is NOT
+        // done here. The bind can refuse — a payload that does not read as its
+        // schema — and §scxml-3.13's answer to that is `error.execution`, which
+        // only the engine can raise. `StaticExecutionEngine::bindTypedPayload`
+        // owns both halves, beside its own call to this function.
     }
 
     /**

@@ -322,18 +322,50 @@ abstract class StateMachineEngine<S : State, E : Event>(
     protected var currentEventMetadata: EventMetadata = EventMetadata.EMPTY
 
     /**
-     * NL→IR Item C1 Path A (EventSchema MCU native lowering): lift the dequeued
-     * event's type-erased typed `_event.data` payload into the typed policy
-     * field(s) the generated native guards read. Called at every point that
-     * assigns [currentEventMetadata], so a stale payload from a prior event is
-     * always cleared before the next microstep — a non-typed event (carrier
-     * `null`) resets the generated fields to `null`, making every typed guard
-     * fail. The base implementation is a no-op; only a generated machine that
-     * lowered at least one typed guard overrides it. The Kotlin twin of the Go
-     * policy's `PopulateEventMetadata` type-switch / the C11 pop loop's
+     * NL→IR Item C1 Path A (EventSchema MCU native lowering): bind the dequeued
+     * event's typed `_event.data` view into the typed policy field(s) the
+     * generated native guards read. Called at every point that assigns
+     * [currentEventMetadata], so a stale payload from a prior event is always
+     * cleared before the next microstep — an event with no typed view resets
+     * the generated fields to `null`, making every typed guard fail. The base
+     * implementation is a no-op; only a generated machine that lowered at least
+     * one typed guard overrides it. The Kotlin twin of the Go policy's
+     * `PopulateEventMetadata` + `LiftTypedPayload` / the C11 pop loop's
      * `sm->pending_payload = evt.payload`.
+     *
+     * The view has two sources. The type-erased carrier
+     * [EventMetadata.typedPayload] is filled by ONE producer, the generated
+     * `raise<Event>` inject seam; every other producer fills
+     * [EventMetadata.data], so the fields are lifted out of that instead when
+     * no carrier arrived. That is what lets the same guard answer the same way
+     * whichever producer sent the event, including one on the far side of an
+     * invoke boundary.
+     *
+     * An override throws [EventPayload.Refusal] when the data cannot be read as
+     * the event's schema; [bindTypedPayload] turns it into `error.execution`.
      */
-    protected open fun populateTypedPayload(metadata: EventMetadata) {}
+    protected open fun populateTypedPayload(event: E, metadata: EventMetadata) {}
+
+    /**
+     * Bind the dequeued event's typed `_event.data` view, reporting a payload
+     * that cannot be read as `error.execution` (NL→IR Item C1 Path A).
+     *
+     * The raise lives here rather than in each generated machine so every one
+     * of them answers alike, and the answer is the script engine's: W3C SCXML
+     * 3.13 gives `error.execution` for a guard that cannot be evaluated and
+     * treats it as false, which is what an unbound typed field already does.
+     */
+    private fun bindTypedPayload(event: E, metadata: EventMetadata) {
+        try {
+            populateTypedPayload(event, metadata)
+        } catch (refusal: EventPayload.Refusal) {
+            // §scxml-3.12.2 leaves a document that declares no `error.execution`
+            // transition nothing to answer with; the guard still does not fire.
+            val errorEvent = resolveEventByName("error.execution") ?: return
+            val name = eventNameOf(event) ?: "the event"
+            raisePlatformError(errorEvent, "`$name` payload: ${refusal.message}")
+        }
+    }
 
     /**
      * §scxml-3.12.1: Event channel (FIFO, unbounded).
@@ -1370,7 +1402,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 for (queued in eventChannel) {
                     if (isInFinalState) break
                     currentEventMetadata = queued.metadata
-                    populateTypedPayload(queued.metadata)
+                    bindTypedPayload(queued.event, queued.metadata)
                     processMicrostep(queued.event, queued.metadata)
                 }
             }
@@ -2070,7 +2102,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         macrostepTruncated = false
         macrostepMicrostepsTaken = 0
         currentEventMetadata = queued.metadata
-        populateTypedPayload(queued.metadata)
+        bindTypedPayload(queued.event, queued.metadata)
         executeFinalizeForChildEvent(queued.event)
         autoForwardEvent(queued.event, queued.metadata)
         // §scxml-3.1.2: discarding an event no transition matched is the rule;
@@ -2939,7 +2971,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 }
                 val queued = internalEventQueue.removeFirst()
                 currentEventMetadata = queued.metadata
-                populateTypedPayload(queued.metadata)
+                bindTypedPayload(queued.event, queued.metadata)
                 // §scxml-3.12.2: the processor raises `error.*` into this
                 // queue and the clause says they "are ignored if no transition
                 // is found that matches them". Ignoring them is the clause;

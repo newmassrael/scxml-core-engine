@@ -1851,6 +1851,7 @@ protected:
                 currentEventInvokeId_ = eventWithMeta.invokeId;
                 SCE::Common::EventMetadataHelper::populatePolicyFromMetadata<StatePolicy, Event>(policy_,
                                                                                                  eventWithMeta);
+                bindTypedPayload(eventWithMeta);
 
                 SCE_LOG_DEBUG("AOT processInternalQueue: Processing internal event, currentState={}",
                               static_cast<int>(currentState_));
@@ -1977,6 +1978,7 @@ protected:
     void applyExternalEventPreamble(const EventWithMetadata &eventWithMeta) {
         currentEventInvokeId_ = eventWithMeta.invokeId;
         SCE::Common::EventMetadataHelper::populatePolicyFromMetadata<StatePolicy, Event>(policy_, eventWithMeta);
+        bindTypedPayload(eventWithMeta);
 
         // §scxml-6.5: Execute finalize BEFORE processing child events
         if constexpr (SCE::Core::HasFinalize<StatePolicy, EventWithMetadata, StaticExecutionEngine<StatePolicy>>) {
@@ -3204,6 +3206,37 @@ public:
     }
 
 private:
+    /**
+     * @brief Bind the dequeued event's typed `_event.data` view (NL→IR Item C1 Path A)
+     *
+     * The generated policy's hook has two sources for that view. The type-erased
+     * carrier is filled by ONE producer, the generated `raise<Event>` inject
+     * seam; every other producer — `<send>` with `<param>`, an invoke forwarding
+     * either way, autoforward, BasicHTTP, mesh — fills `data`, so the fields are
+     * lifted out of that instead when no carrier arrived. That is what lets the
+     * same guard answer the same way whichever producer sent the event.
+     *
+     * A payload that does not read as its schema is `error.execution` and a
+     * guard that does not fire — §scxml-3.13's answer for a guard that cannot be
+     * evaluated, and the one the script engine gives for the same guard on the
+     * same data. The raise lives here rather than in each generated policy so
+     * every machine answers alike; a document that declares no `error.execution`
+     * transition has nothing to answer with (§scxml-3.12.2) and the guard still
+     * does not fire.
+     */
+    void bindTypedPayload(const EventWithMetadata &eventWithMeta) {
+        if constexpr (SCE::Common::detail::has_populateTypedPayload<StatePolicy, EventWithMetadata>::value) {
+            const std::string refusal = policy_.populateTypedPayload(eventWithMeta);
+            if (refusal.empty()) {
+                return;
+            }
+            if (auto errorEvent = policy_.getEventFromName("error.execution")) {
+                raise(EventWithMetadata(*errorEvent, std::string("`") + policy_.getEventName(eventWithMeta.event) +
+                                                         "` payload: " + refusal));
+            }
+        }
+    }
+
     /**
      * @brief Perform a host-served send whose delay has elapsed, and report it
      *        if nobody did (§scxml-6.2 + §scxml-6.2.4)

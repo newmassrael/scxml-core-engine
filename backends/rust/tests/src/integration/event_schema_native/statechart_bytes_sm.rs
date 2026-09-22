@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: cefcd72f6504a9d6f552bf0f94cecad5fbb262ec59b9140af0c705b7cf982cd7
-// template-hash: ebaa86fbc385aba6e768cc24b7caf9cb286a422578625ecd77b79d34c33f2e74
+// source-hash: ca5f07e498f08e9c44fe0c543fc369f243205362af8b0e260e1a44e3bfa1bd0d
+// template-hash: 583c0d21905ba9b04748a3d6c74f6cc9796a6884a4c31fd1817c64ee900ca1d2
 // generated-at: 0
 
 // SPDX-License-Identifier: MIT
@@ -146,9 +146,16 @@ pub trait StatechartBytesInject {
 
 impl StatechartBytesInject for ::sce_rust_runtime::Engine<StatechartBytesPolicy> {
     fn raise_signal_received(&mut self, payload: StatechartBytesSignalReceivedPayload) {
-        self.raise_external_typed(
+        let data = ::sce_rust_runtime::payload_wire(format_args!(
+            "{{\"raw\":{}}}",
+            ::sce_rust_runtime::event_payload::quote(
+                &::sce_rust_runtime::event_payload::bytes_as_payload_text(&payload.raw)
+            )
+        ));
+        self.raise_external_typed_with_data(
             StatechartBytesEvent::SignalReceived,
             StatechartBytesPayload::SignalReceived(payload),
+            &data,
         );
     }
 }
@@ -397,6 +404,34 @@ impl StatePolicy for StatechartBytesPolicy {
     // variant, against which the variant-specific guards simply fail.
     fn populate_event_payload(&mut self, payload: &Self::Payload) {
         self.pending_payload = payload.clone();
+    }
+
+    // NL→IR Item C1 Path A: …and when no typed payload rode with the event,
+    // read that view out of the `data` every other producer fills — `<send>`
+    // with `<param>`, an invoke forwarding either way, autoforward, BasicHTTP,
+    // mesh. A payload that does not read as this event's schema is returned as
+    // a refusal, which the engine raises as `error.execution`.
+    fn lift_event_payload(
+        &mut self,
+        event: Self::Event,
+        data: &str,
+    ) -> ::core::result::Result<(), ::sce_rust_runtime::event_payload::PayloadRefusal> {
+        // A typed payload already bound the view, so the producer was the inject
+        // seam and there is nothing to read out of `data`.
+        if self.pending_payload != StatechartBytesPayload::None {
+            return Ok(());
+        }
+        match event {
+            StatechartBytesEvent::SignalReceived => {
+                let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
+                self.pending_payload =
+                    StatechartBytesPayload::SignalReceived(StatechartBytesSignalReceivedPayload {
+                        raw: fields.bytes("raw")?,
+                    });
+            }
+            _ => {}
+        }
+        Ok(())
     }
 
     // ======================================================================

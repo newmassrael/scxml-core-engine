@@ -285,6 +285,28 @@ pub fn sce_string_from_str(s: &str) -> SceString {
     }
 }
 
+/// The `_event.data` wire a generated inject seam writes beside its typed
+/// payload (EventSchema native lowering).
+///
+/// Takes [`core::fmt::Arguments`] — what `format_args!` makes — because the
+/// caller is generated code that compiles on both profiles, and only this
+/// crate knows which one it is in. Under std the arguments are rendered; under
+/// no_std there is no `EventMetadata::data` to carry them and nothing reads a
+/// wire, so the answer is the empty string and no formatting machinery is
+/// linked.
+#[inline]
+pub fn payload_wire(args: ::core::fmt::Arguments<'_>) -> SceString {
+    #[cfg(not(feature = "no_std"))]
+    {
+        sce_string_from_str(&::std::fmt::format(args))
+    }
+    #[cfg(feature = "no_std")]
+    {
+        let _ = args;
+        SceString::default()
+    }
+}
+
 /// Conflict-resolution transition buffer for the W3C Appendix D.2 microstep,
 /// resolving to the natural collection of each runtime profile.
 ///
@@ -464,6 +486,12 @@ pub fn stable_sort_by_key<T, K: Ord, F: FnMut(&T) -> K>(buf: &mut [T], mut f: F)
 pub mod clock;
 pub mod engine;
 pub mod event;
+/// NL→IR Item C1 Path A: reading a typed `_event.data` view out of the wire
+/// that every producer but the generated inject seam fills. `std` only —
+/// `EventMetadata::data` is, and a `no_std` build has no script engine whose
+/// answer this one has to match.
+#[cfg(not(feature = "no_std"))]
+pub mod event_payload;
 pub mod hal;
 pub mod helpers;
 /// §scxml-6.2.5 host-supplied Event I/O Processors — the payload types a

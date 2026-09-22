@@ -670,6 +670,24 @@ func (p *{{ machine_name }}Policy) PopulateEventMetadata(meta *sce.EventMetadata
 {% endif %}
 }
 
+// LiftTypedPayload binds the dequeued event's typed `_event.data` view from
+// the data it carries (NL→IR Item C1 Path A).
+//
+// The typed carrier PopulateEventMetadata reads is filled by one producer, the
+// generated Raise<Event> inject seam. Every other producer — <send> with
+// <param>, an invoke forwarding either way, autoforward, BasicHTTP, mesh —
+// fills EventMetadata.Data, so the schema's fields are read out of that here.
+// A refusal is returned for the engine to raise as error.execution, which is
+// what W3C SCXML 3.13 gives for a guard that cannot be evaluated.
+func (p *{{ machine_name }}Policy) LiftTypedPayload(event {{ machine_name }}Event, meta *sce.EventMetadata) error {
+{% if event_payload_active %}
+{{ event_payload_lift }}
+{% else %}
+	// This document lowered no typed guard, so no event carries a typed view.
+	return nil
+{% endif %}
+}
+
 // ClearEventMetadata resets pending event metadata (W3C SCXML 5.10).
 func (p *{{ machine_name }}Policy) ClearEventMetadata() {
 {% if event_payload_active %}

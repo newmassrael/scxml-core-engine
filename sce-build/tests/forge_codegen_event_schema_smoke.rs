@@ -217,7 +217,7 @@ fn statechart_native_lowering_emits_engine_free_typed_guard() {
     // `Engine` is foreign, so an inherent impl would be E0116) whose impl
     // binds the event name + payload variant in one call so the pairing
     // cannot be constructed inconsistently (the generic
-    // `raise_external_typed` is the underlying primitive).
+    // `raise_external_typed_with_data` is the underlying primitive).
     assert!(
         src.contains("pub trait StatechartMinimalInject")
             && src.contains(
@@ -226,11 +226,27 @@ fn statechart_native_lowering_emits_engine_free_typed_guard() {
             && src.contains(
                 "fn raise_job_completed(&mut self, payload: StatechartMinimalJobCompletedPayload)"
             )
-            && src.contains(
-                "self.raise_external_typed(StatechartMinimalEvent::JobCompleted, \
-                 StatechartMinimalPayload::JobCompleted(payload))"
-            ),
+            && src.contains("self.raise_external_typed_with_data(")
+            && src.contains("StatechartMinimalPayload::JobCompleted(payload),"),
         "expected the per-event typed inject extension trait (orphan-rule-clean); got:\n{src}"
+    );
+    // ⚠ `…_with_data`, not `raise_external_typed`: the seam fills BOTH
+    // carriers. The typed payload is what a native guard reads; the wire is
+    // what the script engine binds `_event.data` from, and a document with an
+    // `<assign expr="_event.data.x">` on this same event read nothing from it
+    // while only the first was filled (measured 2026-09-22).
+    assert!(
+        src.contains("::sce_rust_runtime::payload_wire(format_args!(")
+            && src.contains("\\\"elapsed_ms\\\":{}"),
+        "expected the inject seam to fill the `data` wire too; got:\n{src}"
+    );
+    // The other direction: an event carrying only that wire — which is every
+    // producer except the seam above — has its typed view lifted back out.
+    assert!(
+        src.contains("fn lift_event_payload(")
+            && src.contains("PayloadFields::decode(data)?")
+            && src.contains("fields.unsigned::<u32>(\"elapsed_ms\")?"),
+        "expected the lift that reads the typed view out of `data`; got:\n{src}"
     );
     assert!(
         !src.contains("safe_evaluate_guard"),
@@ -297,14 +313,28 @@ fn statechart_native_lowering_go_emits_engine_free_typed_guard() {
     // Per-event typed inject: a free function (the Go twin of Rust's
     // extension trait — `Engine` is foreign, so no method can be added) that
     // binds the event name + payload field values in one call, packing them
-    // into the type-erased `TypedPayload` carrier.
+    // into the type-erased `TypedPayload` carrier AND onto the `Data` wire.
     assert!(
         src.contains(
             "func RaiseJobCompleted(e *sce.Engine[StatechartMinimalState, StatechartMinimalEvent], elapsed_ms uint32)"
-        ) && src.contains(
-            "Metadata: sce.EventMetadata{EventType: sce.EventTypeExternal, TypedPayload: StatechartMinimalJobCompletedPayload{"
-        ),
+        ) && src.contains("TypedPayload: StatechartMinimalJobCompletedPayload{"),
         "expected the per-event typed inject seam; got:\n{src}"
+    );
+    // ⚠ Both carriers. The typed payload is what a native guard reads; `Data`
+    // is what the script engine binds `_event.data` from, and a document with
+    // an `<assign expr="_event.data.x">` on this same event read nothing from
+    // it while only the first was filled (measured 2026-09-22).
+    assert!(
+        src.contains("Data: sce.PayloadJSON(map[string]any{\"elapsed_ms\": elapsed_ms, })"),
+        "expected the inject seam to fill the `Data` wire too; got:\n{src}"
+    );
+    // The other direction: an event carrying only that wire — which is every
+    // producer except the seam above — has its typed view lifted back out.
+    assert!(
+        src.contains("func (p *StatechartMinimalPolicy) LiftTypedPayload(")
+            && src.contains("sce.LiftPayload(meta.Data)")
+            && src.contains("sce.PayloadUnsigned[uint32](fields, \"elapsed_ms\")"),
+        "expected the lift that reads the typed view out of `Data`; got:\n{src}"
     );
     assert!(
         !src.contains("evaluateGuard"),
@@ -358,11 +388,21 @@ fn statechart_native_lowering_kotlin_emits_engine_free_typed_guard() {
         "expected the nullable typed-payload policy field; got:\n{src}"
     );
     assert!(
-        src.contains("override fun populateTypedPayload(metadata: EventMetadata)")
-            && src.contains(
-                "is StatechartMinimalJobCompletedPayload -> pendingJobCompletedPayload = tp"
-            ),
-        "expected the populateTypedPayload carrier lift; got:\n{src}"
+        src.contains(
+            "override fun populateTypedPayload(event: StatechartMinimalEvent, metadata: EventMetadata)"
+        ) && src.contains(
+            "is StatechartMinimalJobCompletedPayload -> pendingJobCompletedPayload = tp"
+        ),
+        "expected the populateTypedPayload carrier bind; got:\n{src}"
+    );
+    // ⚠ The hook takes the EVENT as well as the metadata, because binding the
+    // typed view has a second source: an event that arrived with only the
+    // `data` wire — every producer except the inject seam — has its fields
+    // read out of that, and only the event's name says which schema to read.
+    assert!(
+        src.contains("EventPayload.decode(metadata.data)")
+            && src.contains("fields.uint32(\"elapsed_ms\")"),
+        "expected the lift that reads the typed view out of `data`; got:\n{src}"
     );
     assert!(
         src.contains(
@@ -375,9 +415,12 @@ fn statechart_native_lowering_kotlin_emits_engine_free_typed_guard() {
     // name + payload field values in one call.
     assert!(
         src.contains("fun raiseJobCompleted(elapsed_ms: UInt)")
-            && src.contains(
-                "EventMetadata(type = \"external\", typedPayload = StatechartMinimalJobCompletedPayload(elapsed_ms))"
-            ),
+            && src.contains("typedPayload = StatechartMinimalJobCompletedPayload(elapsed_ms),")
+            // ⚠ Both carriers: the typed payload a native guard reads, and the
+            // `data` wire the script engine binds `_event.data` from. A
+            // document with an `<assign expr="_event.data.x">` on this same
+            // event read nothing from it while only the first was filled.
+            && src.contains("data = EventPayload.encode(mapOf(\"elapsed_ms\" to elapsed_ms))"),
         "expected the per-event typed inject seam; got:\n{src}"
     );
     assert!(
@@ -527,13 +570,37 @@ fn statechart_native_lowering_cpp_compiles_and_runs() {
         "expected the per-document typed payload tag enum; got:\n{header}"
     );
     assert!(
-        header.contains("void populateTypedPayload(const ::std::any &tp)")
-            && header.contains("::std::any_cast<StatechartMinimalJobCompletedPayload>(&tp)"),
+        header.contains("template <typename M>::std::string populateTypedPayload(const M &meta)")
+            && header.contains(
+                "::std::any_cast<StatechartMinimalJobCompletedPayload>(&meta.typedPayload)"
+            ),
         "expected the any_cast populate hook; got:\n{header}"
+    );
+    // ⚠ The hook takes the WHOLE dequeued event and answers with a sentence,
+    // because binding the typed view has a second source: an event that
+    // arrived with only the `data` wire — every producer except the inject
+    // seam — has its fields read out of that, and a payload that does not read
+    // as its schema is reported for the engine to raise as error.execution.
+    assert!(
+        header.contains("::SCE::Common::EventPayloadFields::decode(meta.data, fields)")
+            && header.contains("fields.readInteger(\"elapsed_ms\", payload.elapsed_ms)"),
+        "expected the lift that reads the typed view out of `data`; got:\n{header}"
     );
     assert!(
         header.contains("void raiseJobCompleted(uint32_t elapsed_ms)")
-            && header.contains("m.typedPayload = StatechartMinimalJobCompletedPayload{"),
+            && header.contains("m.typedPayload = StatechartMinimalJobCompletedPayload{")
+            // Both carriers, and the wire built by the same header the lift
+            // reads it with: a generated C++ machine LINKS against
+            // `sce/include` alone, so a call into the runtime library here
+            // would take that property away (measured 2026-09-22).
+            //
+            // ⚠ Two fragments rather than the whole statement: clang-format
+            // wraps this call at its own column, and an anchor that spans the
+            // break dies on a reformat rather than on a regression.
+            && header.contains("m.data = ::SCE::Common::EventPayloadFields::wire(")
+            && header.contains(
+                "::SCE::Common::EventPayloadFields::field(\"elapsed_ms\", elapsed_ms)"
+            ),
         "expected the per-event typed inject seam; got:\n{header}"
     );
     assert!(

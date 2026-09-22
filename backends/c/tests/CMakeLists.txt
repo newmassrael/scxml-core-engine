@@ -2099,6 +2099,66 @@ set_tests_properties(c11_integration_event_schema_bytes PROPERTIES
     LABELS "integration;c11;aot"
 )
 
+# ─── EventSchema lifted-payload fixture (NL→IR C1 Path A) ───────────
+#
+# The two gates above drive the typed payload through the generated inject
+# seam. This one drives the OTHER carrier: the event record's `data`, which is
+# what every producer except that seam fills — `<send>` with `<param>`, an
+# invoke forwarding an event either way, autoforward, BasicHTTP, mesh. Until
+# 2026-09-22 a natively lowered guard could read nothing but the typed union,
+# so the same guard answered differently depending on where its event came
+# from. Its `error.execution` transition makes a payload that does not read as
+# its schema observable with no script engine to ask.
+#
+# ⚠ The fixture is the CANONICAL one under sce-build/tests/fixtures, not a
+# third copy beside this file: `--input-root` resolves the `<sce:import
+# kind="event-schema">` sibling next to the importing statechart, which is the
+# same choice the Rust, Go, Kotlin and Python gates make.
+#
+# MCU-clean gate, unchanged by the lift: this target links NO runtime library.
+# `sce/event_payload.h` is header-only for exactly that reason.
+set(_ESL_FIXTURE_ROOT "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/event_schema")
+set(_ESL_SOURCE "${SCE_C_INTEGRATION_GENERATED_DIR}/statechart_lifted_sm.c")
+set(_ESL_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/statechart_lifted_sm.h")
+add_custom_command(
+    OUTPUT "${_ESL_SOURCE}"
+    COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate
+            "${_ESL_FIXTURE_ROOT}/statechart_lifted.scxml"
+            -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
+            --input-root "${_ESL_FIXTURE_ROOT}"
+            --write-deps "${_ESL_SOURCE}.d"
+    DEPENDS "${_ESL_FIXTURE_ROOT}/statechart_lifted.scxml"
+            "${_ESL_FIXTURE_ROOT}/schema_job_completed_minimal.scxml"
+            "${SCE_CODEGEN}"
+    DEPFILE "${_ESL_SOURCE}.d"
+    BYPRODUCTS "${_ESL_HEADER}"
+    COMMENT "Generating C11 EventSchema lifted-payload fixture: statechart_lifted_sm.{h,c}"
+    VERBATIM
+)
+
+add_executable(sce_c_integration_event_schema_lifted
+    integration/test_event_schema_lifted.c
+    "${_ESL_SOURCE}"
+    "${_ESL_HEADER}"
+)
+# Intentionally NO target_link_libraries: same MCU-clean acceptance proof.
+target_include_directories(sce_c_integration_event_schema_lifted PRIVATE
+    "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    "${CMAKE_SOURCE_DIR}/backends/c/runtime/include"
+)
+set_target_properties(sce_c_integration_event_schema_lifted PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_integration_event_schema_lifted
+    COMMAND sce_c_integration_event_schema_lifted
+)
+set_tests_properties(c11_integration_event_schema_lifted PROPERTIES
+    TIMEOUT 30
+    LABELS "integration;c11;aot"
+)
+
 # ─── BasicHTTP fixture: standalone Node server lifecycle ────────────
 #
 # The W3C SCXML C.2 corpus addresses `http://localhost:8080/test` on the

@@ -838,6 +838,15 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     fn populate_event_payload(&mut self, payload: &Self::Payload) {
         self.pending_payload = payload.clone();
     }
+{% if event_payload_lift %}
+
+    // NL→IR Item C1 Path A: …and when no typed payload rode with the event,
+    // read that view out of the `data` every other producer fills — `<send>`
+    // with `<param>`, an invoke forwarding either way, autoforward, BasicHTTP,
+    // mesh. A payload that does not read as this event's schema is returned as
+    // a refusal, which the engine raises as `error.execution`.
+{{ event_payload_lift }}
+{% endif %}
 {% endif %}
 {# The pending_event_* fields are the script `_event.*` baseline (read only by
    the needs_script_engine-gated binding in process_transition). `data` is the

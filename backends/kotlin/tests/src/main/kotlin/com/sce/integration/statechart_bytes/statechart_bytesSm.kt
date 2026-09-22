@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: cefcd72f6504a9d6f552bf0f94cecad5fbb262ec59b9140af0c705b7cf982cd7
-// template-hash: ebaa86fbc385aba6e768cc24b7caf9cb286a422578625ecd77b79d34c33f2e74
+// source-hash: ca5f07e498f08e9c44fe0c543fc369f243205362af8b0e260e1a44e3bfa1bd0d
+// template-hash: 583c0d21905ba9b04748a3d6c74f6cc9796a6884a4c31fd1817c64ee900ca1d2
 // generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
@@ -50,15 +50,26 @@ class StatechartBytesStateMachine(
     // native transition guards. `null` between events / for untyped events.
     private var pendingSignalReceivedPayload: StatechartBytesSignalReceivedPayload? = null
 
-    // NL→IR Item C1 Path A: lift the dequeued event's type-erased typed payload
-    // into the matching nullable field (a non-typed carrier resets all to null,
-    // so every typed guard fails). Twin of the Go policy's PopulateEventMetadata
-    // type-switch / the C11 pop loop's `sm->pending_payload = evt.payload`.
-    override fun populateTypedPayload(metadata: EventMetadata) {
+    // NL→IR Item C1 Path A: bind the dequeued event's typed `_event.data` view
+    // — from the type-erased carrier the inject seam fills, and otherwise by
+    // lifting the fields out of `metadata.data`, which every other producer
+    // fills. An event with neither resets the fields to null, so every typed
+    // guard fails. A payload that cannot be read as this event's schema throws
+    // EventPayload.Refusal, which the engine reports as error.execution. Twin
+    // of the Go policy's PopulateEventMetadata + LiftTypedPayload / the C11 pop
+    // loop's `sm->pending_payload = evt.payload`.
+    override fun populateTypedPayload(event: StatechartBytesEvent, metadata: EventMetadata) {
         pendingSignalReceivedPayload = null
         when (val tp = metadata.typedPayload) {
             is StatechartBytesSignalReceivedPayload -> pendingSignalReceivedPayload = tp
-            else -> {}
+            else -> {
+                // No typed carrier, so the producer was not the inject seam: read the
+                // fields out of `data`, which every other producer fills.
+                if (event == StatechartBytesEvent.Signal.Received) {
+                    val fields = EventPayload.decode(metadata.data)
+                    pendingSignalReceivedPayload = StatechartBytesSignalReceivedPayload(fields.bytes("raw"))
+                }
+            }
         }
     }
 
@@ -68,7 +79,15 @@ class StatechartBytesStateMachine(
     fun raiseSignalReceived(raw: ByteArray) {
         send(
             StatechartBytesEvent.Signal.Received,
-            EventMetadata(type = "external", typedPayload = StatechartBytesSignalReceivedPayload(raw))
+            EventMetadata(
+                type = "external",
+                typedPayload = StatechartBytesSignalReceivedPayload(raw),
+                // Both carriers are filled: the typed one a native guard reads, and
+                // `data`, which is what the script engine binds `_event.data` from.
+                // Filling only the first left an `<assign expr="_event.data.x">` on
+                // this event reading nothing, on every backend alike.
+                data = EventPayload.encode(mapOf("raw" to raw))
+            )
         )
     }
 
@@ -107,6 +126,16 @@ class StatechartBytesStateMachine(
         is StatechartBytesState.Waiting -> 0
     }
 
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): StatechartBytesEvent? = when (name) {
+        "signal.received" -> StatechartBytesEvent.Signal.Received
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: StatechartBytesEvent): String? = when (event) {
+        is StatechartBytesEvent.Signal.Received -> "signal.received"
+    }
 
 
 

@@ -121,11 +121,15 @@ class {{ machine_name }}StateMachine(
     // lifted from the dequeued event by populateTypedPayload and read by the
     // native transition guards. `null` between events / for untyped events.
 {{ event_payload_policy_fields }}
-    // NL→IR Item C1 Path A: lift the dequeued event's type-erased typed payload
-    // into the matching nullable field (a non-typed carrier resets all to null,
-    // so every typed guard fails). Twin of the Go policy's PopulateEventMetadata
-    // type-switch / the C11 pop loop's `sm->pending_payload = evt.payload`.
-    override fun populateTypedPayload(metadata: EventMetadata) {
+    // NL→IR Item C1 Path A: bind the dequeued event's typed `_event.data` view
+    // — from the type-erased carrier the inject seam fills, and otherwise by
+    // lifting the fields out of `metadata.data`, which every other producer
+    // fills. An event with neither resets the fields to null, so every typed
+    // guard fails. A payload that cannot be read as this event's schema throws
+    // EventPayload.Refusal, which the engine reports as error.execution. Twin
+    // of the Go policy's PopulateEventMetadata + LiftTypedPayload / the C11 pop
+    // loop's `sm->pending_payload = evt.payload`.
+    override fun populateTypedPayload(event: {{ machine_name }}Event, metadata: EventMetadata) {
 {{ event_payload_populate }}    }
 
     // NL→IR Item C1 Path A: per-event typed `_event.data` inject seams.
@@ -231,7 +235,15 @@ class {{ machine_name }}StateMachine(
    whose `turn.done` reached nothing, because `needs_script_engine` had been
    standing in for "this machine resolves events by name" and that fixture is
    the first host-served one without one. #}
-{% if model.invokes or model.has_parent_communication or model.needs_script_engine or model.needs_http_send or model.host_processor_types %}
+{# ⚠ `event_payload_active` is in this list for the reason the paragraph above
+   gives: a typed `_event.data` payload that does not read as its schema is
+   reported as `error.execution` (W3C SCXML 3.13), and THIS map is the only
+   thing that can turn that name into an event. Without it the engine's
+   `bindTypedPayload` resolved nothing and a refused payload was silent —
+   measured 2026-09-22 on `statechart_lifted.scxml`, a machine with no invoke,
+   no parent, no datamodel and no host processor, which is exactly the shape
+   every other condition here misses. #}
+{% if model.invokes or model.has_parent_communication or model.needs_script_engine or model.needs_http_send or model.host_processor_types or event_payload_active %}
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): {{ machine_name }}Event? = when (name) {
 {% for event_name in leaf_events | sort %}

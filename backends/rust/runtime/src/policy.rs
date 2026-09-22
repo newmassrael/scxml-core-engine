@@ -474,6 +474,36 @@ pub trait StatePolicy: Sized + 'static {
     /// `pending_payload` field that `_event.data.<field>` guards read natively.
     fn populate_event_payload(&mut self, _payload: &Self::Payload) {}
 
+    /// Lift the typed `_event.data` view out of the data an event carries
+    /// (EventSchema native lowering).
+    ///
+    /// The payload [`populate_event_payload`](StatePolicy::populate_event_payload)
+    /// binds is filled by ONE producer: the generated `raise_<event>` inject
+    /// seam. Every other producer — `<send>` with `<param>`, namelist or
+    /// `<content>`, an invoke forwarding an event either way, autoforward,
+    /// BasicHTTP, mesh — fills [`EventMetadata::data`](crate::EventMetadata),
+    /// the wire §scxml-5.10 describes and §scxml-B-2-8-1 reads. This reads
+    /// the schema's fields out of that when no typed payload rode with the
+    /// event, so the same guard answers the same way whichever producer sent
+    /// it — including one on the far side of an invoke boundary.
+    ///
+    /// `Err` says the data cannot be read as this event's schema. The engine
+    /// raises `error.execution` and the guard does not fire, which is what W3C
+    /// SCXML 3.13 gives for a guard that cannot be evaluated, and what the
+    /// script engine gives for the same guard on the same data.
+    ///
+    /// ⚠ `std` only, because [`EventMetadata::data`](crate::EventMetadata) is:
+    /// a `no_std` build has no wire to lift from and no script engine to
+    /// disagree with, so there the typed carrier is the whole channel.
+    #[cfg(not(feature = "no_std"))]
+    fn lift_event_payload(
+        &mut self,
+        _event: Self::Event,
+        _data: &str,
+    ) -> Result<(), crate::event_payload::PayloadRefusal> {
+        Ok(())
+    }
+
     /// Get active states for parallel state machines (§scxml-3.4).
     ///
     /// Generated only when `HAS_ACTIVE_STATES` is `true`.

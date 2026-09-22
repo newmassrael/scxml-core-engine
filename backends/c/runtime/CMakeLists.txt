@@ -45,6 +45,11 @@ target_include_directories(sce_c_runtime
 )
 
 # ── Tier 2: sce_c_base (STATIC — freestanding helpers) ──────────
+# ⚠ The typed `_event.data` lift is NOT here. `sce/event_payload.h` is
+# header-only on purpose: the EventSchema native gate links no runtime library
+# at all, because a native value path that links nothing is the MCU-clean proof
+# the whole lowering exists for, and a lift in this library would have taken
+# that proof away from every machine that uses it.
 add_library(sce_c_base STATIC base/dom.c)
 target_link_libraries(sce_c_base PUBLIC sce_c_runtime)
 set_target_properties(sce_c_base PROPERTIES

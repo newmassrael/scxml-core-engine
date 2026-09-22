@@ -2741,6 +2741,49 @@ on Rust, wildcard-import bare `<E>` on Kotlin, `<e>.<E>` on Go,
 `<e>.<E>` on Python, `<E>_t` on C11) — no variant re-emission;
 the Enum document remains the single source of truth.
 
+**Which carrier the payload arrives on** — a typed payload has TWO
+sources, and a natively lowered guard reads the same value from either:
+
+- The generated per-event inject seam (`raise_<event>` on Rust and
+  Python, `Raise<Event>` on Go, `raise<Event>` on C++ and Kotlin,
+  `<machine>_raise_<event>_typed` on C11) fills the typed payload AND
+  the `_event.data` wire, so a document that also reads
+  `_event.data.<field>` through the script engine — an `<assign>`, a
+  `<log>`, an un-lowered `cond` — sees the values the guard saw.
+- Every OTHER producer fills only the wire: `<send>` with `<param>`,
+  namelist or `<content>`, an invoke forwarding an event in either
+  direction, autoforward, BasicHTTP, the mesh. The typed view is then
+  LIFTED out of that wire when the event is dequeued, read as
+  §scxml-B-2-8-1's second rung — the same read the script engine takes
+  for the same string.
+
+⚠ Before 2026-09-22 only the first of the two existed, so the same
+guard answered differently depending on which producer sent its event,
+and a typed payload could not cross an invoke boundary at all.
+
+**A payload that cannot be read as its schema** raises
+`error.execution` and leaves the guard unfired. That is W3C SCXML
+3.13's answer for a guard that cannot be evaluated, and — measured on
+`statechart_lifted.scxml` through the script engine — what the Lua path
+already answered for the same cases: an event with no data, data that
+is not an object of named fields, a field the data does not name, and a
+value of another type or outside the declared width. A native lowering
+that answered differently would make the optimisation observable, which
+is the one thing it may not be. A document that declares no
+`error.execution` transition has nothing to answer with
+(§scxml-3.12.2); the guard still does not fire, and a well-typed payload
+the guard merely rejects is not an error at all.
+
+⚠ `bytes` on the wire: JSON has no byte string, so a `bytes` field
+rides as its byte-exact Latin-1 text and is read back the same way.
+Printable ASCII — what a `bytes` guard compares — is identical under
+either reading.
+
+⚠ Rust `no_std`: `EventMetadata` carries no `data` there, and no script
+engine exists whose reading this one would have to match, so the typed
+payload is the whole channel and neither the wire fill nor the lift is
+emitted.
+
 **Cross-doc Enum literal width narrowing** (DL-5'): integer
 literals compared against (receive-side) or assigned to
 (send-side) an enum-typed field are narrowed against the

@@ -1007,6 +1007,11 @@ add_executable(integration_tests
     integration/DelayedHostSendAotTest.cpp
     integration/HostInvokerAotTest.cpp
     integration/NativeActionAotTest.cpp
+    # NL→IR Item C1 Path A: the typed `_event.data` view read out of the data
+    # wire every producer but the generated inject seam fills. A gate of its
+    # own rather than a case in NativeActionAotTest, because what it measures
+    # is the CARRIER, not the effect: the same guard, asked through both.
+    integration/EventSchemaLiftedAotTest.cpp
     integration/ConfigurationEntryAotTest.cpp
     integration/ParallelCurrentStateAotTest.cpp
     integration/ParallelRegionRootExternalDomainTest.cpp
@@ -1718,6 +1723,15 @@ sce_add_state_machine(
 sce_add_state_machine(
     TARGET integration_tests
     SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/event_schema/statechart_native_action.scxml
+)
+
+# NL→IR Item C1 Path A: the same document the Rust, Go, Kotlin, Python and C11
+# channels drive for the OTHER carrier — the `data` wire every producer but the
+# generated inject seam fills. Compiled here for C++ so all six answer the same
+# guard the same way whichever producer sent its event.
+sce_add_state_machine(
+    TARGET integration_tests
+    SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/event_schema/statechart_lifted.scxml
 )
 
 # W3C SCXML 3.4: `getCurrentState()` names an atomic state in a parallel

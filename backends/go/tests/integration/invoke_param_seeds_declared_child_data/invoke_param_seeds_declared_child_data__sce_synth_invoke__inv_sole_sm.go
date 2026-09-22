@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: a9b3d7b7ea8a5bd6001a98d04817a6efb870e7f83add64eb3bb769017877144d
-// template-hash: ebaa86fbc385aba6e768cc24b7caf9cb286a422578625ecd77b79d34c33f2e74
+// template-hash: 583c0d21905ba9b04748a3d6c74f6cc9796a6884a4c31fd1817c64ee900ca1d2
 // generated-at: 0
 
 
@@ -573,6 +573,20 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSolePolicy) PopulateE
 	p.pendingEventOrigin = meta.Origin
 	p.pendingEventOrigintype = meta.OriginType
 	p.pendingEventInvokeid = meta.InvokeID
+}
+
+// LiftTypedPayload binds the dequeued event's typed `_event.data` view from
+// the data it carries (NL→IR Item C1 Path A).
+//
+// The typed carrier PopulateEventMetadata reads is filled by one producer, the
+// generated Raise<Event> inject seam. Every other producer — <send> with
+// <param>, an invoke forwarding either way, autoforward, BasicHTTP, mesh —
+// fills EventMetadata.Data, so the schema's fields are read out of that here.
+// A refusal is returned for the engine to raise as error.execution, which is
+// what W3C SCXML 3.13 gives for a guard that cannot be evaluated.
+func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSolePolicy) LiftTypedPayload(event InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent, meta *sce.EventMetadata) error {
+	// This document lowered no typed guard, so no event carries a typed view.
+	return nil
 }
 
 // ClearEventMetadata resets pending event metadata (W3C SCXML 5.10).

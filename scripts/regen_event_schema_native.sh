@@ -42,11 +42,18 @@ GENERATED_DIR="backends/rust/tests/src/integration/event_schema_native"
 # not only form-asserted in the sce-build smoke layer.
 BYTES_FIXTURE="sce-build/tests/fixtures/event_schema/statechart_bytes.scxml"
 
+# The lifted fixture asks the same guard through the OTHER carrier: the
+# `EventMetadata.data` wire every producer but the inject seam fills. Its
+# `error.execution` transition is what makes a payload that does not read as
+# its schema observable, with no script engine to ask.
+LIFTED_FIXTURE="sce-build/tests/fixtures/event_schema/statechart_lifted.scxml"
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 "$CODEGEN" generate "$FIXTURE" -l rust -o "$TMP/"
 "$CODEGEN" generate "$BYTES_FIXTURE" -l rust -o "$TMP/"
+"$CODEGEN" generate "$LIFTED_FIXTURE" -l rust -o "$TMP/"
 
 mkdir -p "$GENERATED_DIR"
 find "$GENERATED_DIR" -maxdepth 1 -name '*_sm.rs' -delete
@@ -61,6 +68,9 @@ MODRS="$GENERATED_DIR/mod.rs"
     echo ""
     echo "mod statechart_bytes_sm;"
     echo "pub use statechart_bytes_sm::*;"
+    echo ""
+    echo "mod statechart_lifted_sm;"
+    echo "pub use statechart_lifted_sm::*;"
 } > "$MODRS"
 
 source "$REPO_ROOT/scripts/lib/sce_rustfmt.sh"

@@ -510,11 +510,12 @@
         Lua tables at the `set_current_event` boundary so the runtime
         contract matches every other backend."""
 {% if event_payload_active %}
-        # NL→IR Item C1 Path A: lift the dequeued event's type-erased typed
-        # payload into the matching field (a non-typed carrier resets all to
-        # None, so every typed guard fails). Runs before the script-engine
-        # bind below and independently of any session, so a native-lowered
-        # guard machine needs no Lua session for its typed `_event.data`.
+        # NL→IR Item C1 Path A: bind the dequeued event's typed `_event.data`
+        # view — from the type-erased carrier the inject seam fills, and
+        # otherwise by lifting the fields out of `EventMetadata.data`, which
+        # every other producer fills. Runs before the script-engine bind
+        # below and independently of any session, so a native-lowered guard
+        # machine needs no Lua session for its typed `_event.data`.
         # Twin of the Kotlin `populateTypedPayload` / the Go policy type-switch.
 {{ event_payload_populate }}
 {% endif %}

@@ -5,3 +5,6 @@ pub use statechart_minimal_sm::*;
 
 mod statechart_bytes_sm;
 pub use statechart_bytes_sm::*;
+
+mod statechart_lifted_sm;
+pub use statechart_lifted_sm::*;

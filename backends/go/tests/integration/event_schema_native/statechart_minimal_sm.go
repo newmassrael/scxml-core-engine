@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: cefcd72f6504a9d6f552bf0f94cecad5fbb262ec59b9140af0c705b7cf982cd7
-// template-hash: ebaa86fbc385aba6e768cc24b7caf9cb286a422578625ecd77b79d34c33f2e74
+// source-hash: ca5f07e498f08e9c44fe0c543fc369f243205362af8b0e260e1a44e3bfa1bd0d
+// template-hash: 583c0d21905ba9b04748a3d6c74f6cc9796a6884a4c31fd1817c64ee900ca1d2
 // generated-at: 0
 
 
@@ -150,7 +150,15 @@ type StatechartMinimalJobCompletedPayload struct {
 func RaiseJobCompleted(e *sce.Engine[StatechartMinimalState, StatechartMinimalEvent], elapsed_ms uint32) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[StatechartMinimalEvent]{
 		Event:    StatechartMinimalEventJobCompleted,
-		Metadata: sce.EventMetadata{EventType: sce.EventTypeExternal, TypedPayload: StatechartMinimalJobCompletedPayload{elapsed_ms: elapsed_ms, }},
+		Metadata: sce.EventMetadata{
+			EventType:    sce.EventTypeExternal,
+			TypedPayload: StatechartMinimalJobCompletedPayload{elapsed_ms: elapsed_ms, },
+			// Both carriers are filled: the typed one a native guard reads,
+			// and `Data`, which is what the script engine binds `_event.data`
+			// from. Filling only the first left an `<assign expr="_event.data.x">`
+			// on this event reading nothing, on every backend alike.
+			Data: sce.PayloadJSON(map[string]any{"elapsed_ms": elapsed_ms, }),
+		},
 	})
 }
 
@@ -397,6 +405,38 @@ func (p *StatechartMinimalPolicy) PopulateEventMetadata(meta *sce.EventMetadata)
 		p.pendingPayloadTag = StatechartMinimalPayloadTagJobCompleted
 		p.pendingJobCompletedPayload = v
 	}
+
+}
+
+// LiftTypedPayload binds the dequeued event's typed `_event.data` view from
+// the data it carries (NL→IR Item C1 Path A).
+//
+// The typed carrier PopulateEventMetadata reads is filled by one producer, the
+// generated Raise<Event> inject seam. Every other producer — <send> with
+// <param>, an invoke forwarding either way, autoforward, BasicHTTP, mesh —
+// fills EventMetadata.Data, so the schema's fields are read out of that here.
+// A refusal is returned for the engine to raise as error.execution, which is
+// what W3C SCXML 3.13 gives for a guard that cannot be evaluated.
+func (p *StatechartMinimalPolicy) LiftTypedPayload(event StatechartMinimalEvent, meta *sce.EventMetadata) error {
+	// A typed carrier already bound the view, so the producer was the
+	// inject seam and there is nothing to read out of `Data`.
+	if p.pendingPayloadTag != StatechartMinimalPayloadTagNone {
+		return nil
+	}
+	switch event {
+	case StatechartMinimalEventJobCompleted:
+		fields, err := sce.LiftPayload(meta.Data)
+		if err != nil {
+			return err
+		}
+		var payload StatechartMinimalJobCompletedPayload
+		if payload.elapsed_ms, err = sce.PayloadUnsigned[uint32](fields, "elapsed_ms"); err != nil {
+			return err
+		}
+		p.pendingJobCompletedPayload = payload
+		p.pendingPayloadTag = StatechartMinimalPayloadTagJobCompleted
+	}
+	return nil
 
 }
 

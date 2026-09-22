@@ -4,6 +4,7 @@
 package sce
 
 import (
+	"fmt"
 	"log"
 	"sort"
 	"time"
@@ -452,6 +453,29 @@ func (e *Engine[S, E]) GetActiveStates() []S {
 		current = parent
 	}
 	return active
+}
+
+// liftTypedPayload binds the dequeued event's typed `_event.data` view and
+// reports a refusal as error.execution (NL→IR Item C1 Path A).
+//
+// The raise lives here rather than in each generated policy so that every
+// machine answers a payload it cannot read the same way, and so the answer is
+// the script engine's: §scxml-3.13 gives error.execution for a guard that
+// cannot be evaluated and treats it as false, which is exactly what a policy
+// with no lifted payload does — its tag stays `none` and the typed guards fail.
+func (e *Engine[S, E]) liftTypedPayload(event E, meta *EventMetadata) {
+	err := e.policy.LiftTypedPayload(event, meta)
+	if err == nil {
+		return
+	}
+	errorEvent, ok := e.policy.GetEventFromName("error.execution")
+	if !ok {
+		// §scxml-3.12.2 leaves a document that declares no error.execution
+		// transition nothing to answer with; the guard still does not fire.
+		return
+	}
+	e.Raise(NewPlatformError(errorEvent, fmt.Sprintf(
+		"`%s` payload: %s", e.policy.GetEventName(event), err.Error())))
 }
 
 // isInFinalState reports whether this session has ended — that is, whether the
@@ -1318,6 +1342,7 @@ func (e *Engine[S, E]) processInternalQueue() {
 		}
 		// §scxml-5.10: Populate policy metadata from event
 		e.policy.PopulateEventMetadata(&eventWithMeta.Metadata)
+		e.liftTypedPayload(eventWithMeta.Event, &eventWithMeta.Metadata)
 		// §scxml-3.12.2: the processor raises error.* into this queue and the
 		// clause says they "are ignored if no transition is found that matches
 		// them". Ignoring them is the clause; staying silent about it is not.
@@ -1428,6 +1453,7 @@ func (e *Engine[S, E]) processNextExternalEvent() bool {
 		}
 		// §scxml-5.10: Populate policy metadata from event
 		e.policy.PopulateEventMetadata(&eventWithMeta.Metadata)
+		e.liftTypedPayload(eventWithMeta.Event, &eventWithMeta.Metadata)
 		// §scxml-3.1.2: "If no transition matches in any state, the event is
 		// discarded." Discarding it is the rule; being unable to say so is not
 		// part of the rule. The host that put this event on the queue is the

@@ -53,6 +53,14 @@ PACKAGE_PREFIX="com.sce.integration"
 BYTES_FIXTURE="sce-build/tests/fixtures/event_schema/statechart_bytes.scxml"
 BYTES_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/statechart_bytes"
 
+# The lifted fixture asks the same guard through the OTHER carrier: the
+# `EventMetadata.data` wire every producer but the `raise<Event>` seam fills.
+# Its `error.execution` transition is what makes a payload that does not read
+# as its schema observable, with no script engine to ask. Its own package dir
+# for the reason the bytes one has one.
+LIFTED_FIXTURE="sce-build/tests/fixtures/event_schema/statechart_lifted.scxml"
+LIFTED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/statechart_lifted"
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
@@ -62,10 +70,14 @@ trap 'rm -rf "$TMP"' EXIT
 "$CODEGEN" generate "$BYTES_FIXTURE" -l kotlin -o "$TMP/bytes/" \
     --input-root "$INPUT_ROOT" \
     --kotlin-package-prefix "$PACKAGE_PREFIX"
+"$CODEGEN" generate "$LIFTED_FIXTURE" -l kotlin -o "$TMP/lifted/" \
+    --input-root "$INPUT_ROOT" \
+    --kotlin-package-prefix "$PACKAGE_PREFIX"
 
-mkdir -p "$GENERATED_DIR" "$BYTES_DIR"
+mkdir -p "$GENERATED_DIR" "$BYTES_DIR" "$LIFTED_DIR"
 find "$GENERATED_DIR" -maxdepth 1 -name '*Sm.kt' -delete
 find "$BYTES_DIR" -maxdepth 1 -name '*Sm.kt' -delete
+find "$LIFTED_DIR" -maxdepth 1 -name '*Sm.kt' -delete
 for src in "$TMP"/minimal/*Sm.kt; do
     [[ -f "$src" ]] || continue
     sed -i "s|// Source: ${TMP}/minimal/|// Source: ${INPUT_ROOT}/|g" "$src"
@@ -75,6 +87,11 @@ for src in "$TMP"/bytes/*Sm.kt; do
     [[ -f "$src" ]] || continue
     sed -i "s|// Source: ${TMP}/bytes/|// Source: ${INPUT_ROOT}/|g" "$src"
     cp "$src" "$BYTES_DIR/"
+done
+for src in "$TMP"/lifted/*Sm.kt; do
+    [[ -f "$src" ]] || continue
+    sed -i "s|// Source: ${TMP}/lifted/|// Source: ${INPUT_ROOT}/|g" "$src"
+    cp "$src" "$LIFTED_DIR/"
 done
 
 echo "Regenerated: $GENERATED_DIR/ from $FIXTURE"

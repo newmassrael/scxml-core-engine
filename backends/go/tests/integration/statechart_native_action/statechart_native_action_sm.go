@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: cefcd72f6504a9d6f552bf0f94cecad5fbb262ec59b9140af0c705b7cf982cd7
-// template-hash: ebaa86fbc385aba6e768cc24b7caf9cb286a422578625ecd77b79d34c33f2e74
+// source-hash: ca5f07e498f08e9c44fe0c543fc369f243205362af8b0e260e1a44e3bfa1bd0d
+// template-hash: 583c0d21905ba9b04748a3d6c74f6cc9796a6884a4c31fd1817c64ee900ca1d2
 // generated-at: 0
 
 
@@ -166,7 +166,15 @@ type StatechartNativeActionFragmentReceivedPayload struct {
 func RaiseFragmentReceived(e *sce.Engine[StatechartNativeActionState, StatechartNativeActionEvent], payload []byte, offset uint32) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[StatechartNativeActionEvent]{
 		Event:    StatechartNativeActionEventFragmentReceived,
-		Metadata: sce.EventMetadata{EventType: sce.EventTypeExternal, TypedPayload: StatechartNativeActionFragmentReceivedPayload{payload: payload, offset: offset, }},
+		Metadata: sce.EventMetadata{
+			EventType:    sce.EventTypeExternal,
+			TypedPayload: StatechartNativeActionFragmentReceivedPayload{payload: payload, offset: offset, },
+			// Both carriers are filled: the typed one a native guard reads,
+			// and `Data`, which is what the script engine binds `_event.data`
+			// from. Filling only the first left an `<assign expr="_event.data.x">`
+			// on this event reading nothing, on every backend alike.
+			Data: sce.PayloadJSON(map[string]any{"payload": sce.BytesAsPayloadText(payload), "offset": offset, }),
+		},
 	})
 }
 
@@ -447,6 +455,41 @@ func (p *StatechartNativeActionPolicy) PopulateEventMetadata(meta *sce.EventMeta
 		p.pendingPayloadTag = StatechartNativeActionPayloadTagFragmentReceived
 		p.pendingFragmentReceivedPayload = v
 	}
+
+}
+
+// LiftTypedPayload binds the dequeued event's typed `_event.data` view from
+// the data it carries (NL→IR Item C1 Path A).
+//
+// The typed carrier PopulateEventMetadata reads is filled by one producer, the
+// generated Raise<Event> inject seam. Every other producer — <send> with
+// <param>, an invoke forwarding either way, autoforward, BasicHTTP, mesh —
+// fills EventMetadata.Data, so the schema's fields are read out of that here.
+// A refusal is returned for the engine to raise as error.execution, which is
+// what W3C SCXML 3.13 gives for a guard that cannot be evaluated.
+func (p *StatechartNativeActionPolicy) LiftTypedPayload(event StatechartNativeActionEvent, meta *sce.EventMetadata) error {
+	// A typed carrier already bound the view, so the producer was the
+	// inject seam and there is nothing to read out of `Data`.
+	if p.pendingPayloadTag != StatechartNativeActionPayloadTagNone {
+		return nil
+	}
+	switch event {
+	case StatechartNativeActionEventFragmentReceived:
+		fields, err := sce.LiftPayload(meta.Data)
+		if err != nil {
+			return err
+		}
+		var payload StatechartNativeActionFragmentReceivedPayload
+		if payload.payload, err = sce.PayloadBytes(fields, "payload"); err != nil {
+			return err
+		}
+		if payload.offset, err = sce.PayloadUnsigned[uint32](fields, "offset"); err != nil {
+			return err
+		}
+		p.pendingFragmentReceivedPayload = payload
+		p.pendingPayloadTag = StatechartNativeActionPayloadTagFragmentReceived
+	}
+	return nil
 
 }
 

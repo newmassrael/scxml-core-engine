@@ -140,6 +140,11 @@
 {% endif %}
 {% endif %}
 #include "common/EventDataHelper.h"
+{% if event_payload_active %}
+// NL→IR Item C1 Path A: the typed `_event.data` view is lifted out of the data
+// every producer but the inject seam fills, and written into it by that seam.
+#include "common/EventPayloadLift.h"
+{% endif %}
 {% if model.needs_donedata_helper %}
 #include "common/DoneDataHelper.h"
 {% endif %}
@@ -471,8 +476,9 @@ struct {{ model.name }}Policy {
     {% endif %}
     {% if event_payload_active %}
     // NL→IR Item C1 Path A: the current event's typed `_event.data` payload,
-    // lifted from the dequeued event's std::any carrier by populateTypedPayload
-    // and read by the native transition guards (`pending<Event>Payload_.<field>`).
+    // bound by populateTypedPayload from the dequeued event's std::any carrier
+    // or, when it carries none, lifted out of its `data`, and read by the
+    // native transition guards (`pending<Event>Payload_.<field>`).
     // Mirrors the Rust policy's `pending_payload` / the C11 `sm->pending_payload`.
 {{ event_payload_policy_members }}
     {% endif %}

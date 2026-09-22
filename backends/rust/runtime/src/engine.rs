@@ -1827,6 +1827,58 @@ impl<P: StatePolicy> Engine<P> {
         }
     }
 
+    /// Raise a typed event that also carries its payload on the `_event.data`
+    /// wire (EventSchema native lowering).
+    ///
+    /// The generated `raise_<event>` seam calls this so ONE act fills both
+    /// carriers: the typed payload a native guard reads, and the wire the
+    /// script engine binds `_event.data` from. Filling only the first left an
+    /// `<assign expr="_event.data.x">` on the same event reading nothing.
+    ///
+    /// `data` is ignored under `no_std`, where [`EventMetadata`] carries no
+    /// wire and nothing reads one — the generated seam passes the empty string
+    /// [`crate::payload_wire`] answers with there.
+    pub fn raise_external_typed_with_data(
+        &mut self,
+        event: P::Event,
+        payload: P::Payload,
+        data: &str,
+    ) {
+        #[cfg(feature = "no_std")]
+        let _ = data;
+        let meta = EventWithMetadata {
+            event,
+            payload,
+            metadata: {
+                #[cfg(not(feature = "no_std"))]
+                {
+                    EventMetadata {
+                        event_type: EventType::External,
+                        data: crate::sce_string_from_str(data),
+                        origin_type: crate::sce_string_from_str(
+                            crate::helpers::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE,
+                        ),
+                        ..Default::default()
+                    }
+                }
+                #[cfg(feature = "no_std")]
+                {
+                    EventMetadata {
+                        event_type: EventType::External,
+                    }
+                }
+            },
+            #[cfg(not(feature = "no_std"))]
+            target: SceString::new(),
+        };
+        self.external_queue.raise(meta);
+
+        // §scxml-5.10.1: Mark next event as external for _event.type
+        if concepts::has_external_event_flag::<P>() {
+            self.policy.set_next_event_is_external(true);
+        }
+    }
+
     /// §scxml-6.4.1: Raise an external event by name (for child autoforward).
     ///
     /// Matches C++ `raiseExternal(const string&, const string&)`. If the name does
@@ -2006,6 +2058,34 @@ impl<P: StatePolicy> Engine<P> {
                 err.metadata.send_id = crate::sce_string_from_str(&send_id);
                 self.raise(err);
             }
+        }
+    }
+
+    /// Bind the dequeued event's typed `_event.data` view from the data it
+    /// carries, and report a payload that cannot be read as `error.execution`
+    /// (EventSchema native lowering).
+    ///
+    /// The typed payload [`StatePolicy::populate_event_payload`] binds is
+    /// filled by ONE producer, the generated `raise_<event>` inject seam; every
+    /// other producer fills `metadata.data`, so the fields are lifted out of
+    /// that instead when no payload rode with the event. The raise lives here
+    /// rather than in each generated policy so every machine answers a payload
+    /// it cannot read the same way, and the answer is the script engine's:
+    /// §scxml-3.13 gives `error.execution` for a guard that cannot be evaluated
+    /// and treats it as false, which is what an unbound payload already does.
+    #[cfg(not(feature = "no_std"))]
+    fn bind_lifted_payload(&mut self, event: P::Event, data: &str) {
+        let Err(refusal) = self.policy.lift_event_payload(event, data) else {
+            return;
+        };
+        // §scxml-3.12.2 leaves a document that declares no `error.execution`
+        // transition nothing to answer with; the guard still does not fire.
+        if let Some(evt) = P::get_event_from_name("error.execution") {
+            let err = EventWithMetadata::platform_error(
+                evt,
+                &format!("`{}` payload: {refusal}", P::get_event_name(event)),
+            );
+            self.raise(err);
         }
     }
 
@@ -2569,6 +2649,10 @@ impl<P: StatePolicy> Engine<P> {
             // that rode with this event so `_event.data.<field>` guards read it
             // natively. No-op for schemaless policies (`Payload = ()`).
             self.policy.populate_event_payload(&event_with_meta.payload);
+            // …and when no typed payload rode with it, read that view out of
+            // the `data` every other producer fills.
+            #[cfg(not(feature = "no_std"))]
+            self.bind_lifted_payload(event_with_meta.event, &event_with_meta.metadata.data);
             // §scxml-3.12.2: the processor raises `error.*` into this queue and
             // the clause says they "are ignored if no transition is found that
             // matches them". Ignoring them is the clause; staying silent about
@@ -2699,6 +2783,10 @@ impl<P: StatePolicy> Engine<P> {
             // that rode with this event so `_event.data.<field>` guards read it
             // natively. No-op for schemaless policies (`Payload = ()`).
             self.policy.populate_event_payload(&event_with_meta.payload);
+            // …and when no typed payload rode with it, read that view out of
+            // the `data` every other producer fills.
+            #[cfg(not(feature = "no_std"))]
+            self.bind_lifted_payload(event_with_meta.event, &event_with_meta.metadata.data);
             // §scxml-3.1.2: "If no transition matches in any state, the event
             // is discarded." Discarding it is the rule; being unable to say so
             // is not part of the rule. The host that put this event on the

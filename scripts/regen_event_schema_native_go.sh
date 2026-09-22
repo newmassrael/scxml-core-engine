@@ -47,15 +47,26 @@ GENERATED_DIR="backends/go/tests/integration/event_schema_native"
 BYTES_FIXTURE="sce-build/tests/fixtures/event_schema/statechart_bytes.scxml"
 BYTES_DIR="backends/go/tests/integration/event_schema_bytes"
 
+# The lifted fixture asks the same guard through the OTHER carrier: the
+# `EventMetadata.Data` wire every producer but the `Raise<Event>` seam fills.
+# Its `error.execution` transition is what makes a payload that does not read
+# as its schema observable, with no script engine to ask. Its own directory for
+# the reason the bytes one has one — a different machine name is a different
+# Go package.
+LIFTED_FIXTURE="sce-build/tests/fixtures/event_schema/statechart_lifted.scxml"
+LIFTED_DIR="backends/go/tests/integration/event_schema_lifted"
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 "$CODEGEN" generate "$FIXTURE" -l go -o "$TMP/minimal/" --input-root "$INPUT_ROOT"
 "$CODEGEN" generate "$BYTES_FIXTURE" -l go -o "$TMP/bytes/" --input-root "$INPUT_ROOT"
+"$CODEGEN" generate "$LIFTED_FIXTURE" -l go -o "$TMP/lifted/" --input-root "$INPUT_ROOT"
 
-mkdir -p "$GENERATED_DIR" "$BYTES_DIR"
+mkdir -p "$GENERATED_DIR" "$BYTES_DIR" "$LIFTED_DIR"
 find "$GENERATED_DIR" -maxdepth 1 -name '*_sm.go' -delete
 find "$BYTES_DIR" -maxdepth 1 -name '*_sm.go' -delete
+find "$LIFTED_DIR" -maxdepth 1 -name '*_sm.go' -delete
 for src in "$TMP"/minimal/*_sm.go; do
     [[ -f "$src" ]] || continue
     sed -i "s|// From: ${TMP}/minimal/|// From: ${INPUT_ROOT}/|g" "$src"
@@ -66,5 +77,10 @@ for src in "$TMP"/bytes/*_sm.go; do
     sed -i "s|// From: ${TMP}/bytes/|// From: ${INPUT_ROOT}/|g" "$src"
     cp "$src" "$BYTES_DIR/"
 done
+for src in "$TMP"/lifted/*_sm.go; do
+    [[ -f "$src" ]] || continue
+    sed -i "s|// From: ${TMP}/lifted/|// From: ${INPUT_ROOT}/|g" "$src"
+    cp "$src" "$LIFTED_DIR/"
+done
 
-echo "Regenerated: $GENERATED_DIR/ + $BYTES_DIR/ from $FIXTURE + $BYTES_FIXTURE"
+echo "Regenerated: $GENERATED_DIR/ + $BYTES_DIR/ + $LIFTED_DIR/ from $FIXTURE + $BYTES_FIXTURE + $LIFTED_FIXTURE"

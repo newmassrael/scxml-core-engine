@@ -2365,6 +2365,7 @@ fn render_rust(
         &native.payload_events,
         &policy_generics_decl,
         &policy_generics_use,
+        options.no_std,
     );
     crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
 
@@ -2421,6 +2422,7 @@ fn render_rust(
         event_payload_defs => &payload.defs,
         event_payload_type => &payload.type_name,
         event_payload_entries => &payload.entries,
+        event_payload_lift => &payload.lift,
         has_native_actions => native.any,
         native_actions_defs => &native.interface_def,
         native_actions_interface => &native.interface_name,
@@ -2702,7 +2704,30 @@ fn render_c11(
     // machine name the hosted backends use.
     let native =
         crate::forge::native_action::render(&mut model_lowered, &model.name, Language::C11);
-    let payload = crate::forge::generator::build_c11_event_payload(model, &native.payload_events);
+    // Suite symbol prefix: C has no namespace, so every emitted symbol is
+    // `<name>_…`. When set, this is the ready-to-prepend `<prefix>_` string
+    // (empty when unset) that nests every self/child symbol — including the
+    // struct tag and UPPER macro/enum names — under the suite prefix so
+    // identically-named machines from different catalogs link into one binary
+    // without an ODR clash. The C11 peer of `--cpp-namespace-prefix`.
+    // Empty = the historical un-prefixed shape (byte-identical). Filenames,
+    // SCE-MAP markers, and the Lua session-id string keep the logical name.
+    //
+    // ⚠ Resolved HERE rather than beside the render context, because the
+    // payload channel's symbols must carry it too: its inject seams call
+    // `<prefix><name>_raise_external`, and a prefixed build where they did not
+    // would not link. Both this and the guard writes must happen before
+    // `model_lowered` is serialised — a guard attached after that never
+    // reaches the template.
+    let csym_prefix = match c_symbol_prefix {
+        Some(p) if !p.is_empty() => format!("{p}_"),
+        _ => String::new(),
+    };
+    let payload = crate::forge::generator::build_c11_event_payload(
+        model,
+        &native.payload_events,
+        &csym_prefix,
+    );
     crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
 
     let header_tmpl = env
@@ -2715,19 +2740,6 @@ fn render_c11(
     let model_val = minijinja::Value::from_serialize(&model_lowered);
     let license_val = minijinja::Value::from_serialize(license_config());
 
-    // Suite symbol prefix: C has no namespace, so every emitted symbol is
-    // `<name>_…`. When set, this is the ready-to-prepend `<prefix>_` string
-    // (empty when unset) that nests every self/child symbol — including the
-    // struct tag and UPPER macro/enum names — under the suite prefix so
-    // identically-named machines from different catalogs link into one
-    // binary without an ODR clash. The C11 peer of `--cpp-namespace-prefix`.
-    // Empty = the historical un-prefixed shape (byte-identical). Filenames,
-    // SCE-MAP markers, and the Lua session-id string keep the logical name.
-    let csym_prefix = match c_symbol_prefix {
-        Some(p) if !p.is_empty() => format!("{p}_"),
-        _ => String::new(),
-    };
-
     let header_ctx = minijinja::context! {
         model => &model_val,
         base_path => &base_path,
@@ -2737,6 +2749,7 @@ fn render_c11(
         event_payload_type => &payload.type_name,
         event_payload_active => payload.active,
         event_payload_entry_decls => &payload.entry_decls,
+        event_payload_lift_storage => &payload.lift_storage,
         has_native_actions => native.any,
         native_actions_defs => &native.interface_def,
         native_actions_interface => &native.interface_name,
@@ -2750,6 +2763,8 @@ fn render_c11(
         event_payload_type => &payload.type_name,
         event_payload_active => payload.active,
         event_payload_entry_defs => &payload.entry_defs,
+        event_payload_lift_decl => &payload.lift_decl,
+        event_payload_lift_def => &payload.lift_def,
         has_native_actions => native.any,
         native_actions_interface => &native.interface_name,
         native_action_ops => &native.operation_names,
@@ -3338,6 +3353,7 @@ fn render_go(env: &mut Environment, model: &SCXMLModel) -> Result<String, Genera
         event_payload_active => payload.active,
         event_payload_policy_fields => &payload.policy_fields,
         event_payload_populate => &payload.populate,
+        event_payload_lift => &payload.lift,
         event_payload_clear => &payload.clear,
         has_native_actions => native.any,
         native_actions_defs => &native.interface_def,

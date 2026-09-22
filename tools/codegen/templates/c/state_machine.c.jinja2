@@ -264,6 +264,15 @@
    `fprintf` with no declaration in scope — an implicit declaration,
    which is an error under the `-Werror` the repo builds C11 with. #}
 #include <stdio.h>  /* fprintf for <log>; snprintf for body-bearing <foreach> */
+{% if event_payload_active %}
+/* NL→IR Item C1 Path A: reading a typed `_event.data` view out of the wire
+   every producer but the inject seams fills. In the freestanding tier
+   (`sce_c_base`) deliberately — a natively lowered guard has no script engine
+   reading the same wire beside it on the MCU profile. */
+#include <sce/event_payload.h>
+
+{{ event_payload_lift_decl }}
+{% endif %}
 {% if model.needs_dom_helper %}
 /* W3C SCXML B.2: XML DOM helper (backends/c/runtime/include/sce/lua_dom_binding.h).
    cpp `LuaDOMBinding` 1:1 algorithmic mirror in pure C — pugixml is
@@ -3926,6 +3935,16 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external({{ csym_prefix }
    inconsistently. `= {0}` zero-inits the whole record (no <string.h>
    dependency — the datamodel-less native path does not include it). */
 {{ event_payload_entry_defs }}
+
+/* NL→IR Item C1 Path A: the typed `_event.data` view has two sources. The
+   inject seams above fill the typed payload; every other producer — `<send>`
+   with `<param>`, an invoke forwarding either way, autoforward, BasicHTTP,
+   mesh — fills the event's `data`, so the schema's fields are read out of
+   that when no payload rode with the event. A payload that does not read as
+   its event's schema is `error.execution` and a guard that does not fire,
+   which is what W3C SCXML 3.13 gives for a guard that cannot be evaluated,
+   and what the script engine gives for the same guard on the same data. */
+{{ event_payload_lift_def }}
 {% endif %}
 
 {% if model.has_parent_communication %}
@@ -4699,10 +4718,13 @@ SCE_SM_FN static void process_internal_queue({{ csym_prefix }}{{ model.name }}_t
         }
         sce_copy_bounded_id(sm->current_event_invoke_id, evt.invoke_id);
         {% if event_payload_active %}
-        /* NL→IR Item C1 Path A: lift the dequeued event's typed payload so
-           native transition guards read `sm->pending_payload.as.<event>`.
-           Twin of the Rust policy's `populate_event_payload`. */
+        /* NL→IR Item C1 Path A: bind the dequeued event's typed payload so
+           native transition guards read `sm->pending_payload.as.<event>`,
+           and when the event carried none, read that view out of its `data`.
+           Twin of the Rust policy's `populate_event_payload` +
+           `lift_event_payload`. */
         sm->pending_payload = evt.payload;
+        {{ csym_prefix }}{{ model.name }}_lift_payload(sm, &evt);
         {% endif %}
         {% if model.needs_script_engine %}
         /* W3C SCXML 5.10.1 (test331): seed `_event.type` carry — internal
@@ -4812,12 +4834,15 @@ SCE_SM_FN static bool process_next_external_event({{ csym_prefix }}{{ model.name
         sm->macrostep_microsteps_taken = 0u;
         sce_copy_bounded_id(sm->current_event_invoke_id, evt.invoke_id);
         {% if event_payload_active %}
-        /* NL→IR Item C1 Path A: lift the dequeued event's typed payload so
-           native transition guards read `sm->pending_payload.as.<event>`.
-           Twin of the Rust policy's `populate_event_payload`. The external
-           queue is where the per-event `raise_<event>_typed` entries
-           enqueue. */
+        /* NL→IR Item C1 Path A: bind the dequeued event's typed payload so
+           native transition guards read `sm->pending_payload.as.<event>`,
+           and when the event carried none, read that view out of its `data`.
+           Twin of the Rust policy's `populate_event_payload` +
+           `lift_event_payload`. The external queue is where the per-event
+           `raise_<event>_typed` entries enqueue — and where every OTHER
+           producer's event, carrying only `data`, arrives. */
         sm->pending_payload = evt.payload;
+        {{ csym_prefix }}{{ model.name }}_lift_payload(sm, &evt);
         {% endif %}
         {% if model.needs_script_engine %}
         /* W3C SCXML 5.10.1 (test331/336): seed `_event.type` /

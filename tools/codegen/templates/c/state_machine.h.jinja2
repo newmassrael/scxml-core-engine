@@ -445,11 +445,13 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
 {% endif %}
 {% if event_payload_active %}
     /* NL→IR Item C1 Path A: the current event's typed `_event.data`
-       payload, copied from the dequeued event by `process_event_queues`
+       payload — copied from the dequeued event by `process_event_queues`,
+       or, when the event carried none, lifted out of its `data` there,
        and read by native transition guards
        (`sm->pending_payload.as.<event>.<field>`). Mirrors the Rust
        policy's `pending_payload` field. */
     {{ event_payload_type }} pending_payload;
+{{ event_payload_lift_storage }}
 {% endif %}
     {{ csym_prefix }}{{ model.name }}_event_queue_t internal_queue;   /* W3C 3.12.1: high-priority FIFO */
     {{ csym_prefix }}{{ model.name }}_event_queue_t external_queue;   /* W3C 3.12.1: low-priority FIFO  */
