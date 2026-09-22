@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Range bounds at an integer type's own extremes, which every value of the
+  type satisfies. Their comparisons are tautologies that gcc refuses under
+  -Werror=type-limits and rustc under -Dunused_comparisons, so the
+  generator emits none of them; the bounds inside the range keep theirs.
+
+    level   int8    -128 .. 127      both at the extremes: no check
+    offset  int16   -32768 .. 100    lower at the extreme: upper check only
+    count   uint8   0x00 .. 200      lower at the extreme, spelled in hex
+    load    uint16  10 .. 0xFFFF     upper at the extreme: lower check only
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="validator"
+       name="integer_extremes">
+  <datamodel>
+    <data id="level" sce:type="int8" sce:direction="in"
+          sce:range-min="-128" sce:range-max="127"/>
+    <data id="offset" sce:type="int16" sce:direction="in"
+          sce:range-min="-32768" sce:range-max="100"/>
+    <data id="count" sce:type="uint8" sce:direction="in"
+          sce:range-min="0x00" sce:range-max="200"/>
+    <data id="load" sce:type="uint16" sce:direction="in"
+          sce:range-min="10" sce:range-max="0xFFFF"/>
+    <data id="valid" sce:type="bool" sce:direction="out"/>
+  </datamodel>
+</scxml>

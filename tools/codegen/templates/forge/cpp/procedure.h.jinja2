@@ -151,7 +151,14 @@ public:
                     req.subfunc = std::string("{{ send.subfunc }}");
 {% endif %}
 {% if send.has_addr %}
+{# An integer in decimal, a string as written — `std::to_string` has no
+   string overload, so a string address takes the other spelling
+   (SCE_FORGE.md §4.5). #}
+{% if send.addr_form == "text" %}
+                    req.addr = std::string({{ send.addr_expr }});
+{% else %}
                     req.addr = std::to_string({{ send.addr_expr }});
+{% endif %}
 {% endif %}
 {% if send.payload %}
                     req.payload = {{ send.payload_expr }};

@@ -1402,8 +1402,18 @@ pub struct ValidatorRules {
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct RangeRule {
     pub id: String,
+    /// The bound as source every backend reads alike — decimal for an
+    /// integer — which is what the generated check compares against.
     pub min: Option<String>,
     pub max: Option<String>,
+    /// The bounds as the author wrote them — `0x00` where `min` holds `0` —
+    /// for the review page, which a reviewer holds against the document
+    /// they wrote. Empty when no document spelled one. `#[serde(skip)]`
+    /// for the reason [`crate::source_literal`] gives.
+    #[serde(skip, default)]
+    pub min_text: String,
+    #[serde(skip, default)]
+    pub max_text: String,
 }
 
 /// Rate-of-change check: delta between successive calls must not exceed max_delta.

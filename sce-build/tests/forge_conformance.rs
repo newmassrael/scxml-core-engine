@@ -16008,3 +16008,174 @@ mod procedure_retry_cases {
     )
     .unwrap_or_else(|e| panic!("the emitted procedure must honour its retry bound\n{e}"));
 }
+
+// ── A `<send>` address reaches the service as the same text everywhere ──
+//
+// SCE_FORGE.md §4.5: an integer address is sent in decimal, a string as
+// written. The C11 generator sent `""` for every address, and no C fixture's
+// handler read it, which is how that held — the driver below is the handler
+// that reads it.
+
+/// The C11 procedure hands its handler each address form as text, and the
+/// runtime's formatter spells the integer extremes a printf without 64-bit
+/// conversions could not.
+fn run_procedure_address_forms_c11(test_id: &str) -> Result<(), String> {
+    if !toolchain_present("gcc") {
+        return require_all_or_warn(test_id, "gcc");
+    }
+    let proj_dir = cobs_proj_dir("c11", test_id)?;
+    let all_files = generate_files_for_codec_set(
+        &resource_dir(),
+        &["procedure_address_forms.scxml"],
+        sce_build::generator::Language::C11,
+    )?;
+    write_flat_emit(&proj_dir, &all_files, "h").map_err(|e| format!("{test_id}: {e}"))?;
+
+    let driver = format!(
+        "/* Driver for {test_id}: records the address text each <send> hands\n\
+         \x20* its handler, and checks the runtime formatter at the extremes. */\n\
+         #include \"procedure_address_forms.h\"\n\
+         #include <stdio.h>\n\
+         #include <string.h>\n\
+         \n\
+         static char seen[3][SCE_FORGE_DECIMAL_MAX + 8];\n\
+         static int sends = 0;\n\
+         \n\
+         static sce_forge_procedure_service_response_t handler(\n\
+         \x20   const sce_forge_procedure_service_request_t *req, void *user_data) {{\n\
+         \x20   (void)user_data;\n\
+         \x20   sce_forge_procedure_service_response_t response = {{0}};\n\
+         \x20   if (sends < 3 && req->has_addr) {{\n\
+         \x20       strncpy(seen[sends], req->addr, sizeof seen[sends] - 1u);\n\
+         \x20   }}\n\
+         \x20   ++sends;\n\
+         \x20   response.success = true;\n\
+         \x20   return response;\n\
+         }}\n\
+         \n\
+         static int expect(const char *what, const char *got, const char *want) {{\n\
+         \x20   if (strcmp(got, want) != 0) {{\n\
+         \x20       printf(\"%s: sent \\\"%s\\\", expected \\\"%s\\\"\\n\", what, got, want);\n\
+         \x20       return 1;\n\
+         \x20   }}\n\
+         \x20   return 0;\n\
+         }}\n\
+         \n\
+         int main(void) {{\n\
+         \x20   (void)procedure_address_forms_execute(handler, NULL, 4294967295u, -32768, \"gw-1\");\n\
+         \x20   int failed = 0;\n\
+         \x20   failed |= expect(\"unsigned\", seen[0], \"4294967295\");\n\
+         \x20   failed |= expect(\"signed\", seen[1], \"-32768\");\n\
+         \x20   failed |= expect(\"text\", seen[2], \"gw-1\");\n\
+         \x20   char buf[SCE_FORGE_DECIMAL_MAX];\n\
+         \x20   failed |= expect(\"u64 zero\", sce_forge_decimal_u64(buf, 0u), \"0\");\n\
+         \x20   failed |= expect(\"u64 max\", sce_forge_decimal_u64(buf, UINT64_MAX), \"18446744073709551615\");\n\
+         \x20   failed |= expect(\"i64 min\", sce_forge_decimal_i64(buf, INT64_MIN), \"-9223372036854775808\");\n\
+         \x20   failed |= expect(\"i64 -1\", sce_forge_decimal_i64(buf, -1), \"-1\");\n\
+         \x20   return failed;\n\
+         }}\n"
+    );
+    std::fs::write(proj_dir.join("driver.c"), driver)
+        .map_err(|e| format!("write driver.c: {e}"))?;
+
+    let runtime_include = backend_runtime_dir("backends/c/forge-runtime")?.join("include");
+    let exe = proj_dir.join("driver");
+    let mut build = std::process::Command::new("gcc");
+    build
+        .arg("-std=c11")
+        .arg("-Wall")
+        .arg("-Wextra")
+        .arg("-Werror")
+        .arg(format!("-I{}", runtime_include.display()))
+        .arg(format!("-I{}", proj_dir.display()))
+        .arg("-o")
+        .arg(&exe)
+        .arg("driver.c");
+    run_cobs_driver(build, &proj_dir, test_id, "gcc-build")?;
+    run_cobs_driver(
+        std::process::Command::new(&exe),
+        &proj_dir,
+        test_id,
+        "c11-run",
+    )?;
+    let _ = std::fs::remove_dir_all(&proj_dir);
+    Ok(())
+}
+
+#[test]
+fn forge_c11_procedure_sends_each_address_form_as_text() {
+    run_procedure_address_forms_c11("procedure_address_forms_c11")
+        .unwrap_or_else(|e| panic!("the C11 procedure must send its addresses as text\n{e}"));
+}
+
+/// Every other backend compiles the three forms — C++ in particular, whose
+/// `std::to_string` has no overload for the string address.
+#[test]
+fn procedure_address_forms_compile_on_every_backend() {
+    let dir = resource_dir();
+    let doc = ["procedure_address_forms.scxml"];
+    compile_codec_set_cpp(&dir, &doc, "procedure_address_forms_cpp")
+        .unwrap_or_else(|e| panic!("C++:\n{e}"));
+    rustc_compile_codec_set(&dir, &doc, "procedure_address_forms_rust")
+        .unwrap_or_else(|e| panic!("Rust:\n{e}"));
+    compile_codec_set_go(&dir, &doc, "procedure_address_forms_go")
+        .unwrap_or_else(|e| panic!("Go:\n{e}"));
+    compile_codec_set_python(&dir, &doc, "procedure_address_forms_python")
+        .unwrap_or_else(|e| panic!("Python:\n{e}"));
+    compile_codec_set_kotlin(&dir, &doc, "procedure_address_forms_kotlin")
+        .unwrap_or_else(|e| panic!("Kotlin:\n{e}"));
+}
+
+// ── A range bound at the type's own extreme carries no comparison ──
+//
+// Its comparison is a tautology gcc refuses under -Werror=type-limits (the
+// C and C++ gates build with -Wextra -Werror) and rustc under
+// -Dunused_comparisons (the Rust gate denies warnings). The elision was
+// unsigned-only, and its lower half compared the spelling `"0"`, so a signed
+// field at either extreme — and `0x00` — reached those builds.
+
+#[test]
+fn validator_integer_extremes_compile_on_every_backend() {
+    let dir = resource_dir();
+    let doc = ["validator_integer_extremes.scxml"];
+    compile_codec_set_c11(&dir, &doc, "validator_integer_extremes_c11")
+        .unwrap_or_else(|e| panic!("C11:\n{e}"));
+    compile_codec_set_cpp(&dir, &doc, "validator_integer_extremes_cpp")
+        .unwrap_or_else(|e| panic!("C++:\n{e}"));
+    rustc_compile_codec_set(&dir, &doc, "validator_integer_extremes_rust")
+        .unwrap_or_else(|e| panic!("Rust:\n{e}"));
+    compile_codec_set_go(&dir, &doc, "validator_integer_extremes_go")
+        .unwrap_or_else(|e| panic!("Go:\n{e}"));
+    compile_codec_set_python(&dir, &doc, "validator_integer_extremes_python")
+        .unwrap_or_else(|e| panic!("Python:\n{e}"));
+    compile_codec_set_kotlin(&dir, &doc, "validator_integer_extremes_kotlin")
+        .unwrap_or_else(|e| panic!("Kotlin:\n{e}"));
+}
+
+/// The bounds inside the range keep their comparisons, and only those: the
+/// emitted C names each surviving bound once and no extreme at all.
+#[test]
+fn validator_integer_extremes_keep_only_the_bounds_inside_the_range() {
+    let files = generate_files_for_codec_set(
+        &resource_dir(),
+        &["validator_integer_extremes.scxml"],
+        sce_build::generator::Language::C11,
+    )
+    .expect("the validator generates");
+    let emitted: String = files.iter().map(|(_, content)| content.as_str()).collect();
+    for kept in ["offset > 100", "count > 200", "load < 10"] {
+        assert!(emitted.contains(kept), "missing `{kept}`:\n{emitted}");
+    }
+    for dropped in [
+        "level < -128",
+        "level > 127",
+        "offset < -32768",
+        "count < 0x00",
+        "load > 0xFFFF",
+    ] {
+        assert!(
+            !emitted.contains(dropped),
+            "emitted `{dropped}`:\n{emitted}"
+        );
+    }
+}

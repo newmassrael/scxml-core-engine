@@ -635,6 +635,8 @@ fn each_declarative_kind_renders_every_field_it_can_carry() {
                 id: "v".to_string(),
                 min: Some("-10".to_string()),
                 max: Some("10".to_string()),
+                min_text: String::new(),
+                max_text: String::new(),
             }],
             rate_of_changes: vec![RateOfChangeRule {
                 id: "v".to_string(),

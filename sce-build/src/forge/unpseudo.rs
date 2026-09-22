@@ -355,16 +355,50 @@ fn parse_validator(head: &Line<'_>, body: &[&Line<'_>]) -> Result<ValidatorModel
         let w: Vec<&str> = l.text.split_whitespace().collect();
         match w.first().copied() {
             Some("range") => {
+                let id = undo(w.get(1).copied().unwrap_or(""), l.number)?;
+                // A bound is read as the page spells it — the author's
+                // spelling — and valued by its field's type, as the parser
+                // values it, so `0x00` reads back as the model's `0` and
+                // keeps `0x00` for the next rendering.
+                let field_type = m
+                    .inputs
+                    .iter()
+                    .find(|f| f.id == id)
+                    .map(|f| f.sce_type.clone());
+                let bound = |at: usize| -> Result<(String, String), ParseError> {
+                    let spelling = undo(w.get(at).copied().unwrap_or(""), l.number)?;
+                    let value = match &field_type {
+                        Some(ty) => ty
+                            .numeric_literal(&spelling)
+                            .map(crate::forge::model::NumericLiteral::to_source)
+                            .map_err(|rule| ParseError {
+                                line: l.number,
+                                why: format!("range bound `{spelling}` is not {rule}"),
+                            })?,
+                        None => spelling.clone(),
+                    };
+                    Ok((value, spelling))
+                };
                 let mut r = RangeRule {
-                    id: undo(w.get(1).copied().unwrap_or(""), l.number)?,
+                    id,
                     min: None,
                     max: None,
+                    min_text: String::new(),
+                    max_text: String::new(),
                 };
                 let mut i = 2;
                 while i < w.len() {
                     match w[i] {
-                        "min" => r.min = Some(undo(w.get(i + 1).copied().unwrap_or(""), l.number)?),
-                        "max" => r.max = Some(undo(w.get(i + 1).copied().unwrap_or(""), l.number)?),
+                        "min" => {
+                            let (value, spelling) = bound(i + 1)?;
+                            r.min = Some(value);
+                            r.min_text = spelling;
+                        }
+                        "max" => {
+                            let (value, spelling) = bound(i + 1)?;
+                            r.max = Some(value);
+                            r.max_text = spelling;
+                        }
                         other => {
                             return Err(ParseError {
                                 line: l.number,

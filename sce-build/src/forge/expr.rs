@@ -821,8 +821,6 @@ pub(crate) enum UnaryOp {
 // tooling that pre-scans SCXML expressions without full parsing)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-/// Replace the contents of every string literal with spaces of equal length,
-/// preserving expression length and non-string token positions.
 /// Extract unique free identifier names from a raw ECMAScript expression.
 /// Used by inline kind rendering to build member-access renames for languages
 /// that require explicit `self.` / `p.` prefixes (Rust, Go).
@@ -846,6 +844,64 @@ pub fn extract_free_idents(raw_expr: &str) -> Result<Vec<String>, ExprError> {
     Ok(idents)
 }
 
+/// The names `raw_expr` reads as values — its identifier nodes, in the
+/// order first read, each once. Unlike [`extract_free_idents`], which works
+/// on tokens and so also yields the member after a `.`, this reads the
+/// parsed tree: in `frame.len` it answers `frame`, never `len`.
+pub fn read_identifiers(raw_expr: &str) -> Result<Vec<String>, ExprError> {
+    fn walk(node: &TypedExpr, names: &mut Vec<String>) {
+        match &node.kind {
+            ExprKind::Ident(name) => {
+                if !names.contains(name) {
+                    names.push(name.clone());
+                }
+            }
+            ExprKind::Binary { left, right, .. } => {
+                walk(left, names);
+                walk(right, names);
+            }
+            ExprKind::Unary { operand, .. } => walk(operand, names),
+            ExprKind::Conditional {
+                condition,
+                consequent,
+                alternate,
+            } => {
+                walk(condition, names);
+                walk(consequent, names);
+                walk(alternate, names);
+            }
+            ExprKind::Member { object, .. } => walk(object, names),
+            ExprKind::Index { object, index } => {
+                walk(object, names);
+                walk(index, names);
+            }
+            ExprKind::Call { callee, args } => {
+                walk(callee, names);
+                for arg in args {
+                    walk(arg, names);
+                }
+            }
+            ExprKind::BytesView { source, len } => {
+                walk(source, names);
+                if let Some(len) = len {
+                    walk(len, names);
+                }
+            }
+            ExprKind::NumberLit(_)
+            | ExprKind::StringLit { .. }
+            | ExprKind::BytesLit { .. }
+            | ExprKind::BoolLit(_)
+            | ExprKind::NullLit
+            | ExprKind::Raw(_) => {}
+        }
+    }
+    let mut names = Vec::new();
+    walk(&parse_to_ast(raw_expr)?, &mut names);
+    Ok(names)
+}
+
+/// Replace the contents of every string literal with spaces of equal length,
+/// preserving expression length and non-string token positions.
 pub fn strip_string_literals(expr: &str) -> String {
     static RE_STR: LazyLock<regex::Regex> =
         LazyLock::new(|| regex::Regex::new(r#"'[^']*'|"[^"]*""#).unwrap());

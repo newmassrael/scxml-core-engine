@@ -95,7 +95,8 @@ static inline crossfile_procedure_codec_event_t crossfile_procedure_codec_execut
                 sce_forge_procedure_service_request_t _req = {0};
                 _req.service = "Diag";
                 _req.has_addr = true;
-                _req.addr = "";
+                char _addr[SCE_FORGE_DECIMAL_MAX];
+                _req.addr = sce_forge_decimal_u64(_addr, (uint64_t)(_st->ecu_addr));
                 _req.has_payload = true;
                 _req.payload = crossfile_procedure_codec__frame_encode(&_st->frame_);
                 sce_forge_procedure_service_response_t _resp =

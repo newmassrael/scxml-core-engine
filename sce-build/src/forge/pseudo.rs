@@ -1318,12 +1318,22 @@ fn render_validator(m: &ValidatorModel) -> Vec<Node> {
             render_field(f, out);
         }
         for r in &m.rules.ranges {
+            // Each bound as the author spelled it: a reviewer holds the page
+            // against the document, and `0x00` is not found as `0`.
             let mut line = format!("range {}", text(&r.id));
             if let Some(v) = &r.min {
-                let _ = write!(line, " min {}", text(v));
+                let _ = write!(
+                    line,
+                    " min {}",
+                    text(&crate::source_literal::as_written(&r.min_text, v))
+                );
             }
             if let Some(v) = &r.max {
-                let _ = write!(line, " max {}", text(v));
+                let _ = write!(
+                    line,
+                    " max {}",
+                    text(&crate::source_literal::as_written(&r.max_text, v))
+                );
             }
             out.line(&line);
         }

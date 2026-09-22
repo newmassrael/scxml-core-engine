@@ -75,7 +75,8 @@ static inline procedure_security_access_event_t procedure_security_access_execut
                 sce_forge_procedure_service_request_t _req = {0};
                 _req.service = "TesterPresent";
                 _req.has_addr = true;
-                _req.addr = "";
+                char _addr[SCE_FORGE_DECIMAL_MAX];
+                _req.addr = sce_forge_decimal_u64(_addr, (uint64_t)(_st->ecu_addr));
                 sce_forge_procedure_service_response_t _resp =
                     _st->service_handler(&_req, _st->service_handler_user_data);
                 _st->pending_event_data = _resp.data;

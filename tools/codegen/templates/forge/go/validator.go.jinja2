@@ -66,15 +66,17 @@ func New{{ struct_name }}() *{{ struct_name }} {
 // Validate checks all validation rules and returns the result.
 func (p *{{ struct_name }}) Validate({{ params }}) ValidationResult {
 {% for rule in range_rules %}
-{% if rule.has_min and rule.has_max %}
+{# Which bounds carry a comparison is the generator's decision for all six
+   backends; a bound at the type's own extreme carries none. #}
+{% if rule.check_min and rule.check_max %}
 	if {{ rule.id }} < {{ rule.min }} || {{ rule.id }} > {{ rule.max }} {
 		return ValidationResult{Valid: false, Reason: "{{ rule.reason_id }}_out_of_range"}
 	}
-{% elif rule.has_min %}
+{% elif rule.check_min %}
 	if {{ rule.id }} < {{ rule.min }} {
 		return ValidationResult{Valid: false, Reason: "{{ rule.reason_id }}_out_of_range"}
 	}
-{% elif rule.has_max %}
+{% elif rule.check_max %}
 	if {{ rule.id }} > {{ rule.max }} {
 		return ValidationResult{Valid: false, Reason: "{{ rule.reason_id }}_out_of_range"}
 	}

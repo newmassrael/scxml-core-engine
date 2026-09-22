@@ -106,7 +106,13 @@ class {{ class_name }} : ProcedureStateMachine<State, Event>() {
                         subfunc = "{{ send.subfunc }}",
 {% endif %}
 {% if send.has_addr %}
+{# An integer in decimal, a string as written — a string needs no
+   conversion, and kotlinc warns on the redundant one (SCE_FORGE.md §4.5). #}
+{% if send.addr_form == "text" %}
+                        addr = {{ send.addr_expr }},
+{% else %}
                         addr = ({{ send.addr_expr }}).toString(),
+{% endif %}
 {% endif %}
 {% if send.payload %}
                         payload = {{ send.payload_expr }},

@@ -13200,6 +13200,39 @@ struct ResolvedRange {
     max: Option<String>,
 }
 
+impl ResolvedRange {
+    /// Which of this range's bounds carry a comparison, lower then upper.
+    ///
+    /// A bound at the type's own extreme — `0` or `0x00` for an unsigned
+    /// field, `-128` or `127` for an `int8` — is one every value
+    /// satisfies, so its comparison is a tautology that gcc refuses under
+    /// -Werror=type-limits and rustc under -Dunused_comparisons. Decided
+    /// here, once, by comparing NUMBERS, so all six templates emit the
+    /// same comparisons and none compares spellings.
+    ///
+    /// ⚠ It used to be decided twice and for unsigned fields only: the
+    /// lower bound by a template comparing the string `"0"` (so `0x00` kept
+    /// its tautology), the upper here — and a signed field at either
+    /// extreme reached the C, C++ and Rust builds with the comparison they
+    /// refuse.
+    fn bound_checks(&self) -> (bool, bool) {
+        let at_extreme = |bound: &Option<String>, extreme: fn((i128, i128)) -> i128| match (
+            bound,
+            self.sce_type.int_value_range(),
+        ) {
+            (Some(text), Some(range)) => {
+                self.sce_type.numeric_literal(text)
+                    == Ok(crate::forge::model::NumericLiteral::Int(extreme(range)))
+            }
+            _ => false,
+        };
+        (
+            self.min.is_some() && !at_extreme(&self.min, |(low, _)| low),
+            self.max.is_some() && !at_extreme(&self.max, |(_, high)| high),
+        )
+    }
+}
+
 /// Rate-of-change rule with its associated input field resolved.
 struct ResolvedRoc {
     id: String,
@@ -13330,33 +13363,10 @@ fn render_validator(
             obj.insert("reason_id".into(), r.canonical_reason_id().into());
             obj.insert("min".into(), serde_json::json!(r.min));
             obj.insert("max".into(), serde_json::json!(r.max));
-            obj.insert("has_min".into(), r.min.is_some().into());
-            obj.insert("has_max".into(), r.max.is_some().into());
-            // Unsigned typing flag — consumed by C11 + C++ templates
-            // to elide lower-bound checks where `min == "0"` and the
-            // field type is unsigned, since `unsigned < 0` is
-            // tautologically false and gcc -Wtype-limits surfaces it.
-            // Rust/Go/Kotlin/Python builds either don't carry an
-            // equivalent diagnostic or have it disabled by default,
-            // so their templates may still emit the redundant
-            // comparison without breaking the build.
-            obj.insert("is_unsigned".into(), r.sce_type.is_unsigned().into());
-            // Same -Werror=type-limits hazard at the upper bound: a
-            // `uint8_t > 255` test is tautologically false. The C11
-            // template elides the upper-bound comparison when this
-            // flag is true. Computed by comparing the rule's declared max
-            // against the type's natural ceiling as NUMBERS, so a user who
-            // writes `range-max="200"` for a uint8 still gets the
-            // comparison emitted (not tautological) — and one who writes
-            // `0xFF` gets it elided, which a comparison of strings missed.
-            let is_max_at_type_max = match (&r.max, r.sce_type.int_value_range()) {
-                (Some(max_str), Some((_, type_max))) if r.sce_type.is_unsigned() => {
-                    r.sce_type.numeric_literal(max_str)
-                        == Ok(crate::forge::model::NumericLiteral::Int(type_max))
-                }
-                _ => false,
-            };
-            obj.insert("is_max_at_type_max".into(), is_max_at_type_max.into());
+            // Which bounds carry a comparison — see `bound_checks`.
+            let (check_min, check_max) = r.bound_checks();
+            obj.insert("check_min".into(), check_min.into());
+            obj.insert("check_max".into(), check_max.into());
             if matches!(lang, Language::Kotlin) {
                 let conv = kotlin_unsigned_conversion(&r.sce_type).unwrap_or("");
                 obj.insert("conv".into(), conv.into());
@@ -13521,11 +13531,38 @@ fn render_validator(
         None => None,
     };
 
+    // The inputs no emitted check reads: a field no rule names, or one whose
+    // every bound is its type's own extreme and so carries no comparison.
+    // The validator accepts every value such a field can hold, and each
+    // backend that warns on an unused parameter marks these as unread on
+    // purpose — otherwise a build treating warnings as errors refuses the
+    // validator (measured 2026-09-22: C11 `-Werror=unused-parameter` on an
+    // `int8` ranged -128..127).
+    let plausibility_reads = match &rv.plausibility {
+        Some(e) => expr::read_identifiers(e)?,
+        None => Vec::new(),
+    };
+    let unread_params: Vec<String> = rv
+        .inputs
+        .iter()
+        .filter(|f| {
+            let compared = rv.ranges.iter().any(|r| {
+                let (lower, upper) = r.bound_checks();
+                r.id == f.id && (lower || upper)
+            });
+            let rated = rv.rocs.iter().any(|roc| roc.id == f.id);
+            let named = plausibility_reads.contains(&f.id);
+            !(compared || rated || named)
+        })
+        .map(|f| l.local_id(&f.id))
+        .collect();
+
     let mut ctx = l.base_context(&m.name);
     ctx.insert("params".into(), params.into());
     ctx.insert("prev_vars".into(), serde_json::json!(prev_vars));
     ctx.insert("range_rules".into(), serde_json::json!(range_rules));
     ctx.insert("roc_rules".into(), serde_json::json!(roc_rules));
+    ctx.insert("unread_params".into(), serde_json::json!(unread_params));
     ctx.insert(
         "plausibility_expr".into(),
         serde_json::json!(plausibility_expr),
@@ -16758,32 +16795,27 @@ fn render_procedure_c_l2(
                 .on_entry_sends
                 .iter()
                 .map(|send| -> Result<serde_json::Value, ForgeError> {
-                    let addr_expr = send.addr.as_ref().map(|a| -> Result<String, ForgeError> {
-                        // Address is a string-typed identifier; cpp
-                        // wraps with std::to_string. C: emit a
-                        // sprintf-style string. For this fixture the
-                        // addr is `ecuAddr` (uint32), so we emit a
-                        // literal cast call into a static buffer.
-                        // Pragmatic shortcut for D-2: emit the
-                        // identifier rename only — the test fixture's
-                        // handler does not inspect addr.
-                        let renamed = transpile_procedure_expr_c11(
-                            a,
-                            &procedure_type_ctx,
-                            &rename_map,
-                            crate::forge::types::InferredType::Unknown,
-                            &import_lowerings,
-                        )?;
-                        // Build a const-string expression: just empty
-                        // string for now — the handler in
-                        // procedure_security_access does not assert on
-                        // addr, only on payload.bytes. Future fixtures
-                        // can lift to a sprintf-into-static-buffer if
-                        // they need the addr literal value.
-                        let _ = renamed;
-                        Ok("\"\"".to_string())
-                    });
-                    let addr_expr = addr_expr.transpose()?;
+                    // The address expression as C, and the form the
+                    // template turns it into the request's text address
+                    // with — decimal for an integer, as-is for a string.
+                    // ⚠ This used to emit `""` for every address, so a C
+                    // procedure sent no address at all; the fixtures'
+                    // handlers never read it, which is how it held.
+                    let addr_form =
+                        crate::forge::validate::address_form(send, &procedure_type_ctx)?;
+                    let addr_expr = send
+                        .addr
+                        .as_ref()
+                        .map(|a| {
+                            transpile_procedure_expr_c11(
+                                a,
+                                &procedure_type_ctx,
+                                &rename_map,
+                                crate::forge::types::InferredType::Unknown,
+                                &import_lowerings,
+                            )
+                        })
+                        .transpose()?;
                     let payload_expr = send
                         .payload
                         .as_ref()
@@ -16802,6 +16834,7 @@ fn render_procedure_c_l2(
                         "subfunc": send.subfunc,
                         "has_addr": send.addr.is_some(),
                         "addr_expr": addr_expr.unwrap_or_default(),
+                        "addr_form": addr_form.map(crate::forge::validate::AddressForm::as_str),
                         "payload": send.payload.is_some(),
                         "payload_expr": payload_expr.unwrap_or_default(),
                     }))
@@ -17452,6 +17485,11 @@ fn build_procedure_states_with_entry(
                 .on_entry_sends
                 .iter()
                 .map(|send| -> Result<serde_json::Value, ForgeError> {
+                    // The same decision the C11 builder asks for, so an
+                    // address this backend refuses is one every backend
+                    // refuses, and the form it accepts is sent as the same
+                    // text by all six.
+                    let addr_form = crate::forge::validate::address_form(send, type_ctx)?;
                     let addr_expr = send
                         .addr
                         .as_ref()
@@ -17483,6 +17521,7 @@ fn build_procedure_states_with_entry(
                         "subfunc": send.subfunc,
                         "has_addr": send.addr.is_some(),
                         "addr_expr": addr_expr.unwrap_or_default(),
+                        "addr_form": addr_form.map(crate::forge::validate::AddressForm::as_str),
                         "payload": send.payload.is_some(),
                         "payload_expr": payload_expr.unwrap_or_default(),
                     }))

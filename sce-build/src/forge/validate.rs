@@ -23,6 +23,91 @@ pub const PAYLOAD_RULE: &str = "bytes — a codec's encode_to_vec(), or a bytes 
      a scalar has no payload meaning without an endianness and a width, which is \
      the decision a codec makes";
 
+/// What a `<send>`'s `sce:addr` may be, as a refusal names it
+/// (`SCE_FORGE.md` §4.5).
+pub const ADDRESS_RULE: &str = "an integer, sent in decimal, or a string, sent as written \
+     — the text every backend spells alike";
+
+/// How a `<send>`'s address reaches the service request, whose address is
+/// text in every runtime.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AddressForm {
+    /// An unsigned integer, sent in decimal.
+    Unsigned,
+    /// A signed integer, sent in decimal with its sign.
+    Signed,
+    /// A string, sent as written.
+    Text,
+}
+
+impl AddressForm {
+    /// The name a template branches on.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AddressForm::Unsigned => "unsigned",
+            AddressForm::Signed => "signed",
+            AddressForm::Text => "text",
+        }
+    }
+}
+
+/// The form `send`'s address reaches the service request in, or `None`
+/// when the send has no address. Decided once, from the expression's type,
+/// so every backend sends the same text.
+///
+/// ⚠ Each backend used to decide for itself: Python sent a boolean as
+/// `True` where Rust, Kotlin and Go sent `true` and C++ sent `1`, a float
+/// took as many digits as each language's own formatting chose, C++ could
+/// not compile a string address at all (`std::to_string` of a string), and
+/// C sent every address as `""` — read from the six templates' conversions
+/// on 2026-09-22, each a fact of its language's library. An integer and a
+/// string are the two types every backend spells alike, so an address of
+/// any other type — or of one this document does not establish — is
+/// refused as `validation/send-operand-type`, on the attribute's row.
+pub fn address_form(
+    send: &crate::forge::model::ProcedureSendAction,
+    type_ctx: &crate::forge::types::TypeCtx<'_>,
+) -> Result<Option<AddressForm>, ForgeError> {
+    use crate::forge::types::InferredType;
+
+    let Some(addr) = send.addr.as_deref() else {
+        return Ok(None);
+    };
+    let expr = addr.trim();
+    let mut ast = crate::forge::expr::parse_to_ast(expr)?;
+    crate::forge::expr::infer_types(&mut ast, type_ctx);
+    let found = match ast.ty {
+        InferredType::Int { signed: false, .. } => return Ok(Some(AddressForm::Unsigned)),
+        InferredType::Int { signed: true, .. } | InferredType::UntypedInt => {
+            return Ok(Some(AddressForm::Signed))
+        }
+        InferredType::Str => return Ok(Some(AddressForm::Text)),
+        InferredType::Bool => "bool".to_string(),
+        InferredType::Float { bits } => format!("float{bits}"),
+        InferredType::UntypedFloat => "a floating-point number".to_string(),
+        InferredType::Bytes => "bytes".to_string(),
+        InferredType::Null => "null".to_string(),
+        InferredType::Quantity { .. } => "a physical quantity".to_string(),
+        _ => "of no type this document establishes".to_string(),
+    };
+    let written = send
+        .addr_spelling
+        .as_ref()
+        .and_then(|spelling| spelling.locate_trimmed(0..expr.len()));
+    let refusal: ForgeError = ValidationError::SendOperandType {
+        service: send.service.clone(),
+        attr: "sce:addr",
+        observed: written
+            .and_then(|written| written.on_one_row())
+            .unwrap_or(expr)
+            .to_string(),
+        found,
+        rule: ADDRESS_RULE,
+    }
+    .into();
+    Err(refusal.at_line(written.map(|written| written.row)))
+}
+
 /// Refuse a `sce:payload` that names a declared field which is not bytes.
 ///
 /// A procedure's payload is a wire blob: every runtime in this crate types
@@ -344,6 +429,71 @@ mod tests {
             (refusal.location.line, refusal.location.col),
             (Some(7), Some(26)),
             "{refusal:?}"
+        );
+    }
+
+    /// An address of a type no two backends spell alike is refused, on the
+    /// row its attribute sits on and naming it as written; the three forms
+    /// every backend spells alike are told apart by the expression's type.
+    #[test]
+    fn an_address_is_an_integer_or_a_string() {
+        use crate::forge::diagnostic::ToDiagnostics;
+        let document = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="procedure" name="probe" initial="a" version="1.0">
+  <datamodel>
+    <data id="armed" sce:type="bool" sce:direction="in"/>
+    <data id="ecu" sce:type="uint32" sce:direction="in"/>
+    <data id="offset" sce:type="int16" sce:direction="in"/>
+    <data id="gateway" sce:type="string" sce:direction="in"/>
+  </datamodel>
+  <state id="a">
+    <onentry>
+      <send sce:service="svc"
+            sce:addr="armed"/>
+      <send sce:service="svc" sce:addr="ecu"/>
+      <send sce:service="svc" sce:addr="offset"/>
+      <send sce:service="svc" sce:addr="gateway"/>
+    </onentry>
+    <transition event="ok" target="d"/>
+  </state>
+  <final id="d"/>
+</scxml>"#;
+        let label = crate::DocumentLabel {
+            identifier: "probe",
+            diagnostic_label: "probe.scxml",
+        };
+        let parsed = crate::forge::parser::parse_forge_with_imports(document, label)
+            .expect("the document parses")
+            .expect("a forge document");
+        let crate::forge::model::ForgeDocument::Procedure(model) = &parsed.document else {
+            panic!("a procedure: {:?}", parsed.document);
+        };
+        let ctx = crate::forge::type_ctx::procedure(model, &[]);
+        let sends = &model.states[0].on_entry_sends;
+
+        let refusal = Located::in_file(
+            address_form(&sends[0], &ctx).expect_err("a bool address is refused"),
+            "probe.scxml",
+        );
+        let record = &refusal.error.to_diagnostics()[0];
+        assert_eq!(
+            serde_json::to_string(&record.code).unwrap(),
+            "\"validation/send-operand-type\""
+        );
+        assert_eq!(record.actual.as_deref(), Some("armed"));
+        assert_eq!(refusal.location.line, Some(12), "{refusal:?}");
+
+        let forms: Vec<_> = sends[1..]
+            .iter()
+            .map(|send| address_form(send, &ctx).expect("an admitted address"))
+            .collect();
+        assert_eq!(
+            forms,
+            [
+                Some(AddressForm::Unsigned),
+                Some(AddressForm::Signed),
+                Some(AddressForm::Text)
+            ]
         );
     }
 }

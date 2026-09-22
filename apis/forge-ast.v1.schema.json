@@ -5068,6 +5068,7 @@
           ]
         },
         "min": {
+          "description": "The bound as source every backend reads alike — decimal for an integer — which is what the generated check compares against.",
           "type": [
             "string",
             "null"

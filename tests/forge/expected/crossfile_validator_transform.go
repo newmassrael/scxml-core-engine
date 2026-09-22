@@ -37,7 +37,7 @@ func NewCrossfileValidatorTransform() *CrossfileValidatorTransform {
 
 // Validate checks all validation rules and returns the result.
 func (p *CrossfileValidatorTransform) Validate(rawTemp uint16) ValidationResult {
-	if rawTemp < 0 || rawTemp > 4095 {
+	if rawTemp > 4095 {
 		return ValidationResult{Valid: false, Reason: "raw_temp_out_of_range"}
 	}
 	if !(transform_temperature.ComputeTemperature(rawTemp) > -40.0 && transform_temperature.ComputeTemperature(rawTemp) < 200.0) {

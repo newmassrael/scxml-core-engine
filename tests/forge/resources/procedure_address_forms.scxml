@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  One `<send>` per address form SCE_FORGE.md §4.5 admits: an unsigned
+  integer, a signed integer, a string. Every backend sends each as the same
+  text — the integer in decimal, the string as written — and the C driver in
+  forge_conformance reads the text its handler receives.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="procedure" initial="unsignedAddress" version="1.0">
+  <datamodel>
+    <data id="ecuAddr" sce:type="uint32" sce:direction="in"/>
+    <data id="offset" sce:type="int16" sce:direction="in"/>
+    <data id="gateway" sce:type="string" sce:direction="in"/>
+  </datamodel>
+
+  <state id="unsignedAddress">
+    <onentry>
+      <send sce:service="Probe" sce:addr="ecuAddr"/>
+    </onentry>
+    <transition event="ok" target="signedAddress"/>
+    <transition event="fail" target="signedAddress"/>
+  </state>
+
+  <state id="signedAddress">
+    <onentry>
+      <send sce:service="Probe" sce:addr="offset"/>
+    </onentry>
+    <transition event="ok" target="textAddress"/>
+    <transition event="fail" target="textAddress"/>
+  </state>
+
+  <state id="textAddress">
+    <onentry>
+      <send sce:service="Probe" sce:addr="gateway"/>
+    </onentry>
+    <transition event="ok" target="done"/>
+    <transition event="fail" target="done"/>
+  </state>
+
+  <final id="done"/>
+</scxml>

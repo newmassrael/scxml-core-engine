@@ -42,6 +42,43 @@ typedef struct {
     sce_forge_bytes_t payload; /* sce:payload bytes — valid when has_payload */
 } sce_forge_procedure_service_request_t;
 
+/* Bytes a decimal integer address needs: the 20 digits of UINT64_MAX, or
+ * the sign and 19 digits of INT64_MIN, and the terminator. */
+#define SCE_FORGE_DECIMAL_MAX 21
+
+/* `value` in decimal into `buf`, which holds at least
+ * SCE_FORGE_DECIMAL_MAX bytes; returns `buf`. This is how an integer
+ * `sce:addr` becomes the request's text address — the same text every
+ * other backend sends (SCE_FORGE.md §4.5). Written out rather than
+ * snprintf'd: this runtime does no I/O, and a printf family without 64-bit
+ * conversions is common on the targets it serves (newlib-nano). */
+static inline const char *sce_forge_decimal_u64(char *buf, uint64_t value) {
+    char digits[SCE_FORGE_DECIMAL_MAX];
+    size_t count = 0;
+    do {
+        digits[count++] = (char)('0' + (int)(value % 10u));
+        value /= 10u;
+    } while (value != 0u);
+    size_t at = 0;
+    while (count > 0u) {
+        buf[at++] = digits[--count];
+    }
+    buf[at] = '\0';
+    return buf;
+}
+
+/* `value` in decimal, with a leading '-' when negative; see
+ * sce_forge_decimal_u64. The magnitude of INT64_MIN does not fit an
+ * int64_t, so it is negated in unsigned arithmetic. */
+static inline const char *sce_forge_decimal_i64(char *buf, int64_t value) {
+    if (value >= 0) {
+        return sce_forge_decimal_u64(buf, (uint64_t)value);
+    }
+    buf[0] = '-';
+    (void)sce_forge_decimal_u64(buf + 1, (uint64_t)0 - (uint64_t)value);
+    return buf;
+}
+
 /* Service response. `data` populates `_event.data` for subsequent
  * `<assign>` actions; `success` selects the `ok` vs `fail` event. */
 typedef struct {

@@ -4999,8 +4999,15 @@ fn parse_validator(
                     }
                 }
                 if min.is_some() || max.is_some() {
+                    let spelled = |bound: &Bound| {
+                        bound
+                            .as_ref()
+                            .map_or_else(String::new, |(text, _)| text.clone())
+                    };
                     ranges.push(RangeRule {
                         id: field.id.clone(),
+                        min_text: spelled(&min),
+                        max_text: spelled(&max),
                         min: min.map(|(_, value)| value.to_source()),
                         max: max.map(|(_, value)| value.to_source()),
                     });

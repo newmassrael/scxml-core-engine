@@ -33,7 +33,7 @@ func NewValidatorRpmCheck() *ValidatorRpmCheck {
 
 // Validate checks all validation rules and returns the result.
 func (p *ValidatorRpmCheck) Validate(rpm uint16, engineState string) ValidationResult {
-	if rpm < 0 || rpm > 8000 {
+	if rpm > 8000 {
 		return ValidationResult{Valid: false, Reason: "rpm_out_of_range"}
 	}
 	{

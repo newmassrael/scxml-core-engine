@@ -38,10 +38,7 @@ func NewCrossfileValidatorCodec() *CrossfileValidatorCodec {
 
 // Validate checks all validation rules and returns the result.
 func (p *CrossfileValidatorCodec) Validate(msgId uint8, payload uint16) ValidationResult {
-	if msgId < 0 || msgId > 255 {
-		return ValidationResult{Valid: false, Reason: "msg_id_out_of_range"}
-	}
-	if payload < 0 || payload > 4095 {
+	if payload > 4095 {
 		return ValidationResult{Valid: false, Reason: "payload_out_of_range"}
 	}
 	if !(p.Frame.MsgId == msgId && p.Frame.Payload == payload) {

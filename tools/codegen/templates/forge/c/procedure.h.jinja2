@@ -125,8 +125,22 @@ static inline {{ event_typedef }} {{ snake }}_execute_entry_actions(
                 _req.subfunc = "{{ send.subfunc }}";
 {% endif %}
 {% if send.has_addr %}
+{# The request's address is text in every runtime. An integer is sent in
+   decimal, through the runtime's own formatter rather than snprintf (a
+   printf without 64-bit conversions is common on these targets); a string
+   is sent as written. `addr_form` is decided once by the generator for
+   all six backends (SCE_FORGE.md §4.5). #}
                 _req.has_addr = true;
+{% if send.addr_form == "text" %}
                 _req.addr = {{ send.addr_expr }};
+{% else %}
+                char _addr[SCE_FORGE_DECIMAL_MAX];
+{% if send.addr_form == "signed" %}
+                _req.addr = sce_forge_decimal_i64(_addr, (int64_t)({{ send.addr_expr }}));
+{% else %}
+                _req.addr = sce_forge_decimal_u64(_addr, (uint64_t)({{ send.addr_expr }}));
+{% endif %}
+{% endif %}
 {% endif %}
 {% if send.payload %}
                 _req.has_payload = true;
