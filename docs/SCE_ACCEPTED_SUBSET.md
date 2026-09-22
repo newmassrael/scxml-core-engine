@@ -839,6 +839,14 @@ Optional attribute:
 Circular imports across the manifest graph are rejected as
 `manifest/circular-dependency`.
 
+An import the document never names — no `enum:<alias>` type, no
+expression reading `<alias>`, no structural reference such as a codec
+body — is still resolved and checked by every rule above, but the
+generated code does not depend on it: no backend emits an include or
+import for it. Go refuses an unused import outright, and the backends
+must agree on what a document depends on, so the question is answered
+once for all of them (`sce-build/src/forge/import_use.rs`).
+
 **Name references between documents must resolve.** `<sce:import>` is
 the path-based route; a `sce:kind="link"` document also names sibling
 documents by *name*, and those names are joined against the build:

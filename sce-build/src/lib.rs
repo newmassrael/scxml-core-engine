@@ -2648,6 +2648,16 @@ pub fn compile_forge_from_parsed(
         ));
     }
 
+    // Every import above was validated and enriched, because a declaration
+    // that names a missing file or the wrong kind is wrong whether or not
+    // anything reads it. What is RENDERED depends only on the imports the
+    // document names: Go refuses an unused import outright, and the backends
+    // must not disagree about what this document depends on. See
+    // `forge::import_use`.
+    let named = forge::import_use::named_aliases(document, &parsed.cycles, &parsed.imports)
+        .map_err(|e| Located::in_file(e.into(), label.diagnostic_label))?;
+    import_ctx.retain(|imp| named.contains(&imp.alias));
+
     let output = match language {
         generator::Language::Cpp => forge::generator::generate_cpp_with_imports_and_externs(
             document,
