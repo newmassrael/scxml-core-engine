@@ -29,6 +29,7 @@ import yaml
 
 from sce_author.coverage import coverage
 from sce_author.pack import load_pack
+from sce_author.verify import written_positions
 
 HERE = pathlib.Path(__file__).resolve().parent
 CROSSING = HERE / "fixtures" / "crossing"
@@ -130,6 +131,67 @@ class TheSetOfDocumentsIsMeasuredToo(unittest.TestCase):
         self.assertEqual(["plant/out/bell.valeu"], got.undeclared)
         self.assertIn("plant/out/bell.value", got.unwritten)
         self.assertEqual(1, got.covered)
+
+
+# An event slot: a status, the identifier beside it, and a sound only while it
+# is on. Three positions at one address -- the shape the crossing's one-field
+# outputs never had, and so the shape this counting was never shown.
+ALARM = {"address": "plant/out/alarm", "role": "output", "names": ["OUT_Alarm"],
+         "fields": {"Stat": {"values": {"OFF": 1, "ON": 2}},
+                    "ID": {"type": "number"},
+                    "Sound": {"type": "number"}}}
+
+ALARM_RULE = {"address": "plant/out/alarm", "field": "Stat",
+              "map": {True: "ON", False: "OFF"},
+              "also": {"ID": 7},
+              "when": {True: {"Sound": 3}}}
+
+
+class WhatABindingWritesIsCountedAsVerifyCountsIt(unittest.TestCase):
+    """`also` and `when` fields are positions written, here as in `verify`.
+
+    ⚠ This count used to read `address.field` alone. A binding writing an
+    event's identifier with `also` had it reported unwritten by `coverage`
+    while `verify`, on the same binding, judged it -- two tools of one core
+    contradicting each other about one file. Measured 2026-09-23: a binding
+    with `also` and one without it were reported identically.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = pathlib.Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        model = yaml.safe_load((CROSSING / "interface-model.yaml").read_text(encoding="utf-8"))
+        model["entries"].append(ALARM)
+        (self.tmp / "interface-model.yaml").write_text(yaml.safe_dump(model), encoding="utf-8")
+        shutil.copy(CROSSING / "conventions.yaml", self.tmp / "conventions.yaml")
+        self.pack = load_pack(self.tmp)
+
+    def write(self, rule: dict) -> pathlib.Path:
+        path = self.tmp / "alarm.yaml"
+        path.write_text(yaml.safe_dump({
+            "version": 1, "document": "d.scxml", "outputs": {"alarm": rule},
+        }), encoding="utf-8")
+        return path
+
+    def alarm_positions_written(self, rule: dict) -> set:
+        got = coverage(self.pack, [self.write(rule)])
+        return {p for p in got.written if p.startswith("plant/out/alarm.")}
+
+    def test_the_identifier_written_with_also_is_covered(self):
+        self.assertIn("plant/out/alarm.ID", self.alarm_positions_written(ALARM_RULE))
+
+    def test_a_field_written_only_when_on_is_covered(self):
+        self.assertIn("plant/out/alarm.Sound", self.alarm_positions_written(ALARM_RULE))
+
+    def test_without_them_only_the_status_is(self):
+        """The discriminator: the same rule stripped of `also` and `when`."""
+        bare = {k: v for k, v in ALARM_RULE.items() if k not in ("also", "when")}
+        self.assertEqual({"plant/out/alarm.Stat"}, self.alarm_positions_written(bare))
+
+    def test_the_count_is_the_one_verify_judges_with(self):
+        bound, _ = written_positions({"alarm": ALARM_RULE})
+        self.assertEqual(bound, self.alarm_positions_written(ALARM_RULE))
 
 
 if __name__ == "__main__":

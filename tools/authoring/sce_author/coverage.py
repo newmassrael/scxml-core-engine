@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 
 from .check import read_binding
 from .pack import Pack
+from .verify import written_positions
 
 
 def position(address: str, field_name: str) -> str:
@@ -91,18 +92,17 @@ def coverage(pack: Pack, binding_paths) -> Coverage:
     for path in binding_paths:
         path = pathlib.Path(path)
         binding = read_binding(path)
-        for rule in (binding.get("outputs") or {}).values():
-            # ⚠ Neither of these occupies a position. `internal` is a value
-            # the document carries and never publishes, and `unresolved` is
-            # the author saying nobody has yet said where it lands -- counting
-            # either as coverage would report a position as reached by a
-            # document that does not reach it.
-            if rule.get("internal") or rule.get("unresolved"):
-                continue
-            address = rule.get("address")
-            if not address:
-                continue
-            key = position(address, rule.get("field") or "")
+        # ⚠ What a binding writes is counted by the ONE definition `verify`
+        # judges with: `also` and `when` fields included, and neither an
+        # `internal` output (a value never published) nor an `unresolved` one
+        # (nobody has said where it lands) occupying a position. This loop
+        # used to count `address.field` alone -- the defect `verify` had
+        # already been cured of -- so a binding writing an event's ID beside
+        # its status had the ID reported unwritten here while `verify`, on the
+        # same binding, judged it. Measured 2026-09-23: a binding with `also`
+        # and one without were reported identically, six positions short.
+        bound, _ = written_positions(binding.get("outputs") or {})
+        for key in sorted(bound):
             if key not in declared:
                 undeclared.add(key)
                 continue
