@@ -275,6 +275,33 @@
         }
       ]
     },
+    "transform_literal_notations": {
+      "fixture": "compute_low_octal / compute_even_binary / compute_high_hex",
+      "signature": "(flags: u8) -> {low_octal: u8, even_binary: u8, high_hex: u8}",
+      "formula": "low_octal = flags & 0o17 (15); even_binary = flags & 0b1010 (10); high_hex = flags & 0XF0 (240)",
+      "cases": [
+        {
+          "args": [255],
+          "expected": {"low_octal": 15, "even_binary": 10, "high_hex": 240},
+          "note": "every bit set — each mask's own value; C, C++ and Kotlin refused 0o17, and Rust refused all three as written"
+        },
+        {
+          "args": [90],
+          "expected": {"low_octal": 10, "even_binary": 10, "high_hex": 80},
+          "note": "0b01011010 — the masks select different bits"
+        },
+        {
+          "args": [5],
+          "expected": {"low_octal": 5, "even_binary": 0, "high_hex": 0},
+          "note": "0b00000101 — only the octal mask keeps anything"
+        },
+        {
+          "args": [0],
+          "expected": {"low_octal": 0, "even_binary": 0, "high_hex": 0},
+          "note": "all bits clear"
+        }
+      ]
+    },
     "transform_extreme_literals": {
       "fixture": "compute_flipped / compute_lowest",
       "signature": "(word: u64) -> {flipped: u64, lowest: i64}",

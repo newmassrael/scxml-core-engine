@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: transform kind — integer literals in each
+     notation the expression grammar reads: octal, binary, and hex with an
+     uppercase prefix. No backend reads all three as written (C and C++
+     have no 0o, C has no 0b, Kotlin no 0o, Rust no uppercase prefix), so
+     each is written in a form all six read, with the value the author
+     wrote. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="transform" name="literal_notations">
+  <datamodel>
+    <data id="flags" sce:type="uint8" sce:direction="in"/>
+    <data id="lowOctal" sce:type="uint8" sce:direction="out"
+          expr="flags &amp; 0o17"/>
+    <data id="evenBinary" sce:type="uint8" sce:direction="out"
+          expr="flags &amp; 0b1010"/>
+    <data id="highHex" sce:type="uint8" sce:direction="out"
+          expr="flags &amp; 0XF0"/>
+  </datamodel>
+</scxml>

@@ -2963,6 +2963,31 @@ fn is_decimal_integer_literal(n: &str) -> bool {
         && !n.starts_with("0O")
 }
 
+/// A number literal as every backend reads it. The lexer takes the
+/// ECMAScript notations — decimal, `0x`, `0o` and `0b`, each prefix in
+/// either case — and no backend reads all of them: C has neither `0o` nor
+/// `0b`, C++ and Kotlin have no `0o`, and Rust takes only lowercase
+/// prefixes. All six read decimal and lowercase `0x`, so an octal or binary
+/// literal is written in hex and an uppercase hex prefix is lowered; a
+/// decimal, a lowercase hex or a real literal stands as the author wrote
+/// it. Hex keeps the literal non-decimal: a float context still refuses it
+/// rather than promote it, since [`is_decimal_integer_literal`] reads the
+/// author's text.
+///
+/// ⚠ Every emitter wrote the author's text until 2026-09-24: `flags & 0o17`
+/// generated on all six backends and gcc, g++ and kotlinc refused it, and
+/// rustc refused `0XFF`, `0B1010` and `0O17` ("invalid base prefix").
+fn portable_number_literal(text: &str) -> String {
+    match text.get(..2) {
+        Some("0X") => format!("0x{}", &text[2..]),
+        Some("0o" | "0O" | "0b" | "0B") => match integer_literal_value(text) {
+            Some(value) => format!("0x{value:X}"),
+            None => text.to_string(),
+        },
+        _ => text.to_string(),
+    }
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Operator precedence (per target language) + paren insertion
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -3643,7 +3668,7 @@ fn emit_cpp(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprErro
 
 fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
     Ok(match &expr.kind {
-        ExprKind::NumberLit(n) => n.clone(),
+        ExprKind::NumberLit(n) => portable_number_literal(n),
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
         // `std::vector<uint8_t>` has `operator==`, so the default
         // `==`/`!=` path compares length+content directly against this
@@ -4048,7 +4073,7 @@ fn is_narrow_unsigned(ty: InferredType) -> bool {
 
 fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
     Ok(match &expr.kind {
-        ExprKind::NumberLit(n) => n.clone(),
+        ExprKind::NumberLit(n) => portable_number_literal(n),
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
         // `"ack".toByteArray()` is byte-identical to the ASCII literal
         // (UTF-8 default). Used as the `contentEquals` argument in the
@@ -4545,7 +4570,7 @@ fn emit_rust_returned_str(expr: &TypedExpr) -> Result<String, Refusal> {
 
 fn rust_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
     Ok(match &expr.kind {
-        ExprKind::NumberLit(n) => n.clone(),
+        ExprKind::NumberLit(n) => portable_number_literal(n),
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
         // `Vec<u8> == &[u8; N]` (and `== Vec<u8>`) compare length+content,
         // so the default `==`/`!=` Binary path needs no special-casing —
@@ -4876,7 +4901,7 @@ fn emit_go(expr: &TypedExpr, expected: InferredType) -> Result<String, Refusal> 
 
 fn go_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
     Ok(match &expr.kind {
-        ExprKind::NumberLit(n) => n.clone(),
+        ExprKind::NumberLit(n) => portable_number_literal(n),
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
         // Standalone fallback only — the bytes-equality Binary branch
         // renders operands itself (as `string(x)` / a string literal) so
@@ -5198,7 +5223,7 @@ fn emit_python(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprE
 
 fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
     Ok(match &expr.kind {
-        ExprKind::NumberLit(n) => n.clone(),
+        ExprKind::NumberLit(n) => portable_number_literal(n),
         ExprKind::StringLit { value, .. } => format!("'{value}'"),
         // `bytes == bytes` compares content, so the default `==`/`!=`
         // path needs no special-casing — only this constant rendering.
@@ -5530,7 +5555,7 @@ fn emit_c(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError>
 
 fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
     Ok(match &expr.kind {
-        ExprKind::NumberLit(n) => n.clone(),
+        ExprKind::NumberLit(n) => portable_number_literal(n),
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
         // Standalone fallback — the bytes-equality Binary branch renders
         // the literal and its byte count itself (a `bytes` value has no
@@ -6493,6 +6518,26 @@ mod tests {
         // A real context, or none, holds any integer literal.
         assert_eq!(judged("300", float(64)), Ok(()));
         assert_eq!(judged("300", InferredType::Unknown), Ok(()));
+    }
+
+    #[test]
+    fn a_literal_is_written_in_a_notation_every_backend_reads() {
+        let ctx = TypeCtx::new();
+        for target in ExprTarget::ALL {
+            let emit = |expr: &str| {
+                transpile_typed(expr, target, &ctx, &empty_renames(), InferredType::Unknown)
+                    .unwrap()
+            };
+            // Octal and binary become hex, and hex's prefix is lowered.
+            assert_eq!(emit("0o17"), "0xF", "{target:?}");
+            assert_eq!(emit("0O17"), "0xF", "{target:?}");
+            assert_eq!(emit("0b1010"), "0xA", "{target:?}");
+            assert_eq!(emit("0B1010"), "0xA", "{target:?}");
+            assert_eq!(emit("0XFF"), "0xFF", "{target:?}");
+            // What every backend already reads stands as written.
+            assert_eq!(emit("0x0F"), "0x0F", "{target:?}");
+            assert_eq!(emit("15"), "15", "{target:?}");
+        }
     }
 
     #[test]

@@ -127,6 +127,34 @@
       }
     },
     {
+      "name": "transform_literal_notations",
+      "kind": "transform",
+      "ref_section": "pure_functions",
+      "args": [
+        "u8"
+      ],
+      "compound_outputs": [
+        {
+          "key": "low_octal",
+          "function": "compute_low_octal",
+          "type": "u8",
+          "compare": "equality"
+        },
+        {
+          "key": "even_binary",
+          "function": "compute_even_binary",
+          "type": "u8",
+          "compare": "equality"
+        },
+        {
+          "key": "high_hex",
+          "function": "compute_high_hex",
+          "type": "u8",
+          "compare": "equality"
+        }
+      ]
+    },
+    {
       "name": "transform_extreme_literals",
       "kind": "transform",
       "ref_section": "pure_functions",
