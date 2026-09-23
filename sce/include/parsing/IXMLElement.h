@@ -67,7 +67,9 @@ public:
 
     /**
      * @brief Get text content
-     * @return Text content of element
+     * @return Every character-data child of the element (text and CDATA), in
+     *         document order and without comments; the element's inner XML
+     *         when it holds no character data at all
      */
     virtual std::string getTextContent() const = 0;
 

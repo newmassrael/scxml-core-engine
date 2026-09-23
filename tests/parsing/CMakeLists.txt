@@ -208,3 +208,25 @@ target_compile_features(child_state_document_order_test PRIVATE cxx_std_17)
 apply_sce_test_policies(child_state_document_order_test)
 
 add_test(NAME ChildStateDocumentOrderTests COMMAND child_state_document_order_test)
+
+# A <script> body is all of its character data (§scxml-5.8): a comment or a
+# CDATA section inside it splits the text into several nodes, and reading the
+# first of them cut the script off.
+add_executable(script_body_character_data_test
+    ScriptBodyCharacterData_test.cpp
+)
+
+target_link_libraries(script_body_character_data_test
+    PRIVATE
+        sce_runtime
+        sce_core
+        GTest::GTest
+        GTest::Main
+        pthread
+)
+
+target_compile_features(script_body_character_data_test PRIVATE cxx_std_17)
+
+apply_sce_test_policies(script_body_character_data_test)
+
+add_test(NAME ScriptBodyCharacterDataTests COMMAND script_body_character_data_test)

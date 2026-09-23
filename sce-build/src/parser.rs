@@ -2268,7 +2268,7 @@ impl SCXMLParser {
                 continue;
             }
             let src = child.attribute("src").unwrap_or("").to_string();
-            let mut content = child.text().unwrap_or("").to_string();
+            let mut content = character_data(&child);
 
             // §scxml-5.8: "A conformant SCXML document MUST specify
             // either the 'src' attribute or child content, but not
@@ -2448,7 +2448,7 @@ impl SCXMLParser {
             // Parse state-level datamodel
             for dm_elem in scxml_children(&child, "datamodel") {
                 for data in scxml_children(&dm_elem, "data") {
-                    let content = data.text().unwrap_or("").trim().to_string();
+                    let content = character_data(&data).trim().to_string();
                     state.datamodel.push(Variable {
                         id: data.attribute("id").unwrap_or("").to_string(),
                         expr: data.attribute("expr").unwrap_or("").to_string(),
@@ -2921,7 +2921,7 @@ impl SCXMLParser {
                 }
                 action.content = xml.trim().to_string();
             } else {
-                action.content = content_elem.text().unwrap_or("").trim().to_string();
+                action.content = character_data(&content_elem).trim().to_string();
             }
         }
 
@@ -3224,7 +3224,7 @@ impl SCXMLParser {
                 for sc in child.children().filter(|n| n.is_element()) {
                     let sc_name = sc.tag_name().name();
                     if sc_name == "cpp" || sc.tag_name().namespace() == Some("urn:sce:cpp") {
-                        let cpp_code = sc.text().unwrap_or("").to_string();
+                        let cpp_code = character_data(&sc);
                         action.is_cpp_function = true;
                         action.content = cpp_code.clone();
                         action.content_transformed = if !model.context_object_ids.is_empty() {
@@ -3239,7 +3239,7 @@ impl SCXMLParser {
                         break;
                     } else if sc_name == "kt" || sc.tag_name().namespace() == Some("urn:sce:kotlin")
                     {
-                        let kt_code = sc.text().unwrap_or("").to_string();
+                        let kt_code = character_data(&sc);
                         action.is_kt_function = true;
                         action.content = kt_code.clone();
                         action.content_kt = if !model.context_object_ids.is_empty() {
@@ -3255,7 +3255,7 @@ impl SCXMLParser {
                     }
                 }
                 if !found_native {
-                    action.content = child.text().unwrap_or("").to_string();
+                    action.content = character_data(child);
                     // [`NeedsScriptEngineCause::InlineScriptAction`] —
                     // inline `<script>` body requires runtime evaluation.
                 }
@@ -3964,7 +3964,8 @@ impl SCXMLParser {
             dd.content_location = source_location_of(&content_elem, source_name);
             if let Some(expr) = content_elem.attribute("expr") {
                 dd.content = crate::model::DoneDataContent::Expression(expr.to_string());
-            } else if let Some(text) = content_elem.text() {
+            } else {
+                let text = character_data(&content_elem);
                 let trimmed = text.trim();
                 if !trimmed.is_empty() {
                     dd.content = if datamodel == Datamodel::Null {
@@ -5627,8 +5628,24 @@ fn inline_data_value(node: &roxmltree::Node) -> String {
         }
         xml
     } else {
-        node.text().unwrap_or("").trim().to_string()
+        character_data(node).trim().to_string()
     }
+}
+
+/// The character data an element holds: every text child, in document
+/// order — the reader folds a CDATA section into the text around it — and
+/// no comment or processing instruction.
+///
+/// ⚠ Not `roxmltree::Node::text`, which answers the element's FIRST child,
+/// and only when that child is text. A `<script>` whose body opened with a
+/// comment read as empty, so a global one was "neither src nor content"
+/// and the whole document was rejected under §scxml-5.8; a comment in the
+/// middle of a body dropped everything after it (measured 2026-09-24).
+fn character_data(node: &roxmltree::Node) -> String {
+    node.children()
+        .filter(|child| child.is_text())
+        .filter_map(|child| child.text())
+        .collect()
 }
 
 /// XML node serialization matching Python lxml etree.tostring(method='c14n').

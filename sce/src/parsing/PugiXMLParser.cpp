@@ -145,10 +145,21 @@ std::string PugiXMLElement::getTextContent() const {
         return "";
     }
 
-    // First try direct text child
-    auto textNode = node_.child_value();
-    if (textNode && strlen(textNode) > 0) {
-        return textNode;
+    // All of the element's character data, in document order: every PCDATA
+    // and CDATA child, not only the first. `child_value()` answered the
+    // first, and the default parse drops a comment from the tree while
+    // keeping the text on either side of it as two nodes — so a comment in
+    // a <script> body (W3C SCXML 5.8) truncated the script there. The Rust
+    // parser reads the same concatenation (`parser::character_data`), so the
+    // interpreter and the generated machine run one body.
+    std::string text;
+    for (const auto &child : node_.children()) {
+        if (child.type() == pugi::node_pcdata || child.type() == pugi::node_cdata) {
+            text += child.value();
+        }
+    }
+    if (!text.empty()) {
+        return text;
     }
 
     // If no direct text, get inner XML (handles <cpp>...</cpp> etc.)
