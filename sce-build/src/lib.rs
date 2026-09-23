@@ -354,6 +354,26 @@ impl<'a> DocumentLabel<'a> {
         }
     }
 
+    /// The label for a document read from a path a caller named: the
+    /// file stem identifies it, and the path itself — exactly as given,
+    /// never shortened — is what its diagnostics carry
+    /// (SCE_ERROR_CONTRACT.md §2.2). Every command that reads a document
+    /// from disk builds its label here, so two commands asked about one
+    /// file cannot disagree on `location.file`, and therefore on `id`.
+    ///
+    /// A path with no final component (`/`, `..`) has no stem; the path
+    /// then plays both roles rather than inventing a name.
+    pub fn for_input_path(path: &'a str) -> Self {
+        let identifier = Path::new(path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(path);
+        Self {
+            identifier,
+            diagnostic_label: path,
+        }
+    }
+
     /// Distinct identifier vs diagnostic-label roles. Used by the
     /// synth-invoke inline-`<content>` parser path: `identifier` is
     /// the extension-free synth name (flows into [`SCXMLModel::name`]
@@ -1503,14 +1523,8 @@ pub fn compile_forge_file(
 ) -> Result<generator::GeneratedOutput, forge::error::Located<forge::error::ForgeError>> {
     let loaded = load_forge_source(path, include_dirs)?;
 
-    let stem = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("unknown");
-    let label = DocumentLabel {
-        identifier: stem,
-        diagnostic_label: path.to_str().unwrap_or(stem),
-    };
+    let path_text = path.to_string_lossy();
+    let label = DocumentLabel::for_input_path(&path_text);
     let base_dir = path.parent().unwrap_or_else(|| Path::new("."));
 
     let mut output = compile_forge_with_imports(&loaded.text, label, language, base_dir, options)?;
@@ -3013,7 +3027,8 @@ pub fn compile_scxml_with_imports(
     let mut pool_models_for_xref: Vec<(String, forge::model::BufferPoolModel)> = Vec::new();
 
     for forge_path in forge_files {
-        let path_str = forge_path.to_str().unwrap_or("");
+        let path_text = forge_path.to_string_lossy();
+        let path_str: &str = &path_text;
         // Read + expand. This function resolves its documents from paths,
         // so it owns the preprocessor step its callers cannot reach — the
         // statechart half already does, via `compile_model`.
@@ -3031,18 +3046,7 @@ pub fn compile_scxml_with_imports(
                 )
             })?
             .text;
-        let stem = forge_path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("forge");
-        let basename = forge_path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or(path_str);
-        let label = DocumentLabel {
-            identifier: stem,
-            diagnostic_label: path_str,
-        };
+        let label = DocumentLabel::for_input_path(path_str);
         let parsed =
             forge::parser::parse_forge_with_imports(&content, label)?.ok_or_else(|| {
                 Located::new(
@@ -3051,7 +3055,7 @@ pub fn compile_scxml_with_imports(
                         pipeline: crate::Pipeline::Forge,
                     }
                     .into(),
-                    basename,
+                    path_str,
                     None,
                     None,
                 )
@@ -3064,7 +3068,7 @@ pub fn compile_scxml_with_imports(
                     existing_kind = existing.as_str()
                 ))
                 .into(),
-                basename,
+                path_str,
                 None,
                 None,
             )
@@ -3075,7 +3079,7 @@ pub fn compile_scxml_with_imports(
                     "compile_scxml_with_imports: pool registry rejected '{doc_name}' (existing kind '{existing:?}')"
                 ))
                 .into(),
-                basename,
+                path_str,
                 None,
                 None,
             )
@@ -3099,18 +3103,19 @@ pub fn compile_scxml_with_imports(
         // surface.
         match parsed.document {
             forge::model::ForgeDocument::Worker(worker) => {
-                workers_for_outbox.push((basename.to_string(), worker));
+                workers_for_outbox.push((path_str.to_string(), worker));
             }
             forge::model::ForgeDocument::BoundedCollection(bc) => {
-                bounded_collections_for_xref.push((basename.to_string(), bc));
+                bounded_collections_for_xref.push((path_str.to_string(), bc));
             }
             forge::model::ForgeDocument::Link(link) => {
                 // The cross-doc link validators read this
                 // back by link name to follow `<sce:rx-pool ref>` to
-                // the bound BufferPoolModel. The diag-label
-                // (basename) rides along so error sites name the
-                // forge link doc that wrote the offending ref.
-                link_models_for_xref.push((basename.to_string(), link, parsed.imports.clone()));
+                // the bound BufferPoolModel. The diagnostic label (the
+                // path as the caller named it, SCE_ERROR_CONTRACT.md
+                // §2.2) rides along so error sites name the forge link
+                // doc that wrote the offending ref.
+                link_models_for_xref.push((path_str.to_string(), link, parsed.imports.clone()));
             }
             forge::model::ForgeDocument::BufferPool(pool) => {
                 // The reassembly + burst validators look up pool
@@ -3118,7 +3123,7 @@ pub fn compile_scxml_with_imports(
                 // `pool_reg` only stores the kind discriminator; full
                 // BufferPoolModel field access requires the parallel
                 // capture vector.
-                pool_models_for_xref.push((basename.to_string(), pool));
+                pool_models_for_xref.push((path_str.to_string(), pool));
             }
             doc @ (forge::model::ForgeDocument::Codec(_)
             | forge::model::ForgeDocument::Procedure(_)) => {
@@ -3200,10 +3205,6 @@ pub fn compile_scxml_with_imports(
         // and attached to each per-doc `GeneratedOutput.deps` — so
         // dropping them here is intentional, not a leak.
         let ParsedSCXML { model, .. } = compile_model(path_str)?;
-        let basename = scxml_path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or(path_str);
         if !model.name.is_empty() {
             // SCXML without a `name` attribute is legal at the parser
             // tier; skip registration so outbox refs of the form
@@ -3220,7 +3221,7 @@ pub fn compile_scxml_with_imports(
                             existing_kind = existing.as_str()
                         ))
                         .into(),
-                        basename,
+                        path_str,
                         None,
                         None,
                     )
@@ -3229,8 +3230,12 @@ pub fn compile_scxml_with_imports(
         scxml_models.push(((*scxml_path).to_path_buf(), model));
     }
     for (path, model) in &scxml_models {
-        let basename = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-        parser::validate_on_sample_link_references(model, &cross_doc, &pool_reg, basename)?;
+        parser::validate_on_sample_link_references(
+            model,
+            &cross_doc,
+            &pool_reg,
+            &path.to_string_lossy(),
+        )?;
     }
 
     // ── EventSchema receive- + send-side typecheck ──
@@ -3647,7 +3652,8 @@ pub fn compile_scxml_with_imports(
     let mut outputs: Vec<(String, generator::GeneratedOutput)> = Vec::new();
 
     for forge_path in forge_files {
-        let path_str = forge_path.to_str().unwrap_or("");
+        let path_text = forge_path.to_string_lossy();
+        let path_str: &str = &path_text;
         // Read + expand. This function resolves its documents from paths,
         // so it owns the preprocessor step its callers cannot reach — the
         // statechart half already does, via `compile_model`.
@@ -3665,18 +3671,11 @@ pub fn compile_scxml_with_imports(
                 )
             })?
             .text;
-        let stem = forge_path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("forge");
         let basename = forge_path
             .file_name()
             .and_then(|s| s.to_str())
             .unwrap_or(path_str);
-        let label = DocumentLabel {
-            identifier: stem,
-            diagnostic_label: path_str,
-        };
+        let label = DocumentLabel::for_input_path(path_str);
         let base_dir = forge_path.parent().unwrap_or_else(|| Path::new("."));
         let effective_options = bc_options_override.as_ref().unwrap_or(options);
         let out =

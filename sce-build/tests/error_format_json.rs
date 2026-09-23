@@ -1866,3 +1866,123 @@ fn rejected_run_diagnostics_name_the_generator_commit() {
         );
     }
 }
+
+/// Run `sce-codegen` from `cwd` in JSON mode and return the exit code and
+/// the one record a single-fault input produces.
+fn single_record(cwd: &Path, args: &[&str]) -> (Option<i32>, serde_json::Value) {
+    let out = Command::new(sce_codegen_bin())
+        .current_dir(cwd)
+        .arg("--error-format=json")
+        .args(args)
+        .output()
+        .expect("spawn sce-codegen");
+    assert!(
+        out.stdout.is_empty(),
+        "{args:?}: a refused run writes nothing to stdout: {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let lines: Vec<&str> = stderr.lines().filter(|l| !l.trim().is_empty()).collect();
+    assert_eq!(lines.len(), 1, "{args:?}: expected one record:\n{stderr}");
+    let record = serde_json::from_str(lines[0])
+        .unwrap_or_else(|e| panic!("{args:?}: NDJSON line must parse: {e}\n{stderr}"));
+    (out.status.code(), record)
+}
+
+/// SCE_ERROR_CONTRACT.md §2.2: `location.file` is the path as the caller
+/// named it, and it feeds the record's `id`. Every command that reads a
+/// forge document therefore has to report one defect with one record —
+/// `review-table`, `pseudo` and `coverage` used to report the basename,
+/// which opens from one directory only and hashes to a different `id`
+/// than `check` gives the same fault.
+#[test]
+fn every_command_reading_a_forge_document_names_it_as_the_caller_did() {
+    let dir = ScratchDir::new("forge-diagnostic-path");
+    let root = dir.path().canonicalize().expect("canonical scratch dir");
+    std::fs::create_dir(root.join("nested")).expect("create nested dir");
+    let path = root.join("nested/labels.scxml");
+    std::fs::write(
+        &path,
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" name="labels" version="1.0" sce:kind="enum" sce:underlying-type="invalid">
+<sce:variant name="first" value="1"/>
+</scxml>"#,
+    )
+    .expect("write fixture");
+
+    let absolute = path.to_str().expect("utf-8 scratch path").to_string();
+    for input in ["nested/labels.scxml".to_string(), absolute] {
+        let mut reference_id: Option<serde_json::Value> = None;
+        for command in ["check", "review-table", "pseudo", "coverage"] {
+            let (code, record) = single_record(&root, &[command, input.as_str()]);
+            assert_eq!(code, Some(2), "{command} {input}: {record}");
+            assert_eq!(
+                record["code"], "xml/schema-validation",
+                "{command}: {record}"
+            );
+            assert_eq!(
+                record["location"]["file"],
+                input.as_str(),
+                "{command}: {record}"
+            );
+            // The label is openable from where the caller stood.
+            let named = record["location"]["file"].as_str().unwrap();
+            assert_eq!(
+                std::fs::read(root.join(named)).unwrap(),
+                std::fs::read(&path).unwrap(),
+                "{command}: location.file does not open the input"
+            );
+            match &reference_id {
+                Some(id) => assert_eq!(&record["id"], id, "{command}: {record}"),
+                None => reference_id = Some(record["id"].clone()),
+            }
+        }
+    }
+}
+
+/// `pseudo` reads a statechart the way `check` does: the same label and
+/// the same record, not a record naming the extension-free stem.
+#[test]
+fn pseudo_and_check_report_one_statechart_defect_with_one_record() {
+    let dir = ScratchDir::new("pseudo-statechart-path");
+    let root = dir.path().canonicalize().expect("canonical scratch dir");
+    std::fs::create_dir(root.join("nested")).expect("create nested dir");
+    let path = root.join("nested/machine.scxml");
+    std::fs::write(
+        &path,
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" name="machine" version="1.0">
+<state id="waiting"><history id="saved" type="shallow"/></state>
+</scxml>"#,
+    )
+    .expect("write fixture");
+
+    let absolute = path.to_str().expect("utf-8 scratch path").to_string();
+    for input in ["nested/machine.scxml".to_string(), absolute] {
+        let (check_code, check) = single_record(&root, &["check", input.as_str()]);
+        let (pseudo_code, pseudo) = single_record(&root, &["pseudo", input.as_str()]);
+        assert_eq!(check["code"], "validation/missing-element", "{check}");
+        assert_eq!(check["location"]["file"], input.as_str(), "{check}");
+        assert_eq!(pseudo_code, check_code, "{pseudo}");
+        assert_eq!(pseudo["id"], check["id"], "check={check}\npseudo={pseudo}");
+        assert_eq!(
+            pseudo["location"], check["location"],
+            "check={check}\npseudo={pseudo}"
+        );
+    }
+}
+
+/// A document that cannot be read is a diagnostic in the run's error
+/// format for every command, not prose and a bare exit status.
+#[test]
+fn an_unreadable_input_is_a_record_for_coverage_and_unresolved() {
+    let dir = ScratchDir::new("unreadable-input");
+    let root = dir.path().canonicalize().expect("canonical scratch dir");
+    for command in ["check", "coverage", "unresolved"] {
+        let (code, record) = single_record(&root, &[command, "absent/missing.scxml"]);
+        assert_ne!(code, Some(0), "{command}: {record}");
+        assert_eq!(record["code"], "cli/read-input", "{command}: {record}");
+        assert_eq!(
+            record["actual"], "absent/missing.scxml",
+            "{command}: {record}"
+        );
+    }
+}

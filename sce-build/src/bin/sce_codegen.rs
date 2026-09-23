@@ -2891,21 +2891,7 @@ fn emit_orchestrate_asts(
                 "",
             )
         });
-        let stem = forge_path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("unknown");
-        // ⚠ The PATH as the caller gave it, not its last segment. A
-        // diagnostic's `location.file` is what a consumer opens to apply the
-        // fix (SCE_ERROR_CONTRACT.md §2.2), and a bare name opens only from
-        // the one directory the author happened to be standing in. The
-        // statechart pipeline has always passed the path through; this one
-        // trimmed it, so the same build answered two ways depending on which
-        // kind the document declared.
-        let label = sce_build::DocumentLabel {
-            identifier: stem,
-            diagnostic_label: forge_path_str,
-        };
+        let label = sce_build::DocumentLabel::for_input_path(forge_path_str);
 
         // Expand before parsing, as the statechart loop above does via
         // `parse_file`. An AST emitted from unexpanded source would
@@ -2928,7 +2914,7 @@ fn emit_orchestrate_asts(
             Err(e) => error_format.emit_forge_and_exit(&e),
         };
 
-        let out_path = dir_path.join(format!("{stem}.ast.json"));
+        let out_path = dir_path.join(format!("{}.ast.json", label.identifier));
         if let Err(e) = sce_build::forge::ast_export::write_envelope_to_path(&out_path, &parsed) {
             error_format.emit_and_exit(
                 &CliError::WriteOutput {
@@ -3379,18 +3365,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
 
     match sce_build::classify_document(&scxml_content) {
         sce_build::Pipeline::Forge => {
-            let input_stem = Path::new(scxml_path)
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("unknown");
-            // ⚠ The PATH as the caller gave it, not its last segment.
-            // `location.file` is what a consumer opens to apply a fix
-            // (SCE_ERROR_CONTRACT.md §2.2), and a bare name opens only from
-            // the one directory the author happened to be standing in.
-            let doc_label = sce_build::DocumentLabel {
-                identifier: input_stem,
-                diagnostic_label: scxml_path,
-            };
+            let doc_label = sce_build::DocumentLabel::for_input_path(scxml_path);
             let base_dir = Path::new(scxml_path)
                 .parent()
                 .unwrap_or_else(|| Path::new("."));
@@ -3823,38 +3798,12 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
 
     match sce_build::classify_document(&scxml_content) {
         sce_build::Pipeline::Forge => {
-            let input_stem = Path::new(scxml_path)
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("unknown");
-            // `input_stem` is the parser's `name` — a pure symbol
-            // identifier that flows through `to_snake_case` into Go
-            // package names, C++ namespaces, Kotlin packages, etc. Any
-            // `.scxml` extension folded into it would corrupt those
-            // identifiers (`crossfile_procedure_codec_scxml`).
-            //
-            // The PATH the caller gave is the diagnostic label, passed
-            // through the library as the `diagnostic_label` role of
-            // `DocumentLabel` and keeping the two concerns separate all
-            // the way down to XSD `source_label` and every
-            // `Located::file`.
-            //
             // ⚠ This was the BASENAME, on the written reasoning that a
             // filename with its extension is "enough for downstream tooling
             // to open the file without guessing the suffix". The suffix is
             // the part that got thought about; the DIRECTORY did not. A
             // consumer handed `x.scxml` can open it from exactly one place.
-            // ⚠ The PATH as the caller gave it, not its last segment.
-            // `location.file` is what a consumer opens to apply a fix
-            // (SCE_ERROR_CONTRACT.md §2.2), and a bare name opens only from
-            // the one directory the author happened to be standing in. The
-            // statechart pipeline passes `scxml_path` through, so trimming
-            // it here made one build answer two ways about where its own
-            // diagnostics point, decided by which kind the document declares.
-            let doc_label = sce_build::DocumentLabel {
-                identifier: input_stem,
-                diagnostic_label: scxml_path,
-            };
+            let doc_label = sce_build::DocumentLabel::for_input_path(scxml_path);
 
             let base_dir = Path::new(scxml_path)
                 .parent()
@@ -7587,15 +7536,14 @@ fn cmd_annotation_overlay(scxml: &str, error_format: ErrorFormat) {
 // Parses through the production forge parser for that command's reason:
 // what the table shows and what the build compiles must not drift.
 
-/// Read, preprocess and parse a non-statechart forge document.
+/// Read and preprocess a document a review artefact was handed.
 ///
-/// Shared by every review artefact that reads one, so two of them cannot
-/// disagree about which document they were handed: same preprocessor
-/// pass, same label, same refusal for a statechart.
-fn parse_forge_review_input(
-    document: &str,
-    error_format: ErrorFormat,
-) -> sce_build::forge::model::ParsedForge {
+/// Through the preprocessor first, for the reason the AST export gives:
+/// an artefact built from the unexpanded text would describe a document
+/// the author never wrote, because every node a `<sce:use>` carries would
+/// simply be absent from it. A read failure is a diagnostic in the run's
+/// error format, as it is for `check` and `generate`.
+fn read_review_input(document: &str, error_format: ErrorFormat) -> String {
     let path = std::path::Path::new(document);
     let content = std::fs::read_to_string(path).unwrap_or_else(|e| {
         error_format.emit_and_exit(
@@ -7606,29 +7554,27 @@ fn parse_forge_review_input(
             "",
         )
     });
+    match sce_build::parser::expand_preprocessors(&content, document, path.parent(), &[]) {
+        Ok((expanded, _map, _deps)) => expanded,
+        Err(e) => error_format.emit_forge_and_exit(&e),
+    }
+}
 
-    // Through the preprocessor first, for the reason the AST export
-    // gives: an artefact built from the unexpanded text would describe a
-    // document the author never wrote, because every node a `<sce:use>`
-    // carries would simply be absent from it.
-    let content =
-        match sce_build::parser::expand_preprocessors(&content, document, path.parent(), &[]) {
-            Ok((expanded, _map, _deps)) => expanded,
-            Err(e) => error_format.emit_forge_and_exit(&e),
-        };
+/// Read, preprocess and parse a non-statechart forge document.
+///
+/// Shared by every review artefact that reads one, so two of them cannot
+/// disagree about which document they were handed: same preprocessor
+/// pass, same label, same refusal for a statechart.
+fn parse_forge_review_input(
+    document: &str,
+    error_format: ErrorFormat,
+) -> sce_build::forge::model::ParsedForge {
+    let content = read_review_input(document, error_format);
 
-    // The label every other forge caller builds: the stem identifies the
-    // document, the basename is what a diagnostic shows, so a review
-    // artefact and a codegen run name the same document the same way.
-    let stem = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("unknown");
-    let basename = path.file_name().and_then(|s| s.to_str()).unwrap_or(stem);
-    let label = sce_build::DocumentLabel {
-        identifier: stem,
-        diagnostic_label: basename,
-    };
+    // The label every other caller builds, so a review artefact and a
+    // codegen run name the same document the same way — and agree on
+    // every diagnostic's `id`, which hashes `location.file`.
+    let label = sce_build::DocumentLabel::for_input_path(document);
 
     match sce_build::forge::parser::parse_forge_with_imports(&content, label) {
         Ok(Some(p)) => p,
@@ -7703,34 +7649,16 @@ fn cmd_pseudo(
     lexicon: &str,
     error_format: ErrorFormat,
 ) {
-    let path = std::path::Path::new(document);
-    let content = std::fs::read_to_string(path).unwrap_or_else(|e| {
-        error_format.emit_and_exit(
-            &CliError::ReadInput {
-                path: document.to_string(),
-                source: e,
-            },
-            "",
-        )
-    });
-    let content =
-        match sce_build::parser::expand_preprocessors(&content, document, path.parent(), &[]) {
-            Ok((expanded, _map, _deps)) => expanded,
-            Err(e) => error_format.emit_forge_and_exit(&e),
-        };
-    let stem = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("unknown");
-    let basename = path.file_name().and_then(|s| s.to_str()).unwrap_or(stem);
-    let label = sce_build::DocumentLabel {
-        identifier: stem,
-        diagnostic_label: basename,
-    };
+    let content = read_review_input(document, error_format);
+    let label = sce_build::DocumentLabel::for_input_path(document);
 
     let doc = match sce_build::forge::parser::parse_forge_with_imports(&content, label) {
         Ok(Some(p)) => p.document,
-        Ok(None) => match sce_build::parser::SCXMLParser::new().parse_string(&content, stem) {
+        // The statechart reads the file the way `check` reads it: the
+        // same label, and positions mapped back through the preprocessor
+        // to the text the author wrote rather than the expanded text, so
+        // both commands report one defect with one record.
+        Ok(None) => match sce_build::parser::SCXMLParser::new().parse_file(document) {
             Ok(model) => sce_build::forge::model::ForgeDocument::Statechart(Box::new(model)),
             Err(e) => error_format.emit_forge_and_exit(&e),
         },
@@ -8036,24 +7964,11 @@ fn cmd_requirements(scxml: &str, manifest: Option<&str>, error_format: ErrorForm
 /// that is to name them with a rule that does nothing — which is worse
 /// than the fall-through it replaced, because it looks decided.
 fn cmd_coverage(scxml: &str, error_format: ErrorFormat) {
-    let content = match std::fs::read_to_string(scxml) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("cannot read {scxml}: {e}");
-            std::process::exit(1);
-        }
-    };
-    let path = std::path::Path::new(scxml);
-    let base_dir = path.parent().unwrap_or_else(|| std::path::Path::new("."));
-    let stem = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("unknown");
-    let basename = path.file_name().and_then(|s| s.to_str()).unwrap_or(stem);
-    let label = sce_build::DocumentLabel {
-        identifier: stem,
-        diagnostic_label: basename,
-    };
+    let content = read_review_input(scxml, error_format);
+    let base_dir = std::path::Path::new(scxml)
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
+    let label = sce_build::DocumentLabel::for_input_path(scxml);
     let parsed = match sce_build::forge::parser::parse_forge_with_imports(&content, label) {
         Ok(Some(p)) => p,
         // Not a forge document — the SCXML pipeline owns it and has no
@@ -8063,7 +7978,7 @@ fn cmd_coverage(scxml: &str, error_format: ErrorFormat) {
         Ok(None) => return,
         Err(e) => error_format.emit_forge_and_exit(&e),
     };
-    let rows = match sce_build::forge::coverage::report(&parsed, base_dir, basename) {
+    let rows = match sce_build::forge::coverage::report(&parsed, base_dir, scxml) {
         Ok(r) => r,
         Err(e) => error_format.emit_forge_and_exit(&e),
     };
@@ -8079,13 +7994,15 @@ fn cmd_unresolved(scxml: &str, error_format: ErrorFormat) {
     // carry such a marker, so the answer a consumer got was an error
     // rather than a list — and an empty list and an error read the same
     // way to anything that only checks for output.
-    let content = match std::fs::read_to_string(scxml) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("cannot read {scxml}: {e}");
-            std::process::exit(1);
-        }
-    };
+    let content = std::fs::read_to_string(scxml).unwrap_or_else(|e| {
+        error_format.emit_and_exit(
+            &CliError::ReadInput {
+                path: scxml.to_string(),
+                source: e,
+            },
+            "",
+        )
+    });
     match sce_build::forge::parser::detect_kind(&content) {
         Ok(Some(kind)) if kind != sce_build::forge::model::ForgeKind::Statechart => {
             out_stream(|w| {
