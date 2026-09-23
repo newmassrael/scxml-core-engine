@@ -2092,3 +2092,72 @@ fn two_documents_of_one_set_cannot_write_one_artifact() {
         "{record}"
     );
 }
+
+/// A `--script-engine` refusal is a record in the run's error format, with
+/// the engines that would work as its candidates. Both refusals used to be
+/// prose on stderr and a bare exit 1, so a JSON consumer received nothing
+/// to route on.
+#[test]
+fn a_script_engine_refusal_is_a_record_with_its_candidates() {
+    use sce_build::generator::{Language, ScriptEngineTarget};
+
+    let dir = ScratchDir::new("script-engine-refusal");
+    let root = dir.path().canonicalize().expect("canonical scratch dir");
+    std::fs::write(
+        root.join("machine.scxml"),
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" name="machine" version="1.0" initial="idle"><state id="idle"/></scxml>"#,
+    )
+    .expect("write statechart");
+    let out = ScratchDir::new("script-engine-refusal-out");
+    let out_dir = out.path().to_str().unwrap();
+
+    // Derived, not named: the pair a backend refuses moves as arms land.
+    let (lang, engine) = Language::ALL
+        .iter()
+        .find_map(|lang| {
+            ScriptEngineTarget::ALL
+                .iter()
+                .find(|target| !lang.supports_script_engine_target(**target))
+                .map(|target| (*lang, *target))
+        })
+        .expect("some backend refuses some script-engine language");
+    let supported: Vec<&str> = ScriptEngineTarget::ALL
+        .iter()
+        .filter(|target| lang.supports_script_engine_target(**target))
+        .map(|target| target.wire_name())
+        .collect();
+
+    for command in [
+        vec!["generate", "machine.scxml", "-o", out_dir],
+        vec!["check", "machine.scxml"],
+    ] {
+        let mut unknown = command.clone();
+        unknown.extend(["-l", lang.canonical_name(), "--script-engine", "quickjs"]);
+        let (code, record) = single_record(&root, &unknown);
+        assert_eq!(code, Some(20), "{unknown:?}: {record}");
+        assert_eq!(record["code"], "cli/unknown-script-engine", "{record}");
+        assert_eq!(record["actual"], "quickjs", "{record}");
+        assert_eq!(
+            record["fix"]["candidates"],
+            serde_json::json!(sce_build::manifest::SCRIPT_ENGINE_LANGUAGES),
+            "{record}"
+        );
+
+        let mut unsupported = command.clone();
+        unsupported.extend([
+            "-l",
+            lang.canonical_name(),
+            "--script-engine",
+            engine.wire_name(),
+        ]);
+        let (code, record) = single_record(&root, &unsupported);
+        assert_eq!(code, Some(20), "{unsupported:?}: {record}");
+        assert_eq!(record["code"], "cli/unsupported-script-engine", "{record}");
+        assert_eq!(record["actual"], engine.wire_name(), "{record}");
+        assert_eq!(
+            record["fix"]["candidates"],
+            serde_json::json!(supported),
+            "{record}"
+        );
+    }
+}

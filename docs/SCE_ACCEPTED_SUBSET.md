@@ -3140,6 +3140,8 @@ Codes that the author can avoid by writing a better SCXML /
 | `manifest/artifact-path-collision` | Manifest |
 | `cli/unknown-language` | Cli |
 | `cli/unsupported-language` | Cli |
+| `cli/unknown-script-engine` | Cli |
+| `cli/unsupported-script-engine` | Cli |
 | `cli/missing-metadata-field` | Cli |
 | `cli/not-a-directory` | Cli |
 | `cli/invalid-format-option` | Cli |

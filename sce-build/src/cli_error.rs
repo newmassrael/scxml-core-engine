@@ -69,6 +69,35 @@ pub enum CliError {
         route: crate::cli_language::LanguageRoute,
     },
 
+    /// A `--script-engine` value that names no script-engine language.
+    ///
+    /// The menu is [`crate::manifest::SCRIPT_ENGINE_LANGUAGES`], the one
+    /// list the manifest's `script_engine_language` field is drawn from.
+    #[error(
+        "--script-engine '{value}' is not a script engine language. Valid values: {}.",
+        crate::manifest::SCRIPT_ENGINE_LANGUAGES.join(", ")
+    )]
+    UnknownScriptEngine { value: String },
+
+    /// A backend asked to emit for a script-engine language it cannot
+    /// serve.
+    ///
+    /// Distinct from [`CliError::UnknownScriptEngine`] for the reason the
+    /// language pair is distinct: the caller named a real engine, and the
+    /// repair is which engines this backend reaches. `reason` is the
+    /// backend's own account of why — a migration still in progress, or no
+    /// source-emitting arm at all — and keys nothing.
+    #[error(
+        "backend '{lang}' cannot emit for --script-engine {engine}. It emits for {}{reason}",
+        .supported.join(", ")
+    )]
+    UnsupportedScriptEngine {
+        lang: String,
+        engine: String,
+        supported: Vec<String>,
+        reason: String,
+    },
+
     #[error("Cannot read {path}: {source}")]
     ReadInput {
         path: String,
@@ -401,6 +430,33 @@ impl SingleDiagnostic for CliError {
                 Some(lang.clone()),
                 Some(Fix::ReplaceOneOf {
                     candidates: route.candidates(),
+                }),
+            ),
+            CliError::UnknownScriptEngine { value } => (
+                DiagnosticCode::CliUnknownScriptEngine,
+                vec![value.clone()],
+                Some(value.clone()),
+                Some(Fix::ReplaceOneOf {
+                    candidates: crate::manifest::SCRIPT_ENGINE_LANGUAGES
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect(),
+                }),
+            ),
+            // The backend joins the key for the reason the route joins the
+            // unsupported-language key: `lua` is a dead end for one backend
+            // and the working engine of another.
+            CliError::UnsupportedScriptEngine {
+                lang,
+                engine,
+                supported,
+                ..
+            } => (
+                DiagnosticCode::CliUnsupportedScriptEngine,
+                vec![engine.clone(), lang.clone()],
+                Some(engine.clone()),
+                Some(Fix::ReplaceOneOf {
+                    candidates: supported.clone(),
                 }),
             ),
             CliError::ReadInput { path, .. } => (

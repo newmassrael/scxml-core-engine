@@ -2158,6 +2158,12 @@ pub enum DiagnosticCode {
     CliUnknownLanguage,
     #[serde(rename = "cli/unsupported-language")]
     CliUnsupportedLanguage,
+    /// A `--script-engine` value that names no script-engine language.
+    #[serde(rename = "cli/unknown-script-engine")]
+    CliUnknownScriptEngine,
+    /// A backend asked to emit for a script-engine language it cannot serve.
+    #[serde(rename = "cli/unsupported-script-engine")]
+    CliUnsupportedScriptEngine,
     #[serde(rename = "cli/read-input")]
     CliReadInput,
     #[serde(rename = "cli/write-output")]
@@ -3311,6 +3317,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // Cli
         CliUnknownLanguage,
         CliUnsupportedLanguage,
+        CliUnknownScriptEngine,
+        CliUnsupportedScriptEngine,
         CliReadInput,
         CliWriteOutput,
         CliCreateOutputDir,
@@ -4204,6 +4212,8 @@ impl DiagnosticCode {
             | IoFilesystem
             | CliUnknownLanguage
             | CliUnsupportedLanguage
+            | CliUnknownScriptEngine
+            | CliUnsupportedScriptEngine
             | CliReadInput
             | CliWriteOutput
             | CliCreateOutputDir
@@ -4614,6 +4624,8 @@ impl DiagnosticCode {
             IoFilesystem => "io/filesystem",
             CliUnknownLanguage => "cli/unknown-language",
             CliUnsupportedLanguage => "cli/unsupported-language",
+            CliUnknownScriptEngine => "cli/unknown-script-engine",
+            CliUnsupportedScriptEngine => "cli/unsupported-script-engine",
             CliReadInput => "cli/read-input",
             CliWriteOutput => "cli/write-output",
             CliCreateOutputDir => "cli/create-output-dir",
@@ -13879,6 +13891,23 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:d4ef6ce0e63e47bc","code":"cli/unsupported-language","stage":"cli","message":"`generate-w3c` does not target c11. It takes rust, cpp, kotlin, go, python — C11 is absent because no C11 W3C statechart emitter exists yet (RFC §5.J.1); single-document `generate -l c11` uses a different emitter and does work","actual":"c11","fix":{"kind":"replace_one_of","candidates":["rust","cpp","kotlin","go","python"]}}"#,
             ),
             (
+                "cli/unknown-script-engine",
+                CliError::UnknownScriptEngine {
+                    value: "quickjs".into(),
+                },
+                r#"{"v":1,"id":"fnv1a:e8d3b6e3387e0e8e","code":"cli/unknown-script-engine","stage":"cli","message":"--script-engine 'quickjs' is not a script engine language. Valid values: lua, ecmascript.","actual":"quickjs","fix":{"kind":"replace_one_of","candidates":["lua","ecmascript"]}}"#,
+            ),
+            (
+                "cli/unsupported-script-engine",
+                CliError::UnsupportedScriptEngine {
+                    lang: "rust".into(),
+                    engine: "ecmascript".into(),
+                    supported: vec!["lua".into()],
+                    reason: ", and has no template arm that emits the author's source.".into(),
+                },
+                r#"{"v":1,"id":"fnv1a:5a7a512c44e1c3fd","code":"cli/unsupported-script-engine","stage":"cli","message":"backend 'rust' cannot emit for --script-engine ecmascript. It emits for lua, and has no template arm that emits the author's source.","actual":"ecmascript","fix":{"kind":"replace_one_of","candidates":["lua"]}}"#,
+            ),
+            (
                 "cli/read-input",
                 CliError::ReadInput {
                     path: "chart.scxml".into(),
@@ -14419,6 +14448,10 @@ mod tests {
             // neutral until every golden was held to its bucket.
             | MemDcacheLineSizeNotPowerOfTwo
             | CliUnsupportedLanguage
+            // The script-engine languages there are, and the ones this
+            // backend can emit for — each a closed set.
+            | CliUnknownScriptEngine
+            | CliUnsupportedScriptEngine
             // C5 cache-policy on no-dcache core: closed candidate
             // list = `["none"]` (the only legal policy on a core
             // without D-cache). `Fix::ReplaceOneOf` carries the
@@ -15668,7 +15701,8 @@ mod tests {
                 | ExternOrderingUnspecified
                 | ExternTargetPluginSymbolConflict
                 | IoFilesystem
-                | CliUnknownLanguage | CliUnsupportedLanguage | CliReadInput
+                | CliUnknownLanguage | CliUnsupportedLanguage
+                | CliUnknownScriptEngine | CliUnsupportedScriptEngine | CliReadInput
                 | CliWriteOutput | CliCreateOutputDir | CliScxmlGenerate
                 | CliMissingMetadataField | CliNotADirectory
                 | CliInvalidFormatOption | CliJsonSerialization
@@ -15835,9 +15869,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            380,
+            382,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 380 distinct variants to match the DiagnosticCode \
+             expected 382 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -16774,6 +16808,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             IoFilesystem
             | CliUnknownLanguage
             | CliUnsupportedLanguage
+            | CliUnknownScriptEngine
+            | CliUnsupportedScriptEngine
             | CliReadInput
             | CliWriteOutput
             | CliCreateOutputDir
@@ -17454,8 +17490,8 @@ mod anchor_contract_tests {
         // by measuring nothing at all.
         assert_eq!(
             filed.len(),
-            24,
-            "expected the 24 `cli`/`io` codes to be filed as permanent \
+            26,
+            "expected the 26 `cli`/`io` codes to be filed as permanent \
              exemptions; got {}: {filed:?}. If the code set genuinely \
              changed, re-derive this number from the namespace census \
              rather than editing it to match.",

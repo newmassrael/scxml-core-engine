@@ -840,33 +840,30 @@ fn build_manifest<'a>(
 /// lift the refusal — never emit a best effort. A backend half-migrated
 /// across the seam would otherwise produce an artifact that hands ONE engine
 /// two languages in one session, with no diagnostic anywhere saying so.
+///
+/// Both refusals are typed diagnostics, emitted in the run's error format
+/// like every other CLI-boundary failure. They were strings printed with
+/// `eprintln!` and a bare exit 1, so `--error-format=json` got prose and no
+/// record — no code to route on, no candidates to repair from.
 fn resolve_script_engine_target(
     lang: Language,
     requested: Option<&str>,
-) -> Result<Option<sce_build::generator::ScriptEngineTarget>, String> {
+) -> Result<Option<sce_build::generator::ScriptEngineTarget>, CliError> {
     use sce_build::generator::ScriptEngineTarget;
 
     let Some(requested) = requested else {
         return Ok(None);
     };
     let Some(target) = ScriptEngineTarget::parse(requested) else {
-        return Err(format!(
-            "ERROR: --script-engine '{requested}' is not a script engine language. \
-             Valid values: {}.",
-            sce_build::manifest::SCRIPT_ENGINE_LANGUAGES.join(", ")
-        ));
+        return Err(CliError::UnknownScriptEngine {
+            value: requested.to_string(),
+        });
     };
     if lang.supports_script_engine_target(target) {
         return Ok(Some(target));
     }
 
-    let mut message = format!(
-        "ERROR: backend '{}' cannot emit for --script-engine {}. \
-         It emits for '{}'",
-        lang.canonical_name(),
-        target.wire_name(),
-        lang.default_script_engine_target().wire_name()
-    );
+    let mut message = String::new();
     // Two different refusals, and naming the wrong one sends a reader to the
     // wrong repair. A backend asked for LUA is part-way across a migration
     // this can count; one asked for ECMASCRIPT has no source-emitting arm at
@@ -909,7 +906,16 @@ fn resolve_script_engine_target(
             );
         }
     }
-    Err(message)
+    Err(CliError::UnsupportedScriptEngine {
+        lang: lang.canonical_name().to_string(),
+        engine: target.wire_name().to_string(),
+        supported: ScriptEngineTarget::ALL
+            .iter()
+            .filter(|candidate| lang.supports_script_engine_target(**candidate))
+            .map(|candidate| candidate.wire_name().to_string())
+            .collect(),
+        reason: message,
+    })
 }
 
 /// Serialise `report` and write it as a single JSON line to stdout.
@@ -3590,10 +3596,7 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                 let selected_engine =
                     match resolve_script_engine_target(*lang, script_engine.as_deref()) {
                         Ok(selected) => selected,
-                        Err(message) => {
-                            eprintln!("{message}");
-                            std::process::exit(1);
-                        }
+                        Err(refusal) => error_format.emit_and_exit(&refusal, ""),
                     };
                 let template_dir = sce_build::find_template_dir_for(*lang);
                 let outcome = sce_build::emit_model_artifacts(
@@ -3742,10 +3745,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
     // actually needs rather than a constant.
     let script_engine_target = match resolve_script_engine_target(lang, script_engine.as_deref()) {
         Ok(selected) => selected,
-        Err(message) => {
-            eprintln!("{message}");
-            std::process::exit(1);
-        }
+        Err(refusal) => error_format.emit_and_exit(&refusal, ""),
     };
 
     let mut report = GenerateReport {
@@ -5137,10 +5137,7 @@ fn cmd_generate_w3c(args: GenerateW3cArgs) {
     // under the caller's name for this one.
     let script_engine_target = match resolve_script_engine_target(lang, script_engine.as_deref()) {
         Ok(target) => target,
-        Err(message) => {
-            eprintln!("{message}");
-            std::process::exit(1);
-        }
+        Err(refusal) => cli_exit(refusal),
     };
     // The two backends that own both arms of the seam take the run's
     // selection; the other four have a single arm, and it is
@@ -8123,6 +8120,13 @@ fn cmd_generate_integration(
             v
         }
     };
+
+    // The selection is judged once, here, by the resolver `generate` uses —
+    // not left to the first stem script's `generate` to refuse after the
+    // stems before it have already rewritten their trees.
+    if let Err(refusal) = resolve_script_engine_target(lang, script_engine) {
+        error_format.emit_and_exit(&refusal, "");
+    }
 
     for stem in &stems {
         let script = project_root.join(format!("scripts/regen_{stem}{script_suffix}.sh"));

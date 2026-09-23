@@ -249,6 +249,8 @@
         "io/filesystem",
         "cli/unknown-language",
         "cli/unsupported-language",
+        "cli/unknown-script-engine",
+        "cli/unsupported-script-engine",
         "cli/read-input",
         "cli/write-output",
         "cli/create-output-dir",

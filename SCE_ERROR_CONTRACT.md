@@ -968,7 +968,9 @@ references against a real document and drift silently.
 | `cli/review-table-unavailable` | `cli` | no |  |
 | `cli/scxml-generate` | `cli` | no |  |
 | `cli/unknown-language` | `cli` | `replace_one_of` |  |
+| `cli/unknown-script-engine` | `cli` | `replace_one_of` |  |
 | `cli/unsupported-language` | `cli` | `replace_one_of` |  |
+| `cli/unsupported-script-engine` | `cli` | `replace_one_of` |  |
 | `cli/usage` | `cli` | no |  |
 | `cli/write-output` | `cli` | no |  |
 | `forge/source-hash-input-uncovered` | `cli` | no | SCE Protocol-Synthesis RFC §6.2.6 |
