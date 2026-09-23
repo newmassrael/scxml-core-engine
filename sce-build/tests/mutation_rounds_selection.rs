@@ -513,6 +513,64 @@ fn every_runner_the_corpus_declares_is_provisioned_in_the_rounds_job() {
     }
 }
 
+/// How many `mutation_case` declarations a casefile holds.
+fn declared_case_count(casefile: &str) -> usize {
+    fs::read_to_string(repo_root().join(casefile))
+        .unwrap_or_else(|e| panic!("read {casefile}: {e}"))
+        .lines()
+        .filter(|line| line.starts_with("mutation_case "))
+        .count()
+}
+
+/// The lane expands a casefile too large for one job into ALL of its slices.
+///
+/// `matrix_of` checks that a casefile's shards are the complete run 1..N, and
+/// that check is worth nothing if it is only ever handed casefiles worth one
+/// job — where 1..1 is satisfied by the single entry any expansion produces.
+/// The precondition is therefore forced here rather than left to whichever
+/// casefile a sibling test happens to select first: this one goes looking for
+/// the casefile with the MOST cases and asserts, before anything else, that it
+/// really is worth more than one job.
+///
+/// Without that, dropping the last slice from the expansion would be caught
+/// only by the count check — for the wrong reason, and not at all on a
+/// selection where the arithmetic happened to come out at one.
+#[test]
+fn a_casefile_too_large_for_one_job_is_expanded_into_all_of_them() {
+    let workflow = fs::read_to_string(repo_root().join(".github/workflows/mutation-rounds.yml"))
+        .expect("read the mutation-rounds workflow");
+    let script = run_body(&workflow, "select");
+
+    let largest = casefiles()
+        .into_iter()
+        .max_by_key(|casefile| declared_case_count(casefile))
+        .expect("⚠ the corpus is empty");
+    let cases = declared_case_count(&largest);
+
+    // The change set that reaches it: its own first declared target.
+    let targets = declared_targets(&largest);
+    let target = targets
+        .first()
+        .unwrap_or_else(|| panic!("⚠ {largest} declares no target"));
+
+    let (outputs, log) = lane_selection(&script, target);
+    let matrix = matrix_of(&outputs, &log);
+
+    let shards = matrix
+        .iter()
+        .filter(|(casefile, _)| casefile == &largest)
+        .count();
+    assert!(
+        shards > 1,
+        "⚠ the corpus's largest casefile — {largest}, {cases} case(s) — is \
+         worth {shards} job(s), so the shard-coverage check in `matrix_of` \
+         only ever sees the trivial run 1..1 and would pass over an expansion \
+         that dropped a slice. Either the corpus shrank below the \
+         cases-per-job in `scripts/gates/mutation-rounds.sh`, or the \
+         arithmetic stopped dividing.\n{log}"
+    );
+}
+
 /// Run the workflow's selection step over a change set and return the outputs
 /// it recorded, plus its combined log.
 fn lane_selection(script: &str, changed: &str) -> (BTreeMap<String, String>, String) {
@@ -1280,6 +1338,199 @@ fn write_shim(path: &Path, body: &str) {
         fs::set_permissions(path, fs::Permissions::from_mode(0o755))
             .expect("make the shim executable");
     }
+}
+
+/// What the gate handed `scripts/mutate` for each round it ran, and whether it
+/// finished.
+struct RoundArgv {
+    ok: bool,
+    argv: Vec<String>,
+    log: String,
+}
+
+/// Run the gate over a named selection with the harness replaced by a shim
+/// that records its whole command line.
+///
+/// A copy under a fresh index rather than the checkout, for the reason
+/// `rounds_observed` gives: the gate enumerates its corpus with `git ls-files`,
+/// and this tree must not carry the `build/` that would let a ctest round past
+/// the precondition.
+///
+/// The shim delegates every QUERY — `--declares` above all, which the gate
+/// runs once per casefile before choosing anything — and intercepts only the
+/// round itself. Discriminating on "the first argument starts with a dash"
+/// would have worked until the round grew an option of its own, which is
+/// precisely what this test is about.
+fn round_argv(rounds: &[&str], shard: Option<&str>) -> RoundArgv {
+    let dir = tempdir().expect("tempdir");
+    let root = dir.path();
+    for entry in ["scripts", "sce-build/tests/mutations"] {
+        let dest = root.join(entry);
+        fs::create_dir_all(dest.parent().expect("a parent")).expect("create the fixture tree");
+        copy_tree(&repo_root().join(entry), &dest);
+    }
+
+    let harness = root.join("scripts/mutate-under-test");
+    fs::rename(root.join("scripts/mutate"), &harness).expect("move the harness aside");
+    let observed = root.join("argv.txt");
+    write_shim(
+        &root.join("scripts/mutate"),
+        &format!(
+            "for arg in \"$@\"; do\n\
+             \x20 case \"$arg\" in\n\
+             \x20   --declares|--check|--targets) exec '{harness}' \"$@\" ;;\n\
+             \x20 esac\n\
+             done\n\
+             printf '%s\\n' \"$*\" >> \"$SCE_ROUND_ARGV\"\n",
+            harness = harness.display()
+        ),
+    );
+
+    for args in [vec!["init", "-q"], vec!["add", "-A"]] {
+        let out = Command::new("git")
+            .args(&args)
+            .current_dir(root)
+            .output()
+            .expect("prepare the fixture index");
+        assert!(out.status.success(), "git {args:?} failed in the fixture");
+    }
+
+    let mut command = gate_shell();
+    command
+        .arg("scripts/gates/mutation-rounds.sh")
+        .current_dir(root)
+        .env("SCE_MUTATION_ROUNDS", rounds.join(","))
+        .env("SCE_ROUND_ARGV", &observed);
+    if let Some(shard) = shard {
+        command.env("SCE_MUTATION_SHARD", shard);
+    }
+    let out = command.output().expect("run the gate");
+
+    RoundArgv {
+        ok: out.status.success(),
+        argv: fs::read_to_string(&observed)
+            .unwrap_or_default()
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(str::to_string)
+            .collect(),
+        log: format!(
+            "--- stdout ---\n{}\n--- stderr ---\n{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        ),
+    }
+}
+
+/// A cargo casefile whose round the fixture above can reach — no ctest
+/// selector, because the fixture deliberately carries no configured tree.
+fn a_cargo_casefile() -> String {
+    casefiles()
+        .into_iter()
+        .find(|casefile| !declares_ctest(casefile) && declared_needs(casefile).is_empty())
+        .expect("⚠ the corpus holds no cargo casefile that declares no service")
+}
+
+/// The lane's job carries a slice, and the slice reaches the harness.
+///
+/// This is the last link of the repair, and the quietest one to lose. The
+/// matrix names a shard, the gate is handed it in `SCE_MUTATION_SHARD` — and
+/// if the gate then called `scripts/mutate` without it, every job of a sharded
+/// casefile would run the WHOLE casefile: the same cases measured N times, in
+/// N jobs each of which reaches the 330-minute ceiling the sharding exists to
+/// stay under. Eight rounds of dispatch 32803356117 ended exactly that way.
+/// Nothing in the lane's output would say so.
+#[test]
+fn the_shard_the_lane_names_reaches_the_harness() {
+    let casefile = a_cargo_casefile();
+
+    let sharded = round_argv(&[&casefile], Some("2/3"));
+    assert!(
+        sharded.ok,
+        "⚠ the gate failed while running the sharded round:\n{}",
+        sharded.log
+    );
+    assert_eq!(
+        sharded.argv.len(),
+        1,
+        "⚠ one casefile was named, so exactly one round should have run: \
+         {:?}\n{}",
+        sharded.argv,
+        sharded.log
+    );
+    assert!(
+        sharded.argv[0].contains("--shard 2/3"),
+        "⚠ the gate ran the round without the slice it was handed. It called \
+         `scripts/mutate {}` where `SCE_MUTATION_SHARD=2/3` was set, so this \
+         job would measure the whole casefile — and so would every other job \
+         of it.\n{}",
+        sharded.argv[0],
+        sharded.log
+    );
+    assert!(
+        sharded.argv[0].contains(&casefile),
+        "⚠ the round ran something other than the casefile it was named: {}\n{}",
+        sharded.argv[0],
+        sharded.log
+    );
+
+    // And the by-hand shape is unchanged: no variable, no option, whole file.
+    // A gate that passed `--shard 1/1` unconditionally would work, but it
+    // would put a slice in every ledger record and make every by-hand round
+    // read as one shard of something.
+    let whole = round_argv(&[&casefile], None);
+    assert!(
+        whole.ok,
+        "⚠ the gate failed while running the unsharded round:\n{}",
+        whole.log
+    );
+    assert!(
+        !whole.argv[0].contains("--shard"),
+        "⚠ a round nobody sharded was given a slice anyway: {}\n{}",
+        whole.argv[0],
+        whole.log
+    );
+}
+
+/// A slice names one casefile, because that is the shape a lane job is handed.
+///
+/// Naming one alongside a wider selection would run the same slice NUMBER of
+/// several different files — cases 5-8 of one and 5-8 of another — which is
+/// never what a caller means and would be recorded as though each casefile had
+/// been sharded deliberately.
+#[test]
+fn a_shard_named_over_more_than_one_casefile_is_refused() {
+    let corpus: Vec<String> = casefiles()
+        .into_iter()
+        .filter(|casefile| !declares_ctest(casefile) && declared_needs(casefile).is_empty())
+        .take(2)
+        .collect();
+    assert_eq!(
+        corpus.len(),
+        2,
+        "⚠ the corpus has fewer than two cargo casefiles declaring no service, \
+         so this test cannot name a selection wider than one"
+    );
+
+    let run = round_argv(&[&corpus[0], &corpus[1]], Some("1/2"));
+    assert!(
+        !run.ok,
+        "⚠ the gate accepted one slice across two casefiles and ran {:?}\n{}",
+        run.argv, run.log
+    );
+    assert!(
+        run.argv.is_empty(),
+        "⚠ the gate refused, but only after running {:?} — a round that was \
+         measured under a slice nobody meant is worse than one that did not \
+         run.\n{}",
+        run.argv,
+        run.log
+    );
+    assert!(
+        run.log.contains("one slice of ONE casefile"),
+        "⚠ refused, but not for the reason under test:\n{}",
+        run.log
+    );
 }
 
 /// A recorded `cmake` invocation that configures a tree rather than building

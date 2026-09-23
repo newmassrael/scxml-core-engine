@@ -369,6 +369,253 @@ fn an_assertion_never_counts_as_a_measurement() {
     );
 }
 
+/// Record one shard of a casefile: `index` of `of`, carrying one CAUGHT case.
+///
+/// The label varies with the index so the merged record below can be checked
+/// for having every shard's cases in it rather than one shard's twice.
+fn record_a_shard(home: &Path, ledger: &Path, index: u32, of: u32) {
+    let labels = labels_of(A_MULTI_CASE_CASEFILE);
+    let label = labels[(index - 1) as usize].replace(char::from(39), "'\"'\"'");
+    let declared = labels.len();
+    with_library(
+        home,
+        &format!(
+            "export SCE_MUTATION_LEDGER_DIR={:?}; \
+             rows=\"$(mktemp)\"; \
+             mutation_ledger_begin {A_MULTI_CASE_CASEFILE} \"$rows\" {index} {of} {declared}; \
+             mutation_ledger_case CAUGHT '{label}' '1/2 red'; \
+             mutation_ledger_commit cargo 0 >/dev/null; \
+             rm -f \"$rows\"",
+            ledger.display().to_string()
+        ),
+    );
+}
+
+/// One shard is not a round: it measures a slice and says nothing about the
+/// rest, so it must not take the casefile off the unjudged list.
+///
+/// This is the corpus's cardinal error reached by a new route. A casefile too
+/// large for one CI job is now covered by several — eight of dispatch
+/// 32803356117's rounds ran to the lane's 330-minute ceiling before that — and
+/// if any one of those jobs could mark the file judged, the corpus would read
+/// three measured cases as sixteen.
+#[test]
+fn one_shard_does_not_judge_the_casefile_the_others_share() {
+    let home = tempdir().expect("temp home");
+    let ledger = tempdir().expect("temp ledger");
+
+    let before = ask(ledger.path(), &["unjudged"]);
+    assert!(
+        before.lines().any(|line| line == A_MULTI_CASE_STEM),
+        "the casefile this test is about is already judged, so it asserts \
+         nothing:\n{before}"
+    );
+
+    record_a_shard(home.path(), ledger.path(), 1, 3);
+    record_a_shard(home.path(), ledger.path(), 3, 3);
+
+    let after = ask(ledger.path(), &["unjudged"]);
+    assert!(
+        after.lines().any(|line| line == A_MULTI_CASE_STEM),
+        "two of three shards took {A_MULTI_CASE_STEM} off the unjudged list. The \
+         cases in the missing slice were measured by nothing, and the corpus \
+         now reads them as judged — an absent verdict wearing a present \
+         one's clothes.\n{after}"
+    );
+
+    // And the record is not hidden either: it is held aside, not discarded.
+    // `judged` must stay silent about it for the same reason.
+    let judged = ask(ledger.path(), &["judged"]);
+    assert!(
+        !judged
+            .lines()
+            .any(|line| line.starts_with(A_MULTI_CASE_STEM)),
+        "an incomplete shard set was reported as a judged round:\n{judged}"
+    );
+}
+
+/// The complete set adds up to exactly one judged round, with every shard's
+/// cases in it.
+#[test]
+fn the_shards_add_up_to_one_round_once_they_all_arrive() {
+    let home = tempdir().expect("temp home");
+    let ledger = tempdir().expect("temp ledger");
+
+    let before_count = ask(ledger.path(), &["unjudged"]).lines().count();
+    for index in 1..=3 {
+        record_a_shard(home.path(), ledger.path(), index, 3);
+    }
+
+    let after = ask(ledger.path(), &["unjudged"]);
+    assert_eq!(
+        after.lines().count(),
+        before_count - 1,
+        "a complete shard set should retire exactly one casefile; the list \
+         went from {before_count} to {}\n{after}",
+        after.lines().count()
+    );
+
+    let judged = ask(ledger.path(), &["judged"]);
+    let line = judged
+        .lines()
+        .find(|line| line.starts_with(A_MULTI_CASE_STEM))
+        .unwrap_or_else(|| panic!("the complete set is not reported as judged:\n{judged}"));
+    assert!(
+        line.contains("3 caught"),
+        "the shards' tallies were not added up — one job's count is not the \
+         casefile's. Got: {line}"
+    );
+    assert!(
+        line.contains("rc=0"),
+        "a set whose shards all reached their end should read rc=0: {line}"
+    );
+}
+
+/// A case that was not caught is a hole wherever in the set it was measured.
+///
+/// `holes` is how the corpus finds the cases a round did NOT catch, and it
+/// reads them out of the newest measured record's `cases`. Merging the shards
+/// by taking one of them — the shortest implementation that makes the tallies
+/// look right — would drop the other slices' cases from that list, so a
+/// SURVIVED case in shard 1 would be invisible while the casefile read as
+/// judged. That is the absent verdict again, one level inside the record.
+#[test]
+fn a_hole_in_any_shard_is_a_hole_in_the_casefile() {
+    let home = tempdir().expect("temp home");
+    let ledger = tempdir().expect("temp ledger");
+
+    let labels = labels_of(A_MULTI_CASE_CASEFILE);
+    let survived = labels[0].replace(char::from(39), "'\"'\"'");
+    let declared = labels.len();
+    // The bad case is in the FIRST shard and the last shard is clean, so an
+    // implementation that kept only the newest slice would print nothing.
+    with_library(
+        home.path(),
+        &format!(
+            "export SCE_MUTATION_LEDGER_DIR={:?}; \
+             rows=\"$(mktemp)\"; \
+             mutation_ledger_begin {A_MULTI_CASE_CASEFILE} \"$rows\" 1 2 {declared}; \
+             mutation_ledger_case SURVIVED '{survived}' '0/2 red'; \
+             mutation_ledger_commit cargo 1 >/dev/null; \
+             rm -f \"$rows\"",
+            ledger.path().display().to_string()
+        ),
+    );
+    record_a_shard(home.path(), ledger.path(), 2, 2);
+
+    let holes = ask(ledger.path(), &["holes"]);
+    assert!(
+        holes.contains(&labels[0]),
+        "a SURVIVED case measured in shard 1 does not appear among the \
+         casefile's holes. The merge kept one slice's cases instead of all of \
+         them, so a case nothing catches reads as a casefile that was \
+         judged.\n{holes}"
+    );
+    assert!(
+        holes.contains("SURVIVED") && !holes.contains("VANISHED"),
+        "the hole is listed without saying which kind it is:\n{holes}"
+    );
+}
+
+/// The corpus summary counts a merged shard set as one judged casefile, and
+/// sees the cases inside it.
+///
+/// `status` is the headline, and the line nobody runs a subcommand to check.
+/// It reads `newest(stem)` for four different questions — judged/unjudged,
+/// stale, unverifiable, and cases-not-caught — so a merged record that lacked
+/// any of the fields those need would take the whole summary down, or worse,
+/// answer a question it never asked. Every one of them is exercised here in
+/// one run because that is how `status` reaches them.
+#[test]
+fn the_corpus_summary_reads_a_merged_shard_set() {
+    let home = tempdir().expect("temp home");
+    let ledger = tempdir().expect("temp ledger");
+
+    let labels = labels_of(A_MULTI_CASE_CASEFILE);
+    let survived = labels[0].replace(char::from(39), "'\"'\"'");
+    let declared = labels.len();
+    // One CAUGHT and one SURVIVED, in different shards, so the summary has
+    // something to count in both directions.
+    with_library(
+        home.path(),
+        &format!(
+            "export SCE_MUTATION_LEDGER_DIR={:?}; \
+             rows=\"$(mktemp)\"; \
+             mutation_ledger_begin {A_MULTI_CASE_CASEFILE} \"$rows\" 1 2 {declared}; \
+             mutation_ledger_case SURVIVED '{survived}' '0/2 red'; \
+             mutation_ledger_commit cargo 1 >/dev/null; \
+             rm -f \"$rows\"",
+            ledger.path().display().to_string()
+        ),
+    );
+
+    let before = ask(ledger.path(), &["status"]);
+    assert!(
+        before.contains("of the judged: 0 case(s) not caught"),
+        "one shard of two already moved the summary, so the count below would \
+         not be about a merge:\n{before}"
+    );
+
+    record_a_shard(home.path(), ledger.path(), 2, 2);
+    let after = ask(ledger.path(), &["status"]);
+
+    assert!(
+        after.contains("of the judged: 1 case(s) not caught, in 1 casefile(s)"),
+        "the summary does not see the SURVIVED case inside the merged set. \
+         `status` is the line a reader trusts without running anything else, \
+         and a corpus whose open cases are invisible there reads as \
+         finished.\n{after}"
+    );
+    // The merged record carries the last shard's blob, so `stale` can still
+    // ask its question rather than silently answering "no" — the sharper
+    // failure the summary's own comment names.
+    assert!(
+        after.contains("of the judged: 0 unverifiable"),
+        "the merged record lost its casefile blob, so `stale` cannot tell \
+         whether the verdict still describes the casefile on disk:\n{after}"
+    );
+}
+
+/// A shard that stopped partway makes the whole reading `rc=2`.
+///
+/// `rc` is the half of a record that says the round reached its END, and a set
+/// is only as complete as its worst slice. Taking the last shard's status —
+/// the obvious implementation — would let a set in which one job died report
+/// the same thing as one where none did.
+#[test]
+fn a_set_is_no_more_finished_than_its_worst_shard() {
+    let home = tempdir().expect("temp home");
+    let ledger = tempdir().expect("temp ledger");
+
+    let labels = labels_of(A_MULTI_CASE_CASEFILE);
+    let unjudged = labels[0].replace(char::from(39), "'\"'\"'");
+    let declared = labels.len();
+    with_library(
+        home.path(),
+        &format!(
+            "export SCE_MUTATION_LEDGER_DIR={:?}; \
+             rows=\"$(mktemp)\"; \
+             mutation_ledger_begin {A_MULTI_CASE_CASEFILE} \"$rows\" 1 2 {declared}; \
+             mutation_ledger_case UNJUDGED '{unjudged}' 'stopped'; \
+             mutation_ledger_commit cargo 2 >/dev/null; \
+             rm -f \"$rows\"",
+            ledger.path().display().to_string()
+        ),
+    );
+    record_a_shard(home.path(), ledger.path(), 2, 2);
+
+    let judged = ask(ledger.path(), &["judged"]);
+    let line = judged
+        .lines()
+        .find(|line| line.starts_with(A_MULTI_CASE_STEM))
+        .unwrap_or_else(|| panic!("the complete set is not reported at all:\n{judged}"));
+    assert!(
+        line.contains("rc=2"),
+        "a set holding a shard that stopped partway reported as one that \
+         reached its end. Got: {line}"
+    );
+}
+
 #[test]
 fn a_measured_round_is_what_takes_a_casefile_off_the_unjudged_list() {
     let home = tempdir().expect("temp home");
