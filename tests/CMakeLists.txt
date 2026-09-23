@@ -668,6 +668,7 @@ add_executable(states_tests
     states/ConcurrentRegionTest.cpp
     states/ParallelPseudoStateChildTest.cpp
     states/TransitionDomainSelfTransitionTest.cpp
+    states/EntrySetAlgorithmsTest.cpp
     mocks/MockActionExecutor.cpp
 )
 

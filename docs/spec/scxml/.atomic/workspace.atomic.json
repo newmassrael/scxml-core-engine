@@ -14449,6 +14449,11 @@
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "execute_on_entry_as_ancestor",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/EntrySetHelper.h",
+          "symbol": "addAncestorStatesToEnter",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14497,6 +14502,11 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "reenterParallelRegions",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/EntrySetHelper.h",
+          "symbol": "addDescendantStatesToEnter",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14530,6 +14540,11 @@
           "file": "sce-build/src/model.rs",
           "symbol": "Transition",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/core/EntrySetHelper.h",
+          "symbol": "computeEntrySet",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14635,6 +14650,11 @@
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "is_in_final_state",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/EntrySetHelper.h",
+          "symbol": "computeEntrySet",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14857,6 +14877,11 @@
           "file": "sce/src/runtime/HistoryManager.cpp",
           "symbol": "HistoryManager::restoreHistory",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/EntrySetHelper.h",
+          "symbol": "getEffectiveTargetStates",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14894,6 +14919,11 @@
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "_select_from_chain",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/EntrySetHelper.h",
+          "symbol": "getProperAncestors",
           "kind": "implements"
         }
       ],
