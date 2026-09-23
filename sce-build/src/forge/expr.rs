@@ -3180,7 +3180,9 @@ fn emit_cpp(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprErro
         if op.is_arith() && matches!(expected, InferredType::Float { .. }) {
             let l_raw = emit_cpp(left, expected)?;
             let r_raw = emit_cpp(right, expected)?;
-            let l = if child_needs_parens(left, *op, true, ecma_precedence)
+            let l = if c_family_divides_integers(*op, left, right) {
+                format!("static_cast<{}>({l_raw})", c_family_float_name(expected))
+            } else if child_needs_parens(left, *op, true, ecma_precedence)
                 || c_family_clarity_parens(left, *op)
             {
                 format!("({l_raw})")
@@ -3338,6 +3340,46 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             )
         }
     })
+}
+
+/// Whether a `/` evaluated in a float context would still divide as integers
+/// in C or C++, and so needs its left operand widened first.
+///
+/// SCE_FORGE.md §3.4.1: `/` is real division whenever the result is real.
+/// Rust, Kotlin and Go widen every operand in a float context and Python's
+/// `/` is true division, so those four already agree. The C family widens
+/// only through [`cpp_coerce`]'s `.0` on a decimal literal, which leaves the
+/// case where BOTH operands stay integral — two integer variables, or a
+/// hexadecimal literal that cannot take `.0` — dividing as integers before
+/// the result is converted: `a / b` with `a = 7, b = 2` returned 3.0 into a
+/// `double` output while the other four returned 3.5.
+///
+/// Widening the left operand alone is enough: the usual arithmetic
+/// conversions then carry the right one.
+fn c_family_divides_integers(op: BinOp, left: &TypedExpr, right: &TypedExpr) -> bool {
+    op == BinOp::Div
+        && stays_integral_in_float_context(left)
+        && stays_integral_in_float_context(right)
+}
+
+/// An operand the C family still holds as an integer after float push-down.
+/// A decimal integer literal is not one — [`cpp_coerce`] gives it `.0`.
+fn stays_integral_in_float_context(operand: &TypedExpr) -> bool {
+    match operand.ty {
+        InferredType::Int { .. } => true,
+        InferredType::UntypedInt => match &operand.kind {
+            ExprKind::NumberLit(text) => !is_decimal_integer_literal(text),
+            _ => true,
+        },
+        _ => false,
+    }
+}
+
+fn c_family_float_name(expected: InferredType) -> &'static str {
+    match expected {
+        InferredType::Float { bits: 32 } => "float",
+        _ => "double",
+    }
 }
 
 fn cpp_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExpr) -> String {
@@ -4652,6 +4694,9 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);
             let l_raw = emit_python(left, operand_ty)?;
             let r_raw = emit_python(right, operand_ty)?;
+            if let Some(lowered) = python_integer_div_rem(*op, operand_ty, &l_raw, &r_raw) {
+                return Ok(lowered);
+            }
             let l = if child_needs_parens(left, *op, true, python_precedence) {
                 format!("({l_raw})")
             } else {
@@ -4786,6 +4831,42 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
     })
 }
 
+/// Lower `/` and `%` between two integer operands to the truncating pair the
+/// other five backends compute (SCE_FORGE.md §3.4.1).
+///
+/// ⚠ Neither Python operator is that pair. `/` is true division (PEP 238), so
+/// an `int` output received a float; `//` and `%` both round toward −∞, so
+/// they agree with truncation only while the operands share a sign — `-7 // 2`
+/// is −4 where C, C++, Rust, Go and Kotlin give −3, and `-7 % 3` is 2 where
+/// they give −1. Replacing `/` with `//` would have traded one wrong answer
+/// for another on exactly the negative inputs a date calculation reaches.
+///
+/// The operands are bound once through a lambda rather than spliced in twice:
+/// a spliced form re-evaluates the dividend in each sign branch, and a nested
+/// division multiplies that at every level. `int(a / b)` is not an option —
+/// it rounds through a float and is wrong past 2**53, inside the int64 range.
+///
+/// Only called outside a float context: [`emit_python`] returns before
+/// reaching here when the expected type is `Float`, which is where Python's
+/// true division is the right answer.
+fn python_integer_div_rem(op: BinOp, operand_ty: InferredType, l: &str, r: &str) -> Option<String> {
+    if !matches!(
+        operand_ty,
+        InferredType::Int { .. } | InferredType::UntypedInt
+    ) {
+        return None;
+    }
+    match op {
+        BinOp::Div => Some(format!(
+            "(lambda n, d: n // d if (n >= 0) == (d > 0) else -(-n // d))({l}, {r})"
+        )),
+        BinOp::Mod => Some(format!(
+            "(lambda n, d: n % abs(d) if n >= 0 else -(-n % abs(d)))({l}, {r})"
+        )),
+        _ => None,
+    }
+}
+
 fn python_coerce(raw: String, from: InferredType, to: InferredType) -> String {
     use InferredType::*;
     if from == to || matches!(to, Unknown) || matches!(from, Unknown) {
@@ -4845,7 +4926,9 @@ fn emit_c(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError>
         if op.is_arith() && matches!(expected, InferredType::Float { .. }) {
             let l_raw = emit_c(left, expected)?;
             let r_raw = emit_c(right, expected)?;
-            let l = if child_needs_parens(left, *op, true, ecma_precedence)
+            let l = if c_family_divides_integers(*op, left, right) {
+                format!("({})({l_raw})", c_family_float_name(expected))
+            } else if child_needs_parens(left, *op, true, ecma_precedence)
                 || c_family_clarity_parens(left, *op)
             {
                 format!("({l_raw})")

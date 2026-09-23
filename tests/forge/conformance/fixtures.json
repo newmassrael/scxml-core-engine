@@ -83,6 +83,48 @@
       }
     },
     {
+      "name": "transform_int_div",
+      "kind": "transform",
+      "ref_section": "pure_functions",
+      "args": [
+        "i32",
+        "i32"
+      ],
+      "output": {
+        "function": "compute_quotient",
+        "type": "i32",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "transform_int_rem",
+      "kind": "transform",
+      "ref_section": "pure_functions",
+      "args": [
+        "i32",
+        "i32"
+      ],
+      "output": {
+        "function": "compute_remainder",
+        "type": "i32",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "transform_int_ratio",
+      "kind": "transform",
+      "ref_section": "pure_functions",
+      "args": [
+        "i32",
+        "i32"
+      ],
+      "output": {
+        "function": "compute_ratio",
+        "type": "f64",
+        "compare": "tolerance"
+      }
+    },
+    {
       "name": "transform_temperature",
       "kind": "transform",
       "ref_section": "pure_functions",

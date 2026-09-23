@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Conformance fixture: `%` between two integer operands takes the sign of the
+  dividend.
+
+  That is ECMAScript's `%`, and C99, C++11, Rust, Go and Kotlin compute the
+  same remainder, so it is also the remainder that pairs with the truncating
+  `/` of `transform_int_div`: `a === (a / b) * b + a % b` holds for every
+  case below on every backend.
+
+  ⚠ Python's `%` takes the sign of the DIVISOR. It agrees with the other five
+  only while the operands share a sign, so the discriminating cases are the
+  mixed-sign ones: −7 % 3 is −1 here and 2 in Python, 7 % −3 is 1 here and −2
+  in Python.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="transform" name="int_rem">
+  <datamodel>
+    <data id="dividend" sce:type="int32" sce:direction="in"/>
+    <data id="divisor" sce:type="int32" sce:direction="in"/>
+    <data id="remainder" sce:type="int32" sce:direction="out" expr="dividend % divisor"/>
+  </datamodel>
+</scxml>

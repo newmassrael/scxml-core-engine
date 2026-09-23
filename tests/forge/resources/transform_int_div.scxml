@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Conformance fixture: `/` between two integer operands truncates toward zero.
+
+  The expression language is ECMAScript, where `a / b` is real division; a
+  document that stores it into an integer output is asking for
+  `Math.trunc(a / b)`. C, C++, Rust, Go and Kotlin divide integers exactly
+  that way, so five of the six backends agreed before this fixture existed.
+
+  ⚠ THE SIXTH IS WHY IT EXISTS. Python's `/` is true division (PEP 238) and
+  its `//` rounds toward −∞. The Python emitter wrote `/`, so an `int`-typed
+  output received a float, and every case below with a non-zero remainder
+  came back as a fraction. `//` alone would not have fixed it either: it
+  agrees with truncation only while the two operands share a sign. The
+  cases are chosen so that each of those three answers — true division,
+  floor, truncation — is distinguishable.
+
+  ⚠⚠ Measured 2026-09-23: none of the 187 fixtures in the catalog divided two
+  integers. The only `/` was `celsius * 9 / 5 + 32`, in a float context, which
+  is the one place Python's true division is the right answer.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="transform" name="int_div">
+  <datamodel>
+    <data id="dividend" sce:type="int32" sce:direction="in"/>
+    <data id="divisor" sce:type="int32" sce:direction="in"/>
+    <data id="quotient" sce:type="int32" sce:direction="out" expr="dividend / divisor"/>
+  </datamodel>
+</scxml>

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Conformance fixture: `/` between two integer operands is real division when
+  the result is real.
+
+  ECMAScript `a / b` is always real division; `transform_int_div` covers the
+  integer context, where the output truncates it, and this fixture covers the
+  float context, where nothing may.
+
+  ⚠ THE C FAMILY IS WHY IT EXISTS. Rust, Kotlin and Go widen every operand
+  in a float context and Python's `/` is true division, but the C and C++
+  emitters only promoted DECIMAL LITERALS (`9 / 5` → `9.0 / 5.0`). Two integer
+  variables went through untouched, divided as integers, and the truncated
+  quotient was then converted: `7 / 2` returned 3.0 into a `double` output on
+  those two backends and 3.5 on the other four.
+
+  Both operands are variables on purpose. A literal on either side is
+  promoted by the old rule and would pass without the fix.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="transform" name="int_ratio">
+  <datamodel>
+    <data id="numerator" sce:type="int32" sce:direction="in"/>
+    <data id="denominator" sce:type="int32" sce:direction="in"/>
+    <data id="ratio" sce:type="float64" sce:direction="out" expr="numerator / denominator"/>
+  </datamodel>
+</scxml>

@@ -359,6 +359,21 @@ Rejected constructs cause a **build-time error** with the specific unsupported s
 
 **Equality convention**: `===` (strict equality) is used per ECMAScript convention. Codegen maps it to language-appropriate equality (`==` in C++/Kotlin/Go/Python/Rust). `==` (loose equality) is not permitted in Extended SCXML to avoid type coercion ambiguity. If the parser encounters `==`, it must emit a **build-time error**: `"Loose equality '==' is not permitted in Extended SCXML. Use '===' (strict equality) instead."` This avoids silent type coercion bugs and guides authors toward the correct syntax.
 
+#### 3.4.1 Division and Remainder
+
+ECMAScript has one number type, so `a / b` is always real division and `a % b` is always the remainder of truncated division. Extended SCXML is typed, and the result a document receives depends on where the value lands:
+
+| Context | `a / b` | `a % b` |
+|---|---|---|
+| Float context (the value flows into a `float32`/`float64` output, operand or parameter) | Real division, even when both operands are integers: `7 / 2` is `3.5` | Not specified — see below |
+| Integer context (both operands integer-typed, result stays integer) | **Truncated toward zero** — ECMAScript `Math.trunc(a / b)`: `-7 / 2` is `-3`, `7 / -2` is `-3` | **Sign of the dividend** — ECMAScript `%`: `-7 % 3` is `-1`, `7 % -3` is `1` |
+
+In integer context `a === (a / b) * b + a % b` holds for every non-zero `b` on every backend.
+
+This is what C99, C++11, Rust, Go and Kotlin compute natively for integers, so their emitters write `/` and `%`. Python's `/` is true division and its `//` and `%` round toward −∞, so the Python emitter lowers integer-context `/` and `%` explicitly; `//` alone would agree only while the operands share a sign. In float context the C family divides in floating point only when an operand is already floating, so C and C++ widen the left operand when both are integral. Conformance: `transform_int_div`, `transform_int_rem` (negative and mixed-sign cases) in `tests/forge/conformance/`.
+
+**Not yet specified**: `%` on floating operands (Go's `%` does not accept them and C/C++ need `fmod`), the result of an integer `/` or `%` by zero, and signed or 64-bit overflow of `+`, `-`, `*`, `<<`. The backends do not agree on either today (C/C++ leave both undefined, Rust panics in debug builds, Go and Kotlin wrap or throw, Python's integers do not overflow), and a document whose inputs can reach them has no cross-language guarantee.
+
 #### Transpiler Architecture
 
 The expression transpiler uses a proper **AST-based pipeline**, not regex string replacement. This is necessary because target languages have different operator precedence rules — naive text substitution produces incorrect code for complex expressions.

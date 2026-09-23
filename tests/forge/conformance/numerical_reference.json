@@ -199,6 +199,117 @@
         }
       ]
     },
+    "transform_int_div": {
+      "fixture": "compute_quotient",
+      "signature": "(dividend: i32, divisor: i32) -> i32",
+      "formula": "integer division truncating toward zero — ECMAScript Math.trunc(a / b)",
+      "cases": [
+        {
+          "args": [7, 2],
+          "expected": 3,
+          "note": "ordinary — true division gives 3.5, floor and truncation agree on 3"
+        },
+        {
+          "args": [-7, 2],
+          "expected": -3,
+          "note": "THE discriminator — truncation gives -3, floor (Python //) gives -4, true division gives -3.5"
+        },
+        {
+          "args": [7, -2],
+          "expected": -3,
+          "note": "negative divisor — floor gives -4"
+        },
+        {
+          "args": [-7, -2],
+          "expected": 3,
+          "note": "both negative — the quotient is positive, floor and truncation agree"
+        },
+        {
+          "args": [-401, 400],
+          "expected": -1,
+          "note": "the days_from_civil era step for year -2 — floor gives -2 and shifts every date before year 0 by 400 years"
+        },
+        {
+          "args": [0, -5],
+          "expected": 0,
+          "note": "zero dividend with a negative divisor — a sign branch that tests the divisor alone returns -0 or -1"
+        },
+        {
+          "args": [6, 3],
+          "expected": 2,
+          "note": "exact division keeps its value in every lowering"
+        },
+        {
+          "args": [2147483647, 1],
+          "expected": 2147483647,
+          "note": "i32 max through a division that changes nothing"
+        }
+      ]
+    },
+    "transform_int_rem": {
+      "fixture": "compute_remainder",
+      "signature": "(dividend: i32, divisor: i32) -> i32",
+      "formula": "integer remainder with the sign of the dividend — ECMAScript %, C99 %",
+      "cases": [
+        {
+          "args": [7, 3],
+          "expected": 1,
+          "note": "ordinary — every lowering agrees when both operands are non-negative"
+        },
+        {
+          "args": [-7, 3],
+          "expected": -1,
+          "note": "THE discriminator — the dividend's sign gives -1, Python's divisor-signed % gives 2"
+        },
+        {
+          "args": [7, -3],
+          "expected": 1,
+          "note": "negative divisor — Python gives -2"
+        },
+        {
+          "args": [-7, -3],
+          "expected": -1,
+          "note": "both negative — every lowering agrees"
+        },
+        {
+          "args": [-6, 3],
+          "expected": 0,
+          "note": "exact multiple of a negative dividend — no -0 leaks through a sign branch"
+        },
+        {
+          "args": [0, -5],
+          "expected": 0,
+          "note": "zero dividend"
+        }
+      ]
+    },
+    "transform_int_ratio": {
+      "fixture": "compute_ratio",
+      "signature": "(numerator: i32, denominator: i32) -> f64",
+      "formula": "real division of two integers — ECMAScript a / b",
+      "cases": [
+        {
+          "args": [7, 2],
+          "expected": 3.5,
+          "note": "THE discriminator — integer division before the conversion gives 3.0"
+        },
+        {
+          "args": [-7, 2],
+          "expected": -3.5,
+          "note": "negative numerator — truncation gives -3.0, floor gives -4.0"
+        },
+        {
+          "args": [1, 3],
+          "expected": 0.3333333333333333,
+          "note": "a quotient below one — integer division gives 0.0"
+        },
+        {
+          "args": [6, 3],
+          "expected": 2.0,
+          "note": "exact division — every lowering agrees, so this case alone could not tell them apart"
+        }
+      ]
+    },
     "transform_floor": {
       "fixture": "compute_floored",
       "signature": "(value: f64) -> i32",
