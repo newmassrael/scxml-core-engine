@@ -1484,11 +1484,6 @@
         },
         {
           "file": "sce/include/core/ParallelTransitionHelper.h",
-          "symbol": "hasConflict",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/core/ParallelTransitionHelper.h",
           "symbol": "isInternal",
           "kind": "references"
         },
@@ -8583,11 +8578,6 @@
           "kind": "implements"
         },
         {
-          "file": "backends/go/runtime/scheduler.go",
-          "symbol": "ScheduleEvent",
-          "kind": "implements"
-        },
-        {
           "file": "backends/go/runtime/send.go",
           "symbol": "IsInvalidTarget",
           "kind": "references"
@@ -13905,11 +13895,6 @@
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "pollScheduler",
-          "kind": "references"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "scheduleHttpSend",
           "kind": "references"
         },
@@ -14608,11 +14593,6 @@
           "file": "sce/src/states/ConcurrentRegion.cpp",
           "symbol": "ConcurrentRegion::processEvent",
           "kind": "references"
-        },
-        {
-          "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::computeExitSet",
-          "kind": "implements"
         },
         {
           "file": "sce/include/core/ParallelTransitionHelper.h",
@@ -15362,11 +15342,6 @@
         {
           "file": "sce/src/states/ConcurrentRegion.cpp",
           "symbol": "ConcurrentRegion::processEvent",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/core/ParallelTransitionHelper.h",
-          "symbol": "ParallelTransitionAlgorithms",
           "kind": "implements"
         },
         {
@@ -17073,6 +17048,36 @@
       "target_kind": "section",
       "target_id": "scxml-3.11",
       "reason": "A test site; its comment no longer cites the section, and a verifies binding needs a confirmation this test does not carry."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stale binding: hasConflict was removed from ParallelTransitionHelper.h in 54581ac84f (2026-08-27); no symbol by that name exists. Found by a sweep of all bindings for a missing symbol (reported by session scxml-core-engine-3c); the pinned validator reads it as 0 on every axis."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-removeConflictingTransitions",
+      "reason": "Stale binding: no symbol ParallelTransitionAlgorithms exists in ParallelTransitionHelper.h, and git log -S finds no commit that ever added it there. removeConflictingTransitions lives in ConflictResolutionHelper.h (ConflictResolutionAlgorithms), which carries its own bindings."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.2",
+      "reason": "Stale binding: PullScheduler.ScheduleEvent was renamed to ScheduleEventAt in 004b904c34 (2026-08-24); the binding is re-pointed to the live symbol in the same change."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-2",
+      "reason": "Stale binding: StateMachineEngine.pollScheduler was removed in 8c9ca54698 (2026-08-19); no symbol by that name exists in the Kotlin runtime. The file's live C-2 symbols keep their own bindings."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-computeExitSet",
+      "reason": "Stale binding: ConcurrentRegion::computeExitSet no longer exists (gone after 0c4f8a60cf, 2026-08-27). The remaining computeExitSet citations in that file sit in ConcurrentRegion::processEvent and say the region does NOT compute the set; that symbol already has its own references binding."
     }
   ],
   "frames": {},

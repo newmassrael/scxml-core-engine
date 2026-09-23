@@ -142,11 +142,11 @@ struct ExitSetAlgorithms {
 };
 
 /**
- * @brief Helper functions for parallel state transition conflict detection
+ * @brief Appendix D's exit set, bound to a StatePolicy
  *
- * §scxml-D-removeConflictingTransitions: optimal enabled transition set
- * - Optimal enabled transition set: Select non-conflicting transitions
- * - Conflict detection: Two transitions conflict if they exit the same state
+ * The exit set is what a microstep exits and what conflict resolution
+ * intersects; the resolver itself is ConflictResolutionHelper's, and this
+ * class does not decide conflicts.
  *
  * Shared between Interpreter and AOT engines following Zero Duplication Principle.
  */
@@ -217,8 +217,8 @@ public:
         return exitSet;
     }
 
-    // §scxml-D-removeConflictingTransitions lives in ConflictResolutionHelper,
-    // where both engines reach it. A second resolver stood here -- a depth sort
+    // Appendix D's removeConflictingTransitions lives in
+    // ConflictResolutionHelper, where both engines reach it. A second resolver stood here -- a depth sort
     // and a greedy scan, which is not the appendix's ordered-set procedure -- and
     // nothing in the tree called it. It is gone rather than carried forward with
     // the configuration this exit set now needs: two implementations of one
