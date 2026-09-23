@@ -413,8 +413,44 @@ const ALGORITHM_CALL_ARGUMENT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "#;
 
-/// The algorithm `ALGORITHM_CALL_ARGUMENT` imports — refused nothing
-/// itself, it only has to exist.
+/// A bare `<sce:call>` target that is a near miss of the imported
+/// algorithm's alias. It used to be emitted verbatim as a call of a
+/// function nothing defines.
+const ALGORITHM_CALL_BARE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_alg_call_bare" version="1.0">
+  <sce:import kind="algorithm" src="probe_match.scxml" as="matched"/>
+  <sce:signature>
+    <sce:param name="reading" type="uint16"/>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:body>
+    <sce:call args="true, reading"
+              target="matchd"/>
+    <sce:return expr="reading"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// `alias.method` on an algorithm import, where the method is a near miss
+/// of the algorithm's declared name — the only callable it defines. The
+/// refusal names the METHOD, the part after the dot.
+const ALGORITHM_CALL_METHOD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_alg_call_method" version="1.0">
+  <sce:import kind="algorithm" src="probe_match.scxml" as="matched"/>
+  <sce:signature>
+    <sce:param name="reading" type="uint16"/>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:body>
+    <sce:call args="true, reading"
+              target="matched.probe_mach"/>
+    <sce:return expr="reading"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// The algorithm the `<sce:call>` cases import — refused nothing itself, it
+/// only has to exist.
 const PROBE_MATCH: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_match" version="1.0">
   <sce:signature>
@@ -607,6 +643,22 @@ const CASES: &[Case] = &[
         line: 12,
         col: 21,
         actual: Some("readng"),
+    },
+    Case {
+        file: "probe_alg_call_bare.scxml",
+        document: ALGORITHM_CALL_BARE,
+        code: "algorithm/call-target-unknown",
+        line: 10,
+        col: 23,
+        actual: Some("matchd"),
+    },
+    Case {
+        file: "probe_alg_call_method.scxml",
+        document: ALGORITHM_CALL_METHOD,
+        code: "algorithm/call-target-method-unknown",
+        line: 10,
+        col: 31,
+        actual: Some("probe_mach"),
     },
 ];
 

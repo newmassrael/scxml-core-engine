@@ -351,6 +351,17 @@ pub struct ImportContext {
     pub transform_state_read: Option<crate::forge::previous_value::FirstRead>,
 }
 
+impl ImportContext {
+    /// Whether a call can reach this import as a function: an algorithm
+    /// whose callable symbol was resolved (`qualified_call`). The one
+    /// answer both call forms read — an expression's `km(a, b)` and the
+    /// statement `<sce:call target="km">` — so neither can reach an import
+    /// the other cannot.
+    pub fn is_callable_algorithm(&self) -> bool {
+        self.kind == "algorithm" && !self.qualified_call.is_empty()
+    }
+}
+
 /// Resolve a list of `ForgeImport` into template-ready `ImportContext`.
 ///
 /// Uses `options` to pick up language-specific knobs (today only
@@ -21984,12 +21995,33 @@ fn lower_algorithm_stmt(
             args,
             args_spelling,
         } => {
-            let target_site = ExpressionSite::new(target, target_spelling.as_ref());
-            // A refusal of the call's shape — how many arguments — is about
-            // `args`; with no `args` written, it is about the call's target.
-            let arity_at = crate::forge::expression_site::WrittenAt::attribute(
-                args_spelling.as_ref().or(target_spelling.as_ref()),
-            );
+            // RFC §synth-5-A line 311 + §synth-5-L line 2642-2647 (item C7 lowering): the
+            // target is resolved before any argument is lowered — what it
+            // names decides how many arguments there are and how the call is
+            // spelled. A bare target is an imported algorithm's alias, as in
+            // the expression form `km(a, b)`; `alias.method` is a bounded
+            // collection's read-only method, or an imported algorithm by its
+            // own declared name.
+            let callee = resolve_call_target(
+                target,
+                &ExpressionSite::new(target, target_spelling.as_ref()),
+                imports,
+            )?;
+            if args.len() != callee.arity() {
+                let refusal: ForgeError =
+                    crate::forge::error::ValidationError::AlgorithmCallArgCountMismatch {
+                        target: target.clone(),
+                        actual: args.len(),
+                        expected: callee.arity(),
+                    }
+                    .into();
+                // About the call's shape, so about `args` as a whole — or,
+                // with no `args` written, about the call's target.
+                return Err(crate::forge::expression_site::WrittenAt::attribute(
+                    args_spelling.as_ref().or(target_spelling.as_ref()),
+                )
+                .place(refusal));
+            }
             let lowered_args: Vec<String> = args
                 .iter()
                 .map(|arg| {
@@ -22004,225 +22036,185 @@ fn lower_algorithm_stmt(
                     .map_err(|refusal| site.place(refusal))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
+            let call = match callee {
+                // The symbol the expression form calls, so the two forms
+                // cannot spell one algorithm two ways (`qualified_call` is
+                // the cross-document symbol SSOT, `forge_qualified_call`).
+                CallTarget::Algorithm(imp) => {
+                    format!("{}({})", imp.qualified_call, lowered_args.join(", "))
+                }
+                CallTarget::CollectionMethod { imp, method, .. } => {
+                    collection_method_call(lang, imp, method, &lowered_args)
+                }
+            };
             let semi = if matches!(lang, Language::Kotlin | Language::Python) {
                 ""
             } else {
                 ";"
             };
-
-            // RFC §synth-5-A line 311 + §synth-5-L line 2642-2647 (item C7 lowering
-            // 2026-05-13): dotted target `<sce:call
-            // target="alias.method">` dispatches into an `<sce:import>`
-            // alias. Bare target (no dot) keeps the v1 behaviour of
-            // emitting a sibling free-function call verbatim.
-            if let Some((alias, method)) = target.split_once('.') {
-                // BC public read-only method roster.
-                const BC_READONLY_METHODS: &[&str] =
-                    &["capacity", "find_by_index", "get", "get_by_slot", "len"];
-                // BC mutating methods rejected by `algorithm/
-                // bc-mutation-forbidden` (algorithms
-                // are pure per RFC §synth-5-A line 333).
-                const BC_MUTATING_METHODS: &[&str] = &["insert", "remove"];
-
-                // Where each half of `alias.method` is written: a refusal of
-                // the alias names the alias, one of the method the method.
-                let lead = target.len() - target.trim_start().len();
-                let alias_span = alias.len().saturating_sub(lead);
-                let alias_at = target_site.locate(Some(0..alias_span));
-                let method_start = alias_span + 1;
-                let method_at =
-                    target_site.locate(Some(method_start..method_start + method.trim_end().len()));
-
-                let imp = imports.iter().find(|i| i.alias.as_str() == alias);
-                let imp = match imp {
-                    Some(imp) => imp,
-                    None => {
-                        let mut candidates: Vec<String> =
-                            imports.iter().map(|i| i.alias.clone()).collect();
-                        candidates.sort();
-                        let refusal: ForgeError =
-                            crate::forge::error::ValidationError::AlgorithmCallTargetUnknown {
-                                target: target.clone(),
-                                alias: alias.to_string(),
-                                candidates,
-                            }
-                            .into();
-                        return Err(alias_at.place(refusal));
-                    }
-                };
-
-                let emit_qualified_call = |lang: Language, alias: &str, method: &str| -> String {
-                    match lang {
-                        // BC import → instance method dispatch via the
-                        // positional ref param. Algorithm import →
-                        // free-function namespace-qualified call.
-                        Language::Rust => {
-                            if imp.kind == "bounded-collection" {
-                                format!("{alias}.{method}")
-                            } else {
-                                // Algorithm: `<snake>::<method>` —
-                                // `imp.namespace` is the snake form.
-                                let snake = filters::to_snake_case(alias.to_string());
-                                let _ = snake;
-                                format!("{ns}::{method}", ns = imp.namespace)
-                            }
-                        }
-                        Language::Cpp => {
-                            if imp.kind == "bounded-collection" {
-                                format!("{alias}.{method}")
-                            } else {
-                                // Algorithm: `SCE::Generated::<Ns>::<method>`.
-                                format!("{ns}::{method}", ns = imp.namespace)
-                            }
-                        }
-                        Language::Kotlin => {
-                            // Both BC (instance) and algorithm (object
-                            // singleton method on the imported package's
-                            // `<NameCamel>(...)` free function) use `.`
-                            // dispatch syntax in Kotlin.
-                            format!("{alias}.{method}")
-                        }
-                        Language::Go => {
-                            // Go BC instance method; algorithm cross-
-                            // call: `<package>.<MethodPascal>` — BC
-                            // method names already use Pascal form per
-                            // BC template (GetBySlot, FindByIndex,
-                            // etc.); BC v1 algorithm body uses the
-                            // exported names directly.
-                            let go_method = match method {
-                                "get_by_slot" => "GetBySlot".to_string(),
-                                "find_by_index" => "FindByIndex".to_string(),
-                                "get" => "Get".to_string(),
-                                "len" => "Len".to_string(),
-                                "capacity" => "Capacity".to_string(),
-                                other => filters::to_pascal_case(other.to_string()),
-                            };
-                            format!("{alias}.{go_method}")
-                        }
-                        Language::Python => {
-                            // BC instance method; algorithm cross-call:
-                            // `<snake>.<func_snake>(...)`.
-                            format!("{alias}.{method}")
-                        }
-                        Language::C11 => {
-                            // C11: no namespaces — function prefix
-                            // dispatch. BC method = `<bc_snake>_<method>(self, args...)`;
-                            // algorithm cross-call = `<algo_snake>_<func>(args)`. Both
-                            // resolve to `<namespace>_<method>` so the dispatch shape
-                            // is uniform regardless of import kind.
-                            format!("{ns}_{method}", ns = imp.namespace)
-                        }
-                    }
-                };
-
-                if imp.kind == "bounded-collection" {
-                    // Method roster validation.
-                    if BC_MUTATING_METHODS.contains(&method) {
-                        let refusal: ForgeError =
-                            crate::forge::error::ValidationError::AlgorithmBcMutationForbidden {
-                                target: target.clone(),
-                                method: method.to_string(),
-                            }
-                            .into();
-                        return Err(method_at.place(refusal));
-                    }
-                    if !BC_READONLY_METHODS.contains(&method) {
-                        let candidates: Vec<String> = BC_READONLY_METHODS
-                            .iter()
-                            .map(|s| (*s).to_string())
-                            .collect();
-                        let refusal: ForgeError =
-                            crate::forge::error::ValidationError::AlgorithmCallTargetMethodUnknown {
-                                target: target.clone(),
-                                alias: alias.to_string(),
-                                method: method.to_string(),
-                                kind: "bounded-collection".to_string(),
-                                candidates,
-                            }
-                            .into();
-                        return Err(method_at.place(refusal));
-                    }
-                    // Arity validation (fixed per RFC §synth-5-L: find_by_index/
-                    // get/get_by_slot take 1 arg; len/capacity take 0).
-                    let expected_arity = match method {
-                        "find_by_index" | "get" | "get_by_slot" => 1,
-                        "len" | "capacity" => 0,
-                        _ => unreachable!("BC_READONLY_METHODS roster guard"),
-                    };
-                    if args.len() != expected_arity {
-                        let refusal: ForgeError =
-                            crate::forge::error::ValidationError::AlgorithmCallArgCountMismatch {
-                                target: target.clone(),
-                                actual: args.len(),
-                                expected: expected_arity,
-                            }
-                            .into();
-                        return Err(arity_at.place(refusal));
-                    }
-                    // Emit per-backend method call. C11 needs `&self`
-                    // as the first arg (snake-prefix dispatch).
-                    let qualified = emit_qualified_call(lang, alias, method);
-                    let final_args = match lang {
-                        Language::C11 => {
-                            // BC C11 methods take `const <snake>_t *self`
-                            // as the first param; thread `alias`
-                            // (already a `const <snake>_t *`) into the
-                            // call.
-                            let mut a = vec![alias.to_string()];
-                            a.extend(lowered_args.iter().cloned());
-                            a.join(", ")
-                        }
-                        _ => lowered_args.join(", "),
-                    };
-                    out.push_str(&format!("{pad}{qualified}({final_args}){semi}\n"));
-                } else if imp.kind == "algorithm" {
-                    // Cross-algorithm dispatch — arity check from the
-                    // imported algorithm's discovered signature
-                    // (`imp.param_types.len()` is populated by
-                    // `validate_and_enrich_imports::discover_stateless_signature`).
-                    let expected_arity = imp.param_types.len();
-                    if args.len() != expected_arity {
-                        let refusal: ForgeError =
-                            crate::forge::error::ValidationError::AlgorithmCallArgCountMismatch {
-                                target: target.clone(),
-                                actual: args.len(),
-                                expected: expected_arity,
-                            }
-                            .into();
-                        return Err(arity_at.place(refusal));
-                    }
-                    let qualified = emit_qualified_call(lang, alias, method);
-                    out.push_str(&format!(
-                        "{pad}{qualified}({args}){semi}\n",
-                        args = lowered_args.join(", ")
-                    ));
-                } else {
-                    // Other kinds (codec/procedure/etc.) — out of scope:
-                    // algorithm calls target bounded-collection methods
-                    // only. No closed candidate set —
-                    // future RFC extensions may add cross-kind dispatch.
-                    let refusal: ForgeError =
-                        crate::forge::error::ValidationError::AlgorithmCallTargetMethodUnknown {
-                            target: target.clone(),
-                            alias: alias.to_string(),
-                            method: method.to_string(),
-                            kind: imp.kind.clone(),
-                            candidates: Vec::new(),
-                        }
-                        .into();
-                    return Err(method_at.place(refusal));
-                }
-            } else {
-                // Bare target — sibling free-function call within the
-                // same algorithm doc. Emit verbatim per v1 behaviour.
-                out.push_str(&format!(
-                    "{pad}{target}({args}){semi}\n",
-                    args = lowered_args.join(", ")
-                ));
-            }
+            out.push_str(&format!("{pad}{call}{semi}\n"));
         }
     }
     Ok(())
+}
+
+/// What an `<sce:call target>` reaches.
+enum CallTarget<'a> {
+    /// An imported algorithm, named by its alias or as `alias.<its name>`.
+    Algorithm(&'a ImportContext),
+    /// One of a bounded collection's read-only methods, with the number of
+    /// arguments it takes.
+    CollectionMethod {
+        imp: &'a ImportContext,
+        method: &'a str,
+        arity: usize,
+    },
+}
+
+impl CallTarget<'_> {
+    /// How many arguments the call takes.
+    fn arity(&self) -> usize {
+        match self {
+            Self::Algorithm(imp) => imp.param_types.len(),
+            Self::CollectionMethod { arity, .. } => *arity,
+        }
+    }
+}
+
+/// A bounded collection's read-only methods and how many arguments each
+/// takes — what an algorithm body may call on one.
+const COLLECTION_READ_METHODS: &[(&str, usize)] = &[
+    ("capacity", 0),
+    ("find_by_index", 1),
+    ("get", 1),
+    ("get_by_slot", 1),
+    ("len", 0),
+];
+
+/// A bounded collection's methods that change it — refused in an algorithm
+/// body, which is pure.
+const COLLECTION_MUTATING_METHODS: &[&str] = &["insert", "remove"];
+
+/// What `target` names, or its refusal placed at the part that names
+/// nothing: the whole of a bare target, the alias or the method of
+/// `alias.method`.
+fn resolve_call_target<'a>(
+    target: &'a str,
+    site: &ExpressionSite<'_>,
+    imports: &'a [ImportContext],
+) -> Result<CallTarget<'a>, ForgeError> {
+    use crate::forge::error::{CallReach, ValidationError};
+    // Ranges index the target trimmed — the frame `ExpressionSite` places in.
+    let trimmed = target.trim();
+    let Some((alias, method)) = trimmed.split_once('.') else {
+        if let Some(imp) = imports
+            .iter()
+            .find(|i| i.alias == trimmed && i.is_callable_algorithm())
+        {
+            return Ok(CallTarget::Algorithm(imp));
+        }
+        let mut candidates: Vec<String> = imports
+            .iter()
+            .filter(|i| i.is_callable_algorithm())
+            .map(|i| i.alias.clone())
+            .collect();
+        candidates.sort();
+        let refusal: ForgeError = ValidationError::AlgorithmCallTargetUnknown {
+            target: target.to_string(),
+            alias: trimmed.to_string(),
+            reach: CallReach::Algorithm,
+            candidates,
+        }
+        .into();
+        return Err(site.locate(Some(0..trimmed.len())).place(refusal));
+    };
+    let Some(imp) = imports.iter().find(|i| i.alias == alias) else {
+        let mut candidates: Vec<String> = imports.iter().map(|i| i.alias.clone()).collect();
+        candidates.sort();
+        let refusal: ForgeError = ValidationError::AlgorithmCallTargetUnknown {
+            target: target.to_string(),
+            alias: alias.to_string(),
+            reach: CallReach::Import,
+            candidates,
+        }
+        .into();
+        return Err(site.locate(Some(0..alias.len())).place(refusal));
+    };
+    let method_at = site.locate(Some(alias.len() + 1..trimmed.len()));
+    let method_unknown = |candidates: Vec<String>| -> ForgeError {
+        method_at.place(
+            ValidationError::AlgorithmCallTargetMethodUnknown {
+                target: target.to_string(),
+                alias: alias.to_string(),
+                method: method.to_string(),
+                kind: imp.kind.clone(),
+                candidates,
+            }
+            .into(),
+        )
+    };
+    match imp.kind.as_str() {
+        "bounded-collection" => {
+            if COLLECTION_MUTATING_METHODS.contains(&method) {
+                let refusal: ForgeError = ValidationError::AlgorithmBcMutationForbidden {
+                    target: target.to_string(),
+                    method: method.to_string(),
+                }
+                .into();
+                return Err(method_at.place(refusal));
+            }
+            match COLLECTION_READ_METHODS
+                .iter()
+                .find(|(name, _)| *name == method)
+            {
+                Some(&(_, arity)) => Ok(CallTarget::CollectionMethod { imp, method, arity }),
+                None => Err(method_unknown(
+                    COLLECTION_READ_METHODS
+                        .iter()
+                        .map(|(name, _)| (*name).to_string())
+                        .collect(),
+                )),
+            }
+        }
+        // An imported algorithm defines one callable, its own declared name.
+        "algorithm" if imp.is_callable_algorithm() && method == imp.document_name => {
+            Ok(CallTarget::Algorithm(imp))
+        }
+        "algorithm" => Err(method_unknown(vec![imp.document_name.clone()])),
+        // No other kind defines a callable an algorithm body may reach.
+        _ => Err(method_unknown(Vec::new())),
+    }
+}
+
+/// A bounded collection's read-only `method` called on the collection the
+/// algorithm was handed as `imp.alias`, in `lang`.
+fn collection_method_call(
+    lang: crate::generator::Language,
+    imp: &ImportContext,
+    method: &str,
+    args: &[String],
+) -> String {
+    use crate::generator::Language;
+    let alias = imp.alias.as_str();
+    match lang {
+        // C11 has no methods: the collection's functions are prefixed with
+        // its namespace and take the collection (`const <snake>_t *`, which
+        // `alias` already is) as their first argument.
+        Language::C11 => {
+            let mut all = vec![alias.to_string()];
+            all.extend(args.iter().cloned());
+            format!("{}_{method}({})", imp.namespace, all.join(", "))
+        }
+        // Go exports the methods in Pascal case.
+        Language::Go => format!(
+            "{alias}.{}({})",
+            filters::to_pascal_case(method.to_string()),
+            args.join(", ")
+        ),
+        Language::Rust | Language::Cpp | Language::Kotlin | Language::Python => {
+            format!("{alias}.{method}({})", args.join(", "))
+        }
+    }
 }
 
 /// W1 symbol-name SSOT for the `algorithm` kind: the primary callable
@@ -22795,7 +22787,7 @@ fn render_algorithm(
         .map(|c| (c.name.clone(), to_upper_snake(&c.name)))
         .collect();
     for imp in imports {
-        if imp.kind == "algorithm" && !imp.qualified_call.is_empty() {
+        if imp.is_callable_algorithm() {
             const_renames_owned.push((imp.alias.clone(), imp.qualified_call.clone()));
         }
     }

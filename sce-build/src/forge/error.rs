@@ -1051,13 +1051,17 @@ pub enum ValidationError {
     },
 
     /// RFC §synth-5-A line 311 + §synth-5-L line 2642-2647 (item C7 lowering): `<sce:call
-    /// target="alias.method">` where `alias` does not match any
-    /// `<sce:import as="...">` declared in the enclosing algorithm doc.
-    /// `candidates` is the sorted list of declared import aliases.
-    #[error("algorithm: <sce:call target=\"{target}\">: alias '{alias}' is not a declared import")]
+    /// target>` names nothing its form reaches — the `alias` of
+    /// `alias.method` is no `<sce:import as="...">` of the enclosing
+    /// algorithm doc, or a bare target is no imported algorithm's alias.
+    /// `reach` says which, and `candidates` is what that form does reach,
+    /// sorted: every declared import alias for `alias.method`, the imported
+    /// algorithms' for a bare target.
+    #[error("algorithm: <sce:call target=\"{target}\">: alias '{alias}' is not {reach}")]
     AlgorithmCallTargetUnknown {
         target: String,
         alias: String,
+        reach: CallReach,
         candidates: Vec<String>,
     },
 
@@ -4153,6 +4157,31 @@ pub enum CallbackPathReason {
         /// Offending segment verbatim.
         segment: String,
     },
+}
+
+/// What an `<sce:call target>` has to name, by the form it is written in —
+/// carried on [`ValidationError::AlgorithmCallTargetUnknown`] so its message
+/// says what the target failed to be.
+///
+/// ⚠ The message used to say "is not a declared import" for both forms. A
+/// bare target that names a declared import of another kind — a bounded
+/// collection called without a method — made that sentence false.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CallReach {
+    /// `alias.method`: the alias of any `<sce:import>` of the document.
+    Import,
+    /// A bare target: the alias of an imported algorithm, the name the
+    /// expression form calls it by.
+    Algorithm,
+}
+
+impl std::fmt::Display for CallReach {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Import => "a declared import",
+            Self::Algorithm => "an imported algorithm",
+        })
+    }
 }
 
 /// SCE Protocol-Synthesis RFC §synth-5-D line 911 — worker shared-mutable-state

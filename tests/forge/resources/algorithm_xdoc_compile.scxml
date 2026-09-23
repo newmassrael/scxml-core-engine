@@ -16,6 +16,15 @@
   (g++ / rustc) can verify the cross-doc `#include` / `use` resolves and
   the qualified call binds against the imported algorithm's emitted
   symbol, isolating the identity SSOT from the unrelated BC/codec emit.
+
+  The imported algorithm is reached three ways, and all three must bind
+  to the one symbol: the expression form `eq(a, b)`, and the `<sce:call>`
+  statement both bare (`eq`, the alias) and dotted (`eq.bytes_equal`, the
+  alias and the algorithm's declared name). ⚠ Measured 2026-09-23 before
+  they were resolved: the bare statement was emitted verbatim as
+  `eq(a, b)` on all six backends, and the dotted one spelled the symbol by
+  a rule of its own that agreed with the expression form on Rust and C++
+  only — on Go, Python, Kotlin and C it named a symbol nothing defines.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -31,6 +40,8 @@
     <sce:return type="uint16"/>
   </sce:signature>
   <sce:body>
+    <sce:call target="eq" args="a, b"/>
+    <sce:call target="eq.bytes_equal" args="a, b"/>
     <sce:if cond="eq(a, b)">
       <sce:return expr="1"/>
     </sce:if>

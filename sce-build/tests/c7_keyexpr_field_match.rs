@@ -612,6 +612,64 @@ fn python_cross_doc_algorithm_imports() {
     );
 }
 
+/// The caller of `algorithm_xdoc_compile`, generated for `lang` with the
+/// algorithm it imports.
+fn compile_xdoc_caller_for(lang: Language) -> String {
+    let dir = tempdir().expect("tempdir");
+    let inner = copy_resource_into(dir.path(), "algorithm_bytes_equal.scxml");
+    let outer = copy_resource_into(dir.path(), "algorithm_xdoc_compile.scxml");
+    let outputs = compile_scxml_with_imports(
+        &[],
+        &[inner.as_path(), outer.as_path()],
+        &template_dir(lang),
+        lang,
+        &options_for(lang),
+        None,
+    )
+    .expect("orchestrator codegen succeeds");
+    outputs
+        .iter()
+        .find(|(name, _)| name == "algorithm_xdoc_compile.scxml")
+        .expect("caller output present")
+        .1
+        .files
+        .iter()
+        .map(|(_, c)| c.clone())
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+/// The `<sce:call>` statement reaches an imported algorithm by the symbol
+/// the expression form calls — bare (`eq`) and dotted (`eq.bytes_equal`)
+/// alike — on every backend, whether or not its compiler is installed.
+///
+/// ⚠ Measured 2026-09-23 before they were resolved: the bare statement
+/// was emitted verbatim as `eq(a, b)` on all six backends, and the dotted
+/// one agreed with the expression form on Rust and C++ only (Go
+/// `eq.BytesEqual`, Python and Kotlin `eq.bytes_equal`, C
+/// `bytes_equal_bytes_equal`). The compile gates above reach the same
+/// defect only where a toolchain is present.
+#[test]
+fn a_call_statement_reaches_the_symbol_the_expression_form_calls() {
+    for (lang, callee) in [
+        (Language::Rust, "bytes_equal::bytes_equal"),
+        (Language::Cpp, "SCE::Generated::BytesEqual::bytes_equal"),
+        (Language::Go, "bytes_equal.BytesEqual"),
+        (Language::Python, "bytes_equal.bytes_equal"),
+        (Language::Kotlin, "bytesEqual"),
+        (Language::C11, "bytes_equal"),
+    ] {
+        let code = compile_xdoc_caller_for(lang);
+        let call = format!("{callee}(a, b)");
+        // Two statements and the `if` condition.
+        assert_eq!(
+            code.matches(&call).count(),
+            3,
+            "{lang:?}: expected `{call}` from both statements and the condition; got:\n{code}"
+        );
+    }
+}
+
 // ── Full C++ field-match compile gate (BC + codec + algorithm) ────
 //
 // The cross-doc gate above isolates identity on a std-only shape; this

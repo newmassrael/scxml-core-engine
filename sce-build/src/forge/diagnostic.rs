@@ -6187,6 +6187,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             target,
             alias,
             candidates,
+            ..
         } => DiagnosticPayload {
             code: DiagnosticCode::AlgorithmCallTargetUnknown,
             stage: Stage::Validation,
@@ -9726,7 +9727,7 @@ mod tests {
     /// bump when the wire shape changes.
     pub(super) fn forge_golden_entries() -> Vec<(&'static str, ForgeError, &'static str)> {
         use crate::forge::error::{
-            CallbackPathReason, ExprError, GenerateError, ImportError, ManifestError,
+            CallReach, CallbackPathReason, ExprError, GenerateError, ImportError, ManifestError,
             WorkerSharedStateReason, XmlError,
         };
         vec![
@@ -11722,6 +11723,7 @@ mod tests {
                 ValidationError::AlgorithmCallTargetUnknown {
                     target: "missing_alias.find_by_index".into(),
                     alias: "missing_alias".into(),
+                    reach: CallReach::Import,
                     candidates: vec!["subs".into()],
                 }
                 .into(),
