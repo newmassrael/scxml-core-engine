@@ -514,3 +514,113 @@ fn positive_targetless_transition_compiles() {
     );
     compile_positive(dir.path(), "targetless_ok.scxml");
 }
+
+// ── §3.11: a legal state specification ────────────────────────────────
+//
+// Every token resolving is not enough. A conformant document "MUST either
+// be empty or contain a legal state specification", and every engine used
+// to accept these without a word — entering both states would put two
+// children of one compound state in the configuration.
+
+use sce_build::scxml_semantic::{StateSpecificationBreach, StateSpecificationPosition};
+
+fn specification_breach(
+    err: &sce_build::forge::error::Located<sce_build::forge::error::ForgeError>,
+) -> (&StateSpecificationPosition, &StateSpecificationBreach) {
+    match scxml_err(err) {
+        ScxmlSemanticError::IllegalStateSpecification {
+            position, breach, ..
+        } => (position, breach),
+        other => panic!("expected IllegalStateSpecification, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_target_set_inside_one_compound_state_is_rejected() {
+    let dir = tempdir().expect("tempdir");
+    write_fixture(
+        dir.path(),
+        "siblings.scxml",
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" name="siblings" initial="idle">
+  <state id="idle">
+    <transition event="go" target="a b"/>
+  </state>
+  <state id="c" initial="a">
+    <state id="a"><transition event="back" target="idle"/></state>
+    <state id="b"><transition event="back" target="idle"/></state>
+  </state>
+</scxml>
+"#,
+    );
+    let err = compile_expect_err(dir.path(), "siblings.scxml");
+    let (position, breach) = specification_breach(&err);
+    assert_eq!(position, &StateSpecificationPosition::TransitionTarget);
+    assert_eq!(
+        breach,
+        &StateSpecificationBreach::NotParallel {
+            first: "a".into(),
+            second: "b".into(),
+            meet: Some("c".into()),
+        }
+    );
+}
+
+#[test]
+fn a_target_set_naming_a_state_and_its_descendant_is_rejected() {
+    let dir = tempdir().expect("tempdir");
+    write_fixture(
+        dir.path(),
+        "ancestor.scxml",
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" name="ancestor" initial="idle">
+  <state id="idle">
+    <transition event="go" target="par region_b"/>
+  </state>
+  <parallel id="par">
+    <state id="region_a"><transition event="back" target="idle"/></state>
+    <state id="region_b"><transition event="back" target="idle"/></state>
+  </parallel>
+</scxml>
+"#,
+    );
+    let err = compile_expect_err(dir.path(), "ancestor.scxml");
+    let (_, breach) = specification_breach(&err);
+    assert_eq!(
+        breach,
+        &StateSpecificationBreach::Ancestor {
+            ancestor: "par".into(),
+            descendant: "region_b".into(),
+        }
+    );
+}
+
+#[test]
+fn a_deep_initial_across_the_regions_of_a_parallel_is_accepted() {
+    // The shape W3C test 364 uses: `initial` names one state in each region.
+    let dir = tempdir().expect("tempdir");
+    write_fixture(
+        dir.path(),
+        "deep_initial.scxml",
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" name="deep_initial" initial="top">
+  <state id="top" initial="a2 b2">
+    <parallel id="par">
+      <state id="ra" initial="a1">
+        <state id="a1"/>
+        <state id="a2"><transition event="back" target="a1"/></state>
+      </state>
+      <state id="rb" initial="b1">
+        <state id="b1"/>
+        <state id="b2"><transition event="back" target="b1"/></state>
+      </state>
+    </parallel>
+  </state>
+</scxml>
+"#,
+    );
+    compile_positive(dir.path(), "deep_initial.scxml");
+}

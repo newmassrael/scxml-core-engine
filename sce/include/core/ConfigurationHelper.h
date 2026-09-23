@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <optional>
 #include <vector>
@@ -193,6 +194,104 @@ template <typename Policy>
     }
 
     return ConfigurationRejection::None;
+}
+
+/// §scxml-3.11: which rule a state SPECIFICATION breaks. A specification is
+/// what a transition's `target`, a state's `initial`, or a `<history>`
+/// default names — states, without their ancestors or default descendants —
+/// and it is legal when (1) no state on it is an ancestor of another and (2)
+/// adding all ancestors and default descendants yields a legal configuration.
+enum class SpecificationBreach {
+    None,
+    /// Rule 1: one state on the list is an ancestor of another.
+    Ancestor,
+    /// Rule 2: two states meet at a state that is not a `<parallel>` — a
+    /// compound state, or the `<scxml>` element — which holds exactly one
+    /// child in any configuration, so both cannot be active.
+    NotParallel,
+    /// An `initial` value or `<history>` default names a state outside the
+    /// state that holds it.
+    OutsideContainer,
+};
+
+/// A breach and the states it is about. `first` / `second` read per breach:
+/// `Ancestor` — the ancestor, then its descendant; `NotParallel` — the two
+/// states, with `meet` the state they meet at (`nullopt` = `<scxml>`);
+/// `OutsideContainer` — the state outside, then the container.
+template <typename State> struct SpecificationVerdict {
+    SpecificationBreach breach = SpecificationBreach::None;
+    State first{};
+    State second{};
+    std::optional<State> meet;
+};
+
+/// Whether `states` is a legal state specification — the rules
+/// `SpecificationBreach` names.
+///
+/// `parentOf(s)` answers the state `s` sits directly under, `nullopt` at the
+/// top of the document; a `<history>` answers the state it is declared in.
+/// `isParallel(s)` answers whether `s` is a `<parallel>`. `container` is the
+/// state an `initial` value or `<history>` default is restricted to the
+/// descendants of, and `nullopt` for a transition target.
+///
+/// Rule 2 is asked pairwise: adding two states' ancestors adds the state they
+/// meet at, and unless that is a `<parallel>` it holds only one of them. A
+/// state named twice is not a breach; the list is a set.
+///
+/// Lambda-injected so the Interpreter (string ids) and the generated code
+/// (enum states) ask one definition — the Rust generator's
+/// `scxml_references::specification_breach` is its twin, and the two must
+/// accept and refuse the same documents.
+template <typename State, typename ParentOf, typename IsParallel>
+[[nodiscard]] SpecificationVerdict<State> checkStateSpecification(const std::vector<State> &states,
+                                                                  const std::optional<State> &container,
+                                                                  ParentOf parentOf, IsParallel isParallel) {
+    const auto properAncestors = [&parentOf](const State &s) {
+        std::vector<State> out;
+        for (std::optional<State> p = parentOf(s); p.has_value(); p = parentOf(*p)) {
+            out.push_back(*p);
+        }
+        return out;
+    };
+    const auto contains = [](const std::vector<State> &list, const State &s) {
+        return std::find(list.begin(), list.end(), s) != list.end();
+    };
+
+    if (container.has_value()) {
+        for (const State &s : states) {
+            if (!contains(properAncestors(s), *container)) {
+                return {SpecificationBreach::OutsideContainer, s, *container, std::nullopt};
+            }
+        }
+    }
+    for (std::size_t i = 0; i < states.size(); ++i) {
+        for (std::size_t j = i + 1; j < states.size(); ++j) {
+            const State &first = states[i];
+            const State &second = states[j];
+            if (first == second) {
+                continue;
+            }
+            const std::vector<State> aboveFirst = properAncestors(first);
+            const std::vector<State> aboveSecond = properAncestors(second);
+            if (contains(aboveSecond, first)) {
+                return {SpecificationBreach::Ancestor, first, second, std::nullopt};
+            }
+            if (contains(aboveFirst, second)) {
+                return {SpecificationBreach::Ancestor, second, first, std::nullopt};
+            }
+            std::optional<State> meet;
+            for (const State &a : aboveFirst) {
+                if (contains(aboveSecond, a)) {
+                    meet = a;
+                    break;
+                }
+            }
+            if (!meet.has_value() || !isParallel(*meet)) {
+                return {SpecificationBreach::NotParallel, first, second, meet};
+            }
+        }
+    }
+    return {};
 }
 
 }  // namespace SCE::Core

@@ -1053,6 +1053,23 @@ TEST(SemanticErrorWire, TransitionTargetUnknownConformsToV1Schema) {
     EXPECT_EQ(j.at("fix").at("candidates").size(), 2u);
 }
 
+TEST(SemanticErrorWire, IllegalStateSpecificationConformsToV1Schema) {
+    // `validation/attribute-rule-violated` carries the rule in `expected`,
+    // the value in `actual`, and no `fix`: which state to drop is the
+    // author's decision, and the Rust arm offers none either.
+    using Leaf = SemanticIllegalStateSpecification;
+    const Leaf err(/*owner=*/"s1", Leaf::Position::TransitionTarget, /*value=*/"a b", Leaf::Breach::NotParallel,
+                   /*first=*/"a", /*second=*/"b", /*meet=*/std::string("c"));
+    const auto j = err.to_json();
+    semantic_conformance::assertSemanticBase(j, "validation/attribute-rule-violated");
+    conformance::assertNoUnexpectedKeys(j);
+    EXPECT_EQ(j.at("actual").get<std::string>(), "a b");
+    ASSERT_TRUE(j.contains("expected"));
+    EXPECT_EQ(j.at("expected").at(0).get<std::string>(), std::string(Leaf::rule()));
+    EXPECT_FALSE(j.contains("fix")) << j.dump();
+    EXPECT_NE(j.at("message").get<std::string>().find("meet at 'c'"), std::string::npos) << j.dump();
+}
+
 TEST(SemanticErrorWire, HistoryDefaultMissingConformsToV1Schema) {
     // The one leaf no conformance test reached. Nothing pointed at the
     // hole: the curated code lists in this file asserted their own

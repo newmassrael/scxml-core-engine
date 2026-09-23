@@ -200,6 +200,91 @@ private:
     std::vector<std::string> available_;
 };
 
+// A multi-state `target` or `initial` whose tokens all resolve and which is
+// still not a legal state specification (§scxml-3.11): two of its states
+// cannot be in one configuration together, or an `initial` / `<history>`
+// default names a state outside the state that holds it. Mirrors Rust
+// `ScxmlSemanticError::IllegalStateSpecification` and folds onto
+// `validation/attribute-rule-violated` (concept identity with forge
+// `ValidationError::AttributeRuleViolated`: the value breaks a rule its
+// position states). The rule rides `expected`; no `fix` is offered, because
+// which state to drop is the author's decision.
+//
+// The judgement itself is `SCE::Core::checkStateSpecification`, which this
+// leaf only reports. Message and key fragments are rendered exactly as the
+// Rust variant renders them — the cross-producer harness holds the ids to
+// agreement.
+class SemanticIllegalStateSpecification : public SemanticError {
+public:
+    enum class Position {
+        TransitionTarget,
+        StateInitial,
+        DocumentInitial,
+        HistoryDefault,
+    };
+
+    enum class Breach {
+        Ancestor,
+        NotParallel,
+        OutsideContainer,
+    };
+
+    // `first` / `second` read per breach: `Ancestor` — ancestor, descendant;
+    // `NotParallel` — the two states, `meet` where they meet (empty = the
+    // `<scxml>` element); `OutsideContainer` — the state outside, the
+    // container.
+    SemanticIllegalStateSpecification(std::string owner, Position position, std::string value, Breach breach,
+                                      std::string first, std::string second, std::optional<std::string> meet)
+        : SemanticError(renderMessage(owner, position, value, breach, first, second, meet),
+                        {"scxml-state:" + owner, positionKey(position), value}),
+          owner_(std::move(owner)), position_(position), value_(std::move(value)), breach_(breach),
+          first_(std::move(first)), second_(std::move(second)), meet_(std::move(meet)) {}
+
+    std::string_view code() const noexcept override {
+        return "validation/attribute-rule-violated";
+    }
+
+    nlohmann::ordered_json to_json() const override;
+
+    std::unique_ptr<Diagnostic> clone() const override {
+        return std::make_unique<SemanticIllegalStateSpecification>(*this);
+    }
+
+    const std::string &owner() const noexcept {
+        return owner_;
+    }
+
+    Position position() const noexcept {
+        return position_;
+    }
+
+    const std::string &value() const noexcept {
+        return value_;
+    }
+
+    Breach breach() const noexcept {
+        return breach_;
+    }
+
+    // The rule, stated as the value the position accepts. Identical to Rust
+    // `scxml_semantic::LEGAL_STATE_SPECIFICATION_RULE`.
+    static const char *rule() noexcept;
+
+private:
+    static std::string renderMessage(const std::string &owner, Position position, const std::string &value,
+                                     Breach breach, const std::string &first, const std::string &second,
+                                     const std::optional<std::string> &meet);
+    static std::string positionKey(Position position);
+
+    std::string owner_;
+    Position position_;
+    std::string value_;
+    Breach breach_;
+    std::string first_;
+    std::string second_;
+    std::optional<std::string> meet_;
+};
+
 // `<history>` element declares no default configuration. The spec
 // requires a single unconditional `<transition>` child naming the
 // configuration to enter when the parent state has no stored history;

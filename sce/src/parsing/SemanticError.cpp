@@ -57,6 +57,77 @@ nlohmann::ordered_json SemanticTransitionTargetUnknown::to_json() const {
     return out;
 }
 
+const char *SemanticIllegalStateSpecification::rule() noexcept {
+    return "W3C SCXML 3.11: a legal state specification -- no state on the list is an "
+           "ancestor of another, every two of them lie in different regions of a "
+           "<parallel>, and an initial or history default names only descendants of "
+           "the state that holds it";
+}
+
+std::string SemanticIllegalStateSpecification::positionKey(Position position) {
+    // `<element>-<attribute>`, as Rust's `StateSpecificationPosition::element_attribute`.
+    switch (position) {
+    case Position::TransitionTarget:
+        return "transition-target";
+    case Position::StateInitial:
+        return "state-initial";
+    case Position::DocumentInitial:
+        return "scxml-initial";
+    case Position::HistoryDefault:
+        return "history-default";
+    }
+    return "transition-target";
+}
+
+std::string SemanticIllegalStateSpecification::renderMessage(const std::string &owner, Position position,
+                                                             const std::string &value, Breach breach,
+                                                             const std::string &first, const std::string &second,
+                                                             const std::optional<std::string> &meet) {
+    // Rendered as Rust's `#[error]` on `IllegalStateSpecification` renders it.
+    std::string label;
+    switch (position) {
+    case Position::TransitionTarget:
+        label = "<transition target>";
+        break;
+    case Position::StateInitial:
+        label = "initial";
+        break;
+    case Position::DocumentInitial:
+        label = "<scxml initial>";
+        break;
+    case Position::HistoryDefault:
+        label = "the <history> default target";
+        break;
+    }
+    std::string clause;
+    switch (breach) {
+    case Breach::Ancestor:
+        clause = "'" + first + "' is an ancestor of '" + second + "', and both are on the list";
+        break;
+    case Breach::NotParallel:
+        clause = meet.has_value()
+                     ? "'" + first + "' and '" + second + "' meet at '" + *meet +
+                           "', which is not a <parallel>, so both cannot be active"
+                     : "'" + first + "' and '" + second +
+                           "' lie under different children of <scxml>, and a configuration holds exactly one";
+        break;
+    case Breach::OutsideContainer:
+        clause = "'" + first + "' is not a descendant of '" + second + "', which holds the value";
+        break;
+    }
+    return label + (owner.empty() ? std::string{} : " of '" + owner + "'") + " names \"" + value +
+           "\", which is not a legal state specification: " + clause + " -- W3C SCXML 3.11";
+}
+
+nlohmann::ordered_json SemanticIllegalStateSpecification::to_json() const {
+    // `validation/attribute-rule-violated` carries the rule in `expected` and
+    // the value in `actual`, and no `fix` — as the Rust arm does.
+    auto out = baseEnvelope();
+    out["expected"] = nlohmann::ordered_json::array({rule()});
+    out["actual"] = value_;
+    return out;
+}
+
 nlohmann::ordered_json SemanticHistoryDefaultMissing::to_json() const {
     auto out = baseEnvelope();
     // `validation/missing-element` carries `actual` (the offending

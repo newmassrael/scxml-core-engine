@@ -4,6 +4,7 @@
 #include "parsing/SCXMLParser.h"
 #include "GuardUtils.h"
 #include "backends/LogUtils.h"
+#include "core/ConfigurationHelper.h"
 #include "core/LogMacros.h"
 #include "parsing/Diagnostic.h"
 #include "parsing/IXMLParser.h"
@@ -613,6 +614,50 @@ bool SCE::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
         availableStateIds.push_back(s->getId());
     }
 
+    // §scxml-3.11: a `target` or `initial` naming several states must be a
+    // legal state specification. The judgement is the shared helper's
+    // (`SCE::Core::checkStateSpecification`); these adapt the Interpreter's
+    // string ids to it. A `<history>` answers the state it is declared in.
+    const auto parentOf = [&model](const std::string &id) -> std::optional<std::string> {
+        const IStateNode *node = model->findStateById(id);
+        if (node == nullptr || node->getParent() == nullptr) {
+            return std::nullopt;
+        }
+        return node->getParent()->getId();
+    };
+    const auto isParallel = [&model](const std::string &id) {
+        const IStateNode *node = model->findStateById(id);
+        return node != nullptr && node->getType() == Type::PARALLEL;
+    };
+    using Position = SCE::parsing::SemanticIllegalStateSpecification::Position;
+    const auto requireSpecification = [&](const std::string &owner, Position position,
+                                          const std::vector<std::string> &states,
+                                          const std::optional<std::string> &container) {
+        const auto verdict = SCE::Core::checkStateSpecification(states, container, parentOf, isParallel);
+        if (verdict.breach == SCE::Core::SpecificationBreach::None) {
+            return;
+        }
+        std::string value;
+        for (const auto &s : states) {
+            value += (value.empty() ? "" : " ") + s;
+        }
+        using Breach = SCE::parsing::SemanticIllegalStateSpecification::Breach;
+        Breach breach = Breach::OutsideContainer;
+        switch (verdict.breach) {
+        case SCE::Core::SpecificationBreach::Ancestor:
+            breach = Breach::Ancestor;
+            break;
+        case SCE::Core::SpecificationBreach::NotParallel:
+            breach = Breach::NotParallel;
+            break;
+        case SCE::Core::SpecificationBreach::OutsideContainer:
+        case SCE::Core::SpecificationBreach::None:
+            break;
+        }
+        throw SCE::parsing::SemanticIllegalStateSpecification(owner, position, value, breach, verdict.first,
+                                                              verdict.second, verdict.meet);
+    };
+
     // 2. Validate initial states (§scxml-3.3 — root-level initial)
     const auto &initialStates = model->getInitialStates();
     if (!initialStates.empty()) {
@@ -627,6 +672,7 @@ bool SCE::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
                     /*parent_id=*/std::string{}, availableStateIds);
             }
         }
+        requireSpecification(std::string{}, Position::DocumentInitial, initialStates, std::nullopt);
     }
 
     // 3. Validate state relationships
@@ -677,6 +723,19 @@ bool SCE::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
                 }
                 throw SCE::parsing::SemanticHistoryDefaultMissing(state->getId(), parentId, siblings);
             }
+            // §scxml-3.11: the default is a legal state specification of the
+            // containing state's descendants.
+            std::vector<std::string> defaults;
+            for (const auto &transition : state->getTransitions()) {
+                for (const auto &target : transition->getTargets()) {
+                    if (!target.empty()) {
+                        defaults.push_back(target);
+                    }
+                }
+            }
+            const IStateNode *container = state->getParent();
+            requireSpecification(state->getId(), Position::HistoryDefault, defaults,
+                                 container ? std::optional<std::string>(container->getId()) : std::nullopt);
         }
 
         // Validate transition target states (§scxml-3.5)
@@ -690,12 +749,21 @@ bool SCE::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
                     throw SCE::parsing::SemanticTransitionTargetUnknown(state->getId(), target, availableStateIds);
                 }
             }
+            // §scxml-3.11: the tokens together are a legal state specification.
+            std::vector<std::string> named;
+            for (const auto &target : targets) {
+                if (!target.empty()) {
+                    named.push_back(target);
+                }
+            }
+            requireSpecification(state->getId(), Position::TransitionTarget, named, std::nullopt);
         }
 
         // §scxml-3.3: Validate compound-state initial state(s)
         if (!state->getInitialState().empty() && state->getChildren().size() > 0) {
             std::istringstream iss(state->getInitialState());
             std::string initialStateId;
+            std::vector<std::string> initials;
             while (iss >> initialStateId) {
                 if (!model->findStateById(initialStateId)) {
                     // Same wire code as root-level (§wire-W5 D2 — one
@@ -706,7 +774,11 @@ bool SCE::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
                         initialStateId, SCE::parsing::SemanticInitialStateUnknown::Scope::CompoundState,
                         /*parent_id=*/state->getId(), availableStateIds);
                 }
+                initials.push_back(initialStateId);
             }
+            // §scxml-3.11: a legal state specification of this state's own
+            // descendants.
+            requireSpecification(state->getId(), Position::StateInitial, initials, state->getId());
         }
     }
 

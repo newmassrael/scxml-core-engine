@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cross-producer fixture: a `<transition target>` whose tokens all resolve and
+  which is not a legal state specification (W3C SCXML 3.11) — `a` and `b` are
+  two children of the compound state `c`, which holds exactly one child in any
+  configuration. key_fragments are (owning state, "transition-target", the
+  states as a whitespace-normalized list).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="s1">
+  <state id="s1">
+    <transition event="go" target="a b"/>
+  </state>
+  <state id="c" initial="a">
+    <state id="a"/>
+    <state id="b"/>
+  </state>
+</scxml>

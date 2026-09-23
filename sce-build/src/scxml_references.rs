@@ -9,7 +9,7 @@
 // `<state>` / `<parallel>` / `<final>` / `<history>` declared in that
 // document. This pass rejects the ones that do not.
 //
-// Two diagnostic surfaces, both REUSED from the existing wire-code
+// Three diagnostic surfaces, all REUSED from the existing wire-code
 // inventory (no new wire code):
 //
 //   * `ScxmlSemanticError::TransitionTargetUnknown` — a transition
@@ -22,6 +22,11 @@
 //   * `ScxmlSemanticError::InitialStateUnknown` (compound scope) — a
 //     compound state's `initial` token names nothing. The root-scope
 //     form is produced earlier by `analyzer::can_generate_static`.
+//   * `ScxmlSemanticError::IllegalStateSpecification` — every token
+//     resolves and the value, taken whole, is not a legal state
+//     specification (§scxml-3.11). Asked after the tokens resolve, of all
+//     four positions. Mirrors C++ `SemanticIllegalStateSpecification`,
+//     whose judgement is the shared `SCE::Core::checkStateSpecification`.
 //
 // Why the pass is load-bearing rather than a quality check: a target
 // that does not resolve reaches the emitters as a plain state name and
@@ -61,7 +66,9 @@
 
 use crate::forge::error::{ForgeError, Located, SourceLocation};
 use crate::model::SCXMLModel;
-use crate::scxml_semantic::{InitialStateScope, ScxmlSemanticError};
+use crate::scxml_semantic::{
+    InitialStateScope, ScxmlSemanticError, StateSpecificationBreach, StateSpecificationPosition,
+};
 
 /// Reject the document on the first unresolved state reference.
 /// Short-circuits like its sibling validators
@@ -120,7 +127,33 @@ pub fn validate(model: &SCXMLModel, diag_label: &str) -> Result<(), Located<Forg
                 ));
             }
         }
+        // §scxml-3.11: a legal state specification, restricted to the
+        // descendants of the state the `<history>` is declared in.
+        check_specification(
+            model,
+            history_id,
+            StateSpecificationPosition::HistoryDefault,
+            &info.default_target,
+            Some(&info.parent),
+            model
+                .states
+                .get(&info.parent)
+                .and_then(|s| s.source_location.as_ref()),
+            diag_label,
+        )?;
     }
+
+    // §scxml-3.11: `<scxml initial>` is a legal state specification. Its
+    // tokens were resolved before this pass (`analyzer::can_generate_static`).
+    check_specification(
+        model,
+        "",
+        StateSpecificationPosition::DocumentInitial,
+        &model.initial,
+        None,
+        None,
+        diag_label,
+    )?;
 
     // Document order keeps the first-fired diagnostic stable across
     // runs (`model.states` is keyed by id, not by position).
@@ -154,9 +187,21 @@ pub fn validate(model: &SCXMLModel, diag_label: &str) -> Result<(), Located<Forg
                 ));
             }
         }
+        // §scxml-3.11: a legal state specification of this state's own
+        // descendants.
+        check_specification(
+            model,
+            &state.id,
+            StateSpecificationPosition::StateInitial,
+            &state.initial,
+            Some(&state.id),
+            state.source_location.as_ref(),
+            diag_label,
+        )?;
 
         // §scxml-3.5 / §scxml-3.13: every whitespace-separated token of
-        // a multi-target attribute resolves independently.
+        // a multi-target attribute resolves independently — and then,
+        // §scxml-3.11, the tokens together are a legal state specification.
         for trans in &state.transitions {
             for token in trans.target.split_whitespace() {
                 if !resolves(model, token) {
@@ -170,6 +215,15 @@ pub fn validate(model: &SCXMLModel, diag_label: &str) -> Result<(), Located<Forg
                     ));
                 }
             }
+            check_specification(
+                model,
+                &state.id,
+                StateSpecificationPosition::TransitionTarget,
+                &trans.target,
+                None,
+                trans.source_location.as_ref(),
+                diag_label,
+            )?;
         }
     }
 
@@ -179,6 +233,120 @@ pub fn validate(model: &SCXMLModel, diag_label: &str) -> Result<(), Located<Forg
 /// True when `id` names a declared state or history pseudostate.
 fn resolves(model: &SCXMLModel, id: &str) -> bool {
     model.states.contains_key(id) || model.history_states.contains_key(id)
+}
+
+/// The state `id` sits directly under: a state's parent, or the state a
+/// `<history>` is declared in. `None` at the top of the document.
+fn parent_of<'a>(model: &'a SCXMLModel, id: &str) -> Option<&'a str> {
+    match model.states.get(id) {
+        Some(state) => state.parent.as_deref(),
+        None => model.history_states.get(id).map(|h| h.parent.as_str()),
+    }
+}
+
+/// `id`'s proper ancestors, nearest first.
+fn proper_ancestors<'a>(model: &'a SCXMLModel, id: &str) -> Vec<&'a str> {
+    let mut out = Vec::new();
+    let mut current = parent_of(model, id);
+    while let Some(parent) = current {
+        out.push(parent);
+        current = parent_of(model, parent);
+    }
+    out
+}
+
+/// The first breach of §scxml-3.11 in a resolved list of states, if any.
+///
+/// Rule 1 and rule 2 are asked of every pair. Rule 2 is the rule stated as
+/// "a full legal configuration results when all ancestors and default
+/// descendants have been added", read pairwise: adding two states'
+/// ancestors adds the state they meet at, and a configuration holding that
+/// state holds exactly one of its children unless it is a `<parallel>` —
+/// so any meeting point that is not a `<parallel>` (the `<scxml>` element
+/// included, whose configuration child is also unique) cannot hold both.
+///
+/// `container` is the state whose descendants an `initial` value or a
+/// `<history>` default is restricted to; `None` for a transition target
+/// and for `<scxml initial>`, whose states may lie anywhere.
+///
+/// A state named twice is not a breach: the list is a set.
+fn specification_breach(
+    model: &SCXMLModel,
+    states: &[&str],
+    container: Option<&str>,
+) -> Option<StateSpecificationBreach> {
+    if let Some(container) = container {
+        if let Some(outside) = states
+            .iter()
+            .find(|s| !proper_ancestors(model, s).contains(&container))
+        {
+            return Some(StateSpecificationBreach::OutsideContainer {
+                state: outside.to_string(),
+                container: container.to_string(),
+            });
+        }
+    }
+    for (i, first) in states.iter().enumerate() {
+        for second in &states[i + 1..] {
+            if first == second {
+                continue;
+            }
+            let above_first = proper_ancestors(model, first);
+            let above_second = proper_ancestors(model, second);
+            if above_second.contains(first) {
+                return Some(StateSpecificationBreach::Ancestor {
+                    ancestor: first.to_string(),
+                    descendant: second.to_string(),
+                });
+            }
+            if above_first.contains(second) {
+                return Some(StateSpecificationBreach::Ancestor {
+                    ancestor: second.to_string(),
+                    descendant: first.to_string(),
+                });
+            }
+            let meet = above_first.iter().find(|a| above_second.contains(a));
+            let parallel = meet
+                .and_then(|m| model.states.get(*m))
+                .is_some_and(|s| s.is_parallel);
+            if !parallel {
+                return Some(StateSpecificationBreach::NotParallel {
+                    first: first.to_string(),
+                    second: second.to_string(),
+                    meet: meet.map(|m| m.to_string()),
+                });
+            }
+        }
+    }
+    None
+}
+
+/// Refuse `value` at `position` when its resolved states break §scxml-3.11.
+fn check_specification(
+    model: &SCXMLModel,
+    owner: &str,
+    position: StateSpecificationPosition,
+    value: &str,
+    container: Option<&str>,
+    at: Option<&SourceLocation>,
+    diag_label: &str,
+) -> Result<(), Located<ForgeError>> {
+    let states: Vec<&str> = value.split_whitespace().collect();
+    match specification_breach(model, &states, container) {
+        None => Ok(()),
+        Some(breach) => Err(located(
+            ScxmlSemanticError::IllegalStateSpecification {
+                owner: owner.to_string(),
+                position,
+                value: value.to_string(),
+                breach,
+            }
+            .into(),
+            at,
+            diag_label,
+            model,
+        )),
+    }
 }
 
 /// Direct children of `parent_id` in document order — the legal set
@@ -307,14 +475,18 @@ mod tests {
         // legal shape.
         let mut a = state("a", 0);
         a.transitions.push(transition_to("h"));
-        let mut model = model_with(vec![a, state("b", 1)]);
+        let mut b1 = state("b1", 2);
+        b1.parent = Some("b".to_string());
+        let mut model = model_with(vec![a, state("b", 1), b1]);
         model.history_states.insert(
             "h".to_string(),
             HistoryInfo {
                 parent: "b".to_string(),
                 history_type: "shallow".to_string(),
                 leaf_target: String::new(),
-                default_target: "b".to_string(),
+                // A history default names descendants of the state it is
+                // declared in (W3C SCXML 3.11) — `b1`, not `b` itself.
+                default_target: "b1".to_string(),
                 default_actions: Vec::new(),
             },
         );
@@ -407,5 +579,155 @@ mod tests {
             },
             other => panic!("expected ForgeError::Scxml, got {other:?}"),
         }
+    }
+
+    // ── A legal state specification (W3C SCXML 3.11) ──────────────────
+
+    fn under(id: &str, order: u32, parent: &str) -> State {
+        let mut s = state(id, order);
+        s.parent = Some(parent.to_string());
+        s
+    }
+
+    /// `top` holds `p`, a `<parallel>` of regions `ra` and `rb`, each with
+    /// two leaves; `other` is a second top-level state.
+    fn two_regions() -> Vec<State> {
+        let mut p = under("p", 1, "top");
+        p.is_parallel = true;
+        vec![
+            state("top", 0),
+            p,
+            under("ra", 2, "p"),
+            under("a1", 3, "ra"),
+            under("a2", 4, "ra"),
+            under("rb", 5, "p"),
+            under("b1", 6, "rb"),
+            state("other", 7),
+        ]
+    }
+
+    fn breach_of(
+        model: &SCXMLModel,
+    ) -> (StateSpecificationPosition, String, StateSpecificationBreach) {
+        let err = validate(model, "probe.scxml").expect_err("must reject");
+        match err.error {
+            ForgeError::Scxml(boxed) => match *boxed {
+                ScxmlSemanticError::IllegalStateSpecification {
+                    position,
+                    value,
+                    breach,
+                    ..
+                } => (position, value, breach),
+                other => panic!("expected IllegalStateSpecification, got {other:?}"),
+            },
+            other => panic!("expected ForgeError::Scxml, got {other:?}"),
+        }
+    }
+
+    fn with_transition(mut states: Vec<State>, from: &str, target: &str) -> SCXMLModel {
+        states
+            .iter_mut()
+            .find(|s| s.id == from)
+            .expect("source state")
+            .transitions
+            .push(transition_to(target));
+        model_with(states)
+    }
+
+    #[test]
+    fn a_target_set_across_the_regions_of_a_parallel_is_legal() {
+        let model = with_transition(two_regions(), "other", "a1 b1");
+        assert!(validate(&model, "probe.scxml").is_ok());
+    }
+
+    #[test]
+    fn two_children_of_one_compound_state_are_not() {
+        let model = with_transition(two_regions(), "other", "a1 a2");
+        let (position, value, breach) = breach_of(&model);
+        assert_eq!(position, StateSpecificationPosition::TransitionTarget);
+        assert_eq!(value, "a1 a2");
+        assert_eq!(
+            breach,
+            StateSpecificationBreach::NotParallel {
+                first: "a1".into(),
+                second: "a2".into(),
+                meet: Some("ra".into()),
+            }
+        );
+    }
+
+    #[test]
+    fn two_top_level_states_meet_at_the_document_and_are_not_legal() {
+        let model = with_transition(two_regions(), "a1", "top other");
+        let (_, _, breach) = breach_of(&model);
+        assert_eq!(
+            breach,
+            StateSpecificationBreach::NotParallel {
+                first: "top".into(),
+                second: "other".into(),
+                meet: None,
+            }
+        );
+    }
+
+    #[test]
+    fn a_state_and_its_own_descendant_are_not() {
+        let model = with_transition(two_regions(), "other", "b1 p");
+        let (_, _, breach) = breach_of(&model);
+        assert_eq!(
+            breach,
+            StateSpecificationBreach::Ancestor {
+                ancestor: "p".into(),
+                descendant: "b1".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn a_state_named_twice_is_a_set_of_one() {
+        let model = with_transition(two_regions(), "other", "a1 a1");
+        assert!(validate(&model, "probe.scxml").is_ok());
+    }
+
+    #[test]
+    fn an_initial_names_only_descendants_of_its_state() {
+        let mut states = two_regions();
+        states.iter_mut().find(|s| s.id == "ra").unwrap().initial = "a1 b1".into();
+        let (position, _, breach) = breach_of(&model_with(states));
+        assert_eq!(position, StateSpecificationPosition::StateInitial);
+        assert_eq!(
+            breach,
+            StateSpecificationBreach::OutsideContainer {
+                state: "b1".into(),
+                container: "ra".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn a_deep_initial_across_regions_is_legal() {
+        let mut states = two_regions();
+        states.iter_mut().find(|s| s.id == "top").unwrap().initial = "a2 b1".into();
+        assert!(validate(&model_with(states), "probe.scxml").is_ok());
+    }
+
+    #[test]
+    fn a_history_default_is_held_to_the_same_rule() {
+        let mut model = model_with(two_regions());
+        model.history_states.insert(
+            "h".into(),
+            HistoryInfo {
+                parent: "ra".into(),
+                history_type: "deep".into(),
+                default_target: "a1 a2".into(),
+                ..Default::default()
+            },
+        );
+        let (position, _, breach) = breach_of(&model);
+        assert_eq!(position, StateSpecificationPosition::HistoryDefault);
+        assert!(matches!(
+            breach,
+            StateSpecificationBreach::NotParallel { .. }
+        ));
     }
 }

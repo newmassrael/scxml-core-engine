@@ -2324,8 +2324,8 @@ document. Four reference positions carry the rule:
 
 | Position | Spec | Rule |
 |---|---|---|
-| `<transition target>` | W3C SCXML §3.5, §3.13 | Every whitespace-separated token resolves independently. A targetless transition (no `target` attribute) is not a reference. |
-| `<state initial>` | W3C SCXML §3.3 | Every token names a child of the owning state. |
+| `<transition target>` | W3C SCXML §3.5, §3.11, §3.13 | Every whitespace-separated token resolves independently, and the tokens together are a legal state specification. A targetless transition (no `target` attribute) is not a reference. |
+| `<state initial>` | W3C SCXML §3.3, §3.11 | Every token resolves to a descendant of the owning state, and the tokens together are a legal state specification. |
 | `<initial>` child | W3C SCXML §3.6 | The initial element's transition target resolves; the parser folds it into the owning state's `initial`. |
 | `<history>` default | W3C SCXML §3.10.2 | The default `<transition>` child is **required**, and its target resolves. |
 
@@ -2342,14 +2342,32 @@ Rejection codes:
   because without it the pseudostate can never be entered. The legal
   default targets travel in `message` — SCE_ERROR_CONTRACT §3.1 has no
   add-child-element `fix` variant.
+- `validation/attribute-rule-violated` — every token resolves and the
+  value, taken whole, is not a **legal state specification** (W3C SCXML
+  §3.11). All four positions carry the rule: no state on the list is an
+  ancestor of another; every two of them meet at a `<parallel>` (a
+  compound state or `<scxml>` holds one child, so two states meeting there
+  cannot both be active); and an `initial` or `<history>` default names
+  only descendants of the state that holds it. `expected` carries the
+  rule and `actual` the value as written; no `fix` is offered, because
+  which state to drop is the author's decision. The identifier normalizes
+  the value's whitespace, since the C++ Interpreter holds it only as a
+  list. ⚠ Before this rule every engine accepted such a value in silence —
+  the reference pass asks each token alone — and what an engine does with
+  one is unspecified. A state named twice is not a breach; the list is a
+  set.
 
-Both rules are enforced on every path that parses a document, and both
+These rules are enforced on every path that parses a document, and both
 engines carry them: the Rust producers are
 `sce-build/src/scxml_references.rs` and the `<history>` arm of
 `parser.rs`, and the C++ Interpreter's counterparts are
 `SemanticTransitionTargetUnknown` / `SemanticInitialStateUnknown` /
-`SemanticHistoryDefaultMissing` thrown from
-`SCXMLParser::validateModel`.
+`SemanticHistoryDefaultMissing` / `SemanticIllegalStateSpecification`
+thrown from `SCXMLParser::validateModel`. The legal-specification
+judgement on the C++ side is `SCE::Core::checkStateSpecification`
+(`sce/include/core/ConfigurationHelper.h`), shared with the generated
+code; `tests/parsing/fixtures/cross_producer/` holds the two producers to
+one code and one identifier for it.
 
 Why these are rejections rather than warnings: the code generators
 lower a transition target to a `State` enum variant. An id that names

@@ -9111,6 +9111,41 @@ fn scxml_semantic_fields(e: &crate::scxml_semantic::ScxmlSemanticError) -> Diagn
                 target.clone(),
             ],
         },
+        ScxmlSemanticError::IllegalStateSpecification {
+            owner,
+            position,
+            value,
+            breach: _,
+        } => {
+            let (element, attr) = position.element_attribute();
+            DiagnosticPayload {
+                // REUSE — same wire code as forge
+                // `ValidationError::AttributeRuleViolated`. Concept identity:
+                // every token resolves, and the value as a whole breaks the
+                // rule its position states. The rule rides `expected` and no
+                // `fix` is offered: which state to drop is the author's
+                // decision, and §3 spells a rejection no local edit names
+                // with `expected` alone.
+                code: DiagnosticCode::ValidationAttributeRuleViolated,
+                stage: Stage::Validation,
+                expected: Some(vec![
+                    crate::scxml_semantic::LEGAL_STATE_SPECIFICATION_RULE.to_string()
+                ]),
+                actual: Some(value.clone()),
+                fix: None,
+                // The owner and position keep the same bad value written in
+                // two places distinguishable in the content-hash id. The
+                // value enters the id with its whitespace normalized: it is
+                // a list of states, and the C++ producer holds it only as
+                // that list, so `actual` keeps the spelling (§3.1.1) while the
+                // id keeps the identity both producers can compute.
+                key_fragments: vec![
+                    format!("scxml-state:{owner}"),
+                    format!("{element}-{attr}"),
+                    value.split_whitespace().collect::<Vec<_>>().join(" "),
+                ],
+            }
+        }
         ScxmlSemanticError::HistoryDefaultTransitionMissing {
             history_id,
             parent_id,

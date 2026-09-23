@@ -704,6 +704,46 @@
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "execute_exit_actions",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/parsing/SemanticError.h",
+          "symbol": "SemanticIllegalStateSpecification",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/scxml_references.rs",
+          "symbol": "specification_breach",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/ConfigurationHelper.h",
+          "symbol": "checkStateSpecification",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/ConfigurationHelper.h",
+          "symbol": "SpecificationBreach",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/scxml_references.rs",
+          "symbol": "validate",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/scxml_references.rs",
+          "symbol": "check_specification",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/parsing/SCXMLParser.cpp",
+          "symbol": "SCE::SCXMLParser::validateModel",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/scxml_semantic.rs",
+          "symbol": "ScxmlSemanticError",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -16954,6 +16994,30 @@
       "target_kind": "section",
       "target_id": "scxml-6.2",
       "reason": "Its citation moved with the orchestrator body into compile_document_set; the binding follows the code."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.11",
+      "reason": "The citations sit inside SCE::SCXMLParser::validateModel; the symbol was recorded without its namespace."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.11",
+      "reason": "The variant doc comments resolve to the enclosing enum ScxmlSemanticError; a variant path is not a symbol the resolver yields."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.11",
+      "reason": "A test module header; it no longer cites the section, and a verifies binding needs a confirmation it does not carry."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.11",
+      "reason": "A test site; its comment no longer cites the section, and a verifies binding needs a confirmation this test does not carry."
     }
   ],
   "frames": {},

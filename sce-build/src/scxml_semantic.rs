@@ -23,6 +23,11 @@
 //!   `validation/missing-element` (REUSE — concept identity with forge
 //!   `ValidationError::MissingElement`: a required child element is
 //!   absent)
+//! - [`ScxmlSemanticError::IllegalStateSpecification`] →
+//!   `validation/attribute-rule-violated` (REUSE — concept identity with
+//!   forge `ValidationError::AttributeRuleViolated`: every token of the
+//!   value resolves, and the value as a whole breaks a rule the position
+//!   states)
 //! - [`ScxmlSemanticError::NoStates`] →
 //!   `validation/empty-collection` (REUSE)
 //! - [`ScxmlSemanticError::TopLevelScriptUnloaded`] →
@@ -118,6 +123,68 @@ impl std::fmt::Display for InitialStateScope {
     }
 }
 
+/// Where a state specification is written — the four positions §scxml-3.11
+/// holds to the same rule.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StateSpecificationPosition {
+    /// `<transition target="...">` of a state.
+    TransitionTarget,
+    /// `initial="..."` of a compound state, or the target of its
+    /// `<initial>` child, which the parser folds into the attribute.
+    StateInitial,
+    /// `<scxml initial="...">`.
+    DocumentInitial,
+    /// The target of a `<history>`'s default `<transition>`.
+    HistoryDefault,
+}
+
+impl StateSpecificationPosition {
+    /// The element and attribute the value is written on, for the wire. A
+    /// `<history>` default is written on its `<transition>` child; `default`
+    /// names that position. Mirrored by the C++
+    /// `SemanticIllegalStateSpecification`, whose key fragments must agree.
+    pub fn element_attribute(&self) -> (&'static str, &'static str) {
+        match self {
+            StateSpecificationPosition::TransitionTarget => ("transition", "target"),
+            StateSpecificationPosition::StateInitial => ("state", "initial"),
+            StateSpecificationPosition::DocumentInitial => ("scxml", "initial"),
+            StateSpecificationPosition::HistoryDefault => ("history", "default"),
+        }
+    }
+}
+
+/// Which rule of §scxml-3.11 a state specification breaks, and the states
+/// that break it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StateSpecificationBreach {
+    /// Rule 1: `ancestor` is an ancestor of `descendant`, and both are on
+    /// the list.
+    Ancestor {
+        ancestor: String,
+        descendant: String,
+    },
+    /// Rule 2: `first` and `second` meet at `meet` (`None` = the `<scxml>`
+    /// element), which is not a `<parallel>`, so adding their ancestors would
+    /// put two children of one compound state — or two children of
+    /// `<scxml>` — in the configuration at once.
+    NotParallel {
+        first: String,
+        second: String,
+        meet: Option<String>,
+    },
+    /// The additional requirement on an `initial` value and a `<history>`
+    /// default: every state is a descendant of `container`, and `state` is
+    /// not.
+    OutsideContainer { state: String, container: String },
+}
+
+/// The rule, stated as the value the position accepts.
+pub const LEGAL_STATE_SPECIFICATION_RULE: &str =
+    "W3C SCXML 3.11: a legal state specification -- no state on the list is an \
+     ancestor of another, every two of them lie in different regions of a \
+     <parallel>, and an initial or history default names only descendants of \
+     the state that holds it";
+
 /// SCXML post-parse semantic failures.
 ///
 /// Each variant maps to a stable wire `DiagnosticCode` via
@@ -181,6 +248,67 @@ pub enum ScxmlSemanticError {
         /// `parent_id`'s children in document order — the legal
         /// default-configuration set the author picks from.
         available: Vec<String>,
+    },
+
+    /// A multi-state target or initial value whose tokens all resolve, and
+    /// which is still not a legal state specification (§scxml-3.11): two of
+    /// its states cannot be in one configuration together.
+    ///
+    /// ⚠ Every engine used to accept this without a word, because the
+    /// reference pass asks each token alone whether it names a state. A
+    /// conformant document "MUST either be empty or contain a legal state
+    /// specification", and what an illegal one does is unspecified: entering
+    /// both would put two children of one compound state in the
+    /// configuration, which §scxml-3.11 forbids outright.
+    ///
+    /// Mirrors C++ `SemanticIllegalStateSpecification`.
+    #[error(
+        "{}{} names \"{value}\", which is not a legal state specification: {} \
+         -- W3C SCXML 3.11",
+        match position {
+            StateSpecificationPosition::TransitionTarget => "<transition target>",
+            StateSpecificationPosition::StateInitial => "initial",
+            StateSpecificationPosition::DocumentInitial => "<scxml initial>",
+            StateSpecificationPosition::HistoryDefault => "the <history> default target",
+        },
+        if owner.is_empty() { String::new() } else { format!(" of '{owner}'") },
+        match breach {
+            StateSpecificationBreach::Ancestor { ancestor, descendant } => format!(
+                "'{ancestor}' is an ancestor of '{descendant}', and both are on \
+                 the list"
+            ),
+            StateSpecificationBreach::NotParallel {
+                first,
+                second,
+                meet: Some(meet),
+            } => format!(
+                "'{first}' and '{second}' meet at '{meet}', which is not a \
+                 <parallel>, so both cannot be active"
+            ),
+            StateSpecificationBreach::NotParallel {
+                first,
+                second,
+                meet: None,
+            } => format!(
+                "'{first}' and '{second}' lie under different children of \
+                 <scxml>, and a configuration holds exactly one"
+            ),
+            StateSpecificationBreach::OutsideContainer { state, container } => format!(
+                "'{state}' is not a descendant of '{container}', which holds \
+                 the value"
+            ),
+        }
+    )]
+    IllegalStateSpecification {
+        /// The state the value is written on — for a `<history>` default,
+        /// the history's id. Empty for `<scxml initial>`.
+        owner: String,
+        /// Which position the value sits in.
+        position: StateSpecificationPosition,
+        /// The value as written.
+        value: String,
+        /// Which rule it breaks, and the states that break it.
+        breach: StateSpecificationBreach,
     },
 
     /// SCXML document has no top-level `<state>`, `<parallel>`, or
@@ -689,6 +817,16 @@ mod tests {
                 parent_id: "p".into(),
                 available: vec![],
             },
+            ScxmlSemanticError::IllegalStateSpecification {
+                owner: "s".into(),
+                position: StateSpecificationPosition::TransitionTarget,
+                value: "a b".into(),
+                breach: StateSpecificationBreach::NotParallel {
+                    first: "a".into(),
+                    second: "b".into(),
+                    meet: Some("p".into()),
+                },
+            },
             ScxmlSemanticError::NoStates,
             ScxmlSemanticError::UnsupportedDatamodel {
                 declared: "xpath".into(),
@@ -769,7 +907,7 @@ mod tests {
 
     /// Number of arms in [`variant_name`]. Kept next to it so the two
     /// move together.
-    const VARIANT_COUNT: usize = 14;
+    const VARIANT_COUNT: usize = 15;
 
     /// Exhaustive discriminant projection — the compile-time half of
     /// `every_variant_routes_through_forge_error`'s coverage claim.
@@ -780,6 +918,7 @@ mod tests {
             ScxmlSemanticError::HistoryDefaultTransitionMissing { .. } => {
                 "HistoryDefaultTransitionMissing"
             }
+            ScxmlSemanticError::IllegalStateSpecification { .. } => "IllegalStateSpecification",
             ScxmlSemanticError::NoStates => "NoStates",
             ScxmlSemanticError::UnsupportedDatamodel { .. } => "UnsupportedDatamodel",
             ScxmlSemanticError::NullDatamodelForbidsConstruct { .. } => {
@@ -902,18 +1041,24 @@ mod tests {
             // a statechart) — so no new wire code, only a second producer
             // of an existing one.
             ("validation/wrong-pipeline", "SemanticWrongPipeline"),
+            // The legal-state-specification leaf (`IllegalStateSpecification`
+            // cites the rule): reuses the rule-violation code.
+            (
+                "validation/attribute-rule-violated",
+                "SemanticIllegalStateSpecification",
+            ),
         ];
         assert_eq!(
             rust_to_cpp.len(),
-            6,
-            "Expected 6 W5 leaves (§wire-W5 D2 inventory: 1 NEW + 5 REUSED)"
+            7,
+            "Expected 7 W5 leaves (§wire-W5 D2 inventory: 1 NEW + 6 REUSED)"
         );
 
         let expected_cpp: BTreeSet<&str> = rust_to_cpp.iter().map(|(_, cpp)| *cpp).collect();
         assert_eq!(
             expected_cpp.len(),
-            6,
-            "Expected 6 distinct SemanticError subtypes"
+            7,
+            "Expected 7 distinct SemanticError subtypes"
         );
 
         let hdr = include_str!("../../sce/include/parsing/SemanticError.h");
@@ -984,8 +1129,12 @@ mod tests {
                 "SemanticTopLevelScriptUnloaded",
                 "scxml/top-level-script-unloaded",
             ),
+            (
+                "SemanticIllegalStateSpecification",
+                "validation/attribute-rule-violated",
+            ),
         ];
-        assert_eq!(class_to_code.len(), 5);
+        assert_eq!(class_to_code.len(), 6);
 
         let hdr = include_str!("../../sce/include/parsing/SemanticError.h");
 
