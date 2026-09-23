@@ -127,6 +127,28 @@
       }
     },
     {
+      "name": "transform_extreme_literals",
+      "kind": "transform",
+      "ref_section": "pure_functions",
+      "args": [
+        "u64"
+      ],
+      "compound_outputs": [
+        {
+          "key": "flipped",
+          "function": "compute_flipped",
+          "type": "u64",
+          "compare": "equality"
+        },
+        {
+          "key": "lowest",
+          "function": "compute_lowest",
+          "type": "i64",
+          "compare": "equality"
+        }
+      ]
+    },
+    {
       "name": "transform_narrowing_wraps",
       "kind": "transform",
       "ref_section": "pure_functions",

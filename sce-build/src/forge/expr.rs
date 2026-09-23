@@ -646,6 +646,54 @@ fn integer_literal_value(text: &str) -> Option<u64> {
     u64::from_str_radix(digits, radix).ok()
 }
 
+/// An integer literal no bare spelling carries into C, C++ or Kotlin: its
+/// size passes `i64::MAX`. [`reject_out_of_range_literals`] has held every
+/// literal to its type, so there are exactly two — a `uint64` value above
+/// `i64::MAX`, and `int64`'s minimum, the negation of `2^63`.
+///
+/// ⚠ Both were emitted bare until 2026-09-24: gcc and g++ refuse a decimal
+/// constant that large under `-Werror` ("so large that it is unsigned"),
+/// and kotlinc refuses it outright ("value out of range").
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WideLiteral {
+    Unsigned,
+    Int64Min,
+}
+
+/// `node` as a [`WideLiteral`], when it is one.
+fn wide_literal(node: &TypedExpr) -> Option<WideLiteral> {
+    const LONG_MAX: u64 = i64::MAX.unsigned_abs();
+    let magnitude = |kind: &ExprKind| match kind {
+        ExprKind::NumberLit(text) if !is_float_literal_text(text) => integer_literal_value(text),
+        _ => None,
+    };
+    match &node.kind {
+        ExprKind::Unary {
+            op: UnaryOp::Neg,
+            operand,
+        } => (magnitude(&operand.kind) == Some(LONG_MAX + 1)).then_some(WideLiteral::Int64Min),
+        kind => magnitude(kind)
+            .filter(|value| *value > LONG_MAX)
+            .map(|_| WideLiteral::Unsigned),
+    }
+}
+
+/// `INT64_MIN` in C and C++. `-9223372036854775808LL` negates a constant
+/// `long long` cannot hold, so the value is spelled as an expression.
+pub(crate) const C_INT64_MIN: &str = "(-9223372036854775807LL - 1)";
+
+/// `node`, of integer type `to`, as C and C++ spell it when it is a
+/// [`WideLiteral`]; `None` for anything else, which stands as emitted.
+fn c_family_wide_literal(raw: &str, to: InferredType, node: &TypedExpr) -> Option<String> {
+    if !matches!(to.strip_quantity(), InferredType::Int { .. }) {
+        return None;
+    }
+    Some(match wide_literal(node)? {
+        WideLiteral::Unsigned => format!("{raw}ULL"),
+        WideLiteral::Int64Min => C_INT64_MIN.to_string(),
+    })
+}
+
 /// Refuse a call of a function `ctx` registers — an imported function, a
 /// `<sce:helper>`, a stateful import's method — whose arguments do not fit
 /// its signature: more or fewer than it takes, refused at the callee, or
@@ -3754,6 +3802,9 @@ fn c_family_float_name(expected: InferredType) -> &'static str {
 
 fn cpp_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExpr) -> String {
     use InferredType::*;
+    if let Some(spelled) = c_family_wide_literal(&raw, to, node) {
+        return spelled;
+    }
     if from == to || matches!(to, Unknown) || matches!(from, Unknown) {
         return raw;
     }
@@ -4203,6 +4254,15 @@ fn kotlin_binop(op: BinOp) -> &'static str {
 /// expected parent type.
 fn kotlin_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExpr) -> String {
     use InferredType::*;
+    // Kotlin has no bare literal past `Long`: the unsigned value takes the
+    // `uL` suffix, and `Long`'s minimum is its named constant.
+    if matches!(to.strip_quantity(), Int { .. }) {
+        match wide_literal(node) {
+            Some(WideLiteral::Unsigned) => return format!("{raw}uL"),
+            Some(WideLiteral::Int64Min) => return "Long.MIN_VALUE".to_string(),
+            None => {}
+        }
+    }
     if from == to || matches!(to, Unknown) {
         return raw;
     }
@@ -5652,6 +5712,9 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
 
 fn c_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExpr) -> String {
     use InferredType::*;
+    if let Some(spelled) = c_family_wide_literal(&raw, to, node) {
+        return spelled;
+    }
     if from == to || matches!(to, Unknown) || matches!(from, Unknown) {
         return raw;
     }
@@ -6430,6 +6493,67 @@ mod tests {
         // A real context, or none, holds any integer literal.
         assert_eq!(judged("300", float(64)), Ok(()));
         assert_eq!(judged("300", InferredType::Unknown), Ok(()));
+    }
+
+    #[test]
+    fn a_literal_past_long_is_spelled_as_each_backend_reads_it() {
+        let ctx = TypeCtx::new();
+        let emit = |expr: &str, target: ExprTarget, to: InferredType| {
+            transpile_typed(expr, target, &ctx, &empty_renames(), to).unwrap()
+        };
+        let (unsigned64, signed64) = (int(false, 64), int(true, 64));
+        for (target, max, min) in [
+            (
+                ExprTarget::C,
+                "18446744073709551615ULL",
+                "(-9223372036854775807LL - 1)",
+            ),
+            (
+                ExprTarget::Cpp,
+                "18446744073709551615ULL",
+                "(-9223372036854775807LL - 1)",
+            ),
+            (
+                ExprTarget::Kotlin,
+                "18446744073709551615uL",
+                "Long.MIN_VALUE",
+            ),
+            (
+                ExprTarget::Rust,
+                "18446744073709551615",
+                "-9223372036854775808",
+            ),
+            (
+                ExprTarget::Go,
+                "18446744073709551615",
+                "-9223372036854775808",
+            ),
+            (
+                ExprTarget::Python,
+                "18446744073709551615",
+                "-9223372036854775808",
+            ),
+        ] {
+            assert_eq!(
+                emit("18446744073709551615", target, unsigned64),
+                max,
+                "{target:?}"
+            );
+            assert_eq!(
+                emit("-9223372036854775808", target, signed64),
+                min,
+                "{target:?}"
+            );
+        }
+        // Within `Long` the literal stands as it always did.
+        assert_eq!(
+            emit("9223372036854775807", ExprTarget::C, unsigned64),
+            "9223372036854775807"
+        );
+        assert_eq!(
+            emit("-9223372036854775807", ExprTarget::Kotlin, signed64),
+            "-9223372036854775807"
+        );
     }
 
     #[test]

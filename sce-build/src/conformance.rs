@@ -772,11 +772,10 @@ pub fn c_literal_for(value: &serde_json::Value, ty: &str) -> String {
         }
         (serde_json::Value::Number(n), "i64") => {
             // An `LL` suffix keeps a value past INT_MAX from being typed as
-            // the default ladder picks it. `INT64_MIN` has no literal form:
-            // `-9223372036854775808LL` is the negation of a literal that
-            // does not fit `long long`, so it is spelled as an expression.
+            // the default ladder picks it. `INT64_MIN` has no literal form,
+            // so it is the one expression the forge emitters spell it as.
             match n.as_i64() {
-                Some(i64::MIN) => "(-9223372036854775807LL - 1)".into(),
+                Some(i64::MIN) => crate::forge::expr::C_INT64_MIN.into(),
                 Some(i) => format!("{i}LL"),
                 None => format!("/* i64 oracle value out of range: {n} */"),
             }

@@ -275,6 +275,33 @@
         }
       ]
     },
+    "transform_extreme_literals": {
+      "fixture": "compute_flipped / compute_lowest",
+      "signature": "(word: u64) -> {flipped: u64, lowest: i64}",
+      "formula": "flipped = word ^ 18446744073709551615 (every bit inverted); lowest = -9223372036854775808, the int64 minimum, whatever the input",
+      "cases": [
+        {
+          "args": [0],
+          "expected": {"flipped": 18446744073709551615, "lowest": -9223372036854775808},
+          "note": "THE discriminator — u64::MAX and i64::MIN as the backends' own literals; C, C++ and Kotlin refused both spelled bare"
+        },
+        {
+          "args": [18446744073709551615],
+          "expected": {"flipped": 0, "lowest": -9223372036854775808},
+          "note": "every bit set inverts to none"
+        },
+        {
+          "args": [9223372036854775808],
+          "expected": {"flipped": 9223372036854775807, "lowest": -9223372036854775808},
+          "note": "only the top bit set — past i64::MAX on the way in, i64::MAX on the way out"
+        },
+        {
+          "args": [1],
+          "expected": {"flipped": 18446744073709551614, "lowest": -9223372036854775808},
+          "note": "the low bit alone"
+        }
+      ]
+    },
     "transform_narrowing_wraps": {
       "fixture": "compute_low / compute_low_from_signed / compute_narrow_signed",
       "signature": "(wide: u32, signed_wide: i32, big: i64) -> {low: u8, low_from_signed: u8, narrow_signed: i32}",

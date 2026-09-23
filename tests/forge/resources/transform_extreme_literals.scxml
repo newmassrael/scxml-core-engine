@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: transform kind — integer literals at the 64-bit
+     extremes. uint64's largest value masks the input, and int64's smallest
+     is an output of its own. Each backend spells them its own way: C and
+     C++ refuse either bare (a decimal constant that large is "so large
+     that it is unsigned"), and Kotlin has no bare literal past Long. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="transform" name="extreme_literals">
+  <datamodel>
+    <data id="word" sce:type="uint64" sce:direction="in"/>
+    <data id="flipped" sce:type="uint64" sce:direction="out"
+          expr="word ^ 18446744073709551615"/>
+    <data id="lowest" sce:type="int64" sce:direction="out"
+          expr="-9223372036854775808"/>
+  </datamodel>
+</scxml>
