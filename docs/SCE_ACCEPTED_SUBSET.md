@@ -1481,7 +1481,11 @@ name** — `expression/unsupported-builtin`:
   `push`, `replace`, `reverse`, `slice`, `sort`, `split`, `substring`,
   `toLowerCase`, `toString`, `toUpperCase`, plus `length` as a
   property; the diagnostic carries that list as its
-  `fix: replace_one_of` candidates.
+  `fix: replace_one_of` candidates. The method is named without the
+  call — `actual` is `.map`, a candidate `.join` — because the call
+  carries the author's arguments: the name is what stands on the
+  reported row, and a candidate replaces it and leaves the arguments
+  where they were written.
 - **Members of a namespace SCE installs.** `Math` — the functions of
   ECMA-262 15.8.2 minus the names Lua has no primitive for, and all
   eight constants of 15.8.1 — plus `JSON.parse` / `JSON.stringify` and

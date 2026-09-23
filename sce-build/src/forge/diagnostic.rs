@@ -11238,18 +11238,21 @@ mod tests {
                 // not need Appendix B.2 open.
                 "forge/expression-unsupported-builtin",
                 ExprError::UnsupportedBuiltin {
-                    name: ".map()".into(),
+                    // The method without the call, as the refusal spells it:
+                    // a document that wrote `.map(f)` does not hold `.map()`.
+                    name: ".map".into(),
                     // ⚠ This golden pins the ECMAScript wording, which is what
                     // makes it the witness that adding `vocabulary` did not
                     // move that path — only the forge path, which now names
-                    // itself. The `id` below is unchanged too: §7 of
+                    // itself. Adding it left the `id` unchanged too: §7 of
                     // SCE_ERROR_CONTRACT.md hashes code/stage/file/key
-                    // fragments, never the message.
+                    // fragments, never the message. The name is a fragment,
+                    // so dropping the parentheses from it moved the `id`.
                     vocabulary: crate::ecmascript::builtins::ECMASCRIPT_VOCABULARY.into(),
-                    available: vec![".join()".into(), ".push()".into()],
+                    available: vec![".join".into(), ".push".into()],
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:136a075615baf31b","code":"expression/unsupported-builtin","stage":"expression","spec":"W3C SCXML §B.2","message":".map() is not provided by SCE's ECMAScript datamodel. Available: .join(), .push()","actual":".map()","fix":{"kind":"replace_one_of","candidates":[".join()",".push()"]}}"#,
+                r#"{"v":1,"id":"fnv1a:d24595bb279ddfd8","code":"expression/unsupported-builtin","stage":"expression","spec":"W3C SCXML §B.2","message":".map is not provided by SCE's ECMAScript datamodel. Available: .join, .push","actual":".map","fix":{"kind":"replace_one_of","candidates":[".join",".push"]}}"#,
             ),
             (
                 // A misspelling. The candidates come from the document

@@ -811,6 +811,13 @@ pub fn uncallable_property(
 /// wants to know what this datamodel does to values; one that wrote
 /// `.setAttribute()` is holding a DOM handle, and offering it
 /// `.substring()` would repair one refusal into another.
+///
+/// The name and every candidate are spelled without the call, as
+/// [`unsupported_member`] spells `Math.tanh`. The call may carry
+/// arguments, and then `.toFixed()` is text the document does not
+/// hold: SCE_ERROR_CONTRACT §3.1.1 sends a consumer to the reported
+/// row for `actual`, and a candidate replaces the name alone, leaving
+/// the arguments where the author wrote them.
 pub fn unsupported_method(method: &str) -> Option<crate::forge::error::ExprError> {
     let vocabulary: &[&str] = if UNIMPLEMENTED_METHODS.contains(&method) {
         LOWERED_METHODS
@@ -819,10 +826,10 @@ pub fn unsupported_method(method: &str) -> Option<crate::forge::error::ExprError
     } else {
         return None;
     };
-    let mut available: Vec<String> = vocabulary.iter().map(|m| format!(".{m}()")).collect();
+    let mut available: Vec<String> = vocabulary.iter().map(|m| format!(".{m}")).collect();
     available.sort();
     Some(crate::forge::error::ExprError::UnsupportedBuiltin {
-        name: format!(".{method}()"),
+        name: format!(".{method}"),
         vocabulary: ECMASCRIPT_VOCABULARY.to_string(),
         available,
     })

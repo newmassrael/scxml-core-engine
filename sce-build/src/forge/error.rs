@@ -4279,7 +4279,9 @@ pub enum ExprError {
     #[error("{name} is not provided by {vocabulary}. Available: {}", .available.join(", "))]
     UnsupportedBuiltin {
         /// The name as the author reached for it, qualified by its owner
-        /// where there is one: `JSON.serialize`, `.map()`.
+        /// where there is one: `JSON.serialize`, `.map`. Never the call:
+        /// its arguments are the author's, and `.map()` is not what a
+        /// document that wrote `.map(f)` holds.
         name: String,
         /// ⚠ WHICH vocabulary refused it — and this field exists because
         /// naming the wrong one is worse than naming none.

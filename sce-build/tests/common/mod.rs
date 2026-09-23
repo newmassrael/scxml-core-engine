@@ -32,6 +32,7 @@ pub mod repository;
 pub mod rust_source;
 pub mod source_lexing;
 pub mod template_registration;
+pub mod wire_site;
 pub mod workflow;
 pub mod xml_literal;
 

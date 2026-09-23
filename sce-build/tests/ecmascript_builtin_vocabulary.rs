@@ -173,7 +173,7 @@ fn every_unimplemented_method_is_refused_with_its_alternatives() {
             Err(ExprError::UnsupportedBuiltin {
                 name, available, ..
             }) => {
-                assert_eq!(name, format!(".{method}()"));
+                assert_eq!(name, format!(".{method}"));
                 assert_eq!(
                     available.len(),
                     LOWERED_METHODS.len(),
@@ -246,7 +246,7 @@ fn every_dom_method_binds_its_receiver() {
 /// offers the DOM vocabulary rather than the string vocabulary.
 #[test]
 fn every_unimplemented_dom_method_is_refused_against_the_dom_surface() {
-    let dom_candidates: BTreeSet<String> = DOM_METHODS.iter().map(|m| format!(".{m}()")).collect();
+    let dom_candidates: BTreeSet<String> = DOM_METHODS.iter().map(|m| format!(".{m}")).collect();
     for &method in DOM_UNIMPLEMENTED_METHODS {
         match lower_method(method) {
             // `vocabulary` says WHICH list refused the name — the ECMAScript
@@ -256,7 +256,7 @@ fn every_unimplemented_dom_method_is_refused_against_the_dom_surface() {
             Err(ExprError::UnsupportedBuiltin {
                 name, available, ..
             }) => {
-                assert_eq!(name, format!(".{method}()"));
+                assert_eq!(name, format!(".{method}"));
                 let offered: BTreeSet<String> = available.into_iter().collect();
                 assert_eq!(
                     offered, dom_candidates,

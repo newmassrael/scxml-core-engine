@@ -35,7 +35,11 @@
 //      `words.map(...)`: `check` answered `status: "ok"` on all six
 //      backends and the machine died on evaluation. The refusal names
 //      the vocabulary that does exist, as `fix: replace_one_of`, so a
-//      consumer repairing the document does not need Appendix B.2.
+//      consumer repairing the document does not need Appendix B.2. The
+//      method is named without the call — `.map`, not `.map()` — because
+//      the call carries the author's arguments: the name is what stands on
+//      the reported row, and replacing it is a repair that clears the
+//      record, both read off the document rather than off this file.
 //   5. **A call on an event field is refused, and a platform field is
 //      not.** W3C SCXML 5.10.1 fills seven fields of `_event` with
 //      values, so `_event.name()` calls a string; the clause is a floor
@@ -119,14 +123,35 @@ fn run(args: &[&str]) -> Run {
     }
 }
 
-/// Every NDJSON record on stderr.
+/// Every NDJSON record on stderr, each held to SCE_ERROR_CONTRACT.md
+/// §3.1.1 against the file it names.
+///
+/// `diagnostic_fix_is_applicable` holds the tracked corpus to the same
+/// rule, and the documents this file writes are not tracked — the refusals
+/// they carry are the ones no tracked document does. Checked here, where
+/// every record is read, so no assertion below can pin an `actual` the
+/// document does not hold, as one once pinned `.map()`.
 fn records(stderr: &str) -> Vec<serde_json::Value> {
-    stderr
+    let records: Vec<serde_json::Value> = stderr
         .lines()
         .map(str::trim)
         .filter(|l| l.starts_with('{'))
         .map(|l| serde_json::from_str(l).expect("stderr line is one JSON object"))
-        .collect()
+        .collect();
+    for record in &records {
+        let Some(named) = record["location"]["file"].as_str() else {
+            continue;
+        };
+        let text = std::fs::read_to_string(repo_root().join(named))
+            .unwrap_or_else(|e| panic!("{named} does not open ({e}): {record}"));
+        if let Some(why) = common::wire_site::record_misplaced(record, &text) {
+            panic!(
+                "{} cannot be found in {named}: {why}\n{record}",
+                record["actual"]
+            );
+        }
+    }
+    records
 }
 
 /// W3C test 344 writes `cond="return"` on purpose, so the refusal under
@@ -315,8 +340,8 @@ fn an_unimplemented_standard_method_is_reported_with_the_vocabulary_that_exists(
     assert_eq!(record["stage"], "expression");
     assert_eq!(record["spec"], "W3C SCXML §B.2");
     assert_eq!(
-        record["actual"], ".map()",
-        "the name reached for rides `actual`: {record}"
+        record["actual"], ".map",
+        "the name reached for rides `actual`, without the call: {record}"
     );
     assert_eq!(record["fix"]["kind"], "replace_one_of");
     let candidates: Vec<String> = record["fix"]["candidates"]
@@ -326,7 +351,7 @@ fn an_unimplemented_standard_method_is_reported_with_the_vocabulary_that_exists(
         .map(|c| c.as_str().expect("candidate is a string").to_string())
         .collect();
     assert!(
-        candidates.contains(&".join()".to_string()) && candidates.contains(&".slice()".to_string()),
+        candidates.contains(&".join".to_string()) && candidates.contains(&".slice".to_string()),
         "the repair does not carry the vocabulary that exists: {candidates:?}"
     );
     // Non-overlap (SCE_ERROR_CONTRACT.md §3.2): the candidate list has
@@ -360,6 +385,38 @@ fn an_unimplemented_standard_method_is_reported_with_the_vocabulary_that_exists(
         Some(0),
         "--lint must refuse: {}",
         linted.stderr
+    );
+
+    // `records` has found the name on the reported row (§3.1.1), and
+    // replacing it there with the first candidate clears the record.
+    // `.map()` stood on no row of this document — the call carries a
+    // function — so the edit it proposed was one no consumer could perform.
+    let named = record["location"]["file"]
+        .as_str()
+        .unwrap_or_else(|| panic!("no location.file in {record}"));
+    let text = std::fs::read_to_string(named).expect("the reported file opens");
+    let rechecked = |label: &str| {
+        let checked = run(&["check", named, "--error-format=json"]);
+        let fires = records(&checked.stderr)
+            .iter()
+            .any(|r| r["id"] == record["id"]);
+        (fires, format!("{label}:\n{}", checked.stderr))
+    };
+    // The replay proves nothing unless `check` reproduces the record first.
+    let (fires, stderr) = rechecked("before the repair");
+    assert!(fires, "check does not reproduce {record}\n{stderr}");
+    let repaired = common::wire_site::apply_substitution(
+        &text,
+        record["actual"].as_str().expect("actual"),
+        &candidates[0],
+        record["location"]["line"].as_u64().map(|n| n as usize),
+    );
+    std::fs::write(named, repaired).expect("write the repaired document");
+    let (fires, stderr) = rechecked("after the repair");
+    assert!(
+        !fires,
+        "{} still fires once {:?} replaced {}\n{stderr}",
+        record["code"], candidates[0], record["actual"]
     );
 }
 

@@ -32,6 +32,8 @@
 //! which is the property `diagnostic_fix_is_applicable.rs` enforces over the
 //! tracked corpus, asserted here for documents that corpus does not hold.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -725,16 +727,11 @@ fn mismatches(case: &Case, record: &serde_json::Value) -> Vec<String> {
         }
     }
     // §3.1.1, read off the document rather than off the fixture's claim.
-    if let (Some(line), Some(actual)) = (
-        record["location"]["line"].as_u64(),
-        record["actual"].as_str(),
-    ) {
-        let row = case.document.lines().nth(line as usize - 1).unwrap_or("");
-        if !row.contains(actual) {
-            wrong.push(format!(
-                "actual {actual:?} does not occur on line {line}: {row:?}"
-            ));
-        }
+    if let Some(why) = common::wire_site::record_misplaced(record, case.document) {
+        wrong.push(format!(
+            "actual {} cannot be found: {why}",
+            record["actual"]
+        ));
     }
     wrong
 }

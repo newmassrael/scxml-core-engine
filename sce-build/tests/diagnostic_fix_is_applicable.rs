@@ -63,6 +63,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::OnceLock;
 
+use common::wire_site::{self, apply_substitution, Misplaced};
 use sce_build::forge::codegen_matrix::language_wire_name;
 use sce_build::generator::Language;
 
@@ -455,7 +456,9 @@ fn locating_violation(root: &Path, rec: &FixRecord) -> Option<String> {
 
 /// Is `actual` findable in `named` — on `line` when there is one,
 /// exactly once in the file when there is not? The rule a record's own
-/// `actual` and each `related` entry's are both held to (§3.1.1, §2.4).
+/// `actual` and each `related` entry's are both held to (§3.1.1, §2.4),
+/// read through [`wire_site::locate`], which the suites writing their own
+/// documents read too.
 fn token_violation(
     root: &Path,
     site: &str,
@@ -470,45 +473,29 @@ fn token_violation(
              open — §2.2: \"A consumer opens it to apply a fix\".",
         ));
     };
-    let lines: Vec<&str> = text.lines().collect();
-    match line {
-        Some(line) => {
-            let Some(source_line) = lines.get(line - 1) else {
-                return Some(format!(
-                    "{site} points at line {line} of {named}, which has {} lines.",
-                    lines.len(),
-                ));
-            };
-            if !source_line.contains(actual) {
-                return Some(format!(
-                    "{site} carries actual={actual:?} and points at \
-                     {named}:{line}, but that line does not contain it:\n    \
-                     {}\n  The consumer edits the line it was given, so a \
-                     coordinate on the enclosing element repairs the wrong \
-                     token (or nothing).",
-                    source_line.trim(),
-                ));
-            }
-            None
-        }
-        None => {
-            let hits = text.matches(actual).count();
-            if hits == 1 {
-                return None;
-            }
-            Some(format!(
-                "{site} carries actual={actual:?} with no location.line, and \
-                 that token occurs {hits} time(s) in {named}. Without a line \
-                 the whole-file search is the only locating strategy the wire \
-                 offers, and it is {} here.",
-                if hits == 0 {
-                    "a miss — the value is not in the file at all"
-                } else {
-                    "ambiguous"
-                },
-            ))
-        }
-    }
+    let why = match wire_site::locate(&text, line, actual) {
+        Ok(()) => return None,
+        Err(why) => why,
+    };
+    Some(match why {
+        Misplaced::NoSuchRow { .. } => format!("{site} points into {named}, but {why}."),
+        Misplaced::NotOnTheRow { .. } => format!(
+            "{site} carries actual={actual:?} and points at {named}, but \
+             {why}\n  The consumer edits the line it was given, so a \
+             coordinate on the enclosing element repairs the wrong token \
+             (or nothing).",
+        ),
+        Misplaced::NotUnique { hits } => format!(
+            "{site} carries actual={actual:?} in {named}, but {why}. Without \
+             a line the whole-file search is the only locating strategy the \
+             wire offers, and it is {} here.",
+            if hits == 0 {
+                "a miss — the value is not in the file at all"
+            } else {
+                "ambiguous"
+            },
+        ),
+    })
 }
 
 /// Each `related` entry that names a token, held to the rule the
@@ -559,19 +546,20 @@ fn every_actual_names_a_site_the_consumer_can_locate() {
          emitting `fix`.",
     );
 
+    let exempt = |r: &FixRecord| wire_site::exempt_as_assembled(r.expanded, !r.fix_kind.is_empty());
     let judged: Vec<&FixRecord> = records
         .iter()
         .filter(|r| {
-            !r.fix_kind.is_empty() || (r.actual.is_some() && !r.expanded) || !r.related.is_empty()
+            !r.fix_kind.is_empty() || (r.actual.is_some() && !exempt(r)) || !r.related.is_empty()
         })
         .collect();
     let violations: Vec<String> = judged
         .iter()
         .flat_map(|rec| {
-            let own = if !rec.fix_kind.is_empty() || !rec.expanded {
-                locating_violation(&root, rec)
-            } else {
+            let own = if exempt(rec) {
                 None
+            } else {
+                locating_violation(&root, rec)
             };
             own.into_iter().chain(related_violations(&root, rec))
         })
@@ -709,30 +697,6 @@ fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
         }
     }
     Ok(())
-}
-
-/// Perform the substitution the way a consumer holding only the wire
-/// record would: on the named line when the record gives one,
-/// otherwise on the document's single occurrence.
-fn apply_substitution(text: &str, actual: &str, replacement: &str, line: Option<usize>) -> String {
-    match line {
-        Some(n) => {
-            let mut out: Vec<String> = Vec::new();
-            for (i, l) in text.lines().enumerate() {
-                if i + 1 == n {
-                    out.push(l.replacen(actual, replacement, 1));
-                } else {
-                    out.push(l.to_string());
-                }
-            }
-            let mut joined = out.join("\n");
-            if text.ends_with('\n') {
-                joined.push('\n');
-            }
-            joined
-        }
-        None => text.replacen(actual, replacement, 1),
-    }
 }
 
 /// Lower bound for the expansion half. The corpus carries template

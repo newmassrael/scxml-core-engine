@@ -339,7 +339,7 @@ fn a_refusal_is_reached_through_the_literal_key() {
     assert_eq!(property_refused("_event['name']()"), "_event.name");
     assert_eq!(property_refused("Math['PI']()"), "Math.PI");
     match refusal("arr['map'](handlers.retry)") {
-        ExprError::UnsupportedBuiltin { name, .. } => assert_eq!(name, ".map()"),
+        ExprError::UnsupportedBuiltin { name, .. } => assert_eq!(name, ".map"),
         other => panic!("arr['map'](...) was refused as {other:?}"),
     }
     match refusal("JSON['serialize'](arr)") {
