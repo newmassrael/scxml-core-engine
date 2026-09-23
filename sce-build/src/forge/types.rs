@@ -142,6 +142,34 @@ impl InferredType {
         self.is_float_like()
     }
 
+    /// Is this a number — an integer or a float of any width, a literal of
+    /// either, or a quantity over one?
+    pub fn is_numeric(&self) -> bool {
+        self.is_integer_like() || self.is_float_like()
+    }
+
+    /// The name a diagnostic gives this type: the declared spelling where
+    /// there is one (`uint16`, `float64`, `bool`), and what the value is
+    /// where there is not (`integer literal`).
+    pub fn describe(&self) -> String {
+        match self {
+            Self::Int {
+                signed: false,
+                bits,
+            } => format!("uint{bits}"),
+            Self::Int { signed: true, bits } => format!("int{bits}"),
+            Self::Float { bits } => format!("float{bits}"),
+            Self::UntypedInt => "integer literal".into(),
+            Self::UntypedFloat => "float literal".into(),
+            Self::Bool => "bool".into(),
+            Self::Str => "string".into(),
+            Self::Bytes => "bytes".into(),
+            Self::Null => "null".into(),
+            Self::Unknown => "unknown".into(),
+            Self::Quantity { .. } => "quantity".into(),
+        }
+    }
+
     /// Strip any `Quantity` wrapper to the raw numeric `InferredType`.
     /// `Quantity { base: Int{s,b}, .. }` → `Int{s,b}`; everything else
     /// passes through unchanged. Used by codegen sites that need the

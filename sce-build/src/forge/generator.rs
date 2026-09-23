@@ -3911,7 +3911,7 @@ fn render_condition(
 
     let type_ctx = crate::forge::type_ctx::condition(m, imports);
     let site = ExpressionSite::new(&m.expr, m.expr_spelling.as_ref());
-    let expr_val = expr::transpile_typed(
+    let expr_val = expr::transpile_into(
         site.source,
         l.expr_target(),
         &type_ctx,
@@ -14670,11 +14670,11 @@ fn render_validator(
                     site.source,
                     &type_ctx,
                     &expr_renames,
-                    crate::forge::types::InferredType::Bool,
+                    expr::Expected::Slot(crate::forge::types::InferredType::Bool),
                     &import_lowerings,
                 )
             } else {
-                expr::transpile_typed(
+                expr::transpile_into(
                     site.source,
                     l.expr_target(),
                     &type_ctx,
@@ -17406,7 +17406,7 @@ fn render_procedure_cpp(
                         ExprTarget::Cpp,
                         &procedure_type_ctx,
                         &empty_procedure_renames,
-                        expected,
+                        expr::Expected::Slot(expected),
                     )
                 })
                 .transpose()?;
@@ -17653,7 +17653,7 @@ fn render_procedure_c(
                                 ExprTarget::C,
                                 &procedure_type_ctx,
                                 &rename_map,
-                                crate::forge::types::InferredType::Bool,
+                                expr::Expected::Slot(crate::forge::types::InferredType::Bool),
                             )
                         })
                         .transpose()?;
@@ -17817,7 +17817,7 @@ fn render_procedure_c_l2(
                         ExprTarget::C,
                         &procedure_type_ctx,
                         &empty_renames,
-                        inferred,
+                        expr::Expected::Slot(inferred),
                     )
                 })
                 .transpose()?;
@@ -17992,7 +17992,7 @@ fn render_procedure_c_l2(
                                 ExpressionSite::new(a, send.addr_spelling.as_ref()),
                                 &procedure_type_ctx,
                                 &rename_map,
-                                crate::forge::types::InferredType::Unknown,
+                                expr::Expected::Hint(crate::forge::types::InferredType::Unknown),
                                 &import_lowerings,
                             )
                         })
@@ -18005,7 +18005,10 @@ fn render_procedure_c_l2(
                                 ExpressionSite::new(p, send.payload_spelling.as_ref()),
                                 &procedure_type_ctx,
                                 &rename_map,
-                                crate::forge::types::InferredType::Bytes,
+                                // An emission choice for C11's byte view; the
+                                // payload's type is `send-operand-type`'s to
+                                // judge, on every backend alike.
+                                expr::Expected::Hint(crate::forge::types::InferredType::Bytes),
                                 &import_lowerings,
                             )
                         })
@@ -18042,7 +18045,9 @@ fn render_procedure_c_l2(
                         ExpressionSite::new(&p.expr, p.expr_spelling.as_ref()),
                         &procedure_type_ctx,
                         &rename_map,
-                        crate::forge::types::InferredType::Str,
+                        // C11 carries a `<donedata>` param as text; nothing
+                        // declares the param's type.
+                        expr::Expected::Hint(crate::forge::types::InferredType::Str),
                         &import_lowerings,
                     )?;
                     Ok(serde_json::json!({
@@ -18105,7 +18110,7 @@ fn render_procedure_c_l2(
                                 ExpressionSite::new(c, tr.cond_spelling.as_ref()),
                                 &procedure_type_ctx,
                                 &rename_map,
-                                crate::forge::types::InferredType::Bool,
+                                expr::Expected::Slot(crate::forge::types::InferredType::Bool),
                                 &import_lowerings,
                             )
                         })
@@ -18471,9 +18476,9 @@ fn transpile_procedure_expr(
     target: ExprTarget,
     type_ctx: &crate::forge::types::TypeCtx<'_>,
     renames: &std::collections::HashMap<&str, &str>,
-    expected: crate::forge::types::InferredType,
+    expected: expr::Expected,
 ) -> Result<String, ForgeError> {
-    expr::transpile_typed(site.source, target, type_ctx, renames, expected)
+    expr::transpile_expecting(site.source, target, type_ctx, renames, expected)
         .map_err(|refusal| site.place(refusal))
 }
 
@@ -18486,7 +18491,7 @@ fn transpile_procedure_expr_c11(
     site: ExpressionSite<'_>,
     type_ctx: &crate::forge::types::TypeCtx<'_>,
     renames: &std::collections::HashMap<&str, &str>,
-    expected: crate::forge::types::InferredType,
+    expected: expr::Expected,
     lowerings: &[expr::ImportLowering],
 ) -> Result<String, ForgeError> {
     if lowerings.is_empty() {
@@ -18627,7 +18632,7 @@ fn build_procedure_non_final_states(
                                 target,
                                 type_ctx,
                                 rename_map,
-                                crate::forge::types::InferredType::Bool,
+                                expr::Expected::Slot(crate::forge::types::InferredType::Bool),
                             )
                         })
                         .transpose()?;
@@ -18682,7 +18687,7 @@ fn build_procedure_states_with_entry(
                                 target,
                                 type_ctx,
                                 rename_map,
-                                crate::forge::types::InferredType::Unknown,
+                                expr::Expected::Hint(crate::forge::types::InferredType::Unknown),
                             )
                         })
                         .transpose()?;
@@ -18695,7 +18700,7 @@ fn build_procedure_states_with_entry(
                                 target,
                                 type_ctx,
                                 payload_map,
-                                crate::forge::types::InferredType::Unknown,
+                                expr::Expected::Hint(crate::forge::types::InferredType::Unknown),
                             )
                         })
                         .transpose()?;
@@ -18745,7 +18750,7 @@ fn build_procedure_final_states_with_donedata(
                         target,
                         type_ctx,
                         rename_map,
-                        crate::forge::types::InferredType::Unknown,
+                        expr::Expected::Hint(crate::forge::types::InferredType::Unknown),
                     )?;
                     Ok(serde_json::json!({
                         "name": p.name,
@@ -18849,7 +18854,7 @@ fn build_procedure_states_with_assigns(
                                     value,
                                     type_ctx,
                                     assign_rename_map,
-                                    lhs_ty,
+                                    expr::Expected::Slot(lhs_ty),
                                     import_lowerings,
                                 )?
                             } else {
@@ -18858,7 +18863,7 @@ fn build_procedure_states_with_assigns(
                                     target,
                                     type_ctx,
                                     assign_rename_map,
-                                    lhs_ty,
+                                    expr::Expected::Slot(lhs_ty),
                                 )?
                             };
                             let wrapped =
@@ -19080,7 +19085,7 @@ fn render_procedure_kotlin(
                     ExprTarget::Kotlin,
                     &procedure_type_ctx,
                     &empty_procedure_renames,
-                    expected,
+                    expr::Expected::Slot(expected),
                 )?,
             };
             Ok(serde_json::json!({
@@ -19343,7 +19348,7 @@ fn render_procedure_rust(
                     ExprTarget::Rust,
                     &procedure_type_ctx,
                     &empty_procedure_renames,
-                    expected,
+                    expr::Expected::Slot(expected),
                 )?,
             };
             Ok(serde_json::json!({
@@ -19611,7 +19616,7 @@ fn render_procedure_go(
                         ExprTarget::Go,
                         &procedure_type_ctx,
                         &empty_procedure_renames,
-                        expected,
+                        expr::Expected::Slot(expected),
                     )
                 })
                 .transpose()?;
@@ -19816,7 +19821,7 @@ fn render_procedure_python(
                     ExprTarget::Python,
                     &procedure_type_ctx,
                     &empty_procedure_renames,
-                    expected,
+                    expr::Expected::Slot(expected),
                 )?,
             };
             Ok(serde_json::json!({
@@ -20794,7 +20799,7 @@ fn render_observer(
     // reported as generated and emitted a condition with nothing in it —
     // the last two lowering results in this file that were swallowed.
     let lower = |site: ExpressionSite<'_>| {
-        expr::transpile_typed(
+        expr::transpile_into(
             site.source,
             l.expr_target(),
             &obs_type_ctx,
@@ -21240,28 +21245,6 @@ struct AlgorithmLowerCtx<'a> {
     c11_result_type: Option<&'a str>,
 }
 
-/// Human-readable name for an inferred type, used by the byte-buffer-build
-/// `algorithm/append-type-mismatch` diagnostic's `{got}` slot.
-fn describe_inferred_type(ty: crate::forge::types::InferredType) -> String {
-    use crate::forge::types::InferredType;
-    match ty {
-        InferredType::Int {
-            signed: false,
-            bits,
-        } => format!("uint{bits}"),
-        InferredType::Int { signed: true, bits } => format!("int{bits}"),
-        InferredType::Float { bits } => format!("float{bits}"),
-        InferredType::UntypedInt => "integer literal".into(),
-        InferredType::UntypedFloat => "float literal".into(),
-        InferredType::Bool => "bool".into(),
-        InferredType::Str => "string".into(),
-        InferredType::Bytes => "bytes".into(),
-        InferredType::Null => "null".into(),
-        InferredType::Unknown => "unknown".into(),
-        InferredType::Quantity { .. } => "quantity".into(),
-    }
-}
-
 /// Lower one statement. Every refusal is placed at the attribute it names,
 /// from the statement's spellings (`crate::forge::expression_site`); nested
 /// bodies recurse through here, and a nested statement places its own.
@@ -21371,7 +21354,7 @@ fn lower_algorithm_stmt(
                 ))
             })?;
             let site = ExpressionSite::new(init, init_spelling.as_ref());
-            let init_lowered = expr::transpile_typed(
+            let init_lowered = expr::transpile_into(
                 init,
                 l.expr_target(),
                 type_ctx,
@@ -21429,9 +21412,8 @@ fn lower_algorithm_stmt(
             let (lhs, lhs_ty) = expr::transpile_lvalue(target, l.expr_target(), type_ctx, renames)
                 .map_err(|refusal| target_site.place(refusal))?;
             let rhs_site = ExpressionSite::new(rhs, expr_spelling.as_ref());
-            let rhs_lowered =
-                expr::transpile_typed(rhs, l.expr_target(), type_ctx, renames, lhs_ty)
-                    .map_err(|refusal| rhs_site.place(refusal))?;
+            let rhs_lowered = expr::transpile_into(rhs, l.expr_target(), type_ctx, renames, lhs_ty)
+                .map_err(|refusal| rhs_site.place(refusal))?;
             let semi = if matches!(lang, Language::Kotlin | Language::Python) {
                 ""
             } else {
@@ -21502,7 +21484,7 @@ fn lower_algorithm_stmt(
                 let refusal: ForgeError =
                     crate::forge::error::ValidationError::AlgorithmAppendTypeMismatch {
                         target: target.clone(),
-                        got: describe_inferred_type(rhs_ty),
+                        got: rhs_ty.describe(),
                         observed: at.observed(),
                     }
                     .into();
@@ -21577,7 +21559,7 @@ fn lower_algorithm_stmt(
         } => {
             let site = ExpressionSite::new(cond, cond_spelling.as_ref());
             let cond_lowered =
-                expr::transpile_typed(cond, l.expr_target(), type_ctx, renames, InferredType::Bool)
+                expr::transpile_into(cond, l.expr_target(), type_ctx, renames, InferredType::Bool)
                     .map_err(|refusal| site.place(refusal))?;
             // Rust forbids the `if (cond)` paren wrap under
             // `unused_parens` (workspace-wide deny-warnings). Other curly-
@@ -21627,7 +21609,7 @@ fn lower_algorithm_stmt(
         } => {
             let site = ExpressionSite::new(cond, cond_spelling.as_ref());
             let cond_lowered =
-                expr::transpile_typed(cond, l.expr_target(), type_ctx, renames, InferredType::Bool)
+                expr::transpile_into(cond, l.expr_target(), type_ctx, renames, InferredType::Bool)
                     .map_err(|refusal| site.place(refusal))?;
             let _ = max_iter; // RFC §synth-5-A runtime-counter guard lands in A4 (build-time fold).
                               // Same paren policy as `if` above — Rust loop conditions
@@ -21954,7 +21936,7 @@ fn lower_algorithm_stmt(
                     // every emitter route through its own coerce path.
                     let site = ExpressionSite::new(rhs, expr_spelling.as_ref());
                     let lowered =
-                        expr::transpile_typed(rhs, l.expr_target(), type_ctx, renames, return_ty)
+                        expr::transpile_into(rhs, l.expr_target(), type_ctx, renames, return_ty)
                             .map_err(|refusal| site.place(refusal))?;
                     if matches!(return_ty, InferredType::Bytes) {
                         // SCE byte-buffer-build (§4.12): wrap the finished
@@ -22024,14 +22006,15 @@ fn lower_algorithm_stmt(
             }
             let lowered_args: Vec<String> = args
                 .iter()
-                .map(|arg| {
+                .enumerate()
+                .map(|(i, arg)| {
                     let site = ExpressionSite::new(&arg.expr, arg.spelling.as_ref());
-                    expr::transpile_typed(
+                    expr::transpile_expecting(
                         &arg.expr,
                         l.expr_target(),
                         type_ctx,
                         renames,
-                        InferredType::Unknown,
+                        callee.parameter(i),
                     )
                     .map_err(|refusal| site.place(refusal))
                 })
@@ -22077,6 +22060,22 @@ impl CallTarget<'_> {
         match self {
             Self::Algorithm(imp) => imp.param_types.len(),
             Self::CollectionMethod { arity, .. } => *arity,
+        }
+    }
+
+    /// What argument `i` lands in: an imported algorithm's declared
+    /// parameter, which a value of another kind is refused; a collection
+    /// method's argument declares no type the pipeline can name.
+    fn parameter(&self, i: usize) -> expr::Expected {
+        use crate::forge::types::InferredType;
+        match self {
+            Self::Algorithm(imp) => imp
+                .param_types
+                .get(i)
+                .map_or(expr::Expected::Hint(InferredType::Unknown), |ty| {
+                    expr::Expected::Slot(InferredType::from_sce_type(ty))
+                }),
+            Self::CollectionMethod { .. } => expr::Expected::Hint(InferredType::Unknown),
         }
     }
 }

@@ -143,6 +143,8 @@
         "expression/unexpected-token",
         "expression/invalid-lvalue",
         "expression/type-coercion",
+        "expression/type-mismatch",
+        "expression/argument-count-mismatch",
         "expression/go-ternary-unsupported",
         "import/file-not-found",
         "import/kind-mismatch",

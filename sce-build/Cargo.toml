@@ -780,6 +780,11 @@ path = "tests/an_algorithm_rule_is_refused_at_the_attribute_that_breaks_it.rs"
 required-features = ["cli"]
 
 [[test]]
+name = "a_value_stands_only_where_its_kind_is_declared"
+path = "tests/a_value_stands_only_where_its_kind_is_declared.rs"
+required-features = ["cli"]
+
+[[test]]
 name = "value_space_coverage"
 path = "tests/value_space_coverage.rs"
 required-features = ["cli"]

@@ -1306,6 +1306,24 @@ no typed interpretation or are explicitly excluded:
   a type from the slot the value flows into or from its branches) —
   `expression/go-ternary-unsupported`. Give the value a typed
   destination, or type one of the branches.
+- A value of one kind where the place it flows into declares another —
+  `expression/type-mismatch`. An output, a local, a returned value, a
+  condition and a parameter each declare the type of what lands in them,
+  and with no implicit coercion a `bool` is not a number and a number is
+  not a `bool`. A real is not an integer either: the backends do not
+  agree on rounding it, so a real where an integer is declared is refused
+  — `round(…)` or `floor(…)` says which the document means. An integer
+  stands as any integer width, wrapped to it, or as a real; a real as a
+  real of either width; a string as bytes. Judged once, before any
+  backend emits, so every backend refuses the same documents. ⚠ Until
+  2026-09-24 nothing judged it: a comparison assigned to a `uint16` local
+  generated on all six backends and compiled only on those that convert
+  on their own, and a real assigned there reached Rust as an `f32`
+  assigned to a `u16`.
+- A call of a function the document registered — an imported algorithm,
+  transform, condition, lookup or interpolation, a `<sce:helper>`, a
+  stateful import's method — with more or fewer arguments than it takes
+  — `expression/argument-count-mismatch`, placed at the callee.
 - Free-form tokens not part of the grammar —
   `expression/unsupported-construct`, `expression/unexpected-token`,
   `expression/invalid-lvalue`, `expression/type-coercion`,
@@ -3154,6 +3172,8 @@ Codes that the author can avoid by writing a better SCXML /
 | `expression/unexpected-token` | Expression |
 | `expression/invalid-lvalue` | Expression |
 | `expression/type-coercion` | Expression |
+| `expression/type-mismatch` | Expression |
+| `expression/argument-count-mismatch` | Expression |
 | `expression/go-ternary-unsupported` | Expression |
 | `import/file-not-found` | Import |
 | `import/kind-mismatch` | Import |

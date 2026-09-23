@@ -599,6 +599,12 @@ Concretely:
 - `mesh/external-ambiguous-event-group` populates `expected` with the
   required cardinality (e.g. `["1"]`) and leaves `fix` absent — the
   number is a rule description, not a replacement value for `actual`.
+- `expression/type-mismatch` populates `expected` with the declared type
+  of the place the value flows into (e.g. `["uint16"]`) and leaves `fix`
+  absent — which value belongs there is the document's meaning.
+  `expression/argument-count-mismatch` populates `expected` with the
+  number of arguments the callee takes (e.g. `["2"]`), a cardinality as
+  above, and carries no `actual`: the arity is no text of the document.
 - `validation/attribute-rule-violated` populates `expected` with the
   rule a legal value satisfies (e.g. `["positive integer"]`) and leaves
   `fix` absent. It is `invalid-attribute`'s other half: a value outside a
@@ -758,6 +764,7 @@ references against a real document and drift silently.
 | `collection/multi-writer-without-atomics` | `validation` | no | SCE Protocol-Synthesis RFC §5.L |
 | `collection/ordering-sorted-requires-index-by` | `validation` | no | SCE Protocol-Synthesis RFC §5.L |
 | `collection/overflow-policy-oldest-wins-requires-ordering-insertion` | `validation` | no | SCE Protocol-Synthesis RFC §5.L |
+| `expression/argument-count-mismatch` | `expression` | no | SCE Forge §3.4 |
 | `expression/empty` | `expression` | no | SCE Forge §3.4 |
 | `expression/go-ternary-unsupported` | `expression` | no | SCE Forge §3.4 |
 | `expression/invalid-lvalue` | `expression` | no | SCE Forge §3.4 |
@@ -770,6 +777,7 @@ references against a real document and drift silently.
 | `expression/property-not-callable` | `expression` | `replace_with` / no | W3C SCXML §B.2 |
 | `expression/strict-equality` | `expression` | `replace_with` | SCE Forge §3.4 |
 | `expression/type-coercion` | `expression` | no | SCE Forge §3.4 |
+| `expression/type-mismatch` | `expression` | no | SCE Forge §3.4 |
 | `expression/unexpected-token` | `expression` | no | SCE Forge §3.4 |
 | `expression/unknown-enum-variant` | `expression` | `replace_one_of` | SCE Accepted Subset §2.2 |
 | `expression/unknown-identifier` | `expression` | `replace_one_of` / no | W3C SCXML §B.2 |

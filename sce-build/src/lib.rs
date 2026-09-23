@@ -5544,7 +5544,13 @@ fn validate_worker_inbox_ordering_placement(
 ///   return — the expression transpiler treats them as opaque in that case).
 /// * Condition → parameters are `inputs`, return is `Bool`.
 /// * Lookup → parameter is `input`, return is `output`.
-/// * Interpolation → parameters are opaque (vector-valued); returns `Float64`.
+/// * Interpolation → parameters are `inputs` (one per axis), return is
+///   `output`.
+///
+/// ⚠ An empty parameter list states that the callee takes no argument; the
+/// call rules read it that way. A kind whose parameters are not known here
+/// returns no signature at all (`None` return), which leaves its calls
+/// unjudged rather than judged against a list nobody declared.
 fn discover_stateless_signature(
     doc: &forge::model::ForgeDocument,
 ) -> (Vec<forge::model::SceType>, Option<forge::model::SceType>) {
@@ -5567,12 +5573,13 @@ fn discover_stateless_signature(
             vec![m.input.sce_type.clone()],
             Some(m.output.sce_type.clone()),
         ),
-        ForgeDocument::Interpolation(_) => {
-            // Interpolation takes a typed input (x, or x+y for 2D) and returns
-            // float64. Without opening up the Interpolation model further, we
-            // treat parameters as empty (opaque) and return Float64.
-            (Vec::new(), Some(SceType::Float64))
-        }
+        // The emitted lookup takes each declared input in declaration order
+        // (`render_interpolation` renders `param_str(&m.inputs)`), and the
+        // parser admits only a `float64` output.
+        ForgeDocument::Interpolation(m) => (
+            m.inputs.iter().map(|f| f.sce_type.clone()).collect(),
+            Some(m.output.sce_type.clone()),
+        ),
         // RFC §synth-5-A Algorithm: a stateless free function whose signature is
         // the declared `<sce:signature>` (params in positional order, an
         // optional return). Capturing it here lets `infer_types` resolve the

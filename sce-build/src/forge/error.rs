@@ -4560,6 +4560,42 @@ pub enum ExprError {
         observed: Option<String>,
     },
 
+    /// A value of one kind where the place it flows into — an output, a
+    /// local, a returned value, a condition, a parameter — declares
+    /// another. Extended SCXML is typed and admits no implicit coercion
+    /// (SCE_FORGE.md, Expression Language), so a `bool` is not a number, a
+    /// number is not a `bool`, and a real is not an integer. Which values
+    /// stand where is `expr::slot_admits`.
+    ///
+    /// `observed` is the value as the author wrote it, which the wire
+    /// reports as `actual`.
+    ///
+    /// ⚠ Nothing judged this before 2026-09-24: a comparison assigned to a
+    /// `uint16` local, and a comparison as a `float64` output, generated on
+    /// every backend and compiled only where the target language converts
+    /// on its own.
+    #[error("{got} where {expected} is expected: Extended SCXML admits no implicit coercion")]
+    TypeMismatch {
+        expected: String,
+        got: String,
+        observed: Option<String>,
+    },
+
+    /// A call of a function the document registered — an imported
+    /// algorithm, transform, condition, lookup or interpolation, a
+    /// `<sce:helper>`, a stateful import's method — with more or fewer
+    /// arguments than it takes.
+    ///
+    /// ⚠ Nothing counted them before 2026-09-24: an imported two-parameter
+    /// algorithm called with one argument generated on every backend, and
+    /// only the target language's compiler refused it.
+    #[error("{callee} takes {expected} argument(s), not {actual}")]
+    ArgumentCount {
+        callee: String,
+        expected: usize,
+        actual: usize,
+    },
+
     /// A conditional expression the Go emitter cannot give a result type.
     /// Go lowers `c ? a : b` to a typed function literal, so it needs a type
     /// it can spell; neither the slot the value flows into nor the

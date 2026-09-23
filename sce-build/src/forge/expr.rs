@@ -147,7 +147,73 @@ pub fn transpile_typed(
     renames: &HashMap<&str, &str>,
     expected: InferredType,
 ) -> Result<String, Refusal> {
+    transpile_at(
+        expr,
+        target,
+        ctx,
+        renames,
+        Expected::Hint(expected),
+        Position::Operand,
+    )
+}
+
+/// [`transpile_typed`] for a value that lands in a place DECLARED to hold
+/// `slot` — an output, a local, a returned value, a condition, a parameter.
+/// A value of another kind is refused before any backend emits
+/// ([`slot_admits`]), so every backend refuses the same documents; `slot` is
+/// also what the emitters coerce toward.
+pub fn transpile_into(
+    expr: &str,
+    target: ExprTarget,
+    ctx: &TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    slot: InferredType,
+) -> Result<String, Refusal> {
+    transpile_at(
+        expr,
+        target,
+        ctx,
+        renames,
+        Expected::Slot(slot),
+        Position::Operand,
+    )
+}
+
+/// [`transpile_typed`] or [`transpile_into`], as `expected` says — for a
+/// caller that forwards an expectation it was handed.
+pub fn transpile_expecting(
+    expr: &str,
+    target: ExprTarget,
+    ctx: &TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    expected: Expected,
+) -> Result<String, Refusal> {
     transpile_at(expr, target, ctx, renames, expected, Position::Operand)
+}
+
+/// What the type a caller hands the pipeline asks of the value.
+///
+/// ⚠ One parameter served both, and a caller could not say which it meant:
+/// C11 passes `string` for a `<donedata>` param and `bytes` for a payload,
+/// where every other backend passes nothing — an emission choice, not a
+/// declaration. Judging every expectation would have refused on C11 alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Expected {
+    /// The declared type of the place the value lands in: a value of
+    /// another kind is refused, and the emitters coerce toward it.
+    Slot(InferredType),
+    /// Only what the emitters coerce toward. Nothing is declared there, so
+    /// nothing is judged.
+    Hint(InferredType),
+}
+
+impl Expected {
+    /// The type the emitters coerce toward, either way.
+    pub fn ty(self) -> InferredType {
+        match self {
+            Self::Slot(ty) | Self::Hint(ty) => ty,
+        }
+    }
 }
 
 /// [`transpile_typed`] for the value a function RETURNS in the type its
@@ -163,7 +229,14 @@ pub fn transpile_returned(
     renames: &HashMap<&str, &str>,
     expected: InferredType,
 ) -> Result<String, Refusal> {
-    transpile_at(expr, target, ctx, renames, expected, Position::Returned)
+    transpile_at(
+        expr,
+        target,
+        ctx,
+        renames,
+        Expected::Slot(expected),
+        Position::Returned,
+    )
 }
 
 /// Where the emitted value goes, for the one target that cares.
@@ -181,13 +254,15 @@ fn transpile_at(
     target: ExprTarget,
     ctx: &TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
-    expected: InferredType,
+    expected: Expected,
     position: Position,
 ) -> Result<String, Refusal> {
     let expr = expr.trim();
     if expr.is_empty() {
         return Err(ExprError::Empty { what: "expression" }.at(None));
     }
+    let slot = expected;
+    let expected = expected.ty();
 
     let mut ast = parse_to_ast(expr)?;
     // Inference must run BEFORE rename so Call callees, Idents, and Members
@@ -198,7 +273,8 @@ fn transpile_at(
     // context; the rename pass then changes only the syntactic form,
     // leaving each TypedExpr's `ty` slot intact (which is exactly what the
     // `Raw` arm of `infer_types` already documents).
-    resolve_then_rename(&mut ast, ctx, renames, target)?;
+    resolve_then_rename(&mut ast, ctx, renames, target, expr)?;
+    judge_slot(&ast, slot, expr)?;
 
     // RFC c7-wildcard W-project: Go exports struct fields in PascalCase
     // (the `codec_field_id` SSOT). Inside an algorithm body every member
@@ -302,7 +378,7 @@ pub(crate) fn transpile_typed_with_import_lowering(
     expr: &str,
     ctx: &TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
-    expected: InferredType,
+    expected: Expected,
     lowerings: &[ImportLowering],
 ) -> Result<String, Refusal> {
     let expr = expr.trim();
@@ -327,8 +403,9 @@ pub(crate) fn transpile_typed_with_import_lowering(
     // reason — it is this pipeline's product, not an author's name, and it
     // is in `ctx` under no spelling. A user's name is still an `Ident` at
     // this point, so each check keeps its subject either way.
-    resolve_then_rename(&mut ast, ctx, renames, ExprTarget::C)?;
-    Ok(emit_c(&ast, expected)?)
+    resolve_then_rename(&mut ast, ctx, renames, ExprTarget::C, expr)?;
+    judge_slot(&ast, expected, expr)?;
+    Ok(emit_c(&ast, expected.ty())?)
 }
 
 /// The passes between parsing and emission that every typed transpile
@@ -355,8 +432,9 @@ fn resolve_then_rename(
     ctx: &TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
     target: ExprTarget,
+    source: &str,
 ) -> Result<(), Refusal> {
-    resolve_names(ast, ctx)?;
+    resolve_names(ast, ctx, source)?;
     lower_enum_variant_refs(ast, ctx, target);
     if !renames.is_empty() {
         rename_identifiers(ast, renames);
@@ -364,14 +442,131 @@ fn resolve_then_rename(
     Ok(())
 }
 
-/// Steps 0–2 of [`resolve_then_rename`]: the tree typed against `ctx`, and
-/// the names it reads that `ctx` does not carry refused. Everything a
-/// lowering needs to know about the expression and nothing it does to it.
-fn resolve_names(ast: &mut TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), Refusal> {
+/// Steps 0–2 of [`resolve_then_rename`]: the tree typed against `ctx`, the
+/// names it reads that `ctx` does not carry refused, and every call of a
+/// function `ctx` registers held to its signature. Everything a lowering
+/// needs to know about the expression and nothing it does to it. `source`
+/// is the text the tree was parsed from, which a refusal of an argument
+/// reports.
+fn resolve_names(ast: &mut TypedExpr, ctx: &TypeCtx<'_>, source: &str) -> Result<(), Refusal> {
     lower_previous(ast, ctx);
     infer_types(ast, ctx);
     reject_unknown_callees(ast, ctx)?;
-    reject_unknown_names(ast, ctx)
+    reject_unknown_names(ast, ctx)?;
+    reject_call_argument_mismatches(ast, ctx, source)
+}
+
+/// Whether a value of type `got` may stand where `slot` is declared.
+///
+/// Extended SCXML is typed and admits no implicit coercion, so a value
+/// stands only in a place of its own kind: a number where a number is
+/// declared, a `bool` where a `bool` is, a string where a string is. A
+/// string also stands as bytes: a bytes comparison reads a string literal
+/// as its bytes, and a string field is projected to a byte view. A type the
+/// pipeline could not name — an operand it does not know, `null` — is not
+/// judged here.
+///
+/// A number stands where another number type is declared when every
+/// backend makes the same value of it: an integer as any integer, wrapped
+/// to the declared width as fixed-width arithmetic wraps, or as a real; a
+/// real as a real of either width. A real where an integer is declared is
+/// refused. The backends do not agree on rounding it or on what an
+/// out-of-range value becomes — C leaves that undefined, Rust saturates —
+/// and `round` and `floor` say which one the document means.
+///
+/// ⚠ Nothing refused a real there before 2026-09-24: a real assigned to a
+/// `uint16` local generated on every backend, and Rust then assigned an
+/// `f32` to a `u16`, which rustc refuses.
+pub(crate) fn slot_admits(slot: InferredType, got: InferredType) -> bool {
+    use InferredType as T;
+    match (slot, got) {
+        (T::Unknown | T::Null, _) | (_, T::Unknown | T::Null) => true,
+        (slot, got) if slot.is_integer_like() => got.is_integer_like(),
+        (slot, got) if slot.is_numeric() => got.is_numeric(),
+        (T::Bool, got) => got == T::Bool,
+        (T::Str, got) => got == T::Str,
+        (T::Bytes, got) => matches!(got, T::Bytes | T::Str),
+        _ => true,
+    }
+}
+
+/// `value`, of a kind `slot` does not admit, refused at its range — which
+/// `source` is the text of, and the refusal reports as written.
+fn type_mismatch(slot: InferredType, value: &TypedExpr, source: &str) -> Refusal {
+    ExprError::TypeMismatch {
+        expected: slot.describe(),
+        got: value.ty.describe(),
+        observed: value
+            .span
+            .clone()
+            .and_then(|span| source.get(span))
+            .map(str::to_string),
+    }
+    .at(value.span.clone())
+}
+
+/// The whole expression, refused when `expected` declares a place its value
+/// may not stand in ([`slot_admits`]). A hint declares nothing.
+fn judge_slot(ast: &TypedExpr, expected: Expected, source: &str) -> Result<(), Refusal> {
+    match expected {
+        Expected::Slot(slot) if !slot_admits(slot, ast.ty) => Err(type_mismatch(slot, ast, source)),
+        Expected::Slot(_) | Expected::Hint(_) => Ok(()),
+    }
+}
+
+/// Refuse a call of a function `ctx` registers — an imported function, a
+/// `<sce:helper>`, a stateful import's method — whose arguments do not fit
+/// its signature: more or fewer than it takes, refused at the callee, or
+/// one whose kind its parameter does not admit ([`slot_admits`]), refused
+/// at that argument. A callee the context does not register — a builtin, a
+/// `Raw` symbol this pipeline lowered a call to — is not judged here.
+///
+/// ⚠ Nothing compared a call with its signature before 2026-09-24: an
+/// imported two-parameter algorithm called with one argument, or with its
+/// arguments' kinds swapped, generated on every backend and was refused
+/// only by the target language's compiler.
+fn reject_call_argument_mismatches(
+    expr: &TypedExpr,
+    ctx: &TypeCtx<'_>,
+    source: &str,
+) -> Result<(), Refusal> {
+    if let ExprKind::Call { callee, args } = &expr.kind {
+        // The same two spellings `infer_types` resolves a signature by: a
+        // bare name, and `obj.method` registered as `"{obj}.{method}"`.
+        let registered = match &callee.kind {
+            ExprKind::Ident(name) => ctx.lookup_func(name).map(|sig| (name.clone(), sig)),
+            ExprKind::Member { object, property } => match &object.kind {
+                ExprKind::Ident(object) => {
+                    let name = format!("{object}.{property}");
+                    ctx.lookup_func(&name).map(|sig| (name, sig))
+                }
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some((name, signature)) = registered {
+            if args.len() != signature.params.len() {
+                return Err(ExprError::ArgumentCount {
+                    callee: name,
+                    expected: signature.params.len(),
+                    actual: args.len(),
+                }
+                .at(callee.span.clone()));
+            }
+            if let Some((param, arg)) = signature
+                .params
+                .iter()
+                .zip(args)
+                .find(|(param, arg)| !slot_admits(**param, arg.ty))
+            {
+                return Err(type_mismatch(*param, arg, source));
+            }
+        }
+    }
+    for child in expr_children(expr) {
+        reject_call_argument_mismatches(child, ctx, source)?;
+    }
+    Ok(())
 }
 
 /// `expr` parsed and resolved against `ctx` — typed, and refused for a name
@@ -392,7 +587,7 @@ pub(crate) fn resolve(expr: &str, ctx: &TypeCtx<'_>) -> Result<TypedExpr, Refusa
         return Err(ExprError::Empty { what: "expression" }.at(None));
     }
     let mut ast = parse_to_ast(expr)?;
-    resolve_names(&mut ast, ctx)?;
+    resolve_names(&mut ast, ctx, expr)?;
     Ok(ast)
 }
 

@@ -998,6 +998,13 @@ pub enum DiagnosticCode {
     ExpressionInvalidLvalue,
     #[serde(rename = "expression/type-coercion")]
     ExpressionTypeCoercion,
+    // A value of one kind where the place it flows into declares another:
+    // judged once, before any backend emits, so every backend refuses the
+    // same documents — unlike `type-coercion`, a backend's own refusal.
+    #[serde(rename = "expression/type-mismatch")]
+    ExpressionTypeMismatch,
+    #[serde(rename = "expression/argument-count-mismatch")]
+    ExpressionArgumentCountMismatch,
     #[serde(rename = "expression/go-ternary-unsupported")]
     ExpressionGoTernaryUnsupported,
 
@@ -3165,6 +3172,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ExpressionUnexpectedToken,
         ExpressionInvalidLvalue,
         ExpressionTypeCoercion,
+        ExpressionTypeMismatch,
+        ExpressionArgumentCountMismatch,
         ExpressionGoTernaryUnsupported,
         // Import
         ImportFileNotFound,
@@ -3662,6 +3671,8 @@ impl DiagnosticCode {
             | ExpressionUnexpectedToken
             | ExpressionInvalidLvalue
             | ExpressionTypeCoercion
+            | ExpressionTypeMismatch
+            | ExpressionArgumentCountMismatch
             | ExpressionGoTernaryUnsupported => Some("SCE Forge §3.4"),
 
             // ── Mesh deploy.yaml schema (SCE_MESH.md §14) ────────
@@ -4484,6 +4495,8 @@ impl DiagnosticCode {
             ExpressionUnexpectedToken => "expression/unexpected-token",
             ExpressionInvalidLvalue => "expression/invalid-lvalue",
             ExpressionTypeCoercion => "expression/type-coercion",
+            ExpressionTypeMismatch => "expression/type-mismatch",
+            ExpressionArgumentCountMismatch => "expression/argument-count-mismatch",
             ExpressionGoTernaryUnsupported => "expression/go-ternary-unsupported",
             ImportFileNotFound => "import/file-not-found",
             ImportKindMismatch => "import/kind-mismatch",
@@ -8722,6 +8735,36 @@ fn expression_fields(e: &ExprError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![(*lang).to_string(), detail.clone()],
         },
+        // `expected` names the declared type as metadata: which value belongs
+        // there is the document's meaning, so there is no edit to propose.
+        ExprError::TypeMismatch {
+            expected,
+            got,
+            observed,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ExpressionTypeMismatch,
+            stage: Stage::Expression,
+            expected: Some(vec![expected.clone()]),
+            actual: observed.clone(),
+            fix: None,
+            key_fragments: vec![expected.clone(), got.clone()],
+        },
+        // The count a callee takes is metadata as a cardinality is; which
+        // argument to add or drop is the author's, and the arity is no text
+        // of the document — so no `actual`, as `algorithm/call-arg-count-
+        // mismatch` has none, and the record is placed at the callee.
+        ExprError::ArgumentCount {
+            callee,
+            expected,
+            actual,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ExpressionArgumentCountMismatch,
+            stage: Stage::Expression,
+            expected: Some(vec![expected.to_string()]),
+            actual: None,
+            fix: None,
+            key_fragments: vec![callee.clone(), expected.to_string(), actual.to_string()],
+        },
         ExprError::GoTernary => DiagnosticPayload {
             code: DiagnosticCode::ExpressionGoTernaryUnsupported,
             stage: Stage::Expression,
@@ -11383,6 +11426,26 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:af0be9fbfaff2085","code":"expression/type-coercion","stage":"expression","spec":"SCE Forge §3.4","message":"cannot coerce Rust expression: mixing i32 and String","actual":"label"}"#,
+            ),
+            (
+                "forge/expression-type-mismatch",
+                ExprError::TypeMismatch {
+                    expected: "uint16".into(),
+                    got: "bool".into(),
+                    observed: Some("reading === 3".into()),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:55ce10c9c15a81d6","code":"expression/type-mismatch","stage":"expression","spec":"SCE Forge §3.4","message":"bool where uint16 is expected: Extended SCXML admits no implicit coercion","expected":["uint16"],"actual":"reading === 3"}"#,
+            ),
+            (
+                "forge/expression-argument-count-mismatch",
+                ExprError::ArgumentCount {
+                    callee: "matched".into(),
+                    expected: 2,
+                    actual: 1,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:6a40bf0012c51570","code":"expression/argument-count-mismatch","stage":"expression","spec":"SCE Forge §3.4","message":"matched takes 2 argument(s), not 1","expected":["2"]}"#,
             ),
             (
                 "forge/import-file-not-found",
@@ -14752,6 +14815,13 @@ mod tests {
             | MeshDeployStatelessAcceptKeyRotationShorterThanLifetime
             | MeshDeploySessionArmingQuotaVsPeerTableInvariantViolated
             | MeshEventSchemaMismatch
+            // `expression/type-mismatch`: `expected` is the declared type of
+            // the place the value flows into; `expression/argument-count-
+            // mismatch`: the number of arguments the callee takes. Neither
+            // proposes an edit — which value, or which argument, is the
+            // author's.
+            | ExpressionTypeMismatch
+            | ExpressionArgumentCountMismatch
             | AlgorithmAppendTypeMismatch => ExpectedIsMetadata,
 
             // ── Deterministic fix or no fix; expected=None ────
@@ -15678,6 +15748,7 @@ mod tests {
                 | ExpressionStrictEquality
                 | ExpressionParseMismatch | ExpressionUnexpectedToken
                 | ExpressionInvalidLvalue | ExpressionTypeCoercion
+                | ExpressionTypeMismatch | ExpressionArgumentCountMismatch
                 | ExpressionGoTernaryUnsupported | ImportFileNotFound
                 | ImportKindMismatch | ImportNotForge | ImportReadError
                 | ManifestCircularDependency | ManifestIo
@@ -15938,9 +16009,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            382,
+            384,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 382 distinct variants to match the DiagnosticCode \
+             expected 384 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -16615,6 +16686,11 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ExpressionMemberOfNonRecord
             | ExpressionStrictEquality
             | ExpressionTypeCoercion
+            // Forge-only: a declared type exists for a forge kind's output,
+            // local, return or parameter; a statechart guard's values are
+            // the host's datamodel, untyped.
+            | ExpressionTypeMismatch
+            | ExpressionArgumentCountMismatch
             | ExpressionGoTernaryUnsupported
             | ImportFileNotFound
             | ImportKindMismatch
