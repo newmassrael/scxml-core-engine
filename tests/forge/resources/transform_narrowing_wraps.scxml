@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: transform kind — an integer converted to a
+     narrower type, or to the other sign, keeps its low bits on every
+     backend, read in the declared sign: 300 into a uint8 is 44, and
+     2147483648 into an int32 is -2147483648. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="transform" name="narrowing_wraps">
+  <datamodel>
+    <data id="wide" sce:type="uint32" sce:direction="in"/>
+    <data id="signedWide" sce:type="int32" sce:direction="in"/>
+    <data id="big" sce:type="int64" sce:direction="in"/>
+    <data id="low" sce:type="uint8" sce:direction="out"
+          expr="wide"/>
+    <data id="lowFromSigned" sce:type="uint8" sce:direction="out"
+          expr="signedWide"/>
+    <data id="narrowSigned" sce:type="int32" sce:direction="out"
+          expr="big"/>
+  </datamodel>
+</scxml>

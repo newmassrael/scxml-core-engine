@@ -127,6 +127,36 @@
       }
     },
     {
+      "name": "transform_narrowing_wraps",
+      "kind": "transform",
+      "ref_section": "pure_functions",
+      "args": [
+        "u32",
+        "i32",
+        "i64"
+      ],
+      "compound_outputs": [
+        {
+          "key": "low",
+          "function": "compute_low",
+          "type": "u8",
+          "compare": "equality"
+        },
+        {
+          "key": "low_from_signed",
+          "function": "compute_low_from_signed",
+          "type": "u8",
+          "compare": "equality"
+        },
+        {
+          "key": "narrow_signed",
+          "function": "compute_narrow_signed",
+          "type": "i32",
+          "compare": "equality"
+        }
+      ]
+    },
+    {
       "name": "transform_int_div",
       "kind": "transform",
       "ref_section": "pure_functions",

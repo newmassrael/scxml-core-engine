@@ -5203,10 +5203,47 @@ fn python_coerce(raw: String, from: InferredType, to: InferredType) -> String {
     if from == to || matches!(to, Unknown) || matches!(from, Unknown) {
         return raw;
     }
+    if let (
+        Int {
+            signed: from_signed,
+            bits: from_bits,
+        },
+        Int { signed, bits },
+    ) = (from.strip_quantity(), to.strip_quantity())
+    {
+        return python_wrap_int(raw, (from_signed, from_bits), (signed, bits));
+    }
     // Python's `/` is true division (PEP 238) and its dynamic typing
     // handles int→float implicitly.  No `.0` suffix needed — unlike
     // C++/Go/Kotlin/Rust where integer division would produce wrong results.
     raw
+}
+
+/// `raw`, an integer of type `from`, as the integer type `to` holds it: its
+/// value modulo 2^bits, read in `to`'s sign — what Rust's `as`, Go's and
+/// C's conversions and Kotlin's `toUByte()`/`toInt()` compute. Python's
+/// `int` has no width, so the conversion is spelled out; a `to` that holds
+/// every value of `from` leaves `raw` alone.
+///
+/// ⚠ Python kept the whole value until 2026-09-24: a `uint32` of 300
+/// assigned to a `uint8` stayed 300 where the other five backends gave 44.
+fn python_wrap_int(raw: String, from: (bool, u8), to: (bool, u8)) -> String {
+    let ((from_signed, from_bits), (signed, bits)) = (from, to);
+    let holds_every_value = match (from_signed, signed) {
+        (false, false) | (true, true) => from_bits <= bits,
+        (false, true) => from_bits < bits,
+        (true, false) => false,
+    };
+    if holds_every_value {
+        return raw;
+    }
+    let mask: u128 = (1u128 << bits) - 1;
+    if signed {
+        let half: u128 = 1u128 << (bits - 1);
+        format!("((({raw}) + 0x{half:X}) & 0x{mask:X}) - 0x{half:X}")
+    } else {
+        format!("({raw}) & 0x{mask:X}")
+    }
 }
 
 fn python_binop(op: BinOp) -> &'static str {
@@ -6401,6 +6438,37 @@ mod tests {
         )
         .unwrap();
         assert_eq!(out, "9 / 5 + celsius");
+    }
+
+    #[test]
+    fn python_wraps_an_integer_to_the_type_it_is_converted_to() {
+        // Rust `as`, Go and C conversions and Kotlin `toUByte()` keep the low
+        // bits; Python's `int` keeps all of them unless told otherwise.
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("wide", int(false, 32));
+        ctx.insert_var("signed_wide", int(true, 32));
+        ctx.insert_var("big", int(true, 64));
+        let py = |expr: &str, to: InferredType| {
+            transpile_typed(expr, ExprTarget::Python, &ctx, &empty_renames(), to).unwrap()
+        };
+        assert_eq!(py("wide", int(false, 8)), "(wide) & 0xFF");
+        assert_eq!(py("signed_wide", int(false, 8)), "(signed_wide) & 0xFF");
+        assert_eq!(
+            py("signed_wide", int(false, 64)),
+            "(signed_wide) & 0xFFFFFFFFFFFFFFFF"
+        );
+        assert_eq!(
+            py("big", int(true, 32)),
+            "(((big) + 0x80000000) & 0xFFFFFFFF) - 0x80000000"
+        );
+        assert_eq!(
+            py("wide", int(true, 32)),
+            "(((wide) + 0x80000000) & 0xFFFFFFFF) - 0x80000000"
+        );
+        // A type that holds every value of the source changes nothing.
+        assert_eq!(py("wide", int(false, 64)), "wide");
+        assert_eq!(py("wide", int(true, 64)), "wide");
+        assert_eq!(py("signed_wide", int(true, 64)), "signed_wide");
     }
 
     // ── Function signature lookup ───────────────────────────────

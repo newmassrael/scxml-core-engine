@@ -275,6 +275,38 @@
         }
       ]
     },
+    "transform_narrowing_wraps": {
+      "fixture": "compute_low / compute_low_from_signed / compute_narrow_signed",
+      "signature": "(wide: u32, signed_wide: i32, big: i64) -> {low: u8, low_from_signed: u8, narrow_signed: i32}",
+      "formula": "each input converted to its output's type: the value modulo 2^bits, read in the output's sign — what Rust `as`, Go and C conversions and Kotlin's toUByte()/toInt() compute",
+      "cases": [
+        {
+          "args": [300, -1, 2147483648],
+          "expected": {"low": 44, "low_from_signed": 255, "narrow_signed": -2147483648},
+          "note": "THE discriminator — Python's int kept 300, -1 and 2147483648 where the other five backends wrap"
+        },
+        {
+          "args": [4294967295, 300, -2147483649],
+          "expected": {"low": 255, "low_from_signed": 44, "narrow_signed": 2147483647},
+          "note": "the widest unsigned input, and a signed input below INT32_MIN that wraps to INT32_MAX"
+        },
+        {
+          "args": [255, -256, 4294967297],
+          "expected": {"low": 255, "low_from_signed": 0, "narrow_signed": 1},
+          "note": "a negative multiple of 256 has no low bits; 2^32 + 1 keeps only the 1"
+        },
+        {
+          "args": [200, 100, -5],
+          "expected": {"low": 200, "low_from_signed": 100, "narrow_signed": -5},
+          "note": "every value fits its output — the conversion changes nothing"
+        },
+        {
+          "args": [0, 0, 0],
+          "expected": {"low": 0, "low_from_signed": 0, "narrow_signed": 0},
+          "note": "all bits clear"
+        }
+      ]
+    },
     "transform_int_div": {
       "fixture": "compute_quotient",
       "signature": "(dividend: i32, divisor: i32) -> i32",
