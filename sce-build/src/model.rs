@@ -793,7 +793,15 @@ pub struct HistoryInfo {
     pub parent: String,
     #[serde(rename = "type")]
     pub history_type: String,
+    /// The default transition's `target` attribute text, as written — what
+    /// a diagnostic quotes back. Its tokens are
+    /// [`default_targets`](Self::default_targets).
     pub default_target: String,
+    /// §scxml-3.10.2: the default transition's target set — the history's
+    /// default stored state configuration — one id per token of its
+    /// `target`, as written.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub default_targets: Vec<String>,
     pub leaf_target: String,
     pub default_actions: Vec<Action>,
 }
@@ -1586,7 +1594,26 @@ pub struct OnSampleNode {
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct State {
     pub id: String,
+    /// The `initial` value as the parser leaves it — which several passes
+    /// rewrite: a multi-target initial elsewhere in the document can
+    /// override it, and a value naming a `<history>` is replaced by that
+    /// history's default target.
+    ///
+    /// ⚠ Not this state's initial transition. Read
+    /// [`initial_targets`](Self::initial_targets) for that.
     pub initial: String,
+    /// §scxml-3.3: the target set of this compound state's initial
+    /// transition — one id per token of the `initial` attribute or of the
+    /// `<initial>` element's transition, as written, or the first child
+    /// state in document order when the document names none. A token
+    /// naming a `<history>` stays that id. Empty for an atomic state, a
+    /// `<final>` and a `<parallel>`, none of which has an initial
+    /// transition.
+    ///
+    /// Captured where the element is parsed, before any pass rewrites
+    /// [`initial`](Self::initial).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub initial_targets: Vec<String>,
     pub initial_children: Vec<String>,
     pub is_final: bool,
     pub is_parallel: bool,
@@ -2089,7 +2116,21 @@ pub struct SCXMLModel {
     #[serde(skip)]
     pub imported_event_schemas:
         std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>,
+    /// The document's initial state, as the parser leaves it: resolved to
+    /// a leaf, and for a multi-token value collapsed to its first token.
+    ///
+    /// ⚠ Not the document's initial transition. Read
+    /// [`initial_targets`](Self::initial_targets) for that.
     pub initial: String,
+    /// §scxml-3.2: the target set of the document's initial transition —
+    /// one id per token of `<scxml initial>`, as written, or the first
+    /// child state in document order when the attribute is absent. What
+    /// the Appendix D entry procedures enter from the `<scxml>` element.
+    ///
+    /// Captured before any pass rewrites [`initial`](Self::initial), so it
+    /// cannot disagree with the document it came from.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub initial_targets: Vec<String>,
     pub initial_leaf: String,
     pub binding: String,
     /// The data model this document declares (§scxml-3.2 `datamodel`).

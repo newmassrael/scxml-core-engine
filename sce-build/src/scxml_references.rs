@@ -487,6 +487,7 @@ mod tests {
                 // A history default names descendants of the state it is
                 // declared in — `b1`, not `b` itself.
                 default_target: "b1".to_string(),
+                default_targets: vec!["b1".to_string()],
                 default_actions: Vec::new(),
             },
         );
@@ -503,6 +504,7 @@ mod tests {
                 history_type: "deep".to_string(),
                 leaf_target: String::new(),
                 default_target: "ghost".to_string(),
+                default_targets: vec!["ghost".to_string()],
                 default_actions: Vec::new(),
             },
         );

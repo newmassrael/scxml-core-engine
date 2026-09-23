@@ -2119,10 +2119,18 @@
               "type": "array"
             },
             "initial": {
+              "description": "The document's initial state, as the parser leaves it: resolved to a leaf, and for a multi-token value collapsed to its first token.\n\n⚠ Not the document's initial transition. Read [`initial_targets`](Self::initial_targets) for that.",
               "type": "string"
             },
             "initial_leaf": {
               "type": "string"
+            },
+            "initial_targets": {
+              "description": "§scxml-3.2: the target set of the document's initial transition — one id per token of `<scxml initial>`, as written, or the first child state in document order when the attribute is absent. What the Appendix D entry procedures enter from the `<scxml>` element.\n\nCaptured before any pass rewrites [`initial`](Self::initial), so it cannot disagree with the document it came from.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             },
             "inline_kinds": {
               "items": {
@@ -3704,7 +3712,15 @@
           "type": "array"
         },
         "default_target": {
+          "description": "The default transition's `target` attribute text, as written — what a diagnostic quotes back. Its tokens are [`default_targets`](Self::default_targets).",
           "type": "string"
+        },
+        "default_targets": {
+          "description": "§scxml-3.10.2: the default transition's target set — the history's default stored state configuration — one id per token of its `target`, as written.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "leaf_target": {
           "type": "string"
@@ -5178,6 +5194,7 @@
           "type": "string"
         },
         "initial": {
+          "description": "The `initial` value as the parser leaves it — which several passes rewrite: a multi-target initial elsewhere in the document can override it, and a value naming a `<history>` is replaced by that history's default target.\n\n⚠ Not this state's initial transition. Read [`initial_targets`](Self::initial_targets) for that.",
           "type": "string"
         },
         "initial_children": {
@@ -5197,6 +5214,13 @@
         },
         "initial_history_id": {
           "type": "string"
+        },
+        "initial_targets": {
+          "description": "§scxml-3.3: the target set of this compound state's initial transition — one id per token of the `initial` attribute or of the `<initial>` element's transition, as written, or the first child state in document order when the document names none. A token naming a `<history>` stays that id. Empty for an atomic state, a `<final>` and a `<parallel>`, none of which has an initial transition.\n\nCaptured where the element is parsed, before any pass rewrites [`initial`](Self::initial).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "initial_transition_actions": {
           "items": {

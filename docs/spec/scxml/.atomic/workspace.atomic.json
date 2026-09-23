@@ -536,6 +536,11 @@
           "file": "sce/src/parsing/SCXMLParser.cpp",
           "symbol": "SCE::SCXMLParser::validateModel",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "symbol": "HistoryInfo",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -2572,6 +2577,11 @@
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "initial_state",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "parse_impl",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -2988,6 +2998,11 @@
         {
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "is_compound_state",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "parse_states",
           "kind": "references"
         }
       ],

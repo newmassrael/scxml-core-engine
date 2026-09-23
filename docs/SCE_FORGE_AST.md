@@ -326,6 +326,7 @@ here):
       "name": "example_machine",
       "scxml_name": "example_machine",
       "initial": "s0",
+      "initial_targets": ["s0"],
       "initial_leaf": "s0",
       "datamodel_type": "ecmascript",
       "binding": "early",
@@ -335,7 +336,7 @@ here):
           "document_order": 0,
           "transitions": [
             {
-              "event": "go", "target": "done",
+              "event": "go", "target": "done", "targets": ["done"],
               "type": "external",
               "matching_enum_values": ["go"],
               "prefix_matching_events": ["go"]

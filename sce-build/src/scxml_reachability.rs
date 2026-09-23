@@ -397,6 +397,7 @@ mod tests {
                 parent: String::new(),
                 history_type: "shallow".to_string(),
                 default_target: "armed".to_string(),
+                default_targets: vec!["armed".to_string()],
                 leaf_target: "armed".to_string(),
                 default_actions: Vec::new(),
             },

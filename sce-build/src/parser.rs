@@ -1836,6 +1836,10 @@ impl SCXMLParser {
         let mut model = SCXMLModel {
             name: name.to_string(),
             scxml_name: root.attribute("name").unwrap_or("").to_string(),
+            // §scxml-3.2: the initial transition's target set, as written —
+            // taken here, before `resolve_deep_initial` and
+            // `apply_parallel_initial_overrides` rewrite `initial`.
+            initial_targets: initial.split_whitespace().map(str::to_string).collect(),
             initial,
             binding: root.attribute("binding").unwrap_or("early").to_string(),
             datamodel: resolve_declared_datamodel(root.attribute("datamodel"))
@@ -2072,6 +2076,7 @@ impl SCXMLParser {
                 .map(|(id, _)| id.clone())
             {
                 model.initial = state_id.clone();
+                model.initial_targets = vec![state_id.clone()];
                 model.initial_leaf = state_id;
             }
         }
@@ -2493,6 +2498,23 @@ impl SCXMLParser {
                     model.states.get_mut(&state_id).unwrap().initial = child_id;
                 }
             }
+
+            // §scxml-3.3: the initial transition's target set, as written or
+            // as defaulted just above — taken before any later pass rewrites
+            // `initial`. Only a compound state has one; a <state> without
+            // child states is atomic.
+            let compound = model
+                .states
+                .values()
+                .any(|s| s.parent.as_deref() == Some(state_id.as_str()));
+            if compound {
+                let state = model.states.get_mut(&state_id).unwrap();
+                state.initial_targets = state
+                    .initial
+                    .split_whitespace()
+                    .map(str::to_string)
+                    .collect();
+            }
         }
 
         // Parse <final> elements
@@ -2676,6 +2698,10 @@ impl SCXMLParser {
                     parent: parent_id.unwrap_or("").to_string(),
                     history_type,
                     leaf_target: String::new(), // resolved later
+                    default_targets: default_target
+                        .split_whitespace()
+                        .map(str::to_string)
+                        .collect(),
                     default_target,
                     default_actions,
                 },
@@ -9085,5 +9111,83 @@ mod tests {
         assert!(armed.req.is_empty());
         assert!(armed.transitions[0].req.is_empty());
         assert!(armed.on_entry_blocks[0][0].req.is_empty());
+    }
+
+    // ── Target sets are kept as written ─────────────────────────────────
+    //
+    // The Appendix D entry procedures read a document's target sets — the
+    // initial transitions and every transition's `target` — and three passes
+    // rewrite the single-string fields next to them: `resolve_deep_initial`
+    // and `apply_parallel_initial_overrides` rewrite `initial`, and
+    // `resolve_history_targets` replaces a history id by its default. A
+    // rewrite reaching a set would change what is entered.
+
+    const TARGET_SETS: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="a1 b2" datamodel="null">
+  <parallel id="p">
+    <state id="ra" initial="a0">
+      <state id="a0"/>
+      <state id="a1"/>
+    </state>
+    <state id="rb">
+      <initial><transition target="hb"/></initial>
+      <history id="hb" type="deep"><transition target="b1"/></history>
+      <state id="b1"/>
+      <state id="b2">
+        <transition event="back" target="hb"/>
+      </state>
+    </state>
+  </parallel>
+</scxml>"#;
+
+    #[test]
+    fn a_multi_target_initial_is_kept_whole_and_does_not_leak_into_its_ancestors() {
+        let model = SCXMLParser::new()
+            .parse_string(TARGET_SETS, "target_sets")
+            .expect("parse");
+        assert_eq!(model.initial_targets, ["a1", "b2"]);
+        // `apply_parallel_initial_overrides` points `ra`'s `initial` at `a1`
+        // for the document's own initial entry; the state's initial
+        // transition is still the one it wrote.
+        assert_eq!(model.states["ra"].initial_targets, ["a0"]);
+        assert!(
+            model.states["p"].initial_targets.is_empty(),
+            "a <parallel> has no initial transition"
+        );
+        assert!(
+            model.states["a0"].initial_targets.is_empty(),
+            "an atomic state has none"
+        );
+    }
+
+    #[test]
+    fn a_history_token_stays_a_history_in_every_target_set() {
+        let model = SCXMLParser::new()
+            .parse_string(TARGET_SETS, "target_sets")
+            .expect("parse");
+        assert_eq!(model.states["rb"].initial_targets, ["hb"]);
+        let back = &model.states["b2"].transitions[0];
+        assert_eq!(back.targets, ["hb"]);
+        // The single-string field is the rewritten one.
+        assert_eq!(back.history_target.as_deref(), Some("hb"));
+        assert_eq!(model.history_states["hb"].default_targets, ["b1"]);
+    }
+
+    #[test]
+    fn a_compound_state_without_an_initial_takes_its_first_child_in_document_order() {
+        // A `<final>` written first is the first child, although `<state>`
+        // children are parsed before `<final>` ones.
+        let model = SCXMLParser::new()
+            .parse_string(
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null">
+  <state id="c">
+    <final id="cz"/>
+    <state id="ca"/>
+  </state>
+</scxml>"#,
+                "first_child",
+            )
+            .expect("parse");
+        assert_eq!(model.initial_targets, ["c"]);
+        assert_eq!(model.states["c"].initial_targets, ["cz"]);
     }
 }
