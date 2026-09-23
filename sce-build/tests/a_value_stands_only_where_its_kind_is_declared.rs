@@ -184,6 +184,59 @@ const INTERPOLATION_ARITY: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "#;
 
+/// A stateful import's method called with two arguments where it takes one.
+/// C11 lowers such a call to its own free function, and until 2026-09-24
+/// did so before any check ran, so C11 alone generated this and the next.
+const METHOD_ARITY: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="procedure" initial="sample" version="1.0">
+  <sce:import src="probe_smoother.scxml" kind="filter" as="smoother"/>
+  <datamodel>
+    <data id="rawSample" sce:type="float64" sce:direction="in"/>
+    <data id="smoothed" sce:type="float64" sce:direction="internal"/>
+  </datamodel>
+  <state id="sample">
+    <transition target="done">
+      <assign location="smoothed"
+              expr="smoother.update(rawSample, rawSample)"/>
+    </transition>
+  </state>
+  <final id="done">
+    <donedata><param name="result" expr="'success'"/></donedata>
+  </final>
+</scxml>
+"#;
+
+/// The same method's `float64` result assigned to a `bool` local.
+const METHOD_SLOT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="procedure" initial="sample" version="1.0">
+  <sce:import src="probe_smoother.scxml" kind="filter" as="smoother"/>
+  <datamodel>
+    <data id="rawSample" sce:type="float64" sce:direction="in"/>
+    <data id="flag" sce:type="bool" sce:direction="internal"/>
+  </datamodel>
+  <state id="sample">
+    <transition target="done">
+      <assign location="flag"
+              expr="smoother.update(rawSample)"/>
+    </transition>
+  </state>
+  <final id="done">
+    <donedata><param name="result" expr="'success'"/></donedata>
+  </final>
+</scxml>
+"#;
+
+/// The filter the method cases import: `update` takes one `float64`.
+const PROBE_SMOOTHER: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="filter" version="1.0">
+  <datamodel>
+    <data id="rawSignal" sce:type="float64" sce:direction="in"/>
+    <data id="smoothed" sce:type="float64" sce:direction="out"
+          sce:filter="low-pass" sce:alpha="0.1"/>
+  </datamodel>
+</scxml>
+"#;
+
 /// The algorithm the call cases import: a `bool` then a `uint16`.
 const PROBE_MATCH: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_match" version="1.0">
@@ -254,6 +307,7 @@ const CONTROLS: &[&str] = &["probe_control.scxml", "probe_interpolation_control.
 const SUPPORT: &[(&str, &str)] = &[
     ("probe_match.scxml", PROBE_MATCH),
     ("probe_limit.scxml", PROBE_LIMIT),
+    ("probe_smoother.scxml", PROBE_SMOOTHER),
     ("probe_control.scxml", CONTROL),
     ("probe_interpolation_control.scxml", INTERPOLATION_CONTROL),
 ];
@@ -330,6 +384,22 @@ const CASES: &[Case] = &[
         line: 7,
         col: 29,
         actual: None,
+    },
+    Case {
+        file: "probe_method_arity.scxml",
+        document: METHOD_ARITY,
+        code: "expression/argument-count-mismatch",
+        line: 11,
+        col: 21,
+        actual: None,
+    },
+    Case {
+        file: "probe_method_slot.scxml",
+        document: METHOD_SLOT,
+        code: "expression/type-mismatch",
+        line: 11,
+        col: 21,
+        actual: Some("smoother.update(rawSample)"),
     },
 ];
 

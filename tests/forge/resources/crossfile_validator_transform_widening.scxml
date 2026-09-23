@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: cross-file composition — arguments narrower than
+     the parameter they are passed to. The imported transform takes a
+     uint16; the validator passes it a uint8 input and an integer literal.
+     Each argument is converted to its parameter's type, as the
+     <sce:call> statement form already did: before 2026-09-24 the
+     expression form passed them as they were, and rustc refused a u8
+     where a u16 was declared. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="validator" version="1.0">
+  <sce:import src="transform_temperature.scxml" kind="transform" as="tempConvert"/>
+
+  <datamodel>
+    <data id="rawByte" sce:type="uint8" sce:direction="in"
+          sce:range-min="0" sce:range-max="200"/>
+    <data id="valid" sce:type="bool" sce:direction="out"
+          sce:plausibility="tempConvert(rawByte) &gt; tempConvert(0)"/>
+  </datamodel>
+</scxml>

@@ -624,6 +624,26 @@
       ]
     },
     {
+      "name": "crossfile_validator_transform_widening",
+      "kind": "validator",
+      "ref_section": "validators",
+      "args": [
+        "u8"
+      ],
+      "output": [
+        {
+          "name": "valid",
+          "type": "bool",
+          "compare": "equality"
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "compare": "equality"
+        }
+      ]
+    },
+    {
       "name": "crossfile_validator_condition",
       "kind": "validator",
       "ref_section": "validators",

@@ -14637,7 +14637,7 @@ fn render_validator(
                 // Codec: validator currently only reads codec fields in
                 // plausibility (no `frame.encode()` call site exists in
                 // any validator fixture). Empty methods list keeps the
-                // pre-pass a no-op for codec; the field rename map
+                // lowering a no-op for codec; the field rename map
                 // (entry 4 above) handles every read path.
                 "codec" => Vec::new(),
                 // Other stateful kinds: no fixture consumer yet. Add
@@ -14661,10 +14661,11 @@ fn render_validator(
         .map(|e| ExpressionSite::new(e, m.rules.plausibility_spelling.as_ref()));
     let plausibility_expr = match plausibility {
         Some(site) => Some({
-            // C11 with stateful imports → AST pre-pass for method-call
-            // lowering. Other languages and stateless-only C11 flow
-            // through the standard pipeline; the rename map already
-            // collapses field/method Member nodes for those paths.
+            // C11 with stateful imports → the method-call lowering, run
+            // once the expression is resolved and its calls judged. Other
+            // languages and stateless-only C11 flow through the standard
+            // pipeline; the rename map already collapses field/method
+            // Member nodes for those paths.
             if matches!(lang, Language::C11) && has_stateful_imports {
                 expr::transpile_typed_with_import_lowering(
                     site.source,
@@ -17889,7 +17890,7 @@ fn render_procedure_c_l2(
     // Cross-file stateful-import field renames: `frame.msgId` →
     // `_st->frame_.msg_id`. The matching method-call rewrite (e.g.
     // `frame.encode()` → `codec_simple_frame_encode(&_st->frame_)`) flows
-    // through the C11 AST pre-pass, not this rename map — see
+    // through the C11 AST lowering, not this rename map — see
     // `stateful_import_method_renames` for the rationale.
     let import_field_renames = stateful_import_field_renames(imports, &generator::Language::C11);
     for (k, v) in &import_field_renames {
@@ -18370,7 +18371,7 @@ fn stateful_import_method_renames(
                 // function taking an explicit `<snake>_t *self` first
                 // arg, so the rewrite must inject an argument that a
                 // `Member→Raw` collapse cannot produce. The matching
-                // transform happens in the C11-only AST pre-pass
+                // transform happens in the C11-only AST lowering
                 // `expr::lower_stateful_import_calls` invoked through
                 // `expr::transpile_typed_with_import_lowering`; by the
                 // time the rename pass runs, the Member node is already
@@ -18483,10 +18484,10 @@ fn transpile_procedure_expr(
 }
 
 /// C11 procedure expression transpile that runs the stateful-import
-/// method-call lowering pre-pass before the standard pipeline. Falls back
-/// to the plain [`transpile_procedure_expr`] when `lowerings` is empty so
-/// the caller can use the same wrapper for procedures with or without
-/// imports without branching.
+/// method-call lowering once the expression is resolved and its calls
+/// judged. Falls back to the plain [`transpile_procedure_expr`] when
+/// `lowerings` is empty so the caller can use the same wrapper for
+/// procedures with or without imports without branching.
 fn transpile_procedure_expr_c11(
     site: ExpressionSite<'_>,
     type_ctx: &crate::forge::types::TypeCtx<'_>,
@@ -18844,10 +18845,9 @@ fn build_procedure_states_with_assigns(
                             // C11 stateful-import lowering: assign RHS may
                             // call an imported codec's instance method
                             // (e.g. `frame.encode()`), which needs the
-                            // free-function rewrite pre-pass before the
-                            // shared infer/rename/emit pipeline. Other
-                            // backends route through `transpile_procedure_expr`
-                            // unchanged.
+                            // free-function rewrite between resolution and
+                            // rename. Other backends route through
+                            // `transpile_procedure_expr` unchanged.
                             let value = ExpressionSite::new(&a.expr, a.expr_spelling.as_ref());
                             let transpiled = if matches!(target, ExprTarget::C) {
                                 transpile_procedure_expr_c11(

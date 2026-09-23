@@ -2146,6 +2146,63 @@
         }
       ]
     },
+    "crossfile_validator_transform_widening": {
+      "fixture": "CrossfileValidatorTransformWidening::validate",
+      "signature": "(rawByte: u8) -> ValidationResult{valid, reason}",
+      "description": "Cross-file composition fixture whose call arguments are narrower than the parameters they are passed to: the imported transform_temperature (`tempConvert`) takes a u16, and the plausibility predicate `tempConvert(rawByte) > tempConvert(0)` passes it the u8 input and an integer literal. Every backend converts each argument to its parameter's type; the values are the transform's own, so the predicate passes iff rawByte > 0 (tempConvert(raw) = raw * 0.1 - 40.0 and tempConvert(0) = -40.0 exactly). Evaluation order: range check (rawByte in [0, 200]) -> plausibility.",
+      "sequence": [
+        {
+          "args": [
+            1
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "raw=1 -> -39.9 > -40.0; the smallest value the predicate admits"
+        },
+        {
+          "args": [
+            200
+          ],
+          "expected": {
+            "valid": true,
+            "reason": ""
+          },
+          "note": "raw=200 -> -20.0 > -40.0; the range's upper bound, inclusive"
+        },
+        {
+          "args": [
+            0
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "plausibility_failed"
+          },
+          "note": "raw=0 -> -40.0, equal to tempConvert(0); in range, so plausibility is what fails"
+        },
+        {
+          "args": [
+            201
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "raw_byte_out_of_range"
+          },
+          "note": "raw=201 -> just above range; the range check fires first"
+        },
+        {
+          "args": [
+            255
+          ],
+          "expected": {
+            "valid": false,
+            "reason": "raw_byte_out_of_range"
+          },
+          "note": "raw=255 -> the largest u8; out of range"
+        }
+      ]
+    },
     "crossfile_validator_condition": {
       "fixture": "CrossfileValidatorCondition::validate",
       "signature": "(coolantTemp: f64, oilTemp: f64, maxTemp: f64) -> ValidationResult{valid, reason}",

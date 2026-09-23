@@ -134,7 +134,7 @@ fn children(e: &TypedExpr) -> Vec<&TypedExpr> {
         } => vec![condition, consequent, alternate],
         ExprKind::Member { object, .. } => vec![object],
         ExprKind::Index { object, index } => vec![object, index],
-        ExprKind::Call { callee, args } => {
+        ExprKind::Call { callee, args, .. } => {
             let mut v = vec![&**callee];
             v.extend(args.iter());
             v

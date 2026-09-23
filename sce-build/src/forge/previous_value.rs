@@ -97,7 +97,7 @@ fn walk(e: &TypedExpr, out: &mut Reads) -> Result<(), Malformed> {
             }
             return Ok(());
         }
-        ExprKind::Call { callee, args } => {
+        ExprKind::Call { callee, args, .. } => {
             if matches!(&callee.kind, ExprKind::Ident(n) if n == PREVIOUS) {
                 return match args.as_slice() {
                     [arg] => match &arg.kind {

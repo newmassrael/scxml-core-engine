@@ -217,7 +217,7 @@ fn find_unit_mismatch(ast: &TypedExpr) -> Option<UnitMismatch> {
         ExprKind::Index { object, index } => {
             find_unit_mismatch(object).or_else(|| find_unit_mismatch(index))
         }
-        ExprKind::Call { callee, args } => {
+        ExprKind::Call { callee, args, .. } => {
             if let Some(child) = find_unit_mismatch(callee) {
                 return Some(child);
             }

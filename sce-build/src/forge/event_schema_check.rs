@@ -493,7 +493,7 @@ fn cond_references_event_data(expr: &TypedExpr) -> bool {
         ExprKind::Index { object, index } => {
             cond_references_event_data(object) || cond_references_event_data(index)
         }
-        ExprKind::Call { callee, args } => {
+        ExprKind::Call { callee, args, .. } => {
             cond_references_event_data(callee) || args.iter().any(cond_references_event_data)
         }
         // RFC c7-wildcard W-project: a `BytesView` projection is produced
@@ -800,7 +800,7 @@ fn walk_for_event_data_refs(
                 diag_label,
             )?;
         }
-        ExprKind::Call { callee, args } => {
+        ExprKind::Call { callee, args, .. } => {
             walk_for_event_data_refs(
                 callee,
                 schema,

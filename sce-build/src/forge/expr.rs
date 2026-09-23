@@ -273,7 +273,7 @@ fn transpile_at(
     // context; the rename pass then changes only the syntactic form,
     // leaving each TypedExpr's `ty` slot intact (which is exactly what the
     // `Raw` arm of `infer_types` already documents).
-    resolve_then_rename(&mut ast, ctx, renames, target, expr)?;
+    resolve_then_rename(&mut ast, ctx, renames, target, &[], expr)?;
     judge_slot(&ast, slot, expr)?;
 
     // RFC c7-wildcard W-project: Go exports struct fields in PascalCase
@@ -330,8 +330,9 @@ pub fn infer_expr_type(expr: &str, ctx: &TypeCtx<'_>) -> Result<InferredType, Re
 /// must lower to `<free_fn>(<prepended_arg>, args...)` where `<free_fn>` is
 /// looked up per method in [`ImportLowering::methods`]. The textual rename
 /// map cannot express the prepended-argument injection on its own, so the
-/// C11 transpile entry runs an AST pre-pass keyed by this descriptor before
-/// the standard infer/rename/emit pipeline.
+/// C11 transpile entry runs an AST rewrite keyed by this descriptor once the
+/// tree is resolved and its calls judged, before rename and emission
+/// ([`resolve_then_rename`] step 3).
 ///
 /// **Per-method routing**: each `(method_name, free_fn)` entry maps the
 /// SCXML-source method spelling (`"encode"`, `"update"`, ...) to the actual
@@ -350,12 +351,12 @@ pub(crate) struct ImportLowering {
     /// every `Call{Member{Ident(alias), method}, args}` site.
     pub alias: String,
     /// Pre-rendered first-argument expression (e.g. `&_st->frame_`). The
-    /// pre-pass installs it as a `Raw` node at index 0 of the rewritten
+    /// rewrite installs it as a `Raw` node at index 0 of the rewritten
     /// Call's args, so the existing emit_c walker stamps it out verbatim
     /// without further coercion. Identical for every method on a given
     /// import — the prepended `self` reference does not vary by method.
     pub prepended_arg: String,
-    /// Per-method routing: `(method_name, free_fn)` pairs. The pre-pass
+    /// Per-method routing: `(method_name, free_fn)` pairs. The rewrite
     /// looks up the source-level method name and rewrites the Call's
     /// callee to the matching free-function symbol verbatim. Unmatched
     /// methods are left untouched — see the type-level doc for rationale.
@@ -366,14 +367,14 @@ pub(crate) struct ImportLowering {
 /// import method-call lowering.
 ///
 /// Same pipeline as [`transpile_typed`] (target = `ExprTarget::C`,
-/// expected ECMAScript subset), but inserts a C11-specific AST rewrite
-/// before the infer/rename/emit chain: every `Call{Member{Ident(alias),
-/// method}, args}` whose `alias` matches a [`ImportLowering`] entry is
-/// rewritten to the equivalent free-function call form documented on
-/// [`ImportLowering`]. Sites whose alias does not match are left
-/// untouched, falling through to the normal pipeline (where they would
-/// surface as an unknown-identifier rename — exactly the diagnostic the
-/// caller wants for typos in `<sce:import as="...">` references).
+/// expected ECMAScript subset), plus one C11-specific AST rewrite once the
+/// tree is resolved: every `Call{Member{Ident(alias), method}, args}` whose
+/// `alias` matches a [`ImportLowering`] entry is rewritten to the
+/// equivalent free-function call form documented on [`ImportLowering`].
+/// Sites whose alias does not match are left untouched, falling through to
+/// the normal pipeline (where they would surface as an unknown-identifier
+/// rename — exactly the diagnostic the caller wants for typos in
+/// `<sce:import as="...">` references).
 pub(crate) fn transpile_typed_with_import_lowering(
     expr: &str,
     ctx: &TypeCtx<'_>,
@@ -387,23 +388,7 @@ pub(crate) fn transpile_typed_with_import_lowering(
     }
 
     let mut ast = parse_to_ast(expr)?;
-    // C11-only lowering must run *before* infer/rename: the rewritten Call
-    // node's callee is a `Raw` fragment (free-function name) and its first
-    // arg is a `Raw` fragment (`&_st->member`), both of which `infer_types`
-    // and `rename_identifiers` already document as inert under their walks.
-    // The remaining args still carry Ident leaves that the standard pipeline
-    // resolves through `ctx` and `renames` exactly as if no lowering had
-    // happened — keeping the expression-pipeline's existing contract intact.
-    if !lowerings.is_empty() {
-        lower_stateful_import_calls(&mut ast, lowerings);
-    }
-    // ⚠ The C11 path lowers stateful import calls ABOVE, so by here a
-    // `smoother.update(x)` has become the `Raw` C symbol
-    // `filter_low_pass_update(...)`. Both name checks ignore a `Raw` for that
-    // reason — it is this pipeline's product, not an author's name, and it
-    // is in `ctx` under no spelling. A user's name is still an `Ident` at
-    // this point, so each check keeps its subject either way.
-    resolve_then_rename(&mut ast, ctx, renames, ExprTarget::C, expr)?;
+    resolve_then_rename(&mut ast, ctx, renames, ExprTarget::C, lowerings, expr)?;
     judge_slot(&ast, expected, expr)?;
     Ok(emit_c(&ast, expected.ty())?)
 }
@@ -422,19 +407,34 @@ pub(crate) fn transpile_typed_with_import_lowering(
 /// 1. [`infer_types`] BEFORE anything renames, because `ctx` is keyed by
 ///    the names the author wrote and a renamed node is a `Raw` it can no
 ///    longer look up (see [`transpile_typed`]).
-/// 2. The two name checks, still before rename, for the same reason and
-///    because the diagnostic must name back what the author wrote.
-/// 3. Enum variants lowered to this backend's spelling once the names are
+/// 2. The two name checks and the call checks, still before rename, for
+///    the same reason and because the diagnostic must name back what the
+///    author wrote.
+/// 3. C11's stateful import calls lowered to free functions (`lowerings`,
+///    empty everywhere else), once the calls are judged: the lowered call
+///    is a `Raw` symbol that `ctx` holds under no spelling, so no check
+///    could judge it afterwards.
+/// 4. Enum variants lowered to this backend's spelling once the names are
 ///    known good; rename leaves the resulting `Raw` alone.
-/// 4. Rename.
+/// 5. Rename.
+///
+/// ⚠ Step 3 ran first, before inference, until 2026-09-24. Every check then
+/// saw a `Raw` callee and skipped it, so a stateful import's method called
+/// with the wrong number of arguments, or into a place of another kind, was
+/// refused on five backends and generated on C11 — measured with a filter's
+/// `update` called with two arguments.
 fn resolve_then_rename(
     ast: &mut TypedExpr,
     ctx: &TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
     target: ExprTarget,
+    lowerings: &[ImportLowering],
     source: &str,
 ) -> Result<(), Refusal> {
     resolve_names(ast, ctx, source)?;
+    if !lowerings.is_empty() {
+        lower_stateful_import_calls(ast, lowerings);
+    }
     lower_enum_variant_refs(ast, ctx, target);
     if !renames.is_empty() {
         rename_identifiers(ast, renames);
@@ -530,7 +530,7 @@ fn reject_call_argument_mismatches(
     ctx: &TypeCtx<'_>,
     source: &str,
 ) -> Result<(), Refusal> {
-    if let ExprKind::Call { callee, args } = &expr.kind {
+    if let ExprKind::Call { callee, args, .. } = &expr.kind {
         // The same two spellings `infer_types` resolves a signature by: a
         // bare name, and `obj.method` registered as `"{obj}.{method}"`.
         let registered = match &callee.kind {
@@ -602,9 +602,17 @@ pub(crate) fn resolve(expr: &str, ctx: &TypeCtx<'_>) -> Result<TypedExpr, Refusa
 /// which the rename pass handles after this rewrite returns. Splitting the
 /// two cases at AST shape — Call vs. bare Member — keeps each pass's
 /// responsibility one-thing-only.
+///
+/// Runs on a RESOLVED tree ([`resolve_then_rename`] step 3): the call keeps
+/// the type and the parameter types inference gave the method it names,
+/// and the prepended state argument takes no parameter type of its own.
 fn lower_stateful_import_calls(ast: &mut TypedExpr, lowerings: &[ImportLowering]) {
     match &mut ast.kind {
-        ExprKind::Call { callee, args } => {
+        ExprKind::Call {
+            callee,
+            args,
+            params,
+        } => {
             // Try the lowering match first so a successful rewrite does not
             // double-walk the (now-replaced) callee through the recursive
             // arms below.
@@ -628,9 +636,13 @@ fn lower_stateful_import_calls(ast: &mut TypedExpr, lowerings: &[ImportLowering]
                             for arg in new_args.iter_mut().skip(1) {
                                 lower_stateful_import_calls(arg, lowerings);
                             }
+                            let mut new_params = Vec::with_capacity(params.len() + 1);
+                            new_params.push(InferredType::Unknown);
+                            new_params.append(params);
                             ast.kind = ExprKind::Call {
                                 callee: new_callee,
                                 args: new_args,
+                                params: new_params,
                             };
                             return;
                         }
@@ -1042,6 +1054,13 @@ pub(crate) enum ExprKind {
     Call {
         callee: Box<TypedExpr>,
         args: Vec<TypedExpr>,
+        /// The parameter types of the function the call resolved to, one per
+        /// argument in position order — what each argument converts to, the
+        /// way a value converts to the place it lands in. Empty until
+        /// [`infer_types`] resolves the callee, and for a callee no context
+        /// registers (a builtin, a symbol this pipeline lowered a call to),
+        /// whose arguments are emitted as they are.
+        params: Vec<InferredType>,
     },
     /// A borrowed `bytes`-view projection of a `Str`-typed source. Not
     /// produced by the parser — [`infer_types`] wraps a call argument in
@@ -1187,7 +1206,7 @@ pub fn read_identifiers(raw_expr: &str) -> Result<Vec<String>, Refusal> {
                 walk(object, names);
                 walk(index, names);
             }
-            ExprKind::Call { callee, args } => {
+            ExprKind::Call { callee, args, .. } => {
                 walk(callee, names);
                 for arg in args {
                     walk(arg, names);
@@ -2213,6 +2232,7 @@ impl<'a> Parser<'a> {
                         ExprKind::Call {
                             callee: Box::new(expr),
                             args,
+                            params: Vec::new(),
                         },
                     );
                 }
@@ -2308,7 +2328,7 @@ fn rename_identifiers(ast: &mut TypedExpr, renames: &HashMap<&str, &str>) {
             rename_identifiers(object, renames);
             rename_identifiers(index, renames);
         }
-        ExprKind::Call { callee, args } => {
+        ExprKind::Call { callee, args, .. } => {
             rename_identifiers(callee, renames);
             for arg in args {
                 rename_identifiers(arg, renames);
@@ -2360,7 +2380,7 @@ fn export_go_member_properties(ast: &mut TypedExpr) {
             export_go_member_properties(object);
             export_go_member_properties(index);
         }
-        ExprKind::Call { callee, args } => {
+        ExprKind::Call { callee, args, .. } => {
             export_go_member_properties(callee);
             for arg in args {
                 export_go_member_properties(arg);
@@ -2612,7 +2632,11 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
                 }
             }
         }
-        ExprKind::Call { callee, args } => {
+        ExprKind::Call {
+            callee,
+            args,
+            params: call_params,
+        } => {
             infer_types(callee, ctx);
             for a in args.iter_mut() {
                 infer_types(a, ctx);
@@ -2646,12 +2670,8 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
                     // bounded-string field used as bytes — project it to a
                     // borrowed `bytes` view so the call site emits each
                     // backend's byte-view idiom. A `Bytes` argument (an
-                    // upstream view param) passes through unprojected; a
-                    // numeric / `Unknown` argument is left verbatim (the
-                    // pre-W-project behaviour — a genuine mistype then
-                    // surfaces as a host-language type error rather than a
-                    // silent reinterpretation). Gated to the algorithm kind
-                    // via the TypeCtx flag.
+                    // upstream view param) passes through unprojected.
+                    // Gated to the algorithm kind via the TypeCtx flag.
                     if ctx.project_str_args_as_bytes_view {
                         for (i, a) in args.iter_mut().enumerate() {
                             if matches!(params.get(i), Some(InferredType::Bytes))
@@ -2661,6 +2681,16 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
                             }
                         }
                     }
+                    // Every other argument converts to its parameter's type
+                    // when emitted, as a value converts to the place it
+                    // lands in; one of a kind its parameter does not admit
+                    // is refused before that (`reject_call_argument_mismatches`).
+                    //
+                    // ⚠ Until 2026-09-24 the arguments were emitted as they
+                    // were: a `uint8` passed to a `uint16` parameter reached
+                    // Rust as a `u8`, which rustc refused, while the
+                    // `<sce:call>` statement form converted it.
+                    *call_params = params;
                     ret
                 }
                 // Item C7 wildcard-keyexpr lowering: the `len(<bytes|str>)` builtin is
@@ -2931,6 +2961,13 @@ fn is_len_builtin(callee: &TypedExpr, args: &[TypedExpr]) -> bool {
         && matches!(&callee.kind, ExprKind::Ident(n) | ExprKind::Raw(n) if n == "len")
 }
 
+/// The type every emitter converts a call's argument `index` to: its
+/// parameter's, from the call's resolved `params`, or none at all for a
+/// callee no context registers.
+fn argument_type(params: &[InferredType], index: usize) -> InferredType {
+    params.get(index).copied().unwrap_or(InferredType::Unknown)
+}
+
 /// The unary builtins that consume a real number and produce an integer:
 /// `round(x)` and `floor(x)`.
 ///
@@ -3060,7 +3097,7 @@ fn reject_unknown_callees(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), Ref
     if !ctx.reject_unknown_callees {
         return Ok(());
     }
-    if let ExprKind::Call { callee, args } = &expr.kind {
+    if let ExprKind::Call { callee, args, .. } = &expr.kind {
         let name = match &callee.kind {
             // ⚠ `Ident` ONLY, never `Raw`. A `Raw` callee is not something an
             // author wrote — it is this pipeline's own product, emitted by
@@ -3068,7 +3105,9 @@ fn reject_unknown_callees(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), Ref
             // into the C symbol `filter_low_pass_update(...)`) and by
             // `rename_identifiers`. Those names are not in `ctx.funcs` and
             // never will be: the context is keyed by the USER-VISIBLE name,
-            // which is exactly what this check has to speak about.
+            // which is exactly what this check has to speak about. Both run
+            // after this check ([`resolve_then_rename`]), so it reads the
+            // call as the author wrote it on every backend.
             //
             // ⚠⚠ The first version read `Raw` too, with a comment asserting
             // that a lowered call "is a bare name the context registered".
@@ -3170,7 +3209,7 @@ fn reject_unknown_names(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), Refus
                     .map_err(|refusal| refusal.at(expr.span.clone()))?;
             }
         }
-        ExprKind::Call { callee, args } if matches!(callee.kind, ExprKind::Ident(_)) => {
+        ExprKind::Call { callee, args, .. } if matches!(callee.kind, ExprKind::Ident(_)) => {
             for arg in args {
                 reject_unknown_names(arg, ctx)?;
             }
@@ -3288,7 +3327,7 @@ fn expr_children_mut(expr: &mut TypedExpr) -> Vec<&mut TypedExpr> {
             consequent,
             alternate,
         } => vec![condition, consequent, alternate],
-        ExprKind::Call { callee, args } => {
+        ExprKind::Call { callee, args, .. } => {
             let mut v = vec![&mut **callee];
             v.extend(args.iter_mut());
             v
@@ -3322,7 +3361,7 @@ pub(crate) fn lower_previous(ast: &mut TypedExpr, ctx: &TypeCtx<'_>) {
         return;
     }
     let cell = match &ast.kind {
-        ExprKind::Call { callee, args } => match (&callee.kind, args.as_slice()) {
+        ExprKind::Call { callee, args, .. } => match (&callee.kind, args.as_slice()) {
             (ExprKind::Ident(name), [arg]) if name == crate::forge::previous_value::PREVIOUS => {
                 match &arg.kind {
                     ExprKind::Ident(field) => ctx.previous_cells.get(field.as_str()).copied(),
@@ -3352,7 +3391,7 @@ pub(crate) fn expr_children(expr: &TypedExpr) -> Vec<&TypedExpr> {
             consequent,
             alternate,
         } => vec![condition, consequent, alternate],
-        ExprKind::Call { callee, args } => {
+        ExprKind::Call { callee, args, .. } => {
             let mut v = vec![&**callee];
             v.extend(args.iter());
             v
@@ -3494,7 +3533,11 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 emit_cpp(index, InferredType::Unknown)?,
             )
         }
-        ExprKind::Call { callee, args } => {
+        ExprKind::Call {
+            callee,
+            args,
+            params,
+        } => {
             if is_len_builtin(callee, args) {
                 return Ok(format!(
                     "({}).size()",
@@ -3516,8 +3559,8 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 });
             }
             let mut a = Vec::with_capacity(args.len());
-            for arg in args {
-                a.push(emit_cpp(arg, InferredType::Unknown)?);
+            for (i, arg) in args.iter().enumerate() {
+                a.push(emit_cpp(arg, argument_type(params, i))?);
             }
             format!(
                 "{}({})",
@@ -3648,7 +3691,7 @@ fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprE
     // Width-aware `round`/`floor`: same rule as Rust and Go — the declared
     // output type decides the integer, not a constant. See
     // `real_to_int_builtin`.
-    if let ExprKind::Call { callee, args } = &expr.kind {
+    if let ExprKind::Call { callee, args, .. } = &expr.kind {
         if let Some(op) = real_to_int_builtin(callee, args) {
             if let InferredType::Int { signed, bits } = expected {
                 let inner = emit_kotlin(&args[0], InferredType::Float { bits: 64 })?;
@@ -3945,7 +3988,11 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 wrap_postfix(object, emit_kotlin(object, InferredType::Unknown)?),
             )
         }
-        ExprKind::Call { callee, args } => {
+        ExprKind::Call {
+            callee,
+            args,
+            params,
+        } => {
             if is_len_builtin(callee, args) {
                 return Ok(format!(
                     "({}).size",
@@ -3976,8 +4023,8 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 return Ok(format!("{call}.toLong()"));
             }
             let mut a = Vec::with_capacity(args.len());
-            for arg in args {
-                a.push(emit_kotlin(arg, InferredType::Unknown)?);
+            for (i, arg) in args.iter().enumerate() {
+                a.push(emit_kotlin(arg, argument_type(params, i))?);
             }
             format!(
                 "{}({})",
@@ -4234,7 +4281,7 @@ fn emit_rust(expr: &TypedExpr, expected: InferredType) -> Result<String, Refusal
     // is width-blind and `rust_coerce` trusts the node's inferred type —
     // which the always-`usize` `.len()` does not actually carry, so the
     // cast must be injected here where the `expected` width is known.
-    if let ExprKind::Call { callee, args } = &expr.kind {
+    if let ExprKind::Call { callee, args, .. } = &expr.kind {
         if is_len_builtin(callee, args) {
             if let InferredType::Int { signed, bits } = expected {
                 let inner = emit_rust(&args[0], InferredType::Unknown)?;
@@ -4386,7 +4433,11 @@ fn rust_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
                 wrap_postfix(object, emit_rust(object, InferredType::Unknown)?),
             )
         }
-        ExprKind::Call { callee, args } => {
+        ExprKind::Call {
+            callee,
+            args,
+            params,
+        } => {
             if is_len_builtin(callee, args) {
                 return Ok(format!(
                     "({}).len()",
@@ -4404,8 +4455,8 @@ fn rust_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
                 return Ok(format!("(({inner}).{m}() as i64)"));
             }
             let mut emitted_args = Vec::with_capacity(args.len());
-            for a in args {
-                emitted_args.push(emit_rust(a, InferredType::Unknown)?);
+            for (i, a) in args.iter().enumerate() {
+                emitted_args.push(emit_rust(a, argument_type(params, i))?);
             }
             format!(
                 "{}({})",
@@ -4608,7 +4659,7 @@ fn emit_go(expr: &TypedExpr, expected: InferredType) -> Result<String, Refusal> 
     // always-wider stand-in) and short-circuits `UntypedInt → _` to a no-op
     // on the untyped-constant assumption. Mirrors the Rust `.len() as uN`
     // push-down (item C7 wildcard-keyexpr lowering).
-    if let ExprKind::Call { callee, args } = &expr.kind {
+    if let ExprKind::Call { callee, args, .. } = &expr.kind {
         if is_len_builtin(callee, args) {
             if let InferredType::Int { signed, bits } = expected {
                 let inner = emit_go(&args[0], InferredType::Unknown)?;
@@ -4715,7 +4766,11 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
                 emit_go(index, InferredType::Unknown)?,
             )
         }
-        ExprKind::Call { callee, args } => {
+        ExprKind::Call {
+            callee,
+            args,
+            params,
+        } => {
             if is_len_builtin(callee, args) {
                 return Ok(format!(
                     "len({})",
@@ -4733,8 +4788,8 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
                 return Ok(format!("int64({f}({inner}))"));
             }
             let mut a = Vec::with_capacity(args.len());
-            for arg in args {
-                a.push(emit_go(arg, InferredType::Unknown)?);
+            for (i, arg) in args.iter().enumerate() {
+                a.push(emit_go(arg, argument_type(params, i))?);
             }
             format!(
                 "{}({})",
@@ -5058,7 +5113,11 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 emit_python(index, InferredType::Unknown)?,
             )
         }
-        ExprKind::Call { callee, args } => {
+        ExprKind::Call {
+            callee,
+            args,
+            params,
+        } => {
             if is_len_builtin(callee, args) {
                 return Ok(format!(
                     "len({})",
@@ -5083,8 +5142,8 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 });
             }
             let mut a = Vec::with_capacity(args.len());
-            for arg in args {
-                a.push(emit_python(arg, InferredType::Unknown)?);
+            for (i, arg) in args.iter().enumerate() {
+                a.push(emit_python(arg, argument_type(params, i))?);
             }
             format!(
                 "{}({})",
@@ -5371,7 +5430,11 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 emit_c(index, InferredType::Unknown)?,
             )
         }
-        ExprKind::Call { callee, args } => {
+        ExprKind::Call {
+            callee,
+            args,
+            params,
+        } => {
             if is_len_builtin(callee, args) {
                 return Ok(format!(
                     "({}).len",
@@ -5389,8 +5452,8 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 });
             }
             let mut a = Vec::with_capacity(args.len());
-            for arg in args {
-                a.push(emit_c(arg, InferredType::Unknown)?);
+            for (i, arg) in args.iter().enumerate() {
+                a.push(emit_c(arg, argument_type(params, i))?);
             }
             format!(
                 "{}({})",

@@ -7752,6 +7752,14 @@ fn forge_c11_crossfile_validator_transform() {
 }
 
 #[test]
+fn forge_c11_crossfile_validator_transform_widening() {
+    assert_standalone_forge_c(
+        "crossfile_validator_transform_widening",
+        "crossfile_validator_transform_widening.c.h",
+    );
+}
+
+#[test]
 fn forge_c11_crossfile_validator_condition() {
     assert_standalone_forge_c(
         "crossfile_validator_condition",
@@ -8329,6 +8337,50 @@ fn forge_crossfile_validator_transform_python() {
     assert_standalone_forge_python(
         "crossfile_validator_transform",
         "crossfile_validator_transform.py",
+    );
+}
+
+// An argument narrower than its parameter, converted to the parameter's
+// type at the call: `rawByte` (uint8) and the literal `0` into
+// `tempConvert`'s uint16.
+
+#[test]
+fn forge_crossfile_validator_transform_widening_cpp() {
+    assert_standalone_forge(
+        "crossfile_validator_transform_widening",
+        "crossfile_validator_transform_widening.h",
+    );
+}
+
+#[test]
+fn forge_crossfile_validator_transform_widening_kotlin() {
+    assert_standalone_forge_kotlin(
+        "crossfile_validator_transform_widening",
+        "CrossfileValidatorTransformWidening.kt",
+    );
+}
+
+#[test]
+fn forge_crossfile_validator_transform_widening_rust() {
+    assert_standalone_forge_rust(
+        "crossfile_validator_transform_widening",
+        "crossfile_validator_transform_widening.rs",
+    );
+}
+
+#[test]
+fn forge_crossfile_validator_transform_widening_go() {
+    assert_standalone_forge_go(
+        "crossfile_validator_transform_widening",
+        "crossfile_validator_transform_widening.go",
+    );
+}
+
+#[test]
+fn forge_crossfile_validator_transform_widening_python() {
+    assert_standalone_forge_python(
+        "crossfile_validator_transform_widening",
+        "crossfile_validator_transform_widening.py",
     );
 }
 
@@ -9146,6 +9198,11 @@ fn crossfile_matrix_procedure_filter() {
 #[test]
 fn crossfile_matrix_validator_transform() {
     assert_crossfile_codegen_languages("crossfile_validator_transform", SIX_BACKENDS);
+}
+
+#[test]
+fn crossfile_matrix_validator_transform_widening() {
+    assert_crossfile_codegen_languages("crossfile_validator_transform_widening", SIX_BACKENDS);
 }
 
 #[test]
