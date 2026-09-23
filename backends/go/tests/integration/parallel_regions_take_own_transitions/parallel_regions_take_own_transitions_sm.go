@@ -516,8 +516,8 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) GetParallelRegions(state Paral
 	switch state {
 	case ParallelRegionsTakeOwnTransitionsStateRun:
 		return []ParallelRegionsTakeOwnTransitionsState{
-			ParallelRegionsTakeOwnTransitionsStateBudget,
 			ParallelRegionsTakeOwnTransitionsStateDrive,
+			ParallelRegionsTakeOwnTransitionsStateBudget,
 		}
 	}
 	return nil

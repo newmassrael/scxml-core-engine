@@ -427,7 +427,7 @@ class AiLoopStateMachine(
 
     // W3C SCXML 3.4: Get child regions of a parallel state (C++ getParallelRegions pattern)
     override fun getParallelRegions(state: AiLoopState): List<AiLoopState> = when (state) {
-        is AiLoopState.Run -> listOf(AiLoopState.Budget, AiLoopState.Drive, AiLoopState.Watch)
+        is AiLoopState.Run -> listOf(AiLoopState.Drive, AiLoopState.Watch, AiLoopState.Budget)
         else -> emptyList()
     }
 
@@ -1551,14 +1551,14 @@ class AiLoopStateMachine(
                 // The exception has its own exception: not the region the entry
                 // set is already descending into, which `pathChild` names and
                 // which the caller enters with the target's own path.
-                if (pathChild != AiLoopState.Budget) {
-                    onEntry(AiLoopState.Budget)
-                }
                 if (pathChild != AiLoopState.Drive) {
                     onEntry(AiLoopState.Drive)
                 }
                 if (pathChild != AiLoopState.Watch) {
                     onEntry(AiLoopState.Watch)
+                }
+                if (pathChild != AiLoopState.Budget) {
+                    onEntry(AiLoopState.Budget)
                 }
             }
             is AiLoopState.Running -> {

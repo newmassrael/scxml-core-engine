@@ -1225,7 +1225,7 @@ impl StatePolicy for AiLoopPolicy {
 
     fn get_parallel_regions(state: Self::State) -> &'static [Self::State] {
         match state {
-            AiLoopState::Run => &[AiLoopState::Budget, AiLoopState::Drive, AiLoopState::Watch],
+            AiLoopState::Run => &[AiLoopState::Drive, AiLoopState::Watch, AiLoopState::Budget],
             _ => &[],
         }
     }

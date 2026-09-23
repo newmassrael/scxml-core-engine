@@ -1953,8 +1953,8 @@ impl SCXMLParser {
             model.initial_leaf = model.resolve_to_leaf(&model.initial);
         }
 
-        // Compute parallel regions
-        self.compute_parallel_regions(&mut model);
+        // Children in document order, and the parallel regions they make
+        self.compute_children(&mut model);
 
         // Detect transition/entry/exit actions, hierarchy
         self.detect_transition_actions(&mut model);
@@ -4184,21 +4184,37 @@ impl SCXMLParser {
         }
     }
 
-    fn compute_parallel_regions(&self, model: &mut SCXMLModel) {
-        let parallel_ids: Vec<String> = model
-            .states
-            .iter()
-            .filter(|(_, s)| s.is_parallel)
-            .map(|(id, _)| id.clone())
-            .collect();
-        for pid in parallel_ids {
-            let children: Vec<String> = model
-                .states
-                .iter()
-                .filter(|(_, s)| s.parent.as_deref() == Some(&pid))
-                .map(|(id, _)| id.clone())
-                .collect();
-            model.parallel_regions.insert(pid, children);
+    /// Every state's children in document order, and every `<parallel>`'s
+    /// regions — which are exactly its children.
+    ///
+    /// `states` is keyed by id, so a walk over it answers in id order: the
+    /// regions used to come out alphabetically, and every backend entering a
+    /// `<parallel>` region by region entered them in that order rather than
+    /// the document's.
+    fn compute_children(&self, model: &mut SCXMLModel) {
+        // §scxml-D-getChildStates: a state's children, ranked by the
+        // document-order index `assign_document_order` gave each element.
+        let mut ranked: BTreeMap<String, Vec<(u32, String)>> = BTreeMap::new();
+        for (id, state) in &model.states {
+            if let Some(parent) = &state.parent {
+                ranked
+                    .entry(parent.clone())
+                    .or_default()
+                    .push((state.document_order, id.clone()));
+            }
+        }
+        for (parent, mut children) in ranked {
+            children.sort();
+            if let Some(state) = model.states.get_mut(&parent) {
+                state.children = children.into_iter().map(|(_, id)| id).collect();
+            }
+        }
+        for (id, state) in &model.states {
+            if state.is_parallel {
+                model
+                    .parallel_regions
+                    .insert(id.clone(), state.children.clone());
+            }
         }
     }
 
@@ -9189,5 +9205,32 @@ mod tests {
             .expect("parse");
         assert_eq!(model.initial_targets, ["c"]);
         assert_eq!(model.states["c"].initial_targets, ["cz"]);
+        assert_eq!(model.states["c"].children, ["cz", "ca"]);
+    }
+
+    /// A `<parallel>`'s regions are its children in DOCUMENT order, which is
+    /// the order they are entered in. The ids here sort the other way round,
+    /// and a nested `<parallel>` sits between two `<state>` regions.
+    #[test]
+    fn parallel_regions_are_listed_in_document_order_not_id_order() {
+        let model = SCXMLParser::new()
+            .parse_string(
+                r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null">
+  <parallel id="p">
+    <state id="zr"><state id="z1"/></state>
+    <parallel id="np">
+      <state id="n2"/>
+      <state id="n1"/>
+    </parallel>
+    <state id="ar"><state id="a1"/></state>
+  </parallel>
+</scxml>"#,
+                "region_order",
+            )
+            .expect("parse");
+        assert_eq!(model.states["p"].children, ["zr", "np", "ar"]);
+        assert_eq!(model.parallel_regions["p"], ["zr", "np", "ar"]);
+        assert_eq!(model.parallel_regions["np"], ["n2", "n1"]);
+        assert!(model.states["z1"].children.is_empty());
     }
 }

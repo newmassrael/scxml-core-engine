@@ -649,8 +649,8 @@ impl StatePolicy for ParallelRegionsTakeOwnTransitionsPolicy {
     fn get_parallel_regions(state: Self::State) -> &'static [Self::State] {
         match state {
             ParallelRegionsTakeOwnTransitionsState::Run => &[
-                ParallelRegionsTakeOwnTransitionsState::Budget,
                 ParallelRegionsTakeOwnTransitionsState::Drive,
+                ParallelRegionsTakeOwnTransitionsState::Budget,
             ],
             _ => &[],
         }

@@ -1058,9 +1058,9 @@ func (p *AiLoopPolicy) GetParallelRegions(state AiLoopState) []AiLoopState {
 	switch state {
 	case AiLoopStateRun:
 		return []AiLoopState{
-			AiLoopStateBudget,
 			AiLoopStateDrive,
 			AiLoopStateWatch,
+			AiLoopStateBudget,
 		}
 	}
 	return nil

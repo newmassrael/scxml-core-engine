@@ -5169,6 +5169,13 @@
     "State": {
       "description": "§scxml-3.3: State element",
       "properties": {
+        "children": {
+          "description": "§scxml-D-getChildStates: this state's `<state>`, `<parallel>` and `<final>` children, in document order — for a `<parallel>`, its regions. Empty for an atomic state and a `<final>`. Derived by the parser from [`parent`](Self::parent), so it cannot disagree with it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "datamodel": {
           "items": {
             "$ref": "#/definitions/Variable"

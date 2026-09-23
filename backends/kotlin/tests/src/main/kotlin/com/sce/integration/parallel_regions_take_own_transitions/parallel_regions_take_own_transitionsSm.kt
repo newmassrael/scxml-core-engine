@@ -142,7 +142,7 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
 
     // W3C SCXML 3.4: Get child regions of a parallel state (C++ getParallelRegions pattern)
     override fun getParallelRegions(state: ParallelRegionsTakeOwnTransitionsState): List<ParallelRegionsTakeOwnTransitionsState> = when (state) {
-        is ParallelRegionsTakeOwnTransitionsState.Run -> listOf(ParallelRegionsTakeOwnTransitionsState.Budget, ParallelRegionsTakeOwnTransitionsState.Drive)
+        is ParallelRegionsTakeOwnTransitionsState.Run -> listOf(ParallelRegionsTakeOwnTransitionsState.Drive, ParallelRegionsTakeOwnTransitionsState.Budget)
         else -> emptyList()
     }
 
@@ -463,11 +463,11 @@ class ParallelRegionsTakeOwnTransitionsStateMachine(
                 // The exception has its own exception: not the region the entry
                 // set is already descending into, which `pathChild` names and
                 // which the caller enters with the target's own path.
-                if (pathChild != ParallelRegionsTakeOwnTransitionsState.Budget) {
-                    onEntry(ParallelRegionsTakeOwnTransitionsState.Budget)
-                }
                 if (pathChild != ParallelRegionsTakeOwnTransitionsState.Drive) {
                     onEntry(ParallelRegionsTakeOwnTransitionsState.Drive)
+                }
+                if (pathChild != ParallelRegionsTakeOwnTransitionsState.Budget) {
+                    onEntry(ParallelRegionsTakeOwnTransitionsState.Budget)
                 }
             }
             is ParallelRegionsTakeOwnTransitionsState.Running -> {

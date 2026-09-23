@@ -14844,6 +14844,16 @@
           "file": "sce/src/states/ConcurrentStateNode.cpp",
           "symbol": "ConcurrentStateNode::addChild",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "symbol": "State",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "compute_children",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",

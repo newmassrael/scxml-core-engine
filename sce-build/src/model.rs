@@ -1619,6 +1619,12 @@ pub struct State {
     pub is_parallel: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
+    /// §scxml-D-getChildStates: this state's `<state>`, `<parallel>` and
+    /// `<final>` children, in document order — for a `<parallel>`, its
+    /// regions. Empty for an atomic state and a `<final>`. Derived by the
+    /// parser from [`parent`](Self::parent), so it cannot disagree with it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub children: Vec<String>,
     pub transitions: Vec<Transition>,
     pub on_entry_blocks: Vec<Vec<Action>>,
     pub on_exit_blocks: Vec<Vec<Action>>,
