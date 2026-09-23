@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Conformance fixture: arithmetic between a 64-bit signed operand and a narrow
+  unsigned one keeps all 64 bits and the sign.
+
+  The operand types join to `int64` (SCE_FORGE.md §3.4, `join_arith`), and
+  C, C++, Rust, Go and Python compute there.
+
+  ⚠ KOTLIN IS WHY IT EXISTS. Kotlin defines no arithmetic on UByte/UShort,
+  so its emitter widened any operation touching one — to `UInt`, 32 bits,
+  whatever the other operand was. A `Long` operand went through `.toUInt()`
+  and lost its upper half and its sign: -5 + 3 came back as 4294967294, and
+  5000000000 + 1 as 705032705. Below 64 bits the damage is invisible, because
+  32-bit two's complement wraps back to the right answer — which is why no
+  fixture caught it before the harness could carry an `i64`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="transform" name="mixed_width_add">
+  <datamodel>
+    <data id="base" sce:type="int64" sce:direction="in"/>
+    <data id="offset" sce:type="uint8" sce:direction="in"/>
+    <data id="total" sce:type="int64" sce:direction="out" expr="base + offset"/>
+  </datamodel>
+</scxml>

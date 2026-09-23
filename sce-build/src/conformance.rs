@@ -36,6 +36,11 @@ pub const FORGE_CATALOG_RELATIVE_PATH: &str = "tests/forge/conformance/fixtures.
 pub enum CanonicalType {
     Bool,
     I32,
+    /// Signed 64-bit — day counts, epoch milliseconds and any other quantity
+    /// past the 32-bit range. Without it the harness could not observe a
+    /// lowering that narrows a 64-bit operand to 32 bits
+    /// (`transform_mixed_width_add`, `transform_mixed_width_or`).
+    I64,
     U8,
     U16,
     U32,
@@ -624,6 +629,7 @@ pub fn rust_type_for(ty: &str) -> &'static str {
     match ty {
         "bool" => "bool",
         "i32" => "i32",
+        "i64" => "i64",
         "u8" => "u8",
         "u16" => "u16",
         "u32" => "u32",
@@ -644,6 +650,7 @@ pub fn rust_unmarshal_expr(raw: &str, ty: &str) -> String {
         "f64" => format!("{raw}.as_f64().expect(\"f64\")"),
         "f32" => format!("{raw}.as_f64().expect(\"f64\") as f32"),
         "i32" => format!("{raw}.as_i64().expect(\"i64\") as i32"),
+        "i64" => format!("{raw}.as_i64().expect(\"i64\")"),
         "u8" => format!("{raw}.as_u64().expect(\"u64\") as u8"),
         "u16" => format!("{raw}.as_u64().expect(\"u64\") as u16"),
         "u32" => format!("{raw}.as_u64().expect(\"u64\") as u32"),
@@ -665,6 +672,7 @@ pub fn cpp_type_for(ty: &str) -> &'static str {
         "f64" => "double",
         "f32" => "float",
         "i32" => "std::int32_t",
+        "i64" => "std::int64_t",
         "u8" => "std::uint8_t",
         "u16" => "std::uint16_t",
         "u32" => "std::uint32_t",
@@ -684,6 +692,7 @@ pub fn go_type_for(ty: &str) -> &'static str {
         "f64" => "float64",
         "f32" => "float32",
         "i32" => "int32",
+        "i64" => "int64",
         "u8" => "uint8",
         "u16" => "uint16",
         "u32" => "uint32",
@@ -705,6 +714,7 @@ pub fn c_type_for(ty: &str) -> &'static str {
         "f64" => "double",
         "f32" => "float",
         "i32" => "int32_t",
+        "i64" => "int64_t",
         "u8" => "uint8_t",
         "u16" => "uint16_t",
         "u32" => "uint32_t",
@@ -760,6 +770,17 @@ pub fn c_literal_for(value: &serde_json::Value, ty: &str) -> String {
                 format!("{n}uLL")
             }
         }
+        (serde_json::Value::Number(n), "i64") => {
+            // An `LL` suffix keeps a value past INT_MAX from being typed as
+            // the default ladder picks it. `INT64_MIN` has no literal form:
+            // `-9223372036854775808LL` is the negation of a literal that
+            // does not fit `long long`, so it is spelled as an expression.
+            match n.as_i64() {
+                Some(i64::MIN) => "(-9223372036854775807LL - 1)".into(),
+                Some(i) => format!("{i}LL"),
+                None => format!("/* i64 oracle value out of range: {n} */"),
+            }
+        }
         (serde_json::Value::Number(n), _) => {
             // Integer canonical types — print the integer text.
             if let Some(i) = n.as_i64() {
@@ -806,6 +827,7 @@ pub fn kt_type_for(ty: &str) -> &'static str {
         "f64" => "Double",
         "f32" => "Float",
         "i32" => "Int",
+        "i64" => "Long",
         "u8" => "UByte",
         "u16" => "UShort",
         "u32" => "UInt",
@@ -824,6 +846,7 @@ pub fn kt_unmarshal_expr(raw: &str, ty: &str) -> String {
         "f64" => format!("{raw}.jsonPrimitive.double"),
         "f32" => format!("{raw}.jsonPrimitive.double.toFloat()"),
         "i32" => format!("{raw}.jsonPrimitive.int"),
+        "i64" => format!("{raw}.jsonPrimitive.long"),
         "u8" => format!("{raw}.jsonPrimitive.int.toUByte()"),
         "u16" => format!("{raw}.jsonPrimitive.int.toUShort()"),
         // `jsonPrimitive.int` rejects values > Int.MAX (~2.1B) so it

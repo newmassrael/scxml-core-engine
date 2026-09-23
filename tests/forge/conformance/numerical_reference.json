@@ -226,6 +226,55 @@
         }
       ]
     },
+    "transform_mixed_width_add": {
+      "fixture": "compute_total",
+      "signature": "(base: i64, offset: u8) -> i64",
+      "formula": "base + offset, computed in the joined type int64",
+      "cases": [
+        {
+          "args": [-5, 3],
+          "expected": -2,
+          "note": "THE sign discriminator — a lowering through 32-bit UInt returns 4294967294"
+        },
+        {
+          "args": [5000000000, 1],
+          "expected": 5000000001,
+          "note": "THE width discriminator — past 2^32, a 32-bit lowering returns 705032705"
+        },
+        {
+          "args": [0, 255],
+          "expected": 255,
+          "note": "the narrow operand at its maximum — every lowering agrees"
+        },
+        {
+          "args": [-9223372036854775807, 255],
+          "expected": -9223372036854775552,
+          "note": "near INT64_MIN — the C harness has to spell this literal with an LL suffix"
+        }
+      ]
+    },
+    "transform_mixed_width_or": {
+      "fixture": "compute_merged",
+      "signature": "(word: i64, flags: u8) -> i64",
+      "formula": "word | flags, computed in the joined type int64",
+      "cases": [
+        {
+          "args": [4294967296, 1],
+          "expected": 4294967297,
+          "note": "THE discriminator — 2^32 | 1 through a 32-bit Int drops the upper half and returns 1"
+        },
+        {
+          "args": [-256, 7],
+          "expected": -249,
+          "note": "a negative word — 32 bits are enough here, so every lowering agrees"
+        },
+        {
+          "args": [0, 0],
+          "expected": 0,
+          "note": "all bits clear"
+        }
+      ]
+    },
     "transform_int_div": {
       "fixture": "compute_quotient",
       "signature": "(dividend: i32, divisor: i32) -> i32",

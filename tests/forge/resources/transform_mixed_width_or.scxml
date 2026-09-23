@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Conformance fixture: a bitwise operation between a 64-bit operand and a
+  narrow unsigned one keeps the upper 32 bits.
+
+  The bitwise sibling of `transform_mixed_width_add`. Kotlin defines no
+  bitwise operators on UByte/UShort either, and its emitter widened these to
+  `Int` — signed 32 bits — so a `Long` operand went through `.toInt()` and
+  `4294967296 | 1` (2^32 | 1) came back as 1. A mask narrower than 32 bits
+  (`x & 0xFF`) cannot show it, since the bits it discards are the ones `&`
+  would have cleared anyway; `|` keeps them, so it can.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="transform" name="mixed_width_or">
+  <datamodel>
+    <data id="word" sce:type="int64" sce:direction="in"/>
+    <data id="flags" sce:type="uint8" sce:direction="in"/>
+    <data id="merged" sce:type="int64" sce:direction="out" expr="word | flags"/>
+  </datamodel>
+</scxml>

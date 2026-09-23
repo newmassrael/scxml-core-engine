@@ -21,9 +21,11 @@
     "types": [
       "bool",
       "i32",
+      "i64",
       "u8",
       "u16",
       "u32",
+      "u64",
       "f32",
       "f64",
       "string",
@@ -93,6 +95,34 @@
       "output": {
         "function": "compute_share",
         "type": "i32",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "transform_mixed_width_add",
+      "kind": "transform",
+      "ref_section": "pure_functions",
+      "args": [
+        "i64",
+        "u8"
+      ],
+      "output": {
+        "function": "compute_total",
+        "type": "i64",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "transform_mixed_width_or",
+      "kind": "transform",
+      "ref_section": "pure_functions",
+      "args": [
+        "i64",
+        "u8"
+      ],
+      "output": {
+        "function": "compute_merged",
+        "type": "i64",
         "compare": "equality"
       }
     },

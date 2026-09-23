@@ -3494,16 +3494,31 @@ fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprE
         // Kotlin's narrow unsigned types (UByte/UShort) do not support
         // bitwise/shift operations directly — `UByte shr Int` does not
         // resolve, and `UByte.toUByte` is a method reference, not a call.
-        // Widen to signed Int32 for the operation, then coerce back to the
-        // caller-requested type. The outer kotlin_coerce handles the
-        // Int32 → UByte/UShort reverse conversion via `.toUByte()`.
+        // Widen to signed Int32 for the operation — or to the joined type
+        // when that is 64-bit, see `kotlin_narrow_unsigned_domain` — then
+        // coerce back to the caller-requested type. The outer kotlin_coerce
+        // handles the Int32 → UByte/UShort reverse conversion via `.toUByte()`.
         if op.is_bitwise() && (is_narrow_unsigned(left.ty) || is_narrow_unsigned(right.ty)) {
-            let widened = InferredType::Int {
-                signed: true,
-                bits: 32,
+            let widened = kotlin_narrow_unsigned_domain(
+                join_int(left.ty, right.ty),
+                InferredType::Int {
+                    signed: true,
+                    bits: 32,
+                },
+            );
+            // A shift count is an `Int` whatever is being shifted:
+            // `Long.shl` takes `bitCount: Int`, so a 64-bit domain applies
+            // to the left operand only.
+            let count_ty = if matches!(op, BinOp::Shl | BinOp::Shr | BinOp::UShr) {
+                InferredType::Int {
+                    signed: true,
+                    bits: 32,
+                }
+            } else {
+                widened
             };
             let l_raw = emit_kotlin(left, widened)?;
-            let r_raw = emit_kotlin(right, widened)?;
+            let r_raw = emit_kotlin(right, count_ty)?;
             let l = if child_needs_parens(left, *op, true, kotlin_precedence) {
                 format!("({l_raw})")
             } else {
@@ -3525,10 +3540,13 @@ fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprE
         // the caller-requested narrow unsigned via the outer
         // `kotlin_coerce`'s `.toUByte()` / `.toUShort()` arm.
         if op.is_arith() && (is_narrow_unsigned(left.ty) || is_narrow_unsigned(right.ty)) {
-            let widened = InferredType::Int {
-                signed: false,
-                bits: 32,
-            };
+            let widened = kotlin_narrow_unsigned_domain(
+                join_arith(left.ty, right.ty),
+                InferredType::Int {
+                    signed: false,
+                    bits: 32,
+                },
+            );
             let l_raw = emit_kotlin(left, widened)?;
             let r_raw = emit_kotlin(right, widened)?;
             let l = if child_needs_parens(left, *op, true, kotlin_precedence) {
@@ -3574,6 +3592,25 @@ fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprE
     }
     let raw = kotlin_emit_node(expr)?;
     Ok(kotlin_coerce(raw, expr.ty, expected, expr))
+}
+
+/// The type Kotlin computes an operation in when one operand is UByte/UShort,
+/// which Kotlin defines no arithmetic or bitwise operators on.
+///
+/// `narrow` is the 32-bit domain each path has always used — `UInt` for
+/// arithmetic, `Int` for bitwise. It is right whenever the operands join to 32
+/// bits or fewer: two's complement wraps the 32-bit result back to the value
+/// the joined type would have held. It is wrong when the other operand is
+/// 64-bit, because `.toUInt()` / `.toInt()` on a `Long` discards the upper
+/// half and the sign before the operation runs (`-5L + 3u` gave 4294967294,
+/// `(1L shl 32) or 1` gave 1). A 64-bit join is therefore computed in the
+/// joined type itself — `Long` or `ULong` — which Kotlin does define every
+/// operator on.
+fn kotlin_narrow_unsigned_domain(joined: InferredType, narrow: InferredType) -> InferredType {
+    match joined {
+        InferredType::Int { bits: 64, .. } => joined,
+        _ => narrow,
+    }
 }
 
 /// A narrow unsigned integer — UByte (8) or UShort (16). Kotlin stdlib does

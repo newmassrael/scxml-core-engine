@@ -42,6 +42,13 @@
           ]
         },
         {
+          "description": "Signed 64-bit — day counts, epoch milliseconds and any other quantity past the 32-bit range. Without it the harness could not observe a lowering that narrows a 64-bit operand to 32 bits (`transform_mixed_width_add`, `transform_mixed_width_or`).",
+          "type": "string",
+          "enum": [
+            "i64"
+          ]
+        },
+        {
           "description": "Used by codec fields declared `sce:type=\"uint64\" sce:bit-size=\"vle\"` (RFC §synth-5-B App. B canonical Zenoh ZInt). Round-trip oracle vectors store the decoded value as a JSON integer literal up to u64::MAX.",
           "type": "string",
           "enum": [
