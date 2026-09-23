@@ -347,7 +347,13 @@ fi
 # ============================================================================
 # 5. VERSION file
 # ============================================================================
-if command -v git &>/dev/null && [ -d "${SCE_ROOT}/.git" ]; then
+# `-e`, not `-d`: a linked worktree's `.git` (and a submodule checkout's) is a
+# FILE naming the real gitdir, and a directory test read every such checkout
+# as "not under git" and stamped "unknown" — into VERSION and, through it,
+# into MANIFEST.json's `embed_version`. The test still asks about SCE_ROOT
+# itself, so a source copy nested in someone else's repository is not
+# described by that repository's HEAD.
+if command -v git &>/dev/null && [ -e "${SCE_ROOT}/.git" ]; then
     VERSION="$(cd "${SCE_ROOT}" && git describe --tags --always 2>/dev/null || echo "unknown")"
 else
     VERSION="unknown"
