@@ -636,6 +636,18 @@ refuse it. `verify` replays one activation per recorded case, which is the
 on-change reading, so it also refuses `periodic`, which records of changes
 cannot replay. A document that reads none needs no answer.
 
+For a statechart the same key is the **delivery rule**: under `on-change` an
+input's event reaches the machine only when the address's value changed, so a
+record that rewrites a value it already held -- a setup step restating a
+precondition, say -- delivers nothing, in setup and judged rounds alike. The
+comparison is through the value space, so `0` and `CLEAR` are one value. A
+judged case whose every drive is such a restatement reaches the document not
+at all and is not judged. When the records restate a value and the binding
+does not say `activation`, `check` reports it and `verify` refuses to replay:
+delivering the restatement is a guess about the platform, and on 2026-09-23 it
+revived a machine an earlier event had reset and passed a case the product
+failed. Records that never restate need no answer.
+
 **Memory belongs in the document.** A transform that needs the round before
 says so itself — `previous(x)` is the value field `x` held one activation ago,
 and `x` declares the `sce:initial` it holds before the first

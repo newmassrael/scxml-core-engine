@@ -55,6 +55,7 @@ LITERAL = """<?xml version="1.0" encoding="UTF-8"?>
     </transition>
   </state>
   <state id="approaching">
+    <transition event="train.occupied"/>
     <transition event="train.cleared" target="clear">
       <send event="signal.dark" type="x-sce-host"/>
     </transition>
@@ -70,6 +71,8 @@ BINDING = {
                         "becomes": "APPROACHING", "event": "train.approaching"},
         "cleared": {"address": "plant/in/train-approach",
                     "becomes": "CLEAR", "event": "train.cleared"},
+        "occupied": {"address": "plant/in/train-approach",
+                     "becomes": "OCCUPIED", "event": "train.occupied"},
     },
     "outputs": {
         "roadSignal": {
@@ -161,12 +164,18 @@ class AMachineIsSetUpBeforeItIsJudged(unittest.TestCase):
 
     def test_what_the_setup_sent_is_not_what_the_case_is_judged_on(self):
         """The setup flashes the signal; the case then drives something that
-        sends nothing, so its own round reads the resting value."""
+        sends nothing, so its own round reads the resting value.
+
+        ⚠ The "something" is a real change -- the track becomes OCCUPIED, which
+        `approaching` hears and answers with nothing. It used to be the same
+        approach reported again, and whether a restatement reaches the machine
+        at all is the host's delivery rule (`activation`), not this test's
+        subject."""
         result = self.run_with({
-            "name": "a second approach report changes nothing",
+            "name": "an occupied track is heard and answered with nothing",
             "before": FROM_CLEAR + [{"given": {"plant/in/train-approach": "APPROACHING"},
                                      "drove": ["plant/in/train-approach"]}],
-            "given": {"plant/in/train-approach": "APPROACHING"},
+            "given": {"plant/in/train-approach": "OCCUPIED"},
             "drove": ["plant/in/train-approach"],
             "expect": {"plant/out/road-signal.value": "DARK"}})
         self.assertTrue(result.ran, result.refusal)

@@ -1231,6 +1231,53 @@ class CaseJudge:
                 f"asserts")
 
 
+def unchanged_drives(step, last: dict, model) -> set:
+    """The addresses this step drove at the value they already held.
+
+    A record's `drove` says the platform WROTE an address; it does not say
+    the write changed anything. Whether an unchanged write reaches the
+    document is the host's delivery rule, which the binding states as
+    `activation`. The first value an address is seen at is a change.
+    """
+    return {address for address in (step.drove or ())
+            if address in last and address in step.given
+            and _same(last[address], step.given[address], _field_at(model, address))}
+
+
+def remember_given(step, last: dict) -> None:
+    """What the platform holds after this step, as the record states it."""
+    last.update(step.given or {})
+
+
+def restatement_needs_activation(cases, model, activation) -> str:
+    """Why these records cannot be replayed through a statechart, if they cannot.
+
+    ⚠ Replaying a restated write as an event is a guess about the platform,
+    and the wrong guess passes a document the product fails: measured
+    2026-09-23, a setup step rewrote two inputs at the values they held, the
+    replay sent both events and revived a machine an earlier event had reset,
+    and the product -- which runs the component only when an input changes --
+    sent nothing and failed the case the replay passed.
+    """
+    if activation == "on-change":
+        return ""
+    last: dict = {}
+    for step, owner, judged in rounds_of(cases):
+        same = unchanged_drives(step, last, model)
+        remember_given(step, last)
+        if same:
+            where = owner.name + ("" if judged else " (setup)")
+            return (f"case {where!r} drives {', '.join(sorted(same))} at the "
+                    f"value it already held. Whether that reaches the document "
+                    f"is the host's delivery rule, and the binding does not say "
+                    f"it: `activation: on-change` means an unchanged input "
+                    f"reaches nothing"
+                    + ("" if activation is None else
+                       f" (`{activation}` cannot be replayed from records of "
+                       f"changes)"))
+    return ""
+
+
 def rounds_of(cases):
     """Every round the examples drive, in order, and whether it is judged.
 
@@ -1348,7 +1395,7 @@ class StatechartRun:
                 f"on")
         return value
 
-    def observe(self, case, restated: bool = False) -> None:
+    def observe(self, case) -> None:
         """Move virtual time to the moment this case was observed.
 
         ⚠ NOTHING IS SUBTRACTED FROM ANYTHING. `elapsed_ms` is the age of
@@ -1378,21 +1425,6 @@ class StatechartRun:
                 f"earlier one is ordinary -- the situation restarted -- but "
                 f"a single one below zero says the record means something "
                 f"else by the field")
-        if restated:
-            # ⚠ The one place the anchor is genuinely ambiguous, and it is
-            # refused rather than chosen. This case drove the same addresses
-            # to the same values as the one before it, which the schema says
-            # is a real assertion and not nothing happening -- but nothing
-            # says whether the age is measured from THIS assertion or from
-            # the earlier one that began the situation. The two put the
-            # reading at different moments, and a delayed act sits between
-            # them, so picking one would silently date every such reading.
-            raise VerifyError(
-                f"drove the same values as the case before it and records an "
-                f"`elapsed_ms` of {case.elapsed_ms}, and nothing says whether "
-                f"that age runs from this assertion or from the one that "
-                f"started the situation. The two are different moments, and "
-                f"a delayed act can fall between them")
         self.engine.advance_time(int(case.elapsed_ms))
 
 
@@ -1415,6 +1447,11 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
             "never move, and every delayed act would be reported as one that "
             "never fired -- a full run, judged, against a document that was "
             "never given the chance to do half of what it does."))
+
+    activation = binding.get("activation")
+    why = restatement_needs_activation(examples.cases, pack.model, activation)
+    if why:
+        return Verification(refusal=why)
 
     inputs = dict(binding.get("inputs") or {})
     outputs = dict(binding.get("outputs") or {})
@@ -1490,9 +1527,22 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
     # Only `held` is read here: a statechart keeps its own memory in states,
     # and what the binding remembers for it is the slots `hold_last` names.
     history = History()
-    previous: tuple = ()
     failed: set = set()
+    # What each address held after the rounds so far. Kept on every round,
+    # judged or skipped: the platform's values move whether or not a case of
+    # ours is being judged.
+    last_given: dict = {}
     for case, owner, judged in rounds_of(examples.cases):
+        # Under `on-change` the host runs the component only for an input
+        # that changed; a record restating a value delivers nothing.
+        #
+        # ⚠ This also settles what a restatement's `elapsed_ms` is measured
+        # from, which used to be refused as unknowable: a restatement that
+        # reaches nothing restarts nothing, so no case is dated from one.
+        # A binding that does not say `activation` never gets here with a
+        # restatement -- the run is refused before it starts.
+        unchanged = unchanged_drives(case, last_given, pack.model)
+        remember_given(case, last_given)
         if id(owner) in failed:
             continue
         result = CaseResult(name=owner.name)
@@ -1500,14 +1550,6 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
             if judged:
                 withhold(result, case)
             continue
-        # What this case ASSERTED, as the record states it: the addresses it
-        # drove, at the values it drove them to. ⚠ Read rather than derived.
-        # Comparing one case's whole `given` with the next one's would call a
-        # restatement nothing happening, which is the error `drove` exists to
-        # stop.
-        signature = tuple(sorted((a, case.given.get(a))
-                                 for a in (case.drove or ())))
-        restated, previous = bool(signature) and signature == previous, signature
         try:
             # ⚠ EVERY driven address, in the order the record drove them. This
             # was `any(run.drive(...) for rule in ...)`, which stops at the
@@ -1527,6 +1569,8 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
             lost = could_have_moved(where) if case.drove else ""
             moved = False
             for address in dict.fromkeys(case.drove or ()):
+                if address in unchanged:
+                    continue
                 for rule in driving.values():
                     if lost:
                         break
@@ -1546,6 +1590,13 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
                 # ⚠ A case that drove nothing this document listens for is
                 # NOT a pass. Reading the machine afterwards would report
                 # whatever the previous case left, attributed to this one.
+                if unchanged and unchanged >= set(case.drove):
+                    raise VerifyError(
+                        f"drove {sorted(unchanged)} at the value(s) they "
+                        f"already held, and under `activation: on-change` an "
+                        f"unchanged input reaches nothing: no input of this "
+                        f"case reaches the document, so there is no round of "
+                        f"its to judge")
                 raise VerifyError(
                     f"drove {list(case.drove) or 'nothing'}, and no input "
                     f"rule turns any of that into an event this document "
@@ -1554,7 +1605,7 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
             # starts the situation whose age `elapsed_ms` states, and the
             # reading is what that age dates -- so a delayed act reaches the
             # machine in between, which is the whole point of it having one.
-            run.observe(case, restated)
+            run.observe(case)
             requests = run.recorder.take()
             # ⚠ A `hold_last` position is the SLOT's memory, and a slot does
             # not know which rounds a record calls setup: a value written

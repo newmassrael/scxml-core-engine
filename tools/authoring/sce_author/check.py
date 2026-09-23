@@ -831,6 +831,16 @@ def check(pack: Pack, binding_path: pathlib.Path) -> list[Finding]:
     if document.keeps and not binding.get("activation"):
         out.append(Finding("binding", activation_unsaid(document.path.name)))
 
+    # A statechart replayed from records that restate a value is judged on
+    # the host's delivery rule; `verify` refuses in these words when the
+    # binding does not state it, and the two must not disagree.
+    if document.kind in STATECHART_KINDS and pack.examples.cases:
+        from .verify import restatement_needs_activation  # verify imports this module
+        why = restatement_needs_activation(pack.examples.cases, pack.model,
+                                           binding.get("activation"))
+        if why:
+            out.append(Finding("binding", why))
+
     # ⚠ An event nothing answers is the statechart shape of a silent pass. The
     # case would send it, the machine would ignore it, every later reading
     # would be of a machine that was never driven -- and each case would still

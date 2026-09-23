@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 
 import yaml
 
+from sce_author.check import check
 from sce_author.errors import AuthoringError
 from sce_author.pack import load_pack
 from sce_author.verify import _default_codegen, sent_value, verify
@@ -338,18 +339,15 @@ class AStatechartIsDrivenNotCalled(unittest.TestCase):
              "given": {"plant/in/train-approach": "APPROACHING"},
              "drove": ["plant/in/train-approach"],
              "expect": {"plant/out/road-signal.value": "FLASHING"}},
-            {"name": "and it is still flashing until it clears",
-             "given": {"plant/in/train-approach": "APPROACHING"},
-             "drove": ["plant/in/train-approach"],
-             # ⚠ Re-driving `train.approaching` in `flashing` selects no
-             # transition, so nothing is sent and the resting value stands.
-             # That is the document's answer, and it is what a machine with
-             # memory looks like from outside.
-             "expect": {"plant/out/road-signal.value": "DARK"}},
+            # ⚠ A third case restating APPROACHING used to be here, judged as
+            # an event the machine received. Whether a restated write reaches
+            # the machine is the host's delivery rule, not the record's, so
+            # that case now lives with `activation` in
+            # `AnUnchangedInputReachesNothingUnderOnChange`.
         ]}
         result = self.run_with(examples)
         self.assertTrue(result.ran, result.refusal)
-        self.assertEqual(3, result.passed,
+        self.assertEqual(2, result.passed,
                          [(r.name, r.refusal, r.failures) for r in result.results])
 
     def test_unordered_cases_are_refused_rather_than_replayed(self):
@@ -463,29 +461,36 @@ class ADelayedActNeedsTimeToBeDrivenThrough(unittest.TestCase):
                          [(r.name, r.refusal) for r in result.results])
         self.assertIn("no `elapsed_ms`", result.results[1].refusal)
 
-    def test_a_restated_value_with_an_age_is_refused_not_guessed(self):
-        """The one anchor the record genuinely does not settle.
+    RESTATED_WITH_AN_AGE = [
+        {"name": "a train is detected",
+         "given": {"plant/in/train-approach": "APPROACHING"},
+         "drove": ["plant/in/train-approach"], "elapsed_ms": 100,
+         "expect": {"plant/out/road-signal.value": "DARK"}},
+        {"name": "the same reading, asserted again",
+         "given": {"plant/in/train-approach": "APPROACHING"},
+         "drove": ["plant/in/train-approach"], "elapsed_ms": 600,
+         "expect": {"plant/out/road-signal.value": "FLASHING"}},
+    ]
 
-        Driving the same address to the same value again is a real
-        assertion -- the schema is explicit that a restatement is not
-        nothing happening. But nothing says whether the age that comes with
-        it runs from this assertion or from the one that began the
-        situation, and a delayed act can fall between the two.
-        """
-        result = self.run_cases([
-            {"name": "a train is detected",
-             "given": {"plant/in/train-approach": "APPROACHING"},
-             "drove": ["plant/in/train-approach"], "elapsed_ms": 100,
-             "expect": {"plant/out/road-signal.value": "DARK"}},
-            {"name": "the same reading, asserted again",
-             "given": {"plant/in/train-approach": "APPROACHING"},
-             "drove": ["plant/in/train-approach"], "elapsed_ms": 600,
-             "expect": {"plant/out/road-signal.value": "FLASHING"}},
-        ])
+    def test_a_restated_value_with_an_age_is_refused_without_the_delivery_rule(self):
+        """Whether the age runs from this assertion or from the one that
+        began the situation depends on whether the restatement reached the
+        machine at all, and that is `activation`. Unsaid, it is refused."""
+        result = self.run_cases(self.RESTATED_WITH_AN_AGE)
+        self.assertFalse(result.ran)
+        self.assertIn("the same reading, asserted again", result.refusal)
+        self.assertIn("activation: on-change", result.refusal)
+
+    def test_under_on_change_a_restatement_with_an_age_dates_nothing(self):
+        """A restatement that reaches nothing restarts nothing, so there is
+        no second anchor to choose between -- and no round to judge."""
+        self.binding = {**self.binding, "activation": "on-change"}
+        result = self.run_cases(self.RESTATED_WITH_AN_AGE)
         self.assertTrue(result.ran, result.refusal)
-        self.assertEqual(1, result.unjudged,
+        self.assertEqual((1, 0, 1), (result.passed, result.failed, result.unjudged),
                          [(r.name, r.refusal) for r in result.results])
-        self.assertIn("started the situation", result.results[1].refusal)
+        self.assertIn("no input of this case reaches the document",
+                      result.results[1].refusal)
 
     def test_a_document_with_delays_and_no_ages_at_all_is_refused(self):
         result = self.run_cases([
@@ -554,10 +559,11 @@ class AnOutputTheDocumentDeclaresIsReadFromIt(unittest.TestCase):
             [(r.name, r.refusal) for r in result.results])
 
 
-# A machine that speaks only when something CHANGES: entering `flashing` says
-# so, leaving it says so, and a round that changes nothing sends nothing. The
-# position it writes keeps its last value between those rounds -- which is
-# what `hold_last` says of the address, not of the document.
+# A machine that speaks only when its signal CHANGES: entering `flashing` says
+# so, leaving it says so, and an occupied track -- a real change of input --
+# is heard and answered with nothing. The position it writes keeps its last
+# value between those rounds, which is what `hold_last` says of the address,
+# not of the document.
 SPEAKS_ON_CHANGE = """<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -569,6 +575,7 @@ SPEAKS_ON_CHANGE = """<?xml version="1.0" encoding="UTF-8"?>
     <onentry>
       <send event="signal.flashing" type="x-sce-host"/>
     </onentry>
+    <transition event="train.occupied"/>
     <transition event="train.cleared" target="dark">
       <send event="signal.dark" type="x-sce-host"/>
     </transition>
@@ -576,7 +583,11 @@ SPEAKS_ON_CHANGE = """<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 """
 
-HOLDING = {**BINDING, "outputs": {
+HOLDING = {**BINDING, "inputs": {
+    **BINDING["inputs"],
+    "occupied": {"address": "plant/in/train-approach", "becomes": "OCCUPIED",
+                 "event": "train.occupied"},
+}, "outputs": {
     "roadSignal": {
         "address": "plant/out/road-signal", "field": "value",
         "sent": {"processor": "x-sce-host"},
@@ -590,9 +601,10 @@ HOLDING = {**BINDING, "outputs": {
 }}
 
 
-def approach(name: str, expect: str | None = None, **extra) -> dict:
+def track(name: str, value: str, expect: str | None = None, **extra) -> dict:
+    """One case that moves the approach reading to `value`."""
     case = {"name": name,
-            "given": {"plant/in/train-approach": "APPROACHING"},
+            "given": {"plant/in/train-approach": value},
             "drove": ["plant/in/train-approach"], **extra}
     if expect is not None:
         case["expect"] = {"plant/out/road-signal.value": expect}
@@ -641,13 +653,10 @@ class AHeldPositionOutlivesTheRoundThatWroteIt(unittest.TestCase):
 
     def test_a_round_that_sends_nothing_keeps_what_the_last_one_wrote(self):
         result = self.run_cases([
-            approach("a train approaches", "FLASHING"),
-            # Re-driving the approach in `flashing` selects no transition.
-            approach("the reading is restated", "FLASHING"),
-            {"name": "the train clears",
-             "given": {"plant/in/train-approach": "CLEAR"},
-             "drove": ["plant/in/train-approach"],
-             "expect": {"plant/out/road-signal.value": "DARK"}},
+            track("a train approaches", "APPROACHING", "FLASHING"),
+            # Heard in `flashing`, answered with nothing.
+            track("the track is occupied", "OCCUPIED", "FLASHING"),
+            track("the train clears", "CLEAR", "DARK"),
         ])
         self.assertTrue(result.ran, result.refusal)
         self.assertEqual((3, 0, 0, 0), self.verdict(result), self.details(result))
@@ -655,12 +664,12 @@ class AHeldPositionOutlivesTheRoundThatWroteIt(unittest.TestCase):
     def test_what_the_setup_wrote_is_what_the_judged_round_holds(self):
         """⚠ The slot does not know which rounds the record calls setup. The
         approach below is sent during the case's `before`, and the judged
-        round -- a restatement -- sends nothing, so FLASHING can only come
+        round -- an occupied track -- sends nothing, so FLASHING can only come
         from the setup round."""
         result = self.run_cases([
-            approach("restated after an approach", "FLASHING",
-                     before=[{"given": {"plant/in/train-approach": "APPROACHING"},
-                              "drove": ["plant/in/train-approach"]}]),
+            track("occupied after an approach", "OCCUPIED", "FLASHING",
+                  before=[{"given": {"plant/in/train-approach": "APPROACHING"},
+                           "drove": ["plant/in/train-approach"]}]),
         ])
         self.assertTrue(result.ran, result.refusal)
         self.assertEqual((1, 0, 0, 0), self.verdict(result), self.details(result))
@@ -669,8 +678,8 @@ class AHeldPositionOutlivesTheRoundThatWroteIt(unittest.TestCase):
         """The hold is a reading, not a pass: expecting DARK where the slot
         holds FLASHING is a failure, not something waved through."""
         result = self.run_cases([
-            approach("a train approaches", "FLASHING"),
-            approach("the reading is restated", "DARK"),
+            track("a train approaches", "APPROACHING", "FLASHING"),
+            track("the track is occupied", "OCCUPIED", "DARK"),
         ])
         self.assertTrue(result.ran, result.refusal)
         self.assertEqual((1, 1, 0, 0), self.verdict(result), self.details(result))
@@ -690,6 +699,144 @@ class AHeldPositionOutlivesTheRoundThatWroteIt(unittest.TestCase):
         [case] = result.results
         self.assertEqual(("", [], ["plant/out/road-signal.value"]),
                          (case.refusal, case.failures, case.unchecked),
+                         self.details(result))
+
+
+# A machine that must SEE a transition, not a first value: the first reading
+# of the approach only tells it where it is, and a detector fault makes it
+# forget. That is the shape of any edge-detecting rule over a signal that can
+# fail -- and the shape in which a delivered restatement changes the answer.
+FORGETS_ON_FAULT = """<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" datamodel="null" initial="watch" sce:kind="statechart">
+  <state id="watch" initial="unseen">
+    <transition event="obstacle.fault" target="unseen"/>
+    <state id="unseen">
+      <transition event="train.cleared" target="down"/>
+      <transition event="train.approaching" target="up"/>
+    </state>
+    <state id="down">
+      <transition event="train.approaching" target="up">
+        <send event="signal.flashing" type="x-sce-host"/>
+      </transition>
+    </state>
+    <state id="up">
+      <transition event="train.cleared" target="down">
+        <send event="signal.dark" type="x-sce-host"/>
+      </transition>
+    </state>
+  </state>
+</scxml>
+"""
+
+EDGE_BINDING = {**BINDING, "inputs": {
+    **BINDING["inputs"],
+    "detectorFault": {"address": "plant/in/obstacle", "becomes": "FAULT",
+                      "event": "obstacle.fault"},
+}}
+
+APPROACH = "plant/in/train-approach"
+OBSTACLE = "plant/in/obstacle"
+SIGNAL = "plant/out/road-signal.value"
+
+# The detector faults, and the case after it restates CLEAR in its setup
+# before the train comes. Delivered, the restatement would put the machine
+# back in `down`, and the approach would flash; not delivered, the machine is
+# still `unseen`, and the approach is only a first reading.
+AFTER_A_FAULT = [
+    {"name": "a clear reading",
+     "given": {APPROACH: "CLEAR", OBSTACLE: "NONE"}, "drove": [APPROACH],
+     "expect": {SIGNAL: "DARK"}},
+    {"name": "the detector faults",
+     "given": {APPROACH: "CLEAR", OBSTACLE: "FAULT"}, "drove": [OBSTACLE],
+     "expect": {SIGNAL: "DARK"}},
+    {"name": "a train, after a restated clear",
+     "before": [{"given": {APPROACH: "CLEAR", OBSTACLE: "FAULT"},
+                 "drove": [APPROACH]}],
+     "given": {APPROACH: "APPROACHING", OBSTACLE: "FAULT"}, "drove": [APPROACH],
+     "expect": {SIGNAL: "DARK"}},
+]
+
+
+@unittest.skipUnless(codegen_is_built(),
+                     "the product's generator is not built; nothing can be run")
+class AnUnchangedInputReachesNothingUnderOnChange(unittest.TestCase):
+    """A record's `drove` says the platform wrote an address, not that the
+    write changed it. Whether an unchanged write reaches the machine is the
+    host's delivery rule -- `activation` -- and `verify` follows it.
+
+    ⚠ It used to send every driven address as an event. Measured 2026-09-23:
+    a setup step rewrote two inputs at the values they held, the replay sent
+    both, revived a machine an earlier fault had reset, and passed a case the
+    product -- which runs the component only when an input changes -- failed.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = pathlib.Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        for name in ("interface-model.yaml", "conventions.yaml"):
+            shutil.copy(CROSSING / name, self.tmp / name)
+        (self.tmp / "signal.scxml").write_text(FORGETS_ON_FAULT, encoding="utf-8")
+
+    def run_cases(self, cases, **binding_keys):
+        (self.tmp / "examples.yaml").write_text(
+            yaml.safe_dump({**EXAMPLES, "cases": cases}), encoding="utf-8")
+        path = self.tmp / "b.yaml"
+        path.write_text(yaml.safe_dump({**EDGE_BINDING, **binding_keys}),
+                        encoding="utf-8")
+        return verify(load_pack(self.tmp), path)
+
+    def details(self, result):
+        return [(r.name, r.refusal, r.failures) for r in result.results]
+
+    def test_a_restated_setup_does_not_revive_what_a_fault_reset(self):
+        result = self.run_cases(AFTER_A_FAULT, activation="on-change")
+        self.assertTrue(result.ran, result.refusal)
+        self.assertEqual((3, 0, 0), (result.passed, result.failed, result.unjudged),
+                         self.details(result))
+
+    def test_without_the_delivery_rule_a_restatement_is_refused_not_guessed(self):
+        result = self.run_cases(AFTER_A_FAULT)
+        self.assertFalse(result.ran)
+        self.assertIn("a train, after a restated clear (setup)", result.refusal)
+        self.assertIn("activation: on-change", result.refusal)
+
+    def test_a_judged_case_that_changes_nothing_is_not_judged(self):
+        """The host does not run the component for it, so there is no answer
+        of the document's to compare -- not a pass on the last one's."""
+        result = self.run_cases([
+            AFTER_A_FAULT[0],
+            {"name": "the clear reading again",
+             "given": {APPROACH: "CLEAR", OBSTACLE: "NONE"}, "drove": [APPROACH],
+             "expect": {SIGNAL: "DARK"}},
+        ], activation="on-change")
+        self.assertTrue(result.ran, result.refusal)
+        self.assertEqual((1, 0, 1), (result.passed, result.failed, result.unjudged),
+                         self.details(result))
+        self.assertIn("no input of this case reaches the document",
+                      result.results[1].refusal)
+
+    def test_check_says_it_in_the_words_verify_refuses_in(self):
+        """`check` and `verify` judge one binding; they must not disagree."""
+        self.run_cases(AFTER_A_FAULT)  # writes the pack and binding
+        found = [f.detail for f in check(load_pack(self.tmp), self.tmp / "b.yaml")]
+        refused = self.run_cases(AFTER_A_FAULT).refusal
+        self.assertIn(refused, found)
+        self.run_cases(AFTER_A_FAULT, activation="on-change")
+        found = [f.detail for f in check(load_pack(self.tmp), self.tmp / "b.yaml")]
+        self.assertFalse([f for f in found if "activation" in f], found)
+
+    def test_a_record_that_writes_codes_is_compared_through_the_value_space(self):
+        """`CLEAR` and `0` are one value. Comparing spellings would call a
+        restatement a change and deliver it -- the defect, by another road."""
+        coded = [dict(case) for case in AFTER_A_FAULT]
+        coded[2] = {**coded[2], "before": [
+            {"given": {APPROACH: "0", OBSTACLE: "FAULT"}, "drove": [APPROACH]}]}
+        result = self.run_cases(coded, activation="on-change")
+        self.assertTrue(result.ran, result.refusal)
+        self.assertEqual((3, 0, 0), (result.passed, result.failed, result.unjudged),
                          self.details(result))
 
 
