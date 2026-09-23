@@ -529,3 +529,76 @@ fn a_refusal_after_an_include_names_the_authored_row_on_every_forge_route() {
         "compile_forge_file must name the authored row on every schema record: {rows:?}"
     );
 }
+
+/// A transform whose input arrives through `<xi:include>`, and whose output
+/// expression names something no input declares. The refusal is raised
+/// while the expression is lowered — after parsing, from the model — so the
+/// row and column it carries are the attribute's as the reader recorded
+/// them in the EXPANDED text, four rows below where the author wrote them.
+const DOC_WITH_A_LOWERING_ERROR_AFTER_AN_INCLUDE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" xmlns:xi="http://www.w3.org/2001/XInclude" sce:kind="transform" name="probe_lowering">
+  <datamodel>
+    <xi:include href="celsius.fragment.xml"/>
+    <data id="result" sce:type="float64" sce:direction="out"
+          expr="celsius + conut"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// Where [`DOC_WITH_A_LOWERING_ERROR_AFTER_AN_INCLUDE`] spells `conut`.
+const AUTHORED_LOWERING_ERROR_AT: (u64, u64) = (6, 27);
+
+/// A refusal made while lowering is placed at the token and mapped back to
+/// the authored row like any other: the two mappings compose, so neither
+/// the expanded row nor the element's row reaches the wire.
+#[test]
+fn a_lowering_refusal_after_an_include_names_the_authored_token() {
+    let doc = "probe_lowering.scxml";
+    let dir = include_fixture(&[(doc, DOC_WITH_A_LOWERING_ERROR_AFTER_AN_INCLUDE)]);
+    let out = tempfile::tempdir().expect("tempdir");
+    let out_dir = out.path().to_str().expect("utf8 path");
+    let (line, col) = AUTHORED_LOWERING_ERROR_AT;
+
+    let routes: [&[&str]; 3] = [
+        &["check", doc, "-l", "rust"],
+        &["generate", doc, "-l", "rust", "-o", out_dir],
+        &[
+            "orchestrate",
+            "--forge",
+            doc,
+            "-l",
+            "rust",
+            "--output-dir",
+            out_dir,
+        ],
+    ];
+    for args in routes {
+        let record = refusal_record(dir.path(), args);
+        assert_eq!(
+            record["code"], "expression/unknown-identifier",
+            "{args:?}: {record}"
+        );
+        assert_eq!(record["location"]["file"], doc, "{args:?}: {record}");
+        assert_eq!(
+            (&record["location"]["line"], &record["location"]["col"]),
+            (&serde_json::json!(line), &serde_json::json!(col)),
+            "{args:?}: the refusal must name the authored token: {record}"
+        );
+        assert_eq!(record["actual"], "conut", "{args:?}: {record}");
+    }
+
+    let err = match sce_build::compile_forge_file(
+        &dir.path().join(doc),
+        Language::Rust,
+        &[],
+        &ForgeCompileOptions::default(),
+    ) {
+        Ok(_) => panic!("the document names an undeclared identifier and must be refused"),
+        Err(e) => e,
+    };
+    assert_eq!(
+        (err.location.line, err.location.col),
+        (Some(line as u32), Some(col as u32)),
+        "compile_forge_file must name the authored token: {err}"
+    );
+}

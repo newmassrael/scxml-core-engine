@@ -767,6 +767,13 @@ name = "a_parameter_an_output_does_not_read_is_unread_on_purpose"
 path = "tests/a_parameter_an_output_does_not_read_is_unread_on_purpose.rs"
 required-features = ["cli"]
 
+# Spawns sce-codegen `check` once per backend: each lowers the expression
+# for itself, and the placement it asserts is made in that lowering.
+[[test]]
+name = "a_lowering_refusal_names_the_token_it_refuses"
+path = "tests/a_lowering_refusal_names_the_token_it_refuses.rs"
+required-features = ["cli"]
+
 [[test]]
 name = "value_space_coverage"
 path = "tests/value_space_coverage.rs"

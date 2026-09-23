@@ -54,11 +54,12 @@ use std::ops::Range;
 use std::path::Path;
 
 use crate::attribute_spelling::Written;
-use crate::forge::error::{ExprError, ForgeError, Located, SourceLocation, ValidationError};
+use crate::forge::error::{ForgeError, Located, SourceLocation, ValidationError};
 use crate::forge::expr::{
     decode_bytes_literal, parse_to_ast, references_event_data_lexically, transpile_typed, BinOp,
     ExprKind, ExprTarget, TypedExpr, UnaryOp,
 };
+use crate::forge::expression_site::ExpressionSite;
 use crate::forge::model::{EnumModel, EventSchemaModel, ForgeField, ForgeKind, SceType};
 use crate::forge::types::{InferredType, TypeCtx};
 use crate::model::{Action, Param, SCXMLModel, Transition};
@@ -231,7 +232,7 @@ pub fn lower_typed_guard(
     schema: &EventSchemaModel,
     accessor: &str,
     target: ExprTarget,
-) -> Result<String, ExprError> {
+) -> Result<String, crate::forge::expr::Refusal> {
     // The dotted access-path keys must outlive `ctx` (whose `vars` map
     // borrows its keys), so they are owned here and borrowed in.
     let keys: Vec<String> = schema
@@ -1506,23 +1507,26 @@ fn located_on_transition(
 /// for `==`, carrying its `replace_with: "==="` fix) rather than a generic
 /// "unlowerable guard".
 ///
-/// ⚠ An `ExprError` carries no position inside the guard, so this is the
-/// position the guard STARTS at — the offending token's own row for a
-/// guard written on one row, and not for a guard continued past its first.
+/// ⚠ This used to place every such refusal where the guard STARTS, because
+/// the parser said nothing about where in the guard it refused — the
+/// offending token's own row for a guard written on one row, and not for a
+/// guard continued past its first. The refusal now carries the token's
+/// range, and the guard's spelling reads it back to the row and column the
+/// token is written on.
 fn located_expr_on_transition(
     transition: &Transition,
     diag_label: &str,
-    err: ExprError,
+    err: crate::forge::expr::Refusal,
 ) -> Located<ForgeError> {
-    let (line, col) = match (
-        transition.cond_spelling.as_ref(),
-        transition.source_location.as_ref(),
-    ) {
-        (Some(spelling), _) => (Some(spelling.row()), Some(spelling.col())),
-        (None, Some(loc)) => (loc.line, loc.col),
-        (None, None) => (None, None),
-    };
-    Located::new(ForgeError::Expression(err), diag_label, line, col)
+    // At the token the parser refused, read back off the guard as written.
+    // ⚠ Not at the `<transition>`'s own coordinate when the guard has no
+    // spelling: that is the row the start tag BEGINS on, and a guard
+    // written on a later row of it is not there — a row the token is not
+    // on is worse than none (`expression_site`). Every transition a
+    // document produced records the spelling, so this is only the
+    // synthesised kind.
+    let site = ExpressionSite::new(guard_text(transition), transition.cond_spelling.as_ref());
+    Located::in_file(site.place(err), diag_label)
 }
 
 /// Per-statechart send-side typecheck.
@@ -1891,6 +1895,7 @@ fn located_at(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::forge::error::ExprError;
     use crate::forge::model::{Direction, EnumModel, EnumRef, EnumVariant, ForgeField, SceType};
 
     fn field(id: &str, ty: SceType) -> ForgeField {

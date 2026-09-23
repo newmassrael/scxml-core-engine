@@ -1482,8 +1482,18 @@ pub struct ProcedureSendAction {
 pub struct ProcedureAssign {
     /// Target variable name (location attribute).
     pub location: String,
+    /// The `location` attribute as written and where, so a refusal of the
+    /// target names it on its own row — which an `<assign>` does not share
+    /// with the `<transition>` around it. Skipped from serialization, as
+    /// every position on this model is.
+    #[serde(skip)]
+    pub location_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     /// Value expression (expr attribute).
     pub expr: String,
+    /// The `expr` attribute as written and where, for the reason
+    /// [`ProcedureAssign::location_spelling`] gives.
+    #[serde(skip)]
+    pub expr_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
 }
 
 /// A `<param>` within `<donedata>` on a `<final>` state.
@@ -1495,6 +1505,11 @@ pub struct ProcedureDoneParam {
     pub name: String,
     /// Value expression.
     pub expr: String,
+    /// The `expr` attribute as written and where, so a refusal of the value
+    /// names it on its own row. Skipped from serialization, as every
+    /// position on this model is.
+    #[serde(skip)]
+    pub expr_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
 }
 
 // ── Shared types (Level 1 + Level 2) ─────────────────────────
@@ -1510,6 +1525,13 @@ pub struct ProcedureTransition {
     /// Optional ECMAScript guard expression. `None` = unconditional (else branch).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cond: Option<String>,
+    /// The `cond` attribute as written and where. [`Self::line`] is the row
+    /// the element STARTS on, which a start tag written over several rows
+    /// need not share with its guard — so a refusal of the guard is placed
+    /// from this, never from that. Skipped from serialization, as every
+    /// position on this model is.
+    #[serde(skip)]
+    pub cond_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     /// Event trigger (Level 2). `None` = eventless transition (guard-only).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub event: Option<String>,
@@ -3093,9 +3115,18 @@ pub struct ThresholdMonitor {
     pub id: String,
     /// ECMAScript expression for entering the active state.
     pub enter_expr: String,
+    /// The attribute `enter_expr` was read from, as written and where, so a
+    /// refusal of the expression names it on its own row. Skipped from
+    /// serialization, as every position on this model is.
+    #[serde(skip)]
+    pub enter_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     /// ECMAScript expression for leaving the active state. Optional.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub leave_expr: Option<String>,
+    /// The attribute `leave_expr` was read from, for the reason
+    /// [`ThresholdMonitor::enter_spelling`] gives.
+    #[serde(skip)]
+    pub leave_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     /// Event name emitted on entering active state.
     pub on_enter: String,
     /// Event name emitted on leaving active state. Optional.
@@ -4895,6 +4926,7 @@ mod tests {
         let tr = ProcedureTransition {
             target: "B".into(),
             cond: None,
+            cond_spelling: None,
             event: None,
             assigns: Vec::new(),
             line: Some(7),

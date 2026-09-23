@@ -42,8 +42,10 @@
 
 use std::collections::BTreeSet;
 
-use crate::forge::error::ExprError;
+use crate::attribute_spelling::AttributeSpelling;
+use crate::forge::error::ForgeError;
 use crate::forge::expr;
+use crate::forge::expression_site::ExpressionSite;
 use crate::forge::model::{
     AlgorithmConstType, AlgorithmStmt, CodecVariant, Cycle, ForgeDocument, ForgeField, ForgeImport,
     SceType,
@@ -53,17 +55,23 @@ use crate::forge::model::{
 ///
 /// `document` is the one about to be rendered — after any rewrite that
 /// runs before rendering — so the set describes the code that is emitted.
+///
+/// ⚠ This walk parses every expression of the document before any backend
+/// does, so an expression that does not parse is refused HERE, not by a
+/// renderer — and is placed here, from the spelling each position keeps.
+/// It used to answer with the bare refusal, which reached the wire with a
+/// file and no row (measured 2026-09-23).
 pub(crate) fn named_aliases(
     document: &ForgeDocument,
     cycles: &[Cycle],
     imports: &[ForgeImport],
-) -> Result<BTreeSet<String>, ExprError> {
+) -> Result<BTreeSet<String>, ForgeError> {
     let mut names = Names::default();
     names.document(document)?;
     for cycle in cycles {
         names.name(&cycle.of);
         for step in &cycle.steps {
-            names.opt_expr(step.when.as_deref())?;
+            names.opt_expr(step.when.as_deref(), None)?;
         }
     }
     Ok(imports
@@ -96,30 +104,37 @@ impl Names {
     }
 
     /// Every name the expression reads as a value, callees included —
-    /// `frame.len` reads `frame`, `crc(x)` reads `crc` and `x`.
-    fn expr(&mut self, raw: &str) -> Result<(), ExprError> {
-        for name in expr::read_identifiers(raw)? {
+    /// `frame.len` reads `frame`, `crc(x)` reads `crc` and `x`. `spelling`
+    /// is the attribute it was read from, which places a refusal of it;
+    /// `None` where the model keeps no spelling for that position.
+    fn expr(&mut self, raw: &str, spelling: Option<&AttributeSpelling>) -> Result<(), ForgeError> {
+        let site = ExpressionSite::new(raw, spelling);
+        for name in expr::read_identifiers(raw).map_err(|refusal| site.place(refusal))? {
             self.0.insert(name);
         }
         Ok(())
     }
 
-    fn opt_expr(&mut self, raw: Option<&str>) -> Result<(), ExprError> {
+    fn opt_expr(
+        &mut self,
+        raw: Option<&str>,
+        spelling: Option<&AttributeSpelling>,
+    ) -> Result<(), ForgeError> {
         match raw {
-            Some(raw) => self.expr(raw),
+            Some(raw) => self.expr(raw, spelling),
             None => Ok(()),
         }
     }
 
-    fn field(&mut self, field: &ForgeField) -> Result<(), ExprError> {
+    fn field(&mut self, field: &ForgeField) -> Result<(), ForgeError> {
         self.ty(&field.sce_type);
-        self.opt_expr(field.expr.as_deref())
+        self.opt_expr(field.expr.as_deref(), field.expr_spelling.as_ref())
     }
 
     fn fields<'a>(
         &mut self,
         fields: impl IntoIterator<Item = &'a ForgeField>,
-    ) -> Result<(), ExprError> {
+    ) -> Result<(), ForgeError> {
         fields.into_iter().try_for_each(|f| self.field(f))
     }
 
@@ -129,43 +144,43 @@ impl Names {
         }
     }
 
-    fn stmts(&mut self, stmts: &[AlgorithmStmt]) -> Result<(), ExprError> {
+    fn stmts(&mut self, stmts: &[AlgorithmStmt]) -> Result<(), ForgeError> {
         for stmt in stmts {
             match stmt {
                 AlgorithmStmt::Var { sce_type, init, .. } => {
                     self.ty(sce_type);
-                    self.opt_expr(init.as_deref())?;
+                    self.opt_expr(init.as_deref(), None)?;
                 }
                 // A target is an lvalue in expression syntax — `x`,
                 // `buf[i]` — so it is read the way an expression is.
                 AlgorithmStmt::Assign { target, expr } | AlgorithmStmt::Append { target, expr } => {
-                    self.expr(target)?;
-                    self.expr(expr)?;
+                    self.expr(target, None)?;
+                    self.expr(expr, None)?;
                 }
                 AlgorithmStmt::If {
                     cond,
                     then_body,
                     else_body,
                 } => {
-                    self.expr(cond)?;
+                    self.expr(cond, None)?;
                     self.stmts(then_body)?;
                     if let Some(else_body) = else_body {
                         self.stmts(else_body)?;
                     }
                 }
                 AlgorithmStmt::While { cond, body, .. } => {
-                    self.expr(cond)?;
+                    self.expr(cond, None)?;
                     self.stmts(body)?;
                 }
                 AlgorithmStmt::Foreach { source, body, .. } => {
                     self.name(source);
                     self.stmts(body)?;
                 }
-                AlgorithmStmt::Return { expr } => self.opt_expr(expr.as_deref())?,
+                AlgorithmStmt::Return { expr } => self.opt_expr(expr.as_deref(), None)?,
                 AlgorithmStmt::Call { target, args, .. } => {
-                    self.expr(target)?;
+                    self.expr(target, None)?;
                     for arg in args {
-                        self.expr(arg)?;
+                        self.expr(arg, None)?;
                     }
                 }
             }
@@ -173,19 +188,22 @@ impl Names {
         Ok(())
     }
 
-    fn document(&mut self, document: &ForgeDocument) -> Result<(), ExprError> {
+    fn document(&mut self, document: &ForgeDocument) -> Result<(), ForgeError> {
         match document {
             ForgeDocument::Transform(m) => self.fields(m.inputs.iter().chain(&m.outputs)),
             ForgeDocument::Lookup(m) => self.fields([&m.input, &m.output]),
             ForgeDocument::Condition(m) => {
                 self.fields(&m.inputs)?;
-                self.expr(&m.expr)
+                self.expr(&m.expr, m.expr_spelling.as_ref())
             }
             ForgeDocument::Validator(m) => {
                 self.fields(&m.inputs)?;
                 // Range bounds and rate limits are numeric literals; the
                 // plausibility rule is the one expression a validator has.
-                self.opt_expr(m.rules.plausibility.as_deref())
+                self.opt_expr(
+                    m.rules.plausibility.as_deref(),
+                    m.rules.plausibility_spelling.as_ref(),
+                )
             }
             ForgeDocument::Procedure(m) => {
                 self.fields(m.inputs.iter().chain(&m.internals))?;
@@ -195,18 +213,21 @@ impl Names {
                 }
                 for state in &m.states {
                     for transition in &state.transitions {
-                        self.opt_expr(transition.cond.as_deref())?;
+                        self.opt_expr(
+                            transition.cond.as_deref(),
+                            transition.cond_spelling.as_ref(),
+                        )?;
                         for assign in &transition.assigns {
-                            self.expr(&assign.location)?;
-                            self.expr(&assign.expr)?;
+                            self.expr(&assign.location, assign.location_spelling.as_ref())?;
+                            self.expr(&assign.expr, assign.expr_spelling.as_ref())?;
                         }
                     }
                     for send in &state.on_entry_sends {
-                        self.opt_expr(send.addr.as_deref())?;
-                        self.opt_expr(send.payload.as_deref())?;
+                        self.opt_expr(send.addr.as_deref(), send.addr_spelling.as_ref())?;
+                        self.opt_expr(send.payload.as_deref(), send.payload_spelling.as_ref())?;
                     }
                     for param in &state.done_params {
-                        self.expr(&param.expr)?;
+                        self.expr(&param.expr, param.expr_spelling.as_ref())?;
                     }
                 }
                 Ok(())
@@ -230,8 +251,11 @@ impl Names {
             ForgeDocument::Observer(m) => {
                 self.fields(&m.inputs)?;
                 for monitor in &m.monitors {
-                    self.expr(&monitor.enter_expr)?;
-                    self.opt_expr(monitor.leave_expr.as_deref())?;
+                    self.expr(&monitor.enter_expr, monitor.enter_spelling.as_ref())?;
+                    self.opt_expr(
+                        monitor.leave_expr.as_deref(),
+                        monitor.leave_spelling.as_ref(),
+                    )?;
                 }
                 Ok(())
             }
@@ -245,11 +269,11 @@ impl Names {
                         AlgorithmConstType::Scalar(t) => self.ty(t),
                         AlgorithmConstType::Array { elem, .. } => self.ty(elem),
                     }
-                    self.opt_expr(c.init.as_deref())?;
+                    self.opt_expr(c.init.as_deref(), None)?;
                     if let Some(fold) = &c.fold {
                         self.ty(&fold.elem_type);
                         self.stmts(&fold.body)?;
-                        self.expr(&fold.yield_expr)?;
+                        self.expr(&fold.yield_expr, None)?;
                     }
                 }
                 self.stmts(&m.body)
@@ -260,7 +284,7 @@ impl Names {
                 self.opt_name(m.tx_pool.as_deref());
                 self.opt_name(m.stage_pool.as_deref());
                 for inbound in &m.inbound {
-                    self.opt_expr(inbound.when.as_deref())?;
+                    self.opt_expr(inbound.when.as_deref(), None)?;
                 }
                 for outbound in &m.outbound {
                     self.name(&outbound.encode);

@@ -125,6 +125,24 @@ impl AttributeSpelling {
         }
     }
 
+    /// Whether this attribute, decoded, is `text` — up to the whitespace
+    /// around it. A range of `text` reads back onto this spelling only then:
+    /// a model that rewrote the value after reading it holds text nobody
+    /// wrote here, and placing a range of it against this spelling would
+    /// name a place that holds something else.
+    pub fn spells(&self, text: &str) -> bool {
+        let mut decoded = String::with_capacity(self.written.len());
+        let mut at = 0usize;
+        while at < self.written.len() {
+            let Some((written, produced)) = self.written.get(at..).and_then(step) else {
+                return false;
+            };
+            decoded.push(produced);
+            at += written;
+        }
+        decoded.trim() == text.trim()
+    }
+
     /// [`locate`](Self::locate) for a range of this value decoded and then
     /// trimmed — the text an expression parser is handed. The leading
     /// whitespace `str::trim` drops is counted on the decoding itself, so
@@ -260,6 +278,21 @@ mod tests {
         let written = spelling.locate_trimmed(2..3).expect("the operator");
         assert_eq!(written.text, "&lt;");
         assert_eq!((written.row, written.col), (2, 4));
+    }
+
+    /// An attribute spells the value the reader decoded from it — escapes
+    /// resolved, line breaks normalized, the surrounding whitespace aside —
+    /// and nothing else: not its own escaped text, not a rewrite of it.
+    #[test]
+    fn an_attribute_spells_what_the_reader_decoded_and_nothing_else() {
+        let (decoded, spelling) = spelling_of("<t v=\" a &amp;&amp;\r\n b \"/>", "v");
+        assert!(spelling.spells(&decoded));
+        assert!(spelling.spells(decoded.trim()));
+        assert!(
+            !spelling.spells("a &amp;&amp; b"),
+            "the escaped text is not the value"
+        );
+        assert!(!spelling.spells("(a) && b"), "a rewrite is not the value");
     }
 
     #[test]

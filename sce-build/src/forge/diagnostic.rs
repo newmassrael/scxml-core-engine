@@ -5137,8 +5137,24 @@ impl ToDiagnostics for Located<ForgeError> {
 }
 
 impl SingleDiagnostic for Located<ForgeError> {
+    /// The wrapped error's payload, with `actual` as the document spells it
+    /// where a placement read that off the source (SCE_ERROR_CONTRACT
+    /// §3.1.1). Only a payload that names an `actual` has one to restate:
+    /// a code that reports none keeps reporting none. The key fragments,
+    /// and so the `id`, stay the decoded values — one refusal has one
+    /// identity however its document escapes the token.
     fn diagnostic_payload(&self) -> DiagnosticPayload {
-        self.error.diagnostic_payload()
+        let mut payload = self.error.diagnostic_payload();
+        if payload.actual.is_some() {
+            match self.as_written() {
+                Some(crate::forge::error::AsWritten::Text(text)) => {
+                    payload.actual = Some(text.clone());
+                }
+                Some(crate::forge::error::AsWritten::Nothing) => payload.actual = None,
+                None => {}
+            }
+        }
+        payload
     }
 
     fn diagnostic_location(&self) -> Option<Location> {
@@ -8684,11 +8700,18 @@ fn expression_fields(e: &ExprError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![location.clone(), detail.clone()],
         },
-        ExprError::TypeCoercion { lang, detail } => DiagnosticPayload {
+        // The operand as written is what a consumer finds on the row; the
+        // backend that refused it is an argument of the invocation, named
+        // by the message and the key, and written in no document.
+        ExprError::TypeCoercion {
+            lang,
+            detail,
+            observed,
+        } => DiagnosticPayload {
             code: DiagnosticCode::ExpressionTypeCoercion,
             stage: Stage::Expression,
             expected: None,
-            actual: Some((*lang).to_string()),
+            actual: observed.clone(),
             fix: None,
             key_fragments: vec![(*lang).to_string(), detail.clone()],
         },
@@ -11314,9 +11337,10 @@ mod tests {
                 ExprError::TypeCoercion {
                     lang: "Rust",
                     detail: "mixing i32 and String".into(),
+                    observed: Some("label".into()),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:af0be9fbfaff2085","code":"expression/type-coercion","stage":"expression","spec":"SCE Forge §3.4","message":"cannot coerce Rust expression: mixing i32 and String","actual":"Rust"}"#,
+                r#"{"v":1,"id":"fnv1a:af0be9fbfaff2085","code":"expression/type-coercion","stage":"expression","spec":"SCE Forge §3.4","message":"cannot coerce Rust expression: mixing i32 and String","actual":"label"}"#,
             ),
             (
                 "forge/import-file-not-found",

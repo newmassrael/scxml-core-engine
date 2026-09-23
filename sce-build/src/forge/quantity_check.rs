@@ -31,9 +31,9 @@
 // single-responsibility and removes the need to thread an
 // error-collection sink through the inference recursion.
 
-use crate::attribute_spelling::AttributeSpelling;
 use crate::forge::error::{Located, ValidationError};
 use crate::forge::expr::{infer_types, lower_previous, parse_to_ast, BinOp, ExprKind, TypedExpr};
+use crate::forge::expression_site::ExpressionSite;
 use crate::forge::model::{
     ConditionModel, ForgeDocument, ForgeKind, ParsedForge, TransformModel, ValidatorModel,
 };
@@ -130,14 +130,6 @@ fn check_validator(
     Ok(())
 }
 
-/// An expression as the reader decoded it, and the attribute it was read
-/// from as written — `None` for a model no document produced.
-#[derive(Clone, Copy)]
-struct ExpressionSite<'a> {
-    source: &'a str,
-    spelling: Option<&'a AttributeSpelling>,
-}
-
 /// Parse + infer the expression, then walk the typed AST looking for
 /// binary-op nodes whose two operands carry `InferredType::Quantity`
 /// annotations on different unit tags.
@@ -168,15 +160,7 @@ fn check_expression(
         // The operation as the author wrote it, and the row it sits on —
         // which, in an expression continued over several rows, is not the
         // row the attribute starts on.
-        let written = site
-            .spelling
-            .zip(mismatch.span)
-            .and_then(|(spelling, span)| spelling.locate_trimmed(span));
-        let (line, col) = match (written, site.spelling) {
-            (Some(written), _) => (Some(written.row), Some(written.col)),
-            (None, Some(spelling)) => (Some(spelling.row()), Some(spelling.col())),
-            (None, None) => (None, None),
-        };
+        let at = site.locate(mismatch.span);
         let err = crate::forge::error::ForgeError::Validation(Box::new(
             ValidationError::QuantityUnitMismatch {
                 kind,
@@ -185,12 +169,10 @@ fn check_expression(
                 left_unit: mismatch.left_unit.to_owned(),
                 right_unit: mismatch.right_unit.to_owned(),
                 expr: trimmed.to_owned(),
-                observed: written
-                    .and_then(|written| written.on_one_row())
-                    .map(str::to_string),
+                observed: at.observed(),
             },
         ));
-        return Err(Located::new(err, label, line, col));
+        return Err(Located::new(err, label, at.line, at.col));
     }
     Ok(())
 }
@@ -296,6 +278,7 @@ fn binop_token(op: BinOp) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::attribute_spelling::AttributeSpelling;
     use crate::forge::quantity::{NumericBaseType, Rational, UnitTag};
     use crate::forge::types::TypeCtx;
 

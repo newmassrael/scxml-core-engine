@@ -15,6 +15,7 @@ use crate::forge::error::{ForgeError, GenerateError, RelatedRole};
 // SSOT). The per-language payload builders here import and call it.
 use crate::forge::event_schema_check::select_native_typed_guards;
 use crate::forge::expr::{self, ExprTarget};
+use crate::forge::expression_site::ExpressionSite;
 use crate::forge::model::*;
 use crate::generator::{self, GeneratedOutput};
 use std::path::Path;
@@ -1343,13 +1344,18 @@ fn render_transform(
             let renames = rename_map(&pairs);
             // The body is what the output's function RETURNS, in the type
             // its signature declares.
-            let expr_val = expr::transpile_returned(
+            let site = ExpressionSite::new(
                 out.expr.as_deref().unwrap_or("0"),
+                out.expr_spelling.as_ref(),
+            );
+            let expr_val = expr::transpile_returned(
+                site.source,
                 l.expr_target(),
                 &type_ctx,
                 &renames,
                 expected,
-            )?;
+            )
+            .map_err(|refusal| site.place(refusal))?;
 
             // W1 symbol-name SSOT: the bare call-base comes from
             // forge_transform_symbol (shared with the cross-doc resolver); the
@@ -3893,13 +3899,15 @@ fn render_condition(
     let params = l.param_str(&m.inputs);
 
     let type_ctx = crate::forge::type_ctx::condition(m, imports);
+    let site = ExpressionSite::new(&m.expr, m.expr_spelling.as_ref());
     let expr_val = expr::transpile_typed(
-        &m.expr,
+        site.source,
         l.expr_target(),
         &type_ctx,
         &renames,
         crate::forge::types::InferredType::Bool,
-    )?;
+    )
+    .map_err(|refusal| site.place(refusal))?;
 
     let mut ctx = l.base_context(&m.name);
     ctx.insert("func_name".into(), func_name.into());
@@ -14635,29 +14643,35 @@ fn render_validator(
     let has_stateful_imports = imports.iter().any(|imp| imp.is_stateful);
 
     let type_ctx = crate::forge::type_ctx::validator(m, imports);
-    let plausibility_expr = match &rv.plausibility {
-        Some(e) => Some({
+    // `rv.plausibility` is the model's own text, so its spelling reads back.
+    let plausibility = rv
+        .plausibility
+        .as_deref()
+        .map(|e| ExpressionSite::new(e, m.rules.plausibility_spelling.as_ref()));
+    let plausibility_expr = match plausibility {
+        Some(site) => Some({
             // C11 with stateful imports → AST pre-pass for method-call
             // lowering. Other languages and stateless-only C11 flow
             // through the standard pipeline; the rename map already
             // collapses field/method Member nodes for those paths.
             if matches!(lang, Language::C11) && has_stateful_imports {
                 expr::transpile_typed_with_import_lowering(
-                    e,
+                    site.source,
                     &type_ctx,
                     &expr_renames,
                     crate::forge::types::InferredType::Bool,
                     &import_lowerings,
-                )?
+                )
             } else {
                 expr::transpile_typed(
-                    e,
+                    site.source,
                     l.expr_target(),
                     &type_ctx,
                     &expr_renames,
                     crate::forge::types::InferredType::Bool,
-                )?
+                )
             }
+            .map_err(|refusal| site.place(refusal))?
         }),
         None => None,
     };
@@ -14669,8 +14683,8 @@ fn render_validator(
     // purpose — otherwise a build treating warnings as errors refuses the
     // validator (measured 2026-09-22: C11 `-Werror=unused-parameter` on an
     // `int8` ranged -128..127).
-    let plausibility_reads = match &rv.plausibility {
-        Some(e) => expr::read_identifiers(e)?,
+    let plausibility_reads = match plausibility {
+        Some(site) => expr::read_identifiers(site.source).map_err(|refusal| site.place(refusal))?,
         None => Vec::new(),
     };
     let unread_params: Vec<String> = rv
@@ -17376,8 +17390,8 @@ fn render_procedure_cpp(
                 .expr
                 .as_ref()
                 .map(|e| {
-                    expr::transpile_typed(
-                        e,
+                    transpile_procedure_expr(
+                        ExpressionSite::new(e, f.expr_spelling.as_ref()),
                         ExprTarget::Cpp,
                         &procedure_type_ctx,
                         &empty_procedure_renames,
@@ -17624,7 +17638,7 @@ fn render_procedure_c(
                         .as_ref()
                         .map(|c| {
                             transpile_procedure_expr(
-                                c,
+                                ExpressionSite::new(c, tr.cond_spelling.as_ref()),
                                 ExprTarget::C,
                                 &procedure_type_ctx,
                                 &rename_map,
@@ -17787,8 +17801,8 @@ fn render_procedure_c_l2(
                 .as_ref()
                 .map(|e| {
                     let inferred = crate::forge::types::InferredType::from_sce_type(&f.sce_type);
-                    expr::transpile_typed(
-                        e,
+                    transpile_procedure_expr(
+                        ExpressionSite::new(e, f.expr_spelling.as_ref()),
                         ExprTarget::C,
                         &procedure_type_ctx,
                         &empty_renames,
@@ -17964,7 +17978,7 @@ fn render_procedure_c_l2(
                         .as_ref()
                         .map(|a| {
                             transpile_procedure_expr_c11(
-                                a,
+                                ExpressionSite::new(a, send.addr_spelling.as_ref()),
                                 &procedure_type_ctx,
                                 &rename_map,
                                 crate::forge::types::InferredType::Unknown,
@@ -17977,7 +17991,7 @@ fn render_procedure_c_l2(
                         .as_ref()
                         .map(|p| {
                             transpile_procedure_expr_c11(
-                                p,
+                                ExpressionSite::new(p, send.payload_spelling.as_ref()),
                                 &procedure_type_ctx,
                                 &rename_map,
                                 crate::forge::types::InferredType::Bytes,
@@ -18014,7 +18028,7 @@ fn render_procedure_c_l2(
                 .iter()
                 .map(|p| -> Result<serde_json::Value, ForgeError> {
                     let transpiled = transpile_procedure_expr_c11(
-                        &p.expr,
+                        ExpressionSite::new(&p.expr, p.expr_spelling.as_ref()),
                         &procedure_type_ctx,
                         &rename_map,
                         crate::forge::types::InferredType::Str,
@@ -18077,7 +18091,7 @@ fn render_procedure_c_l2(
                         .as_ref()
                         .map(|c| {
                             transpile_procedure_expr_c11(
-                                c,
+                                ExpressionSite::new(c, tr.cond_spelling.as_ref()),
                                 &procedure_type_ctx,
                                 &rename_map,
                                 crate::forge::types::InferredType::Bool,
@@ -18437,16 +18451,19 @@ fn stateful_import_field_renames(
 /// fault had turned its answer into text inside a generated file (measured
 /// 2026-09-21, where it was hiding every procedure's `_event.data` read the
 /// moment names began to be checked).
+///
+/// The refusal is placed where `site` was written — every procedure
+/// expression is lowered through here or [`transpile_procedure_expr_c11`],
+/// once per backend, so this is the one place each of them is placed.
 fn transpile_procedure_expr(
-    raw: &str,
+    site: ExpressionSite<'_>,
     target: ExprTarget,
     type_ctx: &crate::forge::types::TypeCtx<'_>,
     renames: &std::collections::HashMap<&str, &str>,
     expected: crate::forge::types::InferredType,
 ) -> Result<String, ForgeError> {
-    Ok(expr::transpile_typed(
-        raw, target, type_ctx, renames, expected,
-    )?)
+    expr::transpile_typed(site.source, target, type_ctx, renames, expected)
+        .map_err(|refusal| site.place(refusal))
 }
 
 /// C11 procedure expression transpile that runs the stateful-import
@@ -18455,18 +18472,17 @@ fn transpile_procedure_expr(
 /// the caller can use the same wrapper for procedures with or without
 /// imports without branching.
 fn transpile_procedure_expr_c11(
-    raw: &str,
+    site: ExpressionSite<'_>,
     type_ctx: &crate::forge::types::TypeCtx<'_>,
     renames: &std::collections::HashMap<&str, &str>,
     expected: crate::forge::types::InferredType,
     lowerings: &[expr::ImportLowering],
 ) -> Result<String, ForgeError> {
     if lowerings.is_empty() {
-        return transpile_procedure_expr(raw, ExprTarget::C, type_ctx, renames, expected);
+        return transpile_procedure_expr(site, ExprTarget::C, type_ctx, renames, expected);
     }
-    Ok(expr::transpile_typed_with_import_lowering(
-        raw, type_ctx, renames, expected, lowerings,
-    )?)
+    expr::transpile_typed_with_import_lowering(site.source, type_ctx, renames, expected, lowerings)
+        .map_err(|refusal| site.place(refusal))
 }
 
 // ── Procedure: Rust ─────────────────────────────────────────
@@ -18596,7 +18612,7 @@ fn build_procedure_non_final_states(
                         .as_ref()
                         .map(|c| {
                             transpile_procedure_expr(
-                                c,
+                                ExpressionSite::new(c, tr.cond_spelling.as_ref()),
                                 target,
                                 type_ctx,
                                 rename_map,
@@ -18651,7 +18667,7 @@ fn build_procedure_states_with_entry(
                         .as_ref()
                         .map(|a| {
                             transpile_procedure_expr(
-                                a,
+                                ExpressionSite::new(a, send.addr_spelling.as_ref()),
                                 target,
                                 type_ctx,
                                 rename_map,
@@ -18664,7 +18680,7 @@ fn build_procedure_states_with_entry(
                         .as_ref()
                         .map(|p| {
                             transpile_procedure_expr(
-                                p,
+                                ExpressionSite::new(p, send.payload_spelling.as_ref()),
                                 target,
                                 type_ctx,
                                 payload_map,
@@ -18714,7 +18730,7 @@ fn build_procedure_final_states_with_donedata(
                     // nothing — it decides numeric width, not string
                     // coercion.
                     let transpiled = transpile_procedure_expr(
-                        &p.expr,
+                        ExpressionSite::new(&p.expr, p.expr_spelling.as_ref()),
                         target,
                         type_ctx,
                         rename_map,
@@ -18800,12 +18816,15 @@ fn build_procedure_states_with_assigns(
                             // it used to become `/* SCE_LVALUE_ERROR: … */`
                             // followed by the raw location, the same silence
                             // `transpile_procedure_expr` had.
+                            let location =
+                                ExpressionSite::new(&a.location, a.location_spelling.as_ref());
                             let (location_emitted, lhs_ty) = expr::transpile_lvalue(
-                                &a.location,
+                                location.source,
                                 target,
                                 type_ctx,
                                 assign_rename_map,
-                            )?;
+                            )
+                            .map_err(|refusal| location.place(refusal))?;
                             // C11 stateful-import lowering: assign RHS may
                             // call an imported codec's instance method
                             // (e.g. `frame.encode()`), which needs the
@@ -18813,9 +18832,10 @@ fn build_procedure_states_with_assigns(
                             // shared infer/rename/emit pipeline. Other
                             // backends route through `transpile_procedure_expr`
                             // unchanged.
+                            let value = ExpressionSite::new(&a.expr, a.expr_spelling.as_ref());
                             let transpiled = if matches!(target, ExprTarget::C) {
                                 transpile_procedure_expr_c11(
-                                    &a.expr,
+                                    value,
                                     type_ctx,
                                     assign_rename_map,
                                     lhs_ty,
@@ -18823,7 +18843,7 @@ fn build_procedure_states_with_assigns(
                                 )?
                             } else {
                                 transpile_procedure_expr(
-                                    &a.expr,
+                                    value,
                                     target,
                                     type_ctx,
                                     assign_rename_map,
@@ -19044,8 +19064,8 @@ fn render_procedure_kotlin(
             let expected = crate::forge::types::InferredType::from_sce_type(&f.sce_type);
             let default_val = match &f.expr {
                 None => l.default_expr(&f.sce_type),
-                Some(e) => expr::transpile_typed(
-                    e,
+                Some(e) => transpile_procedure_expr(
+                    ExpressionSite::new(e, f.expr_spelling.as_ref()),
                     ExprTarget::Kotlin,
                     &procedure_type_ctx,
                     &empty_procedure_renames,
@@ -19307,8 +19327,8 @@ fn render_procedure_rust(
             let expected = crate::forge::types::InferredType::from_sce_type(&f.sce_type);
             let default_val = match &f.expr {
                 None => l.default_expr(&f.sce_type),
-                Some(e) => expr::transpile_typed(
-                    e,
+                Some(e) => transpile_procedure_expr(
+                    ExpressionSite::new(e, f.expr_spelling.as_ref()),
                     ExprTarget::Rust,
                     &procedure_type_ctx,
                     &empty_procedure_renames,
@@ -19575,8 +19595,8 @@ fn render_procedure_go(
                 .expr
                 .as_ref()
                 .map(|e| {
-                    expr::transpile_typed(
-                        e,
+                    transpile_procedure_expr(
+                        ExpressionSite::new(e, f.expr_spelling.as_ref()),
                         ExprTarget::Go,
                         &procedure_type_ctx,
                         &empty_procedure_renames,
@@ -19780,8 +19800,8 @@ fn render_procedure_python(
             let expected = crate::forge::types::InferredType::from_sce_type(&f.sce_type);
             let default_val = match &f.expr {
                 None => l.default_expr(&f.sce_type),
-                Some(e) => expr::transpile_typed(
-                    e,
+                Some(e) => transpile_procedure_expr(
+                    ExpressionSite::new(e, f.expr_spelling.as_ref()),
                     ExprTarget::Python,
                     &procedure_type_ctx,
                     &empty_procedure_renames,
@@ -20757,28 +20777,34 @@ fn render_observer(
     let obs_type_ctx = crate::forge::type_ctx::observer(m, imports);
     let obs_empty_renames = std::collections::HashMap::new();
 
+    // ⚠ A monitor expression that does not lower is refused, as every other
+    // kind's is. Both used to fall back to the EMPTY string
+    // (`.unwrap_or_default()`), so an undeclared name in `sce:enter` was
+    // reported as generated and emitted a condition with nothing in it —
+    // the last two lowering results in this file that were swallowed.
+    let lower = |site: ExpressionSite<'_>| {
+        expr::transpile_typed(
+            site.source,
+            l.expr_target(),
+            &obs_type_ctx,
+            &obs_empty_renames,
+            crate::forge::types::InferredType::Bool,
+        )
+        .map_err(|refusal| site.place(refusal))
+    };
     let monitors: Vec<serde_json::Value> = m
         .monitors
         .iter()
-        .map(|mon| {
-            let enter_expr = expr::transpile_typed(
+        .map(|mon| -> Result<serde_json::Value, ForgeError> {
+            let enter_expr = lower(ExpressionSite::new(
                 &mon.enter_expr,
-                l.expr_target(),
-                &obs_type_ctx,
-                &obs_empty_renames,
-                crate::forge::types::InferredType::Bool,
-            )
-            .unwrap_or_default();
-            let leave_expr = mon.leave_expr.as_ref().map(|e| {
-                expr::transpile_typed(
-                    e,
-                    l.expr_target(),
-                    &obs_type_ctx,
-                    &obs_empty_renames,
-                    crate::forge::types::InferredType::Bool,
-                )
-                .unwrap_or_default()
-            });
+                mon.enter_spelling.as_ref(),
+            ))?;
+            let leave_expr = mon
+                .leave_expr
+                .as_ref()
+                .map(|e| lower(ExpressionSite::new(e, mon.leave_spelling.as_ref())))
+                .transpose()?;
 
             let active_var = match lang {
                 crate::generator::Language::Cpp => format!("{}Active_", mon.id),
@@ -20795,7 +20821,7 @@ fn render_observer(
                 }
             };
 
-            serde_json::json!({
+            Ok(serde_json::json!({
                 "id": mon.id,
                 "active_var": active_var,
                 "enter_expr": enter_expr,
@@ -20806,9 +20832,9 @@ fn render_observer(
                 "has_on_leave": mon.on_leave.is_some(),
                 "event_enter": l.event_name(&mon.on_enter),
                 "event_leave": mon.on_leave.as_ref().map(|s| l.event_name(s)),
-            })
+            }))
         })
-        .collect();
+        .collect::<Result<_, _>>()?;
 
     // The event list is the DOMAIN's members, not one entry per monitor. Two
     // monitors may raise the same event -- an observer that watches one

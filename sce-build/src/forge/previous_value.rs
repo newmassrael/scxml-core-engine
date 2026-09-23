@@ -36,6 +36,7 @@ use std::ops::Range;
 
 use crate::forge::error::{ExprError, ForgeError, Located, ValidationError};
 use crate::forge::expr::{expr_children, parse_to_ast, ExprKind, TypedExpr};
+use crate::forge::expression_site::ExpressionSite;
 use crate::forge::model::{ForgeDocument, ForgeField, ParsedForge, TransformModel};
 
 /// The built-in's name, as an expression spells it.
@@ -74,8 +75,13 @@ pub(crate) struct Malformed {
 /// refused by the expression stage with its own diagnostic, and every
 /// validation pass that re-parses stays quiet on it so the same text is not
 /// reported twice (`quantity_check` follows the same rule).
+///
+/// Spans index `expr` TRIMMED, as every entry point of the expression
+/// pipeline hands its text to the parser, so one rule places them all
+/// ([`ExpressionSite`]).
 pub(crate) fn reads(expr: &str) -> Option<Result<Reads, Malformed>> {
-    if expr.trim().is_empty() {
+    let expr = expr.trim();
+    if expr.is_empty() {
         return Some(Ok(Reads::default()));
     }
     let ast = parse_to_ast(expr).ok()?;
@@ -211,12 +217,12 @@ pub(crate) fn first_read(m: &TransformModel, which: impl Fn(&str) -> bool) -> Op
             continue;
         };
         if let Some(p) = read.previous.into_iter().find(|p| which(&p.name)) {
-            let (line, col, _) = locate(out, p.span);
+            let at = site(out).locate(p.span);
             return Some(FirstRead {
                 output: out.id.clone(),
                 field: p.name,
-                line,
-                col,
+                line: at.line,
+                col: at.col,
             });
         }
     }
@@ -236,8 +242,8 @@ pub fn check(parsed: &ParsedForge, label: &str) -> Result<(), Located<ForgeError
         let read = match read {
             Ok(read) => read,
             Err(Malformed { span }) => {
-                let (line, col, written) = locate(out, span.clone());
-                let got = written.unwrap_or_else(|| slice(out, span));
+                let at = site(out).locate(span.clone());
+                let got = at.observed().unwrap_or_else(|| slice(out, span));
                 return Err(Located::new(
                     ExprError::ParseMismatch {
                         expected: "exactly one field name in 'previous(…)'".into(),
@@ -245,13 +251,14 @@ pub fn check(parsed: &ParsedForge, label: &str) -> Result<(), Located<ForgeError
                     }
                     .into(),
                     label,
-                    line,
-                    col,
+                    at.line,
+                    at.col,
                 ));
             }
         };
         for p in read.previous {
-            let (line, col, _) = locate(out, p.span.clone());
+            let at = site(out).locate(p.span.clone());
+            let (line, col) = (at.line, at.col);
             let Some(field) = fields.iter().find(|f| f.id == p.name) else {
                 return Err(Located::new(
                     ExprError::UnknownIdentifier {
@@ -315,28 +322,19 @@ pub fn check(parsed: &ParsedForge, label: &str) -> Result<(), Located<ForgeError
     Ok(())
 }
 
-/// Where `span` of `out`'s expression was written: row, column and the text
-/// as the document spells it when that text lies on one row.
-fn locate(
-    out: &ForgeField,
-    span: Option<Range<usize>>,
-) -> (Option<u32>, Option<u32>, Option<String>) {
-    let written = out
-        .expr_spelling
-        .as_ref()
-        .zip(span)
-        .and_then(|(spelling, span)| spelling.locate(span));
-    match (written, out.expr_spelling.as_ref()) {
-        (Some(w), _) => (Some(w.row), Some(w.col), w.on_one_row().map(str::to_string)),
-        (None, Some(spelling)) => (Some(spelling.row()), Some(spelling.col()), None),
-        (None, None) => (None, None, None),
-    }
+/// `out`'s expression, as a refusal of a piece of it is placed against.
+fn site(out: &ForgeField) -> ExpressionSite<'_> {
+    ExpressionSite::new(
+        out.expr.as_deref().unwrap_or(""),
+        out.expr_spelling.as_ref(),
+    )
 }
 
 /// `span` of `out`'s expression as the reader decoded it — what a record
-/// carries when the spelling cannot place it.
+/// carries when the spelling cannot place it. Trimmed first, as [`reads`]
+/// parses it, so the span slices the string it indexes.
 fn slice(out: &ForgeField, span: Option<Range<usize>>) -> String {
-    let expr = out.expr.as_deref().unwrap_or("");
+    let expr = out.expr.as_deref().unwrap_or("").trim();
     span.and_then(|s| expr.get(s))
         .unwrap_or(expr)
         .trim()

@@ -5505,6 +5505,7 @@ fn parse_procedure_transitions(
             .to_string();
 
         let cond = child.attribute("cond").map(|s| s.to_string());
+        let cond_spelling = AttributeSpelling::of(&child, None, "cond");
         let event = child.attribute("event").map(|s| s.to_string());
 
         // Parse <assign> children within the transition (Level 2)
@@ -5514,6 +5515,7 @@ fn parse_procedure_transitions(
         transitions.push(ProcedureTransition {
             target,
             cond,
+            cond_spelling,
             event,
             assigns,
             line,
@@ -5561,7 +5563,9 @@ fn parse_procedure_assigns(
             .to_string();
         assigns.push(ProcedureAssign {
             location: location_attr,
+            location_spelling: AttributeSpelling::of(&child, None, "location"),
             expr,
+            expr_spelling: AttributeSpelling::of(&child, None, "expr"),
         });
     }
     Ok(assigns)
@@ -5680,6 +5684,7 @@ fn parse_procedure_donedata(
             params.push(ProcedureDoneParam {
                 name: param_name,
                 expr,
+                expr_spelling: AttributeSpelling::of(&child, None, "expr"),
             });
         }
     }
@@ -6525,7 +6530,9 @@ fn parse_observer(
             monitors.push(ThresholdMonitor {
                 id,
                 enter_expr,
+                enter_spelling: AttributeSpelling::of(&data, Some(SCE_NAMESPACE), "enter"),
                 leave_expr,
+                leave_spelling: AttributeSpelling::of(&data, Some(SCE_NAMESPACE), "leave"),
                 on_enter,
                 on_leave,
             });

@@ -603,7 +603,9 @@ mod tests {
                 monitors: vec![ThresholdMonitor {
                     id: "m".into(),
                     enter_expr: "x > 1".into(),
+                    enter_spelling: None,
                     leave_expr: None,
+                    leave_spelling: None,
                     on_enter: "hi".into(),
                     on_leave: None,
                 }],

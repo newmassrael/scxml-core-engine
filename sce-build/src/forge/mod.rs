@@ -23,6 +23,7 @@ pub mod enum_naming;
 pub mod error;
 pub mod event_schema_check;
 pub mod expr;
+pub mod expression_site;
 pub mod extern_emit;
 pub mod extern_validator;
 pub mod generator;

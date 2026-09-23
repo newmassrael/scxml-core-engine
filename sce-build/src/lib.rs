@@ -2863,7 +2863,7 @@ pub fn compile_forge_from_parsed(
     // must not disagree about what this document depends on. See
     // `forge::import_use`.
     let named = forge::import_use::named_aliases(document, &parsed.cycles, &parsed.imports)
-        .map_err(|e| Located::in_file(e.into(), label.diagnostic_label))?;
+        .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
     import_ctx.retain(|imp| named.contains(&imp.alias));
 
     // A transform that reads a field through `previous()` is not callable as

@@ -103,6 +103,27 @@ struct LocatedContext {
     /// stay the one site a consumer edits; these are what it reads to
     /// decide how (SCE_ERROR_CONTRACT §2.4).
     related: Vec<RelatedSite>,
+    /// What the document spells at `location`, when the placement read it
+    /// off the source — the record's `actual` in place of the decoded
+    /// token the payload names (SCE_ERROR_CONTRACT §3.1.1).
+    as_written: Option<AsWritten>,
+}
+
+/// What the document spells at the site a refusal was placed at, read off
+/// the source by [`crate::forge::expression_site::ExpressionSite::place`].
+///
+/// It exists because a refusal's payload names what the PIPELINE saw — a
+/// token as the XML reader decoded it — while SCE_ERROR_CONTRACT §3.1.1 has
+/// a consumer find `actual` on `location.line` as the document spells it:
+/// `&&` is written `&amp;&amp;` there, and the end of an expression is
+/// written nowhere at all.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AsWritten {
+    /// This text, on the placed row.
+    Text(String),
+    /// Nothing: the refused site is the end of the expression, where no
+    /// token is written.
+    Nothing,
 }
 
 /// Another place a rejection involves, beside the one its record is
@@ -199,6 +220,23 @@ impl<E> Located<E> {
         self.context
             .as_deref_mut()
             .map_or(&mut [], |context| context.related.as_mut_slice())
+    }
+
+    /// What the document spells at `location`, when a placement read it off
+    /// the source.
+    pub fn as_written(&self) -> Option<&AsWritten> {
+        self.context.as_deref()?.as_written.as_ref()
+    }
+
+    /// Record what the document spells at `location` — or, with `None`,
+    /// that nothing read it.
+    pub fn with_as_written(mut self, as_written: Option<AsWritten>) -> Self {
+        if as_written.is_some() {
+            self.context_mut().as_written = as_written;
+        } else if let Some(context) = self.context.as_mut() {
+            context.as_written = None;
+        }
+        self
     }
 
     /// Record the call site that supplied the substituted bytes.
@@ -344,6 +382,18 @@ pub enum ForgeError {
 // are provided per boxed variant so callers may pass either shape.
 // The inline variants (Xml/Expression/Import/Manifest) get their
 // `From` from thiserror's `#[from]` derive.
+
+/// A span is a range of the expression the pipeline was handed, and only a
+/// caller holding the attribute that expression was read from can turn it
+/// into a row — [`crate::forge::expression_site::ExpressionSite::place`].
+/// A `?` straight into `ForgeError` holds no such thing, so the refusal
+/// arrives as it is and the span, which names no row by itself, is dropped
+/// here rather than carried where nothing reads it.
+impl From<Spanned<ExprError>> for ForgeError {
+    fn from(refusal: Spanned<ExprError>) -> Self {
+        Self::Expression(refusal.error)
+    }
+}
 
 impl From<ValidationError> for ForgeError {
     fn from(err: ValidationError) -> Self {
@@ -4457,13 +4507,82 @@ pub enum ExprError {
     InvalidLvalue { location: String, detail: String },
 
     /// Type coercion failure in a language emitter (Rust, Go).
+    ///
+    /// `observed` is the operand as the author wrote it — the literal that
+    /// cannot be promoted — and is what the wire reports as `actual`.
+    ///
+    /// ⚠ `actual` used to be `lang`: the name of the backend, which is an
+    /// argument of the invocation and occurs in no document, so a consumer
+    /// told to find it on the row found nothing (SCE_ERROR_CONTRACT §2.1).
+    /// The backend is the message's to name.
     #[error("cannot coerce {lang} expression: {detail}")]
-    TypeCoercion { lang: &'static str, detail: String },
+    TypeCoercion {
+        lang: &'static str,
+        detail: String,
+        observed: Option<String>,
+    },
 
     /// Target language cannot represent the expression construct.
     /// Currently: Go has no ternary expression.
     #[error("cannot transpile ternary expression to Go: Go has no conditional expression")]
     GoTernary,
+}
+
+impl ExprError {
+    /// `self`, raised at `span` of the expression the pipeline was handed.
+    pub(crate) fn at(self, span: Option<std::ops::Range<usize>>) -> Spanned<ExprError> {
+        Spanned { error: self, span }
+    }
+}
+
+/// A refusal, and the range of the expression it was raised at — the node
+/// or token the pipeline was judging when it refused.
+///
+/// The expression pipeline's [`Located`], one stage in. A span names no row
+/// by itself: it indexes the expression the pipeline was handed, TRIMMED —
+/// how every entry point hands it to the parser — and only a caller holding
+/// the attribute that expression was read from can turn it into the row,
+/// the column and the text as the document spells it
+/// ([`crate::forge::expression_site::ExpressionSite::place`]).
+///
+/// ⚠ A wrapper, NOT an [`ExprError`] variant. `ExprError`'s variants are
+/// the frontend's failure alphabet, each mapped to a `DiagnosticCode` of its
+/// own, and a decision was taken on that bijection
+/// (`docs/SCE_LUA_TRANSLATION_SEAM.md`, the error channel): an FFI carries
+/// the code because the code distinguishes every failure. A variant that
+/// only says WHERE would be a member of the alphabet that is no failure —
+/// the first version of this was one, and the ledger holding that document
+/// to the tree refused it.
+///
+/// ⚠⚠ Before any of this, the pipeline knew which token it refused and said
+/// nothing about where it was: a lowering refusal reached the wire with a
+/// file and no row, though the model had kept every expression attribute as
+/// written, row and column included (measured 2026-09-23).
+#[derive(Debug)]
+pub struct Spanned<E> {
+    pub error: E,
+    /// `None` where no one range is the fault — an empty expression.
+    pub span: Option<std::ops::Range<usize>>,
+}
+
+/// A refusal no range was attached to — a helper that judges no node.
+impl<E> From<E> for Spanned<E> {
+    fn from(error: E) -> Self {
+        Spanned { error, span: None }
+    }
+}
+
+impl<E: std::fmt::Display> std::fmt::Display for Spanned<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Where is the location's business; the sentence is the refusal's.
+        self.error.fmt(f)
+    }
+}
+
+impl<E: std::error::Error + 'static> std::error::Error for Spanned<E> {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.error)
+    }
 }
 
 /// The trailing clause of an "unknown name" message, or nothing when
@@ -4867,7 +4986,7 @@ impl ForgeError {
         match line {
             Some(line) => self.placed(Placement {
                 line: Some(line),
-                related: Vec::new(),
+                ..Placement::default()
             }),
             None => self,
         }
@@ -4877,12 +4996,12 @@ impl ForgeError {
     /// placed at (SCE_ERROR_CONTRACT §2.4).
     pub fn related_row(self, role: RelatedRole, line: Option<u32>, actual: Option<String>) -> Self {
         self.placed(Placement {
-            line: None,
             related: vec![RelatedRow { role, line, actual }],
+            ..Placement::default()
         })
     }
 
-    fn placed(self, at: Placement) -> Self {
+    pub(crate) fn placed(self, at: Placement) -> Self {
         ForgeError::Positioned {
             at: Box::new(at),
             error: Box::new(self),
@@ -4890,18 +5009,25 @@ impl ForgeError {
     }
 
     /// Split a [`ForgeError::Positioned`] into the error it wraps and where
-    /// it sits. The innermost row wins: the element nearest the failure is
-    /// the one the author edits. Related rows gather from every layer.
+    /// it sits. The innermost site wins: the element nearest the failure is
+    /// the one the author edits. Its row, column and spelling are taken
+    /// together — a column read off one layer and a row off another would
+    /// name a place neither layer meant. Related rows gather from every
+    /// layer.
     pub fn into_positioned(self) -> (Self, Placement) {
         match self {
             ForgeError::Positioned { at, error } => {
                 let (inner, nearer) = error.into_positioned();
+                let site = if nearer.line.is_some() { &nearer } else { &*at };
+                let (line, col, as_written) = (site.line, site.col, site.as_written.clone());
                 let mut related = nearer.related;
                 related.extend(at.related);
                 (
                     inner,
                     Placement {
-                        line: nearer.line.or(at.line),
+                        line,
+                        col,
+                        as_written,
                         related,
                     },
                 )
@@ -4912,11 +5038,18 @@ impl ForgeError {
 }
 
 /// Where a code-generation error sits in the document it was raised on —
-/// the row of the element being handled, and any other rows the rejection
-/// involves. Rows only: the compile boundary names the file.
+/// the row of the element being handled, or the token being judged when a
+/// placement read it off the source, and any other rows the rejection
+/// involves. The compile boundary names the file.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Placement {
     pub line: Option<u32>,
+    /// The column on `line`, when the placement knew the token and not only
+    /// its element.
+    pub col: Option<u32>,
+    /// What the document spells there, when the placement read it off the
+    /// source ([`AsWritten`]).
+    pub as_written: Option<AsWritten>,
     pub related: Vec<RelatedRow>,
 }
 
@@ -4930,7 +5063,7 @@ pub struct RelatedRow {
 }
 
 impl Located<ForgeError> {
-    /// A code-generation error located in `file`: at the row and with the
+    /// A code-generation error located in `file`: at the site and with the
     /// related rows [`ForgeError::Positioned`] carries, with no row
     /// otherwise. Every compile boundary that receives a generation error
     /// builds its record through here, so the wrapper never reaches a
@@ -4939,7 +5072,7 @@ impl Located<ForgeError> {
         let file = file.into();
         let (error, at) = error.into_positioned();
         at.related.into_iter().fold(
-            Located::new(error, file.clone(), at.line, None),
+            Located::new(error, file.clone(), at.line, at.col).with_as_written(at.as_written),
             |located, row| {
                 located.related_to(RelatedSite {
                     role: row.role,

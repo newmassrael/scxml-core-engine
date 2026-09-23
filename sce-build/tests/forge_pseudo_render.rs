@@ -209,16 +209,20 @@ fn a_procedure_renders_every_form_it_can_carry() {
                     ProcedureTransition {
                         target: "granted".to_string(),
                         cond: Some("counter < 3".to_string()),
+                        cond_spelling: None,
                         event: Some("reply".to_string()),
                         assigns: vec![ProcedureAssign {
                             location: "counter".to_string(),
+                            location_spelling: None,
                             expr: "counter + 1".to_string(),
+                            expr_spelling: None,
                         }],
                         line: Some(9),
                     },
                     ProcedureTransition {
                         target: "denied".to_string(),
                         cond: None,
+                        cond_spelling: None,
                         event: None,
                         assigns: Vec::new(),
                         line: None,
@@ -244,6 +248,7 @@ fn a_procedure_renders_every_form_it_can_carry() {
                 done_params: vec![ProcedureDoneParam {
                     name: "key".to_string(),
                     expr: "counter".to_string(),
+                    expr_spelling: None,
                 }],
                 line: None,
             },
@@ -741,7 +746,9 @@ fn each_signal_kind_renders_every_field_it_can_carry() {
         monitors: vec![ThresholdMonitor {
             id: "alarm".to_string(),
             enter_expr: "t > 110".to_string(),
+            enter_spelling: None,
             leave_expr: Some("t < 100".to_string()),
+            leave_spelling: None,
             on_enter: "raise".to_string(),
             on_leave: Some("clear".to_string()),
         }],

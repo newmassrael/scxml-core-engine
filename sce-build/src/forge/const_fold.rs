@@ -615,7 +615,7 @@ fn eval_expr_typed(
 /// (If.cond, While.cond) and as the inner step of
 /// [`eval_expr_typed`].
 fn eval_expr(expr_text: &str, scope: &Scope) -> Result<EvalValue, ConstFoldKind> {
-    let ast = expr::parse_to_ast(expr_text).map_err(map_expr_err)?;
+    let ast = expr::parse_to_ast(expr_text).map_err(|refusal| map_expr_err(refusal.error))?;
     eval_node(&ast, scope)
 }
 

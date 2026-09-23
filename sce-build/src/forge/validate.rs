@@ -14,6 +14,7 @@
 //! self-contradicting SCXML from compiling at all.
 
 use crate::forge::error::{ForgeError, Located, ValidationError};
+use crate::forge::expression_site::ExpressionSite;
 use crate::forge::limits::resolve_bytes_max;
 use crate::forge::model::{ProcedureModel, ProcedureState, SceType};
 
@@ -73,9 +74,11 @@ pub fn address_form(
     let Some(addr) = send.addr.as_deref() else {
         return Ok(None);
     };
-    let expr = addr.trim();
-    let mut ast = crate::forge::expr::parse_to_ast(expr)?;
-    crate::forge::expr::infer_types(&mut ast, type_ctx);
+    let site = ExpressionSite::new(addr, send.addr_spelling.as_ref());
+    // The names first. An undeclared one infers as no type at all, and
+    // judging that as the address's type would report the type while the
+    // name is what is wrong — which is what this did until 2026-09-23.
+    let ast = crate::forge::expr::resolve(addr, type_ctx).map_err(|refusal| site.place(refusal))?;
     let found = match ast.ty {
         InferredType::Int { signed: false, .. } => return Ok(Some(AddressForm::Unsigned)),
         InferredType::Int { signed: true, .. } | InferredType::UntypedInt => {
@@ -90,22 +93,17 @@ pub fn address_form(
         InferredType::Quantity { .. } => "a physical quantity".to_string(),
         _ => "of no type this document establishes".to_string(),
     };
-    let written = send
-        .addr_spelling
-        .as_ref()
-        .and_then(|spelling| spelling.locate_trimmed(0..expr.len()));
+    let expr = addr.trim();
+    let at = site.locate(Some(0..expr.len()));
     let refusal: ForgeError = ValidationError::SendOperandType {
         service: send.service.clone(),
         attr: "sce:addr",
-        observed: written
-            .and_then(|written| written.on_one_row())
-            .unwrap_or(expr)
-            .to_string(),
+        observed: at.observed().unwrap_or_else(|| expr.to_string()),
         found,
         rule: ADDRESS_RULE,
     }
     .into();
-    Err(refusal.at_line(written.map(|written| written.row)))
+    Err(at.place(refusal))
 }
 
 /// Refuse a `sce:payload` that names a declared field which is not bytes.
@@ -154,29 +152,20 @@ pub fn validate_payload_is_bytes(
             if matches!(field.sce_type, SceType::Bytes) {
                 continue;
             }
-            let written = send
-                .payload_spelling
-                .as_ref()
-                .and_then(|spelling| spelling.locate_trimmed(0..name.len()));
-            let (line, col) = match written {
-                Some(written) => (Some(written.row), Some(written.col)),
-                None => (None, None),
-            };
+            let at = ExpressionSite::new(payload, send.payload_spelling.as_ref())
+                .locate(Some(0..name.len()));
             return Err(Located::new(
                 ValidationError::SendOperandType {
                     service: send.service.clone(),
                     attr: "sce:payload",
-                    observed: written
-                        .and_then(|written| written.on_one_row())
-                        .unwrap_or(name)
-                        .to_string(),
+                    observed: at.observed().unwrap_or_else(|| name.to_string()),
                     found: format!("declared {}", field.sce_type.as_attr()),
                     rule: PAYLOAD_RULE,
                 }
                 .into(),
                 doc_name,
-                line,
-                col,
+                at.line,
+                at.col,
             ));
         }
     }
@@ -313,10 +302,13 @@ mod tests {
                     transitions: vec![ProcedureTransition {
                         target: "done".to_string(),
                         cond: None,
+                        cond_spelling: None,
                         event: Some("ok".to_string()),
                         assigns: vec![ProcedureAssign {
                             location: "seed".to_string(),
+                            location_spelling: None,
                             expr: "_event.data".to_string(),
+                            expr_spelling: None,
                         }],
                         line: None,
                     }],

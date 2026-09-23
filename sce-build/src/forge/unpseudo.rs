@@ -1218,7 +1218,9 @@ fn parse_observer(head: &Line<'_>, body: &[&Line<'_>]) -> Result<ObserverModel, 
         let mut mon = ThresholdMonitor {
             id: undo(id, line.number)?,
             enter_expr: String::new(),
+            enter_spelling: None,
             leave_expr: None,
+            leave_spelling: None,
             on_enter: String::new(),
             on_leave: None,
         };
@@ -1755,6 +1757,7 @@ fn parse_procedure_state(
             s.done_params.push(ProcedureDoneParam {
                 name: undo(name, l.number)?,
                 expr: undo(expr, l.number)?,
+                expr_spelling: None,
             });
         } else {
             s.transitions.push(parse_procedure_transition(l, &sub)?);
@@ -1798,13 +1801,16 @@ fn parse_procedure_transition(
         })?;
         assigns.push(ProcedureAssign {
             location: undo(location, k.number)?,
+            location_spelling: None,
             expr: undo(expr, k.number)?,
+            expr_spelling: None,
         });
     }
 
     Ok(ProcedureTransition {
         target: undo(target, line.number)?,
         cond,
+        cond_spelling: None,
         event,
         assigns,
         line: None,

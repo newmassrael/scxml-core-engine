@@ -58,11 +58,16 @@
 //   so `>>>` maps to `>>`. SCXML authors must ensure operands are unsigned or
 //   use explicit masking. Kotlin has `ushr` and Python promotes to big-int.
 
-use crate::forge::error::ExprError;
+use crate::forge::error::{ExprError, Spanned};
 use crate::forge::types::{join_arith, join_int, InferredType, TypeCtx};
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::LazyLock;
+
+/// A refusal of the expression the pipeline was handed, and the range of it
+/// the refusal was raised at ([`Spanned`]) — what every entry point below
+/// answers with, so the caller holding the attribute can place it.
+pub type Refusal = Spanned<ExprError>;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Public API
@@ -141,7 +146,7 @@ pub fn transpile_typed(
     ctx: &TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
     expected: InferredType,
-) -> Result<String, ExprError> {
+) -> Result<String, Refusal> {
     transpile_at(expr, target, ctx, renames, expected, Position::Operand)
 }
 
@@ -157,7 +162,7 @@ pub fn transpile_returned(
     ctx: &TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
     expected: InferredType,
-) -> Result<String, ExprError> {
+) -> Result<String, Refusal> {
     transpile_at(expr, target, ctx, renames, expected, Position::Returned)
 }
 
@@ -178,10 +183,10 @@ fn transpile_at(
     renames: &HashMap<&str, &str>,
     expected: InferredType,
     position: Position,
-) -> Result<String, ExprError> {
+) -> Result<String, Refusal> {
     let expr = expr.trim();
     if expr.is_empty() {
-        return Err(ExprError::Empty { what: "expression" });
+        return Err(ExprError::Empty { what: "expression" }.at(None));
     }
 
     let mut ast = parse_to_ast(expr)?;
@@ -208,17 +213,19 @@ fn transpile_at(
         export_go_member_properties(&mut ast);
     }
 
-    match target {
-        ExprTarget::Cpp => emit_cpp(&ast, expected),
-        ExprTarget::Kotlin => emit_kotlin(&ast, expected),
+    // The Rust and Go emitters refuse at a node; the others refuse nothing of
+    // their own, so a refusal they pass on carries no range.
+    Ok(match target {
+        ExprTarget::Cpp => emit_cpp(&ast, expected)?,
+        ExprTarget::Kotlin => emit_kotlin(&ast, expected)?,
         ExprTarget::Rust if position == Position::Returned && expected == InferredType::Str => {
-            emit_rust_returned_str(&ast)
+            emit_rust_returned_str(&ast)?
         }
-        ExprTarget::Rust => emit_rust(&ast, expected),
-        ExprTarget::Go => emit_go(&ast, expected),
-        ExprTarget::Python => emit_python(&ast, expected),
-        ExprTarget::C => emit_c(&ast, expected),
-    }
+        ExprTarget::Rust => emit_rust(&ast, expected)?,
+        ExprTarget::Go => emit_go(&ast, expected)?,
+        ExprTarget::Python => emit_python(&ast, expected)?,
+        ExprTarget::C => emit_c(&ast, expected)?,
+    })
 }
 
 /// Infer the static [`InferredType`] of an expression without emitting any
@@ -228,10 +235,10 @@ fn transpile_at(
 /// SCE_FORGE.md §4.12). Runs the same tokenize → parse → [`infer_types`]
 /// pipeline as [`transpile_typed`] but stops at the typed-AST root instead
 /// of emitting, so the dispatch sees exactly the type the emitter would.
-pub fn infer_expr_type(expr: &str, ctx: &TypeCtx<'_>) -> Result<InferredType, ExprError> {
+pub fn infer_expr_type(expr: &str, ctx: &TypeCtx<'_>) -> Result<InferredType, Refusal> {
     let expr = expr.trim();
     if expr.is_empty() {
-        return Err(ExprError::Empty { what: "expression" });
+        return Err(ExprError::Empty { what: "expression" }.at(None));
     }
     let mut ast = parse_to_ast(expr)?;
     infer_types(&mut ast, ctx);
@@ -297,10 +304,10 @@ pub(crate) fn transpile_typed_with_import_lowering(
     renames: &HashMap<&str, &str>,
     expected: InferredType,
     lowerings: &[ImportLowering],
-) -> Result<String, ExprError> {
+) -> Result<String, Refusal> {
     let expr = expr.trim();
     if expr.is_empty() {
-        return Err(ExprError::Empty { what: "expression" });
+        return Err(ExprError::Empty { what: "expression" }.at(None));
     }
 
     let mut ast = parse_to_ast(expr)?;
@@ -321,7 +328,7 @@ pub(crate) fn transpile_typed_with_import_lowering(
     // is in `ctx` under no spelling. A user's name is still an `Ident` at
     // this point, so each check keeps its subject either way.
     resolve_then_rename(&mut ast, ctx, renames, ExprTarget::C)?;
-    emit_c(&ast, expected)
+    Ok(emit_c(&ast, expected)?)
 }
 
 /// The passes between parsing and emission that every typed transpile
@@ -348,16 +355,45 @@ fn resolve_then_rename(
     ctx: &TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
     target: ExprTarget,
-) -> Result<(), ExprError> {
-    lower_previous(ast, ctx);
-    infer_types(ast, ctx);
-    reject_unknown_callees(ast, ctx)?;
-    reject_unknown_names(ast, ctx)?;
+) -> Result<(), Refusal> {
+    resolve_names(ast, ctx)?;
     lower_enum_variant_refs(ast, ctx, target);
     if !renames.is_empty() {
         rename_identifiers(ast, renames);
     }
     Ok(())
+}
+
+/// Steps 0–2 of [`resolve_then_rename`]: the tree typed against `ctx`, and
+/// the names it reads that `ctx` does not carry refused. Everything a
+/// lowering needs to know about the expression and nothing it does to it.
+fn resolve_names(ast: &mut TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), Refusal> {
+    lower_previous(ast, ctx);
+    infer_types(ast, ctx);
+    reject_unknown_callees(ast, ctx)?;
+    reject_unknown_names(ast, ctx)
+}
+
+/// `expr` parsed and resolved against `ctx` — typed, and refused for a name
+/// `ctx` does not carry — without lowering it to any backend.
+///
+/// For a check that decides on the expression's TYPE, which is only a
+/// question once its names are known: an undeclared name infers as no
+/// type at all, and a check that read that as the answer would report the
+/// type while the name is what is wrong.
+///
+/// ⚠ That is what happened. `validate::address_form` parsed and inferred
+/// on its own, so `sce:addr="ecuAdr"` beside `ecuAddr` was refused as an
+/// address "of no type this document establishes" — no mention of the
+/// name, and no near miss offered (measured 2026-09-23).
+pub(crate) fn resolve(expr: &str, ctx: &TypeCtx<'_>) -> Result<TypedExpr, Refusal> {
+    let expr = expr.trim();
+    if expr.is_empty() {
+        return Err(ExprError::Empty { what: "expression" }.at(None));
+    }
+    let mut ast = parse_to_ast(expr)?;
+    resolve_names(&mut ast, ctx)?;
+    Ok(ast)
 }
 
 /// Walk a TypedExpr in place and rewrite every `Call{Member{Ident(alias),
@@ -483,16 +519,17 @@ pub fn transpile_lvalue(
     target: ExprTarget,
     ctx: &TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
-) -> Result<(String, InferredType), ExprError> {
+) -> Result<(String, InferredType), Refusal> {
     let trimmed = location.trim();
     if trimmed.is_empty() {
         return Err(ExprError::Empty {
             what: "assign location",
-        });
+        }
+        .at(None));
     }
 
     let mut ast = parse_to_ast(trimmed)?;
-    validate_lvalue_shape(&ast.kind, trimmed)?;
+    validate_lvalue_shape(&ast.kind, trimmed).map_err(|refusal| refusal.at(ast.span.clone()))?;
 
     // Same ordering as `transpile_typed`: infer first so Ident/Member leaves
     // can still bind their type from the user-visible name before rename
@@ -525,18 +562,25 @@ pub fn transpile_lvalue(
 /// against typed `ConstValue` storage. The inference layer is
 /// irrelevant there because the evaluator carries `SceType`
 /// annotations on every storage site (Var/Assign/yield) instead.
-pub(crate) fn parse_to_ast(expr: &str) -> Result<TypedExpr, ExprError> {
+pub(crate) fn parse_to_ast(expr: &str) -> Result<TypedExpr, Refusal> {
     let trimmed = expr.trim();
     if trimmed.is_empty() {
-        return Err(ExprError::Empty { what: "expression" });
+        return Err(ExprError::Empty { what: "expression" }.at(None));
     }
-    let (tokens, mut spans) = tokenize_spanned(trimmed, LexMode::Forge)?;
-    // Ranges into `expr` as the caller holds it, not into its trimmed copy.
+    // Ranges into `expr` as the caller holds it, not into its trimmed copy —
+    // the tokens' and a refusal's alike, so every range this returns reads
+    // against the one string.
     let lead = expr.len() - expr.trim_start().len();
+    let shift = |span: std::ops::Range<usize>| span.start + lead..span.end + lead;
+    let (tokens, mut spans) =
+        tokenize_spanned(trimmed, LexMode::Forge).map_err(|refusal| Spanned {
+            span: refusal.span.map(shift),
+            error: refusal.error,
+        })?;
     for span in &mut spans {
-        *span = span.start + lead..span.end + lead;
+        *span = shift(span.clone());
     }
-    reject_policy_violating_tokens(&tokens)?;
+    reject_policy_violating_tokens(&tokens, &spans)?;
     Parser::new(&tokens, &spans).parse_expression()
 }
 
@@ -555,32 +599,33 @@ pub(crate) fn parse_to_ast(expr: &str) -> Result<TypedExpr, ExprError> {
 /// rule. Every caller of [`parse_to_ast`] therefore keeps the exact
 /// diagnostics it had when the tokenizer raised them itself — same
 /// `ExprError`, same code, same fix.
-fn reject_policy_violating_tokens(tokens: &[Token]) -> Result<(), ExprError> {
-    for token in tokens {
-        match token {
-            Token::LooseEq => {
-                return Err(ExprError::StrictEquality {
-                    operator: "==",
-                    strict: "===",
-                })
-            }
-            Token::LooseNeq => {
-                return Err(ExprError::StrictEquality {
-                    operator: "!=",
-                    strict: "!==",
-                })
-            }
+///
+/// `spans` are the tokens' ranges, one per token, and the refusal is raised
+/// at the token that violates the rule.
+fn reject_policy_violating_tokens(
+    tokens: &[Token],
+    spans: &[std::ops::Range<usize>],
+) -> Result<(), Refusal> {
+    for (token, span) in tokens.iter().zip(spans) {
+        let refusal = match token {
+            Token::LooseEq => ExprError::StrictEquality {
+                operator: "==",
+                strict: "===",
+            },
+            Token::LooseNeq => ExprError::StrictEquality {
+                operator: "!=",
+                strict: "!==",
+            },
             Token::Unsupported {
                 construct,
                 spelling,
-            } => {
-                return Err(ExprError::UnsupportedConstruct {
-                    construct: (*construct).to_string(),
-                    observed: Some((*spelling).to_string()),
-                })
-            }
-            _ => {}
-        }
+            } => ExprError::UnsupportedConstruct {
+                construct: (*construct).to_string(),
+                observed: Some((*spelling).to_string()),
+            },
+            _ => continue,
+        };
+        return Err(refusal.at(Some(span.clone())));
     }
     Ok(())
 }
@@ -867,12 +912,12 @@ pub(crate) enum UnaryOp {
 /// Extract unique free identifier names from a raw ECMAScript expression.
 /// Used by inline kind rendering to build member-access renames for languages
 /// that require explicit `self.` / `p.` prefixes (Rust, Go).
-pub fn extract_free_idents(raw_expr: &str) -> Result<Vec<String>, ExprError> {
-    let tokens = tokenize(raw_expr.trim())?;
+pub fn extract_free_idents(raw_expr: &str) -> Result<Vec<String>, Refusal> {
+    let (tokens, spans) = tokenize_spanned(raw_expr.trim(), LexMode::Forge)?;
     // Extended SCXML expression, so the same admission rules apply. The
     // tokenizer no longer enforces them, so every entry point that treats
     // its input as Forge source states so explicitly.
-    reject_policy_violating_tokens(&tokens)?;
+    reject_policy_violating_tokens(&tokens, &spans)?;
     let mut idents = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for token in &tokens {
@@ -891,7 +936,7 @@ pub fn extract_free_idents(raw_expr: &str) -> Result<Vec<String>, ExprError> {
 /// order first read, each once. Unlike [`extract_free_idents`], which works
 /// on tokens and so also yields the member after a `.`, this reads the
 /// parsed tree: in `frame.len` it answers `frame`, never `len`.
-pub fn read_identifiers(raw_expr: &str) -> Result<Vec<String>, ExprError> {
+pub fn read_identifiers(raw_expr: &str) -> Result<Vec<String>, Refusal> {
     fn walk(node: &TypedExpr, names: &mut Vec<String>) {
         match &node.kind {
             ExprKind::Ident(name) => {
@@ -939,7 +984,9 @@ pub fn read_identifiers(raw_expr: &str) -> Result<Vec<String>, ExprError> {
         }
     }
     let mut names = Vec::new();
-    walk(&parse_to_ast(raw_expr)?, &mut names);
+    // Trimmed, as every entry point hands the parser its text, so a refusal
+    // raised here indexes the same string as one raised by a lowering.
+    walk(&parse_to_ast(raw_expr.trim())?, &mut names);
     Ok(names)
 }
 
@@ -1144,16 +1191,22 @@ fn tokenize(input: &str) -> Result<Vec<Token>, ExprError> {
     tokenize_as(input, LexMode::Forge)
 }
 
+/// The tokens of `input`, without where they were read from — and so a
+/// refusal without where it was raised either, since its caller holds no
+/// range to read one against.
 pub(crate) fn tokenize_as(input: &str, mode: LexMode) -> Result<Vec<Token>, ExprError> {
-    tokenize_spanned(input, mode).map(|(tokens, _)| tokens)
+    tokenize_spanned(input, mode)
+        .map(|(tokens, _)| tokens)
+        .map_err(|refusal| refusal.error)
 }
 
 /// A token stream with the byte range each token was read from: one range
 /// per token, `Eof` taking the empty range at the end of `input`.
 type SpannedTokens = (Vec<Token>, Vec<std::ops::Range<usize>>);
 
-/// [`tokenize_as`], keeping where each token was read from.
-fn tokenize_spanned(input: &str, mode: LexMode) -> Result<SpannedTokens, ExprError> {
+/// [`tokenize_as`], keeping where each token was read from — and where a
+/// refusal was raised, in the same byte ranges.
+fn tokenize_spanned(input: &str, mode: LexMode) -> Result<SpannedTokens, Refusal> {
     let mut tokens = Vec::new();
     let mut spans = Vec::new();
     let bytes = input.as_bytes();
@@ -1205,10 +1258,13 @@ fn tokenize_spanned(input: &str, mode: LexMode) -> Result<SpannedTokens, ExprErr
                 i += 1;
             }
             if i >= len {
+                // Raised at the quote that opened it: the literal has no end
+                // to point at.
                 return Err(ExprError::Lex {
                     position: start,
                     detail: "unterminated string literal".to_string(),
-                });
+                }
+                .at(Some(start - 1..start)));
             }
             let value = input[start..i].to_string();
             i += 1;
@@ -1282,7 +1338,7 @@ fn tokenize_spanned(input: &str, mode: LexMode) -> Result<SpannedTokens, ExprErr
             }
             let word = &input[start..i];
             if !ecma {
-                validate_keyword(word)?;
+                validate_keyword(word).map_err(|refusal| refusal.at(Some(start..i)))?;
             }
             tokens.push(Token::Ident(word.to_string()));
             continue;
@@ -1442,7 +1498,8 @@ fn tokenize_spanned(input: &str, mode: LexMode) -> Result<SpannedTokens, ExprErr
                 return Err(ExprError::Lex {
                     position: i,
                     detail: format!("unexpected character: '{shown}'"),
-                });
+                }
+                .at(Some(i..i + shown.len_utf8())));
             }
         };
         tokens.push(tok);
@@ -1536,6 +1593,18 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Where the token at `index` was read from — the range a refusal of
+    /// it is raised at. Past the end, the end: the `Eof` a parser runs
+    /// into has the empty range there, and so does anything beyond it.
+    fn span_of(&self, index: usize) -> Option<std::ops::Range<usize>> {
+        self.spans.get(index).or(self.spans.last()).cloned()
+    }
+
+    /// Where the token last consumed was read from.
+    fn consumed_span(&self) -> Option<std::ops::Range<usize>> {
+        self.span_of(self.pos.saturating_sub(1))
+    }
+
     /// Where the construct about to be parsed begins.
     fn start(&self) -> usize {
         self.spans
@@ -1569,7 +1638,7 @@ impl<'a> Parser<'a> {
         tok
     }
 
-    fn expect(&mut self, expected: &Token) -> Result<(), ExprError> {
+    fn expect(&mut self, expected: &Token) -> Result<(), Refusal> {
         let tok = self.advance().clone();
         if &tok == expected {
             Ok(())
@@ -1577,21 +1646,23 @@ impl<'a> Parser<'a> {
             Err(ExprError::ParseMismatch {
                 expected: format!("'{expected}'"),
                 got: tok.to_string(),
-            })
+            }
+            .at(self.consumed_span()))
         }
     }
 
-    fn parse_expression(&mut self) -> Result<TypedExpr, ExprError> {
+    fn parse_expression(&mut self) -> Result<TypedExpr, Refusal> {
         let expr = self.parse_conditional()?;
         if *self.peek() != Token::Eof {
             return Err(ExprError::UnexpectedToken {
                 token: self.peek().to_string(),
-            });
+            }
+            .at(self.span_of(self.pos)));
         }
         Ok(expr)
     }
 
-    fn parse_conditional(&mut self) -> Result<TypedExpr, ExprError> {
+    fn parse_conditional(&mut self) -> Result<TypedExpr, Refusal> {
         let start = self.start();
         let expr = self.parse_logical_or()?;
         if *self.peek() == Token::Question {
@@ -1611,7 +1682,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn parse_logical_or(&mut self) -> Result<TypedExpr, ExprError> {
+    fn parse_logical_or(&mut self) -> Result<TypedExpr, Refusal> {
         let start = self.start();
         let mut left = self.parse_logical_and()?;
         while *self.peek() == Token::PipePipe {
@@ -1629,7 +1700,7 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    fn parse_logical_and(&mut self) -> Result<TypedExpr, ExprError> {
+    fn parse_logical_and(&mut self) -> Result<TypedExpr, Refusal> {
         let start = self.start();
         let mut left = self.parse_bitwise_or()?;
         while *self.peek() == Token::AmpAmp {
@@ -1647,7 +1718,7 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    fn parse_bitwise_or(&mut self) -> Result<TypedExpr, ExprError> {
+    fn parse_bitwise_or(&mut self) -> Result<TypedExpr, Refusal> {
         let start = self.start();
         let mut left = self.parse_bitwise_xor()?;
         while *self.peek() == Token::Pipe {
@@ -1665,7 +1736,7 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    fn parse_bitwise_xor(&mut self) -> Result<TypedExpr, ExprError> {
+    fn parse_bitwise_xor(&mut self) -> Result<TypedExpr, Refusal> {
         let start = self.start();
         let mut left = self.parse_bitwise_and()?;
         while *self.peek() == Token::Caret {
@@ -1683,7 +1754,7 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    fn parse_bitwise_and(&mut self) -> Result<TypedExpr, ExprError> {
+    fn parse_bitwise_and(&mut self) -> Result<TypedExpr, Refusal> {
         let start = self.start();
         let mut left = self.parse_equality()?;
         while *self.peek() == Token::Amp {
@@ -1701,7 +1772,7 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    fn parse_equality(&mut self) -> Result<TypedExpr, ExprError> {
+    fn parse_equality(&mut self) -> Result<TypedExpr, Refusal> {
         let start = self.start();
         let mut left = self.parse_relational()?;
         loop {
@@ -1724,7 +1795,7 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    fn parse_relational(&mut self) -> Result<TypedExpr, ExprError> {
+    fn parse_relational(&mut self) -> Result<TypedExpr, Refusal> {
         let start = self.start();
         let mut left = self.parse_shift()?;
         loop {
@@ -1749,7 +1820,7 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    fn parse_shift(&mut self) -> Result<TypedExpr, ExprError> {
+    fn parse_shift(&mut self) -> Result<TypedExpr, Refusal> {
         let start = self.start();
         let mut left = self.parse_additive()?;
         loop {
@@ -1773,7 +1844,7 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    fn parse_additive(&mut self) -> Result<TypedExpr, ExprError> {
+    fn parse_additive(&mut self) -> Result<TypedExpr, Refusal> {
         let start = self.start();
         let mut left = self.parse_multiplicative()?;
         loop {
@@ -1796,7 +1867,7 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    fn parse_multiplicative(&mut self) -> Result<TypedExpr, ExprError> {
+    fn parse_multiplicative(&mut self) -> Result<TypedExpr, Refusal> {
         let start = self.start();
         let mut left = self.parse_unary()?;
         loop {
@@ -1820,7 +1891,7 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    fn parse_unary(&mut self) -> Result<TypedExpr, ExprError> {
+    fn parse_unary(&mut self) -> Result<TypedExpr, Refusal> {
         let start = self.start();
         let op = match self.peek() {
             Token::Minus => Some(UnaryOp::Neg),
@@ -1843,7 +1914,7 @@ impl<'a> Parser<'a> {
         self.parse_postfix()
     }
 
-    fn parse_postfix(&mut self) -> Result<TypedExpr, ExprError> {
+    fn parse_postfix(&mut self) -> Result<TypedExpr, Refusal> {
         let start = self.start();
         let mut expr = self.parse_primary()?;
         loop {
@@ -1856,7 +1927,8 @@ impl<'a> Parser<'a> {
                             return Err(ExprError::ParseMismatch {
                                 expected: "property name after '.'".into(),
                                 got: other.to_string(),
-                            })
+                            }
+                            .at(self.consumed_span()))
                         }
                     };
                     expr = self.node(
@@ -1904,7 +1976,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn parse_primary(&mut self) -> Result<TypedExpr, ExprError> {
+    fn parse_primary(&mut self) -> Result<TypedExpr, Refusal> {
         let start = self.start();
         match self.advance().clone() {
             Token::Number(n) => Ok(self.node(start, ExprKind::NumberLit(n))),
@@ -1926,7 +1998,8 @@ impl<'a> Parser<'a> {
             }
             other => Err(ExprError::UnexpectedToken {
                 token: other.to_string(),
-            }),
+            }
+            .at(self.consumed_span())),
         }
     }
 }
@@ -2737,7 +2810,7 @@ const EXPR_BUILTINS: [&str; 4] = ["len", "eq", "round", "floor"];
 /// per-kind builders in [`crate::forge::type_ctx`] turn this on — the first
 /// version of this check had no gate and refused three legitimate emitter
 /// behaviours that the suite asserts.
-fn reject_unknown_callees(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), ExprError> {
+fn reject_unknown_callees(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), Refusal> {
     if !ctx.reject_unknown_callees {
         return Ok(());
     }
@@ -2777,6 +2850,8 @@ fn reject_unknown_callees(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), Exp
                     ctx.funcs.keys().map(|k| (*k).to_string()).collect();
                 available.extend(EXPR_BUILTINS.iter().map(|b| (*b).to_string()));
                 available.sort();
+                // Raised at the callee, not the call: the callee is the name
+                // `actual` reports, and the arguments are not the mistake.
                 return Err(ExprError::UnsupportedBuiltin {
                     name,
                     // ⚠ NOT the ECMAScript datamodel. A `sce:kind` document's
@@ -2785,7 +2860,8 @@ fn reject_unknown_callees(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), Exp
                     // functions — two names, not the seventeen of `Math`.
                     vocabulary: "SCE's forge expression layer".to_string(),
                     available,
-                });
+                }
+                .at(callee.span.clone()));
             }
         }
     }
@@ -2826,7 +2902,7 @@ fn reject_unknown_callees(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), Exp
 ///
 /// ⚠⚠⚠ `Ident` only, never `Raw` — a `Raw` is this pipeline's own product,
 /// for the reason [`reject_unknown_callees`] gives.
-fn reject_unknown_names(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), ExprError> {
+fn reject_unknown_names(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), Refusal> {
     match &expr.kind {
         ExprKind::Member { object, property } => {
             if let ExprKind::Ident(alias) = &object.kind {
@@ -2838,11 +2914,14 @@ fn reject_unknown_names(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), ExprE
                         alias: alias.clone(),
                         name: property.clone(),
                         declared: scope.variants.to_vec(),
-                    });
+                    }
+                    .at(expr.span.clone()));
                 }
             }
             if ctx.reject_unknown_identifiers {
-                reject_undeclared_member(object, property, ctx)?;
+                // The whole access is what either refusal names as `actual`.
+                reject_undeclared_member(object, property, ctx)
+                    .map_err(|refusal| refusal.at(expr.span.clone()))?;
             }
         }
         ExprKind::Call { callee, args } if matches!(callee.kind, ExprKind::Ident(_)) => {
@@ -2862,7 +2941,8 @@ fn reject_unknown_names(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Result<(), ExprE
                     name,
                     ctx.vars.keys().copied().filter(|k| !k.contains('.')),
                 ),
-            });
+            }
+            .at(expr.span.clone()));
         }
         _ => {}
     }
@@ -3769,7 +3849,7 @@ fn wrap_dotcall(raw: String, node: &TypedExpr, method: &str) -> String {
 //   `expr as iN` when widening is necessary.
 // * Hex/bin/oct literal in float context: hard error.
 
-fn emit_rust(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError> {
+fn emit_rust(expr: &TypedExpr, expected: InferredType) -> Result<String, Refusal> {
     // Push-down: for arithmetic binary ops with a concrete-float expected
     // type, emit operands at the expected type directly. Without this, a
     // mixed expression like `raw * 0.1` (raw: UInt16, expected: Float64)
@@ -3879,7 +3959,7 @@ fn emit_rust(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprErr
 ///   pass has lowered it to a `Raw` call by now) returns `String`, as does
 ///   an imported transform's;
 /// * anything else is borrowed, and takes `.to_string()`.
-fn emit_rust_returned_str(expr: &TypedExpr) -> Result<String, ExprError> {
+fn emit_rust_returned_str(expr: &TypedExpr) -> Result<String, Refusal> {
     match &expr.kind {
         ExprKind::Conditional {
             condition,
@@ -3899,7 +3979,7 @@ fn emit_rust_returned_str(expr: &TypedExpr) -> Result<String, ExprError> {
     }
 }
 
-fn rust_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
+fn rust_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
     Ok(match &expr.kind {
         ExprKind::NumberLit(n) => n.clone(),
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
@@ -4045,7 +4125,7 @@ fn rust_coerce(
     from: InferredType,
     to: InferredType,
     node: &TypedExpr,
-) -> Result<String, ExprError> {
+) -> Result<String, Refusal> {
     use InferredType::*;
     if from == to || matches!(to, Unknown) || matches!(from, Unknown) {
         return Ok(raw);
@@ -4065,7 +4145,9 @@ fn rust_coerce(
                          hex/binary/octal literals are not promotable. \
                          Use a decimal float literal (e.g. `1.0`, `255.0`) instead."
                     ),
-                });
+                    observed: Some(text.clone()),
+                }
+                .at(node.span.clone()));
             }
             // Computed subtree: explicit cast.
             let target = match to {
@@ -4141,9 +4223,9 @@ fn rust_int_type(signed: bool, bits: u8) -> &'static str {
 // Integer widening: `int64(x)`. Ternary does not exist — we reject it at
 // emit time with a clear error.
 
-fn emit_go(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError> {
-    if has_ternary(expr) {
-        return Err(ExprError::GoTernary);
+fn emit_go(expr: &TypedExpr, expected: InferredType) -> Result<String, Refusal> {
+    if let Some(ternary) = first_ternary(expr) {
+        return Err(ExprError::GoTernary.at(ternary.span.clone()));
     }
     // Push-down: see emit_rust for rationale.
     if let ExprKind::Binary { op, left, right } = &expr.kind {
@@ -4219,7 +4301,7 @@ fn emit_go(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
     Ok(go_coerce(raw, expr.ty, expected, expr))
 }
 
-fn go_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
+fn go_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
     Ok(match &expr.kind {
         ExprKind::NumberLit(n) => n.clone(),
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
@@ -4240,7 +4322,7 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 && (matches!(left.ty, InferredType::Bytes)
                     || matches!(right.ty, InferredType::Bytes))
             {
-                let render = |operand: &TypedExpr| -> Result<String, ExprError> {
+                let render = |operand: &TypedExpr| -> Result<String, Refusal> {
                     if let ExprKind::BytesLit { bytes } = &operand.kind {
                         Ok(format!("\"{}\"", bytes_as_quoted_ascii(bytes)))
                     } else {
@@ -4416,15 +4498,21 @@ fn go_int_type(signed: bool, bits: u8) -> &'static str {
     }
 }
 
-fn has_ternary(expr: &TypedExpr) -> bool {
+/// The first conditional in `expr`, left to right — what Go cannot spell,
+/// and the node a refusal of it is raised at.
+fn first_ternary(expr: &TypedExpr) -> Option<&TypedExpr> {
     match &expr.kind {
-        ExprKind::Conditional { .. } => true,
-        ExprKind::Binary { left, right, .. } => has_ternary(left) || has_ternary(right),
-        ExprKind::Unary { operand, .. } => has_ternary(operand),
-        ExprKind::Member { object, .. } => has_ternary(object),
-        ExprKind::Index { object, index } => has_ternary(object) || has_ternary(index),
-        ExprKind::Call { callee, args } => has_ternary(callee) || args.iter().any(has_ternary),
-        _ => false,
+        ExprKind::Conditional { .. } => Some(expr),
+        ExprKind::Binary { left, right, .. } => {
+            first_ternary(left).or_else(|| first_ternary(right))
+        }
+        ExprKind::Unary { operand, .. } => first_ternary(operand),
+        ExprKind::Member { object, .. } => first_ternary(object),
+        ExprKind::Index { object, index } => first_ternary(object).or_else(|| first_ternary(index)),
+        ExprKind::Call { callee, args } => {
+            first_ternary(callee).or_else(|| args.iter().find_map(first_ternary))
+        }
+        _ => None,
     }
 }
 
@@ -6119,6 +6207,8 @@ mod tests {
         ctx
     }
 
+    /// The refusal itself: where it was raised is
+    /// [`a_refusal_is_raised_at_the_text_it_refuses`]'s question.
     fn member_check(src: &str, ctx: &TypeCtx<'_>) -> Result<String, ExprError> {
         transpile_typed(
             src,
@@ -6127,6 +6217,69 @@ mod tests {
             &HashMap::new(),
             InferredType::Unknown,
         )
+        .map_err(|refusal| refusal.error)
+    }
+
+    /// A refusal is raised at the text it refuses, as a range of the string
+    /// the pipeline was handed — the range a placement reads the row, the
+    /// column and the author's spelling off. One case per kind of raise
+    /// site: the lexer, the token rule, the parser, the name checks, and
+    /// each backend's emitter.
+    #[test]
+    fn a_refusal_is_raised_at_the_text_it_refuses() {
+        let mut ctx = member_scope();
+        ctx.reject_unknown_callees = true;
+        let cases: [(&str, ExprTarget, InferredType, &str); 9] = [
+            ("x + conut", ExprTarget::Cpp, InferredType::Unknown, "conut"),
+            ("x.foo + 1", ExprTarget::Cpp, InferredType::Unknown, "x.foo"),
+            (
+                "frame.msg_idd === 1",
+                ExprTarget::Cpp,
+                InferredType::Unknown,
+                "frame.msg_idd",
+            ),
+            (
+                "nope(x) + 1",
+                ExprTarget::Cpp,
+                InferredType::Unknown,
+                "nope",
+            ),
+            ("x == 1", ExprTarget::Cpp, InferredType::Unknown, "=="),
+            ("x + @", ExprTarget::Cpp, InferredType::Unknown, "@"),
+            ("x + + )", ExprTarget::Cpp, InferredType::Unknown, ")"),
+            (
+                "x > 1 ? 1 : 2",
+                ExprTarget::Go,
+                InferredType::Unknown,
+                "x > 1 ? 1 : 2",
+            ),
+            (
+                "0x1F",
+                ExprTarget::Rust,
+                InferredType::Float { bits: 64 },
+                "0x1F",
+            ),
+        ];
+        for (src, target, expected, refused) in cases {
+            let Spanned {
+                error: refusal,
+                span,
+            } = transpile_typed(src, target, &ctx, &HashMap::new(), expected).expect_err(src);
+            let span = span.unwrap_or_else(|| panic!("{src}: {refusal} carries no span"));
+            assert_eq!(&src[span], refused, "{src}: {refusal}");
+        }
+
+        // The end of the expression is where a missing token is refused, and
+        // nothing is written there — an empty range, not the last token.
+        let unclosed = transpile_typed(
+            "(x + 1",
+            ExprTarget::Cpp,
+            &ctx,
+            &HashMap::new(),
+            InferredType::Unknown,
+        )
+        .expect_err("an unclosed parenthesis");
+        assert_eq!(unclosed.span, Some(6..6));
     }
 
     #[test]
