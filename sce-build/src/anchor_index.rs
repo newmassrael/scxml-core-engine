@@ -61,7 +61,8 @@
 //! [`crate::model::State::source_location`] uses. A caller holding
 //! authored coordinates — anything that has already been through
 //! [`crate::model::AuthoredPositions::resolve`] or
-//! `remap_post_expansion` — is in a different space and must resolve
+//! [`crate::model::AuthoredPositions::authored`] — is in a different
+//! space and must resolve
 //! before remapping, not after. Documents with no preprocessor
 //! directives make the two spaces identical, which is precisely why
 //! this has to be said out loud: the mistake is invisible in every

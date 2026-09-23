@@ -1455,11 +1455,25 @@ pub fn find_template_dir_for(language: generator::Language) -> std::path::PathBu
 /// XInclude targets. A build script needs exactly this list for
 /// `cargo:rerun-if-changed`; without it, editing a template leaves the
 /// generated artefact stale with nothing reporting a problem.
+///
+/// `positions` is the expanded text together with its map back to what
+/// the author wrote. Every rejection raised against the text — parsing,
+/// validation, lowering — is in expanded coordinates, and
+/// [`model::AuthoredPositions::authored`] is how it reaches the caller in
+/// the author's. The text lives there, not in a second field, so the
+/// two cannot describe different documents.
 pub struct LoadedForgeSource {
-    /// Post-expansion document text, ready for the forge parse entries.
-    pub text: String,
+    /// The post-expansion text and its map back to authored coordinates.
+    pub positions: model::AuthoredPositions,
     /// Files the expansion pass read, in pipeline order.
     pub deps: Vec<PathBuf>,
+}
+
+impl LoadedForgeSource {
+    /// Post-expansion document text, ready for the forge parse entries.
+    pub fn text(&self) -> &str {
+        &self.positions.expanded
+    }
 }
 
 /// Read a forge document from disk and expand its preprocessors.
@@ -1499,10 +1513,13 @@ pub fn load_forge_source(
         Located::new(ForgeError::Xml(error), label.clone(), None, None)
     })?;
 
-    let (text, _map, deps) =
+    let (text, map, deps) =
         parser::expand_preprocessors(&content, &label, path.parent(), include_dirs)?;
 
-    Ok(LoadedForgeSource { text, deps })
+    Ok(LoadedForgeSource {
+        positions: model::AuthoredPositions::new(label, text, map),
+        deps,
+    })
 }
 
 /// Compile a forge document straight from a path.
@@ -1527,7 +1544,11 @@ pub fn compile_forge_file(
     let label = DocumentLabel::for_input_path(&path_text);
     let base_dir = path.parent().unwrap_or_else(|| Path::new("."));
 
-    let mut output = compile_forge_with_imports(&loaded.text, label, language, base_dir, options)?;
+    // Every refusal of the expanded text reaches the caller in the
+    // author's coordinates — the rows the statechart route has always
+    // reported, and the ones a consumer can open.
+    let mut output = compile_forge_with_imports(loaded.text(), label, language, base_dir, options)
+        .map_err(|err| loaded.positions.authored(err))?;
 
     // Preprocessor inputs first, import closure after — the same order
     // the statechart route writes them, so a depfile reader sees one
@@ -2962,6 +2983,65 @@ pub fn compile_scxml_with_imports(
     options: &ForgeCompileOptions,
     deploy: Option<&mesh::deploy::DeployConfig>,
 ) -> Result<Vec<(String, generator::GeneratedOutput)>, CompileError> {
+    // Every refusal the set raises against a forge document is in that
+    // document's expanded coordinates; it leaves here in the author's.
+    // Statechart documents are placed where they are parsed.
+    let mut sources = ForgeSources::default();
+    compile_document_set(
+        &mut sources,
+        scxml_files,
+        forge_files,
+        template_dir,
+        language,
+        options,
+        deploy,
+    )
+    .map_err(|err| sources.authored(err))
+}
+
+/// The forge documents a build set read, each once, in the order read —
+/// the text every later pass works from, and the map its refusals leave
+/// through.
+///
+/// Read once, not once per pass: this used to read and expand each forge
+/// input again for code generation, so a file edited between the two
+/// reads was validated as one text and generated as another.
+#[derive(Default)]
+struct ForgeSources {
+    docs: Vec<(PathBuf, model::AuthoredPositions)>,
+}
+
+impl ForgeSources {
+    /// Keep `positions` for the document read from `path` — once per
+    /// label, so a document named twice is not mapped twice.
+    fn record(&mut self, path: &Path, positions: model::AuthoredPositions) {
+        if self
+            .docs
+            .iter()
+            .all(|(_, known)| known.document != positions.document)
+        {
+            self.docs.push((path.to_path_buf(), positions));
+        }
+    }
+
+    /// `err`, with every position in a document of this set moved to
+    /// where its author wrote it.
+    fn authored(&self, err: CompileError) -> CompileError {
+        self.docs
+            .iter()
+            .fold(err, |err, (_, positions)| positions.authored(err))
+    }
+}
+
+fn compile_document_set(
+    sources: &mut ForgeSources,
+    scxml_files: &[&Path],
+    forge_files: &[&Path],
+    template_dir: &Path,
+    language: generator::Language,
+    options: &ForgeCompileOptions,
+    deploy: Option<&mesh::deploy::DeployConfig>,
+) -> Result<Vec<(String, generator::GeneratedOutput)>, CompileError> {
     use forge::cross_doc_registry::SceCrossDocRegistry;
     use forge::error::{Located, ValidationError};
     use forge::pool_registry::ForgePoolRegistry;
@@ -3032,22 +3112,25 @@ pub fn compile_scxml_with_imports(
         let path_str: &str = &path_text;
         // Read + expand. This function resolves its documents from paths,
         // so it owns the preprocessor step its callers cannot reach — the
-        // statechart half already does, via `compile_model`.
-        let content = load_forge_source(forge_path, &options.include_dirs)?.text;
+        // statechart half already does, via `compile_model`. Recorded
+        // before the parse result is judged, so a refusal of this very
+        // text leaves through its map.
+        let loaded = load_forge_source(forge_path, &options.include_dirs)?;
         let label = DocumentLabel::for_input_path(path_str);
-        let parsed =
-            forge::parser::parse_forge_with_imports(&content, label)?.ok_or_else(|| {
-                Located::new(
-                    ValidationError::WrongPipeline {
-                        kind: forge::model::ForgeKind::Statechart,
-                        pipeline: crate::Pipeline::Forge,
-                    }
-                    .into(),
-                    path_str,
-                    None,
-                    None,
-                )
-            })?;
+        let parsed = forge::parser::parse_forge_with_imports(loaded.text(), label);
+        sources.record(forge_path, loaded.positions);
+        let parsed = parsed?.ok_or_else(|| {
+            Located::new(
+                ValidationError::WrongPipeline {
+                    kind: forge::model::ForgeKind::Statechart,
+                    pipeline: crate::Pipeline::Forge,
+                }
+                .into(),
+                path_str,
+                None,
+                None,
+            )
+        })?;
         namespace.claim(parsed.document.name(), path_str)?;
         cross_doc.record_document(&parsed.document);
         pool_reg.record_document(&parsed.document);
@@ -3602,13 +3685,11 @@ pub fn compile_scxml_with_imports(
     // so single-file callers and the orchestrator share emit paths.
     let mut outputs = ProducedArtifacts::default();
 
-    for forge_path in forge_files {
+    // Generated from the text pass 1 read and validated — the same bytes,
+    // not a second read of a file that may have changed in between.
+    for (forge_path, positions) in &sources.docs {
         let path_text = forge_path.to_string_lossy();
         let path_str: &str = &path_text;
-        // Read + expand. This function resolves its documents from paths,
-        // so it owns the preprocessor step its callers cannot reach — the
-        // statechart half already does, via `compile_model`.
-        let content = load_forge_source(forge_path, &options.include_dirs)?.text;
         let basename = forge_path
             .file_name()
             .and_then(|s| s.to_str())
@@ -3616,8 +3697,13 @@ pub fn compile_scxml_with_imports(
         let label = DocumentLabel::for_input_path(path_str);
         let base_dir = forge_path.parent().unwrap_or_else(|| Path::new("."));
         let effective_options = bc_options_override.as_ref().unwrap_or(options);
-        let out =
-            compile_forge_with_imports(&content, label, language, base_dir, effective_options)?;
+        let out = compile_forge_with_imports(
+            &positions.expanded,
+            label,
+            language,
+            base_dir,
+            effective_options,
+        )?;
         outputs.add(basename, path_str, out)?;
     }
 

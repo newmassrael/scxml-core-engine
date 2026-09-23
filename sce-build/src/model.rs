@@ -1801,6 +1801,10 @@ impl SCXMLModel {
 /// Keeping the mapping lets each ask at the point of use.
 #[derive(Debug, Clone, Default)]
 pub struct AuthoredPositions {
+    /// The label the expanded document was parsed under — what every
+    /// rejection raised against it carries as `location.file`, and so what
+    /// tells [`Self::authored`] which locations are its to move.
+    pub document: String,
     /// The expanded document the recorded rows index into.
     pub expanded: String,
     /// Expanded byte range → authored origin.
@@ -1808,6 +1812,103 @@ pub struct AuthoredPositions {
 }
 
 impl AuthoredPositions {
+    /// The positions of `expanded`, parsed under the label `document`.
+    pub fn new(
+        document: impl Into<String>,
+        expanded: impl Into<String>,
+        map: crate::position_map::PositionMap,
+    ) -> Self {
+        Self {
+            document: document.into(),
+            expanded: expanded.into(),
+            map,
+        }
+    }
+
+    /// Move a rejection raised against the expanded document back to where
+    /// its author wrote it.
+    ///
+    /// Every validator and emitter reports in expanded coordinates, and this
+    /// one function rewrites them on the way out — for a statechart at the
+    /// parse boundary, for a forge document wherever its errors leave the
+    /// build. Three places a record carries a position, all moved:
+    ///
+    /// * its own `location` — the row always, the column when it had one. A
+    ///   row with no column is a row all the same: raised after parsing from
+    ///   a line the model recorded, it names the same expanded text and is
+    ///   exactly as wrong unmoved. This used to require both, so such a
+    ///   refusal kept its expanded row under the authored file's name.
+    /// * each `related` site — the other rows the same rejection names, once
+    ///   left in expanded coordinates beside a moved `location`.
+    /// * each schema-validation record, one per violation, which may land in
+    ///   a spliced fragment and then names that fragment's file.
+    ///
+    /// Only positions in THIS document are moved. A record naming another
+    /// file — an imported document, a sibling of a build set — was raised
+    /// against that file's own text, and moving it through this map would
+    /// place it in a document it does not describe.
+    ///
+    /// The call site that supplied substituted bytes on the row travels
+    /// with the record, since a value assembled from a template parameter
+    /// is repaired at the `<sce:use>`, not at the template row it is read
+    /// from (`SCE_ERROR_CONTRACT.md` §2.3).
+    pub fn authored(
+        &self,
+        mut err: crate::forge::error::Located<crate::forge::error::ForgeError>,
+    ) -> crate::forge::error::Located<crate::forge::error::ForgeError> {
+        use crate::forge::error::{ForgeError, XmlError};
+        if self.map.is_identity() {
+            return err;
+        }
+
+        if err.location.file == self.document {
+            let expanded_line = err.location.line;
+            let had_col = err.location.col.is_some();
+            if let Some((file, row, col)) = self.resolve(err.location.line, err.location.col) {
+                err.location.file = file;
+                err.location.line = Some(row);
+                err.location.col = had_col.then_some(col);
+            }
+            if let Some((file, row, col)) = self.call_site_on(expanded_line) {
+                err = err.expanded_from(file, row, col);
+            }
+        }
+
+        for site in err.related_mut() {
+            if site.location.file != self.document {
+                continue;
+            }
+            let had_col = site.location.col.is_some();
+            if let Some((file, row, col)) = self.resolve(site.location.line, site.location.col) {
+                site.location.file = file;
+                site.location.line = Some(row);
+                site.location.col = had_col.then_some(col);
+            }
+        }
+
+        if let ForgeError::Xml(XmlError::SchemaValidation(ref mut xsd)) = err.error {
+            if xsd.source_label == self.document {
+                for record in &mut xsd.diagnostics {
+                    // A record already naming its own file was placed
+                    // before this map saw it.
+                    if record.file.is_some() {
+                        continue;
+                    }
+                    let had_col = record.col.is_some();
+                    if let Some((file, row, col)) = self.resolve(record.line, record.col) {
+                        record.line = Some(row);
+                        record.col = had_col.then_some(col);
+                        if file != self.document {
+                            record.file = Some(file);
+                        }
+                    }
+                }
+            }
+        }
+
+        err
+    }
+
     /// Resolve an expanded (row, col) to the authored file and
     /// position. Returns `None` when the mapping is the identity, so
     /// callers keep whatever spelling they already had rather than

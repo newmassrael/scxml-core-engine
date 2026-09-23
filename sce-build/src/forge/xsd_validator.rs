@@ -41,6 +41,19 @@ pub struct XsdDiag {
     pub line: Option<u32>,
     pub col: Option<u32>,
     pub message: String,
+    /// The file this violation was authored in, when it is not the
+    /// container's document — a fragment an expansion spliced in, whose
+    /// rows the violation's `line` names once mapped back. `None` is the
+    /// container's `source_label`, which is every violation of a document
+    /// no preprocessor touched.
+    pub file: Option<String>,
+}
+
+impl XsdDiag {
+    /// The file a consumer opens to find this violation.
+    pub fn file_or<'a>(&'a self, container: &'a str) -> &'a str {
+        self.file.as_deref().unwrap_or(container)
+    }
 }
 
 /// The collection of XSD violations produced by one `validate()` call.
@@ -85,32 +98,29 @@ impl crate::forge::diagnostic::ToDiagnostics for XsdErrors {
         self.diagnostics
             .iter()
             .map(|d| {
+                let file = d.file_or(&self.source_label);
                 let key_fragments = vec![
-                    self.source_label.clone(),
+                    file.to_string(),
                     d.line.map(|l| l.to_string()).unwrap_or_default(),
                     d.message.clone(),
                 ];
-                let id = compute_id(
-                    code,
-                    stage,
-                    Some(self.source_label.as_str()),
-                    &key_fragments,
-                );
+                let id = compute_id(code, stage, Some(file), &key_fragments);
                 Diagnostic {
                     schema_version: SCHEMA_VERSION,
                     id,
                     generator: crate::GENERATOR_COMMIT,
                     code,
                     stage,
-                    // Schema-validation rows are already remapped to
-                    // authored coordinates by `remap_post_expansion`;
-                    // they carry no per-record call site.
+                    // Schema-validation rows are already mapped back to
+                    // authored coordinates by
+                    // `AuthoredPositions::authored`; they carry no
+                    // per-record call site.
                     expanded_from: None,
                     related: Vec::new(),
                     spec: code.spec_anchor(),
                     message: d.message.clone(),
                     location: Some(Location {
-                        file: self.source_label.clone(),
+                        file: file.to_string(),
                         line: d.line,
                         col: d.col,
                     }),
@@ -136,7 +146,7 @@ impl std::fmt::Display for XsdErrors {
             write!(
                 f,
                 "{}:{}: {}",
-                self.source_label,
+                d.file_or(&self.source_label),
                 d.line.unwrap_or(0),
                 d.message
             )?;
@@ -205,6 +215,7 @@ pub fn validate(xml_text: &str, source_label: &str, schema_path: &Path) -> Resul
             line: None,
             col: None,
             message: format!("XML parse error: {e}"),
+            file: None,
         }],
     })?;
 
@@ -214,6 +225,7 @@ pub fn validate(xml_text: &str, source_label: &str, schema_path: &Path) -> Resul
             line: None,
             col: None,
             message: format!("schema path is not valid UTF-8: {schema_path:?}"),
+            file: None,
         }],
     })?;
 
@@ -339,6 +351,7 @@ fn format_error(err: &libxml::error::StructuredError) -> XsdDiag {
         // than probe an unreliable field.
         col: None,
         message: msg,
+        file: None,
     }
 }
 

@@ -401,3 +401,131 @@ fn cli_generate_expands_templates_on_the_forge_route() {
         "`sce-codegen generate` dropped the templated row. Emitted:\n{emitted}"
     );
 }
+
+/// The included document's root is a wrapper: its children are what the
+/// expander splices in (`docs/SCE_ACCEPTED_SUBSET.md`, XInclude).
+const MULTILINE_FRAGMENT: &str = r#"<fragment xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext">
+  <data id="celsius"
+        sce:type="float64"
+        sce:direction="in"/>
+</fragment>
+"#;
+
+/// The one record `sce-codegen` prints for `args` in JSON mode.
+fn refusal_record(dir: &Path, args: &[&str]) -> serde_json::Value {
+    let output = Command::new(codegen_bin())
+        .current_dir(dir)
+        .arg("--error-format=json")
+        .args(args)
+        .output()
+        .expect("run sce-codegen");
+    assert!(
+        !output.status.success(),
+        "{args:?} must refuse the document; stdout: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let lines: Vec<&str> = stderr.lines().filter(|l| !l.trim().is_empty()).collect();
+    assert_eq!(lines.len(), 1, "{args:?}: expected one record:\n{stderr}");
+    serde_json::from_str(lines[0]).unwrap_or_else(|e| panic!("{args:?}: {e}\n{stderr}"))
+}
+
+/// A transform whose output declares a type no scalar has, on authored line
+/// 5, after an `<xi:include>` that lands four lines of fragment ahead of it.
+/// Refused while the document is read, so every route that reads a forge
+/// document raises it.
+const DOC_WITH_A_SCHEMA_ERROR_AFTER_AN_INCLUDE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" xmlns:xi="http://www.w3.org/2001/XInclude" sce:kind="transform" name="probe_schema">
+  <datamodel>
+    <xi:include href="celsius.fragment.xml"/>
+    <data id="result" sce:type="float65" sce:direction="out" expr="celsius + 1"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// The line [`DOC_WITH_A_SCHEMA_ERROR_AFTER_AN_INCLUDE`] spells `float65` on.
+///
+/// The refused element's start tag is kept on this one line: libxml2 files
+/// a schema violation under the line its start tag ENDS on, so a tag
+/// spanning two lines would make this test measure that convention
+/// rather than the expansion mapping it is about.
+const AUTHORED_SCHEMA_ERROR_LINE: u64 = 5;
+
+/// Write the fragment and `docs` into a fresh directory.
+fn include_fixture(docs: &[(&str, &str)]) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("celsius.fragment.xml"), MULTILINE_FRAGMENT)
+        .expect("write fragment");
+    for (name, body) in docs {
+        std::fs::write(dir.path().join(name), body).expect("write doc");
+    }
+    dir
+}
+
+/// A diagnostic in a preprocessed forge document names the row the author
+/// wrote, not the row the expander produced. The statechart route has always
+/// mapped its coordinates back; every forge route threw the map away, so a
+/// refusal after an `<xi:include>` pointed as many lines past the defect as
+/// the fragment was long — at a row that may not exist in the file it names.
+#[test]
+fn a_refusal_after_an_include_names_the_authored_row_on_every_forge_route() {
+    let doc = "probe_schema.scxml";
+    let dir = include_fixture(&[(doc, DOC_WITH_A_SCHEMA_ERROR_AFTER_AN_INCLUDE)]);
+    let out = tempfile::tempdir().expect("tempdir");
+    let out_dir = out.path().to_str().expect("utf8 path");
+
+    let routes: [&[&str]; 6] = [
+        &["check", doc, "-l", "rust"],
+        &["generate", doc, "-l", "rust", "-o", out_dir],
+        &["review-table", doc],
+        &["pseudo", doc],
+        &["coverage", doc],
+        &[
+            "orchestrate",
+            "--forge",
+            doc,
+            "-l",
+            "rust",
+            "--output-dir",
+            out_dir,
+        ],
+    ];
+    for args in routes {
+        let record = refusal_record(dir.path(), args);
+        assert_eq!(
+            record["code"], "xml/schema-validation",
+            "{args:?}: {record}"
+        );
+        assert_eq!(record["location"]["file"], doc, "{args:?}: {record}");
+        assert_eq!(
+            record["location"]["line"], AUTHORED_SCHEMA_ERROR_LINE,
+            "{args:?}: the refusal must name the authored row: {record}"
+        );
+    }
+
+    // The library facade, which the orchestrator and build scripts share.
+    let err = match sce_build::compile_forge_file(
+        &dir.path().join(doc),
+        Language::Rust,
+        &[],
+        &ForgeCompileOptions::default(),
+    ) {
+        Ok(_) => panic!("the document declares an unknown type and must be refused"),
+        Err(e) => e,
+    };
+    // A schema refusal is a multi-record container — one record per
+    // violation, each with its own row — so each row is asserted.
+    let rows: Vec<Option<u32>> = match &err.error {
+        sce_build::forge::error::ForgeError::Xml(
+            sce_build::forge::error::XmlError::SchemaValidation(xsd),
+        ) => xsd.diagnostics.iter().map(|d| d.line).collect(),
+        other => panic!("expected a schema refusal, got {other:?}"),
+    };
+    assert!(
+        !rows.is_empty()
+            && rows
+                .iter()
+                .all(|r| *r == Some(AUTHORED_SCHEMA_ERROR_LINE as u32)),
+        "compile_forge_file must name the authored row on every schema record: {rows:?}"
+    );
+}

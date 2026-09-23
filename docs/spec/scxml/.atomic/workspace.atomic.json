@@ -8703,11 +8703,6 @@
           "kind": "references"
         },
         {
-          "file": "sce-build/src/lib.rs",
-          "symbol": "compile_scxml_with_imports",
-          "kind": "references"
-        },
-        {
           "file": "backends/rust/runtime/src/hal.rs",
           "symbol": "now_ticks_ms",
           "kind": "implements"
@@ -8746,6 +8741,11 @@
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "advance_time_ms",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "compile_document_set",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -16948,6 +16948,12 @@
       "target_kind": "section",
       "target_id": "scxml-4.3",
       "reason": "Written qualified, but the Rust resolver reads the citation site as the bare fn `set_else`, so validate-code-refs reported symbol_mismatch. Replaced by a row carrying the spelling the code actually resolves to; the binding itself is unchanged in meaning."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.2",
+      "reason": "Its citation moved with the orchestrator body into compile_document_set; the binding follows the code."
     }
   ],
   "frames": {},

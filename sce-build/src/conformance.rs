@@ -1699,7 +1699,8 @@ fn read_transform_holder(
 ) -> Result<Option<crate::forge::generator::TransformHolderSymbols>, String> {
     let text = crate::load_forge_source(scxml_path, &[])
         .map_err(|e| format!("cannot read {}: {e}", scxml_path.display()))?
-        .text;
+        .positions
+        .expanded;
     match crate::forge::parser::parse_forge(&text, crate::DocumentLabel::symmetric(fixture_name))
         .map_err(|e| format!("{}: {e}", scxml_path.display()))?
     {
@@ -2748,7 +2749,7 @@ mod tests {
             // as the author wrote it, not as the parser would see it with
             // the expansion pass skipped.
             let content = match crate::load_forge_source(&scxml_path, &[]) {
-                Ok(loaded) => loaded.text,
+                Ok(loaded) => loaded.positions.expanded,
                 Err(e) => {
                     failures.push(format!("{}: read SCXML: {e}", fixture.name));
                     continue;

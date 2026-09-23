@@ -2903,22 +2903,25 @@ fn emit_orchestrate_asts(
         // `parse_file`. An AST emitted from unexpanded source would
         // describe a document the author never wrote — every node a
         // `<sce:use>` was carrying would simply be absent from it.
-        let content = match sce_build::parser::expand_preprocessors(
+        let positions = match sce_build::parser::expand_preprocessors(
             &content,
             forge_path_str,
             forge_path.parent(),
             include_dirs,
         ) {
-            Ok((expanded, _map, _deps)) => expanded,
+            Ok((expanded, map, _deps)) => {
+                sce_build::model::AuthoredPositions::new(forge_path_str, expanded, map)
+            }
             Err(e) => error_format.emit_forge_and_exit(&e),
         };
 
-        let parsed = match sce_build::forge::parser::parse_forge_with_imports(&content, label) {
-            Ok(Some(p)) => p,
-            // Statechart: silent skip per v1 contract.
-            Ok(None) => continue,
-            Err(e) => error_format.emit_forge_and_exit(&e),
-        };
+        let parsed =
+            match sce_build::forge::parser::parse_forge_with_imports(&positions.expanded, label) {
+                Ok(Some(p)) => p,
+                // Statechart: silent skip per v1 contract.
+                Ok(None) => continue,
+                Err(e) => error_format.emit_forge_and_exit(&positions.authored(e)),
+            };
 
         let out_path = dir_path.join(format!("{}.ast.json", label.identifier));
         if let Err(e) = sce_build::forge::ast_export::write_envelope_to_path(&out_path, &parsed) {
@@ -3379,37 +3382,42 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
             // Expand first. The statechart arm reaches the expander
             // through `Parser::parse_file`; this arm had no equivalent,
             // so the same command answered differently about whether
-            // templates exist depending on the document's kind.
-            let scxml_content = match sce_build::parser::expand_preprocessors(
+            // templates exist depending on the document's kind. Every
+            // refusal of the expanded text below leaves through its map
+            // back to the authored rows, as the statechart arm's do.
+            let positions = match sce_build::parser::expand_preprocessors(
                 &scxml_content,
                 scxml_path,
                 Some(base_dir),
                 &include_dir.iter().map(PathBuf::from).collect::<Vec<_>>(),
             ) {
-                Ok((expanded, _map, _deps)) => expanded,
+                Ok((expanded, map, _deps)) => {
+                    sce_build::model::AuthoredPositions::new(scxml_path, expanded, map)
+                }
                 Err(e) => error_format.emit_forge_and_exit(&e),
             };
 
             // Document axis: a parse failure is fatal regardless of
             // which backends were asked for.
-            let parsed =
-                match sce_build::forge::parser::parse_forge_with_imports(&scxml_content, doc_label)
-                {
-                    Ok(Some(p)) => p,
-                    Ok(None) => {
-                        error_format.emit_forge_and_exit(&sce_build::forge::error::Located::new(
-                            sce_build::forge::error::ValidationError::WrongPipeline {
-                                kind: sce_build::forge::model::ForgeKind::Statechart,
-                                pipeline: sce_build::Pipeline::Forge,
-                            }
-                            .into(),
-                            doc_label.diagnostic_label,
-                            None,
-                            None,
-                        ));
-                    }
-                    Err(e) => error_format.emit_forge_and_exit(&e),
-                };
+            let parsed = match sce_build::forge::parser::parse_forge_with_imports(
+                &positions.expanded,
+                doc_label,
+            ) {
+                Ok(Some(p)) => p,
+                Ok(None) => {
+                    error_format.emit_forge_and_exit(&sce_build::forge::error::Located::new(
+                        sce_build::forge::error::ValidationError::WrongPipeline {
+                            kind: sce_build::forge::model::ForgeKind::Statechart,
+                            pipeline: sce_build::Pipeline::Forge,
+                        }
+                        .into(),
+                        doc_label.diagnostic_label,
+                        None,
+                        None,
+                    ));
+                }
+                Err(e) => error_format.emit_forge_and_exit(&positions.authored(e)),
+            };
 
             // `--strict-unresolved` reaches the forge pipeline too. It did
             // not until 2026-09-18: a forge document carrying
@@ -3421,10 +3429,10 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
             // as a puzzle in the generated code.
             if strict_unresolved {
                 if let Err(e) = sce_build::unresolved_check::check_strict_unresolved_forge(
-                    &scxml_content,
+                    &positions.expanded,
                     doc_label.diagnostic_label,
                 ) {
-                    error_format.emit_forge_and_exit(&e);
+                    error_format.emit_forge_and_exit(&positions.authored(e));
                 }
             }
 
@@ -3441,7 +3449,8 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                     base_dir,
                     &forge_opts,
                 )
-                .map(|_| ());
+                .map(|_| ())
+                .map_err(|e| positions.authored(e));
                 record_backend_outcome(&mut verdicts, *lang, explicit, error_format, outcome);
             }
             // No script engine is reachable from a forge kind, and nothing
@@ -3815,14 +3824,19 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
             };
 
             // Expand before parsing — see the `generate` arm for why
-            // this cannot be left to the caller.
-            let (scxml_content, preprocessor_deps) = match sce_build::parser::expand_preprocessors(
+            // this cannot be left to the caller. The expanded text keeps
+            // its map back to the authored rows, which every refusal of it
+            // below passes through.
+            let (positions, preprocessor_deps) = match sce_build::parser::expand_preprocessors(
                 &scxml_content,
                 scxml_path,
                 Some(base_dir),
                 &include_dirs.iter().map(PathBuf::from).collect::<Vec<_>>(),
             ) {
-                Ok((expanded, _map, deps)) => (expanded, deps),
+                Ok((expanded, map, deps)) => (
+                    sce_build::model::AuthoredPositions::new(scxml_path, expanded, map),
+                    deps,
+                ),
                 Err(e) => error_format.emit_forge_and_exit(&e),
             };
 
@@ -3832,27 +3846,28 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
             // architectural mismatch where the CLI parsed for emit and
             // `compile_forge_with_imports` parsed again internally —
             // `ParsedForge` is a cacheable artefact, not throwaway work.
-            let parsed =
-                match sce_build::forge::parser::parse_forge_with_imports(&scxml_content, doc_label)
-                {
-                    Ok(Some(p)) => p,
-                    Ok(None) => {
-                        // Defensive — `classify_document` already routed
-                        // Statechart to the Scxml arm. A future classifier
-                        // refactor must not silently land here.
-                        error_format.emit_forge_and_exit(&sce_build::forge::error::Located::new(
-                            sce_build::forge::error::ValidationError::WrongPipeline {
-                                kind: sce_build::forge::model::ForgeKind::Statechart,
-                                pipeline: sce_build::Pipeline::Forge,
-                            }
-                            .into(),
-                            doc_label.diagnostic_label,
-                            None,
-                            None,
-                        ));
-                    }
-                    Err(e) => error_format.emit_forge_and_exit(&e),
-                };
+            let parsed = match sce_build::forge::parser::parse_forge_with_imports(
+                &positions.expanded,
+                doc_label,
+            ) {
+                Ok(Some(p)) => p,
+                Ok(None) => {
+                    // Defensive — `classify_document` already routed
+                    // Statechart to the Scxml arm. A future classifier
+                    // refactor must not silently land here.
+                    error_format.emit_forge_and_exit(&sce_build::forge::error::Located::new(
+                        sce_build::forge::error::ValidationError::WrongPipeline {
+                            kind: sce_build::forge::model::ForgeKind::Statechart,
+                            pipeline: sce_build::Pipeline::Forge,
+                        }
+                        .into(),
+                        doc_label.diagnostic_label,
+                        None,
+                        None,
+                    ));
+                }
+                Err(e) => error_format.emit_forge_and_exit(&positions.authored(e)),
+            };
 
             // `--strict-unresolved` on the GENERATE route. The check also
             // sits in `cmd_check`'s forge arm; both are needed and neither
@@ -3863,10 +3878,10 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
             // the build rejected is an artifact nothing should read.
             if strict_unresolved {
                 if let Err(e) = sce_build::unresolved_check::check_strict_unresolved_forge(
-                    &scxml_content,
+                    &positions.expanded,
                     doc_label.diagnostic_label,
                 ) {
-                    error_format.emit_forge_and_exit(&e);
+                    error_format.emit_forge_and_exit(&positions.authored(e));
                 }
             }
 
@@ -3963,7 +3978,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                     emit_generate_manifest(&report);
                     return;
                 }
-                Err(e) => error_format.emit_forge_and_exit(&e),
+                Err(e) => error_format.emit_forge_and_exit(&positions.authored(e)),
             }
         }
         sce_build::Pipeline::Scxml => {}
@@ -7540,7 +7555,13 @@ fn cmd_annotation_overlay(scxml: &str, error_format: ErrorFormat) {
 /// the author never wrote, because every node a `<sce:use>` carries would
 /// simply be absent from it. A read failure is a diagnostic in the run's
 /// error format, as it is for `check` and `generate`.
-fn read_review_input(document: &str, error_format: ErrorFormat) -> String {
+///
+/// The expanded text comes back with its map to the authored one, which
+/// every refusal of it passes through on its way out.
+fn read_review_input(
+    document: &str,
+    error_format: ErrorFormat,
+) -> sce_build::model::AuthoredPositions {
     let path = std::path::Path::new(document);
     let content = std::fs::read_to_string(path).unwrap_or_else(|e| {
         error_format.emit_and_exit(
@@ -7552,7 +7573,9 @@ fn read_review_input(document: &str, error_format: ErrorFormat) -> String {
         )
     });
     match sce_build::parser::expand_preprocessors(&content, document, path.parent(), &[]) {
-        Ok((expanded, _map, _deps)) => expanded,
+        Ok((expanded, map, _deps)) => {
+            sce_build::model::AuthoredPositions::new(document, expanded, map)
+        }
         Err(e) => error_format.emit_forge_and_exit(&e),
     }
 }
@@ -7566,14 +7589,14 @@ fn parse_forge_review_input(
     document: &str,
     error_format: ErrorFormat,
 ) -> sce_build::forge::model::ParsedForge {
-    let content = read_review_input(document, error_format);
+    let positions = read_review_input(document, error_format);
 
     // The label every other caller builds, so a review artefact and a
     // codegen run name the same document the same way — and agree on
     // every diagnostic's `id`, which hashes `location.file`.
     let label = sce_build::DocumentLabel::for_input_path(document);
 
-    match sce_build::forge::parser::parse_forge_with_imports(&content, label) {
+    match sce_build::forge::parser::parse_forge_with_imports(&positions.expanded, label) {
         Ok(Some(p)) => p,
         // A statechart reaches the shared kind/pipeline refusal rather
         // than an empty artefact. It is the one kind that already HAS a
@@ -7590,7 +7613,7 @@ fn parse_forge_review_input(
             None,
             None,
         )),
-        Err(e) => error_format.emit_forge_and_exit(&e),
+        Err(e) => error_format.emit_forge_and_exit(&positions.authored(e)),
     }
 }
 
@@ -7646,10 +7669,10 @@ fn cmd_pseudo(
     lexicon: &str,
     error_format: ErrorFormat,
 ) {
-    let content = read_review_input(document, error_format);
+    let positions = read_review_input(document, error_format);
     let label = sce_build::DocumentLabel::for_input_path(document);
 
-    let doc = match sce_build::forge::parser::parse_forge_with_imports(&content, label) {
+    let doc = match sce_build::forge::parser::parse_forge_with_imports(&positions.expanded, label) {
         Ok(Some(p)) => p.document,
         // The statechart reads the file the way `check` reads it: the
         // same label, and positions mapped back through the preprocessor
@@ -7659,7 +7682,7 @@ fn cmd_pseudo(
             Ok(model) => sce_build::forge::model::ForgeDocument::Statechart(Box::new(model)),
             Err(e) => error_format.emit_forge_and_exit(&e),
         },
-        Err(e) => error_format.emit_forge_and_exit(&e),
+        Err(e) => error_format.emit_forge_and_exit(&positions.authored(e)),
     };
 
     // A deployment is resolved against the model the document holds,
@@ -7961,23 +7984,24 @@ fn cmd_requirements(scxml: &str, manifest: Option<&str>, error_format: ErrorForm
 /// that is to name them with a rule that does nothing — which is worse
 /// than the fall-through it replaced, because it looks decided.
 fn cmd_coverage(scxml: &str, error_format: ErrorFormat) {
-    let content = read_review_input(scxml, error_format);
+    let positions = read_review_input(scxml, error_format);
     let base_dir = std::path::Path::new(scxml)
         .parent()
         .unwrap_or_else(|| std::path::Path::new("."));
     let label = sce_build::DocumentLabel::for_input_path(scxml);
-    let parsed = match sce_build::forge::parser::parse_forge_with_imports(&content, label) {
-        Ok(Some(p)) => p,
-        // Not a forge document — the SCXML pipeline owns it and has no
-        // declared value spaces to report on. Empty output, exit 0: a
-        // consumer that asked every file in a tree must not have to
-        // pre-filter by kind.
-        Ok(None) => return,
-        Err(e) => error_format.emit_forge_and_exit(&e),
-    };
+    let parsed =
+        match sce_build::forge::parser::parse_forge_with_imports(&positions.expanded, label) {
+            Ok(Some(p)) => p,
+            // Not a forge document — the SCXML pipeline owns it and has no
+            // declared value spaces to report on. Empty output, exit 0: a
+            // consumer that asked every file in a tree must not have to
+            // pre-filter by kind.
+            Ok(None) => return,
+            Err(e) => error_format.emit_forge_and_exit(&positions.authored(e)),
+        };
     let rows = match sce_build::forge::coverage::report(&parsed, base_dir, scxml) {
         Ok(r) => r,
-        Err(e) => error_format.emit_forge_and_exit(&e),
+        Err(e) => error_format.emit_forge_and_exit(&positions.authored(e)),
     };
     out_stream(|w| sce_build::forge::coverage::emit_ndjson(&rows, w));
 }

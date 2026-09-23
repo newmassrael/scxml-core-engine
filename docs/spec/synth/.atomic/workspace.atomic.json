@@ -2260,6 +2260,11 @@
           "file": "sce-build/src/forge/model.rs",
           "symbol": "record_fields",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "compile_document_set",
+          "kind": "implements"
         }
       ]
     },
@@ -2977,11 +2982,6 @@
         },
         {
           "file": "sce-build/src/lib.rs",
-          "symbol": "compile_scxml_with_imports",
-          "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/lib.rs",
           "symbol": "validate_bounded_collection_cross_refs",
           "kind": "implements"
         },
@@ -3145,6 +3145,11 @@
         {
           "file": "sce-build/src/mesh/deploy.rs",
           "symbol": "validate_stateless_accept_externs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "compile_document_set",
           "kind": "implements"
         }
       ]
@@ -3831,11 +3836,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce-build/src/lib.rs",
-          "symbol": "compile_scxml_with_imports",
-          "kind": "implements"
-        },
-        {
           "file": "sce-build/src/mesh/deploy.rs",
           "symbol": "LinkConfig",
           "kind": "implements"
@@ -3993,6 +3993,11 @@
           "file": "sce-build/src/mesh/deploy.rs",
           "symbol": "KNOWN_DRIVERS",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "compile_document_set",
+          "kind": "implements"
         }
       ]
     },
@@ -4104,11 +4109,6 @@
         {
           "file": "sce-build/src/lib.rs",
           "symbol": "compile_forge_with_deploy",
-          "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/lib.rs",
-          "symbol": "compile_scxml_with_imports",
           "kind": "implements"
         },
         {
@@ -4317,6 +4317,11 @@
           "file": "sce-build/tests/forge_conformance.rs",
           "symbol": "bounded_collection_enum_index_compiles_on_every_backend",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "compile_document_set",
+          "kind": "implements"
         }
       ]
     },
@@ -4414,11 +4419,6 @@
         {
           "file": "sce-build/src/lib.rs",
           "symbol": "ForgeCompileOptions",
-          "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/lib.rs",
-          "symbol": "compile_scxml_with_imports",
           "kind": "implements"
         },
         {
@@ -4542,6 +4542,11 @@
           "file": "sce-build/src/mesh/deploy.rs",
           "symbol": "KNOWN_DRIVERS",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "compile_document_set",
+          "kind": "implements"
         }
       ]
     },
@@ -4600,11 +4605,6 @@
           "kind": "references"
         },
         {
-          "file": "sce-build/src/lib.rs",
-          "symbol": "compile_scxml_with_imports",
-          "kind": "implements"
-        },
-        {
           "file": "sce-build/src/mesh/deploy.rs",
           "symbol": "MachineSchedulerConfig",
           "kind": "implements"
@@ -4646,6 +4646,11 @@
         {
           "file": "sce-build/src/mesh/deploy.rs",
           "symbol": "validate_machine_scheduler_link_concurrency",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "compile_document_set",
           "kind": "implements"
         }
       ]
@@ -5672,6 +5677,36 @@
       "target_kind": "section",
       "target_id": "synth-5-F",
       "reason": "cross_kind_check no longer walks algorithm consts; it checks only the import graph for cycles, so it implements nothing of the build-time const fold"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-I",
+      "reason": "Its citations moved with the orchestrator body into compile_document_set; the binding follows the code."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-K",
+      "reason": "Its citations moved with the orchestrator body into compile_document_set; the binding follows the code."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-L",
+      "reason": "Its citations moved with the orchestrator body into compile_document_set; the binding follows the code."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-M",
+      "reason": "Its citations moved with the orchestrator body into compile_document_set; the binding follows the code."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-N",
+      "reason": "Its citations moved with the orchestrator body into compile_document_set; the binding follows the code."
     }
   ],
   "frames": {},

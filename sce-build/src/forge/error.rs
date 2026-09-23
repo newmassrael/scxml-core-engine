@@ -192,6 +192,15 @@ impl<E> Located<E> {
         self
     }
 
+    /// The related sites, to rewrite in place — how a mapping back to
+    /// authored coordinates reaches every site the record names, not only
+    /// its own location.
+    pub(crate) fn related_mut(&mut self) -> &mut [RelatedSite] {
+        self.context
+            .as_deref_mut()
+            .map_or(&mut [], |context| context.related.as_mut_slice())
+    }
+
     /// Record the call site that supplied the substituted bytes.
     pub fn expanded_from(mut self, file: impl Into<String>, line: u32, col: u32) -> Self {
         self.context_mut().expanded_from = Some(SourceLocation {

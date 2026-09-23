@@ -80,7 +80,7 @@ fn main() {
         }
 
         let output = compile_forge_with_imports(
-            &loaded.text,
+            loaded.text(),
             DocumentLabel::symmetric(&fixture.name),
             Language::Rust,
             &resource_dir,
@@ -170,7 +170,7 @@ fn generate_stripped_fixtures(
             println!("cargo:rerun-if-changed={}", dep.display());
         }
         let output = compile_forge_with_imports(
-            &loaded.text,
+            loaded.text(),
             DocumentLabel::symmetric(name),
             Language::Rust,
             resource_dir,

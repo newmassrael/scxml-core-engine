@@ -12509,6 +12509,7 @@ mod tests {
                     line: Some(7),
                     col: None,
                     message: "Element 'sce:field': missing required attribute 'id'.".into(),
+                    file: None,
                 }],
             })),
             r#"{"v":1,"id":"fnv1a:cd97e1d8cb41cb8c","code":"xml/schema-validation","stage":"xml","spec":"SCE Forge XSD","message":"Element 'sce:field': missing required attribute 'id'.","location":{"file":"chart.scxml","line":7}}"#,
