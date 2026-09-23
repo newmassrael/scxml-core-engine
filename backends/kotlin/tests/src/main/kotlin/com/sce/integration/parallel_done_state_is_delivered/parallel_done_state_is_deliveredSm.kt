@@ -1,7 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 4f209294ba851e9f433a2fd839fc088f718569422204e93318892b83dc408fac
-// template-hash: 68cd6517eb7ab30f12195ed5715cf739261174462172b0a4bc940ea551e29052
-// generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/parallel_done_state_is_delivered/parallel_done_state_is_delivered.scxml

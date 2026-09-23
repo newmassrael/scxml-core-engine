@@ -1,7 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 88c46d955f89d1b6f7eb00aaedced29c5fbacc4db8ed4464fa38145a023ef16c
-// template-hash: 68cd6517eb7ab30f12195ed5715cf739261174462172b0a4bc940ea551e29052
-// generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/unhandled_error_is_observable/unhandled_error_is_observable.scxml

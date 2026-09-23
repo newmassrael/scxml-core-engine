@@ -50,9 +50,9 @@ exclude = ["/target", "/build", "/embed"]
 #   * `scripts/gate mutation-rounds` — it drives `scripts/mutate`, but a ROUND
 #     is edit → build → run → restore, and what it produces is a verdict, not
 #     a changed tree. Running it on the far side answers the same question.
-#   * `./gradlew … test` — it does write, releasing the `generated-at` pin on
-#     the committed Kotlin trees. That is an unwanted side effect rather than
-#     the point, so sending it is BETTER: the local tree stays clean.
+#   * `./gradlew … test` — it does write: it regenerates the committed Kotlin
+#     trees. That is a side effect rather than the point, so sending it is
+#     BETTER: the local tree stays untouched.
 #   * `scripts/gates/w3c-python.sh` — it regenerates Python modules that are
 #     gitignored. Nothing local reads them except a local pytest run, and the
 #     gate runs its own.

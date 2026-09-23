@@ -20,10 +20,9 @@ use std::path::{Path, PathBuf};
 pub const WITNESS_FILES: &[&str] = &["Cargo.lock", "sce-build/Cargo.toml", "sce-build/build.rs"];
 
 /// Directories walked recursively, relative to the workspace root. Every
-/// file contributes regardless of extension — the same rule
-/// [`crate::forge::drift::compute_template_hash`] applies to the template
-/// tree, so a data file added next to the Rust sources cannot enter the
-/// binary through `include_str!` without entering the witness too.
+/// file contributes regardless of extension, so a data file added next to
+/// the Rust sources cannot enter the binary through `include_str!` without
+/// entering the witness too.
 pub const WITNESS_TREES: &[&str] = &["sce-build/src"];
 
 /// Value [`crate::GENERATOR_SOURCE_DIGEST`] carries when the build could
@@ -169,7 +168,7 @@ fn hash_file(path: &Path) -> Result<[u8; 32], WitnessError> {
 /// Lives here rather than in [`crate::forge::drift`] because `build.rs`
 /// `include!`s this file and cannot reach the library — and the drift
 /// module needs the identical fold, so stating it twice would put the
-/// drift-header `template-hash` one careless edit away from silently
+/// drift-header `source-hash` one careless edit away from silently
 /// moving under every committed generated header.
 pub(crate) fn sha256_bytes(bytes: &[u8]) -> [u8; 32] {
     let mut hasher = Sha256::new();
@@ -304,8 +303,8 @@ mod tests {
     /// edited template is already in effect for the binary CMake invokes.
     /// Folding the template tree into this digest would demand a rebuild
     /// that changes nothing — a false refusal, and the exact reason the
-    /// mtime attempt had to be reverted. Template drift is covered by the
-    /// drift-header `template-hash` instead.
+    /// mtime attempt had to be reverted. A template edit is caught in the
+    /// bytes it changes instead, by `--assert-unchanged`.
     #[test]
     fn editing_a_template_does_not_move_the_digest() {
         let tmp = tempfile::tempdir().unwrap();

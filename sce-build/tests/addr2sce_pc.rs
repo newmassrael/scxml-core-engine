@@ -105,7 +105,6 @@ fn write_sourcemap(dir: &Path, symbols: &[(&str, &str, u32)]) {
     let mut map = sce_build::forge::sourcemap::Sourcemap {
         version: 1,
         source_hash: "0".repeat(64),
-        template_hash: "0".repeat(64),
         symbols: Default::default(),
     };
     for (sym, file, line) in symbols {

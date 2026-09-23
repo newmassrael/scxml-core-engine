@@ -911,7 +911,7 @@ sce-forge-runtime/    Non-MCU Forge kinds: codec / filter / interpolation / look
 **In scope (SCE owns):**
 
 - Every file `sce-codegen` writes: `*_sm.{rs,cpp,h,kt,go,py,c}`, `mod.rs`, per-machine `sce_sourcemap.json` sidecars.
-- The §6.2.6 drift header is the canonical SCE-ownership marker. Files carrying a `// SCE-GENERATED — DO NOT EDIT` block with embedded `source-hash` + `template-hash` lines are SCE-traced; files without that header are out-of-scope.
+- The §6.2.6 drift header is the canonical SCE-ownership marker. Files carrying a `// SCE-GENERATED — DO NOT EDIT` block with an embedded `source-hash` line are SCE-traced; files without that header are out-of-scope.
 
 **Out of scope (SCE does not trace):**
 

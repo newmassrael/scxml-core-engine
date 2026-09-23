@@ -14,59 +14,20 @@
 //      mis-led one consumer into a `hand-author header path` workaround
 //      (vendor pin R30 → R53), so a regression here would re-open the
 //      same mis-judgment for the next contributor.
-//   3. `--workspace-root <PATH>` resolution chain. Vendored binaries
-//      (consumer cwd is the consumer workspace; SCE source lives in
-//      `vendor/sce/`) used to embed a zero `template-hash` in every
-//      generated file because the legacy resolver only walked upward
-//      from cwd and never found SCE. The new chain is `--workspace-root
-//      override → SCE_WORKSPACE_ROOT → CARGO_MANIFEST_DIR/.. → cwd-walk`
-//      with explicit warnings on validation failures along the way.
+//   3. `--workspace-root <PATH>` resolution chain: `--workspace-root
+//      override → SCE_WORKSPACE_ROOT → CARGO_MANIFEST_DIR/.. → cwd-walk`,
+//      with explicit warnings on validation failures along the way. It
+//      decides which checkout `verify-generator` judges this binary
+//      against when no `--root` is named, and vendored binaries (consumer
+//      cwd is the consumer workspace; SCE source lives in `vendor/sce/`)
+//      are why it does not start at the cwd: the legacy resolver only
+//      walked upward from there and never found SCE.
 
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
 
 fn sce_codegen_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sce-codegen"))
-}
-
-static SCRATCH_ID: AtomicU64 = AtomicU64::new(0);
-
-struct ScratchDir(PathBuf);
-impl ScratchDir {
-    fn new(label: &str) -> Self {
-        let id = SCRATCH_ID.fetch_add(1, Ordering::SeqCst);
-        let root = PathBuf::from(env!("CARGO_TARGET_TMPDIR"));
-        let dir = root.join(format!("{label}-{}-{id}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("create scratch dir");
-        ScratchDir(dir)
-    }
-    fn path(&self) -> &std::path::Path {
-        &self.0
-    }
-}
-impl Drop for ScratchDir {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
-}
-
-/// Minimal well-formed SCXML that drives the codegen pipeline (and the
-/// drift-header emission) without depending on forge-kind specifics.
-/// Two states with one event so the rust template emits a non-trivial
-/// machine — enough to exercise template-hash embedding.
-fn write_minimal_scxml(dir: &std::path::Path) -> PathBuf {
-    let path = dir.join("m.scxml");
-    let body = r#"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml" name="m" version="1.0" initial="s0" datamodel="null">
-  <state id="s0">
-    <transition event="go" target="s1"/>
-  </state>
-  <final id="s1"/>
-</scxml>
-"#;
-    std::fs::write(&path, body).expect("write scxml");
-    path
 }
 
 /// Resolve the real SCE workspace root from the test's compile-time
@@ -158,25 +119,25 @@ fn generate_w3c_help_does_not_carry_m2_plus_stale_text() {
 }
 
 // ── #3: --workspace-root + SCE_WORKSPACE_ROOT resolution chain ─────
+//
+// Observed through `verify-generator` with no `--root`: it judges this
+// binary against whichever checkout the chain resolves. This test binary
+// was built from the sources of the checkout `sce_workspace_root()` names,
+// so resolving THAT checkout is the one outcome that passes. Falling
+// through to the unrelated working directory reports the binary
+// unverifiable, and resolving some other checkout reports it stale — both
+// non-zero, both named on stderr.
 
-/// Helper: run `sce-codegen generate` with a controlled cwd / env /
-/// flags, capture stderr, and return the produced `rust_sm.rs` body
-/// for hash inspection. Returns `(stderr, body)`.
-fn run_generate(
+/// Run `sce-codegen <args>` from `cwd` with `env` applied (`None`
+/// removes a variable), returning `(exit code, stderr)`.
+fn run_codegen(
     cwd: &std::path::Path,
     args: &[&str],
     env: &[(&str, Option<&str>)],
-) -> (String, String) {
-    let scratch = ScratchDir::new("ws-root-out");
-    let mut full_args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-    // Append the standard `-o <out_dir>` so each invocation writes to
-    // its own dir.
-    full_args.push("-o".into());
-    full_args.push(scratch.path().display().to_string());
-
+) -> (Option<i32>, String) {
     let mut cmd = Command::new(sce_codegen_bin());
     cmd.current_dir(cwd)
-        .args(&full_args)
+        .args(args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     for (k, v) in env {
@@ -189,104 +150,67 @@ fn run_generate(
             }
         }
     }
-    let out = cmd.output().expect("spawn sce-codegen generate");
-    assert!(
-        out.status.success(),
-        "sce-codegen generate must succeed; stderr:\n{}",
-        String::from_utf8_lossy(&out.stderr),
-    );
-    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
-    // The Rust template emits `<basename>_sm.rs`.
-    let body =
-        std::fs::read_to_string(scratch.path().join("m_sm.rs")).expect("read generated m_sm.rs");
-    (stderr, body)
+    let out = cmd.output().expect("spawn sce-codegen");
+    (
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
 }
 
-const ZERO_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
-
 #[test]
-fn workspace_root_explicit_flag_yields_real_template_hash() {
-    let scxml_dir = ScratchDir::new("ws-explicit-src");
-    let scxml_path = write_minimal_scxml(scxml_dir.path());
+fn workspace_root_explicit_flag_resolves_the_workspace() {
     let ws = sce_workspace_root();
-    let unrelated_cwd = std::env::temp_dir();
-
     // cwd is unrelated to SCE; --workspace-root pins the real root.
-    let (stderr, body) = run_generate(
-        &unrelated_cwd,
-        &[
-            "--workspace-root",
-            ws.to_str().unwrap(),
-            "generate",
-            scxml_path.to_str().unwrap(),
-            "-l",
-            "rust",
-        ],
+    let (code, stderr) = run_codegen(
+        &std::env::temp_dir(),
+        &["--workspace-root", ws.to_str().unwrap(), "verify-generator"],
         &[("SCE_WORKSPACE_ROOT", None)],
     );
-    assert!(
-        !stderr.contains("workspace root not detected"),
-        "explicit --workspace-root must suppress the zero-hash warning; stderr:\n{stderr}",
-    );
-    let hash_line = body
-        .lines()
-        .find(|l| l.contains("template-hash:"))
-        .expect("template-hash line in generated body");
-    assert!(
-        !hash_line.contains(ZERO_HASH),
-        "template-hash must not be zero when --workspace-root pins a valid root; got: {hash_line}",
+    assert_eq!(
+        code,
+        Some(0),
+        "an explicit --workspace-root must resolve the checkout this binary was built \
+         from; stderr:\n{stderr}",
     );
 }
 
 #[test]
-fn workspace_root_env_var_yields_real_template_hash() {
-    let scxml_dir = ScratchDir::new("ws-env-src");
-    let scxml_path = write_minimal_scxml(scxml_dir.path());
+fn workspace_root_env_var_resolves_the_workspace() {
     let ws = sce_workspace_root();
-    let unrelated_cwd = std::env::temp_dir();
-
-    let (stderr, body) = run_generate(
-        &unrelated_cwd,
-        &["generate", scxml_path.to_str().unwrap(), "-l", "rust"],
+    let (code, stderr) = run_codegen(
+        &std::env::temp_dir(),
+        &["verify-generator"],
         &[("SCE_WORKSPACE_ROOT", Some(ws.to_str().unwrap()))],
     );
-    assert!(
-        !stderr.contains("workspace root not detected"),
-        "SCE_WORKSPACE_ROOT env must suppress the zero-hash warning; stderr:\n{stderr}",
-    );
-    let hash_line = body
-        .lines()
-        .find(|l| l.contains("template-hash:"))
-        .expect("template-hash line in generated body");
-    assert!(
-        !hash_line.contains(ZERO_HASH),
-        "template-hash must not be zero with SCE_WORKSPACE_ROOT set; got: {hash_line}",
+    assert_eq!(
+        code,
+        Some(0),
+        "SCE_WORKSPACE_ROOT must resolve the checkout this binary was built from; \
+         stderr:\n{stderr}",
     );
 }
 
 #[test]
 fn workspace_root_invalid_explicit_flag_warns_and_falls_through() {
-    let scxml_dir = ScratchDir::new("ws-invalid-src");
-    let scxml_path = write_minimal_scxml(scxml_dir.path());
     let bogus = std::env::temp_dir().join("definitely-not-a-workspace-root-XYZ");
     // Don't actually create the dir — its absence is the point.
-    let unrelated_cwd = std::env::temp_dir();
     let ws_real = sce_workspace_root();
+    assert!(
+        ws_real.exists(),
+        "sce_workspace_root() must resolve to an existing dir for this test to be meaningful",
+    );
 
     // We deliberately keep SCE_WORKSPACE_ROOT unset; resolution must
     // still find the real workspace via CARGO_MANIFEST_DIR/.. (this
     // test binary was built against the SCE workspace, so that layer
     // resolves), and the bogus explicit override must emit its warning
     // along the way.
-    let (stderr, body) = run_generate(
-        &unrelated_cwd,
+    let (code, stderr) = run_codegen(
+        &std::env::temp_dir(),
         &[
             "--workspace-root",
             bogus.to_str().unwrap(),
-            "generate",
-            scxml_path.to_str().unwrap(),
-            "-l",
-            "rust",
+            "verify-generator",
         ],
         &[("SCE_WORKSPACE_ROOT", None)],
     );
@@ -294,21 +218,11 @@ fn workspace_root_invalid_explicit_flag_warns_and_falls_through() {
         stderr.contains("--workspace-root") && stderr.contains("does not contain"),
         "invalid --workspace-root must emit a validation warning; stderr:\n{stderr}",
     );
-    // The fall-through (CARGO_MANIFEST_DIR/..) must still resolve to
-    // the real workspace, so the embedded hash is real — not zero.
-    let hash_line = body
-        .lines()
-        .find(|l| l.contains("template-hash:"))
-        .expect("template-hash line");
-    assert!(
-        !hash_line.contains(ZERO_HASH),
-        "fallback resolution (CARGO_MANIFEST_DIR/..) must still produce a real hash; got: {hash_line}",
-    );
-    // Sanity: the fallback target is the workspace this test binary
-    // was built against.
-    assert!(
-        ws_real.exists(),
-        "sce_workspace_root() must resolve to an existing dir for this test to be meaningful",
+    assert_eq!(
+        code,
+        Some(0),
+        "the fall-through (CARGO_MANIFEST_DIR/..) must still resolve the real workspace; \
+         stderr:\n{stderr}",
     );
 }
 
@@ -320,25 +234,15 @@ fn workspace_root_compile_time_fallback_resolves_for_vendored_layout() {
     // fallback (baked at build time) is what must save the day —
     // this is the layer the legacy "walk up from cwd" resolver
     // missed for vendor-pinned consumers.
-    let scxml_dir = ScratchDir::new("ws-fallback-src");
-    let scxml_path = write_minimal_scxml(scxml_dir.path());
-    let unrelated_cwd = std::env::temp_dir();
-
-    let (stderr, body) = run_generate(
-        &unrelated_cwd,
-        &["generate", scxml_path.to_str().unwrap(), "-l", "rust"],
+    let (code, stderr) = run_codegen(
+        &std::env::temp_dir(),
+        &["verify-generator"],
         &[("SCE_WORKSPACE_ROOT", None)],
     );
-    assert!(
-        !stderr.contains("workspace root not detected"),
-        "CARGO_MANIFEST_DIR/.. fallback must keep the zero-hash warning silent; stderr:\n{stderr}",
-    );
-    let hash_line = body
-        .lines()
-        .find(|l| l.contains("template-hash:"))
-        .expect("template-hash line");
-    assert!(
-        !hash_line.contains(ZERO_HASH),
-        "CARGO_MANIFEST_DIR/.. fallback must produce a real template-hash; got: {hash_line}",
+    assert_eq!(
+        code,
+        Some(0),
+        "the CARGO_MANIFEST_DIR/.. fallback must resolve the real workspace; \
+         stderr:\n{stderr}",
     );
 }

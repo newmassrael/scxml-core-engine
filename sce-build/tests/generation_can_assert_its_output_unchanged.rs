@@ -60,9 +60,6 @@ fn generated_door() -> tempfile::TempDir {
 }
 
 /// `sce-codegen generate door.scxml -o out -l cpp` in `dir`, plus `extra`.
-///
-/// `SOURCE_DATE_EPOCH` pins the header stamp, so two runs over one input
-/// produce one sequence of bytes and a comparison means something.
 fn generate(dir: &Path, extra: &[&str]) -> Output {
     Command::new(codegen())
         .args(["--error-format", "json", "generate"])
@@ -71,7 +68,6 @@ fn generate(dir: &Path, extra: &[&str]) -> Output {
         .arg(dir.join("out"))
         .args(["-l", "cpp"])
         .args(extra)
-        .env("SOURCE_DATE_EPOCH", "0")
         .output()
         .expect("run sce-codegen")
 }
@@ -151,7 +147,6 @@ fn generate_w3c(language: &str, registry: &Path, out: &Path, extra: &[&str]) -> 
         .arg("--output-dir")
         .arg(out)
         .args(extra)
-        .env("SOURCE_DATE_EPOCH", "0")
         .output()
         .expect("run sce-codegen generate-w3c")
 }
@@ -367,7 +362,6 @@ fn a_child_document_the_generation_copies_is_compared_not_copied() {
             .arg(tmp.path().join("out"))
             .args(["-l", "cpp"])
             .args(extra)
-            .env("SOURCE_DATE_EPOCH", "0")
             .output()
             .expect("run sce-codegen")
     };

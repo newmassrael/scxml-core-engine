@@ -159,7 +159,7 @@ function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
         endif()
         add_custom_command(
             OUTPUT "${SUB_HEADER_FILE}"
-            COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate "${SUB_SCXML_FILE}" -l cpp -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --as-child --write-deps "${SUB_HEADER_FILE}.d"
+            COMMAND "${SCE_CODEGEN}" generate "${SUB_SCXML_FILE}" -l cpp -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --as-child --write-deps "${SUB_HEADER_FILE}.d"
             ${_SUB_FORMAT_CMD}
             DEPENDS "${SUB_SCXML_FILE}" "${SCE_CODEGEN}"
             DEPFILE "${SUB_HEADER_FILE}.d"
@@ -305,7 +305,7 @@ function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
         )
         add_custom_command(
             OUTPUT "${_CPP_HYBRID_HEADER}"
-            COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate "${_CPP_HYBRID_SCXML}" -l cpp -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --as-child --write-deps "${_CPP_HYBRID_HEADER}.d"
+            COMMAND "${SCE_CODEGEN}" generate "${_CPP_HYBRID_SCXML}" -l cpp -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --as-child --write-deps "${_CPP_HYBRID_HEADER}.d"
             DEPENDS "${_CPP_HYBRID_SCXML}" "${SCE_CODEGEN}"
             DEPFILE "${_CPP_HYBRID_HEADER}.d"
             BYPRODUCTS "${_CPP_HYBRID_INL}"
@@ -326,7 +326,7 @@ function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
     endif()
     add_custom_command(
         OUTPUT "${GENERATED_HEADER}"
-        COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate "${SCXML_FILE}" -l cpp -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --write-deps "${GENERATED_HEADER}.d"
+        COMMAND "${SCE_CODEGEN}" generate "${SCXML_FILE}" -l cpp -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --write-deps "${GENERATED_HEADER}.d"
         ${_PARENT_FORMAT_CMD}
         DEPENDS "${SCXML_FILE}" ${SUB_HEADER_DEPENDENCIES} "${SCE_CODEGEN}"
         DEPFILE "${GENERATED_HEADER}.d"
@@ -496,7 +496,7 @@ function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
         )
         add_custom_command(
             OUTPUT "${_SUB_HEADER}" "${_SUB_SOURCE}"
-            COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate "${_SUB_SCXML}" -l c11 -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --write-deps "${_SUB_SOURCE}.d"
+            COMMAND "${SCE_CODEGEN}" generate "${_SUB_SCXML}" -l c11 -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --write-deps "${_SUB_SOURCE}.d"
             DEPENDS "${_SUB_SCXML}" "${SCE_CODEGEN}"
             DEPFILE "${_SUB_SOURCE}.d"
             COMMENT "Generating C11 code: ${_SUB_NAME}_sm.{h,c}"
@@ -536,7 +536,7 @@ function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
         )
         add_custom_command(
             OUTPUT "${_HYBRID_HEADER}" "${_HYBRID_SOURCE}"
-            COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate "${_HYBRID_SCXML}" -l c11 -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --write-deps "${_HYBRID_SOURCE}.d"
+            COMMAND "${SCE_CODEGEN}" generate "${_HYBRID_SCXML}" -l c11 -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --write-deps "${_HYBRID_SOURCE}.d"
             DEPENDS "${_HYBRID_SCXML}" "${SCE_CODEGEN}"
             DEPFILE "${_HYBRID_SOURCE}.d"
             COMMENT "Generating C11 code: ${_HYBRID_NAME}_sm.{h,c}"
@@ -625,7 +625,7 @@ function(sce_generate_static_w3c_c_test TEST_NUM OUTPUT_DIR)
     endif()
     add_custom_command(
         OUTPUT "${GENERATED_HEADER}" "${GENERATED_SOURCE}"
-        COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate "${SCXML_FILE}" -l c11 -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --write-deps "${GENERATED_SOURCE}.d"
+        COMMAND "${SCE_CODEGEN}" generate "${SCXML_FILE}" -l c11 -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --write-deps "${GENERATED_SOURCE}.d"
         DEPENDS "${SCXML_FILE}" "${SCE_CODEGEN}" ${_CHILD_HEADER_DEPS}
         DEPFILE "${GENERATED_SOURCE}.d"
         ${_C_PARENT_BYPRODUCTS_ARG}

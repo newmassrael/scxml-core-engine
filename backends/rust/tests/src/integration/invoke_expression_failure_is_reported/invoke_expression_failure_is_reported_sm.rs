@@ -1,7 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: c13fc11d9e6b67c63b67dbeb6e7f8a2510d3fe8eb6d1c2b86bb43bf5477e7518
-// template-hash: 68cd6517eb7ab30f12195ed5715cf739261174462172b0a4bc940ea551e29052
-// generated-at: 0
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]

@@ -15,17 +15,17 @@ is wrong, one of those tests is failing.
 ## 1. The short version
 
 ```bash
-SOURCE_DATE_EPOCH=0 sce-codegen generate path/to/machine.scxml \
+sce-codegen generate path/to/machine.scxml \
     --source-root "$(git rev-parse --show-toplevel)" \
     -o generated/ -l cpp
 ```
 
-- `SOURCE_DATE_EPOCH` pins the `generated-at` header stamp.
 - `--source-root` pins the `// From:` provenance path.
 
-Without them the output is still *correct*, but two runs will not be
-byte-identical and the artifact will carry a path that only resolves on
-the machine that produced it.
+Without it the output is still *correct*, and still byte-identical from
+one run to the next, but the provenance path is spelled exactly as you
+named the input — an absolute path stays absolute, and resolves only on the
+machine that produced it.
 
 ---
 
@@ -36,46 +36,53 @@ Every emitted source file starts with the §synth-6.2.6 drift header:
 ```
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: <sha256 over the input source set>
-// template-hash: <sha256 over the codegen template tree + Cargo.lock>
-// generated-at: <unix seconds>
 ```
 
 followed by a license block carrying `// From: <input path>`.
 
-Three of those five values are functions of the inputs. Two — the stamp
-and the provenance path — are functions of *how you invoked the
-generator*, and are what the flags below control.
+The `source-hash` is a function of the inputs (§5). The provenance path is
+a function of *how you invoked the generator*, and is what `--source-root`
+controls (§4). Nothing in the header depends on when the generator ran, or
+on which build of it ran.
 
 ---
 
-## 3. `generated-at` — pin it with `SOURCE_DATE_EPOCH`
+## 3. What the header does not carry
 
-The stamp defaults to wall-clock seconds, so no two runs agree. It feeds
-neither hash, so pinning it costs nothing:
+- **No timestamp.** Two runs over the same inputs write the same bytes with
+  nothing pinned — no `SOURCE_DATE_EPOCH`, no clock. The header carried a
+  `generated-at` stamp until 2026-09; it read the wall clock unless the
+  variable pinned it, and a regeneration that forgot the pin rewrote every
+  file it touched.
+- **No template or generator hash.** Until 2026-09 the header also carried
+  a `template-hash` over the template tree and `Cargo.lock`. It was wrong
+  in both directions: an edit to the lock or to any template re-stamped
+  every committed file with no byte of output changed, while an edit to
+  the generator's own code changed output without moving it. Whether a file
+  holds what the current templates and generator produce is judged on its
+  content instead — `--assert-unchanged` (§8) for one invocation, and
+  regenerating and diffing for a whole pipeline:
 
-```bash
-SOURCE_DATE_EPOCH=0 sce-codegen generate ...
-```
+  ```bash
+  sce-codegen generate src/machine.scxml -o generated/ -l cpp
+  git diff --exit-code generated/     # fails iff generation actually moved
+  ```
 
-`sce-codegen` honours the [reproducible-builds][rb] convention: any
-integer value is used verbatim as the stamp. Pinning it is what makes a
-regeneration gate expressible:
+- **No generator identity.** That is a fact about a run, not a file, and
+  the run's stdout manifest carries it (§7). Stamped into a committed file
+  it would change with every generator commit, whether the output did or
+  not.
 
-```bash
-SOURCE_DATE_EPOCH=0 sce-codegen generate src/machine.scxml -o generated/ -l cpp
-git diff --exit-code generated/     # fails iff generation actually moved
-```
+A file generated before the change still carries the two retired lines;
+regenerating it writes the current header in place of the old one.
 
-This repository does exactly that for its own committed trees —
-`scripts/regen_all_committed_trees.sh` exports the variable, and
-`committed_trees_carry_a_pinned_generated_at` fails if a regeneration ever
-lands without it.
-
-*Tests:* `source_date_epoch_pins_generated_at_for_byte_stable_regen`,
-`generated_at_tracks_the_clock_without_the_pin`
-(`sce-build/tests/codegen_invocation_determinism.rs`).
-
-[rb]: https://reproducible-builds.org/docs/source-date-epoch/
+*Tests:* `regeneration_is_byte_stable_with_nothing_pinned`
+(`sce-build/tests/codegen_invocation_determinism.rs`);
+`committed_generated_files_carry_the_current_header_shape`,
+`verify_reads_a_header_of_the_older_shape`
+(`sce-build/tests/b9_drift_detection.rs`);
+`prepend_header_replaces_a_header_of_the_older_shape`
+(`sce-build/src/forge/drift.rs`).
 
 ---
 
@@ -215,16 +222,23 @@ nothing against the ceiling and a cyclic layout never approaches the bound.
 
 ---
 
-## 6. `template-hash` — pin it with `--workspace-root`
+## 6. `--workspace-root` — which checkout judges the binary
 
-Covers `tools/codegen/templates/**` plus `Cargo.lock`. Resolution order:
-`--workspace-root` → `$SCE_WORKSPACE_ROOT` → `CARGO_MANIFEST_DIR/..` →
-walk up from the working directory.
+`sce-codegen verify-generator` answers whether this binary was built from
+the sources of a given checkout, and with no `--root` it resolves that
+checkout in this order: `--workspace-root` → `$SCE_WORKSPACE_ROOT` →
+`CARGO_MANIFEST_DIR/..` → walk up from the working directory. A vendored
+or relocated build should pass `--workspace-root` rather than rely on the
+walk.
 
-If every layer fails, the axis degrades to a zero hash and says so on
-stderr. Unlike the source axis this is a signposted fallback, not a
-silent one — but a vendored or relocated build should pass
-`--workspace-root` rather than rely on the walk.
+The flag no longer affects generated output: it located the tree the
+header's `template-hash` was computed over, and that line is retired (§3).
+
+*Tests:* `workspace_root_explicit_flag_resolves_the_workspace`,
+`workspace_root_env_var_resolves_the_workspace`,
+`workspace_root_invalid_explicit_flag_warns_and_falls_through`,
+`workspace_root_compile_time_fallback_resolves_for_vendored_layout`
+(`sce-build/tests/cli_meta_and_workspace_root.rs`).
 
 ---
 
@@ -254,8 +268,8 @@ reproduces it is a tree nobody can audit.
 `"unknown"` appears when the generator was built without a git checkout
 to read (vendored crate, release tarball). The value names the *committed*
 state the generator was built from; uncommitted edits to the generator
-itself are not reflected, which is why the input hashes are computed per
-run from actual bytes rather than trusted from the binary's identity.
+itself are not reflected, which is why whether a tree is current is judged
+on its bytes (§8) rather than trusted from the binary's identity.
 
 *Tests:* `version_reports_the_generator_commit`,
 `manifest_generator_matches_version_output`
@@ -273,7 +287,7 @@ staged derivatives, with the same nonempty-source requirement as `generate`.
 ## 8. Verifying after the fact
 
 ```bash
-SOURCE_DATE_EPOCH=0 sce-codegen generate path/to/machine.scxml \
+sce-codegen generate path/to/machine.scxml \
     --source-root "$(git rev-parse --show-toplevel)" \
     -o generated/ -l cpp --assert-unchanged
 ```
@@ -308,14 +322,17 @@ does.
 sce-codegen verify generated/ --input-root src/scxml
 ```
 
-Recomputes both hashes from the current source and template state and
-compares against the values embedded in each file. Mismatch is
-`forge/source-hash-mismatch`, exit 20. It reads headers, not content, so a
-hand edit that leaves the header alone passes it — use `--assert-unchanged`
-above where that matters.
+Recomputes the `source-hash` from the current source set and compares it
+against the value embedded in each file: were these files generated from
+these inputs? Mismatch is `forge/source-hash-mismatch`, exit 20. It needs no
+generation, and it reads headers, not content, so a hand edit, a changed
+template or a changed generator passes it — use `--assert-unchanged` above
+where that matters.
 
 *Tests:* `generation_can_assert_its_output_unchanged`
-(`sce-build/tests/generation_can_assert_its_output_unchanged.rs`).
+(`sce-build/tests/generation_can_assert_its_output_unchanged.rs`);
+`verify_passes_on_clean_round_trip`, `verify_fails_when_source_drifts`
+(`sce-build/tests/b9_drift_detection.rs`).
 
 ---
 

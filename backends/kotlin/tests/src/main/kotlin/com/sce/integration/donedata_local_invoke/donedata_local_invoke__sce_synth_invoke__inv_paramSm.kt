@@ -1,7 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
-// template-hash: 68cd6517eb7ab30f12195ed5715cf739261174462172b0a4bc940ea551e29052
-// generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/donedata_local_invoke/donedata_local_invoke__sce_synth_invoke__inv_param.scxml

@@ -59,30 +59,14 @@ endif()
 
 # ── Generation is reproducible ────────────────────────────────────────
 #
-# Every emitted file carries a `generated-at` header, and it defaults to
-# wall-clock seconds. Spec line 3505 calls it informational — it feeds
-# neither the source-hash nor the template-hash — but it is still bytes in
-# a compiled translation unit, so the build was not reproducible: measured
-# 2026-08-13, a no-op `cmake --build build --target w3c_test_cli` produced
-# a different binary (6a7d888e… → 6667bde9…) with no source changed.
-#
-# `sce-codegen` already implements the reproducible-builds convention
-# (`now_utc_seconds` honours SOURCE_DATE_EPOCH), and the committed trees
-# already pin it to 0 through `regen_all_committed_trees.sh`. This is the
-# same pin for build-time generation, so the two agree.
-#
-# What it cost while missing was not a wrong build — the field is a
-# comment — but a check nobody could run: `scripts/mutate`'s second
-# question is "did restoring the source restore the binaries", and against
-# any ctest target that compiles generated W3C sources the answer was
-# permanently no. A harness that cannot verify its own restore reports
-# every case as INCONCLUSIVE, so the mutation evidence for those targets
-# was unavailable rather than merely unpinned.
-#
-# A prefix rather than a redefinition of SCE_CODEGEN: that variable is also
-# a `DEPENDS` file path and an `install(PROGRAMS)` argument, and a list
-# would break both.
-set(SCE_CODEGEN_ENV ${CMAKE_COMMAND} -E env "SOURCE_DATE_EPOCH=0")
+# Build-time generation needs no environment of its own: the §6.2.6 header
+# carries no timestamp, so the same generator over the same input writes the
+# same bytes on every run. That is load-bearing rather than cosmetic —
+# `scripts/mutate`'s second question is "did restoring the source restore
+# the binaries", and while the header carried a wall-clock `generated-at`
+# (pinned here through an `SCE_CODEGEN_ENV` prefix until it was retired) a
+# no-op rebuild produced a different binary, and every case against a ctest
+# target compiling generated sources came back INCONCLUSIVE.
 
 # ── The generator's age ───────────────────────────────────────────────
 #

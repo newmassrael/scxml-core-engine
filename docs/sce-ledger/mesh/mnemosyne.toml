@@ -92,9 +92,10 @@ severity = "warn"
 # Precedent, not invention: docs/spec/synth already scans this same tree and
 # cites §synth-5-O / §synth-6.2.6 from `{# #}` comments in this very template.
 #
-# Cost to know about: the generated files carry a template-hash, so editing any
-# template requires the §6.2.6 regen sweep (scripts/regen_all_committed_trees.sh)
-# — ~1.5k hash-only file changes — in a following chore commit.
+# Cost to know about: editing a template changes the committed files it renders,
+# so it needs the §6.2.6 regen sweep (scripts/regen_all_committed_trees.sh) —
+# the files the edit actually changes, and no others, since the header stopped
+# carrying a template-hash.
 #
 # `sce-build/src/mesh` is the Rust deploy/topology/codegen tree — the build-time
 # half of mesh, whose C++ runtime half the four `sce/` entries already cover.

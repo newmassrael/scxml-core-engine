@@ -12,15 +12,16 @@
 //! - the `// From:` source path, which must not vary with the directory
 //!   the build happened to run from (§synth-6.2.6 provenance is only
 //!   auditable if it is reproducible);
-//! - the `generated-at` stamp, which `SOURCE_DATE_EPOCH` pins per the
-//!   reproducible-builds convention so a "regenerate and expect no diff"
-//!   CI gate is writable.
+//! - a timestamp. The header carried a `generated-at` stamp until
+//!   2026-09, which read the clock unless `SOURCE_DATE_EPOCH` pinned it;
+//!   it carries none now, and two runs must match with nothing pinned.
 //!
 //! Both are documented in `docs/SCE_CODEGEN_DETERMINISM.md`; these tests
 //! are what keep that document true.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 use tempfile::TempDir;
 
 fn codegen_bin() -> &'static str {
@@ -62,12 +63,23 @@ impl Fixture {
     }
 
     /// Generate into a fresh output directory from `cwd`, returning it.
-    /// `SOURCE_DATE_EPOCH` is pinned so the only variable under test is
-    /// the working directory.
     fn generate_from(&self, cwd: &Path, tag: &str, extra: &[&str]) -> PathBuf {
+        self.generate_with_env(cwd, tag, extra, &[])
+    }
+
+    /// [`generate_from`](Self::generate_from) with `env` applied to the
+    /// child: `Some` sets a variable, `None` removes it.
+    fn generate_with_env(
+        &self,
+        cwd: &Path,
+        tag: &str,
+        extra: &[&str],
+        env: &[(&str, Option<&str>)],
+    ) -> PathBuf {
         let out = self.out_base.join(tag);
         std::fs::create_dir_all(&out).unwrap();
-        let result = Command::new(codegen_bin())
+        let mut command = Command::new(codegen_bin());
+        command
             .arg("generate")
             .arg(&self.doc)
             .arg("-o")
@@ -75,10 +87,14 @@ impl Fixture {
             .arg("-l")
             .arg("rust")
             .args(extra)
-            .env("SOURCE_DATE_EPOCH", "0")
-            .current_dir(cwd)
-            .output()
-            .expect("sce-codegen must be runnable");
+            .current_dir(cwd);
+        for (key, value) in env {
+            match value {
+                Some(value) => command.env(key, value),
+                None => command.env_remove(key),
+            };
+        }
+        let result = command.output().expect("sce-codegen must be runnable");
         assert!(
             result.status.success(),
             "generate from cwd={} failed: {}",
@@ -199,56 +215,40 @@ fn source_root_falls_back_when_input_is_outside_it() {
     assert_eq!(from_line(&emitted(&out)), fx.doc.display().to_string());
 }
 
-/// `generated-at` is wall-clock by default, so two runs never match. The
-/// reproducible-builds convention pins it, and pinning it is what makes a
-/// "regenerate, expect no diff" CI gate expressible — the check the field
-/// report could not write.
+/// Two runs match with nothing pinned. When the header carried a
+/// `generated-at` stamp it read the clock unless `SOURCE_DATE_EPOCH` pinned
+/// it, and every regeneration that forgot the pin rewrote every file.
+///
+/// The runs differ in everything a stamp could read: the first sets
+/// `SOURCE_DATE_EPOCH`, the second clears it, and more than a second of
+/// wall clock separates them — a stamp at the resolution the old one had
+/// cannot come out equal.
 #[test]
-fn source_date_epoch_pins_generated_at_for_byte_stable_regen() {
+fn regeneration_is_byte_stable_with_nothing_pinned() {
     let fx = Fixture::new();
-    let first = fx.generate_from(Path::new("/"), "epoch_a", &[]);
-    let second = fx.generate_from(Path::new("/"), "epoch_b", &[]);
+    let first = fx.generate_with_env(
+        Path::new("/"),
+        "pinned",
+        &[],
+        &[("SOURCE_DATE_EPOCH", Some("1"))],
+    );
+    std::thread::sleep(Duration::from_millis(1100));
+    let second = fx.generate_with_env(
+        Path::new("/"),
+        "unpinned",
+        &[],
+        &[("SOURCE_DATE_EPOCH", None)],
+    );
 
     let a = emitted(&first);
-    let b = emitted(&second);
     assert!(
-        a.contains("// generated-at: 0"),
-        "SOURCE_DATE_EPOCH must drive the stamp, got:\n{}",
+        !a.contains("generated-at"),
+        "the header must carry no timestamp, got:\n{}",
         a.lines().take(4).collect::<Vec<_>>().join("\n"),
     );
     assert_eq!(
-        a, b,
-        "regeneration under a pinned epoch must be byte-stable"
-    );
-}
-
-/// Without the pin the stamp tracks the clock, which is the behaviour the
-/// pin exists to switch off. Asserting it keeps the documented default
-/// honest rather than leaving the two paths indistinguishable.
-#[test]
-fn generated_at_tracks_the_clock_without_the_pin() {
-    let fx = Fixture::new();
-    let out = fx.out_base.join("unpinned");
-    std::fs::create_dir_all(&out).unwrap();
-    let result = Command::new(codegen_bin())
-        .arg("generate")
-        .arg(&fx.doc)
-        .arg("-o")
-        .arg(&out)
-        .arg("-l")
-        .arg("rust")
-        .env_remove("SOURCE_DATE_EPOCH")
-        .current_dir("/")
-        .output()
-        .expect("sce-codegen must be runnable");
-    assert!(result.status.success());
-    let stamp = emitted(&out)
-        .lines()
-        .find_map(|l| l.strip_prefix("// generated-at: ").map(str::to_string))
-        .expect("header carries a generated-at line");
-    let secs: u64 = stamp.parse().expect("stamp is unix seconds");
-    assert!(
-        secs > 1_700_000_000,
-        "unpinned stamp should be a real wall-clock time, got {secs}"
+        a,
+        emitted(&second),
+        "two runs over the same input must be byte-identical with nothing pinned"
     );
 }

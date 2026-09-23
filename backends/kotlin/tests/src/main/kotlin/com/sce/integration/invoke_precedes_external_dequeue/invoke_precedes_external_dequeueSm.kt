@@ -1,7 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7c010da1526dce3962148a99023f795b5efd3dc066529da8bc2dc12378934900
-// template-hash: 68cd6517eb7ab30f12195ed5715cf739261174462172b0a4bc940ea551e29052
-// generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/invoke_precedes_external_dequeue/invoke_precedes_external_dequeue.scxml

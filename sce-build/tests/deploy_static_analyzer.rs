@@ -101,7 +101,6 @@ impl Fixture {
             .arg(&out)
             .arg("-l")
             .arg("cpp")
-            .env("SOURCE_DATE_EPOCH", "0")
             .output()
             .expect("sce-codegen is runnable");
         assert!(
@@ -125,7 +124,6 @@ fn generate(fixture: &Fixture) -> (bool, String, String) {
         .arg(&fixture.out)
         .arg("-l")
         .arg("cpp")
-        .env("SOURCE_DATE_EPOCH", "0")
         .output()
         .expect("sce-codegen is runnable");
     (
@@ -223,7 +221,6 @@ build:
         .arg(&out)
         .arg("-l")
         .arg("cpp")
-        .env("SOURCE_DATE_EPOCH", "0")
         .output()
         .expect("sce-codegen is runnable");
     let stdout = String::from_utf8_lossy(&output.stdout);

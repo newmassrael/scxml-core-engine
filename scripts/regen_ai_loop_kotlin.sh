@@ -24,9 +24,7 @@
 # Requires:
 #   sce-codegen (resolved by scripts/lib/sce_codegen.sh, built when missing).
 #
-# Idempotency: re-runs are byte-stable. `scripts/lib/sce_codegen.sh` pins
-# `generated-at` to SOURCE_DATE_EPOCH=0, which is what
-# `committed_trees_carry_a_pinned_generated_at` requires of a committed tree.
+# Idempotency: re-runs are byte-stable for unchanged inputs and generator.
 
 set -euo pipefail
 

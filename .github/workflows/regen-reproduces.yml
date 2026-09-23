@@ -3,16 +3,18 @@ name: Regen Reproduces Committed Trees
 # The regeneration procedure reproduces what is committed.
 #
 # `scripts/regen_all_committed_trees.sh` has always stated this in its own
-# header — that is why it pins SOURCE_DATE_EPOCH — and nothing checked it.
-# Measured before this lane existed: the Rust W3C tree carried three
-# `__sce_synth_invoke__*.scxml` documents that no run produces, left behind
-# when the parser moved to synthesising an invoke child in memory.
+# header, and nothing checked it. Measured before this lane existed: the Rust
+# W3C tree carried three `__sce_synth_invoke__*.scxml` documents that no run
+# produces, left behind when the parser moved to synthesising an invoke child
+# in memory.
 #
-# It also closes what the drift hashes cannot see. `source-hash` and
-# `template-hash` both cover INPUTS — the documents and the templates — so a
-# change to the emit code under `sce-build/src` that alters the output moves
-# neither hash, and the committed trees drift with every gate green.
-# Regenerating and comparing is the only reader of that axis.
+# It also closes what the header cannot see. `source-hash` covers the INPUT
+# documents, so a change to the templates or to the emit code under
+# `sce-build/src` that alters the output does not move it, and the committed
+# trees drift with every other gate green. Regenerating and comparing is the
+# only reader of that axis — the header used to carry a `template-hash` that
+# claimed part of it, and was retired because it both re-stamped every tree
+# for edits that changed nothing and missed edits to the emit code.
 
 on:
   # No `paths:` filter, deliberately.

@@ -194,18 +194,15 @@ pub enum CliError {
     GeneratorSourceUnverifiable { root: String, reason: String },
 
     /// Spec §synth-6.2.6 generated-source drift: the embedded `source-hash`
-    /// or `template-hash` in a generated file no longer matches the
-    /// recomputed value over the current source + template state.
-    /// `axis` carries `"source"` or `"template"` to disambiguate which
-    /// half drifted; `actual_hex` is the embedded (out-of-date) value,
-    /// `expected_hex` is the freshly-computed one. Repair is
+    /// in a generated file no longer matches the value recomputed over the
+    /// current source set. `actual_hex` is the embedded (out-of-date)
+    /// value, `expected_hex` is the freshly-computed one. Repair is
     /// deterministic: rerun `sce-codegen` with the same inputs.
     #[error(
-        "{path}: §6.2.6 {axis}-hash mismatch (embedded={actual_hex}, recomputed={expected_hex}) — regenerate via sce-codegen"
+        "{path}: §6.2.6 source-hash mismatch (embedded={actual_hex}, recomputed={expected_hex}) — regenerate via sce-codegen"
     )]
     VerifySourceHashMismatch {
         path: String,
-        axis: &'static str,
         expected_hex: String,
         actual_hex: String,
     },
@@ -581,21 +578,15 @@ impl SingleDiagnostic for CliError {
             ),
             CliError::VerifySourceHashMismatch {
                 path,
-                axis,
                 expected_hex,
                 actual_hex,
             } => (
                 DiagnosticCode::ForgeSourceHashMismatch,
-                vec![
-                    path.clone(),
-                    (*axis).to_string(),
-                    expected_hex.clone(),
-                    actual_hex.clone(),
-                ],
-                // `actual` field carries the axis label + embedded value
-                // so consumers parsing the wire can identify which half
-                // drifted without re-reading the file.
-                Some(format!("{axis}-hash={actual_hex}")),
+                vec![path.clone(), expected_hex.clone(), actual_hex.clone()],
+                // `actual` carries the header key with the embedded value,
+                // the line as the file spells it, so a consumer parsing the
+                // wire sees what was found without re-reading the file.
+                Some(format!("source-hash={actual_hex}")),
                 None,
             ),
             CliError::SourceHashInputUncovered {

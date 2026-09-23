@@ -50,8 +50,7 @@ thiserror = "2"
 # Python Jinja2 compatibility (dict.items(), str.strip(), etc.)
 minijinja-contrib = { version = "2", features = ["pycompat"] }
 # SHA-256 for spec §6.2.6 generated-source drift detection. See
-# `forge::drift` — computes `source-hash` over input SCXML + deploy.yaml
-# and `template-hash` over the codegen template tree + Cargo.lock.
+# `forge::drift` — computes `source-hash` over input SCXML + deploy.yaml.
 sha2 = { workspace = true }
 # CLI argument parsing (for sce-codegen binary)
 clap = { version = "4", features = ["derive"], optional = true }
@@ -480,10 +479,9 @@ required-features = ["cli"]
 
 # CLI meta + workspace-root resolution regression. Pins --version
 # output, --help freshness (no stale "M2+" c11 line), and the four-
-# layer workspace-root resolution chain that DriftContext relies on
-# for §6.2.6 template-hash embedding. Surfaced from a vendored-binary
-# zero-hash regression that the legacy
-# walk-up-from-cwd resolver triggered silently.
+# layer workspace-root resolution chain `verify-generator` judges the
+# binary through. Surfaced from a vendored-binary regression that the
+# legacy walk-up-from-cwd resolver triggered silently.
 [[test]]
 name = "cli_meta_and_workspace_root"
 path = "tests/cli_meta_and_workspace_root.rs"

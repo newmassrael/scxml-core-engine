@@ -71,9 +71,7 @@ fn emit(language: &str, name: Option<&str>, out: &Path) {
         .arg("--output-dir")
         .arg(out)
         .arg("-t")
-        .arg(FIXTURE)
-        // Pin the stamp so the emitted bytes cannot depend on the clock.
-        .env("SOURCE_DATE_EPOCH", "0");
+        .arg(FIXTURE);
     if let Some(name) = name {
         cmd.arg("--suite-package").arg(name);
     }
@@ -473,9 +471,8 @@ fn the_default_emission_still_matches_the_committed_tree() {
         emitted, committed,
         "the default emission must still be the committed one — the \
          suite-name substitution has to be the identity at the default, or \
-         every in-repo regeneration rewrites the whole tree. \
-         (`SOURCE_DATE_EPOCH=0` pins the header stamp the committed file \
-         also carries, so this is a byte comparison.)",
+         every in-repo regeneration rewrites the whole tree. (The header \
+         carries no timestamp, so this is a byte comparison.)",
     );
     assert!(
         emitted.contains("sce_rust_tests::generated::"),

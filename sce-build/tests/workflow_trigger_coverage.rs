@@ -1628,14 +1628,14 @@ const MIN_COMMITTED_ARTEFACTS: usize = 1000;
 /// every backend language, so asking for it is asking the tree rather
 /// than restating a directory list that the next backend invalidates.
 /// Both halves are required: `SCE-GENERATED` alone appears in prose
-/// about the marker, and the `template-hash` line is what makes the file
+/// about the marker, and the `source-hash` line is what makes the file
 /// something `scripts/regen_all_committed_trees.sh` rewrites.
 fn is_committed_artefact(path: &Path) -> bool {
     let Ok(bytes) = fs::read(path) else {
         return false;
     };
     let head = String::from_utf8_lossy(&bytes[..bytes.len().min(400)]);
-    head.contains("SCE-GENERATED") && head.contains("template-hash:")
+    head.contains("SCE-GENERATED") && head.contains("source-hash:")
 }
 
 /// Every tracked path, from git rather than from a directory walk, so

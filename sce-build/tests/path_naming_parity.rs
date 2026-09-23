@@ -119,15 +119,10 @@ fn first_diagnostic_code(stderr: &str) -> Option<String> {
 }
 
 /// Run the binary in `cwd` and report the verdict.
-///
-/// `SOURCE_DATE_EPOCH` is pinned so the `generated-at` line in any
-/// emitted file is the same for every naming; without it the byte
-/// comparison below would fail on the clock rather than on the path.
 fn run(args: &[String], cwd: &Path) -> Verdict {
     let out = Command::new(sce_codegen_bin())
         .args(args)
         .arg("--error-format=json")
-        .env("SOURCE_DATE_EPOCH", "1700000000")
         .current_dir(cwd)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

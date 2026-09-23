@@ -1,7 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7c990b384ae6d27b45cff45f6fb75ecde882d112d0f07d342d547b178e6a4257
-// template-hash: 68cd6517eb7ab30f12195ed5715cf739261174462172b0a4bc940ea551e29052
-// generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/xml_data_is_a_dom_tree/xml_data_is_a_dom_tree.scxml

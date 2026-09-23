@@ -5,7 +5,7 @@
   "title": "SCE Sourcemap (wire schema v1)",
   "description": "Per-machine traceability sidecar written next to each emitted backend artifact as out/{language}/sce_sourcemap.json. Maps a mangled generated symbol back to its originating SCXML coordinates (file, state path, synthesised XPath, line range, IR-node kind). Authoritative producer is sce-build/src/forge/sourcemap.rs (struct Sourcemap); the runtime reverse-lookup tool sce-codegen addr2sce keys off this file. Byte-identical across all 6 backends for the same SCXML (symbols are BTreeMap-sorted). Consumers MUST ignore unknown fields: any purely additive change (a new optional field under symbols.*) is compatible with v1 and does NOT bump version. The stability status of this surface lives in this header alone, not in the payload — see docs/SCE_WIRE_CONTRACTS.md for the shared deprecation policy across SCE wire surfaces.",
   "type": "object",
-  "required": ["version", "source_hash", "template_hash", "symbols"],
+  "required": ["version", "source_hash", "symbols"],
   "additionalProperties": false,
   "properties": {
     "version": {
@@ -14,12 +14,7 @@
       "const": 1
     },
     "source_hash": {
-      "description": "Hex-encoded sha256 of the generated source, byte-equal to the artifact's §6.2.6 drift header source hash.",
-      "type": "string",
-      "pattern": "^[0-9a-f]+$"
-    },
-    "template_hash": {
-      "description": "Hex-encoded sha256 of the codegen template set, byte-equal to the artifact's §6.2.6 drift header template hash.",
+      "description": "Hex-encoded sha256 of the input source set (the input SCXML documents and deploy.yaml), byte-equal to the artifact's §6.2.6 drift header source hash.",
       "type": "string",
       "pattern": "^[0-9a-f]+$"
     },

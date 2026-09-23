@@ -6,7 +6,7 @@
 //! Pairs the library helper [`sce_build::apply_drift_headers_to_output`]
 //! with the `sce-codegen verify` subcommand:
 //!
-//! 1. Compute hashes over a synthetic SCXML root + template tree.
+//! 1. Compute the `source-hash` over a synthetic SCXML root.
 //! 2. Apply headers to a hand-built [`generator::GeneratedOutput`].
 //! 3. Write the headered output to a temp dir.
 //! 4. Invoke `sce-codegen verify <out-dir>` as a subprocess.
@@ -20,10 +20,15 @@
 //! `cmd_*` codegen entry; that integration is out of scope for B9 per
 //! the RFC's `[[feedback-design-preflight]]` one-atomic-one-scope
 //! discipline.
+//!
+//! `verify` answers whether generated files were generated from the
+//! current inputs. Whether they hold what the current generator produces
+//! is judged on content by `--assert-unchanged`
+//! (`generation_can_assert_its_output_unchanged.rs`).
 
 mod common;
 
-use sce_build::forge::drift::{compute_source_hash, compute_template_hash, DriftHashes};
+use sce_build::forge::drift::{compute_source_hash, DriftHeader, HEADER_BANNER};
 use sce_build::generator::GeneratedOutput;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -34,8 +39,6 @@ struct VerifyFixture {
     _root: TempDir,
     input_root: PathBuf,
     out_dir: PathBuf,
-    template_root: PathBuf,
-    cargo_lock: PathBuf,
 }
 
 impl VerifyFixture {
@@ -43,24 +46,13 @@ impl VerifyFixture {
         let root = TempDir::new().unwrap();
         let input_root = root.path().join("input");
         let out_dir = root.path().join("out");
-        let template_root = root.path().join("templates");
-        let cargo_lock = root.path().join("Cargo.lock");
         fs::create_dir_all(&input_root).unwrap();
         fs::create_dir_all(&out_dir).unwrap();
-        fs::create_dir_all(&template_root).unwrap();
-        fs::write(&cargo_lock, b"# synthetic lock file\n").unwrap();
         fs::write(input_root.join("foo.scxml"), b"<scxml/>").unwrap();
-        fs::write(
-            template_root.join("state_machine.jinja2"),
-            b"sample template",
-        )
-        .unwrap();
         VerifyFixture {
             _root: root,
             input_root,
             out_dir,
-            template_root,
-            cargo_lock,
         }
     }
 
@@ -68,7 +60,7 @@ impl VerifyFixture {
     /// invokes the library helper to prepend the §synth-6.2.6 header. Body
     /// content is intentionally simple Rust so a future reader can
     /// recognise the test is purely about the header/verify contract.
-    fn generate_headered_rust(&self, hashes: &DriftHashes, generated_at: u64) {
+    fn generate_headered_rust(&self, header: &DriftHeader) {
         let mut output = GeneratedOutput {
             files: vec![(
                 "foo_sm.rs".to_string(),
@@ -76,7 +68,7 @@ impl VerifyFixture {
             )],
             ..Default::default()
         };
-        sce_build::apply_drift_headers_to_output(&mut output, hashes, generated_at);
+        sce_build::apply_drift_headers_to_output(&mut output, header);
         for (filename, content) in output.files {
             let dest = self.out_dir.join(filename);
             fs::write(dest, content).unwrap();
@@ -89,21 +81,16 @@ impl VerifyFixture {
         self.run_verify_from(None)
     }
 
-    /// Variant that pins the spawned binary's working directory.
-    /// Avoids the parallel-test race where one test's
-    /// `set_current_dir` leaks into another test's
-    /// `locate_workspace_root` by mutating the shared process cwd.
+    /// Variant that pins the spawned binary's working directory, so a
+    /// test about the working directory changes the child's and not the
+    /// shared process cwd other tests run in.
     fn run_verify_from(&self, cwd: Option<&Path>) -> (i32, String, String) {
         let bin = env_bin();
         let mut cmd = Command::new(bin);
         cmd.arg("verify")
             .arg(self.out_dir.to_str().unwrap())
             .arg("--input-root")
-            .arg(self.input_root.to_str().unwrap())
-            .arg("--template-root")
-            .arg(self.template_root.to_str().unwrap())
-            .arg("--cargo-lock")
-            .arg(self.cargo_lock.to_str().unwrap());
+            .arg(self.input_root.to_str().unwrap());
         if let Some(dir) = cwd {
             cmd.current_dir(dir);
         }
@@ -121,20 +108,16 @@ fn env_bin() -> &'static str {
     env!("CARGO_BIN_EXE_sce-codegen")
 }
 
-fn compute_hashes_for_fixture(fix: &VerifyFixture) -> DriftHashes {
-    let source_hash = compute_source_hash(&fix.input_root, None).unwrap();
-    let template_hash = compute_template_hash(&fix.template_root, &fix.cargo_lock).unwrap();
-    DriftHashes {
-        source_hash,
-        template_hash,
+fn header_for_fixture(fix: &VerifyFixture) -> DriftHeader {
+    DriftHeader {
+        source_hash: compute_source_hash(&fix.input_root, None).unwrap(),
     }
 }
 
 #[test]
 fn verify_passes_on_clean_round_trip() {
     let fix = VerifyFixture::new();
-    let hashes = compute_hashes_for_fixture(&fix);
-    fix.generate_headered_rust(&hashes, 1715731200);
+    fix.generate_headered_rust(&header_for_fixture(&fix));
     let (code, _stdout, stderr) = fix.run_verify();
     assert_eq!(code, 0, "verify must pass on clean state. stderr: {stderr}");
 }
@@ -142,8 +125,7 @@ fn verify_passes_on_clean_round_trip() {
 #[test]
 fn verify_fails_when_source_drifts() {
     let fix = VerifyFixture::new();
-    let hashes = compute_hashes_for_fixture(&fix);
-    fix.generate_headered_rust(&hashes, 1715731200);
+    fix.generate_headered_rust(&header_for_fixture(&fix));
 
     // Drift the input SCXML after generation. The embedded header
     // still carries the pre-drift hash; recompute will not match.
@@ -160,27 +142,33 @@ fn verify_fails_when_source_drifts() {
     );
 }
 
+/// A tree generated before the header dropped `template-hash` and
+/// `generated-at` still carries them. `verify` judges the `source-hash`
+/// such a file carries like any other; the retired lines are for a
+/// regeneration to remove, not for `verify` to refuse.
 #[test]
-fn verify_fails_when_template_drifts() {
+fn verify_reads_a_header_of_the_older_shape() {
     let fix = VerifyFixture::new();
-    let hashes = compute_hashes_for_fixture(&fix);
-    fix.generate_headered_rust(&hashes, 1715731200);
-
-    // Drift the template tree after generation.
+    let header = header_for_fixture(&fix);
     fs::write(
-        fix.template_root.join("state_machine.jinja2"),
-        b"sample template - drifted",
+        fix.out_dir.join("foo_sm.rs"),
+        format!(
+            "// {HEADER_BANNER}\n// source-hash: {}\n// template-hash: {}\n\
+             // generated-at: 0\npub struct Foo;\n",
+            header.source_hex(),
+            "ab".repeat(32),
+        ),
     )
     .unwrap();
 
     let (code, _stdout, stderr) = fix.run_verify();
-    assert_ne!(
+    assert_eq!(
         code, 0,
-        "verify must fail when template drifted. stderr: {stderr}"
+        "a legacy header with a current source-hash must pass. stderr: {stderr}"
     );
     assert!(
-        stderr.contains("template-hash") || stderr.contains("forge/source-hash-mismatch"),
-        "diagnostic must name the drift axis. stderr: {stderr}"
+        !stderr.contains("headerless"),
+        "a legacy header was not recognised as a header. stderr: {stderr}"
     );
 }
 
@@ -201,11 +189,10 @@ fn helper_emits_python_header_with_hash_prefix() {
         ],
         ..Default::default()
     };
-    let hashes = DriftHashes {
+    let header = DriftHeader {
         source_hash: [0xaa; 32],
-        template_hash: [0xbb; 32],
     };
-    sce_build::apply_drift_headers_to_output(&mut output, &hashes, 0);
+    sce_build::apply_drift_headers_to_output(&mut output, &header);
 
     for (filename, content) in &output.files {
         let prefix_expected = if filename.ends_with(".py") {
@@ -235,13 +222,12 @@ fn helper_is_idempotent_across_two_invocations() {
         files: vec![("foo.rs".into(), "pub fn x() {}\n".into())],
         ..Default::default()
     };
-    let hashes = DriftHashes {
+    let header = DriftHeader {
         source_hash: [0x11; 32],
-        template_hash: [0x22; 32],
     };
-    sce_build::apply_drift_headers_to_output(&mut output, &hashes, 100);
+    sce_build::apply_drift_headers_to_output(&mut output, &header);
     let once = output.files[0].1.clone();
-    sce_build::apply_drift_headers_to_output(&mut output, &hashes, 100);
+    sce_build::apply_drift_headers_to_output(&mut output, &header);
     let twice = output.files[0].1.clone();
     assert_eq!(
         once, twice,
@@ -251,16 +237,12 @@ fn helper_is_idempotent_across_two_invocations() {
 
 #[test]
 fn verify_passes_when_run_from_different_working_directory() {
-    // The verify CLI walks upward for workspace root only as a
-    // *default*; we override template_root + cargo_lock explicitly, so
-    // changing the working directory should not affect outcome. Pin
-    // the spawned binary's cwd via `Command::current_dir` instead of
-    // mutating the process-global cwd — `std::env::set_current_dir`
-    // would race with other parallel tests that rely on the workspace
-    // cwd to resolve `locate_workspace_root()`.
+    // Given absolute paths, `verify` reads nothing relative to where it
+    // runs. Pin the spawned binary's cwd via `Command::current_dir`
+    // instead of mutating the process-global cwd, which would race with
+    // other parallel tests.
     let fix = VerifyFixture::new();
-    let hashes = compute_hashes_for_fixture(&fix);
-    fix.generate_headered_rust(&hashes, 0);
+    fix.generate_headered_rust(&header_for_fixture(&fix));
     let alt_cwd = fix._root.path().join("alt-cwd");
     fs::create_dir_all(&alt_cwd).unwrap();
     let (code, _stdout, stderr) = fix.run_verify_from(Some(&alt_cwd));
@@ -279,23 +261,17 @@ fn verify_passes_when_input_set_is_empty_scxml_directory() {
     let root = TempDir::new().unwrap();
     let input_root = root.path().join("empty-input");
     let out_dir = root.path().join("out");
-    let template_root = root.path().join("templates");
-    let cargo_lock = root.path().join("Cargo.lock");
     fs::create_dir_all(&input_root).unwrap();
     fs::create_dir_all(&out_dir).unwrap();
-    fs::create_dir_all(&template_root).unwrap();
-    fs::write(&cargo_lock, b"# lock\n").unwrap();
-    fs::write(template_root.join("t.jinja2"), b"t").unwrap();
 
-    let hashes = DriftHashes {
+    let header = DriftHeader {
         source_hash: compute_source_hash(&input_root, None).unwrap(),
-        template_hash: compute_template_hash(&template_root, &cargo_lock).unwrap(),
     };
     let mut output = GeneratedOutput {
         files: vec![("foo_sm.rs".into(), "pub struct Foo;\n".into())],
         ..Default::default()
     };
-    sce_build::apply_drift_headers_to_output(&mut output, &hashes, 0);
+    sce_build::apply_drift_headers_to_output(&mut output, &header);
     for (name, content) in output.files {
         fs::write(out_dir.join(name), content).unwrap();
     }
@@ -305,10 +281,6 @@ fn verify_passes_when_input_set_is_empty_scxml_directory() {
         .arg(out_dir.to_str().unwrap())
         .arg("--input-root")
         .arg(input_root.to_str().unwrap())
-        .arg("--template-root")
-        .arg(template_root.to_str().unwrap())
-        .arg("--cargo-lock")
-        .arg(cargo_lock.to_str().unwrap())
         .output()
         .unwrap();
     assert_eq!(
@@ -376,17 +348,15 @@ fn input_root_override_pins_hash_to_canonical_location() {
         String::from_utf8_lossy(&result.stderr),
     );
 
-    let canonical_hashes = DriftHashes {
+    let canonical_header = DriftHeader {
         source_hash: compute_source_hash(&canonical, None).unwrap(),
-        template_hash: [0u8; 32], // unused below; we only compare source axis
     };
-    let stage_hashes = DriftHashes {
+    let stage_header = DriftHeader {
         source_hash: compute_source_hash(&stage, None).unwrap(),
-        template_hash: [0u8; 32],
     };
     assert_ne!(
-        canonical_hashes.source_hex(),
-        stage_hashes.source_hex(),
+        canonical_header.source_hex(),
+        stage_header.source_hex(),
         "test setup: canonical and stage dirs must produce different hashes",
     );
 
@@ -397,7 +367,7 @@ fn input_root_override_pins_hash_to_canonical_location() {
         foo_sm.display()
     );
     let content = fs::read_to_string(&foo_sm).unwrap();
-    let expected_line = format!("source-hash: {}", canonical_hashes.source_hex());
+    let expected_line = format!("source-hash: {}", canonical_header.source_hex());
     assert!(
         content.contains(&expected_line),
         "generated file must embed canonical source-hash. expected line: `{expected_line}`\nfirst 5 lines of {}:\n{}",
@@ -443,18 +413,12 @@ fn fixture_helper_invariants() {
     // a test failure later isolates the actual verify logic rather
     // than fixture wiring.
     let fix = VerifyFixture::new();
-    let hashes = compute_hashes_for_fixture(&fix);
+    let header = header_for_fixture(&fix);
     assert_ne!(
-        hashes.source_hash, [0u8; 32],
+        header.source_hash, [0u8; 32],
         "synthetic fixture must produce non-zero source-hash"
     );
-    assert_ne!(
-        hashes.template_hash, [0u8; 32],
-        "synthetic fixture must produce non-zero template-hash"
-    );
     assert!(fix.input_root.is_dir());
-    assert!(fix.template_root.is_dir());
-    assert!(fix.cargo_lock.is_file());
     let _: &Path = fix.out_dir.as_path();
 }
 
@@ -470,35 +434,19 @@ fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
-// Locked decision: `template-hash` covers the entire
-// `tools/codegen/templates/**` tree plus `Cargo.lock`. That means a
-// template edit in any backend invalidates *every* committed
-// generated tree's embedded hash — even backends whose own emit is
-// byte-identical. The synthetic fixtures above (`verify_passes_…`,
-// `verify_fails_when_…`) exercise the verify contract on hand-built
-// inputs; they cannot catch the cross-backend invalidation that
-// actually bit the donedata + clippy_two_allow chains
-// (a3aae599 / df2fb95d / acd10fe6 / ae139888,
-//  c2dfe502 / 1a5efb07 / dc228ab4 / 64f93cf4), because every CI lane
-// (W3C `generate-w3c -l <lang>` fresh regen, Kotlin gradle's
-// in-place `generateScxml`) bypasses the committed tree entirely.
+// The synthetic fixtures above exercise the verify contract on hand-built
+// inputs. The invariants below run the same `sce-codegen verify` against
+// the committed trees: each tree's embedded `source-hash` must still
+// describe its input root, so an input edited without regenerating the
+// tree it feeds is caught here, on every run, without regenerating
+// anything. A template or generator change is a question about content
+// instead — the `regen-reproduces` lane and `--assert-unchanged` answer it.
 //
-// The W3C invariants below run the same `sce-codegen verify` the
-// synthetic tests exercise, but against the actual repo state. They
-// are the textbook enforcement of "any commit touching
-// `tools/codegen/templates/**` or `Cargo.lock` must refresh both
-// committed trees" — once they pass, the chain of per-backend
-// template atomics cannot land while leaving any other backend's
-// tree stale.
-//
-// Scope is W3C-only on purpose. The hand-authored
-// `donedata_local_invoke` fixture (`sce-{rust,kotlin}-tests/.../fixtures/`)
-// has a *distinct* drift context — its `source-hash` is computed
-// against the fixture dir, not `resources/`. Mixing the two under
-// one verify call would mis-attribute the donedata source-hash
-// (95d74…) as a W3C drift; the regen-scripts that emit donedata
-// (`scripts/regen_donedata_local_invoke{,_kotlin,_go}.sh`) are the
-// existing gate for that context. Layout per backend:
+// Each tree is verified against its own input root, because each is a
+// distinct drift context. The hand-authored `donedata_local_invoke`
+// fixture hashes against its fixture dir, not `resources/`; mixing the
+// two under one verify call would mis-attribute the donedata
+// source-hash as a W3C drift. Layout per backend:
 //
 //   Rust:   W3C SM under `backends/rust/tests/src/generated/`
 //           donedata SM under `backends/rust/tests/src/integration/donedata_local_invoke/`
@@ -538,11 +486,10 @@ fn verify_passes_on_real_committed_rust_w3c_tree() {
     assert_eq!(
         code, 0,
         "verify must pass on the committed Rust W3C generated tree. \
-         A failure here means tools/codegen/templates/** or Cargo.lock \
-         changed without refreshing backends/rust/tests/src/generated/. \
-         Run `scripts/regen_all_committed_trees.sh` and commit the \
-         result — it pins the `generated-at` stamp that a bare \
-         generate-w3c leaves on wall-clock. stderr:\n{stderr}"
+         A failure here means resources/ changed without refreshing \
+         backends/rust/tests/src/generated/. Run \
+         `scripts/regen_all_committed_trees.sh` and commit the result. \
+         stderr:\n{stderr}"
     );
 }
 
@@ -562,11 +509,10 @@ fn verify_passes_on_real_committed_kotlin_w3c_tree() {
     assert_eq!(
         code, 0,
         "verify must pass on the committed Kotlin W3C generated tree. \
-         A failure here means tools/codegen/templates/** or Cargo.lock \
-         changed without refreshing the committed Kotlin generated \
-         tree. Run `scripts/regen_all_committed_trees.sh` and commit \
-         the result — it pins the `generated-at` stamp that a bare \
-         generate-w3c leaves on wall-clock. stderr:\n{stderr}"
+         A failure here means resources/ changed without refreshing the \
+         committed Kotlin generated tree. Run \
+         `scripts/regen_all_committed_trees.sh` and commit the result. \
+         stderr:\n{stderr}"
     );
 }
 
@@ -601,7 +547,7 @@ fn verify_passes_on_real_committed_rust_donedata_tree() {
     assert_eq!(
         code, 0,
         "verify must pass on the committed Rust donedata tree. A \
-         failure here means tools/codegen/templates/**, Cargo.lock, or \
+         failure here means \
          integration_resources/donedata_local_invoke/donedata_local_invoke.scxml \
          changed without refreshing backends/rust/tests/src/integration/donedata_local_invoke/. \
          Run `scripts/regen_donedata_local_invoke.sh` and commit the \
@@ -628,7 +574,7 @@ fn verify_passes_on_real_committed_kotlin_donedata_tree() {
     assert_eq!(
         code, 0,
         "verify must pass on the committed Kotlin donedata tree. A \
-         failure here means tools/codegen/templates/**, Cargo.lock, or \
+         failure here means \
          integration_resources/donedata_local_invoke/donedata_local_invoke.scxml \
          changed without refreshing the donedata generated dir. Run \
          `scripts/regen_donedata_local_invoke_kotlin.sh` and commit the \
@@ -650,7 +596,7 @@ fn verify_passes_on_real_committed_go_donedata_tree() {
     assert_eq!(
         code, 0,
         "verify must pass on the committed Go donedata tree. A \
-         failure here means tools/codegen/templates/**, Cargo.lock, or \
+         failure here means \
          integration_resources/donedata_local_invoke/donedata_local_invoke.scxml \
          changed without refreshing backends/go/tests/donedata_local_invoke/. \
          Run `scripts/regen_donedata_local_invoke_go.sh` and commit the \
@@ -681,11 +627,10 @@ fn verify_passes_on_real_committed_forge_default_round_trip_go_tree() {
     assert_eq!(
         code, 0,
         "verify must pass on the committed Go forge round-trip tree. \
-         A failure here means tools/codegen/templates/**, Cargo.lock, \
-         or any tests/forge/resources/*.scxml changed without \
-         refreshing backends/go/forge-runtime/round_trip/generated/. Run \
-         `backends/go/forge-runtime/round_trip/generate.sh` and commit the \
-         result. stderr:\n{stderr}"
+         A failure here means a tests/forge/resources/*.scxml changed \
+         without refreshing backends/go/forge-runtime/round_trip/generated/. \
+         Run `backends/go/forge-runtime/round_trip/generate.sh` and commit \
+         the result. stderr:\n{stderr}"
     );
 }
 
@@ -717,7 +662,6 @@ fn run_generate(doc: &Path, out: &Path, extra: &[&str]) -> (Option<i32>, String)
         .arg("-l")
         .arg("rust")
         .args(extra)
-        .env("SOURCE_DATE_EPOCH", "0")
         .output()
         .expect("sce-codegen must be runnable");
     (
@@ -827,60 +771,58 @@ fn generate_hashes_a_symlinked_input_rather_than_the_empty_digest() {
         "the empty-input digest must never reach a header"
     );
 }
-/// Every committed generated tree must carry a pinned `generated-at`.
-///
-/// The stamp feeds neither hash, so it is free to pin — and pinning it is
-/// what makes the committed trees byte-reproducible from a pinned
-/// generator. An unpinned regeneration is silent: it rewrites every file
-/// with a fresh wall-clock value, producing a diff that looks like churn
-/// and hides any real change inside it. `scripts/regen_all_committed_trees.sh`
-/// exports `SOURCE_DATE_EPOCH`; this is what notices when something
-/// regenerated without it.
-#[test]
-fn committed_trees_carry_a_pinned_generated_at() {
-    let workspace = workspace_root();
-    // Both trees per backend that commits one. The integration roots for Go
-    // and Kotlin were missing until 2026-08-13, and the omission was not
-    // theoretical: adding one stem with a per-stem regen script — which does
-    // not export `SOURCE_DATE_EPOCH`, only the master script does — left
-    // wall-clock stamps in all three of its Rust, Go and Kotlin trees, and
-    // this test reported exactly one of them. The Rust file was caught
-    // because `backends/rust/tests/src/integration` was listed; its Go and
-    // Kotlin siblings sat in roots nothing scanned.
-    //
-    // Adding them was green on the spot — all 64 existing integration files
-    // were already pinned — so what the gap cost was not a dirty tree but the
-    // guarantee: two thirds of a stem's committed output was unwatched.
-    //
-    // `backends/go/tests/generated` is not listed, though it used to be:
-    // `.gitignore` excludes it, so no commit carries it and it has no
-    // committed stamp to pin. A directory walk read it anyway and judged
-    // whatever the last local regeneration had left there.
-    let roots = [
-        "backends/rust/tests/src/generated",
-        "backends/rust/tests/src/integration",
-        "backends/kotlin/tests/src/main/kotlin/com/sce/generated",
-        "backends/kotlin/tests/src/main/kotlin/com/sce/integration",
-        "backends/go/tests/integration",
-    ];
 
-    let mut checked = 0usize;
-    let mut unpinned: Vec<String> = Vec::new();
-    for rel in roots {
-        collect_generated_at(&workspace, rel, &mut checked, &mut unpinned);
+/// Header keys a committed generated file must no longer carry — the
+/// ones `forge::drift` retired (it says why).
+const RETIRED_HEADER_KEYS: [&str; 2] = ["template-hash", "generated-at"];
+
+/// Every committed generated file carries the header in its current shape.
+///
+/// A tree regenerated by a binary built before `template-hash` and
+/// `generated-at` were retired — or a tree left out of the regeneration
+/// that retired them — brings them back, and nothing else local notices:
+/// `verify` reads only the `source-hash`, which such a file still carries
+/// correctly. The `regen-reproduces` lane sees the bytes differ, in CI;
+/// this sees it on every local run, without regenerating anything.
+///
+/// Every tracked file that opens with the banner is read, rather than a
+/// list of roots. The list this replaced (it scanned for a pinned
+/// `generated-at`) was short two of its five roots for months, and each
+/// root nobody listed was output nobody watched.
+#[test]
+fn committed_generated_files_carry_the_current_header_shape() {
+    let mut headered = 0usize;
+    let mut retired: Vec<String> = Vec::new();
+    for path in common::repository::files_git_tracks(&[]) {
+        let Ok(content) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let Some(keys) = header_keys(&content) else {
+            continue;
+        };
+        headered += 1;
+        if let Some(key) = keys.iter().find(|key| RETIRED_HEADER_KEYS.contains(key)) {
+            retired.push(format!("{} carries `{key}`", path.display()));
+        }
     }
 
+    // Every committed sourcemap sits beside the generated files it maps,
+    // each of which carries a header, so there are at least as many
+    // headered files as sourcemaps. Fewer means the banner stopped being
+    // recognised and the scan above read nothing.
+    let sourcemaps = common::repository::paths_git_tracks(&["*sce_sourcemap.json"]).len();
     assert!(
-        checked > 0,
-        "no committed generated files found — the roots this test walks moved"
+        sourcemaps > 0 && headered >= sourcemaps,
+        "{headered} committed file(s) carry the §synth-6.2.6 banner, fewer than the \
+         {sourcemaps} committed sourcemaps that map them — the scan is not reading headers"
     );
     assert!(
-        unpinned.is_empty(),
-        "{} of {checked} committed files carry a wall-clock `generated-at`. \
-         Re-run `scripts/regen_all_committed_trees.sh` (it exports \
-         SOURCE_DATE_EPOCH) and commit the result. First few:\n{}",
-        unpinned.len(),
-        unpinned
+        retired.is_empty(),
+        "{} of {headered} committed generated files carry a retired header key. \
+         Re-run `scripts/regen_all_committed_trees.sh` with a current sce-codegen \
+         and commit the result. First few:\n{}",
+        retired.len(),
+        retired
             .iter()
             .take(5)
             .cloned()
@@ -889,37 +831,25 @@ fn committed_trees_carry_a_pinned_generated_at() {
     );
 }
 
-/// Helper for [`committed_trees_carry_a_pinned_generated_at`]: every file
-/// git tracks under `rel`. Only files that actually carry a §synth-6.2.6
-/// header are considered — hand-written siblings in the same tree are not
-/// generated output.
-///
-/// Tracked rather than walked, because the claim is about COMMITTED
-/// output: a walk also judged files a local regeneration wrote and nobody
-/// committed, so the verdict depended on the working tree.
-fn collect_generated_at(
-    workspace: &Path,
-    rel: &str,
-    checked: &mut usize,
-    unpinned: &mut Vec<String>,
-) {
-    for tracked in common::repository::paths_git_tracks(&[rel]) {
-        let path = workspace.join(&tracked);
-        let Ok(content) = fs::read_to_string(&path) else {
-            continue;
-        };
-        let Some(stamp) = content
-            .lines()
-            .take(8)
-            .find_map(|l| l.trim_start().strip_prefix("// generated-at: "))
-        else {
-            continue;
-        };
-        *checked += 1;
-        if stamp.trim() != "0" {
-            unpinned.push(format!("{} -> {stamp}", path.display()));
-        }
+/// The keys of `content`'s leading §synth-6.2.6 header, or `None` when it
+/// does not open with the banner. The header is the banner line and the
+/// `key: value` comment lines directly under it.
+fn header_keys(content: &str) -> Option<Vec<&str>> {
+    let mut lines = content.lines();
+    if !lines.next()?.contains(HEADER_BANNER) {
+        return None;
     }
+    let keys = lines
+        .map_while(|line| {
+            let trimmed = line.trim_start();
+            let body = trimmed
+                .strip_prefix("// ")
+                .or_else(|| trimmed.strip_prefix("# "))?;
+            let (key, _) = body.split_once(": ")?;
+            (key == "source-hash" || RETIRED_HEADER_KEYS.contains(&key)).then_some(key)
+        })
+        .collect();
+    Some(keys)
 }
 
 /// Every document in a batch must contribute to the drift hash, even

@@ -2,20 +2,42 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 //! Generated-source drift detection per spec §synth-6.2.6
-//! (`docs/spec/synth/rfc-sce-protocol-synthesis.md` lines 3496-3519).
+//! (`docs/spec/synth/rfc-sce-protocol-synthesis.md`).
 //!
-//! Every emitted file carries a 4-line header:
+//! Every emitted file carries a 2-line header:
 //!
 //! ```text
 //! // SCE-GENERATED — DO NOT EDIT
 //! // source-hash: <sha256 of sorted input SCXML + deploy.yaml>
-//! // template-hash: <sha256 of Cargo.lock + tools/codegen/templates tree>
-//! // generated-at: <unix seconds, informational only>
 //! ```
 //!
-//! `sce-codegen verify <out-dir>` recomputes both hashes from the current
-//! source + template state and compares against the embedded values.
-//! Mismatch fires `forge/source-hash-mismatch`.
+//! The header states a fact about the file's own inputs and nothing that can
+//! change while the file does not. Drift is judged on content:
+//! `sce-codegen … --assert-unchanged` runs the generation in memory and names
+//! every file on disk that is not as it would leave it (see
+//! [`GeneratedTree`]). `sce-codegen verify <out-dir>` is the narrower check
+//! that needs no generation: it recomputes the `source-hash` and compares it
+//! with the embedded value, firing `forge/source-hash-mismatch`.
+//!
+//! ## What the header does not carry
+//!
+//! - A template or generator hash. Until 2026-09 it carried a
+//!   `template-hash` over the template tree and `Cargo.lock`, which was
+//!   wrong in both directions: an edit to the lock or to any template
+//!   re-stamped every committed tree with no byte of output changed, while
+//!   an edit to the generator's own code changed output without moving it.
+//!   A content comparison has neither defect.
+//! - A timestamp. `generated-at` was informational only, pinned to `0` in
+//!   every committed tree, and when unpinned it made two runs over the same
+//!   inputs differ.
+//! - The generator's identity. That is a fact about a run, not a file, and
+//!   the run's stdout manifest carries it as `generator`
+//!   (`SCE_WIRE_CONTRACTS.md` policy 2). Stamped into a committed file it
+//!   would change with every generator commit whether the output did or not.
+//!
+//! [`prepend_or_replace_header`] still recognises the older four-line header,
+//! so a file generated before the change is rewritten in the current shape
+//! instead of growing a second header.
 //!
 //! ## Design decisions
 //!
@@ -28,10 +50,6 @@
 //! - Source set = recursive `**/*.scxml` from input root +
 //!   optional `deploy.yaml` raw bytes (pre-XInclude). XInclude expansion is
 //!   NOT applied — raw on-disk bytes drive the hash.
-//! - `template-hash` = Cargo.lock + recursive sha256 over
-//!   `tools/codegen/templates/**/*`. Cargo.lock substitutes for the
-//!   spec's "sce-build binary" reference because compiled binary bytes are
-//!   linker-non-deterministic.
 
 use crate::generator_witness::{hash_btreemap, hex_encode, sha256_bytes};
 use std::collections::{BTreeMap, BTreeSet};
@@ -41,26 +59,32 @@ use std::path::{Path, PathBuf};
 /// Sentinel header banner. First line of every emitted file regardless of
 /// backend; consumers detect SCE-generated provenance by matching this
 /// prefix (`{comment_prefix} SCE-GENERATED`). The em-dash is intentional
-/// per spec line 3502 verbatim.
+/// per the spec's own spelling.
 pub const HEADER_BANNER: &str = "SCE-GENERATED \u{2014} DO NOT EDIT";
 
-/// Pair of digests computed from the source + template state. Both are
-/// embedded as hex strings in every generated file's §synth-6.2.6 header.
+/// The one key the header states, as `source-hash: <hex>`.
+const SOURCE_HASH_KEY: &str = "source-hash";
+
+/// Keys an earlier header shape wrote and this module no longer does — see
+/// the module documentation. Recognised only so that replacing a header
+/// removes them.
+const RETIRED_HEADER_KEYS: [&str; 2] = ["template-hash", "generated-at"];
+
+/// The facts a §synth-6.2.6 header states about the file it heads.
+///
+/// A struct rather than a bare digest so that a fact added to the header
+/// later is added here, and every site that renders, compares or parses a
+/// header gets it without changing shape.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DriftHashes {
+pub struct DriftHeader {
+    /// Digest of the file's source set — see [`SourceSet`].
     pub source_hash: [u8; 32],
-    pub template_hash: [u8; 32],
 }
 
-impl DriftHashes {
+impl DriftHeader {
     /// Hex-encoded `source-hash` value (64 lowercase hex chars).
     pub fn source_hex(&self) -> String {
         hex_encode(&self.source_hash)
-    }
-
-    /// Hex-encoded `template-hash` value (64 lowercase hex chars).
-    pub fn template_hex(&self) -> String {
-        hex_encode(&self.template_hash)
     }
 }
 
@@ -298,62 +322,17 @@ pub fn compute_source_hash(
     Ok(SourceSet::collect(input_root, deploy_yaml)?.digest())
 }
 
-/// Template-hash rule (§synth-6.2.6): walks `template_root` recursively for every file
-/// (no extension filter — `.jinja2` + `.json` + `.md` + everything else
-/// in the template tree contributes), hashes raw bytes, then folds
-/// `Cargo.lock` into the same BTreeMap as the binary-identity surrogate.
-pub fn compute_template_hash(
-    template_root: &Path,
-    cargo_lock: &Path,
-) -> Result<[u8; 32], DriftHashError> {
-    let mut entries: BTreeMap<PathBuf, [u8; 32]> = BTreeMap::new();
-    walk_filtered(
-        template_root,
-        template_root,
-        &mut entries,
-        &|_| true,
-        MAX_DIRECTORY_DESCENTS,
-    )?;
-    let lock_bytes = fs::read(cargo_lock).map_err(|e| DriftHashError::Io {
-        path: cargo_lock.to_path_buf(),
-        source: e,
-    })?;
-    entries.insert(PathBuf::from("Cargo.lock"), sha256_bytes(&lock_bytes));
-    Ok(hash_btreemap(&entries))
-}
-
-/// Returns the `generated-at` timestamp value. Defaults to the current
-/// unix seconds; honours `SOURCE_DATE_EPOCH` (Linux reproducible-builds
-/// convention) when set. Per spec line 3505 the timestamp is
-/// "informational only" — it does not feed either hash, so deterministic
-/// regeneration via `SOURCE_DATE_EPOCH=0` produces byte-stable output.
-pub fn now_utc_seconds() -> u64 {
-    if let Ok(s) = std::env::var("SOURCE_DATE_EPOCH") {
-        if let Ok(n) = s.parse::<u64>() {
-            return n;
-        }
-    }
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
-}
-
-/// Renders the 4-line §synth-6.2.6 header. `comment_prefix` is `//` for
-/// Rust/Cpp/C11/Kotlin/Go and `#` for Python. Caller prepends the result
-/// at the very top of each emitted file.
+/// Renders the §synth-6.2.6 header: the banner, then `source-hash`.
+/// `comment_prefix` is `//` for Rust/Cpp/C11/Kotlin/Go and `#` for Python.
+/// Caller prepends the result at the very top of each emitted file.
 ///
 /// The output ends in `\n` so subsequent template content starts on a
 /// fresh line.
-pub fn render_header(hashes: &DriftHashes, generated_at_secs: u64, comment_prefix: &str) -> String {
+pub fn render_header(header: &DriftHeader, comment_prefix: &str) -> String {
     format!(
-        "{cp} {banner}\n{cp} source-hash: {sh}\n{cp} template-hash: {th}\n{cp} generated-at: {ts}\n",
+        "{cp} {HEADER_BANNER}\n{cp} {SOURCE_HASH_KEY}: {sh}\n",
         cp = comment_prefix,
-        banner = HEADER_BANNER,
-        sh = hashes.source_hex(),
-        th = hashes.template_hex(),
-        ts = generated_at_secs,
+        sh = header.source_hex(),
     )
 }
 
@@ -368,93 +347,105 @@ pub fn comment_prefix_for_path(path: &Path) -> &'static str {
 }
 
 /// Prepends the §synth-6.2.6 header to a file's content. Idempotent against
-/// already-headered content — if `content` already begins with the
-/// banner line, the existing header block is replaced rather than
-/// duplicated. Idempotence matters for the production pipeline where
-/// codegen may run multiple times for the same logical inputs.
+/// already-headered content — if `content` already begins with the banner
+/// line, the existing header block is replaced rather than duplicated.
+/// Idempotence matters for the production pipeline where codegen may run
+/// multiple times for the same logical inputs, and where a file is read
+/// back and extended (the Rust suite's `mod.rs`).
+///
+/// The existing block is found by its keys, not counted in lines, so a
+/// header of the older four-line shape is replaced as cleanly as the
+/// current one. The body after it is kept byte for byte.
 pub fn prepend_or_replace_header(
     content: &str,
-    hashes: &DriftHashes,
-    generated_at_secs: u64,
+    header: &DriftHeader,
     comment_prefix: &str,
 ) -> String {
-    let header = render_header(hashes, generated_at_secs, comment_prefix);
-    if has_existing_header(content) {
-        // Strip the existing 4-header lines + any single trailing blank
-        // line, then prepend the fresh header. The "single trailing
-        // blank line" matters because we ourselves emit a `\n` at the
-        // end of `render_header`; consecutive runs would otherwise
-        // grow a phantom newline.
-        let mut lines = content.lines();
-        for _ in 0..4 {
-            let _ = lines.next();
-        }
-        let rest = lines.collect::<Vec<_>>().join("\n");
-        let suffix_newline = if content.ends_with('\n') { "\n" } else { "" };
-        format!("{header}{rest}{suffix_newline}")
-    } else {
-        format!("{header}{content}")
-    }
+    let body = strip_header(content).unwrap_or(content);
+    format!("{}{body}", render_header(header, comment_prefix))
 }
 
-/// Cheap structural check: does the content already lead with the
-/// SCE-GENERATED banner? Used by `prepend_or_replace_header` to keep
-/// regeneration idempotent.
-fn has_existing_header(content: &str) -> bool {
-    let Some(first) = content.lines().next() else {
+/// `content` without its leading §synth-6.2.6 header, or `None` when it
+/// does not lead with one. The header is the banner line and the key lines
+/// directly under it, whichever shape wrote them.
+fn strip_header(content: &str) -> Option<&str> {
+    let (first, mut rest) = split_first_line(content)?;
+    if !first.contains(HEADER_BANNER) {
+        return None;
+    }
+    while let Some((line, after)) = split_first_line(rest) {
+        if !is_header_key_line(line) {
+            break;
+        }
+        rest = after;
+    }
+    Some(rest)
+}
+
+/// The first line of `text` without its terminator, and everything after
+/// the terminator. `None` for empty text.
+fn split_first_line(text: &str) -> Option<(&str, &str)> {
+    if text.is_empty() {
+        return None;
+    }
+    Some(match text.find('\n') {
+        Some(end) => (&text[..end], &text[end + 1..]),
+        None => (text, ""),
+    })
+}
+
+/// Is `line` one of the header's key lines — `source-hash`, or a key an
+/// older shape wrote — under either comment prefix?
+fn is_header_key_line(line: &str) -> bool {
+    let Some(body) = comment_body(line) else {
         return false;
     };
-    first.contains(HEADER_BANNER)
+    std::iter::once(SOURCE_HASH_KEY)
+        .chain(RETIRED_HEADER_KEYS)
+        .any(|key| {
+            body.strip_prefix(key)
+                .is_some_and(|after| after.starts_with(": "))
+        })
 }
 
-/// Extracted hex strings from a generated file's embedded header. Hex
-/// values are returned as-is (lowercase, 64 chars). Returns `None` if
-/// the SCE-GENERATED banner is missing or any of the required hash
-/// lines fails to parse.
+/// The text of a `// ` or `# ` comment line, or `None` for any other line.
+fn comment_body(line: &str) -> Option<&str> {
+    let trimmed = line.trim_start();
+    trimmed
+        .strip_prefix("// ")
+        .or_else(|| trimmed.strip_prefix("# "))
+}
+
+/// What a generated file's header states, as written. Hex values are
+/// returned as-is (lowercase, 64 chars).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EmbeddedHashes {
+pub struct EmbeddedHeader {
     pub source_hash_hex: String,
-    pub template_hash_hex: String,
 }
 
-/// Parses the §synth-6.2.6 header out of a generated file's content. Accepts
-/// either `//` or `#` comment prefix. Tolerant of leading shebang line
-/// or BOM (skips first line up to 2 if needed).
-pub fn parse_embedded_hashes(content: &str) -> Option<EmbeddedHashes> {
-    // The 4 header lines live within the first ~6 lines of the file (after
-    // an optional shebang for python). Scan with a small window to keep
-    // recovery cheap even if a future shape change adds an attribute line
-    // before the banner.
-    let mut source_hex: Option<String> = None;
-    let mut template_hex: Option<String> = None;
+/// Parses the §synth-6.2.6 header out of a generated file's content, or
+/// `None` when the banner or the `source-hash` line is missing. Accepts
+/// either `//` or `#` comment prefix, and either header shape.
+pub fn parse_embedded_header(content: &str) -> Option<EmbeddedHeader> {
+    // The header leads the file; the window keeps a file that has none
+    // cheap to reject.
     let mut saw_banner = false;
     for line in content.lines().take(12) {
-        let trimmed = line.trim_start();
-        let body = trimmed
-            .strip_prefix("// ")
-            .or_else(|| trimmed.strip_prefix("# "))?;
+        let body = comment_body(line)?;
         if body.starts_with(HEADER_BANNER) {
             saw_banner = true;
             continue;
         }
-        if let Some(rest) = body.strip_prefix("source-hash: ") {
-            source_hex = Some(rest.trim().to_string());
-        } else if let Some(rest) = body.strip_prefix("template-hash: ") {
-            template_hex = Some(rest.trim().to_string());
-        } else if body.starts_with("generated-at: ") {
-            break;
-        }
-        if source_hex.is_some() && template_hex.is_some() && saw_banner {
-            break;
+        if let Some(rest) = body
+            .strip_prefix(SOURCE_HASH_KEY)
+            .and_then(|after| after.strip_prefix(": "))
+        {
+            return saw_banner.then(|| EmbeddedHeader {
+                source_hash_hex: rest.trim().to_string(),
+            });
         }
     }
-    match (saw_banner, source_hex, template_hex) {
-        (true, Some(s), Some(t)) => Some(EmbeddedHashes {
-            source_hash_hex: s,
-            template_hash_hex: t,
-        }),
-        _ => None,
-    }
+    None
 }
 
 /// A generated output tree, as a check made during generation reads it.
@@ -786,7 +777,7 @@ fn canonical_key(dir: &Path) -> PathBuf {
 // The three primitives this module folds its hashes with — `sha256_bytes`,
 // `hash_btreemap`, `hex_encode` — live in [`crate::generator_witness`]
 // because `sce-build/build.rs` `include!`s that file and cannot reach the
-// library. Stating them twice would put the §synth-6.2.6 `template-hash`
+// library. Stating them twice would put the §synth-6.2.6 `source-hash`
 // one careless edit away from moving silently under every committed
 // generated header in the tree.
 
@@ -1177,47 +1168,16 @@ mod tests {
     }
 
     #[test]
-    fn template_hash_changes_when_template_edited() {
-        let dir = TempDir::new().unwrap();
-        let tpl_root = dir.path().join("templates");
-        let lock = dir.path().join("Cargo.lock");
-        fs::write(&lock, b"# lock content\n").unwrap();
-        write_file(&tpl_root, "state_machine.jinja2", b"hello {{ name }}");
-        let h_pre = compute_template_hash(&tpl_root, &lock).unwrap();
-
-        fs::write(tpl_root.join("state_machine.jinja2"), b"hello {{ other }}").unwrap();
-        let h_post = compute_template_hash(&tpl_root, &lock).unwrap();
-        assert_ne!(h_pre, h_post);
-    }
-
-    #[test]
-    fn template_hash_changes_when_lock_edited() {
-        let dir = TempDir::new().unwrap();
-        let tpl_root = dir.path().join("templates");
-        fs::create_dir_all(&tpl_root).unwrap();
-        let lock = dir.path().join("Cargo.lock");
-        fs::write(&lock, b"# v1\n").unwrap();
-        let h_pre = compute_template_hash(&tpl_root, &lock).unwrap();
-
-        fs::write(&lock, b"# v2\n").unwrap();
-        let h_post = compute_template_hash(&tpl_root, &lock).unwrap();
-        assert_ne!(h_pre, h_post);
-    }
-
-    #[test]
-    fn render_header_emits_4_lines() {
-        let hashes = DriftHashes {
+    fn render_header_emits_the_banner_and_the_source_hash() {
+        let header = DriftHeader {
             source_hash: [0xaa; 32],
-            template_hash: [0xbb; 32],
         };
-        let h = render_header(&hashes, 1715731200, "//");
+        let h = render_header(&header, "//");
         let lines: Vec<&str> = h.lines().collect();
-        assert_eq!(lines.len(), 4);
+        assert_eq!(lines.len(), 2, "{h}");
         assert!(lines[0].contains("SCE-GENERATED"));
         assert!(lines[0].contains("DO NOT EDIT"));
-        assert!(lines[1].starts_with("// source-hash: aaaa"));
-        assert!(lines[2].starts_with("// template-hash: bbbb"));
-        assert_eq!(lines[3], "// generated-at: 1715731200");
+        assert_eq!(lines[1], format!("// source-hash: {}", "aa".repeat(32)));
         // Header must end with newline so following template content
         // starts on a clean line.
         assert!(h.ends_with('\n'));
@@ -1225,100 +1185,107 @@ mod tests {
 
     #[test]
     fn render_header_uses_hash_prefix_for_python() {
-        let hashes = DriftHashes {
+        let header = DriftHeader {
             source_hash: [0; 32],
-            template_hash: [0; 32],
         };
-        let h = render_header(&hashes, 0, "#");
+        let h = render_header(&header, "#");
         let first = h.lines().next().unwrap();
         assert!(first.starts_with("# SCE-GENERATED"));
         assert!(h.contains("# source-hash: "));
-        assert!(h.contains("# template-hash: "));
-        assert!(h.contains("# generated-at: 0"));
     }
 
     #[test]
-    fn parse_embedded_hashes_round_trip() {
-        let hashes = DriftHashes {
+    fn parse_embedded_header_round_trip() {
+        let header = DriftHeader {
             source_hash: [0x12; 32],
-            template_hash: [0x34; 32],
         };
-        let header = render_header(&hashes, 100, "//");
+        let rendered = render_header(&header, "//");
         // Add some body content after the header so parse only consumes
         // the relevant lines.
-        let file_content = format!("{header}\npub mod whatever {{}}\n");
-        let parsed = parse_embedded_hashes(&file_content).expect("header parseable");
-        assert_eq!(parsed.source_hash_hex, hashes.source_hex());
-        assert_eq!(parsed.template_hash_hex, hashes.template_hex());
+        let file_content = format!("{rendered}\npub mod whatever {{}}\n");
+        let parsed = parse_embedded_header(&file_content).expect("header parseable");
+        assert_eq!(parsed.source_hash_hex, header.source_hex());
     }
 
     #[test]
-    fn parse_embedded_hashes_round_trip_python() {
-        let hashes = DriftHashes {
+    fn parse_embedded_header_round_trip_python() {
+        let header = DriftHeader {
             source_hash: [0xab; 32],
-            template_hash: [0xcd; 32],
         };
-        let header = render_header(&hashes, 200, "#");
-        let file_content = format!("{header}def main():\n    pass\n");
-        let parsed = parse_embedded_hashes(&file_content).expect("python header parseable");
-        assert_eq!(parsed.source_hash_hex, hashes.source_hex());
-        assert_eq!(parsed.template_hash_hex, hashes.template_hex());
+        let rendered = render_header(&header, "#");
+        let file_content = format!("{rendered}def main():\n    pass\n");
+        let parsed = parse_embedded_header(&file_content).expect("python header parseable");
+        assert_eq!(parsed.source_hash_hex, header.source_hex());
     }
 
     #[test]
-    fn parse_embedded_hashes_none_when_banner_missing() {
-        let bogus = "// just a regular comment\n// source-hash: aaaa\n// template-hash: bbbb\n";
-        assert!(parse_embedded_hashes(bogus).is_none());
+    fn parse_embedded_header_none_when_banner_missing() {
+        let bogus = "// just a regular comment\n// source-hash: aaaa\n";
+        assert!(parse_embedded_header(bogus).is_none());
     }
 
     #[test]
-    fn now_utc_seconds_honors_source_date_epoch() {
-        // SAFETY: env var manipulation is process-global; the test sets
-        // and immediately restores. Other tests that read this var must
-        // tolerate restoration (they read the value once, not racingly).
-        let prev = std::env::var("SOURCE_DATE_EPOCH").ok();
-        // SAFETY: env var manipulation in tests; isolated per-process by
-        // cargo test default thread model.
-        unsafe {
-            std::env::set_var("SOURCE_DATE_EPOCH", "42");
-        }
-        assert_eq!(now_utc_seconds(), 42);
-        match prev {
-            Some(v) => unsafe { std::env::set_var("SOURCE_DATE_EPOCH", v) },
-            None => unsafe { std::env::remove_var("SOURCE_DATE_EPOCH") },
-        }
+    fn parse_embedded_header_reads_the_older_shape() {
+        let legacy = format!(
+            "// {HEADER_BANNER}\n// source-hash: {s}\n// template-hash: {t}\n\
+             // generated-at: 0\npub fn f() {{}}\n",
+            s = "12".repeat(32),
+            t = "34".repeat(32),
+        );
+        let parsed = parse_embedded_header(&legacy).expect("legacy header parseable");
+        assert_eq!(parsed.source_hash_hex, "12".repeat(32));
     }
 
     #[test]
     fn prepend_header_idempotent_on_double_run() {
-        let hashes = DriftHashes {
+        let header = DriftHeader {
             source_hash: [0x33; 32],
-            template_hash: [0x44; 32],
         };
         let body = "pub fn foo() {}\n";
-        let once = prepend_or_replace_header(body, &hashes, 100, "//");
-        let twice = prepend_or_replace_header(&once, &hashes, 100, "//");
+        let once = prepend_or_replace_header(body, &header, "//");
+        let twice = prepend_or_replace_header(&once, &header, "//");
         assert_eq!(once, twice, "header injection must be idempotent");
     }
 
     #[test]
-    fn prepend_header_replaces_when_hashes_change() {
-        let h1 = DriftHashes {
+    fn prepend_header_replaces_when_the_source_hash_changes() {
+        let h1 = DriftHeader {
             source_hash: [0x11; 32],
-            template_hash: [0x22; 32],
         };
-        let h2 = DriftHashes {
+        let h2 = DriftHeader {
             source_hash: [0x55; 32],
-            template_hash: [0x66; 32],
         };
         let body = "pub fn bar() {}\n";
-        let first = prepend_or_replace_header(body, &h1, 100, "//");
-        let updated = prepend_or_replace_header(&first, &h2, 100, "//");
-        let parsed = parse_embedded_hashes(&updated).expect("re-parse after replacement");
+        let first = prepend_or_replace_header(body, &h1, "//");
+        let updated = prepend_or_replace_header(&first, &h2, "//");
+        let parsed = parse_embedded_header(&updated).expect("re-parse after replacement");
         assert_eq!(parsed.source_hash_hex, h2.source_hex());
-        assert_eq!(parsed.template_hash_hex, h2.template_hex());
-        // Body must still end with the original function definition.
-        assert!(updated.contains("pub fn bar() {}"));
+        assert_eq!(updated, format!("{}{body}", render_header(&h2, "//")));
+    }
+
+    /// A file generated before the header lost `template-hash` and
+    /// `generated-at` is rewritten in the current shape: one header, and
+    /// the body exactly as it was. Counting lines instead of reading keys
+    /// would leave two stale key lines at the top of the body.
+    #[test]
+    fn prepend_header_replaces_a_header_of_the_older_shape() {
+        let header = DriftHeader {
+            source_hash: [0x77; 32],
+        };
+        for prefix in ["//", "#"] {
+            let body = format!("{prefix} GENERATED -- DO NOT EDIT (sce-codegen)\nbody line\n");
+            let legacy = format!(
+                "{prefix} {HEADER_BANNER}\n{prefix} source-hash: {s}\n\
+                 {prefix} template-hash: {t}\n{prefix} generated-at: 0\n{body}",
+                s = "11".repeat(32),
+                t = "22".repeat(32),
+            );
+            assert_eq!(
+                prepend_or_replace_header(&legacy, &header, prefix),
+                format!("{}{body}", render_header(&header, prefix)),
+                "prefix {prefix}"
+            );
+        }
     }
 
     #[test]
@@ -1333,8 +1300,8 @@ mod tests {
     }
 
     #[test]
-    fn header_banner_uses_em_dash_per_spec_line_3502() {
-        // Drift guard: spec line 3502 spells "SCE-GENERATED — DO NOT EDIT"
+    fn header_banner_uses_the_specs_em_dash() {
+        // Drift guard: §6.2.6 spells "SCE-GENERATED — DO NOT EDIT"
         // with a literal em-dash (U+2014). A regex-anchored verifier on
         // the consumer side will fail if this drifts to a hyphen.
         assert!(HEADER_BANNER.contains('\u{2014}'));

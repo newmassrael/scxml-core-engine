@@ -726,13 +726,13 @@ GATES: dict[str, dict] = {
         "cost_s": 1363,
         "summary": "cargo test --workspace --features cli",
     },
-    # The one reader of the axis both drift hashes miss. `source-hash` and
-    # `template-hash` cover the INPUTS — documents and templates — so an edit
-    # to the emit code under `sce-build/src` that changes what comes out moves
-    # neither, and the committed trees drift with every gate green. This
-    # regenerates them and compares, which is also what makes the procedure's
-    # own documented claim ("regenerate and expect no diff") checked rather
-    # than asserted.
+    # The one reader of the content axis. The header's `source-hash` covers
+    # the INPUT documents, so an edit to the templates or to the emit code
+    # under `sce-build/src` that changes what comes out does not move it, and
+    # the committed trees drift with every other gate green. This regenerates
+    # them and compares, which is also what makes the procedure's own
+    # documented claim ("regenerate and expect no diff") checked rather than
+    # asserted.
     "regen-reproduces": {
         "workflows": ["regen-reproduces.yml"],
         "runner_workflow": True,

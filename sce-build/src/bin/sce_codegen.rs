@@ -390,12 +390,9 @@ use sce_build::model::SCXMLModel;
 use sce_build::parser::SCXMLParser;
 
 /// Spec §synth-6.2.6 drift-header context bundled at `cmd_*` entry and
-/// threaded to every file-emitting helper. Two parts —
-/// `source_hash` (sha256 over `**/*.scxml` under `input_root` +
-/// optional `deploy.yaml`) and `template_hash` (sha256 over
-/// `tools/codegen/templates/` + `Cargo.lock` of the SCE workspace) —
-/// plus a `generated-at` timestamp that honours `SOURCE_DATE_EPOCH`
-/// for deterministic regen.
+/// threaded to every file-emitting helper: the header every file of the
+/// invocation carries — its `source_hash`, sha256 over `**/*.scxml` under
+/// `input_root` + optional `deploy.yaml` — and the set that hash covers.
 ///
 /// Pre-computed once per CLI invocation so every write site through
 /// `write_drift_aware` / `write_if_changed_drift_aware` shares the
@@ -403,9 +400,8 @@ use sce_build::parser::SCXMLParser;
 /// inputs and matches each generated file's embedded header.
 #[derive(Debug, Clone)]
 struct DriftContext {
-    hashes: drift::DriftHashes,
-    generated_at: u64,
-    /// The synth-6.2.6 source set that produced `hashes.source_hash`,
+    header: drift::DriftHeader,
+    /// The synth-6.2.6 source set that produced `header.source_hash`,
     /// carried so `write_depfile` can declare it.
     ///
     /// Kept on the context rather than re-collected at the depfile call
@@ -426,7 +422,7 @@ struct DriftContext {
 /// `--input-root` points, not what mode the files carry. Both used to
 /// collapse onto `cli/read-input`, which sent a repair consumer hunting
 /// permissions for a tree whose only problem was aliasing.
-fn drift_hash_failure(walked: &Path, axis: &str, err: drift::DriftHashError) -> CliError {
+fn drift_hash_failure(walked: &Path, err: drift::DriftHashError) -> CliError {
     match err {
         drift::DriftHashError::WalkLimitExceeded { root, limit } => {
             CliError::SourceHashWalkUnbounded {
@@ -435,24 +431,19 @@ fn drift_hash_failure(walked: &Path, axis: &str, err: drift::DriftHashError) -> 
             }
         }
         other => CliError::ReadInput {
-            path: format!("{}: {axis} compute failed: {other}", walked.display()),
+            path: format!("{}: source-hash compute failed: {other}", walked.display()),
             source: std::io::Error::other("drift compute"),
         },
     }
 }
 
 impl DriftContext {
-    /// Best-effort compute for the `template-hash` axis: failures along
-    /// the workspace-probe path downgrade it to a zero hash and log a
-    /// stderr note instead of aborting codegen. The spec invariant
-    /// is "every emitted file carries a header" — a zero-hash header
-    /// still satisfies that, and `sce-codegen verify` reports the
-    /// mismatch when invoked against the real workspace.
+    /// Collects the source set and folds it to the header's `source-hash`.
     ///
-    /// The `source-hash` axis does **not** get that latitude. Its fold is
-    /// total over the collected set, so a walk that resolved to nothing
-    /// still yields a well-formed sha256 (the empty-input digest) that
-    /// reads on the wire exactly like a successful hash — a header a
+    /// A walk that fails, or resolves to nothing, is refused rather than
+    /// embedded. The fold is total over the collected set, so an empty
+    /// walk still yields a well-formed sha256 (the empty-input digest)
+    /// that reads on the wire exactly like a successful hash — a header a
     /// consumer cannot audit is worse than a refusal.
     ///
     /// Every document under an inferred root must be covered. An explicit
@@ -460,7 +451,7 @@ impl DriftContext {
     /// callers then pass an empty slice. Empty source sets are always refused.
     fn compute(input_root: &Path, deploy: Option<&Path>, must_cover: &[&Path]) -> Self {
         let sources = drift::SourceSet::collect(input_root, deploy)
-            .unwrap_or_else(|e| cli_exit(drift_hash_failure(input_root, "source-hash", e)));
+            .unwrap_or_else(|e| cli_exit(drift_hash_failure(input_root, e)));
         let uncovered = must_cover.iter().find(|input| !sources.covers(input));
         if sources.is_empty() || uncovered.is_some() {
             cli_exit(CliError::SourceHashInputUncovered {
@@ -473,38 +464,11 @@ impl DriftContext {
                 hashed: sources.len(),
             });
         }
-        let source_hash = sources.digest();
-        let source_paths = sources.contributing_paths();
-        let explicit = current_workspace_root_override();
-        let template_hash = match locate_workspace_root(explicit.as_deref()) {
-            Some(ws) => {
-                let tpl = ws.join("tools").join("codegen").join("templates");
-                let lock = ws.join("Cargo.lock");
-                drift::compute_template_hash(&tpl, &lock).unwrap_or_else(|e| {
-                    eprintln!(
-                        "sce-codegen: template-hash compute failed under {} ({e}); embedding zero hash",
-                        ws.display(),
-                    );
-                    [0u8; 32]
-                })
-            }
-            None => {
-                eprintln!(
-                    "sce-codegen: workspace root not detected (tried --workspace-root, \
-                     $SCE_WORKSPACE_ROOT, CARGO_MANIFEST_DIR/.., cwd-walk); \
-                     template-hash embedded as zero — pass --workspace-root <PATH> \
-                     to fix",
-                );
-                [0u8; 32]
-            }
-        };
         Self {
-            hashes: drift::DriftHashes {
-                source_hash,
-                template_hash,
+            header: drift::DriftHeader {
+                source_hash: sources.digest(),
             },
-            generated_at: drift::now_utc_seconds(),
-            sources: source_paths,
+            sources: sources.contributing_paths(),
         }
     }
 }
@@ -526,7 +490,7 @@ fn is_drift_eligible_path(path: &Path) -> bool {
 fn apply_drift_header(content: &str, path: &Path, ctx: &DriftContext) -> String {
     if is_drift_eligible_path(path) {
         let prefix = drift::comment_prefix_for_path(path);
-        drift::prepend_or_replace_header(content, &ctx.hashes, ctx.generated_at, prefix)
+        drift::prepend_or_replace_header(content, &ctx.header, prefix)
     } else {
         content.to_string()
     }
@@ -560,7 +524,7 @@ fn write_if_changed_drift_aware(path: &Path, content: &str, ctx: &DriftContext) 
 ///
 ///   - the symbol table is built from the SCXML model alone (no
 ///     backend-specific data),
-///   - hash values come from the same `DriftContext` the §synth-6.2.6
+///   - the hash comes from the same `DriftContext` the §synth-6.2.6
 ///     header consumes (delegation guarantee, not duplication), and
 ///   - JSON key ordering rides BTreeMap so iteration is deterministic.
 ///
@@ -614,11 +578,7 @@ fn flush_sourcemap(acc: &SymbolAccumulator, target_dir: &Path, drift_ctx: &Drift
     if acc.is_empty() {
         return;
     }
-    let map = sourcemap::build(
-        acc,
-        drift_ctx.hashes.source_hex(),
-        drift_ctx.hashes.template_hex(),
-    );
+    let map = sourcemap::build(acc, drift_ctx.header.source_hex());
     let json = match sourcemap::to_json(&map) {
         Ok(s) => s,
         Err(_e) => return,
@@ -662,10 +622,9 @@ fn current_error_format() -> ErrorFormat {
 
 /// Globally-resolved `--workspace-root` override. Mirrors
 /// [`ERROR_FORMAT`]: installed once at the top of `main` so every
-/// site that needs the SCE workspace location (DriftContext template
-/// hashing, the `verify` subcommand) can consult one source of truth
-/// without each call having to thread the flag through its
-/// signature. Unset when the user neither passed `--workspace-root`
+/// site that needs the SCE workspace location (`verify-generator`)
+/// can consult one source of truth without each call having to thread
+/// the flag through its signature. Unset when the user neither passed `--workspace-root`
 /// nor `SCE_WORKSPACE_ROOT` — in which case the resolution falls
 /// through to `CARGO_MANIFEST_DIR`'s parent and cwd-walk per
 /// [`locate_workspace_root`].
@@ -1163,16 +1122,14 @@ const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("SCE_GIT_COM
     version = VERSION,
 )]
 struct Cli {
-    /// Override the SCE workspace root. The workspace root is the
-    /// directory carrying `tools/codegen/templates/` and the
-    /// `Cargo.lock` that feed the §synth-6.2.6 `template-hash`. Resolution
-    /// priority: this flag → `SCE_WORKSPACE_ROOT` env var →
-    /// `CARGO_MANIFEST_DIR/..` (compile-time, used for vendored
-    /// builds where cwd lives in the consumer workspace) → walk up
-    /// from cwd. Set this when an automated build (vendored or
-    /// otherwise) cannot rely on the default resolution and you want
-    /// the embedded `template-hash` to be the real one rather than
-    /// the zero fallback. Global — applies to every subcommand.
+    /// Override the SCE workspace root: the checkout carrying
+    /// `tools/codegen/templates/`, whose sources `verify-generator`
+    /// compares this binary against. Resolution priority: this flag →
+    /// `SCE_WORKSPACE_ROOT` env var → `CARGO_MANIFEST_DIR/..`
+    /// (compile-time, used for vendored builds where cwd lives in the
+    /// consumer workspace) → walk up from cwd. Set this when an automated
+    /// build (vendored or otherwise) cannot rely on the default
+    /// resolution. Global — applies to every subcommand.
     #[arg(long, global = true, value_name = "PATH")]
     workspace_root: Option<PathBuf>,
 
@@ -2372,14 +2329,15 @@ enum Commands {
         header_dir: String,
     },
 
-    /// Verify generated-source drift per spec §synth-6.2.6.
+    /// Verify that generated files were generated from the current inputs,
+    /// per spec §synth-6.2.6.
     ///
     /// Scans `out_dir` for emitted files (.rs / .cpp / .h / .kt / .go /
-    /// .py / .c), reads each file's `// SCE-GENERATED` header,
-    /// recomputes `source-hash` + `template-hash` from the current
-    /// source + template state, and fails on mismatch with
-    /// `forge/source-hash-mismatch`. CI / pre-commit hooks invoke this
-    /// to enforce the "manual edits to `out/` are forbidden" invariant.
+    /// .py / .c), reads each file's `// SCE-GENERATED` header, recomputes
+    /// the `source-hash` from the current source set, and fails on
+    /// mismatch with `forge/source-hash-mismatch`. It reads headers, not
+    /// content, and needs no generation: whether the files hold what the
+    /// current generator produces is `--assert-unchanged`'s question.
     Verify {
         /// Generated output directory to verify (recursive).
         out_dir: String,
@@ -2392,15 +2350,6 @@ enum Commands {
         /// input set. Optional — single-document codegen omits this.
         #[arg(long)]
         deploy: Option<String>,
-        /// Override the template tree location used for the
-        /// `template-hash` recompute. Defaults to
-        /// `<workspace_root>/tools/codegen/templates`.
-        #[arg(long)]
-        template_root: Option<String>,
-        /// Override the `Cargo.lock` location used for the
-        /// `template-hash` recompute. Defaults to `<workspace_root>/Cargo.lock`.
-        #[arg(long)]
-        cargo_lock: Option<String>,
     },
 
     /// Answer whether this binary was built from the sources in a given
@@ -2723,10 +2672,9 @@ fn main() {
     // launch the binary inherit this install via the normal CLI
     // parse; in-process helpers never run before this point.
     let _ = ERROR_FORMAT.set(error_format);
-    // Same OnceLock pattern for the workspace-root override so
-    // DriftContext::compute and cmd_verify can both consult one
-    // source of truth without growing parallel `workspace_root: Option<&Path>`
-    // params on every helper signature.
+    // Same OnceLock pattern for the workspace-root override, so a
+    // command that needs it consults one source of truth without growing
+    // a `workspace_root: Option<&Path>` param on every helper signature.
     if let Some(p) = cli.workspace_root {
         let _ = WORKSPACE_ROOT_OVERRIDE.set(p);
     }
@@ -2833,16 +2781,7 @@ fn main() {
             out_dir,
             input_root,
             deploy,
-            template_root,
-            cargo_lock,
-        } => cmd_verify(
-            &out_dir,
-            &input_root,
-            deploy.as_deref(),
-            template_root.as_deref(),
-            cargo_lock.as_deref(),
-            error_format,
-        ),
+        } => cmd_verify(&out_dir, &input_root, deploy.as_deref(), error_format),
         Commands::VerifyGenerator { root } => cmd_verify_generator(root.as_deref(), error_format),
         Commands::Addr2Sce {
             sourcemap_dir,
@@ -4066,7 +4005,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
     // the embedded source-hash to reproduce against the tracked
     // location, not the transient stage). Pre-computed once and
     // threaded into every file write below so a single invocation's
-    // generated tree shares one source-hash / template-hash pair.
+    // generated tree shares one source-hash.
     let drift_input_root: std::path::PathBuf = match input_root_override {
         Some(s) => std::path::PathBuf::from(s),
         None => containing_dir(Path::new(scxml_path)),
@@ -6579,11 +6518,11 @@ impl W3cBackend for RustBackend {
         let child_sm_file = test_mod_dir.join(format!("{child_name}_sm.rs"));
         write_if_changed_drift_aware(&child_sm_file, &code, drift_ctx);
 
-        // Add child module to the test's mod.rs. The existing file's
-        // first 4 lines are the drift header from `post_write_parent`;
+        // Add child module to the test's mod.rs. The existing file opens
+        // with the drift header from `post_write_parent`;
         // `write_if_changed_drift_aware`'s downstream
         // `prepend_or_replace_header` detects that banner and replaces
-        // the 4-line block in place, so a plain string append below
+        // the header block in place, so a plain string append below
         // the read content is safe — the headered output still has
         // exactly one §synth-6.2.6 header at the top.
         //
@@ -7183,11 +7122,8 @@ impl W3cBackend for KotlinBackend {
             None,
             self.script_engine,
         )?;
-        // The Kotlin templates spell this repository's package root.
-        // Rewriting on the way out rather than parameterising the
-        // template keeps `template-hash` — and therefore every
-        // committed generated file in every backend — unmoved by a
-        // change that generates no new state machine code.
+        // The Kotlin templates spell this repository's package root, and
+        // the suite's own name is rewritten into it on the way out.
         Ok(vec![(
             format!("{input_stem}Sm.kt"),
             self.suite.rewrite_kotlin_source(&code),
@@ -8669,62 +8605,26 @@ fn cmd_expand(scxml_path: &str, include_dirs: &[String]) {
 
 // ── Subcommand: verify ─────────────────────────────────────────
 //
-// Spec §synth-6.2.6 generated-source drift detection. Recomputes
-// `source-hash` + `template-hash` over the current source/template
-// state and compares each generated file's embedded header against
-// the recomputed values. First mismatch wins (deterministic ordering
-// via BTreeMap-sorted file walk) and exits non-zero with
-// `forge/source-hash-mismatch`.
+// Spec §synth-6.2.6: were these files generated from the current inputs?
+// Recomputes the `source-hash` over the current source set and compares
+// each generated file's embedded header against it. First mismatch wins
+// (deterministic ordering via BTreeMap-sorted file walk) and exits
+// non-zero with `forge/source-hash-mismatch`.
+//
+// Whether the files hold what the current generator produces from those
+// inputs is a different question, answered on content by
+// `--assert-unchanged`; no header value can answer it.
 
-fn cmd_verify(
-    out_dir: &str,
-    input_root: &str,
-    deploy: Option<&str>,
-    template_root: Option<&str>,
-    cargo_lock: Option<&str>,
-    error_format: ErrorFormat,
-) {
-    use sce_build::forge::drift::{
-        compute_source_hash, compute_template_hash, parse_embedded_hashes, DriftHashes,
-    };
+fn cmd_verify(out_dir: &str, input_root: &str, deploy: Option<&str>, error_format: ErrorFormat) {
+    use sce_build::forge::drift::{compute_source_hash, parse_embedded_header, DriftHeader};
 
     let out_path = Path::new(out_dir);
     let input_path = Path::new(input_root);
     let deploy_path = deploy.map(Path::new);
 
-    // Defaults for template_root / cargo_lock: consult the same
-    // resolution chain DriftContext uses (--workspace-root override
-    // → SCE_WORKSPACE_ROOT → CARGO_MANIFEST_DIR/.. → cwd-walk) so
-    // `sce-codegen verify` matches whatever workspace produced the
-    // emit. Falls back to cwd only if every layer fails, mirroring
-    // the pre-2026-05 forgiving behaviour for ad-hoc invocations.
-    let explicit_root = current_workspace_root_override();
-    let workspace_root = locate_workspace_root(explicit_root.as_deref()).unwrap_or_else(|| {
-        std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
-    });
-    let tpl_root_default = workspace_root
-        .join("tools")
-        .join("codegen")
-        .join("templates");
-    let lock_default = workspace_root.join("Cargo.lock");
-    let tpl_root = template_root
-        .map(std::path::PathBuf::from)
-        .unwrap_or(tpl_root_default);
-    let lock_path = cargo_lock
-        .map(std::path::PathBuf::from)
-        .unwrap_or(lock_default);
-
-    let expected_source = match compute_source_hash(input_path, deploy_path) {
-        Ok(h) => h,
-        Err(e) => cli_exit(drift_hash_failure(input_path, "source-hash", e)),
-    };
-    let expected_template = match compute_template_hash(&tpl_root, &lock_path) {
-        Ok(h) => h,
-        Err(e) => cli_exit(drift_hash_failure(&tpl_root, "template-hash", e)),
-    };
-    let expected = DriftHashes {
-        source_hash: expected_source,
-        template_hash: expected_template,
+    let expected = DriftHeader {
+        source_hash: compute_source_hash(input_path, deploy_path)
+            .unwrap_or_else(|e| cli_exit(drift_hash_failure(input_path, e))),
     };
 
     let files = collect_generated_files(out_path);
@@ -8733,7 +8633,7 @@ fn cmd_verify(
         let Ok(content) = fs::read_to_string(file) else {
             continue;
         };
-        let Some(embedded) = parse_embedded_hashes(&content) else {
+        let Some(embedded) = parse_embedded_header(&content) else {
             headerless.push(file.clone());
             continue;
         };
@@ -8741,20 +8641,8 @@ fn cmd_verify(
             error_format.emit_and_exit(
                 &CliError::VerifySourceHashMismatch {
                     path: file.display().to_string(),
-                    axis: "source",
                     expected_hex: expected.source_hex(),
                     actual_hex: embedded.source_hash_hex,
-                },
-                "",
-            );
-        }
-        if embedded.template_hash_hex != expected.template_hex() {
-            error_format.emit_and_exit(
-                &CliError::VerifySourceHashMismatch {
-                    path: file.display().to_string(),
-                    axis: "template",
-                    expected_hex: expected.template_hex(),
-                    actual_hex: embedded.template_hash_hex,
                 },
                 "",
             );
@@ -8869,12 +8757,12 @@ fn collect_generated_files(out_dir: &Path) -> Vec<std::path::PathBuf> {
     out.into_iter().collect()
 }
 
-/// Locate the SCE workspace root — the directory carrying
-/// `tools/codegen/templates/` + the workspace `Cargo.lock` that feed
-/// the §synth-6.2.6 `template-hash`. Resolution priority (each layer must
-/// validate the `tools/codegen/templates/` shape — paths failing the
-/// check fall through to the next layer rather than silently
-/// embedding the wrong root):
+/// Locate the SCE workspace root — the checkout carrying
+/// `tools/codegen/templates/` and the generator sources
+/// `verify-generator` compares this binary against. Resolution priority
+/// (each layer must validate the `tools/codegen/templates/` shape —
+/// paths failing the check fall through to the next layer rather than
+/// silently answering about the wrong root):
 ///
 ///   1. `explicit` argument — surfaced as `--workspace-root <PATH>`
 ///      on the CLI; takes precedence so vendored consumers can pin
@@ -8894,9 +8782,9 @@ fn collect_generated_files(out_dir: &Path) -> Vec<std::path::PathBuf> {
 ///      `tools/codegen/templates/` directory. Last-resort path for
 ///      ad-hoc invocations from inside the SCE workspace tree.
 ///
-/// Returns `None` only if every layer fails. Callers treat that as
-/// either a recoverable warning (DriftContext template-hash falls
-/// back to all-zero) or an error (`verify` surfaces an I/O failure).
+/// Returns `None` only if every layer fails; `verify-generator` then
+/// falls back to the current directory, and says so if that tree
+/// cannot be read.
 fn locate_workspace_root(explicit: Option<&Path>) -> Option<std::path::PathBuf> {
     fn validates(candidate: &Path) -> bool {
         candidate
@@ -8911,8 +8799,7 @@ fn locate_workspace_root(explicit: Option<&Path>) -> Option<std::path::PathBuf> 
             return Some(p.to_path_buf());
         }
         // Explicit override that does not validate is a user mistake
-        // worth surfacing — the DriftContext call site already emits
-        // a zero-hash warning when this function returns None.
+        // worth surfacing, even though a later layer may still resolve.
         eprintln!(
             "sce-codegen: --workspace-root '{}' does not contain tools/codegen/templates/",
             p.display(),

@@ -163,9 +163,7 @@ fn write_source(dir: &Path, pipeline: Pipeline) -> PathBuf {
 
 /// Run `sce-codegen generate` against `templates`, writing a depfile.
 ///
-/// `SOURCE_DATE_EPOCH` is pinned so the `generated-at` stamp cannot make
-/// two runs differ for an unrelated reason; `--go-module-prefix` is
-/// required by the Go route and ignored elsewhere.
+/// `--go-module-prefix` is required by the Go route and ignored elsewhere.
 fn generate(
     doc: &Path,
     out: &Path,
@@ -185,7 +183,6 @@ fn generate(
         .arg("example.com/relocation_probe")
         .arg("--write-deps")
         .arg(depfile)
-        .env("SOURCE_DATE_EPOCH", "0")
         .env("SCE_TEMPLATE_DIR", templates)
         .output()
         .expect("sce-codegen is runnable");

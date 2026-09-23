@@ -115,8 +115,6 @@ fn generate_w3c_writes_under_the_named_root_and_not_into_the_repository() {
         .arg(root.join("resources"))
         .arg("--output-dir")
         .arg(out.path())
-        // Pin the stamp so the run cannot depend on the clock.
-        .env("SOURCE_DATE_EPOCH", "0")
         .output()
         .expect("spawn sce-codegen generate-w3c");
     assert!(
@@ -209,7 +207,6 @@ fn generated_content_does_not_depend_on_the_output_root() {
             .arg(root.join("resources"))
             .arg("--output-dir")
             .arg(out)
-            .env("SOURCE_DATE_EPOCH", "0")
             .output()
             .expect("spawn sce-codegen generate-w3c");
         assert!(

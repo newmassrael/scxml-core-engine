@@ -56,10 +56,6 @@ command -v python3 >/dev/null 2>&1 \
 # with a message that names no JDK.
 sce_gate_require_jdk "$SCE_REPO_ROOT/.github/workflows/ecma262-lowered-kotlin.yml"
 
-# The emitted machines carry a `generated-at` stamp. Unpinned, every run
-# produces new bytes and nothing downstream can be compared.
-export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-0}"
-
 LOG="$(mktemp -d)"
 sce_gate_on_exit "rm -rf '$LOG'"
 

@@ -2824,15 +2824,13 @@ pub enum DiagnosticCode {
     MeshIo,
 
     // ── Forge generated-source drift detection (SCE Protocol-Synthesis RFC
-    //    §synth-6.2.6, item B9). Single code covers both axes
-    //    of `sce-codegen verify`'s recomputed-vs-embedded comparison:
-    //    `source-hash` mismatch (input SCXML or deploy.yaml drifted
-    //    since generation) and `template-hash` mismatch (codegen
-    //    template tree or Cargo.lock drifted). The
-    //    `actual` field carries the axis label (`source`|`template`)
-    //    plus the embedded hex; `expected` carries the recomputed
-    //    hex. Repair is `sce-codegen <regen-command>` (deterministic,
-    //    no candidate set), hence NeutralOrDeterministic. ─────────
+    //    §synth-6.2.6, item B9). `sce-codegen verify`'s recomputed-vs-
+    //    embedded comparison of the header's `source-hash`: the input
+    //    SCXML or deploy.yaml drifted since generation. The `actual`
+    //    field carries `source-hash=` plus the embedded hex; `expected`
+    //    carries the recomputed hex. Repair is `sce-codegen
+    //    <regen-command>` (deterministic, no candidate set), hence
+    //    NeutralOrDeterministic. ──────────────────────────────────────
     #[serde(rename = "forge/source-hash-mismatch")]
     ForgeSourceHashMismatch,
 
@@ -4132,9 +4130,8 @@ impl DiagnosticCode {
             | CodegenNoStdInvokeNotSupported => Some("SCE Protocol-Synthesis RFC §5.J.2"),
 
             // ── §synth-6.2.6 generated-source drift detection (B9, 2026-05-14) ──
-            //    The single mismatch code covers both axes (source-hash
-            //    + template-hash); the spec section defines the header
-            //    contract + `sce-build verify` recompute pipeline.
+            //    The spec section defines the header contract and the
+            //    `sce-codegen verify` recompute of its `source-hash`.
             ForgeSourceHashMismatch => Some("SCE Protocol-Synthesis RFC §6.2.6"),
             //    Same section: it defines the source set the header's
             //    `source-hash` folds, which is the invariant this code
@@ -14210,23 +14207,20 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:3e7c8b218f240010","code":"cli/generator-source-unverifiable","stage":"cli","message":"cannot establish whether this sce-codegen matches /home/dev/scxml-core-engine: this binary carries no source witness. Both halves need a full checkout — rebuild the binary with `cargo build --bin sce-codegen --features cli -p sce-build`, or point --root at the workspace it was built from"}"#,
             ),
             // ── §synth-6.2.6 generated-source drift (B9, 2026-05-14) ──
-            //    Single code covers both axes (source-hash + template-hash).
-            //    `axis` field carries `"source"` or `"template"` to
-            //    disambiguate the drifted half; `actual` field embeds the
-            //    axis label + embedded value so consumers parsing the
-            //    wire can identify the drift axis without re-reading the
-            //    file.
+            //    The header states one hash, `source-hash`; `actual`
+            //    embeds its key with the embedded value so consumers
+            //    parsing the wire see what was found without re-reading
+            //    the file.
             (
                 "forge/source-hash-mismatch",
                 CliError::VerifySourceHashMismatch {
                     path: "out/foo_sm.rs".into(),
-                    axis: "source",
                     expected_hex:
                         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
                     actual_hex: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
                         .into(),
                 },
-                r#"{"v":1,"id":"fnv1a:6bbb966dd3008e84","code":"forge/source-hash-mismatch","stage":"cli","spec":"SCE Protocol-Synthesis RFC §6.2.6","message":"out/foo_sm.rs: §6.2.6 source-hash mismatch (embedded=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, recomputed=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) — regenerate via sce-codegen","actual":"source-hash=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}"#,
+                r#"{"v":1,"id":"fnv1a:71555277dcd7934c","code":"forge/source-hash-mismatch","stage":"cli","spec":"SCE Protocol-Synthesis RFC §6.2.6","message":"out/foo_sm.rs: §6.2.6 source-hash mismatch (embedded=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, recomputed=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) — regenerate via sce-codegen","actual":"source-hash=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}"#,
             ),
             // ── §synth-6.2.6 source-set coverage guard ──
             //    Emit-time counterpart to the mismatch code above: that one

@@ -404,7 +404,7 @@ fn walker_does_not_descend_into_files_with_non_source_extensions() {
     // accompanying *_sm.rs file), so the walker must NOT inspect it.
     fs::write(
         out_dir.join("sce_sourcemap.json"),
-        r#"{"v":1,"source_hash":"abc","template_hash":"def","symbols":{}}"#,
+        r#"{"v":1,"source_hash":"abc","symbols":{}}"#,
     )
     .unwrap();
     let result = sce_build::forge::sourcemap::validate_emitted_files_have_markers(&out_dir);

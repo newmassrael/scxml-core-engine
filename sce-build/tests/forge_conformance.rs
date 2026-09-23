@@ -294,7 +294,6 @@ fn strip_provenance(code: &str) -> String {
             let line = line.trim();
             !(line.contains("SCE-MAP:")
                 || line.contains("source-hash:")
-                || line.contains("generated-at:")
                 || line.contains("From:")
                 || line.contains("Source:"))
         })

@@ -9,14 +9,13 @@
 # datamodel on the JVM.
 #
 # This lane was CI-only until now, and the reason was mechanical rather than
-# principled: `generateScxml` invoked the generator without SOURCE_DATE_EPOCH,
-# so simply running the suite rewrote the `generated-at` header of all 449
-# committed Kotlin files. A developer could not run it without dirtying the
-# tree, so nobody did, and the Kotlin backend's only check lived in a lane
-# that — until the same round that added this gate — could not report a
-# failure at all. The pin now lives in `backends/kotlin/tests/build.gradle.kts`
-# where every caller of the task gets it; exporting it here as well means the
-# gate does not depend on that file staying correct to keep the tree clean.
+# principled: `generateScxml` regenerates the committed tree, and while the
+# header carried a wall-clock `generated-at` stamp, simply running the suite
+# rewrote all 449 committed Kotlin files. A developer could not run it without
+# dirtying the tree, so nobody did, and the Kotlin backend's only check lived
+# in a lane that — until the same round that added this gate — could not
+# report a failure at all. The header carries no timestamp now, and the gate
+# still checks, at its end, that the run left the tree as it found it.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -31,8 +30,6 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # The floor is READ from the workflow this gate mirrors, so a mirror cannot
 # measure a different JVM than the lane it mirrors.
 sce_gate_require_jdk "$SCE_REPO_ROOT/.github/workflows/w3c-tests.yml"
-
-export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-0}"
 
 LOG="$(mktemp -d)"
 sce_gate_on_exit "rm -rf '$LOG'"
@@ -836,13 +833,14 @@ fi
 
 sce_gate_step "KotlinLowering census: frontend=$frontend_hits refused=$refused_hits, every refusal declared in $REFUSALS_JSON, $leaving_count of them a gap (ceiling $REFUSAL_GAP_CEILING)"
 
-# The pin is the reason this gate can exist locally at all, so it is checked
-# rather than assumed: a run that rewrites the tree it was handed has
-# reintroduced the wall-clock stamp, and the next gate would be the one to
-# discover it.
+# A run that leaves the tree as it found it is the reason this gate can exist
+# locally at all, so it is checked rather than assumed: a run that rewrites the
+# tree it was handed means the committed tree is not what the generator
+# produces — stale, or generated nondeterministically — and the next gate
+# would be the one to discover it.
 if [[ "$(kotlin_tree_hashes)" != "$TREE_BEFORE" ]]; then
     diff <(printf '%s\n' "$TREE_BEFORE") <(kotlin_tree_hashes) | head -n 10 >&2
-    sce_gate_fail "the suite rewrote the Kotlin tree it was handed — SOURCE_DATE_EPOCH is not reaching the generator"
+    sce_gate_fail "the suite rewrote the Kotlin tree it was handed — the committed tree is not what the generator produces (regenerate it with scripts/regen_all_committed_trees.sh)"
 fi
 
 sce_gate_step "committed tree unchanged after ${#KOTLIN_ENGINE_PAIRS[@]} engine/language pair(s)"

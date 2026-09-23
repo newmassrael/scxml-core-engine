@@ -24,13 +24,6 @@
 // harness sources that travel with it. The build manifests are
 // rendered next to the test-file emitters in `sce_codegen.rs`, which
 // is where the sibling per-backend emission already lives.
-//
-// Deliberately no new crate dependency and no new file under
-// `tools/codegen/templates/`: `forge::drift::compute_template_hash`
-// digests `Cargo.lock` *and* the whole template tree, so either one
-// would restamp `template-hash` in every committed generated file and
-// force a full-tree regeneration for a change that generates no state
-// machine code.
 
 use std::fmt;
 

@@ -53,8 +53,7 @@ linkme = "0.3"
 heapless = "0.8"
 # SHA-256 for spec §6.2.6 generated-source drift detection. Used by
 # `sce-build/src/forge/drift.rs` to compute `source-hash` over the
-# input SCXML + deploy.yaml set and `template-hash` over the codegen
-# template tree + Cargo.lock. Build-time only; not pulled into runtime.
+# input SCXML + deploy.yaml set. Build-time only; not pulled into runtime.
 sha2 = "0.10"
 
 # Release profile optimized for W3C test throughput

@@ -167,9 +167,9 @@ promises it does not make and enforcement that does not exist.
    The sourcemap sidecar deliberately does **not** carry it. The sidecar
    is a committed artifact, so a commit stamp would be invalidated by
    the very commit that wrote it, and every commit touching any tree
-   would have to regenerate all of them; its `source_hash` /
-   `template_hash` identify the inputs instead, per `build.rs` on why a
-   stamp that goes stale is worse than no stamp. A consumer needing the
+   would have to regenerate all of them; its `source_hash` identifies the
+   inputs instead, per `build.rs` on why a stamp that goes stale is worse
+   than no stamp. A consumer needing the
    emitting commit for a sidecar reads it from the manifest of the run
    that produced it, or from a lookup record naming that sidecar. That
    exemption is registered in the same test (`ATTRIBUTION_EXEMPT`, with

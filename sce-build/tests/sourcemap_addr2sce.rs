@@ -7,8 +7,8 @@
 // The contract (spec lines 3055-3057, 3219-3243, 3253-3278,
 // 3321-3324):
 //
-//   D18(i)   Sourcemap JSON shape — version + source_hash +
-//            template_hash + symbols map.
+//   D18(i)   Sourcemap JSON shape — version + source_hash + symbols
+//            map.
 //   D18(ii)  Byte-identity across the 6 backends for the same SCXML.
 //   D18(iii) source_hash byte-equal to §synth-6.2.6 drift header.
 //   D18(iv)  Symbol mangling round-trip with `_u_` escape.
@@ -84,7 +84,10 @@ fn sourcemap_shape_matches_spec() {
     let val: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
     assert_eq!(val["version"], 1);
     assert!(val.get("source_hash").is_some());
-    assert!(val.get("template_hash").is_some());
+    assert!(
+        val.get("template_hash").is_none(),
+        "the sidecar no longer carries a template hash: {json}"
+    );
     let symbols = val["symbols"].as_object().expect("symbols object");
     assert!(!symbols.is_empty(), "symbols map must be non-empty");
     let _ = std::fs::remove_dir_all(&tmp);
@@ -772,9 +775,9 @@ fn lookup_schema_rejects_a_record_without_the_generator_stamp() {
 /// checkable rather than assumed.
 ///
 /// The sourcemap the record points at cannot stand in for this: its
-/// `source_hash` / `template_hash` identify the *inputs* (document bytes,
-/// template tree), and two generators whose emit code differs while the
-/// templates and document do not produce the same pair of hashes.
+/// `source_hash` identifies the *inputs* (document bytes), and two
+/// generators whose emit code differs produce the same hash for the same
+/// document.
 #[test]
 fn both_lookup_directions_name_the_generator_commit() {
     let version_out = Command::new(sce_codegen_bin())

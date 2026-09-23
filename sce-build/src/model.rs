@@ -3106,9 +3106,9 @@ mod model_attribute_names {
     /// the placeholder is what ships: measured 2026-08-26, 388 generated files
     /// under version control carry that literal. It is listed rather than fixed
     /// because the repair is a choice — carry the input document's author
-    /// through, or drop the access — and either one edits templates, which
-    /// re-pins `template-hash` across every committed tree. Named here so a NEW
-    /// unknown access still fails.
+    /// through, or drop the access — and either one edits templates and
+    /// rewrites every committed file that carries the placeholder. Named here
+    /// so a NEW unknown access still fails.
     const KNOWN_MISSING: &[&str] = &["scxml_author"];
 
     fn templates_dir() -> PathBuf {

@@ -33,10 +33,6 @@ sce_gate_requires_free_http_port
 
 CODEGEN="$(sce_gate_codegen)"
 
-# Same pin as `w3c-go`, for the same reason: a generation that stamps
-# wall-clock `generated-at` values leaves the drift suite reporting churn.
-export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-0}"
-
 sce_gate_step "generating the Python W3C and integration suites"
 "$CODEGEN" generate-w3c -l python >/dev/null \
     || sce_gate_fail "Python W3C generation"

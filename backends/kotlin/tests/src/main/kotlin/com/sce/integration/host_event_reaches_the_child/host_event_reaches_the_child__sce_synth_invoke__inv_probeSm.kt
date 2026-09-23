@@ -1,7 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: ceb5ba77c107690ed8824e3a95913c8f850f275ca17535023aec22eab166125d
-// template-hash: 68cd6517eb7ab30f12195ed5715cf739261174462172b0a4bc940ea551e29052
-// generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/host_event_reaches_the_child/host_event_reaches_the_child__sce_synth_invoke__inv_probe.scxml

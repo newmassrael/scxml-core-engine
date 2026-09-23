@@ -15,11 +15,13 @@
 # — their generated trees materialise at CMake / CI time without a
 # committed §synth-6.2.6 header to refresh.
 #
-# Use when a `tools/codegen/templates/` edit or a `Cargo.lock` bump
-# invalidates the embedded `template-hash` on every committed tree
-# (template-hash covers the whole template tree). Running this script + `git add -A` produces
-# a single coherent commit that re-greens the drift-verify gate
-# across every tracked context in one shot.
+# Use after any edit that can change generated output — a template, the
+# generator's own code, an input document. Regenerate and expect no diff
+# beyond the files that edit actually changes: the §synth-6.2.6 header
+# carries only facts about each file's inputs, so nothing is re-stamped
+# that did not change. Running this script + `git add -A` produces a
+# single coherent commit across every tracked context in one shot, and
+# `scripts/gate regen-reproduces` is the check that it did.
 #
 # Usage (from repo root):
 #   scripts/regen_all_committed_trees.sh
@@ -28,17 +30,6 @@ set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
-
-# Pin the §synth-6.2.6 `generated-at` stamp (reproducible-builds
-# convention, honoured by `forge::drift::now_utc_seconds`). Without it the
-# stamp is wall-clock, so every regeneration rewrites all ~1100 committed
-# files whether or not anything semantic moved — churn that trains
-# reviewers to skim exactly the diffs a drift header exists to make
-# visible, and that makes "regenerate and expect no diff" unexpressible as
-# a gate. The stamp feeds neither hash, so pinning it costs no provenance.
-# `committed_trees_carry_a_pinned_generated_at` fails if a regeneration
-# lands without it.
-export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-0}"
 
 # Each stage names itself as it starts and says how long it took when the
 # next one does. A run of this script has been measured at three hours, and
@@ -64,8 +55,8 @@ CODEGEN="$(sce_codegen_require "$REPO_ROOT")"
 stage "W3C committed trees"
 "$CODEGEN" generate-w3c -l rust
 "$CODEGEN" generate-w3c -l kotlin
-# The Go and Python W3C trees are .gitignored, so they carry no committed
-# template-hash to re-green — but they are still real trees on a developer's
+# The Go and Python W3C trees are .gitignored, so nothing committed changes
+# when they are regenerated — but they are still real trees on a developer's
 # disk, and leaving them out of the master refresh let them keep serving
 # citations from templates that had already been corrected. A stale gitignored
 # artifact is invisible to the drift gate and visible to every other check that
@@ -139,8 +130,8 @@ scripts/regen_host_processor_kotlin.sh
 # rather than a stem under `integration_resources/`, so the `generate-integration`
 # fan-out above does not reach it — and a committed tree this script does not
 # know about is exactly the stale-artifact shape described for the W3C Go and
-# Python trees. Its `template-hash` covers the same template tree as everything
-# else, so a template edit invalidates it identically.
+# Python trees. It renders from the same template tree as everything else, so
+# a template edit can change it as readily as any of them.
 stage "AI loop example Rust tree"
 scripts/regen_ai_loop.sh
 

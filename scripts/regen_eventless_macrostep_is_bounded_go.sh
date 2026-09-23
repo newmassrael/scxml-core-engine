@@ -15,9 +15,7 @@
 # Requires:
 #   sce-codegen (resolved by scripts/lib/sce_codegen.sh, built when missing).
 #
-# Idempotency: re-runs are byte-stable except for the embedded
-# `generated-at: <unix-seconds>` header line that the codegen emits
-# on every invocation.
+# Idempotency: re-runs are byte-stable for unchanged inputs and generator.
 
 set -euo pipefail
 

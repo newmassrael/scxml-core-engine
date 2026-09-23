@@ -288,9 +288,8 @@ impl Pipeline {
 /// Run `sce-codegen generate` against `templates`, returning stdout on
 /// success and the full diagnostic on failure.
 ///
-/// `SOURCE_DATE_EPOCH` is pinned so the `generated-at` stamp does not
-/// make every comparison differ; `--go-module-prefix` is required by the
-/// Go crossfile route and ignored elsewhere.
+/// `--go-module-prefix` is required by the Go crossfile route and ignored
+/// elsewhere.
 fn generate(
     doc: &Path,
     out: &Path,
@@ -308,7 +307,6 @@ fn generate(
         .arg(lang)
         .arg("--go-module-prefix")
         .arg("example.com/depfile_probe")
-        .env("SOURCE_DATE_EPOCH", "0")
         .env("SCE_TEMPLATE_DIR", templates);
     if let Some(d) = depfile {
         cmd.arg("--write-deps").arg(d);
@@ -349,7 +347,6 @@ fn generate_conformance(
         .arg(manifest)
         .arg("--output-dir")
         .arg(out)
-        .env("SOURCE_DATE_EPOCH", "0")
         .env("SCE_TEMPLATE_DIR", templates);
     if let Some(d) = depfile {
         cmd.arg("--write-deps").arg(d);

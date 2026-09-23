@@ -9,7 +9,6 @@
 //   {
 //     "version": 1,
 //     "source_hash":   "<hex sha256 — byte-equal to §synth-6.2.6 header>",
-//     "template_hash": "<hex sha256 — byte-equal to §synth-6.2.6 header>",
 //     "symbols": {
 //       "<mangled-symbol>": {
 //         "scxml_file":       "<author-path>",
@@ -59,10 +58,12 @@ pub const SOURCEMAP_SCHEMA_STATUS: &str = "pre-release";
 /// Top-level sourcemap document. Serialised verbatim into
 /// `out/{language}/sce_sourcemap.json`.
 ///
-/// `source_hash` + `template_hash` are hex-encoded sha256 strings
-/// matching the §synth-6.2.6 header values for the same artifact. Reused
-/// from `forge::drift::DriftHashes::source_hex()` /
-/// `template_hex()` so a hash drift surfaces immediately.
+/// `source_hash` is a hex-encoded sha256 string matching the
+/// §synth-6.2.6 header value for the same artifact, taken from
+/// `forge::drift::DriftHeader::source_hex()` so a hash drift surfaces
+/// immediately. A sidecar written before the header dropped
+/// `template-hash` also carries a `template_hash`; it is ignored on read.
+///
 /// `Deserialize` alongside `Serialize` because the sourcemap is read
 /// back, not only written: both lookup directions (`addr2sce`,
 /// `sce2sym`) load this file. Reading it as an untyped
@@ -74,7 +75,6 @@ pub const SOURCEMAP_SCHEMA_STATUS: &str = "pre-release";
 pub struct Sourcemap {
     pub version: u32,
     pub source_hash: String,
-    pub template_hash: String,
     /// BTreeMap → deterministic JSON key order across runs +
     /// platforms. Per the §synth-5-O byte-identity requirement: any
     /// HashMap-style insertion order would surface as a backend-
@@ -123,16 +123,12 @@ pub struct SourceSymbol {
     pub wcet_us: Option<u32>,
 }
 
-/// Build a [`Sourcemap`] from a symbol-table + hash pair. The hash
-/// values come from the caller's `DriftContext` so the sourcemap and
-/// the §synth-6.2.6 header share a single source of truth — see
+/// Build a [`Sourcemap`] from a symbol table and the `source-hash`. The
+/// hash comes from the caller's `DriftContext` so the sourcemap and the
+/// §synth-6.2.6 header share a single source of truth — see
 /// `traceability/sourcemap-source-hash-mismatch` for the drift-check
 /// pre-emit guard that consumes both.
-pub fn build(
-    symbols: &BTreeMap<String, SymbolEntry>,
-    source_hash_hex: String,
-    template_hash_hex: String,
-) -> Sourcemap {
+pub fn build(symbols: &BTreeMap<String, SymbolEntry>, source_hash_hex: String) -> Sourcemap {
     let mut out: BTreeMap<String, SourceSymbol> = BTreeMap::new();
     for (mangled, entry) in symbols {
         let kind = classify_kind(&entry.artifact);
@@ -160,7 +156,6 @@ pub fn build(
     Sourcemap {
         version: SOURCEMAP_VERSION,
         source_hash: source_hash_hex,
-        template_hash: template_hash_hex,
         symbols: out,
     }
 }
@@ -380,9 +375,8 @@ pub struct SymbolLookupRecord<'a> {
     /// `pre-release`.
     ///
     /// The `sourcemap` field below cannot stand in for it: the sidecar's
-    /// `source_hash` / `template_hash` identify the *inputs*, and two
-    /// generators whose emit code differs while the document and
-    /// template tree do not produce the same pair of hashes.
+    /// `source_hash` identifies the *inputs*, and two generators whose
+    /// emit code differs produce the same hash for the same document.
     pub generator: &'static str,
     /// Path of the `sce_sourcemap.json` this hit came from. A reverse
     /// lookup may span several backends' sidecars in one invocation,
@@ -575,7 +569,7 @@ pub fn validate_emitted_files_have_markers_in(
     tree: &dyn crate::forge::drift::GeneratedTree,
     out_dir: &std::path::Path,
 ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
-    use crate::forge::drift::parse_embedded_hashes;
+    use crate::forge::drift::parse_embedded_header;
 
     let files = tree.files_under(out_dir).into_iter().filter(|path| {
         matches!(
@@ -588,7 +582,7 @@ pub fn validate_emitted_files_have_markers_in(
         let Some(content) = tree.read_to_string(&file) else {
             continue;
         };
-        if parse_embedded_hashes(&content).is_none() {
+        if parse_embedded_header(&content).is_none() {
             // ARCHITECTURE.md "Traceability Ownership Boundary":
             // external meta-generator output is out-of-scope by
             // design — skip silently.
@@ -640,13 +634,12 @@ mod tests {
         let map = Sourcemap {
             version: SOURCEMAP_VERSION,
             source_hash: "abc".into(),
-            template_hash: "def".into(),
             symbols: BTreeMap::new(),
         };
         let s = to_json(&map).unwrap();
         assert!(s.contains("\"version\": 1"));
         assert!(s.contains("\"source_hash\": \"abc\""));
-        assert!(s.contains("\"template_hash\": \"def\""));
+        assert!(!s.contains("template_hash"), "{s}");
         assert!(s.ends_with('\n'));
     }
 
@@ -688,7 +681,7 @@ mod tests {
         let mut parser = crate::parser::SCXMLParser::new();
         let model = parser.parse_string(scxml, "fixture.scxml").expect("parses");
         let symbols = build_symbol_table(&model, &[]).expect("no collisions");
-        let map = build(&symbols, "deadbeef".into(), "feedface".into());
+        let map = build(&symbols, "deadbeef".into());
         let json1 = to_json(&map).expect("serialise");
         let json2 = to_json(&map).expect("serialise");
         // Determinism: two emissions of the same sourcemap must be
@@ -709,7 +702,6 @@ mod tests {
         let map = Sourcemap {
             version: SOURCEMAP_VERSION,
             source_hash: "0000".into(),
-            template_hash: "1111".into(),
             symbols: BTreeMap::new(),
         };
         let res = check_source_hash_matches(&map, "ffff", "out/rust/sce_sourcemap.json");

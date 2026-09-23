@@ -105,10 +105,6 @@ abstract class GenerateLoweredArtifact : DefaultTask() {
                     "--script-engine", scriptEngine.get(),
                 )
                 standardOutput = sink
-                // A determinism pin, for the same reason `:sce-kotlin-tests`
-                // carries one: the emitted header stamps a generation time,
-                // and an unpinned one makes every build produce new bytes.
-                environment("SOURCE_DATE_EPOCH", System.getenv("SOURCE_DATE_EPOCH") ?: "0")
             }
         }
     }

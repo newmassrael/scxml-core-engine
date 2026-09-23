@@ -12,9 +12,7 @@
 # beside the parent (docs/SCE_ACCEPTED_SUBSET.md §2.13) and the parent
 # instantiates that stub by name.
 #
-# Idempotency: re-runs are byte-stable except for the embedded
-# `generated-at: <unix-seconds>` header line that the codegen emits
-# on every invocation.
+# Idempotency: re-runs are byte-stable for unchanged inputs and generator.
 #
 # Usage (from repo root):
 #   scripts/regen_invoke_expression_failure_is_reported_go.sh

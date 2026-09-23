@@ -1,7 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 387554cf9d8d5415c8347a9554c4bb2db1133a43787a7fb935ba3f3f9103b433
-// template-hash: 68cd6517eb7ab30f12195ed5715cf739261174462172b0a4bc940ea551e29052
-// generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/invoke_param_error_starts_the_child/invoke_param_error_starts_the_child.scxml

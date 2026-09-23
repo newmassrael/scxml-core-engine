@@ -1,7 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 4731a6ba40787ab928e39e6fce63f290cd233b0d7081f439713483c0324e40fe
-// template-hash: 68cd6517eb7ab30f12195ed5715cf739261174462172b0a4bc940ea551e29052
-// generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/error_cascade_is_bounded/error_cascade_is_bounded.scxml

@@ -102,8 +102,8 @@ PY
 # filter. Widening the guard alone opens a block whose loop then iterates the
 # same empty list, so the emitted machine is byte-identical and no oracle can
 # fail. Measured, not reasoned: generating the invoker fixture with the guard
-# widened differed from the baseline in the `template-hash` header and in
-# nothing else.
+# widened differed from the baseline in the header's `template-hash` line
+# (since retired) and in nothing else.
 #
 # So the loop is widened too, which is what actually puts a host-served invoke
 # through the refusal body. Verified the same way: the emitted Go then carries

@@ -121,28 +121,11 @@ val generateScxml by tasks.registering(Exec::class) {
     description = "Generate Kotlin state machines and test classes from W3C SCXML tests"
 
     // An overlay run compiles machines the caller generated, so regenerating
-    // the committed ones would be work whose output nothing reads — and, on
-    // a tree whose SOURCE_DATE_EPOCH pin ever slipped, a write into the
-    // committed tree that this run has no reason to make.
+    // the committed ones would be work whose output nothing reads.
     enabled = hasCodegen && overlayMachines == null
 
     workingDir = File(rootDir)
     commandLine(sceCodegenBinary ?: "sce-codegen", "generate-w3c", "-l", "kotlin")
-
-    // The generator stamps `generated-at` from the wall clock unless
-    // SOURCE_DATE_EPOCH says otherwise, so simply running this suite
-    // rewrote the header of every committed generated file and left 449
-    // of them modified. That is why the Kotlin W3C lane was CI-only: on
-    // a developer's machine it could not be run without dirtying the
-    // tree. The shell gates pin the same variable the same way
-    // (`scripts/regen_all_committed_trees.sh`, `scripts/gates/w3c-go.sh`);
-    // an inherited value still wins, so a deliberate re-stamp stays
-    // possible. Read through `providers` rather than `System.getenv` so
-    // the configuration cache tracks it.
-    environment(
-        "SOURCE_DATE_EPOCH",
-        providers.environmentVariable("SOURCE_DATE_EPOCH").getOrElse("0"),
-    )
 
     // Inputs: SCXML sources + codegen infrastructure + test registry
     inputs.dir(File(rootDir, "resources"))

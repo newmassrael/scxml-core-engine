@@ -534,20 +534,16 @@ const MIN_REGEN_SCRIPTS: usize = 80;
 
 /// Every regen script reaches the generator through the shell locator.
 ///
-/// The locator is not only where the binary is found — it is also where
-/// `SOURCE_DATE_EPOCH` is defaulted to 0, which is what makes the
-/// `generated-at` header of a regenerated file reproducible.
-/// `committed_trees_carry_a_pinned_generated_at` rejects any other stamp, so
-/// a regen script that reaches the generator some other way writes a
-/// wall-clock header into a committed tree and the drift gate rejects the
-/// push. That is not hypothetical: only the master script exported the
-/// variable and all 115 per-stem scripts did not, so regenerating a single
-/// fixture — the normal shape of a round that changes one fixture — cost a
-/// push cycle on 2026-08-20.
+/// The locator is not only where the binary is found — it is also where a
+/// binary built from other sources is rebuilt before use, by asking its
+/// witness (`verify-generator`). A regen script that reaches the generator
+/// some other way can refresh a committed tree with a generator predating
+/// the very edit it regenerates for, and one commit then holds trees from
+/// two generators.
 ///
-/// Stated over the scripts rather than over the exported variable, because
-/// the variable is set in one place and a test that read it back there would
-/// be asking the fix whether it applied itself. What can actually drift is a
+/// Stated over the scripts rather than over the locator, because the
+/// rebuild lives in one place and a test that read it back there would be
+/// asking the fix whether it applied itself. What can actually drift is a
 /// script that stops going through the locator.
 #[test]
 fn every_regen_script_sources_the_shell_locator() {
@@ -579,8 +575,8 @@ fn every_regen_script_sources_the_shell_locator() {
     assert!(
         orphans.is_empty(),
         "{} regen script(s) do not source scripts/lib/sce_codegen.sh, so they \
-         inherit neither the binary search nor the SOURCE_DATE_EPOCH pin and \
-         will stamp wall-clock `generated-at` headers into committed trees: \
+         inherit neither the binary search nor the rebuild of a stale binary, \
+         and can regenerate a committed tree with the wrong generator: \
          {orphans:#?}",
         orphans.len(),
     );

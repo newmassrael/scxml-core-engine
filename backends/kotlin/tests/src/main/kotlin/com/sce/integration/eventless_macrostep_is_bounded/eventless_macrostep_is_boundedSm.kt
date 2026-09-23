@@ -1,7 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 448efc1945f51a00d346a070a50c9e40a8fdb0d3297033414fa43984fe293f6e
-// template-hash: 68cd6517eb7ab30f12195ed5715cf739261174462172b0a4bc940ea551e29052
-// generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/eventless_macrostep_is_bounded/eventless_macrostep_is_bounded.scxml

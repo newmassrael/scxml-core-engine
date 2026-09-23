@@ -29,14 +29,6 @@ command -v go >/dev/null 2>&1 \
 
 CODEGEN="$(sce_gate_codegen)"
 
-# Pin `generated-at` the way `scripts/regen_all_committed_trees.sh` does.
-# Without this the generation stamps a fresh wall-clock value into every file
-# under `backends/go/tests/generated`, which `committed_trees_carry_a_pinned_
-# generated_at` then fails on — measured: this gate ran first, and the
-# workspace suite three gates later reported 451 unpinned files. A gate that
-# breaks the next gate is worse than no gate.
-export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-0}"
-
 sce_gate_step "generating the Go W3C suite"
 "$CODEGEN" generate-w3c -l go >/dev/null \
     || sce_gate_fail "Go W3C generation"

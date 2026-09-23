@@ -7,8 +7,7 @@
 # The regeneration procedure reproduces the committed trees.
 #
 # `scripts/regen_all_committed_trees.sh` states the property in its own
-# header — pin SOURCE_DATE_EPOCH, "regenerate and expect no diff" — and
-# nothing checked it. What that bought, measured: the Rust W3C tree carried
+# header — "regenerate and expect no diff" — and nothing checked it. What that bought, measured: the Rust W3C tree carried
 # three `__sce_synth_invoke__*.scxml` documents that no run produces. They
 # were on-disk output of an older generator; the parser now synthesises an
 # invoke child in memory ("disk emission is a codegen concern, not a parser
@@ -77,7 +76,7 @@ cp "$CODEGEN" "$WT/target/debug/sce-codegen"
 # what keeps a new backend inside the gate without an edit here. (Prose, not a
 # §-token: this comment describes the header, it does not implement the clause
 # that defines it, and a citation here would be a claim of the second kind.)
-mapfile -t GENERATED < <(cd "$WT" && git grep -l "template-hash:" -- backends \
+mapfile -t GENERATED < <(cd "$WT" && git grep -l "source-hash:" -- backends \
     | grep -v '/mod\.rs$' || true)
 # Floor on the CANDIDATE set, so a scan that stops matching fails loudly
 # instead of sampling nothing. 976 artifacts carried the header when this was
@@ -104,7 +103,7 @@ sce_gate_on_exit "rm -f '$REGEN_LOG'"
 # ORIGINAL checkout while reporting success in the worktree, which is also
 # the likeliest explanation for the four files an earlier attempt at this
 # gate could not account for from inside a Rust test.
-if ! ( cd "$WT" && SOURCE_DATE_EPOCH=0 SCE_WORKSPACE_ROOT="$WT" \
+if ! ( cd "$WT" && SCE_WORKSPACE_ROOT="$WT" \
         ./scripts/regen_all_committed_trees.sh ) >"$REGEN_LOG" 2>&1; then
     tail -40 "$REGEN_LOG" >&2
     sce_gate_fail "the regeneration procedure did not complete"

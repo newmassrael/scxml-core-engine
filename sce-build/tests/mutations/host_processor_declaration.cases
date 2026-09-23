@@ -211,8 +211,8 @@ PY
 # guard alone opens a block whose loop then iterates the same empty list: the
 # emitted machine is byte-identical and no oracle can fail. Measured, not
 # reasoned — generating the invoker fixture with the guard widened differed
-# from the baseline in the `template-hash` header and in NOTHING else (0 body
-# lines).
+# from the baseline in the header's `template-hash` line (since retired) and
+# in NOTHING else (0 body lines).
 #
 # This one was never even reported: its job was cancelled in both CI runs
 # inspected that day, so the SURVIVED it would have produced was never seen.

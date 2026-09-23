@@ -280,10 +280,10 @@ const ATTRIBUTION_EXEMPT: &[(&str, &str)] = &[(
     "schemas/sce-sourcemap.v1.schema.json",
     "committed artifact: a commit stamp would be invalidated by the \
      very commit that writes it, so every commit touching any tree \
-     would have to regenerate every sidecar. source_hash / \
-     template_hash identify the inputs instead, and a consumer needing \
-     the emitting commit reads it from the manifest of the run that \
-     produced the sidecar, or from a lookup record naming it.",
+     would have to regenerate every sidecar. source_hash identifies \
+     the inputs instead, and a consumer needing the emitting commit \
+     reads it from the manifest of the run that produced the sidecar, \
+     or from a lookup record naming it.",
 )];
 
 /// Lower bound on surfaces that must actually be checked for a stamp.

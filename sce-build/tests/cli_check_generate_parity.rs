@@ -414,11 +414,15 @@ const GENERATE_FLAGS: &[FlagFacts] = &[
     ),
     f(
         "--workspace-root",
-        Reach::Verdict,
-        None,
+        Reach::Emission,
+        Some(&["--workspace-root", "."]),
         "rust",
-        "resolves the template tree every backend renders from, and the \
-         `template-hash` the emission is pinned to",
+        "global, for `verify-generator`, which judges the binary against the \
+         checkout it names; `generate` reads nothing through it. It pinned the \
+         root of the header's `template-hash` until that was retired, and \
+         never the template tree, which `SCE_TEMPLATE_DIR` and the build's \
+         own location resolve. The probe names the repository root — `run` \
+         works from there",
     ),
     f(
         "--write-deps",
@@ -619,18 +623,12 @@ fn an_emission_flag_does_not_move_a_verdict() {
 /// on disk, never through the document. Measured on the one tree where the
 /// disk has nothing to say — the tree the same generation just wrote — where
 /// the comparing run must exit exactly as the writing run did.
-///
-/// `SOURCE_DATE_EPOCH` is pinned for both runs: the header stamp is otherwise
-/// wall-clock, and two runs a second apart would differ in it and nothing
-/// else — a difference the flag is right to report and this claim is not
-/// about.
 #[test]
 fn a_comparison_flag_moves_the_verdict_only_by_the_disk() {
-    let run_pinned = |args: &[&str]| {
+    let run_at_root = |args: &[&str]| {
         let out = Command::new(sce_codegen_bin())
             .args(args)
             .current_dir(repo_root())
-            .env("SOURCE_DATE_EPOCH", "0")
             .output()
             .expect("sce-codegen runs");
         (
@@ -656,7 +654,7 @@ fn a_comparison_flag_moves_the_verdict_only_by_the_disk() {
             "--output-dir",
             &dir,
         ];
-        let (written, written_err) = run_pinned(&base);
+        let (written, written_err) = run_at_root(&base);
         assert_eq!(
             written, 0,
             "the probe's writing run fails, so the comparison below measures \
@@ -664,7 +662,7 @@ fn a_comparison_flag_moves_the_verdict_only_by_the_disk() {
         );
         let mut with: Vec<&str> = base.to_vec();
         with.extend(extra.iter().copied());
-        let (compared, compared_err) = run_pinned(&with);
+        let (compared, compared_err) = run_at_root(&with);
         assert_eq!(
             compared, written,
             "`{}` ({}) exited {compared} over the tree the same generation just \

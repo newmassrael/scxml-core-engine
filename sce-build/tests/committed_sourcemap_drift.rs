@@ -9,13 +9,12 @@
 //
 //   - `sce-codegen verify` reads the drift header, and a JSON sidecar
 //     carries no comment syntax to put one in.
-//   - `b9_drift_detection::committed_trees_carry_a_pinned_generated_at`
-//     walks the same trees but only considers files with a
-//     `// generated-at:` line, so every sidecar falls through.
-//   - The sidecar's own `source_hash` / `template_hash` cover the
-//     *inputs*. A change in what the emitter writes for unchanged
-//     inputs — new field, dropped field, different value — moves
-//     neither hash.
+//   - `b9_drift_detection::committed_generated_files_carry_the_current_header_shape`
+//     reads every committed file that opens with the header banner, so
+//     every sidecar falls through.
+//   - The sidecar's own `source_hash` covers the *inputs*. A change in
+//     what the emitter writes for unchanged inputs — new field, dropped
+//     field, different value — does not move it.
 //
 // Measured consequence, and the reason this gate exists: the emitter
 // was changed to populate `SourceSymbol::event`, which had been fed by
@@ -25,9 +24,8 @@
 //
 // The check is a regeneration comparison because nothing weaker can
 // see that class of drift. It compares the `symbols` table only:
-// `source_hash` / `template_hash` depend on the input directory the
-// caller names and belong to the drift-hash axis, which has its own
-// gate.
+// `source_hash` depends on the input directory the caller names and
+// belongs to the drift-hash axis, which has its own gate.
 
 mod common;
 

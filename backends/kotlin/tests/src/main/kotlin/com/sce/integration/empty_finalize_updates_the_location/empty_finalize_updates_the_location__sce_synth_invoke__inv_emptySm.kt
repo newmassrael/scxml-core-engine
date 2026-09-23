@@ -1,7 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: c97edcb094613d8138825758fc943d853d23ad4854f2fa7dcf6ff6f58539b674
-// template-hash: 68cd6517eb7ab30f12195ed5715cf739261174462172b0a4bc940ea551e29052
-// generated-at: 0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/empty_finalize_updates_the_location/empty_finalize_updates_the_location__sce_synth_invoke__inv_empty.scxml

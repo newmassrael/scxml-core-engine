@@ -52,8 +52,8 @@ PY
 
 mutation_case "the artefact probe stops recognising the drift header" <<'PY'
 edit("sce-build/tests/workflow_trigger_coverage.rs",
-     'head.contains("SCE-GENERATED") && head.contains("template-hash:")',
-     'head.contains("SCE-GENERATED") && head.contains("template-hash-absent:")')
+     'head.contains("SCE-GENERATED") && head.contains("source-hash:")',
+     'head.contains("SCE-GENERATED") && head.contains("source-hash-absent:")')
 PY
 
 mutation_case "a single star is allowed to cross a path separator" <<'PY'

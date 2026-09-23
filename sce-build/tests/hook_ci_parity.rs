@@ -508,12 +508,12 @@ const CI_ONLY: &[(&str, &str)] = &[
     ),
     // `gradlew :sce-kotlin-tests:test` used to sit here for the same
     // reason as the forge-runtime task above. The reason was mechanical,
-    // not structural: the task invoked the generator without
-    // SOURCE_DATE_EPOCH, so it stamped the wall clock into 449 committed
-    // headers. `backends/kotlin/tests/build.gradle.kts` pins it now, the
-    // `w3c-kotlin` gate re-checks that the run left the tree clean, and
-    // the lane delegates to that gate — so the Kotlin W3C arm is no
-    // longer CI-only and an entry here would describe nothing.
+    // not structural: the task regenerated the committed tree while the
+    // header still carried a `generated-at` stamp, and stamped the wall
+    // clock into 449 committed headers. The header carries no timestamp
+    // now, the `w3c-kotlin` gate re-checks that the run left the tree
+    // clean, and the lane delegates to that gate — so the Kotlin W3C arm
+    // is no longer CI-only and an entry here would describe nothing.
     (
         "xml_to_html.py",
         "publication, not verification. The report job turns the C++ JUnit \

@@ -872,7 +872,8 @@ first-class vs AOT-only" framing.
 | C11 | no — `${CMAKE_CURRENT_BINARY_DIR}/backends/c/tests/generated/` | CMake build-time |
 
 Committed-tree backends are §6.2.6 drift-gated (per-context source-hash
-+ template-hash invariant via `b9_drift_detection::verify_passes_on_real_committed_*`);
+invariant via `b9_drift_detection::verify_passes_on_real_committed_*`, and
+their content by `scripts/gate regen-reproduces`);
 build-time backends rely on CMake to regenerate on every build, so the
 build process itself is the §6.2.6 freshness invariant.
 

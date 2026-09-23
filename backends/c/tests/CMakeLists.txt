@@ -1892,7 +1892,7 @@ set(_FP_FIXTURE "${CMAKE_SOURCE_DIR}/tests/forge/resources/buffer_pool_ast_expor
 set(_FP_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/buffer_pool_ast_export_min.h")
 add_custom_command(
     OUTPUT "${_FP_HEADER}"
-    COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate "${_FP_FIXTURE}"
+    COMMAND "${SCE_CODEGEN}" generate "${_FP_FIXTURE}"
             -l c -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
             --write-deps "${_FP_HEADER}.d"
     DEPENDS "${_FP_FIXTURE}" "${SCE_CODEGEN}"
@@ -1951,7 +1951,7 @@ set(_BC_ENTRY_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/subscription_entry.h")
 set(_BC_TABLE_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/local_sub_table.h")
 add_custom_command(
     OUTPUT "${_BC_ENTRY_HEADER}"
-    COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate "${_BC_FIXTURE_DIR}/subscription_entry.scxml"
+    COMMAND "${SCE_CODEGEN}" generate "${_BC_FIXTURE_DIR}/subscription_entry.scxml"
             -l c -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
             --write-deps "${_BC_ENTRY_HEADER}.d"
     DEPENDS "${_BC_FIXTURE_DIR}/subscription_entry.scxml" "${SCE_CODEGEN}"
@@ -1961,7 +1961,7 @@ add_custom_command(
 )
 add_custom_command(
     OUTPUT "${_BC_TABLE_HEADER}"
-    COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate "${_BC_FIXTURE_DIR}/local_sub_table.scxml"
+    COMMAND "${SCE_CODEGEN}" generate "${_BC_FIXTURE_DIR}/local_sub_table.scxml"
             -l c -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
             --write-deps "${_BC_TABLE_HEADER}.d"
     DEPENDS "${_BC_FIXTURE_DIR}/local_sub_table.scxml" "${_BC_ENTRY_HEADER}" "${SCE_CODEGEN}"
@@ -2016,7 +2016,7 @@ set(_ES_PARENT_SOURCE "${SCE_C_INTEGRATION_GENERATED_DIR}/event_schema_native_sm
 set(_ES_PARENT_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/event_schema_native_sm.h")
 add_custom_command(
     OUTPUT "${_ES_PARENT_SOURCE}"
-    COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate
+    COMMAND "${SCE_CODEGEN}" generate
             "${_ES_FIXTURE_ROOT}/event_schema_native.scxml"
             -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
             --write-deps "${_ES_PARENT_SOURCE}.d"
@@ -2063,7 +2063,7 @@ set(_ESB_SOURCE "${SCE_C_INTEGRATION_GENERATED_DIR}/event_schema_bytes_sm.c")
 set(_ESB_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/event_schema_bytes_sm.h")
 add_custom_command(
     OUTPUT "${_ESB_SOURCE}"
-    COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate
+    COMMAND "${SCE_CODEGEN}" generate
             "${_ESB_FIXTURE_ROOT}/event_schema_bytes.scxml"
             -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
             --write-deps "${_ESB_SOURCE}.d"
@@ -2122,7 +2122,7 @@ set(_ESL_SOURCE "${SCE_C_INTEGRATION_GENERATED_DIR}/statechart_lifted_sm.c")
 set(_ESL_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/statechart_lifted_sm.h")
 add_custom_command(
     OUTPUT "${_ESL_SOURCE}"
-    COMMAND ${SCE_CODEGEN_ENV} "${SCE_CODEGEN}" generate
+    COMMAND "${SCE_CODEGEN}" generate
             "${_ESL_FIXTURE_ROOT}/statechart_lifted.scxml"
             -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
             --input-root "${_ESL_FIXTURE_ROOT}"

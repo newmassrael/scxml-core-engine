@@ -5443,11 +5443,6 @@
         },
         {
           "file": "sce-build/tests/b9_drift_detection.rs",
-          "symbol": "collect_generated_at",
-          "kind": "references"
-        },
-        {
-          "file": "sce-build/tests/b9_drift_detection.rs",
           "symbol": "generate_headered_rust",
           "kind": "references"
         },
@@ -5461,6 +5456,16 @@
         },
         {
           "file": "scripts/regen_wildcard_in_document_order_kotlin.sh",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/b9_drift_detection.rs",
+          "symbol": "committed_generated_files_carry_the_current_header_shape",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/b9_drift_detection.rs",
+          "symbol": "header_keys",
           "kind": "references"
         }
       ]
@@ -5723,6 +5728,12 @@
       "target_kind": "section",
       "target_id": "synth-5-B",
       "reason": "The file moved unchanged in substance to backends/rust/forge-conformance/tests/forge_default_round_trip.rs, together with the build script that generates its fixtures, so that sce-forge-runtime has no build script; the binding moves with it."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-6.2.6",
+      "reason": "The header no longer carries a generated-at stamp, so the scan for a pinned stamp and its helper collect_generated_at were removed. committed_generated_files_carry_the_current_header_shape replaces them: it reads every committed file opening with the header banner and refuses any retired header key."
     }
   ],
   "frames": {},

@@ -3220,7 +3220,6 @@ to its SCXML origin in a single structured file. Schema:
 {
   "version": 1,
   "source_hash":   "<sha256 — same as §6.2.6 generated-source header>",
-  "template_hash": "<sha256 — same as §6.2.6>",
   "symbols": {
     "session_unicast__Opening__on_init_ack": {
       "scxml_file":       "sources/session/session_unicast.scxml",
@@ -3248,7 +3247,8 @@ to its SCXML origin in a single structured file. Schema:
 is checked into version control with `out/`-equivalent provenance —
 never edited manually. Its `source_hash` MUST match the
 corresponding generated file's §6.2.6 header hash; mismatch is a
-build error.
+build error. Like that header, it carries no template or generator
+hash (§6.2.6).
 
 **Tooling — `addr2sce`.**
 
@@ -3501,14 +3501,14 @@ carries a header of the form:
 ```
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: <sha256 of sorted input SCXML + deploy.yaml>
-// template-hash: <sha256 of template tree + Cargo.lock>
-// generated-at: <utc timestamp, informational only>
 ```
 
-`sce-codegen verify <out-dir>` recomputes both hashes from the
-current source + template state and compares against the embedded
-values. Mismatch is failure. CI runs this as a gate; pre-commit
-hook runs it locally.
+The header states facts about the file's own inputs and none that can
+change while the file does not: no timestamp, no template or generator
+hash (both retired 2026-09). A run names its `generator` on its stdout
+manifest. Drift is judged on content: `--assert-unchanged` writes
+nothing and names each file on disk the generation would change;
+`verify` recomputes the `source-hash` alone; CI regenerates and diffs.
 
 The policy: **manual edits to `out/` are forbidden**. When
 generated code falls short, the path forward is an SCE RFC (or
