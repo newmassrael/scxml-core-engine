@@ -44,6 +44,21 @@ pub mod cli_language;
 /// that keeps opaque author text (`sce:req`, `sce:provenance`,
 /// `sce:unresolved`) from reaching code in any backend.
 pub mod comment_text;
+/// Which commit `HEAD` names, and the paths `build.rs` watches so that
+/// [`GENERATOR_COMMIT`] cannot go stale.
+///
+/// The build script `include!`s this file, the same way it includes
+/// [`generator_witness`]; the crate compiles it only for its own tests,
+/// which are the one place the build script's git reading can be held to
+/// what git does. Nothing in the library calls it.
+///
+/// What the tests hold it to is that every watched path exists. Cargo
+/// reads a watched path that does not as changed on every build, and the
+/// watch set this replaced named two absent files in every linked
+/// worktree: the branch ref and `packed-refs` live in the common git
+/// directory, not in the worktree's own.
+#[cfg(test)]
+mod commit_stamp;
 pub mod conformance;
 /// The W3C SCXML ECMAScript datamodel — parsed, then emitted as Lua. It replaces the
 /// string-rewriting transformer whose entry point could not fail; see the

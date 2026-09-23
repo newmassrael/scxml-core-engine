@@ -1,0 +1,47 @@
+# Mutation cases for "the commit watch names only paths that exist".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/the_commit_watch_names_only_paths_that_exist.cases`.
+#
+# `sce-build/build.rs` embeds the commit `HEAD` names and asks cargo to re-run
+# when it could move. Cargo reads a watched path that does not exist as changed
+# on EVERY build, so the watch set has two ways to be wrong and they pull
+# against each other: miss a path and the embedded commit goes stale; name an
+# absent one and every cargo invocation re-runs the script and recompiles the
+# crate behind it. The set this replaced did the second in every linked
+# worktree — it joined the branch ref and `packed-refs` onto the worktree's
+# private git directory, where neither lives — and measured 2026-09-24 that
+# rebuilt `sce-build` on each invocation, and re-ran the forge runtime's build
+# script behind each throwaway crate `forge_conformance` compiles.
+#
+# Each case below breaks one half. The first two name an absent path, which
+# `assert_all_exist` refuses; the last two send a reftable store down the wrong
+# branch, which the layout test's exact set refuses.
+
+mutation_tests -p sce-build --lib
+mutation_targets sce-build/src/commit_stamp.rs
+mutation_oracles sce-build/src/commit_stamp.rs
+
+mutation_case "an absent loose ref is watched as itself" <<'PY'
+edit("sce-build/src/commit_stamp.rs",
+     ".find(|ancestor| ancestor.exists())",
+     ".next()")
+PY
+
+mutation_case "packed-refs is watched before anything was ever packed" <<'PY'
+edit("sce-build/src/commit_stamp.rs",
+     "if packed.is_file() {",
+     "if !packed.as_os_str().is_empty() {")
+PY
+
+mutation_case "the reftable placeholder HEAD is followed as if it were a ref" <<'PY'
+edit("sce-build/src/commit_stamp.rs",
+     "if reftable.is_dir() {",
+     "if reftable.is_dir() && !head.is_file() {")
+PY
+
+mutation_case "the shared reftable stack is looked for in the worktree's own directory" <<'PY'
+edit("sce-build/src/commit_stamp.rs",
+     "&[\"rev-parse\", \"--git-dir\", \"--git-common-dir\"]",
+     "&[\"rev-parse\", \"--git-dir\", \"--git-dir\"]")
+PY

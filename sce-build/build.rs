@@ -38,7 +38,6 @@
 //! per run from the actual bytes.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 // The witness algorithm is included rather than imported: a build script
 // is its own crate and cannot depend on the library it builds. Including
@@ -53,6 +52,13 @@ mod generator_witness {
     include!("src/generator_witness.rs");
 }
 use generator_witness::{digest_hex, witness_paths, DIGEST_UNAVAILABLE};
+
+// Included for the same reason as the witness: the library's tests hold
+// the watch set to what git does in a linked worktree and a packed ref,
+// and a build script cannot be tested any other way.
+mod commit_stamp {
+    include!("src/commit_stamp.rs");
+}
 
 fn main() {
     let commit = git_commit().unwrap_or_else(|| "unknown".to_string());
@@ -184,55 +190,31 @@ fn collect_templates(root: &Path, current: &Path, out: &mut Vec<(String, PathBuf
 /// vendored crate, a release tarball, a Bazel-style fetched dependency).
 /// Absence is a normal build shape, not a failure — the build must not
 /// break just because provenance is unavailable.
+///
+/// A linked worktree has to work as well as the main one: the field
+/// report's own repro pins a generator via `git worktree add`.
 fn git_commit() -> Option<String> {
-    let git_dir = git_dir()?;
+    // Cargo runs a build script from its package's directory.
+    let here = std::env::current_dir().ok()?;
     // Rebuild when the ref moves, so the embedded value cannot go stale
     // within a working session. A stamp that silently describes the wrong
     // commit is the failure mode this whole surface exists to remove.
-    watch(&git_dir.join("HEAD"));
-    if let Some(reference) = head_ref(&git_dir) {
-        watch(&git_dir.join(&reference));
-        // Refs living in `packed-refs` have no file of their own.
-        watch(&git_dir.join("packed-refs"));
+    for path in commit_stamp::head_watch_paths(&here)? {
+        watch(&path);
     }
-
-    let out = Command::new("git")
-        .args(["rev-parse", "--short=12", "HEAD"])
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let commit = String::from_utf8(out.stdout).ok()?.trim().to_string();
-    (!commit.is_empty()).then_some(commit)
+    commit_stamp::head_commit(&here)
 }
 
-/// Resolve the `.git` directory, following the `gitdir:` indirection a
-/// worktree or submodule checkout uses. The field report's own repro
-/// pins a generator via `git worktree add`, so that shape has to work.
-fn git_dir() -> Option<PathBuf> {
-    let out = Command::new("git")
-        .args(["rev-parse", "--git-dir"])
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let dir = PathBuf::from(String::from_utf8(out.stdout).ok()?.trim());
-    Some(if dir.is_absolute() {
-        dir
-    } else {
-        std::env::current_dir().ok()?.join(dir)
-    })
-}
-
-/// Symbolic ref `HEAD` points at (`refs/heads/main`), if any. A detached
-/// HEAD has none, and the `HEAD` watch alone covers that case.
-fn head_ref(git_dir: &Path) -> Option<String> {
-    let head = std::fs::read_to_string(git_dir.join("HEAD")).ok()?;
-    head.strip_prefix("ref: ").map(|r| r.trim().to_string())
-}
-
+/// Ask cargo to re-run this script when `path` changes.
+///
+/// ⚠ `path` must exist. Cargo reads a watched path that does not as
+/// changed on every build, so the script re-runs each time and everything
+/// compiled from its output is rebuilt after it. Measured 2026-09-24: the
+/// branch-ref watch named a file absent from every linked worktree, so each
+/// cargo invocation in one recompiled this crate, and each throwaway crate
+/// `forge_conformance` compiles against the forge runtime re-ran that
+/// runtime's build script behind it — one every four and a half minutes,
+/// in series on their shared target directory.
 fn watch(path: &Path) {
     println!("cargo:rerun-if-changed={}", path.display());
 }
