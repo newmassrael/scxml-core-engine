@@ -142,6 +142,9 @@ class Document:
     # itself (the manifest's `holder`); this is the same answer read without
     # building, so `check` can ask the binding for what such a document needs.
     keeps: frozenset = frozenset()
+    # Transitions that restart every other region of a `<parallel>` as a side
+    # effect (`_parallel_reentries`). Refused by `check` for a statechart.
+    reentries: tuple = ()
 
     def variants_of(self, ident: str) -> dict | None:
         """The enumeration an `enum:` input or output names, if one is imported."""
@@ -184,6 +187,92 @@ def descriptor_matches(descriptor: str, event_name: str) -> bool:
     token = descriptor[:-2] if descriptor.endswith(".*") else descriptor.rstrip(".")
     return (token == "*" or event_name == token
             or event_name.startswith(token + "."))
+
+
+_STATE_TAGS = frozenset(f"{SCXML_NS}{t}" for t in ("state", "parallel", "final", "history"))
+
+
+def _parallel_reentries(root) -> tuple:
+    """Transitions that leave a `<parallel>` and re-enter it with a region no
+    target is in, as `(source, event, target, parallel, below_source,
+    restarted regions)`.
+
+    W3C SCXML 3.13 takes a transition's domain from the nearest proper
+    ancestor that is a compound state or the `<scxml>` element -- and a
+    `<parallel>` is neither, so it is stepped over. A transition written on a
+    region, or between regions, therefore exits the whole `<parallel>` and
+    enters it again, and every OTHER region restarts at its initial state. The
+    document says "this latch forgets"; the machine does "every latch
+    forgets". Nothing downstream mentions it: the document is valid SCXML,
+    it generates, and a platform's tests pass it whenever they never change
+    one region's input between another region's edges.
+
+    ⚠ Measured 2026-09-23: a model-written document reset all four latches on
+    any latch's ERROR and failed a shipped case; the reference document, which
+    passed every shipped case, reset them on any change of a fault input --
+    written by an author who had already recorded this very trap.
+
+    Reported once per transition, at the WIDEST `<parallel>` it restarts a
+    region of. Not reported: a transition whose target is the `<parallel>`
+    itself (a restart that says so); one whose targets name a state in EVERY
+    region it re-enters (a joint move -- measured the same day, a document
+    moved two latches together with `target="rl_lock rr_lock"` under a
+    compound state that kept the domain there, and nothing restarted that it
+    did not name); `type="internal"` on a compound source whose targets are
+    inside it (W3C SCXML 3.13 then takes the source as the domain); and
+    anything inside an `<invoke>`, which is another session.
+    """
+    parent: dict = {}
+
+    def walk(element) -> None:
+        for child in element:
+            if child.tag == f"{SCXML_NS}invoke":
+                continue
+            parent[child] = element
+            walk(child)
+
+    walk(root)
+    by_id = {e.get("id"): e for e in parent if e.tag in _STATE_TAGS and e.get("id")}
+
+    def ancestors(element):
+        while element in parent:
+            element = parent[element]
+            yield element
+
+    def compound_or_root(element) -> bool:
+        return element is root or (element.tag == f"{SCXML_NS}state"
+                                   and any(c.tag in _STATE_TAGS for c in element))
+
+    found = []
+    for transition in (e for e in parent if e.tag == f"{SCXML_NS}transition"):
+        source = parent[transition]
+        if source.tag not in (f"{SCXML_NS}state", f"{SCXML_NS}parallel"):
+            continue  # an <initial>'s transition exits nothing
+        targets = [by_id.get(i) for i in (transition.get("target") or "").split()]
+        if not targets or None in targets:
+            continue  # targetless exits nothing; an unknown target is refused elsewhere
+        below_source = all(source in ancestors(t) for t in targets)
+        if (transition.get("type") == "internal" and compound_or_root(source)
+                and below_source):
+            continue
+        domain = next(a for a in ancestors(source) if compound_or_root(a)
+                      and all(a in ancestors(t) for t in targets))
+        widest, restarted = None, ()
+        for a in ancestors(source):
+            if a is domain:
+                break
+            if a.tag != f"{SCXML_NS}parallel" or not all(a in ancestors(t) for t in targets):
+                continue
+            # A region holding no target is entered at its initial state.
+            untargeted = tuple(r.get("id") for r in a if r.tag in _STATE_TAGS
+                               and not any(t is r or r in ancestors(t) for t in targets))
+            if untargeted:
+                widest, restarted = a, untargeted
+        if widest is not None:
+            found.append((source.get("id"), transition.get("event") or "",
+                          transition.get("target"), widest.get("id"), below_source,
+                          restarted))
+    return tuple(found)
 
 
 def _listeners(root) -> dict:
@@ -308,6 +397,7 @@ def read_document(path: pathlib.Path) -> Document:
         listeners=_listeners(root),
         types=types,
         enums=_imported_enums(root, path),
+        reentries=_parallel_reentries(root),
     )
 
 
@@ -840,6 +930,25 @@ def check(pack: Pack, binding_path: pathlib.Path) -> list[Finding]:
                                            binding.get("activation"))
         if why:
             out.append(Finding("binding", why))
+
+    # A transition that restarts every other region of a <parallel> as a side
+    # effect. Valid SCXML that generates, and that a platform's tests pass
+    # whenever they never move one region between another region's edges --
+    # which is why it has to be said here (`_parallel_reentries`).
+    for source, event, target, par, below, restarted in document.reentries:
+        fix = (f"write type=\"internal\" to restart only {source!r} (W3C "
+               f"SCXML 3.13 then takes it as the domain), or put the "
+               f"transition on its own states" if below else
+               f"a transition from one region into another restarts every "
+               f"region it does not name as a target")
+        out.append(Finding(
+            f"state {source}",
+            f"the transition on {event!r} to {target!r} leaves and re-enters "
+            f"<parallel id={par!r}>, so {', '.join(map(repr, restarted))} "
+            f"restart{'s' if len(restarted) == 1 else ''} at the initial state "
+            f"(W3C SCXML 3.13: a <parallel> is never a transition's domain). "
+            f"{fix}; to restart all of {par!r} on purpose, target {par!r} "
+            f"itself"))
 
     # ⚠ An event nothing answers is the statechart shape of a silent pass. The
     # case would send it, the machine would ignore it, every later reading

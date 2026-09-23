@@ -708,6 +708,18 @@ the one a real platform receives. Four keys say so:
 | `sent` | this output leaves as a send, optionally narrowed to one `processor`, its value taken from a `param` or the `content` and otherwise being the event name itself |
 | `when_nothing_sent` | what the output reads as in a case where no matching send occurred |
 
+⚠⚠ **A `<parallel>` is never a transition's domain.** W3C SCXML 3.13 takes
+the domain from the nearest ancestor that is a compound state or `<scxml>`, so
+a transition written on one region — or from one region into another — exits
+the whole `<parallel>` and enters it again, and every other region restarts at
+its initial state. `check` refuses it and names the way out: `type="internal"`
+when only the region should restart (the source is then the domain), the
+region's own states otherwise, and the `<parallel>` itself as the target when
+all of it is meant to restart. Measured 2026-09-23: a model-written document
+reset four latches on any latch's ERROR and failed a shipped case, and the
+reference document — which passed every shipped case — reset them on any
+change of a fault input.
+
 ⚠⚠ **A statechart is handed the event and nothing else.** The driver reads
 `event`, `address` and `becomes` off an input rule and sends the event bare, so
 any other key on a statechart's input rule — `equals`, `protocol`,
