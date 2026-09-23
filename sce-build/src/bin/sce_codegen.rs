@@ -230,26 +230,20 @@ impl DriftContext {
     /// reads on the wire exactly like a successful hash — a header a
     /// consumer cannot audit is worse than a refusal.
     ///
-    /// `must_cover` names the document the root was **inferred** from, and
-    /// is what raises the bar from "the set is non-empty" to "the set
-    /// contains this document". Callers pass `None` when the root came
-    /// from `--input-root` or when the entry point is a batch with no
-    /// single named input: a root the caller declared is an assertion
-    /// about where the sources live, not an inference to second-guess,
-    /// and the fixture regen scripts legitimately generate from a staged
-    /// derivative while hashing against the tracked location it came
-    /// from. An empty set is refused either way — no declaration makes
-    /// the empty-input digest a truthful description of an input.
-    fn compute(input_root: &Path, deploy: Option<&Path>, must_cover: Option<&Path>) -> Self {
+    /// Every document under an inferred root must be covered. An explicit
+    /// root instead names the canonical source set for staged derivatives;
+    /// callers then pass an empty slice. Empty source sets are always refused.
+    fn compute(input_root: &Path, deploy: Option<&Path>, must_cover: &[&Path]) -> Self {
         let sources = drift::SourceSet::collect(input_root, deploy)
             .unwrap_or_else(|e| cli_exit(drift_hash_failure(input_root, "source-hash", e)));
-        let undescribed = match must_cover {
-            Some(input) => !sources.covers(input),
-            None => sources.is_empty(),
-        };
-        if undescribed {
+        let uncovered = must_cover.iter().find(|input| !sources.covers(input));
+        if sources.is_empty() || uncovered.is_some() {
             cli_exit(CliError::SourceHashInputUncovered {
-                input: must_cover.unwrap_or(input_root).display().to_string(),
+                input: uncovered
+                    .copied()
+                    .unwrap_or(input_root)
+                    .display()
+                    .to_string(),
                 root: sources.root().display().to_string(),
                 hashed: sources.len(),
             });
@@ -2324,6 +2318,12 @@ struct OrchestrateArgs {
     /// Input forge file path (repeat for multiple files).
     #[arg(long = "forge")]
     forge: Vec<String>,
+    /// Canonical source directory for drift hashing. Defaults to the first
+    /// input's parent, which must then contain every input in the batch.
+    /// Use a shared root for inputs in different directories, or the
+    /// original source root when generating staged derivatives.
+    #[arg(long)]
+    input_root: Option<String>,
     /// Additional directories searched (in declaration order) to
     /// resolve `<xi:include href="...">` and `<sce:use template="...">`
     /// fragments by name — same semantics as `generate --include-dir`.
@@ -2651,6 +2651,7 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
     let OrchestrateArgs {
         scxml,
         forge,
+        input_root,
         include_dir,
         language: language_arg,
         output_dir: output_dir_arg,
@@ -2741,32 +2742,23 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
         }
     }
 
-    // Spec §synth-6.2.6 drift context — covers every output file written
-    // below with a `// SCE-GENERATED` header that `sce-codegen verify`
-    // can recompute and gate on. `input_root` is the directory holding
-    // the set's first document, whichever slot named it, so a typical
-    // batch (all docs in one directory) hashes its whole input set and
-    // the hash is held to cover that document.
-    //
-    // ⚠ A set with no statechart in it used to fall through to ".", so
-    // its digest described the directory the caller stood in rather
-    // than anything it named: the same documents embedded a different
-    // `source-hash` from each place they were built, and from the
-    // repository root the walk took in `target/`, which a parallel test
-    // runner is writing (measured 2026-09-21: "source set changed while
-    // it was being read"). "." now remains only for a set naming no
-    // document, which gives the hash nothing else to describe.
-    let first_document: Option<&Path> = scxml_path_bufs
-        .first()
-        .or_else(|| forge_path_bufs.first())
-        .map(|p| p.as_path());
-    let drift_input_root: std::path::PathBuf = first_document
-        .map(containing_dir)
-        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    // SCE Protocol-Synthesis RFC §synth-6.2.6: the inferred root must
+    // describe the entire batch, not just whichever input came first.
+    let all_documents: Vec<&Path> = scxml_refs.iter().chain(&forge_refs).copied().collect();
+    let drift_input_root = input_root.as_deref().map(PathBuf::from).unwrap_or_else(|| {
+        all_documents
+            .first()
+            .map(|p| containing_dir(p))
+            .unwrap_or_else(|| PathBuf::from("."))
+    });
     let drift_ctx = DriftContext::compute(
         &drift_input_root,
         deploy_path.map(Path::new),
-        first_document,
+        if input_root.is_some() {
+            &[]
+        } else {
+            &all_documents
+        },
     );
 
     // §10 stdout manifest. Built from the same `GenerateReport` shape
@@ -3816,12 +3808,17 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         Some(s) => std::path::PathBuf::from(s),
         None => containing_dir(Path::new(scxml_path)),
     };
+    let named_input = [Path::new(scxml_path)];
     // Coverage is asserted only when the root was inferred above; an
     // explicit `--input-root` is the caller declaring the source set.
     let drift_ctx = DriftContext::compute(
         &drift_input_root,
         deploy_path.map(Path::new),
-        input_root_override.is_none().then(|| Path::new(scxml_path)),
+        if input_root_override.is_none() {
+            &named_input
+        } else {
+            &[]
+        },
     );
 
     match sce_build::classify_document(&scxml_content) {
@@ -5816,7 +5813,7 @@ fn generate_w3c_unified(
     // Spec §synth-6.2.6 drift context — input root is the W3C resources
     // tree; one hash pair covers every emitted parent SM + child SM
     // + test harness across all 202 tests in this invocation.
-    let drift_ctx = DriftContext::compute(resources_dir, None, None);
+    let drift_ctx = DriftContext::compute(resources_dir, None, &[]);
 
     // Named for what it is read from. The line used to say "C++ test
     // registry" from when the registry was `tests/CMakeLists.txt` and
@@ -8309,7 +8306,7 @@ fn cmd_generate_conformance(
     // covers exactly the SCXML inputs the harness asserts against. It
     // is the directory `render_harness` just read from, so the two
     // cannot disagree about which fixtures the header describes.
-    let drift_ctx = DriftContext::compute(&resource_dir, None, None);
+    let drift_ctx = DriftContext::compute(&resource_dir, None, &[]);
     write_drift_aware(
         current_error_format(),
         &out_path,

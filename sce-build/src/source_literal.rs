@@ -22,7 +22,7 @@
 //!
 //! Each carrier keeps a companion `*_text` holding the source spelling,
 //! `#[serde(skip)]` so the `--emit-ast` wire format does not move — the
-//! same shape `VariantArm::source_line` already uses for a value that
+//! same shape `EnumVariant::source_line` already uses for a value that
 //! belongs to diagnostics rather than to consumers.
 //!
 //! ⚠ The companion can be EMPTY, and that is not a defect. A model

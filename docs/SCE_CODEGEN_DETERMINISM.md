@@ -263,6 +263,13 @@ run from actual bytes rather than trusted from the binary's identity.
 
 ---
 
+For `orchestrate`, the inferred root is the first input's parent directory.
+Every `--scxml` and `--forge` input must be covered by that root; otherwise
+code generation refuses with `forge/source-hash-input-uncovered`. For a
+batch spanning directories, pass `--input-root` naming their shared source
+root, and use the same root for `verify`. An explicit root also supports
+staged derivatives, with the same nonempty-source requirement as `generate`.
+
 ## 8. Verifying after the fact
 
 ```bash

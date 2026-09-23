@@ -921,3 +921,65 @@ fn collect_generated_at(
         }
     }
 }
+
+/// Every document in a batch must contribute to the drift hash, even
+/// when its directory differs from the first document's directory.
+#[test]
+fn orchestrate_requires_a_root_covering_the_entire_document_set() {
+    let root = TempDir::new().unwrap();
+    let inputs = root.path().join("inputs");
+    let left = inputs.join("left");
+    let right = inputs.join("right");
+    let out = root.path().join("out");
+    fs::create_dir_all(&left).unwrap();
+    fs::create_dir_all(&right).unwrap();
+    let first = left.join("first.scxml");
+    let second = right.join("second.scxml");
+    fs::write(&first, COVERAGE_FIXTURE.replace("covered", "first")).unwrap();
+    fs::write(&second, COVERAGE_FIXTURE.replace("covered", "second")).unwrap();
+    let run = |explicit: bool| {
+        let mut cmd = Command::new(env_bin());
+        cmd.arg("orchestrate")
+            .arg("--scxml")
+            .arg(&first)
+            .arg("--scxml")
+            .arg(&second)
+            .arg("-o")
+            .arg(&out)
+            .args(["-l", "rust", "--error-format=json"]);
+        if explicit {
+            cmd.arg("--input-root").arg(&inputs);
+        }
+        cmd.output().unwrap()
+    };
+    let refused = run(false);
+    assert!(
+        !refused.status.success(),
+        "an inferred root must not omit the second input"
+    );
+    let diagnostic = String::from_utf8_lossy(&refused.stderr);
+    assert!(
+        diagnostic.contains("forge/source-hash-input-uncovered"),
+        "{diagnostic}"
+    );
+    assert!(diagnostic.contains("second.scxml"), "{diagnostic}");
+    let generated = run(true);
+    assert!(
+        generated.status.success(),
+        "{}",
+        String::from_utf8_lossy(&generated.stderr)
+    );
+    let (code, stderr) = run_verify_real_tree(&out, &inputs);
+    assert_eq!(code, 0, "{stderr}");
+    fs::write(
+        &second,
+        COVERAGE_FIXTURE.replace("covered", "second_changed"),
+    )
+    .unwrap();
+    let (code, stderr) = run_verify_real_tree(&out, &inputs);
+    assert_ne!(
+        code, 0,
+        "a change outside the first input's directory must invalidate output"
+    );
+    assert!(stderr.contains("source-hash mismatch"), "{stderr}");
+}
