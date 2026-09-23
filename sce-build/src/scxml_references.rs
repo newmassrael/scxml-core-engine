@@ -485,7 +485,7 @@ mod tests {
                 history_type: "shallow".to_string(),
                 leaf_target: String::new(),
                 // A history default names descendants of the state it is
-                // declared in (W3C SCXML 3.11) — `b1`, not `b` itself.
+                // declared in — `b1`, not `b` itself.
                 default_target: "b1".to_string(),
                 default_actions: Vec::new(),
             },
@@ -581,7 +581,7 @@ mod tests {
         }
     }
 
-    // ── A legal state specification (W3C SCXML 3.11) ──────────────────
+    // ── A legal state specification ─────────────────────────────────────
 
     fn under(id: &str, order: u32, parent: &str) -> State {
         let mut s = state(id, order);
