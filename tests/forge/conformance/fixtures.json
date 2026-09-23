@@ -83,6 +83,20 @@
       }
     },
     {
+      "name": "transform_guarded_div",
+      "kind": "transform",
+      "ref_section": "pure_functions",
+      "args": [
+        "i32",
+        "i32"
+      ],
+      "output": {
+        "function": "compute_share",
+        "type": "i32",
+        "compare": "equality"
+      }
+    },
+    {
       "name": "transform_int_div",
       "kind": "transform",
       "ref_section": "pure_functions",

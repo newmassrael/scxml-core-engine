@@ -363,7 +363,12 @@ fn every_backend_accepts_the_expanded_form() {
     // so what each backend has to do is accept it. This is the half that
     // silently rots: an expansion that emits something only Python's
     // printer tolerates would still pass the arithmetic test above.
-    for lang in ["python", "cpp", "rust", "kotlin", "c"] {
+    //
+    // ⚠ Go was excluded here, pinned by a test asserting its refusal,
+    // while its emitter refused every conditional expression. It now
+    // lowers them to a typed function literal (`go_conditional` in
+    // forge/expr.rs), so it takes the expansion like the other five.
+    for lang in ["python", "cpp", "rust", "kotlin", "c", "go"] {
         let t = Tmp::new(lang);
         t.write("drivemode.scxml", MODE_ENUM);
         let (rc, _, log) = generate(&t, lang);
@@ -373,32 +378,6 @@ fn every_backend_accepts_the_expanded_form() {
             "{lang}: the expanded cycle navigation was refused:\n{log}"
         );
     }
-}
-
-#[test]
-fn go_refuses_it_for_a_reason_that_predates_cycles() {
-    // ⚠ GO IS EXCLUDED ABOVE, AND THIS IS WHY — written as an assertion
-    // rather than left as an absence, because a backend quietly missing
-    // from a list is how a gap stops being visible.
-    //
-    // The expansion emits conditional expressions, and Go's emitter
-    // refuses EVERY conditional expression: `expression/go-ternary-
-    // unsupported`, raised identically for a one-line `a ? 1 : 0` that
-    // mentions no cycle at all. So this is not a limit the cycle surface
-    // introduced — it is the expression language's existing reach, and
-    // the cycle surface is exactly as portable as the rest of it.
-    //
-    // ⚠⚠ The assertion is on the CODE, so the day Go grows a conditional
-    // form this fails and says to move `go` back into the list above.
-    let t = Tmp::new("go");
-    t.write("drivemode.scxml", MODE_ENUM);
-    let (rc, _, log) = generate(&t, "go");
-    assert_ne!(rc, Some(0), "go accepted a conditional expression:\n{log}");
-    assert!(
-        log.contains("expression/go-ternary-unsupported"),
-        "go refused, but not for the pre-existing ternary reason — if the \
-         cause has changed, this exclusion needs re-deciding:\n{log}"
-    );
 }
 
 #[test]

@@ -199,6 +199,33 @@
         }
       ]
     },
+    "transform_guarded_div": {
+      "fixture": "compute_share",
+      "signature": "(dividend: i32, divisor: i32) -> i32",
+      "formula": "divisor !== 0 ? dividend / divisor : 0 — only the chosen branch is evaluated",
+      "cases": [
+        {
+          "args": [5, 0],
+          "expected": 0,
+          "note": "THE discriminator — a lowering that evaluates both branches divides by zero here and never returns"
+        },
+        {
+          "args": [7, 2],
+          "expected": 3,
+          "note": "the division branch, truncating"
+        },
+        {
+          "args": [-7, 2],
+          "expected": -3,
+          "note": "the division branch with a negative dividend (SCE_FORGE.md 3.4.1)"
+        },
+        {
+          "args": [0, 0],
+          "expected": 0,
+          "note": "zero over zero takes the guard, not the division"
+        }
+      ]
+    },
     "transform_int_div": {
       "fixture": "compute_quotient",
       "signature": "(dividend: i32, divisor: i32) -> i32",

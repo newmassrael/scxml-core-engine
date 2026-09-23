@@ -4313,12 +4313,17 @@ fn rust_int_type(signed: bool, bits: u8) -> &'static str {
 // alone — no `.0` suffix needed.
 //
 // Concrete integer variables DO need explicit conversion: `float64(raw)`.
-// Integer widening: `int64(x)`. Ternary does not exist — we reject it at
-// emit time with a clear error.
+// Integer widening: `int64(x)`. Go has no conditional expression; see
+// `go_conditional` for how one is lowered.
 
 fn emit_go(expr: &TypedExpr, expected: InferredType) -> Result<String, Refusal> {
-    if let Some(ternary) = first_ternary(expr) {
-        return Err(ExprError::GoTernary.at(ternary.span.clone()));
+    if let ExprKind::Conditional {
+        condition,
+        consequent,
+        alternate,
+    } = &expr.kind
+    {
+        return go_conditional(expr, condition, consequent, alternate, expected);
     }
     // Push-down: see emit_rust for rationale.
     if let ExprKind::Binary { op, left, right } = &expr.kind {
@@ -4462,7 +4467,9 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
                 format!("{prefix}{inner}")
             }
         }
-        ExprKind::Conditional { .. } => unreachable!("has_ternary guard"),
+        ExprKind::Conditional { .. } => {
+            unreachable!("emit_go lowers Conditional before go_emit_node")
+        }
         ExprKind::Member { object, property } => {
             format!(
                 "{}.{property}",
@@ -4591,20 +4598,53 @@ fn go_int_type(signed: bool, bits: u8) -> &'static str {
     }
 }
 
-/// The first conditional in `expr`, left to right — what Go cannot spell,
-/// and the node a refusal of it is raised at.
-fn first_ternary(expr: &TypedExpr) -> Option<&TypedExpr> {
-    match &expr.kind {
-        ExprKind::Conditional { .. } => Some(expr),
-        ExprKind::Binary { left, right, .. } => {
-            first_ternary(left).or_else(|| first_ternary(right))
-        }
-        ExprKind::Unary { operand, .. } => first_ternary(operand),
-        ExprKind::Member { object, .. } => first_ternary(object),
-        ExprKind::Index { object, index } => first_ternary(object).or_else(|| first_ternary(index)),
-        ExprKind::Call { callee, args } => {
-            first_ternary(callee).or_else(|| args.iter().find_map(first_ternary))
-        }
+/// Lower `c ? a : b` to an immediately invoked function literal:
+/// `func() T { if c { return a }; return b }()`.
+///
+/// Go has no conditional expression, and every other spelling is wrong in a
+/// way that matters. A generic `pick(c, a, b)` helper evaluates BOTH branches
+/// before choosing, so `d !== 0 ? n / d : 0` panics on the branch the document
+/// said not to take; ECMAScript evaluates only the chosen one, and so do the
+/// other five backends. Hoisting into statements needs a statement position,
+/// which `transform`, `condition` and `lookup` documents do not have — the
+/// advice this emitter used to give ("restructure with if/else") could not be
+/// followed in them at all.
+///
+/// A function literal needs its result type spelled out, which is the one
+/// thing an untyped expression cannot supply. The type the value flows into
+/// wins; otherwise the conditional's own inferred type; when neither is a
+/// type Go can name — an opaque member access, or two untyped literals flowing
+/// into an untyped slot — the expression is refused at the conditional's own
+/// span, and the refusal says why.
+fn go_conditional(
+    conditional: &TypedExpr,
+    condition: &TypedExpr,
+    consequent: &TypedExpr,
+    alternate: &TypedExpr,
+    expected: InferredType,
+) -> Result<String, Refusal> {
+    let (result, type_name) = [expected, conditional.ty]
+        .into_iter()
+        .find_map(|ty| go_nameable_type(ty).map(|name| (ty, name)))
+        .ok_or_else(|| ExprError::GoTernary.at(conditional.span.clone()))?;
+    Ok(format!(
+        "func() {type_name} {{ if {} {{ return {} }}; return {} }}()",
+        emit_go(condition, InferredType::Bool)?,
+        emit_go(consequent, result)?,
+        emit_go(alternate, result)?,
+    ))
+}
+
+/// The Go spelling of a type a function literal can return, or `None` for a
+/// type that has no single spelling here (untyped literals, opaque values).
+fn go_nameable_type(ty: InferredType) -> Option<&'static str> {
+    match ty {
+        InferredType::Int { signed, bits } => Some(go_int_type(signed, bits)),
+        InferredType::Float { bits: 32 } => Some("float32"),
+        InferredType::Float { .. } => Some("float64"),
+        InferredType::Bool => Some("bool"),
+        InferredType::Str => Some("string"),
+        InferredType::Bytes => Some("[]byte"),
         _ => None,
     }
 }

@@ -794,9 +794,12 @@ document, because nothing about walking a declared list differs per
 language — unlike `round`, whose halfway rule genuinely does. One
 rewrite instead of six emitter arms, and a seventh backend inherits it.
 
-⚠⚠ **Go cannot take them**, for a reason that predates them: its emitter
-refuses every conditional expression (`expression/go-ternary-unsupported`,
-raised identically for a one-line `a ? 1 : 0` that mentions no cycle).
+⚠⚠ **On Go they are exactly as portable as any conditional.** Go has no
+conditional expression, so its emitter lowers `c ? a : b` to a typed,
+immediately invoked function literal, which evaluates only the chosen
+branch as the other backends do. It refuses a conditional only when it
+cannot name the literal's result type — neither the slot the value flows
+into nor the branches are typed (`expression/go-ternary-unsupported`).
 The cycle surface is exactly as portable as the rest of the expression
 language, no more and no less.
 
@@ -1298,9 +1301,11 @@ no typed interpretation or are explicitly excluded:
   `cond` on an un-schema'd event is plain ECMAScript evaluated by the
   script engine, where `==` is legal and stays legal (the W3C corpus
   depends on it).
-- Go ternary target (source-language-specific restriction for Go
-  codegen) — `expression/go-ternary-unsupported`. Restructure with
-  `if`/`else`.
+- A conditional expression whose result type Go cannot name (Go-only:
+  the emitter lowers `c ? a : b` to a typed function literal and needs
+  a type from the slot the value flows into or from its branches) —
+  `expression/go-ternary-unsupported`. Give the value a typed
+  destination, or type one of the branches.
 - Free-form tokens not part of the grammar —
   `expression/unsupported-construct`, `expression/unexpected-token`,
   `expression/invalid-lvalue`, `expression/type-coercion`,

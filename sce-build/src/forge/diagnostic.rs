@@ -9945,7 +9945,7 @@ mod tests {
             (
                 "forge/go-ternary",
                 ExprError::GoTernary.into(),
-                r#"{"v":1,"id":"fnv1a:ef5b56dbf74b8718","code":"expression/go-ternary-unsupported","stage":"expression","spec":"SCE Forge §3.4","message":"cannot transpile ternary expression to Go: Go has no conditional expression"}"#,
+                r#"{"v":1,"id":"fnv1a:ef5b56dbf74b8718","code":"expression/go-ternary-unsupported","stage":"expression","spec":"SCE Forge §3.4","message":"cannot lower this conditional expression to Go: neither the value it flows into nor its branches have a type Go can name"}"#,
             ),
             (
                 "forge/not-forge",

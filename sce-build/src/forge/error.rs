@@ -4560,9 +4560,14 @@ pub enum ExprError {
         observed: Option<String>,
     },
 
-    /// Target language cannot represent the expression construct.
-    /// Currently: Go has no ternary expression.
-    #[error("cannot transpile ternary expression to Go: Go has no conditional expression")]
+    /// A conditional expression the Go emitter cannot give a result type.
+    /// Go lowers `c ? a : b` to a typed function literal, so it needs a type
+    /// it can spell; neither the slot the value flows into nor the
+    /// expression itself supplied one (an opaque member access, or untyped
+    /// literals flowing into an untyped slot).
+    #[error(
+        "cannot lower this conditional expression to Go: neither the value it flows into nor its branches have a type Go can name"
+    )]
     GoTernary,
 }
 

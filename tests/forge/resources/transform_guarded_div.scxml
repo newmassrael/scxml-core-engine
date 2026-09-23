@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Conformance fixture: a conditional expression evaluates only the branch it
+  chooses.
+
+  `divisor !== 0 ? dividend / divisor : 0` is the ordinary way to guard a
+  division, and it is only a guard if the division is never evaluated when
+  the divisor is zero. ECMAScript evaluates the chosen branch alone; C, C++,
+  Rust, Kotlin and Python do the same natively.
+
+  ⚠ GO IS WHY IT EXISTS. Go has no conditional expression, and its emitter
+  refused every one until it learned to lower them to a typed function
+  literal. The tempting shortcut — a generic `pick(c, a, b)` helper —
+  evaluates both arguments before choosing, so the zero-divisor case below
+  panics on the branch the document said not to take. That case is the one
+  a shortcut cannot pass; the others check the chosen branch's value.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="transform" name="guarded_div">
+  <datamodel>
+    <data id="dividend" sce:type="int32" sce:direction="in"/>
+    <data id="divisor" sce:type="int32" sce:direction="in"/>
+    <data id="share" sce:type="int32" sce:direction="out"
+          expr="divisor !== 0 ? dividend / divisor : 0"/>
+  </datamodel>
+</scxml>
