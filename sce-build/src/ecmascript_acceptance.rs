@@ -223,6 +223,14 @@ pub fn sites(model: &SCXMLModel) -> Vec<ExpressionSite> {
 /// `resources/309/test309.scxml`, and a consumer could not open it
 /// (measured 2026-09-21: 54 records over the tracked corpus). Every other
 /// producer that walks a model takes the caller's path the same way.
+///
+/// ⚠⚠ The row was the EXPANDED text's until 2026-09-24. A model parsed from
+/// a file carries the map back to what its author wrote, and a refusal in
+/// an XInclude fragment was reported on the including file at the row the
+/// splice put it on — its closing tag — with an `actual` that row does not
+/// hold. It now takes the move every refusal takes
+/// ([`SCXMLModel::authored_location`]); `document` labels a model with no
+/// map, one parsed from a string.
 pub fn refusals(model: &SCXMLModel, document: &str) -> Vec<RefusedExpression> {
     // One scope for the document, assembled before any expression is
     // lowered. A `<data>` declared in the last state is in scope for the
@@ -252,10 +260,13 @@ pub fn refusals(model: &SCXMLModel, document: &str) -> Vec<RefusedExpression> {
                     .as_ref()
                     .map(|at| model.enclosing_anchors(at).to_vec())
                     .unwrap_or_default(),
-                // The element's row and column, in the caller's file.
-                location: site.location.map(|at| SourceLocation {
-                    file: document.to_string(),
-                    ..at
+                // The element's row and column where its author wrote it.
+                location: site.location.map(|at| match model.authored_positions {
+                    Some(_) => model.authored_location(&at),
+                    None => SourceLocation {
+                        file: document.to_string(),
+                        ..at
+                    },
                 }),
             })
         })

@@ -12,7 +12,7 @@
 // survived only inside a string literal in the generated source, where
 // its one reader was whoever later ran the machine.
 //
-// Five claims are pinned here, and none follows from the others:
+// Six claims are pinned here, and none follows from the others:
 //
 //   1. **Reported, and still generated.** The diagnostic is on stderr,
 //      the manifest is on stdout, the exit is `0`, and the artifact is
@@ -47,6 +47,11 @@
 //      and this repository generates — is left alone. One rule cannot
 //      be checked without the other: closing the namespace would refuse
 //      a registered conformance fixture.
+//   6. **Reported where its author wrote it.** A refused expression in an
+//      XInclude fragment names the fragment's file and the row that holds
+//      it. The row used to be the expanded text's, so the record named the
+//      including file at its closing tag, with an `actual` that row does
+//      not hold (measured 2026-09-24).
 
 mod common;
 
@@ -903,5 +908,57 @@ fn a_platform_field_of_the_event_is_not_refused() {
         out.entries().iter().any(|n| n.ends_with("_sm.rs")),
         "no artifact written: {:?}",
         out.entries()
+    );
+}
+
+/// A document whose one state is spliced in from `fragment.xml`.
+const INCLUDING_DOCUMENT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:xi="http://www.w3.org/2001/XInclude" version="1.0" datamodel="ecmascript" initial="a">
+  <datamodel>
+    <data id="count" expr="0"/>
+  </datamodel>
+  <xi:include href="fragment.xml"/>
+  <final id="b"/>
+</scxml>
+"#;
+
+/// The fragment: its root is a wrapper and its children are spliced. The
+/// refused expression — a standard method the datamodel lacks — is on row 3.
+const REFUSING_FRAGMENT: &str = r#"<fragment xmlns="http://www.w3.org/2005/07/scxml">
+  <state id="a">
+    <transition event="go" cond="count.toFixed(2) === '1.00'" target="b"/>
+  </state>
+</fragment>
+"#;
+
+#[test]
+fn a_refused_expression_in_a_fragment_is_reported_where_its_author_wrote_it() {
+    let dir = ScratchDir::new("refusal_in_fragment");
+    std::fs::write(dir.path().join("main.scxml"), INCLUDING_DOCUMENT).expect("write document");
+    std::fs::write(dir.path().join("fragment.xml"), REFUSING_FRAGMENT).expect("write fragment");
+    let document = dir.path().join("main.scxml");
+    let run = run(&[
+        "--error-format=json",
+        "check",
+        document.to_str().expect("utf-8 path"),
+        "-l",
+        "cpp",
+    ]);
+    assert_eq!(run.exit, Some(0), "stderr:\n{}", run.stderr);
+    // `records` has read the file the record names and found `actual` on the
+    // row it reports (§3.1.1); what is left is that the file and the row are
+    // the fragment's.
+    let record = records(&run.stderr)
+        .into_iter()
+        .find(|r| r["code"] == "expression/unsupported-builtin")
+        .unwrap_or_else(|| panic!("no refusal in {}", run.stderr));
+    let file = record["location"]["file"]
+        .as_str()
+        .unwrap_or_else(|| panic!("no location.file in {record}"));
+    assert!(file.ends_with("fragment.xml"), "not the fragment: {record}");
+    assert_eq!(
+        record["location"]["line"].as_u64(),
+        Some(3),
+        "not the fragment's row that holds the `cond`: {record}"
     );
 }
