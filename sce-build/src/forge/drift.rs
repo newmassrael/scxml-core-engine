@@ -152,6 +152,10 @@ pub struct SourceSet {
     ///
     /// [`contributing_paths`]: Self::contributing_paths
     deploy_yaml: Option<PathBuf>,
+    /// The canonical real path of every contributing file — what
+    /// [`covers`](Self::covers) asks about. Resolved once, when the bytes
+    /// are taken, rather than per question.
+    members: BTreeSet<PathBuf>,
 }
 
 impl SourceSet {
@@ -188,10 +192,17 @@ impl SourceSet {
             })?;
             entries.insert(PathBuf::from("deploy.yaml"), sha256_bytes(&bytes));
         }
+        let members = entries
+            .keys()
+            .filter(|rel| rel.as_path() != Path::new("deploy.yaml"))
+            .map(|rel| canonical_key(&input_root.join(rel)))
+            .chain(deploy_yaml.map(canonical_key))
+            .collect();
         Ok(Self {
             root: input_root.to_path_buf(),
             entries,
             deploy_yaml: deploy_yaml.map(Path::to_path_buf),
+            members,
         })
     }
 
@@ -215,24 +226,30 @@ impl SourceSet {
         self.entries.is_empty()
     }
 
-    /// Did `path`'s bytes contribute to this set?
+    /// Is `path` one of the files this set was taken from — so that an
+    /// edit to it moves the digest?
     ///
-    /// Matched on content rather than path. The same document reaches the
-    /// walk under different names depending on how the build addressed it —
-    /// a sandbox link name, a canonicalized real path, a root-relative
-    /// path — and comparing those spellings answers a question about path
-    /// arithmetic, not the one that matters: whether these bytes are in
-    /// the digest. Reading the file back costs one syscall per generate.
+    /// Matched on file identity: the canonical real path, which every
+    /// spelling of one file resolves to — a sandbox link name, a
+    /// root-relative path, the real path itself. Not on spelling, which
+    /// would refuse a link to a member; and not on content, which this
+    /// used to be.
     ///
-    /// Returns `false` when `path` cannot be read, which is the correct
-    /// answer for the caller: bytes it cannot read are bytes it cannot
-    /// prove contributed.
+    /// ⚠ Content answered the wrong question. "Are these bytes in the
+    /// digest?" is true of any copy with the same bytes, wherever it sits,
+    /// and the question the caller asks is whether a later edit to THIS
+    /// file will show. A document outside the root that happened to
+    /// duplicate one inside it passed, and every edit to it afterwards left
+    /// the `source-hash` unmoved — the state `sce-codegen verify` exists
+    /// to catch, reached through the check meant to prevent it.
+    ///
+    /// Returns `false` when `path` does not exist: a file that is not
+    /// there cannot be the one the set read.
     pub fn covers(&self, path: &Path) -> bool {
-        let Ok(bytes) = fs::read(path) else {
-            return false;
-        };
-        let digest = sha256_bytes(&bytes);
-        self.entries.values().any(|h| *h == digest)
+        match fs::canonicalize(path) {
+            Ok(real) => self.members.contains(&real),
+            Err(_) => false,
+        }
     }
 
     /// Every file whose bytes fed [`digest`](Self::digest), as paths a
@@ -1033,9 +1050,9 @@ mod tests {
         assert_eq!(set.len(), 1);
     }
 
-    /// Coverage is content-keyed, so a sandbox link name resolves against a
-    /// set collected from the real tree and vice versa — the two spellings
-    /// of the same document must both answer "covered".
+    /// Coverage is keyed on file identity, so a sandbox link name resolves
+    /// against a set collected from the real tree and vice versa — the two
+    /// spellings of the same document must both answer "covered".
     #[test]
     fn source_set_covers_document_addressed_through_a_symlink() {
         let real = TempDir::new().unwrap();
@@ -1067,6 +1084,31 @@ mod tests {
              is why coverage has to be asserted separately"
         );
         assert!(!set.covers(&doc));
+    }
+
+    /// Same bytes, different file: a copy outside the root is not covered.
+    /// Were it, every later edit to the copy would leave the digest
+    /// unmoved — the coverage check would admit exactly the input whose
+    /// changes the `source-hash` cannot see.
+    #[test]
+    fn source_set_rejects_a_byte_identical_copy_outside_the_root() {
+        let root = TempDir::new().unwrap();
+        let elsewhere = TempDir::new().unwrap();
+        let member = write_file(root.path(), "doc.scxml", b"<scxml/>");
+        let copy = write_file(elsewhere.path(), "doc.scxml", b"<scxml/>");
+
+        let set = SourceSet::collect(root.path(), None).unwrap();
+        assert!(set.covers(&member), "the file the set read is covered");
+        assert!(
+            !set.covers(&copy),
+            "a byte-identical copy outside the root must not be covered"
+        );
+
+        // And the reason it matters: the copy's edit does not reach the digest.
+        let before = set.digest();
+        fs::write(&copy, b"<scxml name=\"edited\"/>").unwrap();
+        let after = SourceSet::collect(root.path(), None).unwrap().digest();
+        assert_eq!(before, after, "the copy was never part of the digest");
     }
 
     #[test]
