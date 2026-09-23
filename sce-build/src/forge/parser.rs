@@ -7067,6 +7067,7 @@ fn parse_algorithm_const(
                 name,
                 sce_type,
                 init: Some(init),
+                init_spelling: AttributeSpelling::of(node, None, "init"),
                 fold: None,
                 compute_at_build: false,
                 line: Some(row_of(node)),
@@ -7107,6 +7108,7 @@ fn parse_algorithm_const(
                 name,
                 sce_type,
                 init: None,
+                init_spelling: None,
                 fold: Some(fold),
                 compute_at_build: true,
                 line: Some(row_of(node)),
@@ -7165,6 +7167,7 @@ fn parse_fold_body(
     // <sce:yield/> reuses the algorithm-statement vocabulary.
     let mut body: Vec<AlgorithmStmt> = Vec::new();
     let mut yield_expr: Option<String> = None;
+    let mut yield_spelling = None;
     for child in node.children().filter(|c| c.is_element()) {
         if child.tag_name().namespace() != Some(SCE_NAMESPACE) {
             continue;
@@ -7182,6 +7185,7 @@ fn parse_fold_body(
                 ));
             }
             yield_expr = Some(require_attr(&child, "expr", "<sce:yield>", doc_name)?);
+            yield_spelling = AttributeSpelling::of(&child, None, "expr");
             continue;
         }
         if yield_expr.is_some() {
@@ -7214,6 +7218,7 @@ fn parse_fold_body(
         elem_type,
         body,
         yield_expr,
+        yield_spelling,
     })
 }
 
@@ -7360,20 +7365,32 @@ fn parse_algorithm_stmt(
             };
             Ok(AlgorithmStmt::Var {
                 name,
+                name_spelling: AttributeSpelling::of(node, None, "name"),
                 sce_type,
                 init,
+                init_spelling: AttributeSpelling::of(node, None, "init"),
                 capacity,
             })
         }
         "assign" => {
             let target = require_attr(node, "target", "<sce:assign>", doc_name)?;
             let expr = require_attr(node, "expr", "<sce:assign>", doc_name)?;
-            Ok(AlgorithmStmt::Assign { target, expr })
+            Ok(AlgorithmStmt::Assign {
+                target,
+                target_spelling: AttributeSpelling::of(node, None, "target"),
+                expr,
+                expr_spelling: AttributeSpelling::of(node, None, "expr"),
+            })
         }
         "append" => {
             let target = require_attr(node, "target", "<sce:append>", doc_name)?;
             let expr = require_attr(node, "expr", "<sce:append>", doc_name)?;
-            Ok(AlgorithmStmt::Append { target, expr })
+            Ok(AlgorithmStmt::Append {
+                target,
+                target_spelling: AttributeSpelling::of(node, None, "target"),
+                expr,
+                expr_spelling: AttributeSpelling::of(node, None, "expr"),
+            })
         }
         "if" => {
             let cond = require_attr(node, "cond", "<sce:if>", doc_name)?;
@@ -7408,6 +7425,7 @@ fn parse_algorithm_stmt(
             }
             Ok(AlgorithmStmt::If {
                 cond,
+                cond_spelling: AttributeSpelling::of(node, None, "cond"),
                 then_body,
                 else_body,
             })
@@ -7428,6 +7446,7 @@ fn parse_algorithm_stmt(
             let body = parse_algorithm_body(node, doc_name)?;
             Ok(AlgorithmStmt::While {
                 cond,
+                cond_spelling: AttributeSpelling::of(node, None, "cond"),
                 body,
                 max_iter,
             })
@@ -7436,11 +7455,19 @@ fn parse_algorithm_stmt(
             let item = require_attr(node, "item", "<sce:foreach>", doc_name)?;
             let source = require_attr(node, "in", "<sce:foreach>", doc_name)?;
             let body = parse_algorithm_body(node, doc_name)?;
-            Ok(AlgorithmStmt::Foreach { item, source, body })
+            Ok(AlgorithmStmt::Foreach {
+                item,
+                source,
+                source_spelling: AttributeSpelling::of(node, None, "in"),
+                body,
+            })
         }
         "return" => {
             let expr = node.attribute("expr").map(|s| s.to_string());
-            Ok(AlgorithmStmt::Return { expr })
+            Ok(AlgorithmStmt::Return {
+                expr,
+                expr_spelling: AttributeSpelling::of(node, None, "expr"),
+            })
         }
         "call" => {
             let target = require_attr(node, "target", "<sce:call>", doc_name)?;
@@ -7455,8 +7482,9 @@ fn parse_algorithm_stmt(
                 .unwrap_or_default();
             Ok(AlgorithmStmt::Call {
                 target,
+                target_spelling: AttributeSpelling::of(node, None, "target"),
                 args,
-                line: Some(row_of(node)),
+                args_spelling: AttributeSpelling::of(node, None, "args"),
             })
         }
         other => Err(located(

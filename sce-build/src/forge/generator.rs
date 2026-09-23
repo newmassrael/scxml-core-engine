@@ -21015,7 +21015,9 @@ fn collect_bc_foreach_member_types(
 ) {
     for s in stmts {
         match s {
-            AlgorithmStmt::Foreach { item, source, body } => {
+            AlgorithmStmt::Foreach {
+                item, source, body, ..
+            } => {
                 if let Some(imp) = bounded_collection_import(imports, source) {
                     if let Some(elem_snake) = imp.bc_element_snake.as_ref() {
                         if let Some(fields) = schemas.get(elem_snake) {
@@ -21249,22 +21251,16 @@ fn describe_inferred_type(ty: crate::forge::types::InferredType) -> String {
     }
 }
 
-/// Lower one statement, placing any failure at the statement's recorded
-/// row (see [`ForgeError::at_line`]); nested bodies recurse through here,
-/// so the innermost recorded row is the one a record names.
+/// Lower one statement. Every refusal is placed at the attribute it names,
+/// from the statement's spellings (`crate::forge::expression_site`); nested
+/// bodies recurse through here, and a nested statement places its own.
+///
+/// ⚠ This used to place every failure at the statement's recorded ROW — the
+/// row its start tag begins on — which only `<sce:call>` recorded at all.
+/// So every other statement's refusal had no row, and a call whose target
+/// was written on the tag's second row was refused one row above the name
+/// it named (measured 2026-09-23).
 fn lower_algorithm_stmt(
-    s: &AlgorithmStmt,
-    ctx: &AlgorithmLowerCtx<'_>,
-    pad: &str,
-    indent: usize,
-    out: &mut String,
-) -> Result<(), ForgeError> {
-    lower_algorithm_stmt_unplaced(s, ctx, pad, indent, out).map_err(|e| e.at_line(s.line()))
-}
-
-/// The lowering itself. Only [`lower_algorithm_stmt`] calls it, so no
-/// failure leaves without the statement's row.
-fn lower_algorithm_stmt_unplaced(
     s: &AlgorithmStmt,
     ctx: &AlgorithmLowerCtx<'_>,
     pad: &str,
@@ -21289,7 +21285,9 @@ fn lower_algorithm_stmt_unplaced(
             name,
             sce_type,
             init,
+            init_spelling,
             capacity,
+            ..
         } => {
             // SCE byte-buffer-build (§4.12): a `type="bytes"` local is a
             // growable output buffer seeded empty and filled forward-only via
@@ -21361,13 +21359,15 @@ fn lower_algorithm_stmt_unplaced(
                      one on every local that is not a bytes buffer"
                 ))
             })?;
+            let site = ExpressionSite::new(init, init_spelling.as_ref());
             let init_lowered = expr::transpile_typed(
                 init,
                 l.expr_target(),
                 type_ctx,
                 renames,
                 InferredType::from_sce_type(sce_type),
-            )?;
+            )
+            .map_err(|refusal| site.place(refusal))?;
             let local = l.local_id(name);
             // Rust: emit `let mut` only when the local is reassigned
             // somewhere in the body (workspace `warnings = "deny"` makes
@@ -21408,10 +21408,19 @@ fn lower_algorithm_stmt_unplaced(
             };
             out.push_str(&line);
         }
-        AlgorithmStmt::Assign { target, expr: rhs } => {
-            let (lhs, lhs_ty) = expr::transpile_lvalue(target, l.expr_target(), type_ctx, renames)?;
+        AlgorithmStmt::Assign {
+            target,
+            target_spelling,
+            expr: rhs,
+            expr_spelling,
+        } => {
+            let target_site = ExpressionSite::new(target, target_spelling.as_ref());
+            let (lhs, lhs_ty) = expr::transpile_lvalue(target, l.expr_target(), type_ctx, renames)
+                .map_err(|refusal| target_site.place(refusal))?;
+            let rhs_site = ExpressionSite::new(rhs, expr_spelling.as_ref());
             let rhs_lowered =
-                expr::transpile_typed(rhs, l.expr_target(), type_ctx, renames, lhs_ty)?;
+                expr::transpile_typed(rhs, l.expr_target(), type_ctx, renames, lhs_ty)
+                    .map_err(|refusal| rhs_site.place(refusal))?;
             let semi = if matches!(lang, Language::Kotlin | Language::Python) {
                 ""
             } else {
@@ -21419,7 +21428,12 @@ fn lower_algorithm_stmt_unplaced(
             };
             out.push_str(&format!("{pad}{lhs} = {rhs_lowered}{semi}\n"));
         }
-        AlgorithmStmt::Append { target, expr: rhs } => {
+        AlgorithmStmt::Append {
+            target,
+            target_spelling,
+            expr: rhs,
+            expr_spelling,
+        } => {
             // SCE byte-buffer-build (§4.12): forward-only append to a `bytes`
             // buffer local. The RHS static type selects the operation — a
             // `bytes` value extends the buffer, any integer value pushes one
@@ -21438,6 +21452,8 @@ fn lower_algorithm_stmt_unplaced(
             // leaves at the first failure through `?`; this is that shape on
             // the backend that has no `?`.
             let target_key = target.trim();
+            let target_site = ExpressionSite::new(target, target_spelling.as_ref());
+            let rhs_site = ExpressionSite::new(rhs, expr_spelling.as_ref());
             // The target must be a declared `<sce:var type="bytes">` buffer.
             // Codegen-time check (mirrors the foreach-source-not-iterable
             // precedent — fires from the same lowering pass that has the
@@ -21449,13 +21465,13 @@ fn lower_algorithm_stmt_unplaced(
                 None => {
                     let mut candidates: Vec<String> = bytes_buffer_caps.keys().cloned().collect();
                     candidates.sort();
-                    return Err(
+                    let refusal: ForgeError =
                         crate::forge::error::ValidationError::AlgorithmAppendTargetNotBuffer {
                             target: target.clone(),
                             candidates,
                         }
-                        .into(),
-                    );
+                        .into();
+                    return Err(target_site.locate(Some(0..target_key.len())).place(refusal));
                 }
             };
             let local = l.local_id(target_key);
@@ -21464,18 +21480,22 @@ fn lower_algorithm_stmt_unplaced(
             // integer would silently truncate, so it is rejected — the author
             // narrows it explicitly. (An untyped integer literal coerces to a
             // byte and is accepted.)
-            let rhs_ty = expr::infer_expr_type(rhs, type_ctx)?;
+            let rhs_ty =
+                expr::infer_expr_type(rhs, type_ctx).map_err(|refusal| rhs_site.place(refusal))?;
             let rhs_is_bytes = matches!(rhs_ty, InferredType::Bytes);
             let rhs_is_byte = matches!(rhs_ty, InferredType::UntypedInt)
                 || matches!(rhs_ty, InferredType::Int { bits, .. } if bits <= 8);
             if !rhs_is_bytes && !rhs_is_byte {
-                return Err(
+                // The value appended, as written, is what the author narrows.
+                let at = rhs_site.locate(Some(0..rhs.trim().len()));
+                let refusal: ForgeError =
                     crate::forge::error::ValidationError::AlgorithmAppendTypeMismatch {
                         target: target.clone(),
                         got: describe_inferred_type(rhs_ty),
+                        observed: at.observed(),
                     }
-                    .into(),
-                );
+                    .into();
+                return Err(at.place(refusal));
             }
             let line = if rhs_is_bytes {
                 let e = expr::transpile_typed(
@@ -21484,7 +21504,8 @@ fn lower_algorithm_stmt_unplaced(
                     type_ctx,
                     renames,
                     InferredType::Bytes,
-                )?;
+                )
+                .map_err(|refusal| rhs_site.place(refusal))?;
                 match lang {
                     Language::Rust => format!("{pad}{local}.extend_from_slice({e})?;\n"),
                     Language::Cpp => {
@@ -21517,7 +21538,8 @@ fn lower_algorithm_stmt_unplaced(
                         signed: false,
                         bits: 8,
                     },
-                )?;
+                )
+                .map_err(|refusal| rhs_site.place(refusal))?;
                 match lang {
                     Language::Rust => format!("{pad}{local}.push({e})?;\n"),
                     Language::Cpp => {
@@ -21538,16 +21560,14 @@ fn lower_algorithm_stmt_unplaced(
         }
         AlgorithmStmt::If {
             cond,
+            cond_spelling,
             then_body,
             else_body,
         } => {
-            let cond_lowered = expr::transpile_typed(
-                cond,
-                l.expr_target(),
-                type_ctx,
-                renames,
-                InferredType::Bool,
-            )?;
+            let site = ExpressionSite::new(cond, cond_spelling.as_ref());
+            let cond_lowered =
+                expr::transpile_typed(cond, l.expr_target(), type_ctx, renames, InferredType::Bool)
+                    .map_err(|refusal| site.place(refusal))?;
             // Rust forbids the `if (cond)` paren wrap under
             // `unused_parens` (workspace-wide deny-warnings). Other curly-
             // brace targets (Cpp/C11/Kotlin/Go) accept either form, but
@@ -21590,16 +21610,14 @@ fn lower_algorithm_stmt_unplaced(
         }
         AlgorithmStmt::While {
             cond,
+            cond_spelling,
             body,
             max_iter,
         } => {
-            let cond_lowered = expr::transpile_typed(
-                cond,
-                l.expr_target(),
-                type_ctx,
-                renames,
-                InferredType::Bool,
-            )?;
+            let site = ExpressionSite::new(cond, cond_spelling.as_ref());
+            let cond_lowered =
+                expr::transpile_typed(cond, l.expr_target(), type_ctx, renames, InferredType::Bool)
+                    .map_err(|refusal| site.place(refusal))?;
             let _ = max_iter; // RFC §synth-5-A runtime-counter guard lands in A4 (build-time fold).
                               // Same paren policy as `if` above — Rust loop conditions
                               // refuse the C-flavoured paren wrap under unused_parens.
@@ -21630,7 +21648,13 @@ fn lower_algorithm_stmt_unplaced(
                 }
             }
         }
-        AlgorithmStmt::Foreach { item, source, body } => {
+        AlgorithmStmt::Foreach {
+            item,
+            source,
+            source_spelling,
+            body,
+        } => {
+            let source_site = ExpressionSite::new(source, source_spelling.as_ref());
             // RFC §synth-5-A line 311 + §synth-5-L line 2642-2647 (item C7 lowering
             // 2026-05-13): source dispatch decides bytes-iteration vs
             // BC-iteration. The author wrote `<sce:foreach in="X">`
@@ -21658,16 +21682,22 @@ fn lower_algorithm_stmt_unplaced(
                 for st in body {
                     if let AlgorithmStmt::Var {
                         name: var_name,
+                        name_spelling,
                         sce_type,
                         ..
                     } = st
                     {
                         if matches!(sce_type, SceType::Uint8) {
-                            return Err(crate::forge::error::ValidationError::AlgorithmForeachSourceBcWithBytesItemType {
+                            // The stranded local is what the record names, so
+                            // it is placed at that local's `name`.
+                            let refusal: ForgeError = crate::forge::error::ValidationError::AlgorithmForeachSourceBcWithBytesItemType {
                                 src: source.clone(),
                                 var_name: var_name.clone(),
                             }
-                            .into());
+                            .into();
+                            return Err(ExpressionSite::new(var_name, name_spelling.as_ref())
+                                .locate(Some(0..var_name.trim().len()))
+                                .place(refusal));
                         }
                     }
                 }
@@ -21850,13 +21880,15 @@ fn lower_algorithm_stmt_unplaced(
                             .map(|imp| imp.alias.clone()),
                     );
                     candidates.sort();
-                    return Err(
+                    let refusal: ForgeError =
                         crate::forge::error::ValidationError::AlgorithmForeachSourceNotIterable {
                             src: source.clone(),
                             candidates,
                         }
-                        .into(),
-                    );
+                        .into();
+                    return Err(source_site
+                        .locate(Some(0..source.trim().len()))
+                        .place(refusal));
                 }
                 let src_lowered = expr::transpile_typed(
                     source,
@@ -21864,7 +21896,8 @@ fn lower_algorithm_stmt_unplaced(
                     type_ctx,
                     renames,
                     InferredType::Unknown,
-                )?;
+                )
+                .map_err(|refusal| source_site.place(refusal))?;
                 let it = l.local_id(item);
                 let header = match lang {
                     Language::Rust => format!("{pad}for &{it} in {src_lowered}.iter() {{\n"),
@@ -21895,7 +21928,10 @@ fn lower_algorithm_stmt_unplaced(
                 }
             }
         }
-        AlgorithmStmt::Return { expr: e } => {
+        AlgorithmStmt::Return {
+            expr: e,
+            expr_spelling,
+        } => {
             let line = match e {
                 Some(rhs) => {
                     // Coerce to the function's declared return type so
@@ -21905,8 +21941,10 @@ fn lower_algorithm_stmt_unplaced(
                     // C/Cpp rely on implicit narrowing; Go on
                     // assignability — passing the explicit type lets
                     // every emitter route through its own coerce path.
+                    let site = ExpressionSite::new(rhs, expr_spelling.as_ref());
                     let lowered =
-                        expr::transpile_typed(rhs, l.expr_target(), type_ctx, renames, return_ty)?;
+                        expr::transpile_typed(rhs, l.expr_target(), type_ctx, renames, return_ty)
+                            .map_err(|refusal| site.place(refusal))?;
                     if matches!(return_ty, InferredType::Bytes) {
                         // SCE byte-buffer-build (§4.12): wrap the finished
                         // buffer into the backend's return shape — Rust the
@@ -21940,10 +21978,25 @@ fn lower_algorithm_stmt_unplaced(
             };
             out.push_str(&line);
         }
-        AlgorithmStmt::Call { target, args, .. } => {
+        AlgorithmStmt::Call {
+            target,
+            target_spelling,
+            args,
+            args_spelling,
+        } => {
+            let target_site = ExpressionSite::new(target, target_spelling.as_ref());
+            // A refusal of the call's shape — how many arguments — is about
+            // `args`; with no `args` written, it is about the call's target.
+            let arity_at = crate::forge::expression_site::WrittenAt::attribute(
+                args_spelling.as_ref().or(target_spelling.as_ref()),
+            );
             let lowered_args: Vec<String> = args
                 .iter()
                 .map(|a| {
+                    // An argument's range reads back onto `args` only where
+                    // `args` is that one argument; `ExpressionSite` says so
+                    // itself and places nothing otherwise.
+                    let site = ExpressionSite::new(a, args_spelling.as_ref());
                     expr::transpile_typed(
                         a,
                         l.expr_target(),
@@ -21951,6 +22004,7 @@ fn lower_algorithm_stmt_unplaced(
                         renames,
                         InferredType::Unknown,
                     )
+                    .map_err(|refusal| site.place(refusal))
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             let semi = if matches!(lang, Language::Kotlin | Language::Python) {
@@ -21973,6 +22027,15 @@ fn lower_algorithm_stmt_unplaced(
                 // are pure per RFC §synth-5-A line 333).
                 const BC_MUTATING_METHODS: &[&str] = &["insert", "remove"];
 
+                // Where each half of `alias.method` is written: a refusal of
+                // the alias names the alias, one of the method the method.
+                let lead = target.len() - target.trim_start().len();
+                let alias_span = alias.len().saturating_sub(lead);
+                let alias_at = target_site.locate(Some(0..alias_span));
+                let method_start = alias_span + 1;
+                let method_at =
+                    target_site.locate(Some(method_start..method_start + method.trim_end().len()));
+
                 let imp = imports.iter().find(|i| i.alias.as_str() == alias);
                 let imp = match imp {
                     Some(imp) => imp,
@@ -21980,14 +22043,14 @@ fn lower_algorithm_stmt_unplaced(
                         let mut candidates: Vec<String> =
                             imports.iter().map(|i| i.alias.clone()).collect();
                         candidates.sort();
-                        return Err(
+                        let refusal: ForgeError =
                             crate::forge::error::ValidationError::AlgorithmCallTargetUnknown {
                                 target: target.clone(),
                                 alias: alias.to_string(),
                                 candidates,
                             }
-                            .into(),
-                        );
+                            .into();
+                        return Err(alias_at.place(refusal));
                     }
                 };
 
@@ -22058,27 +22121,29 @@ fn lower_algorithm_stmt_unplaced(
                 if imp.kind == "bounded-collection" {
                     // Method roster validation.
                     if BC_MUTATING_METHODS.contains(&method) {
-                        return Err(
+                        let refusal: ForgeError =
                             crate::forge::error::ValidationError::AlgorithmBcMutationForbidden {
                                 target: target.clone(),
                                 method: method.to_string(),
                             }
-                            .into(),
-                        );
+                            .into();
+                        return Err(method_at.place(refusal));
                     }
                     if !BC_READONLY_METHODS.contains(&method) {
                         let candidates: Vec<String> = BC_READONLY_METHODS
                             .iter()
                             .map(|s| (*s).to_string())
                             .collect();
-                        return Err(crate::forge::error::ValidationError::AlgorithmCallTargetMethodUnknown {
-                            target: target.clone(),
-                            alias: alias.to_string(),
-                            method: method.to_string(),
-                            kind: "bounded-collection".to_string(),
-                            candidates,
-                        }
-                        .into());
+                        let refusal: ForgeError =
+                            crate::forge::error::ValidationError::AlgorithmCallTargetMethodUnknown {
+                                target: target.clone(),
+                                alias: alias.to_string(),
+                                method: method.to_string(),
+                                kind: "bounded-collection".to_string(),
+                                candidates,
+                            }
+                            .into();
+                        return Err(method_at.place(refusal));
                     }
                     // Arity validation (fixed per RFC §synth-5-L: find_by_index/
                     // get/get_by_slot take 1 arg; len/capacity take 0).
@@ -22088,14 +22153,14 @@ fn lower_algorithm_stmt_unplaced(
                         _ => unreachable!("BC_READONLY_METHODS roster guard"),
                     };
                     if args.len() != expected_arity {
-                        return Err(
+                        let refusal: ForgeError =
                             crate::forge::error::ValidationError::AlgorithmCallArgCountMismatch {
                                 target: target.clone(),
                                 actual: args.len(),
                                 expected: expected_arity,
                             }
-                            .into(),
-                        );
+                            .into();
+                        return Err(arity_at.place(refusal));
                     }
                     // Emit per-backend method call. C11 needs `&self`
                     // as the first arg (snake-prefix dispatch).
@@ -22120,14 +22185,14 @@ fn lower_algorithm_stmt_unplaced(
                     // `validate_and_enrich_imports::discover_stateless_signature`).
                     let expected_arity = imp.param_types.len();
                     if args.len() != expected_arity {
-                        return Err(
+                        let refusal: ForgeError =
                             crate::forge::error::ValidationError::AlgorithmCallArgCountMismatch {
                                 target: target.clone(),
                                 actual: args.len(),
                                 expected: expected_arity,
                             }
-                            .into(),
-                        );
+                            .into();
+                        return Err(arity_at.place(refusal));
                     }
                     let qualified = emit_qualified_call(lang, alias, method);
                     out.push_str(&format!(
@@ -22139,7 +22204,7 @@ fn lower_algorithm_stmt_unplaced(
                     // algorithm calls target bounded-collection methods
                     // only. No closed candidate set —
                     // future RFC extensions may add cross-kind dispatch.
-                    return Err(
+                    let refusal: ForgeError =
                         crate::forge::error::ValidationError::AlgorithmCallTargetMethodUnknown {
                             target: target.clone(),
                             alias: alias.to_string(),
@@ -22147,8 +22212,8 @@ fn lower_algorithm_stmt_unplaced(
                             kind: imp.kind.clone(),
                             candidates: Vec::new(),
                         }
-                        .into(),
-                    );
+                        .into();
+                    return Err(method_at.place(refusal));
                 }
             } else {
                 // Bare target — sibling free-function call within the

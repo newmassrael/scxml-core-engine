@@ -239,6 +239,159 @@ const TRANSFORM_UNCLOSED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "#;
 
+/// An algorithm local's initial value.
+const ALGORITHM_VAR: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_alg_var" version="1.0">
+  <sce:signature>
+    <sce:param name="reading" type="uint16"/>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="x" type="uint16"
+             init="readng"/>
+    <sce:return expr="x"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// An algorithm assignment's value.
+const ALGORITHM_ASSIGN: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_alg_assign" version="1.0">
+  <sce:signature>
+    <sce:param name="reading" type="uint16"/>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="x" type="uint16" init="0"/>
+    <sce:assign target="x"
+                expr="readng + 1"/>
+    <sce:return expr="x"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// An `<sce:append>` whose target names no buffer. The refusal names the
+/// TARGET, so it is placed at that attribute, a row below the element.
+const ALGORITHM_APPEND_TARGET: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_alg_append_target" version="1.0">
+  <sce:signature>
+    <sce:param name="reading" type="uint16"/>
+    <sce:return type="bytes" returns-max-size="4"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="buf" type="bytes" capacity="4"/>
+    <sce:append expr="1"
+                target="buff"/>
+    <sce:return expr="buf"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// An `<sce:append>` of a value wider than a byte.
+///
+/// ⚠ This one reported the TYPE it inferred as `actual` — `uint16`, which
+/// is written nowhere on the row. What the author edits is the appended
+/// expression, so that is what is reported (found by reading the code
+/// 2026-09-23).
+const ALGORITHM_APPEND_TYPE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_alg_append_type" version="1.0">
+  <sce:signature>
+    <sce:param name="reading" type="uint16"/>
+    <sce:return type="bytes" returns-max-size="4"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="buf" type="bytes" capacity="4"/>
+    <sce:append target="buf"
+                expr="reading"/>
+    <sce:return expr="buf"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// An `<sce:if>` guard.
+const ALGORITHM_IF: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_alg_if" version="1.0">
+  <sce:signature>
+    <sce:param name="reading" type="uint16"/>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:body>
+    <sce:if
+        cond="readng &gt; 1">
+      <sce:return expr="1"/>
+    </sce:if>
+    <sce:return expr="0"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// An `<sce:while>` guard, the refused name after an escaped operator.
+const ALGORITHM_WHILE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_alg_while" version="1.0">
+  <sce:signature>
+    <sce:param name="reading" type="uint16"/>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="i" type="uint16" init="0"/>
+    <sce:while max-iter="4"
+               cond="i &lt; limt">
+      <sce:assign target="i" expr="i + 1"/>
+    </sce:while>
+    <sce:return expr="i"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// An `<sce:foreach>` over something that is not iterable. The refusal
+/// names the SOURCE, so it is placed at the `in` attribute.
+const ALGORITHM_FOREACH: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_alg_foreach" version="1.0">
+  <sce:signature>
+    <sce:param name="reading" type="uint16"/>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="acc" type="uint16" init="0"/>
+    <sce:foreach item="b"
+                 in="readings">
+      <sce:assign target="acc" expr="acc + 1"/>
+    </sce:foreach>
+    <sce:return expr="acc"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// An `<sce:return>` value.
+const ALGORITHM_RETURN: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_alg_return" version="1.0">
+  <sce:signature>
+    <sce:param name="reading" type="uint16"/>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return
+        expr="readng"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// An `<sce:call>` through an alias nothing imports. The refusal names the
+/// ALIAS, the part of the target before its dot.
+const ALGORITHM_CALL: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_alg_call" version="1.0">
+  <sce:signature>
+    <sce:param name="reading" type="uint16"/>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:body>
+    <sce:call args="reading"
+              target="telemetry.record"/>
+    <sce:return expr="reading"/>
+  </sce:body>
+</scxml>
+"#;
+
 const CASES: &[Case] = &[
     Case {
         file: "probe_transform.scxml",
@@ -335,6 +488,78 @@ const CASES: &[Case] = &[
         line: 6,
         col: 29,
         actual: None,
+    },
+    Case {
+        file: "probe_alg_var.scxml",
+        document: ALGORITHM_VAR,
+        code: "expression/unknown-identifier",
+        line: 9,
+        col: 20,
+        actual: Some("readng"),
+    },
+    Case {
+        file: "probe_alg_assign.scxml",
+        document: ALGORITHM_ASSIGN,
+        code: "expression/unknown-identifier",
+        line: 10,
+        col: 23,
+        actual: Some("readng"),
+    },
+    Case {
+        file: "probe_alg_append_target.scxml",
+        document: ALGORITHM_APPEND_TARGET,
+        code: "algorithm/append-target-not-buffer",
+        line: 10,
+        col: 25,
+        actual: Some("buff"),
+    },
+    Case {
+        file: "probe_alg_append_type.scxml",
+        document: ALGORITHM_APPEND_TYPE,
+        code: "algorithm/append-type-mismatch",
+        line: 10,
+        col: 23,
+        actual: Some("reading"),
+    },
+    Case {
+        file: "probe_alg_if.scxml",
+        document: ALGORITHM_IF,
+        code: "expression/unknown-identifier",
+        line: 9,
+        col: 15,
+        actual: Some("readng"),
+    },
+    Case {
+        file: "probe_alg_while.scxml",
+        document: ALGORITHM_WHILE,
+        code: "expression/unknown-identifier",
+        line: 10,
+        col: 29,
+        actual: Some("limt"),
+    },
+    Case {
+        file: "probe_alg_foreach.scxml",
+        document: ALGORITHM_FOREACH,
+        code: "algorithm/foreach-source-not-iterable",
+        line: 10,
+        col: 22,
+        actual: Some("readings"),
+    },
+    Case {
+        file: "probe_alg_return.scxml",
+        document: ALGORITHM_RETURN,
+        code: "expression/unknown-identifier",
+        line: 9,
+        col: 15,
+        actual: Some("readng"),
+    },
+    Case {
+        file: "probe_alg_call.scxml",
+        document: ALGORITHM_CALL,
+        code: "algorithm/call-target-unknown",
+        line: 9,
+        col: 23,
+        actual: Some("telemetry"),
     },
 ];
 

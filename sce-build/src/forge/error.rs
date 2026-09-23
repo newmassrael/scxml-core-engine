@@ -1122,9 +1122,18 @@ pub enum ValidationError {
     /// `<sce:append expr>` is neither `uint8` (single-byte push) nor `bytes`
     /// (extend). Appending a wider integer would silently truncate, so the
     /// author must narrow it to a `uint8` first. `got` names the inferred
-    /// type.
+    /// type; `observed` is the appended expression as written, which is what
+    /// the wire reports as `actual`.
+    ///
+    /// ⚠ `actual` used to be `got` — the type SCE inferred, `uint16`, which
+    /// the row does not spell: what the author edits is the expression
+    /// (SCE_ERROR_CONTRACT §2.1).
     #[error("algorithm: <sce:append target=\"{target}\">: expr must be uint8 or bytes, got {got}")]
-    AlgorithmAppendTypeMismatch { target: String, got: String },
+    AlgorithmAppendTypeMismatch {
+        target: String,
+        got: String,
+        observed: Option<String>,
+    },
 
     /// RFC §synth-5-B variant primitive: the variant's enumerated
     /// arms don't cover the tag field's value domain AND no

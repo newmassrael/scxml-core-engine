@@ -322,22 +322,29 @@ fn a_local_reads_back_with_exactly_the_initializer_its_type_allows() {
         body: vec![
             AlgorithmStmt::Var {
                 name: "out".to_string(),
+                name_spelling: None,
                 sce_type: SceType::Bytes,
                 init: None,
+                init_spelling: None,
                 capacity: Some(4),
             },
             AlgorithmStmt::Var {
                 name: "n".to_string(),
+                name_spelling: None,
                 sce_type: SceType::Uint8,
                 init: Some("b".to_string()),
+                init_spelling: None,
                 capacity: None,
             },
             AlgorithmStmt::Append {
                 target: "out".to_string(),
+                target_spelling: None,
                 expr: "n".to_string(),
+                expr_spelling: None,
             },
             AlgorithmStmt::Return {
                 expr: Some("out".to_string()),
+                expr_spelling: None,
             },
         ],
         test_vectors: Vec::new(),

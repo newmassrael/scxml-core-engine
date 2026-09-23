@@ -499,7 +499,7 @@ fn eval_stmt(
             scope.declare(name, value);
             Ok(())
         }
-        AlgorithmStmt::Assign { target, expr } => {
+        AlgorithmStmt::Assign { target, expr, .. } => {
             let target = target.trim();
             // Identifier-only LValues in fold bodies. Member/Index
             // assignments are out of scope for v1 — the fold's output
@@ -522,6 +522,7 @@ fn eval_stmt(
             cond,
             then_body,
             else_body,
+            ..
         } => {
             let c = eval_expr(cond, scope)?.to_bool()?;
             if c {
@@ -535,6 +536,7 @@ fn eval_stmt(
             cond,
             body,
             max_iter,
+            ..
         } => {
             let cap = max_iter.unwrap_or(u32::MAX);
             let mut ticks = 0u32;
@@ -551,7 +553,9 @@ fn eval_stmt(
             }
             Ok(())
         }
-        AlgorithmStmt::Foreach { item, source, body } => {
+        AlgorithmStmt::Foreach {
+            item, source, body, ..
+        } => {
             // Source must resolve to a `bytes`-typed binding. v1 only
             // supports iterating `bytes`, mirroring algorithm-body
             // semantics (lower_algorithm_stmt :: AlgorithmStmt::Foreach).
@@ -972,11 +976,14 @@ mod tests {
             elem_type: SceType::Uint16,
             body: vec![AlgorithmStmt::Var {
                 name: "doubled".into(),
+                name_spelling: None,
                 sce_type: SceType::Uint16,
                 init: Some("i + i".into()),
+                init_spelling: None,
                 capacity: None,
             }],
             yield_expr: "doubled".into(),
+            yield_spelling: None,
         };
         let mut budget = Budget::default();
         let out = evaluate_fold(&fold, &mut budget, TEST_SITE).unwrap();
@@ -1005,39 +1012,52 @@ mod tests {
             body: vec![
                 AlgorithmStmt::Var {
                     name: "c".into(),
+                    name_spelling: None,
                     sce_type: SceType::Uint16,
                     init: Some("i << 8".into()),
+                    init_spelling: None,
                     capacity: None,
                 },
                 AlgorithmStmt::Var {
                     name: "bit".into(),
+                    name_spelling: None,
                     sce_type: SceType::Uint16,
                     init: Some("0".into()),
+                    init_spelling: None,
                     capacity: None,
                 },
                 AlgorithmStmt::While {
                     cond: "bit < 8".into(),
+                    cond_spelling: None,
                     max_iter: Some(8),
                     body: vec![
                         AlgorithmStmt::If {
                             cond: "(c & 0x8000) !== 0".into(),
+                            cond_spelling: None,
                             then_body: vec![AlgorithmStmt::Assign {
                                 target: "c".into(),
+                                target_spelling: None,
                                 expr: "(c << 1) ^ 0x1021".into(),
+                                expr_spelling: None,
                             }],
                             else_body: Some(vec![AlgorithmStmt::Assign {
                                 target: "c".into(),
+                                target_spelling: None,
                                 expr: "c << 1".into(),
+                                expr_spelling: None,
                             }]),
                         },
                         AlgorithmStmt::Assign {
                             target: "bit".into(),
+                            target_spelling: None,
                             expr: "bit + 1".into(),
+                            expr_spelling: None,
                         },
                     ],
                 },
             ],
             yield_expr: "c".into(),
+            yield_spelling: None,
         };
         let mut budget = Budget::default();
         let out = evaluate_fold(&fold, &mut budget, TEST_SITE).expect("CRC16 fold must evaluate");
@@ -1065,6 +1085,7 @@ mod tests {
             elem_type: SceType::Uint16,
             body: vec![],
             yield_expr: "i".into(),
+            yield_spelling: None,
         };
         let mut budget = Budget::new(3);
         let err = evaluate_fold(&fold, &mut budget, TEST_SITE).unwrap_err();
@@ -1087,12 +1108,14 @@ mod tests {
             elem_type: SceType::Uint16,
             body: vec![stmt],
             yield_expr: "i".into(),
+            yield_spelling: None,
         };
 
         let mut budget = Budget::default();
         let ret_err = evaluate_fold(
             &make_fold(AlgorithmStmt::Return {
                 expr: Some("0".into()),
+                expr_spelling: None,
             }),
             &mut budget,
             TEST_SITE,
@@ -1110,8 +1133,9 @@ mod tests {
         let call_err = evaluate_fold(
             &make_fold(AlgorithmStmt::Call {
                 target: "other".into(),
+                target_spelling: None,
                 args: vec![],
-                line: None,
+                args_spelling: None,
             }),
             &mut budget,
             TEST_SITE,
@@ -1136,10 +1160,12 @@ mod tests {
             elem_type: SceType::Uint16,
             body: vec![AlgorithmStmt::While {
                 cond: "i === i".into(), // always true
+                cond_spelling: None,
                 max_iter: Some(4),
                 body: vec![],
             }],
             yield_expr: "i".into(),
+            yield_spelling: None,
         };
         let mut budget = Budget::default();
         let err = evaluate_fold(&fold, &mut budget, TEST_SITE).unwrap_err();

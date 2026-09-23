@@ -1382,6 +1382,8 @@ fn parse_const(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<AlgorithmConst, Pa
             })?,
             body: Vec::new(),
             yield_expr: String::new(),
+            // A pseudo line is not an attribute of any SCXML document.
+            yield_spelling: None,
         };
         for (l, k) in group(kids) {
             if let Some(y) = l.text.strip_prefix("yield ") {
@@ -1400,6 +1402,7 @@ fn parse_const(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<AlgorithmConst, Pa
                 len: len.parse().unwrap_or(0),
             },
             init: None,
+            init_spelling: None,
             fold: Some(fold),
             compute_at_build: true,
             // A pseudo line is not a row of any SCXML document.
@@ -1416,6 +1419,7 @@ fn parse_const(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<AlgorithmConst, Pa
             }
         })?),
         init: Some(undo(value, line.number)?),
+        init_spelling: None,
         fold: None,
         compute_at_build: false,
         line: None,
@@ -1535,10 +1539,14 @@ fn parse_stmt(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<AlgorithmStmt, Pars
                 })
             }
         };
+        // A pseudo line is not an attribute of any SCXML document, so no
+        // statement it builds carries a spelling.
         return Ok(AlgorithmStmt::Var {
             name: undo(name, line.number)?,
+            name_spelling: None,
             sce_type,
             init,
+            init_spelling: None,
             capacity,
         });
     }
@@ -1549,12 +1557,15 @@ fn parse_stmt(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<AlgorithmStmt, Pars
         })?;
         return Ok(AlgorithmStmt::Append {
             target: undo(target, line.number)?,
+            target_spelling: None,
             expr: undo(expr, line.number)?,
+            expr_spelling: None,
         });
     }
     if let Some(rest) = t.strip_prefix("if ") {
         return Ok(AlgorithmStmt::If {
             cond: undo(rest.trim_end_matches(':'), line.number)?,
+            cond_spelling: None,
             then_body: body_of(kids)?,
             // The renderer writes `else:` as a sibling line, so this
             // arm is filled by the caller's `else` handling below.
@@ -1575,6 +1586,7 @@ fn parse_stmt(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<AlgorithmStmt, Pars
         };
         return Ok(AlgorithmStmt::While {
             cond: undo(cond, line.number)?,
+            cond_spelling: None,
             body: body_of(kids)?,
             max_iter,
         });
@@ -1590,15 +1602,20 @@ fn parse_stmt(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<AlgorithmStmt, Pars
         return Ok(AlgorithmStmt::Foreach {
             item: undo(item, line.number)?,
             source: undo(source, line.number)?,
+            source_spelling: None,
             body: body_of(kids)?,
         });
     }
     if t == "return" {
-        return Ok(AlgorithmStmt::Return { expr: None });
+        return Ok(AlgorithmStmt::Return {
+            expr: None,
+            expr_spelling: None,
+        });
     }
     if let Some(rest) = t.strip_prefix("return ") {
         return Ok(AlgorithmStmt::Return {
             expr: Some(undo(rest, line.number)?),
+            expr_spelling: None,
         });
     }
     if let Some(rest) = t.strip_prefix("call ") {
@@ -1613,15 +1630,17 @@ fn parse_stmt(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<AlgorithmStmt, Pars
         }
         return Ok(AlgorithmStmt::Call {
             target: undo(target, line.number)?,
+            target_spelling: None,
             args,
-            // A pseudo line is not a row of any SCXML document.
-            line: None,
+            args_spelling: None,
         });
     }
     if let Some((target, expr)) = t.split_once(" = ") {
         return Ok(AlgorithmStmt::Assign {
             target: undo(target, line.number)?,
+            target_spelling: None,
             expr: undo(expr, line.number)?,
+            expr_spelling: None,
         });
     }
     Err(ParseError {

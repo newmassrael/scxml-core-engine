@@ -147,40 +147,73 @@ impl Names {
     fn stmts(&mut self, stmts: &[AlgorithmStmt]) -> Result<(), ForgeError> {
         for stmt in stmts {
             match stmt {
-                AlgorithmStmt::Var { sce_type, init, .. } => {
+                AlgorithmStmt::Var {
+                    sce_type,
+                    init,
+                    init_spelling,
+                    ..
+                } => {
                     self.ty(sce_type);
-                    self.opt_expr(init.as_deref(), None)?;
+                    self.opt_expr(init.as_deref(), init_spelling.as_ref())?;
                 }
                 // A target is an lvalue in expression syntax — `x`,
                 // `buf[i]` — so it is read the way an expression is.
-                AlgorithmStmt::Assign { target, expr } | AlgorithmStmt::Append { target, expr } => {
-                    self.expr(target, None)?;
-                    self.expr(expr, None)?;
+                AlgorithmStmt::Assign {
+                    target,
+                    target_spelling,
+                    expr,
+                    expr_spelling,
+                }
+                | AlgorithmStmt::Append {
+                    target,
+                    target_spelling,
+                    expr,
+                    expr_spelling,
+                } => {
+                    self.expr(target, target_spelling.as_ref())?;
+                    self.expr(expr, expr_spelling.as_ref())?;
                 }
                 AlgorithmStmt::If {
                     cond,
+                    cond_spelling,
                     then_body,
                     else_body,
                 } => {
-                    self.expr(cond, None)?;
+                    self.expr(cond, cond_spelling.as_ref())?;
                     self.stmts(then_body)?;
                     if let Some(else_body) = else_body {
                         self.stmts(else_body)?;
                     }
                 }
-                AlgorithmStmt::While { cond, body, .. } => {
-                    self.expr(cond, None)?;
+                AlgorithmStmt::While {
+                    cond,
+                    cond_spelling,
+                    body,
+                    ..
+                } => {
+                    self.expr(cond, cond_spelling.as_ref())?;
                     self.stmts(body)?;
                 }
                 AlgorithmStmt::Foreach { source, body, .. } => {
                     self.name(source);
                     self.stmts(body)?;
                 }
-                AlgorithmStmt::Return { expr } => self.opt_expr(expr.as_deref(), None)?,
-                AlgorithmStmt::Call { target, args, .. } => {
-                    self.expr(target, None)?;
+                AlgorithmStmt::Return {
+                    expr,
+                    expr_spelling,
+                } => self.opt_expr(expr.as_deref(), expr_spelling.as_ref())?,
+                AlgorithmStmt::Call {
+                    target,
+                    target_spelling,
+                    args,
+                    args_spelling,
+                } => {
+                    self.expr(target, target_spelling.as_ref())?;
+                    // Each argument is placed only where `args` is that one
+                    // argument — `ExpressionSite` checks the spelling reads
+                    // back.
                     for arg in args {
-                        self.expr(arg, None)?;
+                        self.expr(arg, args_spelling.as_ref())?;
                     }
                 }
             }
@@ -269,11 +302,11 @@ impl Names {
                         AlgorithmConstType::Scalar(t) => self.ty(t),
                         AlgorithmConstType::Array { elem, .. } => self.ty(elem),
                     }
-                    self.opt_expr(c.init.as_deref(), None)?;
+                    self.opt_expr(c.init.as_deref(), c.init_spelling.as_ref())?;
                     if let Some(fold) = &c.fold {
                         self.ty(&fold.elem_type);
                         self.stmts(&fold.body)?;
-                        self.expr(&fold.yield_expr, None)?;
+                        self.expr(&fold.yield_expr, fold.yield_spelling.as_ref())?;
                     }
                 }
                 self.stmts(&m.body)

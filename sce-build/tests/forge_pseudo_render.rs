@@ -71,6 +71,7 @@ fn an_algorithm_renders_every_form_it_can_carry() {
                 name: "POLY".to_string(),
                 sce_type: AlgorithmConstType::Scalar(SceType::Uint16),
                 init: Some("0x1021".to_string()),
+                init_spelling: None,
                 fold: None,
                 compute_at_build: false,
                 line: None,
@@ -82,6 +83,7 @@ fn an_algorithm_renders_every_form_it_can_carry() {
                     len: 4,
                 },
                 init: None,
+                init_spelling: None,
                 fold: Some(FoldBody {
                     range_start: 0,
                     range_end: 4,
@@ -89,11 +91,14 @@ fn an_algorithm_renders_every_form_it_can_carry() {
                     elem_type: SceType::Uint16,
                     body: vec![AlgorithmStmt::Var {
                         name: "acc".to_string(),
+                        name_spelling: None,
                         sce_type: SceType::Uint16,
                         init: Some("i".to_string()),
+                        init_spelling: None,
                         capacity: None,
                     }],
                     yield_expr: "acc".to_string(),
+                    yield_spelling: None,
                 }),
                 compute_at_build: true,
                 line: None,
@@ -102,44 +107,61 @@ fn an_algorithm_renders_every_form_it_can_carry() {
         body: vec![
             AlgorithmStmt::Var {
                 name: "out".to_string(),
+                name_spelling: None,
                 sce_type: SceType::Bytes,
                 init: None,
+                init_spelling: None,
                 capacity: Some(32),
             },
             AlgorithmStmt::Assign {
                 target: "crc".to_string(),
+                target_spelling: None,
                 expr: "seed".to_string(),
+                expr_spelling: None,
             },
             AlgorithmStmt::Append {
                 target: "out".to_string(),
+                target_spelling: None,
                 expr: "crc".to_string(),
+                expr_spelling: None,
             },
             AlgorithmStmt::If {
                 cond: "crc > 0".to_string(),
+                cond_spelling: None,
                 then_body: vec![AlgorithmStmt::Return {
                     expr: Some("out".to_string()),
+                    expr_spelling: None,
                 }],
-                else_body: Some(vec![AlgorithmStmt::Return { expr: None }]),
+                else_body: Some(vec![AlgorithmStmt::Return {
+                    expr: None,
+                    expr_spelling: None,
+                }]),
             },
             AlgorithmStmt::While {
                 cond: "crc != 0".to_string(),
+                cond_spelling: None,
                 body: vec![AlgorithmStmt::Call {
                     target: "step".to_string(),
+                    target_spelling: None,
                     args: vec!["crc".to_string(), "1".to_string()],
-                    line: None,
+                    args_spelling: None,
                 }],
                 max_iter: Some(16),
             },
             AlgorithmStmt::Foreach {
                 item: "b".to_string(),
                 source: "data".to_string(),
+                source_spelling: None,
                 body: vec![AlgorithmStmt::Assign {
                     target: "crc".to_string(),
+                    target_spelling: None,
                     expr: "crc ^ b".to_string(),
+                    expr_spelling: None,
                 }],
             },
             AlgorithmStmt::Return {
                 expr: Some("out".to_string()),
+                expr_spelling: None,
             },
         ],
         test_vectors: vec![TestVector {
@@ -297,7 +319,9 @@ fn a_newline_in_an_expression_does_not_become_a_line() {
         consts: Vec::new(),
         body: vec![AlgorithmStmt::Assign {
             target: "a".to_string(),
+            target_spelling: None,
             expr: "1\n  return 0".to_string(),
+            expr_spelling: None,
         }],
         test_vectors: Vec::new(),
         source_location: None,
@@ -590,6 +614,7 @@ fn two_renderings_of_one_model_agree() {
         consts: Vec::new(),
         body: vec![AlgorithmStmt::Return {
             expr: Some("x".to_string()),
+            expr_spelling: None,
         }],
         test_vectors: Vec::new(),
         source_location: None,

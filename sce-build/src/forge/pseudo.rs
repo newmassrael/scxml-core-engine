@@ -936,6 +936,7 @@ fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out<'_>) {
             sce_type,
             init,
             capacity,
+            ..
         } => {
             let cap = match capacity {
                 Some(n) => format!(" cap {n}"),
@@ -956,16 +957,17 @@ fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out<'_>) {
                 init
             ));
         }
-        AlgorithmStmt::Assign { target, expr } => {
+        AlgorithmStmt::Assign { target, expr, .. } => {
             out.line(&format!("{} = {}", text(target), text(expr)));
         }
-        AlgorithmStmt::Append { target, expr } => {
+        AlgorithmStmt::Append { target, expr, .. } => {
             out.line(&format!("append {} <- {}", text(target), text(expr)));
         }
         AlgorithmStmt::If {
             cond,
             then_body,
             else_body,
+            ..
         } => {
             out.line_of(vec![
                 Part::Word(Word::If),
@@ -994,6 +996,7 @@ fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out<'_>) {
             cond,
             body,
             max_iter,
+            ..
         } => {
             // The bound goes BEFORE the condition, which is the only
             // free-text value on the line. Written the other way round
@@ -1015,7 +1018,9 @@ fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out<'_>) {
                 }
             });
         }
-        AlgorithmStmt::Foreach { item, source, body } => {
+        AlgorithmStmt::Foreach {
+            item, source, body, ..
+        } => {
             out.line_of(vec![
                 Part::Word(Word::Foreach),
                 Part::Text(text(item).into_owned()),
@@ -1029,7 +1034,7 @@ fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out<'_>) {
                 }
             });
         }
-        AlgorithmStmt::Return { expr } => match expr {
+        AlgorithmStmt::Return { expr, .. } => match expr {
             Some(e) => out.line(&format!("return {}", text(e))),
             None => out.line("return"),
         },

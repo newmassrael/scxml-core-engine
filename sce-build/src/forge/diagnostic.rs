@@ -6285,13 +6285,19 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 },
             }
         }
-        ValidationError::AlgorithmAppendTypeMismatch { target, got } => DiagnosticPayload {
+        ValidationError::AlgorithmAppendTypeMismatch {
+            target,
+            got,
+            observed,
+        } => DiagnosticPayload {
             code: DiagnosticCode::AlgorithmAppendTypeMismatch,
             stage: Stage::Validation,
             // The accepted RHS type set is fixed metadata, not a
             // structured repair candidate; narrowing is author-domain.
             expected: Some(vec!["uint8".into(), "bytes".into()]),
-            actual: Some(got.clone()),
+            // The expression as written is what the author narrows; the
+            // type it was inferred as is the message's, and the key's.
+            actual: observed.clone(),
             fix: None,
             key_fragments: vec![target.clone(), got.clone()],
         },
@@ -11747,9 +11753,10 @@ mod tests {
                 ValidationError::AlgorithmAppendTypeMismatch {
                     target: "out".into(),
                     got: "uint16".into(),
+                    observed: Some("wide".into()),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:e63c3542ddb12c1f","code":"algorithm/append-type-mismatch","stage":"validation","spec":"SCE Forge §4.12","message":"algorithm: <sce:append target=\"out\">: expr must be uint8 or bytes, got uint16","expected":["uint8","bytes"],"actual":"uint16"}"#,
+                r#"{"v":1,"id":"fnv1a:e63c3542ddb12c1f","code":"algorithm/append-type-mismatch","stage":"validation","spec":"SCE Forge §4.12","message":"algorithm: <sce:append target=\"out\">: expr must be uint8 or bytes, got uint16","expected":["uint8","bytes"],"actual":"wide"}"#,
             ),
             // ── §synth-5-F build-time const-fold (SCE Protocol-Synthesis RFC §synth-5-F) ─
             (

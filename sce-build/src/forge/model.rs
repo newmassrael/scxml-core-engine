@@ -3426,6 +3426,10 @@ pub struct FoldBody {
     /// Per-iteration yielded expression — its evaluated value at
     /// `elem_type` becomes the next array element.
     pub yield_expr: String,
+    /// The `<sce:yield expr>` attribute as written and where. Skipped from
+    /// serialization, as every position on this model is.
+    #[serde(skip)]
+    pub yield_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
 }
 
 /// Build-time const inside an algorithm body. RFC §synth-5-A v1 admits the
@@ -3446,6 +3450,10 @@ pub struct AlgorithmConst {
     /// parser enforces "exactly one of `init` / `fold`".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub init: Option<String>,
+    /// The `init` attribute as written and where. Skipped from
+    /// serialization, as every position on this model is.
+    #[serde(skip)]
+    pub init_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     /// `<sce:fold>` body for `sce:compute-at="build"` consts. `None`
     /// for scalar consts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3486,6 +3494,14 @@ pub enum AlgorithmStmt {
     /// on a bytes buffer, present on every other local.
     Var {
         name: String,
+        /// The `name` attribute as written and where — what a refusal that
+        /// names the local is placed at. Every `*_spelling` on a statement
+        /// is the same: the attribute a refusal of it names, as written, so
+        /// the refusal lands on the row and column of the token rather than
+        /// on the row its element starts on. Skipped from serialization, as
+        /// every position on this model is.
+        #[serde(skip)]
+        name_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
         #[serde(rename = "type")]
         sce_type: SceType,
         // ⚠ This was an empty string for "no initializer", which gave the
@@ -3495,6 +3511,8 @@ pub enum AlgorithmStmt {
         // (measured 2026-09-22, `algorithm_cobs_encode`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         init: Option<String>,
+        #[serde(skip)]
+        init_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         capacity: Option<u32>,
     },
@@ -3504,7 +3522,14 @@ pub enum AlgorithmStmt {
     /// because it is not a statically-known storage location. Byte buffers are
     /// built forward-only via `<sce:append>` ([`AlgorithmStmt::Append`]), never
     /// index writes. Stored as a raw string and validated by the parser.
-    Assign { target: String, expr: String },
+    Assign {
+        target: String,
+        #[serde(skip)]
+        target_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+        expr: String,
+        #[serde(skip)]
+        expr_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+    },
     /// `<sce:append target="buf" expr="..."/>` — append to a `bytes` local
     /// buffer (SCE byte-buffer-build, SCE_FORGE.md §4.12). `target` is the
     /// identifier of a `type="bytes"` local; `expr` lowers by its static type:
@@ -3513,10 +3538,19 @@ pub enum AlgorithmStmt {
     /// overflow surfaces fallibly (the codec's `CapacityExceeded` model),
     /// never silent truncation. This is the only buffer-mutation statement —
     /// index writes are deliberately excluded (see `Assign`).
-    Append { target: String, expr: String },
+    Append {
+        target: String,
+        #[serde(skip)]
+        target_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+        expr: String,
+        #[serde(skip)]
+        expr_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+    },
     /// `<sce:if cond="..."> ... <sce:else>...</sce:else></sce:if>`.
     If {
         cond: String,
+        #[serde(skip)]
+        cond_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
         then_body: Vec<AlgorithmStmt>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         else_body: Option<Vec<AlgorithmStmt>>,
@@ -3527,6 +3561,8 @@ pub enum AlgorithmStmt {
     /// rejection is not implemented until a consumer needs it.
     While {
         cond: String,
+        #[serde(skip)]
+        cond_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
         body: Vec<AlgorithmStmt>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         max_iter: Option<u32>,
@@ -3537,6 +3573,9 @@ pub enum AlgorithmStmt {
     Foreach {
         item: String,
         source: String,
+        /// The `in` attribute `source` was read from.
+        #[serde(skip)]
+        source_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
         body: Vec<AlgorithmStmt>,
     },
     /// `<sce:return expr=".../>"` — terminate body with an optional
@@ -3545,6 +3584,8 @@ pub enum AlgorithmStmt {
     Return {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         expr: Option<String>,
+        #[serde(skip)]
+        expr_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     },
     /// `<sce:call target="other_algo" args="a, b"/>` — invoke another
     /// algorithm kind imported via `<sce:import>`. v1 forbids
@@ -3552,24 +3593,18 @@ pub enum AlgorithmStmt {
     /// not implemented until a consumer needs it.
     Call {
         target: String,
-        args: Vec<String>,
-        /// 1-based source line of the `<sce:call>`, so a target that
-        /// resolves at code generation to nothing names the row it is on.
-        /// Skipped from serialization, as every `line` on this model is.
+        // ⚠ The call carried its own ROW until 2026-09-23, and every refusal
+        // of it was placed there — the row the start tag begins on, one row
+        // above a target written on the tag's second row. Each refusal now
+        // names a piece of `target` or the whole of `args` and is placed at
+        // that. (A `//` comment, not `///`: the variant's doc is the public
+        // AST schema's description.)
         #[serde(skip)]
-        line: Option<u32>,
+        target_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+        args: Vec<String>,
+        #[serde(skip)]
+        args_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     },
-}
-
-impl AlgorithmStmt {
-    /// The source row the parser recorded for this statement, when it
-    /// recorded one — the row a failure while lowering it is placed at.
-    pub fn line(&self) -> Option<u32> {
-        match self {
-            AlgorithmStmt::Call { line, .. } => *line,
-            _ => None,
-        }
-    }
 }
 
 /// A name an algorithm body introduces.
@@ -3611,7 +3646,9 @@ fn collect_algorithm_bindings<'a>(stmts: &'a [AlgorithmStmt], out: &mut Vec<Algo
             AlgorithmStmt::Var { name, sce_type, .. } => {
                 out.push(AlgorithmBinding::Local { name, sce_type });
             }
-            AlgorithmStmt::Foreach { item, source, body } => {
+            AlgorithmStmt::Foreach {
+                item, source, body, ..
+            } => {
                 out.push(AlgorithmBinding::ForeachItem { name: item, source });
                 collect_algorithm_bindings(body, out);
             }

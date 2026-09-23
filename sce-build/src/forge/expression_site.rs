@@ -74,6 +74,20 @@ pub struct WrittenAt<'a> {
     pub written: Option<Written<'a>>,
 }
 
+impl<'a> WrittenAt<'a> {
+    /// The first character of `spelling`'s attribute — where a refusal about
+    /// the attribute as a WHOLE is placed, rather than about a range of an
+    /// expression read from it (how many arguments `args` holds, say).
+    /// Nowhere without an attribute.
+    pub fn attribute(spelling: Option<&'a AttributeSpelling>) -> Self {
+        spelling.map_or_else(Self::default, |spelling| Self {
+            line: Some(spelling.row()),
+            col: Some(spelling.col()),
+            written: None,
+        })
+    }
+}
+
 impl WrittenAt<'_> {
     /// The text as written, when it lies on the one row a record's `actual`
     /// may occupy.
