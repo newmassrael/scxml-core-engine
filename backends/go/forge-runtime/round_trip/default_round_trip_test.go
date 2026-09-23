@@ -3,7 +3,7 @@
 //
 // RFC variant-default-uniformity go half — runtime
 // round-trip property test. Mirrors
-// backends/rust/forge-runtime/tests/forge_default_round_trip.rs for the Go
+// backends/rust/forge-conformance/tests/forge_default_round_trip.rs for the Go
 // backend: imports the generated codec packages and asserts that a
 // freshly-constructed instance round-trips through encode → decode
 // into the same declared default arm.

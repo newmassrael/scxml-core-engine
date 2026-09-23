@@ -17,6 +17,7 @@ members = [
     "sce-build",
     "sce-build-wasm",
     "backends/rust/forge-runtime",
+    "backends/rust/forge-conformance",
     "backends/rust/link-runtime",
 ]
 

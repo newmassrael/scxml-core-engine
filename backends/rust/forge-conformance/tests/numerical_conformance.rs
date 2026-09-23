@@ -8,7 +8,8 @@
 // fixture catalog at tests/forge/conformance/fixtures.json. This file is a
 // one-line shim so cargo's test discovery picks up the generated code.
 //
-// To inspect the generated source: `cargo build -p sce-forge-runtime --tests`
-// then read target/debug/build/sce-forge-runtime-*/out/numerical_conformance.rs.
+// To inspect the generated source: `cargo build -p sce-forge-conformance
+// --features alloc --tests`, then read
+// target/debug/build/sce-forge-conformance-*/out/numerical_conformance.rs.
 
 include!(concat!(env!("OUT_DIR"), "/numerical_conformance.rs"));

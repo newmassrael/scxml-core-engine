@@ -1273,7 +1273,7 @@ pub fn harness_layout(language: Language) -> HarnessLayout {
 }
 
 /// Backwards-compatible wrapper. Kept so existing call sites in
-/// `sce_codegen.rs` and `backends/rust/forge-runtime/build.rs` continue to
+/// `sce_codegen.rs` and `backends/rust/forge-conformance/build.rs` continue to
 /// compile; new code should call [`harness_layout`] directly.
 pub fn harness_filename(language: Language) -> &'static str {
     harness_layout(language).output_filename

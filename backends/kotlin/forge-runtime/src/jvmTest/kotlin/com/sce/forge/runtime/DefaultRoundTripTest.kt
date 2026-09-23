@@ -3,7 +3,7 @@
 //
 // RFC variant-default-uniformity kotlin half — runtime
 // round-trip property test. Mirrors
-// backends/rust/forge-runtime/tests/forge_default_round_trip.rs for the
+// backends/rust/forge-conformance/tests/forge_default_round_trip.rs for the
 // Kotlin backend: imports the generated codec classes (wired into the
 // jvmTest source set via the `generateRoundTripFixtures` Gradle task)
 // and asserts that a freshly-constructed instance round-trips through

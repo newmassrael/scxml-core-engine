@@ -6,8 +6,9 @@ name: SCE Forge Numerical Conformance
 # an artifact; the 5 subprocess-language jobs (Python/Go/Kotlin/C++/C11)
 # depend on it and download the binary instead of recompiling. Rust stays
 # independent because cargo resolves `sce-build` as a build-dependency of
-# sce-forge-runtime and cannot consume a pre-built binary. See SCE_FORGE.md
-# and memory conformance_harness_architecture.md for the design.
+# sce-forge-conformance, the Rust harness crate, and cannot consume a
+# pre-built binary. See SCE_FORGE.md and memory
+# conformance_harness_architecture.md for the design.
 #
 # ⚠ The C11 arm joined on 2026-09-17 and was the last to. Its suite —
 # harness template, ten per-kind fragments and a standalone CMake project —
@@ -187,9 +188,10 @@ jobs:
       uses: actions/checkout@v6
 
     - name: Install Dependencies
-      # libxml2-dev needed because sce-forge-runtime's build.rs pulls in
+      # libxml2-dev needed because sce-forge-conformance's build.rs pulls in
       # sce-build as a build-dependency, which transitively requires the
-      # `libxml` crate for XSD validation in forge::xsd_validator.
+      # `libxml` crate for XSD validation in forge::xsd_validator. The
+      # runtime crate itself no longer needs it: it has no build script.
       run: |
         sudo apt-get update
         sudo apt-get install -y libxml2-dev pkg-config
@@ -217,7 +219,8 @@ jobs:
         # gated `required-features = ["alloc"]` (its fixtures use encode_to_vec
         # / the owned projection), so without the flag cargo skips or errors on
         # the target and the harness never executes. With it the harness runs
-        # the full cross-language oracle (145 Rust cases).
+        # the full cross-language oracle, and the codec round-trip targets
+        # beside it run too.
         scripts/gate forge-rust 2>&1 | tee rust_conformance.log
 
     - name: Summarize

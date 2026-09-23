@@ -8,8 +8,8 @@
 // whole file would fail to compile under default-features. The pre-push
 // hook builds the workspace with default features only — gate the
 // entire test file so cargo test passes there too. Locally invoke with
-// `cargo test --features alloc` (or `cargo test -p sce-forge-runtime
-// --features alloc`) to exercise this test.
+// `cargo test -p sce-forge-conformance --features alloc` to exercise this
+// test.
 #![cfg(feature = "alloc")]
 
 // RFC variant-default-uniformity Rust runtime round-trip test.

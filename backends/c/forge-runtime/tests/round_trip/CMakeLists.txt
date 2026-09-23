@@ -3,7 +3,7 @@
 #
 # RFC variant-default-uniformity (c11 half) — runtime
 # round-trip property test mirroring
-# backends/rust/forge-runtime/tests/forge_default_round_trip.rs.
+# backends/rust/forge-conformance/tests/forge_default_round_trip.rs.
 #
 # Standalone CMake project that:
 #   - regenerates sce-codegen if cargo is available

@@ -464,10 +464,6 @@
           "kind": "references"
         },
         {
-          "file": "backends/rust/forge-runtime/tests/forge_default_round_trip.rs",
-          "kind": "references"
-        },
-        {
           "file": "sce-build/src/bin/sce_codegen.rs",
           "symbol": "Commands",
           "kind": "implements"
@@ -1684,6 +1680,10 @@
         {
           "file": "sce-build/tests/forge_conformance.rs",
           "symbol": "rustc_compile_codec_set",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/forge-conformance/tests/forge_default_round_trip.rs",
           "kind": "references"
         }
       ]
@@ -5717,6 +5717,12 @@
       "target_kind": "section",
       "target_id": "synth-5-A",
       "reason": "Its §synth-5-A cite was the torn first half of reject_param_assignment's doc, now restored there (bound); the function itself is renamed collect_bytes_buffers and cites only SCE_FORGE.md §4.12"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-B",
+      "reason": "The file moved unchanged in substance to backends/rust/forge-conformance/tests/forge_default_round_trip.rs, together with the build script that generates its fixtures, so that sce-forge-runtime has no build script; the binding moves with it."
     }
   ],
   "frames": {},

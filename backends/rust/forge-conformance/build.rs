@@ -3,20 +3,30 @@
 //
 // build.rs for the cross-language numerical conformance harness (Rust half).
 //
-// Two code-generation steps, both in-process via sce_build:
+// Code generation runs in-process via sce_build, into OUT_DIR, in the steps
+// numbered below:
 //
-//   1. For every fixture listed in tests/forge/conformance/fixtures.json,
-//      invoke compile_forge_with_imports() on the SCXML file and write the
-//      generated Rust fixture code into OUT_DIR.
+//   - every fixture listed in tests/forge/conformance/fixtures.json, compiled
+//     by compile_forge_with_imports() (Steps 1-2);
 //
-//   2. Render the per-fixture test harness from
-//      tools/codegen/templates/forge/rust/conformance/harness.rs.jinja2 and
-//      write it to OUT_DIR/numerical_conformance_generated.rs.
+//   - the per-fixture test harness, rendered from
+//     tools/codegen/templates/forge/rust/conformance/harness.rs.jinja2 into
+//     the file `conformance::harness_filename(Language::Rust)` names (Step 3);
 //
-// The integration test under tests/numerical_conformance.rs is a one-line
-// shim that include!()'s the generated harness, so no committed Rust test
-// code exists — the single source of truth is the fixture catalog and the
-// conformance template.
+//   - the fixtures the round-trip tests include that the catalog does not
+//     list (Steps 4-5).
+//
+// Each integration test under tests/ `include!`s what it needs from OUT_DIR,
+// so no committed Rust test code exists for the numerical harness — the
+// single source of truth is the fixture catalog and the conformance template.
+//
+// This script belongs to this crate and not to `sce-forge-runtime`, whose
+// tests it once served. A build script runs for every consumer of its
+// package, so there it compiled the whole generator and regenerated this
+// catalog for every crate that depended on the runtime — each throwaway
+// crate `forge_conformance` compiles a generated codec into, every
+// consumer's build — none of which read a byte of it. Here it runs only
+// when these tests are built.
 
 use sce_build::{
     compile_forge_with_imports,

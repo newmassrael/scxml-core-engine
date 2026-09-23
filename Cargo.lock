@@ -1681,13 +1681,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "sce-forge-conformance"
+version = "0.1.0"
+dependencies = [
+ "sce-build",
+ "sce-forge-runtime",
+ "sce-portable-bytes",
+ "serde_json",
+]
+
+[[package]]
 name = "sce-forge-runtime"
 version = "0.1.0"
 dependencies = [
  "heapless",
- "sce-build",
  "sce-portable-bytes",
- "serde_json",
 ]
 
 [[package]]

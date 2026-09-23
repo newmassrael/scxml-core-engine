@@ -1,0 +1,51 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+[package]
+name = "sce-forge-conformance"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Rust half of the SCE Forge conformance suite: generated forge fixtures compiled and run against sce-forge-runtime. Holds tests only."
+publish = false
+build = "build.rs"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+# The runtime's heap tier, which every test here needs: the generated
+# fixtures reach `encode_to_vec` and the owned mirrors, and the numerical
+# catalog holds procedure fixtures that need the runtime's procedure module.
+# Off by default so a workspace build compiles these targets the way it did
+# while they lived in the runtime — `cargo test -p sce-forge-conformance
+# --features alloc` runs them, and so does the forge-rust gate.
+alloc = ["sce-forge-runtime/alloc", "sce-portable-bytes/alloc"]
+
+[dependencies]
+sce-forge-runtime = { path = "../forge-runtime", default-features = false }
+# A generated `bytes`-returning algorithm imports `SceBytes` from the shared
+# leaf crate by its own name, so the crate compiling it must name it too.
+sce-portable-bytes = { path = "../portable-bytes", default-features = false }
+
+# The generator runs here at build time, in-process, to write the fixtures and
+# the harness into OUT_DIR. See build.rs.
+[build-dependencies]
+sce-build = { path = "../../../sce-build" }
+
+[dev-dependencies]
+serde_json = "1"
+
+[[test]]
+name = "numerical_conformance"
+path = "tests/numerical_conformance.rs"
+# The catalog includes procedure fixtures, which need the runtime's procedure
+# module and therefore `alloc`; without it they cannot compile, so the target
+# is left out rather than built broken.
+required-features = ["alloc"]
+
+[lints]
+workspace = true

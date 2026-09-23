@@ -111,6 +111,10 @@ paths = [
     "backends/python/forge-runtime/sce_forge_runtime",
     "backends/python/forge-runtime/tests",
     "backends/rust/forge-runtime",
+    # The runtime's tests and the build script generating their fixtures,
+    # moved to a crate of their own so the runtime has no build script. They
+    # were scanned under `forge-runtime` and carry a bound §synth-5-B cite.
+    "backends/rust/forge-conformance",
     "backends/c/runtime/include",
     "tests/forge/resources",
     # Hand-authored: fixtures.schema.json documents each manifest field against

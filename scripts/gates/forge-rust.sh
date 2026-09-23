@@ -12,8 +12,14 @@
 # The separate profile costs a one-time release build; afterwards it is
 # incremental — near-zero on a push that does not touch the crate, which is
 # most of them.
+#
+# Every target of `sce-forge-conformance` runs, not only the numerical one.
+# The codec round-trip tests beside it moved out of `sce-forge-runtime` with
+# the build script that generates their fixtures, and until then this gate
+# named `--test numerical_conformance` alone while `workspace-tests` builds
+# without `alloc` — so no lane ran them at all.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-cargo test --release -p sce-forge-runtime --features alloc --test numerical_conformance \
+cargo test --release -p sce-forge-conformance --features alloc \
     || sce_gate_fail "Rust forge conformance"

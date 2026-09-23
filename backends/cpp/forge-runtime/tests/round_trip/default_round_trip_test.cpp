@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
 // RFC variant-default-uniformity cpp half — runtime round-trip
-// property test. Mirrors backends/rust/forge-runtime/tests/forge_default_round_trip.rs
+// property test. Mirrors backends/rust/forge-conformance/tests/forge_default_round_trip.rs
 // for the C++ backend: compiles the generated codecs into the test binary
 // and runs `T{}.encode_to_vec().decode()` to prove the default-arm fallback defect
 // cannot recur on the cpp branch either.

@@ -179,6 +179,7 @@ scan_exclusions = [
     # so excluding it swallows no section from this gate.
     "sce-build/build.rs",
     "backends/rust/forge-runtime/",
+    "backends/rust/forge-conformance/",
     "backends/rust/link-runtime/",
     "backends/rust/lua/",
     "backends/rust/portable-bytes/",

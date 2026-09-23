@@ -3,7 +3,7 @@
 #
 # RFC variant-default-uniformity python half — runtime
 # round-trip property test. Mirrors
-# backends/rust/forge-runtime/tests/forge_default_round_trip.rs for the
+# backends/rust/forge-conformance/tests/forge_default_round_trip.rs for the
 # Python backend: compiles the 3 default-marker fixtures into a
 # temp output dir and asserts ``T().encode() → T.decode() → same arm``
 # with byte-equal re-encode.

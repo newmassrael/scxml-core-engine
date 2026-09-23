@@ -787,7 +787,7 @@ GATES: dict[str, dict] = {
                    "are already in CI for the same reason and they share one "
                    "workflow, forge-conformance.yml.",
         "cost_s": 96,
-        "summary": "Rust forge conformance (numerical, release)",
+        "summary": "Rust forge conformance (numerical + codec round-trips, release)",
     },
     "forge-python": {
         "workflows": ["forge-conformance.yml"],

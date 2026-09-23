@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 #
 # RFC variant-default-uniformity (cpp half) — runtime round-trip
-# property test mirroring backends/rust/forge-runtime/tests/forge_default_round_trip.rs.
+# property test mirroring backends/rust/forge-conformance/tests/forge_default_round_trip.rs.
 #
 # Standalone CMake project that:
 #   - regenerates sce-codegen if cargo is available

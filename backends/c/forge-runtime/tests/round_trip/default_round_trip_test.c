@@ -4,7 +4,7 @@
 /*
  * RFC variant-default-uniformity c11 half — runtime
  * round-trip property test. Mirrors
- * backends/rust/forge-runtime/tests/forge_default_round_trip.rs for the
+ * backends/rust/forge-conformance/tests/forge_default_round_trip.rs for the
  * C11 backend: includes the generated codec headers and exercises
  * the `<UPPER>_DEFAULT_INIT` designated-initializer macro contract
  * end-to-end.
