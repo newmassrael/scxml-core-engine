@@ -327,6 +327,7 @@ fn a_local_reads_back_with_exactly_the_initializer_its_type_allows() {
                 init: None,
                 init_spelling: None,
                 capacity: Some(4),
+                capacity_spelling: None,
             },
             AlgorithmStmt::Var {
                 name: "n".to_string(),
@@ -335,6 +336,7 @@ fn a_local_reads_back_with_exactly_the_initializer_its_type_allows() {
                 init: Some("b".to_string()),
                 init_spelling: None,
                 capacity: None,
+                capacity_spelling: None,
             },
             AlgorithmStmt::Append {
                 target: "out".to_string(),

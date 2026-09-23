@@ -775,6 +775,11 @@ path = "tests/a_lowering_refusal_names_the_token_it_refuses.rs"
 required-features = ["cli"]
 
 [[test]]
+name = "an_algorithm_rule_is_refused_at_the_attribute_that_breaks_it"
+path = "tests/an_algorithm_rule_is_refused_at_the_attribute_that_breaks_it.rs"
+required-features = ["cli"]
+
+[[test]]
 name = "value_space_coverage"
 path = "tests/value_space_coverage.rs"
 required-features = ["cli"]

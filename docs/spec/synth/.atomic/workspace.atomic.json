@@ -374,11 +374,6 @@
           "kind": "references"
         },
         {
-          "file": "sce-build/src/forge/parser.rs",
-          "symbol": "collect_var_capacity_shapes",
-          "kind": "implements"
-        },
-        {
           "file": "sce-build/src/forge/namespace.rs",
           "symbol": "check",
           "kind": "implements"
@@ -386,6 +381,11 @@
         {
           "file": "sce-build/src/forge/model.rs",
           "symbol": "record_fields",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "reject_param_assignment",
           "kind": "implements"
         }
       ]
@@ -5711,6 +5711,12 @@
       "target_kind": "section",
       "target_id": "synth-5-B",
       "reason": "c8d25c2f92 deleted this helper with the inline member renderers it asserted on; assert_inline_codec_structural no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-A",
+      "reason": "Its §synth-5-A cite was the torn first half of reject_param_assignment's doc, now restored there (bound); the function itself is renamed collect_bytes_buffers and cites only SCE_FORGE.md §4.12"
     }
   ],
   "frames": {},

@@ -86,6 +86,22 @@ impl<'a> WrittenAt<'a> {
             written: None,
         })
     }
+
+    /// The whole value of `spelling`'s attribute as written — where a
+    /// refusal of that value is placed, with the text it reports. At the
+    /// attribute's first character, reporting nothing, when the value has no
+    /// written counterpart; nowhere without an attribute.
+    pub fn value(spelling: Option<&'a AttributeSpelling>) -> Self {
+        match spelling.map(|spelling| (spelling, spelling.value())) {
+            Some((_, Some(written))) => Self {
+                line: Some(written.row),
+                col: Some(written.col),
+                written: Some(written),
+            },
+            Some((spelling, None)) => Self::attribute(Some(spelling)),
+            None => Self::default(),
+        }
+    }
 }
 
 impl WrittenAt<'_> {
@@ -102,6 +118,27 @@ impl WrittenAt<'_> {
     /// As it is, when there is no row to place it on.
     pub fn place(&self, error: ForgeError) -> ForgeError {
         self.place_as(error, None)
+    }
+
+    /// `error`, placed here and reporting the text written here as its
+    /// `actual` — for a refusal whose `actual` is the decoded value of
+    /// exactly what this names, so the record carries what the row spells
+    /// (`&lt;` where the reader decoded `<`).
+    pub fn place_reporting(&self, error: ForgeError) -> ForgeError {
+        self.place_as(error, self.reported())
+    }
+
+    /// What this reports as a record's `actual`: the text as written when it
+    /// lies on one row, and nothing at all for an empty range — the end of an
+    /// expression, where nothing is written. Text over several rows is
+    /// neither, and the payload keeps its own `actual`.
+    fn reported(&self) -> Option<AsWritten> {
+        self.written
+            .and_then(|written| written.on_one_row())
+            .map(|text| match text {
+                "" => AsWritten::Nothing,
+                text => AsWritten::Text(text.to_string()),
+            })
     }
 
     fn place_as(&self, error: ForgeError, as_written: Option<AsWritten>) -> ForgeError {
@@ -152,18 +189,8 @@ impl<'a> ExpressionSite<'a> {
             error: refusal,
             span,
         } = refusal;
-        let at = self.locate(span);
-        // Text on one row is what the row spells; an empty range is the end
-        // of the expression, where nothing is written. Text over several
-        // rows is neither, and the payload keeps its own `actual`.
-        let as_written =
-            at.written
-                .and_then(|written| written.on_one_row())
-                .map(|text| match text {
-                    "" => AsWritten::Nothing,
-                    text => AsWritten::Text(text.to_string()),
-                });
-        at.place_as(ForgeError::Expression(refusal), as_written)
+        self.locate(span)
+            .place_reporting(ForgeError::Expression(refusal))
     }
 }
 

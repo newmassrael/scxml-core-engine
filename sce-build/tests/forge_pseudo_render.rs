@@ -97,6 +97,7 @@ fn an_algorithm_renders_every_form_it_can_carry() {
                         init: Some("i".to_string()),
                         init_spelling: None,
                         capacity: None,
+                        capacity_spelling: None,
                     }],
                     yield_expr: "acc".to_string(),
                     yield_spelling: None,
@@ -113,6 +114,7 @@ fn an_algorithm_renders_every_form_it_can_carry() {
                 init: None,
                 init_spelling: None,
                 capacity: Some(32),
+                capacity_spelling: None,
             },
             AlgorithmStmt::Assign {
                 target: "crc".to_string(),

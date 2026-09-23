@@ -131,16 +131,29 @@ impl AttributeSpelling {
     /// wrote here, and placing a range of it against this spelling would
     /// name a place that holds something else.
     pub fn spells(&self, text: &str) -> bool {
+        self.decoded()
+            .is_some_and(|decoded| decoded.trim() == text.trim())
+    }
+
+    /// The whole value as written, without the whitespace around it, and the
+    /// row and column it starts on — what a refusal of the attribute's whole
+    /// value names. `None` when the value reaches a DTD entity.
+    pub fn value(&self) -> Option<Written<'_>> {
+        let decoded = self.decoded()?;
+        self.locate_trimmed(0..decoded.trim().len())
+    }
+
+    /// This value as the reader decoded it, or `None` when it reaches a DTD
+    /// entity, whose replacement text is not written here.
+    fn decoded(&self) -> Option<String> {
         let mut decoded = String::with_capacity(self.written.len());
         let mut at = 0usize;
         while at < self.written.len() {
-            let Some((written, produced)) = self.written.get(at..).and_then(step) else {
-                return false;
-            };
+            let (written, produced) = step(&self.written[at..])?;
             decoded.push(produced);
             at += written;
         }
-        decoded.trim() == text.trim()
+        Some(decoded)
     }
 
     /// [`locate`](Self::locate) for a range of this value decoded and then
@@ -291,6 +304,16 @@ mod tests {
         let written = spelling.locate_trimmed(2..3).expect("the operator");
         assert_eq!(written.text, "&lt;");
         assert_eq!((written.row, written.col), (2, 4));
+    }
+
+    /// The whole value as written — its references as written, the
+    /// whitespace around it dropped — placed at its first character.
+    #[test]
+    fn a_whole_value_is_placed_where_its_first_character_is() {
+        let (decoded, spelling) = spelling_of("<t\n  v=\"  4&#48;\n\"/>", "v");
+        assert_eq!(decoded.trim(), "40");
+        let value = spelling.value().expect("the value");
+        assert_eq!((value.text, value.row, value.col), ("4&#48;", 2, 8));
     }
 
     /// A piece of a value is placed as an attribute holding only that piece

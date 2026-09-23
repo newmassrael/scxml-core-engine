@@ -3515,6 +3515,8 @@ pub enum AlgorithmStmt {
         init_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         capacity: Option<u32>,
+        #[serde(skip)]
+        capacity_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     },
     /// `<sce:assign target="lvalue" expr="..."/>` — mutates an existing
     /// l-value. SCE's `validate_lvalue_shape` accepts an identifier or a

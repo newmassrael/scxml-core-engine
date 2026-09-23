@@ -1548,6 +1548,7 @@ fn parse_stmt(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<AlgorithmStmt, Pars
             init,
             init_spelling: None,
             capacity,
+            capacity_spelling: None,
         });
     }
     if let Some(rest) = t.strip_prefix("append ") {

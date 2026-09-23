@@ -981,6 +981,7 @@ mod tests {
                 init: Some("i + i".into()),
                 init_spelling: None,
                 capacity: None,
+                capacity_spelling: None,
             }],
             yield_expr: "doubled".into(),
             yield_spelling: None,
@@ -1017,6 +1018,7 @@ mod tests {
                     init: Some("i << 8".into()),
                     init_spelling: None,
                     capacity: None,
+                    capacity_spelling: None,
                 },
                 AlgorithmStmt::Var {
                     name: "bit".into(),
@@ -1025,6 +1027,7 @@ mod tests {
                     init: Some("0".into()),
                     init_spelling: None,
                     capacity: None,
+                    capacity_spelling: None,
                 },
                 AlgorithmStmt::While {
                     cond: "bit < 8".into(),
