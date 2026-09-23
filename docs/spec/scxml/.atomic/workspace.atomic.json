@@ -14525,6 +14525,11 @@
           "file": "sce/include/core/ParallelExitEntryHelper.h",
           "symbol": "computeEntryOrder",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "symbol": "Transition",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14958,6 +14963,11 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "BatchedTransition",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/analyzer.rs",
+          "symbol": "resolve_internal_transitions",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

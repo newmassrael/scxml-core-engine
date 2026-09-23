@@ -5619,7 +5619,15 @@
           "description": "SCE Protocol-Synthesis RFC §synth-5-O source traceability: post-preprocessor source position of the `<transition>` element, populated by [`crate::parser::SCXMLParser::parse_transition`] from `roxmltree::Document::text_pos_at`. Templates emit per-backend SCE-MAP markers above the transition's emitted handler function (Rust `// SCE-MAP:` + `#[doc]`, C/C++ `#line`, Go `//line`, Kotlin `// SCE-MAP:`)."
         },
         "target": {
+          "description": "The `target` attribute as the analyzer leaves it: as written, except that a value naming exactly one `<history>` is rewritten by `parser::resolve_history_targets` to that history's default target (the id moving to [`history_target`](Self::history_target)).\n\n⚠ A value naming several states is not one state. Read [`targets`](Self::targets) for the target SET.",
           "type": "string"
+        },
+        "targets": {
+          "description": "§scxml-3.13 / §scxml-D-computeEntrySet: the transition's target set — Appendix D's `t.target` — one state id per whitespace-separated token of the attribute, as written. A token naming a `<history>` stays that id: dereferencing it to a recorded or default configuration is `addDescendantStatesToEnter`'s work, at run time. Empty for a targetless transition.\n\nFilled where the element is parsed and nowhere else, so it cannot disagree with the attribute it came from; the tokens are a legal state specification (§scxml-3.11, `scxml_references`).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "transition_index": {
           "description": "Original index within parent state's transition list. This index is unique only WITHIN the parent state, never machine-wide — see [`native_payload_guard`](Self::native_payload_guard) for why that distinction matters.",

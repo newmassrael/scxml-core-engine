@@ -2705,9 +2705,12 @@ impl SCXMLParser {
         // defect.
         let resolved = resolve_cond(&cond, &model.context_object_ids);
 
+        let target = elem.attribute("target").unwrap_or("");
         let mut transition = Transition {
             event: elem.attribute("event").unwrap_or("").to_string(),
-            target: elem.attribute("target").unwrap_or("").to_string(),
+            target: target.to_string(),
+            // §scxml-3.13: the target set, one id per token, as written.
+            targets: target.split_whitespace().map(str::to_string).collect(),
             cond,
             cond_spelling,
             cond_cpp: resolved.cond_cpp,

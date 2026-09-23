@@ -49,7 +49,26 @@ pub const SCXML_NAMESPACE: &str = "http://www.w3.org/2005/07/scxml";
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Transition {
     pub event: String,
+    /// The `target` attribute as the analyzer leaves it: as written, except
+    /// that a value naming exactly one `<history>` is rewritten by
+    /// `parser::resolve_history_targets` to that history's default target
+    /// (the id moving to [`history_target`](Self::history_target)).
+    ///
+    /// ⚠ A value naming several states is not one state. Read
+    /// [`targets`](Self::targets) for the target SET.
     pub target: String,
+    /// §scxml-3.13 / §scxml-D-computeEntrySet: the transition's target set —
+    /// Appendix D's `t.target` — one state id per whitespace-separated token of the
+    /// attribute, as written. A token naming a `<history>` stays that id:
+    /// dereferencing it to a recorded or default configuration is
+    /// `addDescendantStatesToEnter`'s work, at run time. Empty for a
+    /// targetless transition.
+    ///
+    /// Filled where the element is parsed and nowhere else, so it cannot
+    /// disagree with the attribute it came from; the tokens are a legal state
+    /// specification (§scxml-3.11, `scxml_references`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub targets: Vec<String>,
     pub cond: String,
     /// The attribute `cond` was read from, as written and where — so a
     /// refusal of a piece of the guard names it as the author spelled it,

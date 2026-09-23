@@ -894,6 +894,35 @@ fn build_prefix_matching(model: &mut SCXMLModel) {
 }
 
 /// §scxml-3.13: Resolve internal transition types.
+/// Whether the states `token` stands for when a transition is taken are all
+/// proper descendants of `source` — Appendix D's `getEffectiveTargetStates`
+/// asked of one token, statically.
+///
+/// A state token stands for itself. A `<history>` token stands for its
+/// recorded configuration, or its default when none is recorded, and both are
+/// descendants of the state the history is declared in (§scxml-3.11); so it
+/// is below `source` when that state is `source` or one of its descendants.
+fn effective_targets_below(model: &SCXMLModel, token: &str, source: &str) -> bool {
+    let mut current = match (model.states.get(token), model.history_states.get(token)) {
+        (Some(state), _) => state.parent.clone(),
+        (None, Some(history)) if history.parent == source => return true,
+        (None, Some(history)) => Some(history.parent.clone()),
+        (None, None) => None,
+    };
+    let mut depth = 0;
+    while let Some(parent) = current {
+        if parent == source {
+            return true;
+        }
+        depth += 1;
+        if depth >= MAX_STATE_DEPTH {
+            return false;
+        }
+        current = model.states.get(&parent).and_then(|s| s.parent.clone());
+    }
+    false
+}
+
 pub(crate) fn resolve_internal_transitions(model: &mut SCXMLModel) {
     let states_snapshot: Vec<(String, State)> = model
         .states
@@ -913,25 +942,16 @@ pub(crate) fn resolve_internal_transitions(model: &mut SCXMLModel) {
         let mut updates: Vec<(usize, String, bool, String)> = Vec::new();
 
         for (i, trans) in transitions.iter().enumerate() {
-            if trans.transition_type == "internal" && !trans.target.is_empty() {
-                let mut is_descendant = false;
-                let mut current = trans.target.clone();
-                let mut depth = 0;
-                while let Some(s) = model.states.get(&current) {
-                    if depth >= MAX_STATE_DEPTH {
-                        break;
-                    }
-                    depth += 1;
-                    if let Some(parent) = &s.parent {
-                        if parent == state_id {
-                            is_descendant = true;
-                            break;
-                        }
-                        current = parent.clone();
-                    } else {
-                        break;
-                    }
-                }
+            if trans.transition_type == "internal" && !trans.targets.is_empty() {
+                // §scxml-D-getTransitionDomain: internal only when EVERY
+                // effective target is a proper descendant of the source. This
+                // walked `target` as one id, so a target set never resolved and
+                // every multi-target internal transition was demoted to
+                // external in silence.
+                let is_descendant = trans
+                    .targets
+                    .iter()
+                    .all(|token| effective_targets_below(model, token, state_id));
 
                 if !is_descendant || !is_compound {
                     updates.push((i, "external".to_string(), false, String::new()));
@@ -1546,5 +1566,90 @@ mod tests {
             !model.uses_cancel,
             "no <cancel> means uses_cancel stays false so send_id elides"
         );
+    }
+
+    /// A compound `src` holding a `<parallel>` of regions `ra` (leaves `a1`,
+    /// `a2`) and `rb` (leaf `b1`), plus `away` outside it. `src` carries one
+    /// `type="internal"` transition to `targets`.
+    fn internal_probe(targets: &[&str]) -> SCXMLModel {
+        let mut model = empty_model();
+        let under = |id: &str, parent: &str| State {
+            id: id.into(),
+            parent: Some(parent.into()),
+            ..Default::default()
+        };
+        model.states.insert(
+            "src".into(),
+            State {
+                id: "src".into(),
+                transitions: vec![Transition {
+                    event: "go".into(),
+                    target: targets.join(" "),
+                    targets: targets.iter().map(|t| t.to_string()).collect(),
+                    transition_type: "internal".into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+        );
+        let mut p = under("p", "src");
+        p.is_parallel = true;
+        for state in [
+            p,
+            under("ra", "p"),
+            under("a1", "ra"),
+            under("a2", "ra"),
+            under("rb", "p"),
+            under("b1", "rb"),
+        ] {
+            model.states.insert(state.id.clone(), state);
+        }
+        model.states.insert(
+            "away".into(),
+            State {
+                id: "away".into(),
+                ..Default::default()
+            },
+        );
+        model
+    }
+
+    fn resolved(model: &SCXMLModel) -> (String, Option<bool>) {
+        let t = &model.states["src"].transitions[0];
+        (t.transition_type.clone(), t.is_true_internal)
+    }
+
+    #[test]
+    fn an_internal_target_set_below_its_source_stays_internal() {
+        // W3C SCXML Appendix D, getTransitionDomain: every target a proper
+        // descendant of a compound source. Walking `target` as one id
+        // ("a1 b1") found no such state and demoted the transition to
+        // external.
+        let mut model = internal_probe(&["a1", "b1"]);
+        resolve_internal_transitions(&mut model);
+        assert_eq!(("internal".to_string(), Some(true)), resolved(&model));
+    }
+
+    #[test]
+    fn one_target_outside_its_source_makes_it_external() {
+        let mut model = internal_probe(&["a1", "away"]);
+        resolve_internal_transitions(&mut model);
+        assert_eq!(("external".to_string(), None), resolved(&model));
+    }
+
+    #[test]
+    fn a_history_declared_below_the_source_stands_for_states_below_it() {
+        let mut model = internal_probe(&["h", "b1"]);
+        model.history_states.insert(
+            "h".into(),
+            crate::model::HistoryInfo {
+                parent: "ra".into(),
+                history_type: "shallow".into(),
+                default_target: "a1".into(),
+                ..Default::default()
+            },
+        );
+        resolve_internal_transitions(&mut model);
+        assert_eq!(("internal".to_string(), Some(true)), resolved(&model));
     }
 }
