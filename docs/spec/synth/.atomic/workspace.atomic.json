@@ -387,11 +387,6 @@
           "file": "sce-build/src/forge/model.rs",
           "symbol": "record_fields",
           "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/forge/generator.rs",
-          "symbol": "lower_algorithm_stmt_unplaced",
-          "kind": "implements"
         }
       ]
     },
@@ -619,11 +614,6 @@
         },
         {
           "file": "sce-build/src/forge/generator.rs",
-          "symbol": "render_inline_codec_member",
-          "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/forge/generator.rs",
           "symbol": "repeat_streaming_decode_stmt",
           "kind": "implements"
         },
@@ -780,11 +770,6 @@
         },
         {
           "file": "sce-build/tests/error_format_json.rs",
-          "kind": "references"
-        },
-        {
-          "file": "sce-build/tests/forge_conformance.rs",
-          "symbol": "assert_inline_codec_structural",
           "kind": "references"
         },
         {
@@ -4309,11 +4294,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce-build/src/forge/generator.rs",
-          "symbol": "lower_algorithm_stmt_unplaced",
-          "kind": "implements"
-        },
-        {
           "file": "sce-build/tests/forge_conformance.rs",
           "symbol": "bounded_collection_enum_index_compiles_on_every_backend",
           "kind": "implements"
@@ -5707,6 +5687,30 @@
       "target_kind": "section",
       "target_id": "synth-5-N",
       "reason": "Its citations moved with the orchestrator body into compile_document_set; the binding follows the code."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-A",
+      "reason": "cb164a24f8 folded the row-placing wrapper back into lower_algorithm_stmt, which this section already binds; lower_algorithm_stmt_unplaced no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-L",
+      "reason": "cb164a24f8 folded the row-placing wrapper back into lower_algorithm_stmt, which this section already binds; lower_algorithm_stmt_unplaced no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-B",
+      "reason": "c8d25c2f92 routed inline kinds through the standalone artifact pipeline and deleted the inline member renderers; render_inline_codec_member no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-B",
+      "reason": "c8d25c2f92 deleted this helper with the inline member renderers it asserted on; assert_inline_codec_structural no longer exists"
     }
   ],
   "frames": {},
