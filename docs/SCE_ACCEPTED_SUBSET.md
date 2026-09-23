@@ -2765,10 +2765,14 @@ sources, and a natively lowered guard reads the same value from either:
 
 - The generated per-event inject seam (`raise_<event>` on Rust and
   Python, `Raise<Event>` on Go, `raise<Event>` on C++ and Kotlin,
-  `<machine>_raise_<event>_typed` on C11) fills the typed payload AND
+  `<machine>_raise_<event>_typed` on C11) supplies the typed payload and
   the `_event.data` wire, so a document that also reads
   `_event.data.<field>` through the script engine — an `<assign>`, a
   `<log>`, an un-lowered `cond` — sees the values the guard saw.
+  C11 returns `false` without enqueueing when a value or its complete JSON
+  exceeds the bounded buffer, or a float is non-finite. A null payload
+  uses zero values. String fields are owned through the JSON and lifted
+  on dequeue, so queued events never borrow caller string storage.
 - Every OTHER producer fills only the wire: `<send>` with `<param>`,
   namelist or `<content>`, an invoke forwarding an event in either
   direction, autoforward, BasicHTTP, the mesh. The typed view is then

@@ -45,6 +45,7 @@
 
 #include <errno.h>
 #include <float.h>
+#include <math.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -557,83 +558,56 @@ SCE_C_UNUSED static inline const char *sce_payload_read_bytes(const sce_payload_
     return NULL;
 }
 
-/* The wire spelling of one byte string, for the inject seam's `data`: the
-   writing half of sce_payload_read_bytes. Writes at most `cap` bytes including
-   the terminator and answers false when the text does not fit. */
-SCE_C_UNUSED static inline bool sce_payload_bytes_as_text(const uint8_t *bytes, size_t len, char *out, size_t cap) {
-    if (cap == 0u || len + 1u > cap) {
-        return false;
-    }
-    for (size_t i = 0; i < len; i++) {
-        out[i] = (char)bytes[i];
-    }
-    out[len] = '\0';
-    return true;
-}
-
-/* The JSON spelling of one text, for the inject seam's `data`. Writes at most
-   `cap` bytes including the terminator and answers false when it does not fit;
-   the quotes and escapes are included. */
-SCE_C_UNUSED static inline bool sce_payload_quote(const char *text, char *out, size_t cap) {
+/* Quote an explicit span. A byte payload uses Latin-1 code points, so NUL
+   and high bytes must be escaped rather than passed through a C string. Text
+   keeps its UTF-8 bytes. Failure never exposes a partial JSON string. */
+SCE_C_UNUSED static inline bool sce_payload_quote_span(const unsigned char *text, size_t len, bool latin1, char *out,
+                                                       size_t cap) {
     static const char HEX[] = "0123456789abcdef";
-    size_t at = 0u;
-    if (cap < 3u) {
+    if (cap > 0u) {
+        out[0] = '\0';
+    }
+    if (cap < 3u || (text == NULL && len != 0u)) {
         return false;
     }
-    out[at++] = '"';
-    for (const char *p = text; *p != '\0'; p++) {
-        const unsigned char c = (unsigned char)*p;
-        const char *escape = NULL;
-        switch (c) {
-        case '"':
-            escape = "\\\"";
-            break;
-        case '\\':
-            escape = "\\\\";
-            break;
-        case '\n':
-            escape = "\\n";
-            break;
-        case '\r':
-            escape = "\\r";
-            break;
-        case '\t':
-            escape = "\\t";
-            break;
-        default:
-            break;
+    size_t at = 1u;
+    out[0] = '"';
+    for (size_t i = 0u; i < len; ++i) {
+        const unsigned char c = text[i];
+        const bool unicode = c < 0x20u || (latin1 && c >= 0x80u);
+        const bool escaped = c == '"' || c == '\\';
+        const size_t needed = unicode ? 6u : (escaped ? 2u : 1u);
+        /* Reserve both the closing quote and the terminator. Subtraction
+           avoids overflow even when the caller passes a very large span. */
+        if (needed > cap - at - 2u) {
+            out[0] = '\0';
+            return false;
         }
-        if (escape != NULL) {
-            if (at + 2u + 1u > cap) {
-                return false;
-            }
-            out[at++] = escape[0];
-            out[at++] = escape[1];
-            continue;
-        }
-        if (c < 0x20u) {
-            if (at + 6u + 1u > cap) {
-                return false;
-            }
+        if (unicode) {
             out[at++] = '\\';
             out[at++] = 'u';
             out[at++] = '0';
             out[at++] = '0';
-            out[at++] = HEX[(c >> 4) & 0xFu];
+            out[at++] = HEX[c >> 4];
             out[at++] = HEX[c & 0xFu];
-            continue;
+        } else {
+            if (escaped) {
+                out[at++] = '\\';
+            }
+            out[at++] = (char)c;
         }
-        if (at + 1u + 1u > cap) {
-            return false;
-        }
-        out[at++] = (char)c;
-    }
-    if (at + 1u + 1u > cap) {
-        return false;
     }
     out[at++] = '"';
     out[at] = '\0';
     return true;
+}
+
+SCE_C_UNUSED static inline bool sce_payload_quote_bytes(const uint8_t *bytes, size_t len, char *out, size_t cap) {
+    return sce_payload_quote_span(bytes, len, true, out, cap);
+}
+
+SCE_C_UNUSED static inline bool sce_payload_quote(const char *text, char *out, size_t cap) {
+    return sce_payload_quote_span((const unsigned char *)text, text != NULL ? strlen(text) : 0u, false, out, cap);
 }
 
 #ifdef __cplusplus

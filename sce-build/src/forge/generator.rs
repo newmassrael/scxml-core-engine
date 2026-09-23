@@ -2684,20 +2684,19 @@ return false;\n    }}\n"
             match &f.sce_type {
                 SceType::Bytes => {
                     wire_locals.push_str(&format!(
-                        "    char _wire_{id}[SCE_MAX_DATA_LEN] = \"\\\"\\\"\";\n    \
-{{\n        char _raw_{id}[SCE_MAX_DATA_LEN];\n        \
-if (sce_payload_bytes_as_text(payload->{id}, payload->{id}_len, _raw_{id},\n                                     \
-sizeof(_raw_{id}))) {{\n            \
-(void)sce_payload_quote(_raw_{id}, _wire_{id}, sizeof(_wire_{id}));\n        }}\n    }}\n"
+                        "    char _wire_{id}[SCE_MAX_DATA_LEN];\n    \
+if (payload->{id}_len > sizeof(payload->{id}) ||\n        \
+!sce_payload_quote_bytes(payload->{id}, payload->{id}_len, _wire_{id}, sizeof(_wire_{id}))) {{\n        \
+return false;\n    }}\n"
                     ));
                     wire_parts.push_str(&format!("\\\"{id}\\\":%s"));
                     wire_args.push_str(&format!(", _wire_{id}"));
                 }
                 SceType::String => {
                     wire_locals.push_str(&format!(
-                        "    char _wire_{id}[SCE_MAX_DATA_LEN] = \"\\\"\\\"\";\n    \
-(void)sce_payload_quote(payload->{id} != NULL ? payload->{id} : \"\", _wire_{id},\n                            \
-sizeof(_wire_{id}));\n"
+                        "    char _wire_{id}[SCE_MAX_DATA_LEN];\n    \
+if (!sce_payload_quote(payload->{id}, _wire_{id}, sizeof(_wire_{id}))) {{\n        \
+return false;\n    }}\n"
                     ));
                     wire_parts.push_str(&format!("\\\"{id}\\\":%s"));
                     wire_args.push_str(&format!(", _wire_{id}"));
@@ -2707,6 +2706,9 @@ sizeof(_wire_{id}));\n"
                     wire_args.push_str(&format!(", payload->{id} ? \"true\" : \"false\""));
                 }
                 SceType::Float32 | SceType::Float64 => {
+                    wire_locals.push_str(&format!(
+                        "    if (!isfinite((double)payload->{id})) {{ return false; }}\n"
+                    ));
                     wire_parts.push_str(&format!("\\\"{id}\\\":%.17g"));
                     wire_args.push_str(&format!(", (double)payload->{id}"));
                 }
@@ -2758,30 +2760,38 @@ sm->pending_payload.as.{member} = _payload;\n        return;\n    }}\n"
         tag_lines.push_str(&format!("    {tag_const},\n"));
         union_lines.push_str(&format!("        {struct_name} {member};\n"));
 
+        // Strings arrive as borrowed C pointers. Queue the owned JSON and
+        // lift it on dequeue; copying the pointer into the queue would keep
+        // reading a caller's subsequently modified or expired storage.
+        let owned_payload = if schema.fields.iter().any(|f| f.sce_type == SceType::String) {
+            String::new()
+        } else {
+            format!("    evt.payload.tag = {tag_const};\n    evt.payload.as.{member} = *payload;\n")
+        };
+
         // Per-event typed inject entry: binds the event enum, the tag, and
         // the union member in one site so a caller cannot mis-pair them
         // (the C twin of the Rust per-event `Engine<Policy>` wrappers).
         entry_decls.push_str(&format!(
             "/* NL\u{2192}IR Item C1 Path A: typed `_event.data` inject for `{event}` — binds\n   \
 the event name, payload tag, and union member in one call (the name\u{2194}type\n   \
-pairing cannot be constructed inconsistently). A NULL `payload` injects the\n   \
-event with a zeroed payload. */\n\
-void {fn_name}({sm}_t *sm, const {struct_name} *payload);\n\n"
+pairing cannot be constructed inconsistently). A NULL `payload` uses zero\n   \
+values. Returns false without enqueueing if a value or its complete JSON\n   \
+does not fit; true hands the event to the bounded external queue. String\n   \
+fields are owned through that JSON and lifted when dequeued. */\n\
+bool {fn_name}({sm}_t *sm, const {struct_name} *payload);\n\n"
         ));
         entry_defs.push_str(&format!(
-            "SCE_SM_FN void {fn_name}({sm}_t *sm, const {struct_name} *payload) {{\n    \
+            "SCE_SM_FN bool {fn_name}({sm}_t *sm, const {struct_name} *payload) {{\n    \
+const {struct_name} _zero = {{0}};\n    \
+if (payload == NULL) {{ payload = &_zero; }}\n    \
 {sm}_event_with_meta_t evt = {{0}};\n    \
 evt.event = {event_const};\n    \
-evt.payload.tag = {tag_const};\n    \
-if (payload != NULL) {{\n        \
-evt.payload.as.{member} = *payload;\n        \
-/* Both carriers are filled: the typed payload a native guard reads, and\n           \
-`data`, which is what the script engine binds `_event.data` from.\n           \
-Filling only the first left an `<assign expr=\"_event.data.x\">` on this\n           \
-event reading nothing, on every backend alike. */\n{wire_locals}        \
-(void)snprintf(evt.data, sizeof(evt.data), \"{{{wire_parts}}}\"{wire_args});\n    \
-}}\n    \
-{sm}_raise_external(sm, &evt);\n}}\n\n"
+/* The wire must hold the complete payload before either carrier can be\n       \
+queued. A truncated value must never disagree with the native guard. */\n{wire_locals}    \
+const int _wire_len = snprintf(evt.data, sizeof(evt.data), \"{{{wire_parts}}}\"{wire_args});\n    \
+if (_wire_len < 0 || (size_t)_wire_len >= sizeof(evt.data)) {{ return false; }}\n\
+{owned_payload}    {sm}_raise_external(sm, &evt);\n    return true;\n}}\n\n"
         ));
     }
     // Trim the trailing comma on the last tag enumerator (C is tolerant of
@@ -15697,14 +15707,13 @@ fn render_worker_rust(
 }
 
 /// Shared resolution bundle for `<sce:kind="bounded-collection">`
-/// codegen across all 6 backends. Each backend's render fn calls
-/// `resolve_bounded_collection_inputs` to get a uniform shape, then
-/// converts the abstract `index_by_sce_type` to its language-
-/// specific type-string at the call site (rust: `rust_type(...)`;
-/// cpp/kotlin: `cpp_type(...)` / `kotlin_type(...)`; etc).
+/// codegen across all 6 backends. The shared resolver translates the
+/// index type in its element document's namespace, and supplies both
+/// the backend type spelling and the imports that make it available.
 struct BoundedCollectionRenderInputs {
     capacity: u32,
-    index_by_sce_type: Option<crate::forge::model::SceType>,
+    index_type: String,
+    index_imports: Vec<String>,
     on_overflow_str: &'static str,
     overflow_is_oldest_wins: bool,
     ordering_str: &'static str,
@@ -15714,6 +15723,7 @@ struct BoundedCollectionRenderInputs {
 fn resolve_bounded_collection_inputs(
     m: &crate::forge::model::BoundedCollectionModel,
     options: &crate::ForgeCompileOptions,
+    language: crate::generator::Language,
 ) -> Result<BoundedCollectionRenderInputs, ForgeError> {
     use crate::forge::model::CapacitySource;
     let resolution = options
@@ -15750,8 +15760,8 @@ fn resolve_bounded_collection_inputs(
     // when present, the orchestrator must have populated the
     // resolution, otherwise the codegen-time invariant breaks and
     // we surface a clear `InvalidConfig` instead of a silently-
-    // broken hook. Each backend's render fn converts the abstract
-    // type to its language string at the call site.
+    // broken hook. The shared language context below resolves the type
+    // together with its element document's enum imports.
     let index_by_sce_type: Option<crate::forge::model::SceType> = match (&m.index_by, resolution) {
         (None, _) => None,
         (Some(_), Some(r)) if r.index_by_field_sce_type.is_some() => {
@@ -15771,6 +15781,29 @@ fn resolve_bounded_collection_inputs(
             ))));
         }
     };
+
+    let imports = resolution.map_or(&[][..], |r| r.index_by_imports.as_slice());
+    if let Some(SceType::Enum(reference)) = &index_by_sce_type {
+        if !imports
+            .iter()
+            .any(|import| import.kind == "enum" && import.alias == reference.alias)
+        {
+            return Err(GenerateError::InvalidConfig(format!(
+                "bounded-collection '{}': index enum alias '{}' has no element import resolution",
+                m.name, reference.alias,
+            ))
+            .into());
+        }
+    }
+    let context = LangCtx::new(language, imports);
+    let index_type = index_by_sce_type
+        .as_ref()
+        .map(|ty| context.type_name(ty).into_owned())
+        .unwrap_or_default();
+    let index_imports = imports
+        .iter()
+        .map(|import| import.include_stmt.clone())
+        .collect();
 
     let on_overflow_str = match m.on_overflow {
         crate::forge::model::OverflowPolicy::DiagnosticEvent => "diagnostic-event",
@@ -15792,7 +15825,8 @@ fn resolve_bounded_collection_inputs(
 
     Ok(BoundedCollectionRenderInputs {
         capacity,
-        index_by_sce_type,
+        index_type,
+        index_imports,
         on_overflow_str,
         overflow_is_oldest_wins,
         ordering_str,
@@ -15815,7 +15849,7 @@ fn render_bounded_collection_rust(
     _imports: &[ImportContext],
     options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
-    let inputs = resolve_bounded_collection_inputs(m, options)?;
+    let inputs = resolve_bounded_collection_inputs(m, options, crate::generator::Language::Rust)?;
     let tmpl = env
         .get_template("bounded_collection.rs.jinja2")
         .map_err(|e| {
@@ -15828,11 +15862,6 @@ fn render_bounded_collection_rust(
     let snake = filters::to_snake_case(m.name.clone());
     let element_pascal = filters::to_pascal_case(m.element_type.clone());
     let element_snake = filters::to_snake_case(m.element_type.clone());
-    let index_by_rust_type = inputs
-        .index_by_sce_type
-        .as_ref()
-        .map(|t| rust_type(t).to_string())
-        .unwrap_or_default();
 
     // RFC c7-wildcard W3: a bounded-collection is an owned, self-contained,
     // no-alloc container, so it stores the element codec's owned mirror —
@@ -15894,7 +15923,8 @@ fn render_bounded_collection_rust(
         concurrency => inputs.concurrency_str,
         has_index_by => m.index_by.is_some(),
         index_by_field => m.index_by.clone().unwrap_or_default(),
-        index_by_rust_type => index_by_rust_type,
+        index_by_rust_type => inputs.index_type,
+        index_imports => inputs.index_imports,
         runtime_dep => "self-contained on (rust, std) and (rust, no_std)",
         handle_derives_attr => crate::rust_derive_policy::RustDeriveCategory::BoundedCollectionHandle.derives_attr(),
         overflow_error_derives_attr => crate::rust_derive_policy::RustDeriveCategory::BoundedCollectionOverflowError.derives_attr(),
@@ -15920,7 +15950,7 @@ fn render_bounded_collection_cpp(
     _imports: &[ImportContext],
     options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
-    let inputs = resolve_bounded_collection_inputs(m, options)?;
+    let inputs = resolve_bounded_collection_inputs(m, options, crate::generator::Language::Cpp)?;
     let tmpl = env
         .get_template("bounded_collection.h.jinja2")
         .map_err(|e| {
@@ -15935,11 +15965,6 @@ fn render_bounded_collection_cpp(
     let element_snake = filters::to_snake_case(m.element_type.clone());
     let upper_name = to_upper_snake(&m.name);
     let guard = format!("SCE_FORGE_{}_H", upper_name);
-    let index_by_cpp_type = inputs
-        .index_by_sce_type
-        .as_ref()
-        .map(|t| cpp_type(t).to_string())
-        .unwrap_or_default();
 
     let ctx = minijinja::context! {
         name => &m.name,
@@ -15956,7 +15981,8 @@ fn render_bounded_collection_cpp(
         concurrency => inputs.concurrency_str,
         has_index_by => m.index_by.is_some(),
         index_by_field => m.index_by.clone().unwrap_or_default(),
-        index_by_cpp_type => index_by_cpp_type,
+        index_by_cpp_type => inputs.index_type,
+        index_imports => inputs.index_imports,
         runtime_dep => "self-contained — std::array + std::bitset only",
     };
     tmpl.render(ctx).map_err(|e| {
@@ -15981,7 +16007,7 @@ fn render_bounded_collection_kotlin(
     _imports: &[ImportContext],
     options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
-    let inputs = resolve_bounded_collection_inputs(m, options)?;
+    let inputs = resolve_bounded_collection_inputs(m, options, crate::generator::Language::Kotlin)?;
     let tmpl = env
         .get_template("bounded_collection.kt.jinja2")
         .map_err(|e| {
@@ -15994,11 +16020,6 @@ fn render_bounded_collection_kotlin(
     let snake = filters::to_snake_case(m.name.clone());
     let element_pascal = filters::to_pascal_case(m.element_type.clone());
     let element_snake = filters::to_snake_case(m.element_type.clone());
-    let index_by_kotlin_type = inputs
-        .index_by_sce_type
-        .as_ref()
-        .map(|t| kotlin_type(t).to_string())
-        .unwrap_or_default();
 
     let ctx = minijinja::context! {
         name => &m.name,
@@ -16013,7 +16034,8 @@ fn render_bounded_collection_kotlin(
         concurrency => inputs.concurrency_str,
         has_index_by => m.index_by.is_some(),
         index_by_field => m.index_by.clone().unwrap_or_default(),
-        index_by_kotlin_type => index_by_kotlin_type,
+        index_by_kotlin_type => inputs.index_type,
+        index_imports => inputs.index_imports,
         runtime_dep => "self-contained — Kotlin stdlib only",
     };
     tmpl.render(ctx).map_err(|e| {
@@ -16040,7 +16062,7 @@ fn render_bounded_collection_c(
     _imports: &[ImportContext],
     options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
-    let inputs = resolve_bounded_collection_inputs(m, options)?;
+    let inputs = resolve_bounded_collection_inputs(m, options, crate::generator::Language::C11)?;
     let tmpl = env
         .get_template("bounded_collection.h.jinja2")
         .map_err(|e| {
@@ -16064,11 +16086,6 @@ fn render_bounded_collection_c(
         .as_ref()
         .map(|f| filters::to_snake_case(f.clone()))
         .unwrap_or_default();
-    let index_by_c_type = inputs
-        .index_by_sce_type
-        .as_ref()
-        .map(|t| c_type(t).to_string())
-        .unwrap_or_default();
 
     let ctx = minijinja::context! {
         name => &m.name,
@@ -16085,7 +16102,8 @@ fn render_bounded_collection_c(
         concurrency => inputs.concurrency_str,
         has_index_by => m.index_by.is_some(),
         index_by_field => index_by_field_snake,
-        index_by_c_type => index_by_c_type,
+        index_by_c_type => inputs.index_type,
+        index_imports => inputs.index_imports,
         runtime_dep => "self-contained — <stdint.h> + <stdbool.h> + <stddef.h> only",
     };
     tmpl.render(ctx).map_err(|e| {
@@ -16116,7 +16134,7 @@ fn render_bounded_collection_go(
     _imports: &[ImportContext],
     options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
-    let inputs = resolve_bounded_collection_inputs(m, options)?;
+    let inputs = resolve_bounded_collection_inputs(m, options, crate::generator::Language::Go)?;
     let tmpl = env
         .get_template("bounded_collection.go.jinja2")
         .map_err(|e| {
@@ -16168,11 +16186,6 @@ fn render_bounded_collection_go(
         .as_ref()
         .map(|f| filters::to_pascal_case(f.clone()))
         .unwrap_or_default();
-    let index_by_go_type = inputs
-        .index_by_sce_type
-        .as_ref()
-        .map(|t| go_type(t).to_string())
-        .unwrap_or_default();
 
     let ctx = minijinja::context! {
         name => &m.name,
@@ -16191,7 +16204,8 @@ fn render_bounded_collection_go(
         concurrency => inputs.concurrency_str,
         has_index_by => m.index_by.is_some(),
         index_by_field_pascal => index_by_field_pascal,
-        index_by_go_type => index_by_go_type,
+        index_by_go_type => inputs.index_type,
+        index_imports => inputs.index_imports,
         runtime_dep => "self-contained — Go stdlib `errors` only",
     };
     tmpl.render(ctx).map_err(|e| {
@@ -16225,7 +16239,7 @@ fn render_bounded_collection_python(
     _imports: &[ImportContext],
     options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
-    let inputs = resolve_bounded_collection_inputs(m, options)?;
+    let inputs = resolve_bounded_collection_inputs(m, options, crate::generator::Language::Python)?;
     let tmpl = env
         .get_template("bounded_collection.py.jinja2")
         .map_err(|e| {
@@ -16253,11 +16267,6 @@ fn render_bounded_collection_python(
         .as_ref()
         .map(|f| filters::to_snake_case(f.clone()))
         .unwrap_or_default();
-    let index_by_py_type = inputs
-        .index_by_sce_type
-        .as_ref()
-        .map(|t| python_type(t).to_string())
-        .unwrap_or_default();
 
     let ctx = minijinja::context! {
         name => &m.name,
@@ -16274,7 +16283,8 @@ fn render_bounded_collection_python(
         concurrency => inputs.concurrency_str,
         has_index_by => m.index_by.is_some(),
         index_by_field_snake => index_by_field_snake,
-        index_by_py_type => index_by_py_type,
+        index_by_py_type => inputs.index_type,
+        index_imports => inputs.index_imports,
         runtime_dep => "self-contained — Python stdlib `dataclasses` + `typing` only",
     };
     tmpl.render(ctx).map_err(|e| {

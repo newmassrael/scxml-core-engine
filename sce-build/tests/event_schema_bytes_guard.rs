@@ -250,3 +250,122 @@ fn c11_bytes_guard_compiles_freestanding() {
         String::from_utf8_lossy(&output.stderr),
     );
 }
+
+#[test]
+fn c11_typed_payload_preserves_values_and_rejects_overflow() {
+    let Some(cc) = toolchain::locate("gcc") else {
+        toolchain::skipped("c11_typed_payload_preserves_values_and_rejects_overflow: gcc missing");
+        return;
+    };
+    let dir = out_dir("bounded_payload", "c11");
+    std::fs::write(dir.join("schema.scxml"), r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" name="sample_schema" sce:kind="event-schema" sce:event-name="sample.received">
+<datamodel>
+<data id="raw" sce:type="bytes" sce:direction="in" sce:max-size="512"/>
+<data id="label" sce:type="string" sce:direction="in"/>
+<data id="ratio" sce:type="float64" sce:direction="in"/>
+<data id="count" sce:type="uint32" sce:direction="in"/>
+</datamodel></scxml>"#).unwrap();
+    let input = dir.join("bounded_payload.scxml");
+    std::fs::write(&input, r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" name="bounded_payload" version="1.0" initial="waiting" datamodel="ecmascript">
+<sce:import src="schema.scxml" kind="event-schema" as="Sample"/>
+<state id="waiting"><transition event="sample.received" cond="_event.data.label === 'ready'" target="done"/></state>
+<state id="done"/></scxml>"#).unwrap();
+    assert!(Command::new(sce_codegen_bin())
+        .arg("generate")
+        .arg(&input)
+        .arg("-o")
+        .arg(&dir)
+        .args(["-l", "c11"])
+        .status()
+        .unwrap()
+        .success());
+    let driver = dir.join("driver.c");
+    std::fs::write(&driver, r#"#include "bounded_payload_sm.h"
+#include "sce/event_payload.h"
+#include <assert.h>
+#include <math.h>
+#include <stdio.h>
+#include <string.h>
+int main(void) {
+    bounded_payload_t sm;
+    char label[SCE_MAX_DATA_LEN + 8];
+    bounded_payload_sample_received_payload_t p = {0};
+    memcpy(p.raw, "ack", 3); p.raw_len = 3; p.label = label; p.ratio = 1.5; p.count = 7;
+    for (size_t n = 0; n < sizeof(label); ++n) {
+        memset(label, 'x', n); label[n] = 0;
+        bounded_payload_init(&sm);
+        int needed = snprintf(NULL, 0, "{\"raw\":\"ack\",\"label\":\"%s\",\"ratio\":1.5,\"count\":7}", label);
+        bool accepted = bounded_payload_raise_sample_received_typed(&sm, &p);
+        assert(accepted == (needed < SCE_MAX_DATA_LEN));
+        assert(sm.external_queue.count == (accepted ? 1 : 0));
+        if (accepted) {
+            sce_payload_fields_t fields; char decoded[SCE_MAX_DATA_LEN];
+            assert(sce_payload_decode(sm.external_queue.buf[sm.external_queue.head].data, &fields) == NULL);
+            assert(sce_payload_read_text(&fields, "label", decoded, sizeof(decoded)) == NULL);
+            assert(strlen(decoded) == n);
+        }
+    }
+    strcpy(label, "ready");
+    bounded_payload_init(&sm);
+    const unsigned char bytes[] = {0, 0x80, 0xff, '"', '\\'};
+    memcpy(p.raw, bytes, sizeof(bytes)); p.raw_len = sizeof(bytes);
+    assert(bounded_payload_raise_sample_received_typed(&sm, &p));
+    sce_payload_fields_t fields; unsigned char decoded[512]; size_t len = 0;
+    assert(sce_payload_decode(sm.external_queue.buf[sm.external_queue.head].data, &fields) == NULL);
+    assert(sce_payload_read_bytes(&fields, "raw", decoded, sizeof(decoded), &len) == NULL);
+    assert(len == sizeof(bytes) && memcmp(decoded, bytes, len) == 0);
+    strcpy(label, "other"); memset(p.raw, 0, sizeof(p.raw));
+    bounded_payload_run(&sm);
+    assert(bounded_payload_in_state(&sm, BOUNDED_PAYLOAD_STATE_DONE));
+    bounded_payload_init(&sm);
+    p.raw_len = sizeof(p.raw) + 1;
+    assert(!bounded_payload_raise_sample_received_typed(&sm, &p));
+    p.raw_len = SIZE_MAX;
+    assert(!bounded_payload_raise_sample_received_typed(&sm, &p));
+    p.raw_len = 42;
+    assert(!bounded_payload_raise_sample_received_typed(&sm, &p));
+    p.raw_len = 43;
+    assert(!bounded_payload_raise_sample_received_typed(&sm, &p));
+    p.raw_len = 0; p.ratio = NAN;
+    assert(!bounded_payload_raise_sample_received_typed(&sm, &p));
+    p.ratio = INFINITY;
+    assert(!bounded_payload_raise_sample_received_typed(&sm, &p));
+    assert(sm.external_queue.count == 0);
+    assert(bounded_payload_raise_sample_received_typed(&sm, NULL));
+    assert(sce_payload_decode(sm.external_queue.buf[sm.external_queue.head].data, &fields) == NULL);
+    assert(sce_payload_read_bytes(&fields, "raw", decoded, sizeof(decoded), &len) == NULL && len == 0);
+    assert(sce_payload_read_text(&fields, "label", (char *)decoded, sizeof(decoded)) == NULL && decoded[0] == 0);
+    uint64_t count = 1; double ratio = 1;
+    assert(sce_payload_read_u64(&fields, "count", &count) == NULL && count == 0);
+    assert(sce_payload_read_f64(&fields, "ratio", &ratio) == NULL && ratio == 0);
+    return 0;
+}
+"#).unwrap();
+    let bin = dir.join("driver");
+    let output = Command::new(cc)
+        .args([
+            "-std=c11",
+            "-O0",
+            "-g",
+            "-Wall",
+            "-Wextra",
+            "-Wpedantic",
+            "-Werror",
+        ])
+        .arg("-I")
+        .arg(repo_root().join("backends/c/runtime/include"))
+        .arg("-I")
+        .arg(&dir)
+        .arg(dir.join("bounded_payload_sm.c"))
+        .arg(&driver)
+        .arg("-o")
+        .arg(&bin)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(Command::new(bin).status().unwrap().success());
+}

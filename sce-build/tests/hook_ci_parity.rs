@@ -484,6 +484,13 @@ const CI_ONLY: &[(&str, &str)] = &[
     // `cargo test` stops at the first failing TARGET and two earlier ones
     // were failing. Found 2026-09-18 only after those were repaired.
     (
+        "gradlew :sce-kotlin-runtime:jvmJar",
+        "provisions the Kotlin statechart runtime classpath for the smoke \
+         tests. Like the forge runtime jar, it is a prerequisite rather \
+         than a verification. CI builds it and refuses missing prerequisites \
+         through SCE_REQUIRE_TOOLS; local contributors may skip with a warning.",
+    ),
+    (
         "gradlew :sce-forge-runtime-kotlin:jvmJar",
         "provisions the runner rather than verifying the tree: it builds the \
          jar every Kotlin forge gate puts on `kotlinc -cp`, and a runner \

@@ -7,8 +7,8 @@
 // published before any subscriber declares" silent-drop on Zenoh.
 //
 // Shape:
-//   - Raw motor peer boots first (listener side of the shared 17454
-//     port). No subscriber declared yet on the brake-side keyexpr, so
+//   - Raw motor peer boots first on a kernel-selected loopback port.
+//     No subscriber declared yet on the brake-side keyexpr, so
 //     brake's generated router will observe MatchingStatus::matching
 //     == false after it opens its own session.
 //   - Brake's generated router opens its Zenoh session, declares a
@@ -49,19 +49,93 @@
 #include "ZenohTestUtils.h"
 #include "mesh/MeshEnvelopeCodec.h"
 
+#include <cerrno>
 #include <chrono>
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <netinet/in.h>
 #include <string>
+#include <sys/socket.h>
+#include <system_error>
 #include <thread>
+#include <unistd.h>
 
 namespace {
 
 using namespace SCE::Test::Mesh;
 
-// Mirrors brake's connect endpoint, pinned in deploy_zenoh_publisher_first.yaml
-// to motor's ecu_motor listen. The raw motor peer co-locates on the same
-// address so the Zenoh peer-mesh handshake converges deterministically.
-constexpr const char *kListen = SCE::Generated::brake_zenoh_publisher_first::ZENOH_CONNECT_ENDPOINTS[0];
+// The generated router reads its runtime config from this fixture's private
+// working directory. Separate processes never share either the file or port.
+class SessionDirectory {
+public:
+    SessionDirectory()
+        : previous_(std::filesystem::current_path()),
+          path_(std::filesystem::temp_directory_path() /
+                ("sce-zenoh-publisher-" + SCE::uuid::to_string(SCE::uuid::v7()))) {
+        if (!std::filesystem::create_directory(path_)) {
+            throw std::runtime_error("cannot create a private Zenoh fixture directory");
+        }
+        try {
+            std::filesystem::current_path(path_);
+        } catch (...) {
+            std::error_code ignored;
+            std::filesystem::remove_all(path_, ignored);
+            throw;
+        }
+    }
+
+    ~SessionDirectory() {
+        std::error_code ignored;
+        std::filesystem::current_path(previous_, ignored);
+        std::filesystem::remove_all(path_, ignored);
+    }
+
+    SessionDirectory(const SessionDirectory &) = delete;
+    SessionDirectory &operator=(const SessionDirectory &) = delete;
+
+private:
+    std::filesystem::path previous_;
+    std::filesystem::path path_;
+};
+
+struct Listener {
+    std::string endpoint;
+    zenoh::Session session;
+};
+
+Listener open_listener() {
+    // Zenoh's C++ API does not expose the port chosen for a :0 listener.
+    // Ask the kernel for a candidate, then let Zenoh own it. Another process
+    // can claim the candidate between close and open, so retry only fixture
+    // setup; the generated router and every behaviour assertion run once.
+    for (int attempt = 0; attempt < 16; ++attempt) {
+        const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
+        if (fd < 0) {
+            throw std::system_error(errno, std::generic_category(), "socket");
+        }
+        sockaddr_in address{};
+        address.sin_family = AF_INET;
+        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        socklen_t size = sizeof(address);
+        if (::bind(fd, reinterpret_cast<const sockaddr *>(&address), sizeof(address)) != 0 ||
+            ::getsockname(fd, reinterpret_cast<sockaddr *>(&address), &size) != 0) {
+            const int error = errno;
+            ::close(fd);
+            throw std::system_error(error, std::generic_category(), "select loopback port");
+        }
+        ::close(fd);
+        const std::string endpoint = "tcp/127.0.0.1:" + std::to_string(ntohs(address.sin_port));
+        try {
+            return {endpoint, open_peer("", endpoint)};
+        } catch (const zenoh::ZException &) {
+            if (attempt == 15) {
+                throw;
+            }
+        }
+    }
+    throw std::runtime_error("cannot open the Zenoh fixture listener");
+}
 
 // Must match deploy_zenoh_publisher_first.yaml binding key for #motor.
 constexpr const char *kMotorKey = "sce/brake_pub_first/motor/cmd";
@@ -80,7 +154,14 @@ int run_test() {
     // The raw motor peer listens so brake's connect succeeds. Without
     // a subscriber on kMotorKey yet, brake's publisher will observe
     // MatchingStatus::matching == false and the buffer stays gated.
-    auto motor_session = open_peer(/*connect=*/"", /*listen=*/kListen);
+    SessionDirectory directory;
+    auto motor = open_listener();
+    auto &motor_session = motor.session;
+    std::ofstream config("zenoh_publisher_first_session.json5");
+    config << "{\"connect\":{\"endpoints\":[\"" << motor.endpoint
+           << "\"]},\"listen\":{\"endpoints\":[]},\"scouting\":{\"multicast\":{\"enabled\":false}}}";
+    config.close();
+    MESH_TEST_REQUIRE(config.good(), "cannot write the private Zenoh session config");
 
     // ── Brake (publisher) boots. ─────────────────────────────────────
     // TestSenderEngine stands in for the SCXML engine — the fixture's

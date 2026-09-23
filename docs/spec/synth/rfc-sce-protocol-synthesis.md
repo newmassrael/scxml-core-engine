@@ -2606,7 +2606,7 @@ pub enum CollectionOrdering { Insertion, SortedByIndex }
 pub enum ConcurrencyMode { SingleWriter, MultiWriter }
 ```
 
-**Operations contract.** Each bounded-collection emits:
+**Operations contract.** Each bounded-collection emits the operations below. `IndexKey` is the indexed element field's declared type; enum aliases resolve in the element document's import namespace. Every backend uses that same enum type and emits the required imports; the collection need not redeclare the alias.
 
 ```
 insert(&mut self, elem: T) -> Result<Handle, OverflowError>

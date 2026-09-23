@@ -442,8 +442,8 @@ fn statechart_native_lowering_kotlin_emits_engine_free_typed_guard() {
         return;
     };
     let Some(jar) = find_kotlin_runtime_jar() else {
-        eprintln!(
-            "SKIP statechart_native_lowering_kotlin compile: runtime jar missing under \
+        toolchain::skipped(
+            "statechart_native_lowering_kotlin compile: runtime jar missing under \
              backends/kotlin/runtime/build/libs (run `./gradlew :sce-kotlin-runtime:assemble`)",
         );
         return;
@@ -850,8 +850,8 @@ fn smoke_kotlin() {
         return;
     };
     let Some(jar) = find_kotlin_runtime_jar() else {
-        eprintln!(
-            "SKIP smoke_kotlin: runtime jar missing under backends/kotlin/runtime/build/libs \
+        toolchain::skipped(
+            "smoke_kotlin: runtime jar missing under backends/kotlin/runtime/build/libs \
              (run `./gradlew :sce-kotlin-runtime:assemble`)",
         );
         return;

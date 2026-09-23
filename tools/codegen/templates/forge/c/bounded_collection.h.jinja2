@@ -60,6 +60,9 @@
 #include <sce/portability.h>
 
 #include "{{ element_snake }}.h"
+{% for statement in index_imports %}
+{{ statement }}
+{% endfor %}
 
 #ifdef __cplusplus
 extern "C" {

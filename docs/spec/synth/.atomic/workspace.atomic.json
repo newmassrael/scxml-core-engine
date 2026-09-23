@@ -4312,6 +4312,11 @@
           "file": "sce-build/src/forge/generator.rs",
           "symbol": "lower_algorithm_stmt_unplaced",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/tests/forge_conformance.rs",
+          "symbol": "bounded_collection_enum_index_compiles_on_every_backend",
+          "kind": "implements"
         }
       ]
     },

@@ -157,6 +157,17 @@ jobs:
   test:
     name: cargo test --workspace --features cli
     runs-on: ubuntu-latest
+    # This lane exhausted the runner disk while running the workspace suite.
+    # Omit DWARF from test artifacts, including linked standard-library
+    # objects. Keep function symbols, panic locations, and the normal test
+    # assertions/optimisation; incremental state is not useful on this lane.
+    # Job scope also covers the generated-crate subprocesses in the suite.
+    env:
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+      CARGO_PROFILE_DEV_STRIP: debuginfo
+      CARGO_PROFILE_TEST_STRIP: debuginfo
+      CARGO_INCREMENTAL: "0"
 
     steps:
     - name: Checkout Repository
@@ -202,20 +213,16 @@ jobs:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-workspace-tests-${{ hashFiles('Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-workspace-sources-v2-${{ hashFiles('Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-workspace-tests-
+          ${{ runner.os }}-cargo-workspace-sources-v2-
 
     # Mirrors the hook's build stage. Debug profile so the binary lands
     # where `CARGO_BIN_EXE_sce-codegen` resolves for the test step below.
     - name: Build sce-codegen
       run: |
-        # The Cargo cache restores all of `target`, but this step only
-        # builds the debug profile, so a release binary the cache still
-        # holds is not a product of this commit. The locator knows which
-        # path that is; naming it here would put a build-layout detail
-        # back into every workflow.
+        # A reused checkout must not select an old release binary over
+        # the debug binary this step builds.
         source scripts/lib/sce_codegen.sh
         sce_codegen_drop_stale_release
         cargo build --bin sce-codegen --features cli -p sce-build
@@ -258,8 +265,9 @@ jobs:
           ${{ runner.os }}-gradle-workspace-tests-
           ${{ runner.os }}-gradle-
 
-    - name: Build the Kotlin forge-runtime jar
-      run: ./gradlew :sce-forge-runtime-kotlin:jvmJar --console=plain
+    # Statechart smoke tests also compile against the core runtime jar.
+    - name: Build the Kotlin runtime jars
+      run: ./gradlew :sce-forge-runtime-kotlin:jvmJar :sce-kotlin-runtime:jvmJar --console=plain
 
     # Delegates to the gate runner rather than restating the command, so
     # the suite has one spelling for both callers. The gate also starts the
@@ -281,3 +289,9 @@ jobs:
         SCE_REQUIRE_TOOLS: "1"
         SCE_GATE_NO_FAIL_FAST: "1"
       run: scripts/gate workspace-tests
+
+    - name: Report build disk usage
+      if: always()
+      run: |
+        df -h .
+        du -sh target ~/.cargo/registry ~/.cargo/git 2>/dev/null || true

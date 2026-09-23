@@ -7034,8 +7034,8 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         # `markReady` drains the buffer via publisher.put → subscriber
         # observes the previously-buffered envelope.
         #
-        # Port 17455 is distinct from 17447–17454; RESOURCE_LOCK
-        # `zenoh_publisher_first_port_17455` serialises this fixture.
+        # The fixture selects its own loopback port and writes a private
+        # session config, so unrelated host processes cannot occupy its port.
         set(MESH_ZENOH_PUBLISHER_FIRST_OUTPUT_DIR
             "${CMAKE_CURRENT_BINARY_DIR}/mesh_zenoh_publisher_first_generated")
 
@@ -7095,7 +7095,6 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
                  COMMAND mesh_zenoh_publisher_first_test)
         set_tests_properties(mesh_zenoh_publisher_first_verification PROPERTIES
             TIMEOUT 30
-            RESOURCE_LOCK zenoh_publisher_first_port_17455
         )
 
         # ── Session Z1: Zenoh liveliness PEER_PARTITIONED E2E (§16.7) ─

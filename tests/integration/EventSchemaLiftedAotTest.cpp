@@ -36,15 +36,6 @@ namespace {
 
 using Machine = ::SCE::Generated::statechart_lifted::statechart_lifted;
 
-// The fixture lowers its guard natively and carries no executable content, so
-// the machine is built with no script engine at all.
-Machine started() {
-    Machine sm;
-    sm.initialize();
-    EXPECT_EQ(sm.getCurrentState(), Machine::State::Waiting);
-    return sm;
-}
-
 // The event as every producer but the inject seam delivers it: its fields on
 // the `data` wire, with no typed payload riding along.
 void deliverData(Machine &sm, const std::string &data) {

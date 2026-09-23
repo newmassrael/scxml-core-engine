@@ -668,8 +668,8 @@ fn smoke_kotlin() {
         return;
     };
     let Some(jar) = find_kotlin_runtime_jar() else {
-        eprintln!(
-            "SKIP smoke_kotlin: runtime jar missing under backends/kotlin/runtime/build/libs \
+        toolchain::skipped(
+            "smoke_kotlin: runtime jar missing under backends/kotlin/runtime/build/libs \
              (run `./gradlew :sce-kotlin-runtime:assemble`)",
         );
         return;

@@ -243,8 +243,8 @@ fn smoke_kotlin() {
     // required for kotlinc to accept the source. The existing
     // sce-kotlin-runtime jar carries the right Kotlin stdlib version.
     let Some(jar) = find_kotlin_runtime_jar() else {
-        eprintln!(
-            "SKIP smoke_kotlin: runtime jar missing under backends/kotlin/runtime/build/libs \
+        toolchain::skipped(
+            "smoke_kotlin: runtime jar missing under backends/kotlin/runtime/build/libs \
              (run `./gradlew :sce-kotlin-runtime:assemble`)",
         );
         return;

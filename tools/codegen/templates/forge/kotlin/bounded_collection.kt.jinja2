@@ -32,6 +32,9 @@
 package com.sce.generated.{{ snake }}
 
 import com.sce.generated.{{ element_snake }}.{{ element_pascal }}
+{% for statement in index_imports %}
+{{ statement }}
+{% endfor %}
 
 /// Slot capacity (`<sce:capacity>`). For `source="deploy"` the value
 /// is resolved from `machines.<m>.limits.<k>` at codegen time per

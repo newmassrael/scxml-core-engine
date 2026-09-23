@@ -10,17 +10,16 @@
 # later appears, the matching listener fires → markReady → FIFO drain
 # → subscriber receives the previously-buffered envelope.
 #
-# Port 17455 is distinct from the 17447/17448/17449/17450/17451/17452/17453
-# ports already used by other zenoh runtime tests. ctest
-# RESOURCE_LOCK `zenoh_publisher_first_port_17455` serialises this
-# fixture against any future test that reuses the port.
+# The test opens a kernel-selected loopback port and writes the connection
+# config into a private working directory before initialising the router.
+# A CTest resource lock cannot protect a fixed port from compiler daemons.
 version: "1.0"
 topology:
   ecu_brake:
     transports:
       zenoh:
         mode: peer
-        connect: ["tcp/127.0.0.1:17455"]
+        config: zenoh_publisher_first_session.json5
     machines:
       brake_zenoh_publisher_first:
         source: brake_zenoh_publisher_first.scxml
@@ -34,7 +33,7 @@ topology:
     transports:
       zenoh:
         mode: peer
-        listen: ["tcp/127.0.0.1:17455"]
+        listen: ["tcp/127.0.0.1:0"]
     machines:
       motor:
         source: motor_zenoh_publisher_first.scxml

@@ -44,6 +44,9 @@ from typing import Callable, Iterator, Optional
 
 {% if has_element_import %}
 {{ element_import_stmt }}
+{% for statement in index_imports %}
+{{ statement }}
+{% endfor %}
 {% endif %}
 
 # Slot capacity per `<sce:capacity>` (spec lines 2583-2585).

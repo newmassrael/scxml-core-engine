@@ -42,6 +42,9 @@ import (
 	"errors"
 {% if has_element_import %}
 {{ element_import_stmt }}
+{% for statement in index_imports %}
+{{ statement }}
+{% endfor %}
 {% endif %}
 )
 

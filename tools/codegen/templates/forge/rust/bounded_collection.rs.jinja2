@@ -32,6 +32,9 @@
    `collection/element-type-not-a-kind` validator guarantees this
    name resolves to a codec/procedure kind before reaching here. #}
 use super::{{ element_snake }}::{{ element_import }};
+{% for statement in index_imports %}
+{{ statement }}
+{% endfor %}
 
 /// Slot capacity (`<sce:capacity>`). For `source="deploy"` the value
 /// is resolved from `machines.<m>.limits.<k>` at codegen time per

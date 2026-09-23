@@ -2108,6 +2108,7 @@ pub fn compile_forge_with_deploy(
             BoundedCollectionResolution {
                 capacity,
                 index_by_field_sce_type: None,
+                index_by_imports: Vec::new(),
             },
         );
         Some(map)
@@ -2535,11 +2536,9 @@ pub struct CachePlatformInfo {
 /// `<sce:index-by field="...">` is declared, the orchestrator
 /// extracts the abstract [`forge::model::SceType`] of that field
 /// from the resolved element-type doc (codec field type / procedure
-/// input or internal type). Each backend's render fn converts the
-/// abstract type into the language-specific string at codegen time
-/// via the existing `rust_type` / `cpp_type` / `kotlin_type` / `c_type` /
-/// etc helpers — keeping the IR backend-neutral and the conversion
-/// table single-sourced. `None` when no `<sce:index-by>` is set OR
+/// input or internal type). The shared language context resolves that
+/// type through the element document's imports and emits any imports
+/// needed by the collection's signature. `None` when no `<sce:index-by>` is set OR
 /// when the upstream path cannot resolve it; the render layer
 /// rejects the latter as `InvalidConfig` rather than silently
 /// dropping the emit.
@@ -2553,10 +2552,12 @@ pub struct BoundedCollectionResolution {
     /// Abstract field type for the `<sce:index-by field>` axis.
     /// `None` when `<sce:index-by>` is not declared. `Some` populated
     /// by the orchestrator from the resolved element-type doc.
-    /// Each backend's render fn converts via its own type-string
-    /// helper (`rust_type(...)`, `cpp_type(...)`, `kotlin_type(...)`,
-    /// `c_type(...)`, and the Go / Python equivalents).
+    /// The shared render context resolves enum aliases through
+    /// `index_by_imports` before selecting the backend's type spelling.
     pub index_by_field_sce_type: Option<forge::model::SceType>,
+    /// Imports resolving the index field in its declaring element document.
+    /// These belong to the element namespace, not the collection namespace.
+    pub index_by_imports: Vec<forge::generator::ImportContext>,
 }
 
 /// Compile a forge SCXML with cross-file import resolution, validation,
@@ -2982,6 +2983,10 @@ pub fn compile_scxml_with_imports(
     // disagree about a document.
     let mut element_type_owned_mirrors: std::collections::HashMap<String, bool> =
         std::collections::HashMap::new();
+    let mut element_import_sources: std::collections::HashMap<
+        String,
+        (Vec<forge::model::ForgeImport>, PathBuf),
+    > = std::collections::HashMap::new();
     let mut all_externs: Vec<forge::model::ExternDeclaration> = Vec::new();
     // Deploy-aware cross-doc link validators (`validate_links_cross_doc`,
     // `validate_links_burst_invariants`, `validate_reassembly_cross_doc`)
@@ -3123,6 +3128,16 @@ pub fn compile_scxml_with_imports(
                 // sharing a name collide there). `insert` is safe —
                 // duplicates are unreachable.
                 let key = doc.name().to_string();
+                element_import_sources.insert(
+                    key.clone(),
+                    (
+                        parsed.imports.clone(),
+                        forge_path
+                            .parent()
+                            .unwrap_or_else(|| Path::new("."))
+                            .to_path_buf(),
+                    ),
+                );
                 // Whether this candidate emits an owned mirror, decided by
                 // the SAME predicate the codec emit uses
                 // (`emit_owned == codec_is_borrowed`). A bounded-collection
@@ -3526,37 +3541,51 @@ pub fn compile_scxml_with_imports(
     // path. CompileConst BCs copy the literal capacity through; DeployKey
     // BCs are skipped here (no deploy access on this entry point — those
     // route through [`compile_forge_with_deploy`]). For BCs with
-    // `<sce:index-by>`, extract the Rust type-string of the named field
+    // `<sce:index-by>`, extract the type and enum import context of the named field
     // from the resolved element-type ForgeDocument that
     // `validate_bounded_collection_cross_refs` just confirmed. The render
     // layer reads `bounded_collection_resolutions[bc.name]` and surfaces
     // a clear `InvalidConfig` if a needed key is absent.
-    let bc_resolutions: std::collections::HashMap<String, BoundedCollectionResolution> =
-        bounded_collections_for_xref
-            .iter()
-            .filter_map(|(_label, bc)| {
-                let capacity = match &bc.capacity {
-                    forge::model::CapacitySource::CompileConst { value } => *value,
-                    // Single-orchestrator path has no deploy; DeployKey
-                    // BCs surface their missing resolution at render
-                    // time via `InvalidConfig` — keeps this populator
-                    // free of guesswork and aligns with the cache_platform
-                    // precedent ("populator skips when source is missing").
-                    forge::model::CapacitySource::DeployKey { .. } => return None,
-                };
-                let index_by_field_sce_type = bc.index_by.as_ref().and_then(|field| {
-                    let element_doc = element_type_candidates.get(&bc.element_type)?;
-                    extract_bounded_collection_index_field_sce_type(element_doc, field)
-                });
-                Some((
-                    bc.name.clone(),
-                    BoundedCollectionResolution {
-                        capacity,
-                        index_by_field_sce_type,
-                    },
-                ))
-            })
-            .collect();
+    let mut bc_resolutions = std::collections::HashMap::new();
+    for (_label, bc) in &bounded_collections_for_xref {
+        let capacity = match &bc.capacity {
+            forge::model::CapacitySource::CompileConst { value } => *value,
+            forge::model::CapacitySource::DeployKey { .. } => continue,
+        };
+        let index_by_field_sce_type = bc.index_by.as_ref().and_then(|field| {
+            let element_doc = element_type_candidates.get(&bc.element_type)?;
+            extract_bounded_collection_index_field_sce_type(element_doc, field)
+        });
+        let mut index_by_imports = Vec::new();
+        if let Some(forge::model::SceType::Enum(reference)) = &index_by_field_sce_type {
+            if let Some((imports, base_dir)) = element_import_sources.get(&bc.element_type) {
+                let declarations: Vec<_> = imports
+                    .iter()
+                    .filter(|import| import.alias == reference.alias)
+                    .cloned()
+                    .collect();
+                index_by_imports =
+                    forge::generator::resolve_imports(&declarations, &language, options)
+                        .map_err(|error| Located::new(error, &bc.element_type, None, None))?;
+                validate_and_enrich_imports(
+                    &mut index_by_imports,
+                    &declarations,
+                    base_dir,
+                    &language,
+                    options,
+                    &bc.element_type,
+                )?;
+            }
+        }
+        bc_resolutions.insert(
+            bc.name.clone(),
+            BoundedCollectionResolution {
+                capacity,
+                index_by_field_sce_type,
+                index_by_imports,
+            },
+        );
+    }
     // Item C7 keyexpr support: element-type field schemas keyed by the
     // element-type snake name, resolved from the same candidate map. An
     // algorithm iterating a BC types each `entry.<field>` from this so the

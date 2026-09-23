@@ -11027,34 +11027,25 @@ fn rustc_run_codec_set(
     cargo_subcommand: &str,
     profile: RustcProfile,
 ) -> Result<(), String> {
+    let mut all_files =
+        generate_files_for_codec_set(dir, scxml_filenames, sce_build::generator::Language::Rust)?;
+    all_files.extend(
+        extra_sources
+            .iter()
+            .map(|(name, content)| (name.to_string(), content.to_string())),
+    );
+    rustc_run_generated_set(all_files, test_id, cargo_subcommand, profile)
+}
+
+fn rustc_run_generated_set(
+    all_files: Vec<(String, String)>,
+    test_id: &str,
+    cargo_subcommand: &str,
+    profile: RustcProfile,
+) -> Result<(), String> {
     use std::collections::HashSet;
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
-
-    // Compile each SCXML to Rust and gather every `.rs` file the
-    // emit produced. A parent-tag dispatcher fixture typically emits 4
-    // files (parent + dispatcher + 2 arm bodies); test-vector
-    // sidecars and helper files are also included verbatim.
-    let lang = sce_build::generator::Language::Rust;
-    let opts = golden_options(lang);
-    let mut all_files: Vec<(String, String)> = Vec::new();
-    for filename in scxml_filenames {
-        let src = std::fs::read_to_string(dir.join(filename))
-            .map_err(|e| format!("read {filename}: {e}"))?;
-        let stem = filename.trim_end_matches(".scxml");
-        let output = sce_build::compile_forge_with_imports(
-            &src,
-            sce_build::DocumentLabel::symmetric(stem),
-            lang,
-            dir,
-            &opts,
-        )
-        .map_err(|e| format!("codegen {filename}: {e:?}"))?;
-        all_files.extend(output.files);
-    }
-    for (filename, content) in extra_sources {
-        all_files.push((filename.to_string(), content.to_string()));
-    }
 
     // Standalone temp Cargo project. `[workspace]` empty section
     // detaches it from the enclosing SCE workspace's `[workspace]`
@@ -11088,7 +11079,7 @@ fn rustc_run_codec_set(
     // reachable `alloc` symbol a hard error rather than a silent dependency.
     let (feature_block, dep_features) = match profile {
         RustcProfile::Alloc => (
-            "default = [\"alloc\"]\nalloc = []",
+            "default = [\"alloc\"]\nalloc = []\nno_std = []",
             r#", features = ["alloc"]"#,
         ),
         // The `alloc` feature stays *declared* so the generated
@@ -11096,7 +11087,7 @@ fn rustc_run_codec_set(
         // undeclared one is `unexpected_cfgs`, i.e. a warning-as-error that
         // would mask the allocator question). It is simply never enabled,
         // here or on the runtime crates.
-        RustcProfile::NoAlloc => ("default = []\nalloc = []", ""),
+        RustcProfile::NoAlloc => ("default = []\nalloc = []\nno_std = []", ""),
     };
     let cargo_toml = format!(
         r#"[package]
@@ -11666,6 +11657,15 @@ fn compile_codec_set_cpp(
     scxml_filenames: &[&str],
     test_id: &str,
 ) -> Result<(), String> {
+    let files =
+        generate_files_for_codec_set(dir, scxml_filenames, sce_build::generator::Language::Cpp)?;
+    compile_generated_set_cpp(files, test_id)
+}
+
+fn compile_generated_set_cpp(
+    all_files: Vec<(String, String)>,
+    test_id: &str,
+) -> Result<(), String> {
     if !toolchain_present("g++") {
         return require_all_or_warn(test_id, "g++");
     }
@@ -11676,9 +11676,6 @@ fn compile_codec_set_cpp(
     let pid = std::process::id();
     let proj_dir = std::env::temp_dir().join(format!("sce_cpp_check_{test_id}_{pid}_{counter}"));
     std::fs::create_dir_all(&proj_dir).map_err(|e| format!("mkdir: {e}"))?;
-
-    let all_files =
-        generate_files_for_codec_set(dir, scxml_filenames, sce_build::generator::Language::Cpp)?;
 
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let runtime_include = std::path::Path::new(manifest_dir)
@@ -11763,6 +11760,15 @@ fn compile_codec_set_c11(
     scxml_filenames: &[&str],
     test_id: &str,
 ) -> Result<(), String> {
+    let files =
+        generate_files_for_codec_set(dir, scxml_filenames, sce_build::generator::Language::C11)?;
+    compile_generated_set_c11(files, test_id)
+}
+
+fn compile_generated_set_c11(
+    all_files: Vec<(String, String)>,
+    test_id: &str,
+) -> Result<(), String> {
     if !toolchain_present("gcc") {
         return require_all_or_warn(test_id, "gcc");
     }
@@ -11773,9 +11779,6 @@ fn compile_codec_set_c11(
     let pid = std::process::id();
     let proj_dir = std::env::temp_dir().join(format!("sce_c11_check_{test_id}_{pid}_{counter}"));
     std::fs::create_dir_all(&proj_dir).map_err(|e| format!("mkdir: {e}"))?;
-
-    let all_files =
-        generate_files_for_codec_set(dir, scxml_filenames, sce_build::generator::Language::C11)?;
 
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let runtime_include = std::path::Path::new(manifest_dir)
@@ -11824,6 +11827,12 @@ fn compile_codec_set_c11(
         .arg("-Wunused")
         .arg("-Wuninitialized")
         .arg(format!("-I{}", runtime_include.display()))
+        .arg(format!(
+            "-I{}",
+            std::path::Path::new(manifest_dir)
+                .join("../backends/c/runtime/include")
+                .display()
+        ))
         .arg(format!("-I{}", proj_dir.display()))
         .arg("-o")
         .arg(&object_out)
@@ -11858,6 +11867,12 @@ fn compile_codec_set_go(
     scxml_filenames: &[&str],
     test_id: &str,
 ) -> Result<(), String> {
+    let files =
+        generate_files_for_codec_set(dir, scxml_filenames, sce_build::generator::Language::Go)?;
+    compile_generated_set_go(files, test_id)
+}
+
+fn compile_generated_set_go(all_files: Vec<(String, String)>, test_id: &str) -> Result<(), String> {
     if !toolchain_present("go") {
         return require_all_or_warn(test_id, "go");
     }
@@ -11868,9 +11883,6 @@ fn compile_codec_set_go(
     let pid = std::process::id();
     let proj_dir = std::env::temp_dir().join(format!("sce_go_check_{test_id}_{pid}_{counter}"));
     std::fs::create_dir_all(&proj_dir).map_err(|e| format!("mkdir: {e}"))?;
-
-    let all_files =
-        generate_files_for_codec_set(dir, scxml_filenames, sce_build::generator::Language::Go)?;
 
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let runtime_path = std::path::Path::new(manifest_dir)
@@ -11977,6 +11989,15 @@ fn compile_codec_set_python(
     scxml_filenames: &[&str],
     test_id: &str,
 ) -> Result<(), String> {
+    let files =
+        generate_files_for_codec_set(dir, scxml_filenames, sce_build::generator::Language::Python)?;
+    compile_generated_set_python(files, test_id)
+}
+
+fn compile_generated_set_python(
+    all_files: Vec<(String, String)>,
+    test_id: &str,
+) -> Result<(), String> {
     if !toolchain_present("python3") {
         return require_all_or_warn(test_id, "python3");
     }
@@ -11987,9 +12008,6 @@ fn compile_codec_set_python(
     let pid = std::process::id();
     let proj_dir = std::env::temp_dir().join(format!("sce_py_check_{test_id}_{pid}_{counter}"));
     std::fs::create_dir_all(&proj_dir).map_err(|e| format!("mkdir: {e}"))?;
-
-    let all_files =
-        generate_files_for_codec_set(dir, scxml_filenames, sce_build::generator::Language::Python)?;
 
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let runtime_path = std::path::Path::new(manifest_dir)
@@ -12099,6 +12117,15 @@ fn compile_codec_set_kotlin(
     scxml_filenames: &[&str],
     test_id: &str,
 ) -> Result<(), String> {
+    let files =
+        generate_files_for_codec_set(dir, scxml_filenames, sce_build::generator::Language::Kotlin)?;
+    compile_generated_set_kotlin(files, test_id)
+}
+
+fn compile_generated_set_kotlin(
+    all_files: Vec<(String, String)>,
+    test_id: &str,
+) -> Result<(), String> {
     if !toolchain_present("kotlinc") {
         return require_all_or_warn(test_id, "kotlinc");
     }
@@ -12109,9 +12136,6 @@ fn compile_codec_set_kotlin(
     let pid = std::process::id();
     let proj_dir = std::env::temp_dir().join(format!("sce_kt_check_{test_id}_{pid}_{counter}"));
     std::fs::create_dir_all(&proj_dir).map_err(|e| format!("mkdir: {e}"))?;
-
-    let all_files =
-        generate_files_for_codec_set(dir, scxml_filenames, sce_build::generator::Language::Kotlin)?;
 
     let Some(jar_path) = kotlin_forge_runtime_jar()? else {
         let _ = std::fs::remove_dir_all(&proj_dir);
@@ -16231,4 +16255,140 @@ fn validator_integer_extremes_keep_only_the_bounds_inside_the_range() {
             "emitted `{dropped}`:\n{emitted}"
         );
     }
+}
+
+/// SCE Protocol-Synthesis RFC §synth-5-L: the index type is resolved in the element document's
+/// namespace, then compiled with the element and enum on every backend.
+#[test]
+fn bounded_collection_enum_index_compiles_on_every_backend() {
+    use sce_build::generator::Language;
+    let dir = tempfile::tempdir().unwrap();
+    let documents = [
+        (
+            "entry_tag.scxml",
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+          version="1.0" sce:kind="enum" sce:underlying-type="uint8">
+          <datamodel><data id="variants"><sce:variant name="first" value="1"/>
+          <sce:variant name="second" value="2"/></data></datamodel></scxml>"#,
+        ),
+        (
+            "entry.scxml",
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+          version="1.0" sce:kind="codec" sce:default-endian="big">
+          <sce:import src="entry_tag.scxml" kind="enum" as="local_tag"/>
+          <datamodel><sce:field id="tag" sce:type="enum:local_tag" sce:byte="0" sce:bit-size="8"/>
+          </datamodel></scxml>"#,
+        ),
+        (
+            "entries.scxml",
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+          version="1.0" sce:kind="bounded-collection">
+          <sce:element-type>entry</sce:element-type><sce:capacity const="4"/>
+          <sce:index-by field="tag"/></scxml>"#,
+        ),
+    ];
+    let paths: Vec<_> = documents
+        .iter()
+        .map(|(name, text)| {
+            let path = dir.path().join(name);
+            std::fs::write(&path, text).unwrap();
+            path
+        })
+        .collect();
+    let refs: Vec<_> = paths.iter().map(|p| p.as_path()).collect();
+    let mut failures = Vec::new();
+    for &language in Language::ALL {
+        let result = std::panic::catch_unwind(|| {
+            let outputs = sce_build::compile_scxml_with_imports(
+                &[],
+                &refs,
+                &sce_build::find_template_dir_for(language),
+                language,
+                &golden_options(language),
+                None,
+            )
+            .map_err(|error| format!("{error:?}"))?;
+            let mut files: Vec<_> = outputs
+                .into_iter()
+                .flat_map(|(_, output)| output.files)
+                .collect();
+            let id = "bounded_collection_enum_index";
+            match language {
+                Language::Cpp => compile_generated_set_cpp(files, id),
+                Language::C11 => compile_generated_set_c11(files, id),
+                Language::Go => compile_generated_set_go(files, id),
+                Language::Kotlin => compile_generated_set_kotlin(files, id),
+                Language::Python => {
+                    // Import and call the generated API: py_compile alone
+                    // does not resolve deferred annotations or imports.
+                    let package = dir.path().join("generated");
+                    std::fs::create_dir_all(&package).unwrap();
+                    std::fs::write(package.join("__init__.py"), "").unwrap();
+                    for (name, text) in &files {
+                        if name.ends_with(".py") {
+                            std::fs::write(
+                                package.join(std::path::Path::new(name).file_name().unwrap()),
+                                text,
+                            )
+                            .unwrap();
+                        }
+                    }
+                    let runtime = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                        .join("../backends/python/forge-runtime");
+                    let pythonpath = std::env::join_paths([dir.path(), runtime.as_path()]).unwrap();
+                    let run = std::process::Command::new("python3")
+                        .args([
+                            "-c",
+                            r#"
+from generated.entries import Entries
+from generated.entry import Entry
+from generated.entry_tag import EntryTag
+from typing import get_type_hints
+assert get_type_hints(Entries.find_by_index)['key'] is EntryTag
+table = Entries()
+value = Entry()
+value.tag = EntryTag.FIRST
+assert table.insert(value) is not None
+assert table.find_by_index(EntryTag.FIRST) is not None
+assert table.find_by_index(EntryTag.SECOND) is None
+"#,
+                        ])
+                        .env("PYTHONPATH", pythonpath)
+                        .output()
+                        .map_err(|e| e.to_string())?;
+                    if !run.status.success() {
+                        return Err(String::from_utf8_lossy(&run.stderr).into_owned());
+                    }
+                    Ok(())
+                }
+                Language::Rust => {
+                    files.push((
+                        "enum_index_probe.rs".into(),
+                        r#"
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn find_an_enum_key() {
+        let mut table = crate::entries::Entries::new();
+        let mut value = crate::entry::Entry::new();
+        value.tag = crate::entry_tag::EntryTag::First;
+        table.insert(value).unwrap();
+        assert!(table.find_by_index(&crate::entry_tag::EntryTag::First).is_some());
+        assert!(table.find_by_index(&crate::entry_tag::EntryTag::Second).is_none());
+    }
+}
+"#
+                        .into(),
+                    ));
+                    rustc_run_generated_set(files, id, "test", RustcProfile::Alloc)
+                }
+            }
+        });
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => failures.push(format!("{language:?}: {error}")),
+            Err(_) => failures.push(format!("{language:?}: generator panicked")),
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
