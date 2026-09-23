@@ -686,9 +686,10 @@ class AHeldPositionOutlivesTheRoundThatWroteIt(unittest.TestCase):
 
     def test_before_anything_is_held_the_position_is_not_written(self):
         """A clear reading first: `dark` acts on nothing, nothing is sent, and
-        nothing has been held -- so the position is not written. It is
-        reported as such (`unchecked`), never landed as `unchanged` or as a
-        value the map would invent."""
+        nothing has been held -- so the position is not written. It is never
+        landed as `unchanged` or as a value the map would invent, and the case
+        is not passed on it: the binding writes that slot, and what the record
+        read there is not an answer of this run's."""
         result = self.run_cases([
             {"name": "a clear reading first",
              "given": {"plant/in/train-approach": "CLEAR"},
@@ -697,9 +698,33 @@ class AHeldPositionOutlivesTheRoundThatWroteIt(unittest.TestCase):
         ])
         self.assertTrue(result.ran, result.refusal)
         [case] = result.results
-        self.assertEqual(("", [], ["plant/out/road-signal.value"]),
-                         (case.refusal, case.failures, case.unchecked),
+        self.assertEqual(([], ["plant/out/road-signal.value"], []),
+                         (case.failures, case.unwritten, case.unchecked),
                          self.details(result))
+        self.assertFalse(case.judged, "a partial assertion was passed")
+
+    def test_a_position_no_rule_claims_still_does_not_stop_a_pass(self):
+        """The other silence, kept as it was. A position no rule of this
+        binding writes may be another document's: this one has nothing to say
+        there, the run reports it (`unbound`), and whether the SET of documents
+        reaches it is `coverage`'s question -- so the case passes on what this
+        document does write."""
+        result = self.run_cases([
+            track("a train approaches", "APPROACHING", "FLASHING"),
+        ])
+        self.assertTrue(result.ran, result.refusal)
+        self.assertEqual((1, 0, 0, 0), self.verdict(result), self.details(result))
+        (self.tmp / "examples.yaml").write_text(yaml.safe_dump({**EXAMPLES, "cases": [
+            {**track("a train approaches", "APPROACHING", "FLASHING"),
+             "expect": {"plant/out/road-signal.value": "FLASHING",
+                        "plant/out/bell.value": "RINGING"}}]}), encoding="utf-8")
+        result = verify(load_pack(self.tmp), self.tmp / "b.yaml")
+        self.assertTrue(result.ran, result.refusal)
+        [case] = result.results
+        self.assertEqual((True, ["plant/out/bell.value"], []),
+                         (case.passed, case.unchecked, case.unwritten),
+                         self.details(result))
+        self.assertIn("plant/out/bell.value", result.unbound)
 
 
 # A machine that must SEE a transition, not a first value: the first reading

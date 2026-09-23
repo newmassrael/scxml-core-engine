@@ -170,12 +170,22 @@ class APositionKeepsWhatItHeld(Fixture):
                          [(c.name, c.refusal, c.failures) for c in result.results])
 
     def test_before_anything_was_held_the_position_is_not_written(self):
-        """Not refused, and not given an invented value: nothing is there."""
+        """Not refused for the map, and not given an invented value: nothing
+        is there. And not PASSED either -- the case asserts a value at a slot
+        this binding writes, nothing has been written there yet, so that part
+        of the case is not an answer of this run's.
+
+        ⚠ It used to be counted `unchecked` beside a judged case, which does
+        not stop a pass, so the case passed on its other positions. That is
+        the partial pass the judge already refuses for a withheld position.
+        """
         cold = {"name": "no alarm yet", **at(0, **{"Plant.Out.Lamp.Value": 22})}
         result = self.judge(held_binding(), cold)
         case = result.results[0]
-        self.assertTrue(case.judged, case.refusal)
-        self.assertEqual(["Plant.Out.Lamp.Value"], case.unchecked)
+        self.assertFalse(case.judged, "a partial assertion was passed")
+        self.assertIn("Plant.Out.Lamp.Value", case.refusal)
+        self.assertNotIn("no entry", case.refusal)
+        self.assertEqual((["Plant.Out.Lamp.Value"], []), (case.unwritten, case.unchecked))
 
     def test_without_it_the_same_value_refuses_the_case(self):
         """The discriminator: without `hold_last` the unmapped value is a

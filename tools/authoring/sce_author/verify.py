@@ -96,6 +96,14 @@ class CaseResult:
     # are neither a pass nor a failure: the document may be right, and what it
     # is right ABOUT is still being asked of whoever knows the address.
     undetermined: list[str] = field(default_factory=list)
+    # ⚠ Positions the binding WRITES, that this case expects, and that this
+    # round wrote nothing at -- a `hold_last` with nothing held yet, a `when`
+    # field for a value that did not come. What such a position reads is what
+    # it held before, which this run does not know, so they are not a pass.
+    # Unlike `unchecked`, which is a position no rule of this binding claims
+    # (another document's, or none): that one is reported, and completeness
+    # across documents is `coverage`'s question.
+    unwritten: list[str] = field(default_factory=list)
 
     @property
     def judged(self) -> bool:
@@ -1205,7 +1213,14 @@ class CaseJudge:
                 resting_on.update(maybe if maybe else open_values)
                 continue
             if address not in produced:
-                result.unchecked.append(address)
+                # ⚠ Two different silences. A position no rule claims is this
+                # binding having nothing to say there; a position a rule claims
+                # and did not write this round is the document's own output,
+                # unread. Both used to land in `unchecked`, which does not stop
+                # a pass -- so a case expecting a value at a slot nothing had
+                # written yet passed on the other positions.
+                (result.unwritten if address in self.bound
+                 else result.unchecked).append(address)
                 continue
             if not _same(want, produced[address], _field_at(self.model, address)):
                 result.failures.append((address, want, produced[address]))
@@ -1223,12 +1238,26 @@ class CaseJudge:
         # their status withheld. A wrong answer on a position that WAS settled
         # is still a failure: withholding the unknown does not excuse what was
         # known.
-        if result.undetermined and not result.failures:
-            result.refusal = (
+        #
+        # The same holds for a position the document itself writes and did not
+        # write this round: what the record read there is whatever the slot
+        # held, which is not an answer of this round's.
+        if result.failures:
+            return
+        why = []
+        if result.undetermined:
+            why.append(
                 f"{len(result.undetermined)} position(s) this case expects "
-                f"depend on unresolved value(s) {', '.join(sorted(resting_on))}; "
-                f"the rest agreed, but a case is not passed on part of what it "
-                f"asserts")
+                f"depend on unresolved value(s) {', '.join(sorted(resting_on))}")
+        if result.unwritten:
+            why.append(
+                f"{', '.join(result.unwritten)}: written by this binding, and "
+                f"nothing was written there this round (a `hold_last` slot "
+                f"with nothing held yet, or a `when` field for another value), "
+                f"so what the record read is not an answer of this run's")
+        if why:
+            result.refusal = ("; ".join(why) + "; the rest agreed, but a case "
+                              "is not passed on part of what it asserts")
 
 
 def unchanged_drives(step, last: dict, model) -> set:

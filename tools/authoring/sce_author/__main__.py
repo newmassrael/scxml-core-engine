@@ -101,8 +101,13 @@ def cmd_verify(args) -> int:
             for address, want, got in case.failures:
                 print(f"          {address}: expected {want!r}, got {got!r}")
         if case.unchecked:
-            print(f"  ----  {case.name}: nothing written at "
+            print(f"  ----  {case.name}: no rule of this binding writes "
                   f"{', '.join(case.unchecked)}")
+        if case.unwritten:
+            # Only reached beside a failure: on its own it makes the case
+            # unjudged, and the refusal above already says it.
+            print(f"  ....  {case.name}: this round wrote nothing at "
+                  f"{', '.join(case.unwritten)}, which this binding writes")
         if case.undetermined and case.judged:
             print(f"  ~~~~  {case.name}: depends on an unresolved input, not "
                   f"judged at {', '.join(case.undetermined)}")

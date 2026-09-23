@@ -335,6 +335,7 @@ def verification_payload(result) -> dict:
              "failures": [{"address": a, "expected": w, "got": g}
                           for a, w, g in case.failures],
              "unchecked": case.unchecked,
+             "unwritten": case.unwritten,
              "undetermined": case.undetermined}
             for case in result.results
         ],
