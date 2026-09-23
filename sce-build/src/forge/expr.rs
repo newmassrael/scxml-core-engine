@@ -274,7 +274,7 @@ fn transpile_at(
     // leaving each TypedExpr's `ty` slot intact (which is exactly what the
     // `Raw` arm of `infer_types` already documents).
     resolve_then_rename(&mut ast, ctx, renames, target, &[], expr)?;
-    judge_slot(&ast, slot, expr)?;
+    judge_value(&ast, slot, expr)?;
 
     // RFC c7-wildcard W-project: Go exports struct fields in PascalCase
     // (the `codec_field_id` SSOT). Inside an algorithm body every member
@@ -389,7 +389,7 @@ pub(crate) fn transpile_typed_with_import_lowering(
 
     let mut ast = parse_to_ast(expr)?;
     resolve_then_rename(&mut ast, ctx, renames, ExprTarget::C, lowerings, expr)?;
-    judge_slot(&ast, expected, expr)?;
+    judge_value(&ast, expected, expr)?;
     Ok(emit_c(&ast, expected.ty())?)
 }
 
@@ -505,13 +505,145 @@ fn type_mismatch(slot: InferredType, value: &TypedExpr, source: &str) -> Refusal
     .at(value.span.clone())
 }
 
-/// The whole expression, refused when `expected` declares a place its value
-/// may not stand in ([`slot_admits`]). A hint declares nothing.
-fn judge_slot(ast: &TypedExpr, expected: Expected, source: &str) -> Result<(), Refusal> {
-    match expected {
-        Expected::Slot(slot) if !slot_admits(slot, ast.ty) => Err(type_mismatch(slot, ast, source)),
-        Expected::Slot(_) | Expected::Hint(_) => Ok(()),
+/// The whole expression judged against what `expected` says about the place
+/// it lands in: refused when a declared slot does not admit its kind
+/// ([`slot_admits`] — a hint declares nothing), and wherever an integer
+/// literal in it takes a type that cannot hold it
+/// ([`reject_out_of_range_literals`] — a hint's type is the one the literal
+/// is emitted in, so it counts).
+fn judge_value(ast: &TypedExpr, expected: Expected, source: &str) -> Result<(), Refusal> {
+    if let Expected::Slot(slot) = expected {
+        if !slot_admits(slot, ast.ty) {
+            return Err(type_mismatch(slot, ast, source));
+        }
     }
+    reject_out_of_range_literals(ast, expected.ty(), source)
+}
+
+/// Refuse an integer literal the type it takes cannot hold
+/// ([`ExprError::LiteralOutOfRange`]). `context` is the type the value lands
+/// in. A literal takes the type the emitters give it: its partner's in a
+/// binary operation (the context's when both are literals), its parameter's
+/// as an argument, the place's otherwise — which is the type Rust and Go
+/// infer for it, and refuse it in.
+fn reject_out_of_range_literals(
+    ast: &TypedExpr,
+    context: InferredType,
+    source: &str,
+) -> Result<(), Refusal> {
+    match &ast.kind {
+        ExprKind::NumberLit(text) if !is_float_literal_text(text) => {
+            literal_fits(ast, text, false, context, source)
+        }
+        // The minus belongs to the literal: `-128` fits an `int8`.
+        ExprKind::Unary {
+            op: UnaryOp::Neg,
+            operand,
+        } => match &operand.kind {
+            ExprKind::NumberLit(text) if !is_float_literal_text(text) => {
+                literal_fits(ast, text, true, context, source)
+            }
+            _ => reject_out_of_range_literals(operand, context, source),
+        },
+        ExprKind::Unary { operand, .. } => reject_out_of_range_literals(operand, context, source),
+        ExprKind::Binary { op, left, right } => {
+            let operand = match binary_operand_type(*op, left.ty, right.ty) {
+                InferredType::UntypedInt if op.is_arith() || op.is_bitwise() => context,
+                joined => joined,
+            };
+            reject_out_of_range_literals(left, operand, source)?;
+            reject_out_of_range_literals(right, operand, source)
+        }
+        ExprKind::Conditional {
+            condition,
+            consequent,
+            alternate,
+        } => {
+            reject_out_of_range_literals(condition, InferredType::Bool, source)?;
+            reject_out_of_range_literals(consequent, context, source)?;
+            reject_out_of_range_literals(alternate, context, source)
+        }
+        ExprKind::Call { args, params, .. } => {
+            for (i, arg) in args.iter().enumerate() {
+                reject_out_of_range_literals(arg, argument_type(params, i), source)?;
+            }
+            Ok(())
+        }
+        ExprKind::Index { object, index } => {
+            reject_out_of_range_literals(object, InferredType::Unknown, source)?;
+            reject_out_of_range_literals(index, InferredType::Unknown, source)
+        }
+        ExprKind::Member { object, .. } => {
+            reject_out_of_range_literals(object, InferredType::Unknown, source)
+        }
+        ExprKind::BytesView { source: of, len } => {
+            reject_out_of_range_literals(of, InferredType::Unknown, source)?;
+            match len {
+                Some(len) => reject_out_of_range_literals(len, InferredType::Unknown, source),
+                None => Ok(()),
+            }
+        }
+        ExprKind::NumberLit(_)
+        | ExprKind::StringLit { .. }
+        | ExprKind::BytesLit { .. }
+        | ExprKind::BoolLit(_)
+        | ExprKind::NullLit
+        | ExprKind::Ident(_)
+        | ExprKind::Raw(_) => Ok(()),
+    }
+}
+
+/// `node`, the integer literal `text` (negated when `negated`), refused when
+/// `context` is an integer type that cannot hold its value.
+fn literal_fits(
+    node: &TypedExpr,
+    text: &str,
+    negated: bool,
+    context: InferredType,
+    source: &str,
+) -> Result<(), Refusal> {
+    let InferredType::Int { signed, bits } = context.strip_quantity() else {
+        return Ok(());
+    };
+    let (min, max): (i128, i128) = if signed {
+        (-(1i128 << (bits - 1)), (1i128 << (bits - 1)) - 1)
+    } else {
+        (0, (1i128 << bits) - 1)
+    };
+    // `None` is a literal wider than any backend's integer, which no
+    // declared type holds.
+    let fits = integer_literal_value(text).is_some_and(|magnitude| {
+        let value = i128::from(magnitude);
+        (min..=max).contains(&if negated { -value } else { value })
+    });
+    if fits {
+        return Ok(());
+    }
+    Err(ExprError::LiteralOutOfRange {
+        literal: node
+            .span
+            .clone()
+            .and_then(|span| source.get(span))
+            .unwrap_or(text)
+            .to_string(),
+        ty: context.strip_quantity().describe(),
+        min: min.to_string(),
+        max: max.to_string(),
+    }
+    .at(node.span.clone()))
+}
+
+/// The value of an integer literal as the lexer spells it — decimal, or
+/// `0x`/`0b`/`0o` prefixed — or `None` past `u64`, the widest integer any
+/// backend declares.
+fn integer_literal_value(text: &str) -> Option<u64> {
+    let (digits, radix) = match text.get(..2) {
+        Some("0x" | "0X") => (&text[2..], 16),
+        Some("0b" | "0B") => (&text[2..], 2),
+        Some("0o" | "0O") => (&text[2..], 8),
+        _ => (text, 10),
+    };
+    u64::from_str_radix(digits, radix).ok()
 }
 
 /// Refuse a call of a function `ctx` registers — an imported function, a
@@ -6258,6 +6390,46 @@ mod tests {
         .unwrap_err()
         .to_string();
         assert!(err.contains("hex/binary/octal"), "error: {err}");
+    }
+
+    #[test]
+    fn an_integer_literal_must_fit_the_type_it_takes() {
+        let ctx = TypeCtx::new();
+        let judged = |expr: &str, to: InferredType| {
+            transpile_typed(expr, ExprTarget::Rust, &ctx, &empty_renames(), to)
+                .map(|_| ())
+                .map_err(|refusal| refusal.to_string())
+        };
+        // Each type's edges fit, whatever the radix, and the minus counts.
+        for (expr, to) in [
+            ("255", int(false, 8)),
+            ("0xFF", int(false, 8)),
+            ("0b11111111", int(false, 8)),
+            ("0o377", int(false, 8)),
+            ("-128", int(true, 8)),
+            ("127", int(true, 8)),
+            ("0", int(false, 8)),
+            ("18446744073709551615", int(false, 64)),
+            ("-9223372036854775808", int(true, 64)),
+        ] {
+            assert_eq!(judged(expr, to), Ok(()), "{expr} as {}", to.describe());
+        }
+        // One past each edge does not, nor does a literal wider than 64 bits.
+        for (expr, to) in [
+            ("256", int(false, 8)),
+            ("0x100", int(false, 8)),
+            ("-129", int(true, 8)),
+            ("128", int(true, 8)),
+            ("-1", int(false, 8)),
+            ("18446744073709551616", int(false, 64)),
+            ("99999999999999999999999", int(true, 64)),
+        ] {
+            let refusal = judged(expr, to).expect_err(expr);
+            assert!(refusal.contains("does not fit in"), "{expr}: {refusal}");
+        }
+        // A real context, or none, holds any integer literal.
+        assert_eq!(judged("300", float(64)), Ok(()));
+        assert_eq!(judged("300", InferredType::Unknown), Ok(()));
     }
 
     #[test]

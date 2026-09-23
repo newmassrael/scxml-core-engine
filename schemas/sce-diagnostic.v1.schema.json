@@ -145,6 +145,7 @@
         "expression/type-coercion",
         "expression/type-mismatch",
         "expression/argument-count-mismatch",
+        "expression/literal-out-of-range",
         "expression/go-ternary-unsupported",
         "import/file-not-found",
         "import/kind-mismatch",

@@ -4596,6 +4596,25 @@ pub enum ExprError {
         actual: usize,
     },
 
+    /// An integer literal the type it takes cannot hold — the type of the
+    /// place it lands in, of the operand it meets, or of the parameter it is
+    /// passed to. A leading minus belongs to the literal: `-128` fits an
+    /// `int8`, and `-1` fits no unsigned type.
+    ///
+    /// `literal` is the literal as the author wrote it, which the wire
+    /// reports as `actual`; `min` and `max` bound the type.
+    ///
+    /// ⚠ Nothing judged this before 2026-09-24: `300` as a `uint8` local's
+    /// initial value generated on every backend; rustc and `go build`
+    /// refused it, C, C++ and Kotlin made it 44, and Python kept 300.
+    #[error("{literal} does not fit in {ty}, which holds {min} to {max}")]
+    LiteralOutOfRange {
+        literal: String,
+        ty: String,
+        min: String,
+        max: String,
+    },
+
     /// A conditional expression the Go emitter cannot give a result type.
     /// Go lowers `c ? a : b` to a typed function literal, so it needs a type
     /// it can spell; neither the slot the value flows into nor the

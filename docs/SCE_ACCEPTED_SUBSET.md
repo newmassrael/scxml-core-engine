@@ -1324,12 +1324,23 @@ no typed interpretation or are explicitly excluded:
   transform, condition, lookup or interpolation, a `<sce:helper>`, a
   stateful import's method — with more or fewer arguments than it takes
   — `expression/argument-count-mismatch`, placed at the callee.
+- An integer literal the type it takes cannot hold —
+  `expression/literal-out-of-range`, placed at the literal. A literal
+  takes the type of the place it lands in, of the operand it meets, or of
+  the parameter it is passed to; a leading minus is part of it, so `-128`
+  stands as an `int8` and `-1` as no unsigned type, and a literal wider
+  than 64 bits stands as none. ⚠ Until 2026-09-24 nothing judged it:
+  `300` as a `uint8`'s initial value generated on all six backends —
+  rustc and `go build` refused it, C, C++ and Kotlin made it 44, and
+  Python kept 300.
 - Free-form tokens not part of the grammar —
   `expression/unsupported-construct`, `expression/unexpected-token`,
   `expression/invalid-lvalue`, `expression/type-coercion`,
-  `expression/parse-mismatch`, `expression/lex`,
-  `expression/empty`, and numeric-parse failures on integer literal
-  overflow, which dispatch as `validation/numeric-parse`.
+  `expression/parse-mismatch`, `expression/lex` and `expression/empty`.
+  ⚠ This line also said an integer literal's overflow dispatches as
+  `validation/numeric-parse`; no expression literal reaches that code,
+  which judges attribute values — measured 2026-09-24, an expression
+  compared with `99999999999999999999999` checked clean.
 
 ### §3.4.1 The forge expression vocabulary — four names
 
@@ -3174,6 +3185,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `expression/type-coercion` | Expression |
 | `expression/type-mismatch` | Expression |
 | `expression/argument-count-mismatch` | Expression |
+| `expression/literal-out-of-range` | Expression |
 | `expression/go-ternary-unsupported` | Expression |
 | `import/file-not-found` | Import |
 | `import/kind-mismatch` | Import |

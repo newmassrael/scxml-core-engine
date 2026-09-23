@@ -1005,6 +1005,11 @@ pub enum DiagnosticCode {
     ExpressionTypeMismatch,
     #[serde(rename = "expression/argument-count-mismatch")]
     ExpressionArgumentCountMismatch,
+    // An integer literal the type it takes cannot hold: judged once, so a
+    // document is not refused by two backends' compilers and wrapped or kept
+    // by the other four.
+    #[serde(rename = "expression/literal-out-of-range")]
+    ExpressionLiteralOutOfRange,
     #[serde(rename = "expression/go-ternary-unsupported")]
     ExpressionGoTernaryUnsupported,
 
@@ -3174,6 +3179,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ExpressionTypeCoercion,
         ExpressionTypeMismatch,
         ExpressionArgumentCountMismatch,
+        ExpressionLiteralOutOfRange,
         ExpressionGoTernaryUnsupported,
         // Import
         ImportFileNotFound,
@@ -3673,6 +3679,7 @@ impl DiagnosticCode {
             | ExpressionTypeCoercion
             | ExpressionTypeMismatch
             | ExpressionArgumentCountMismatch
+            | ExpressionLiteralOutOfRange
             | ExpressionGoTernaryUnsupported => Some("SCE Forge §3.4"),
 
             // ── Mesh deploy.yaml schema (SCE_MESH.md §14) ────────
@@ -4497,6 +4504,7 @@ impl DiagnosticCode {
             ExpressionTypeCoercion => "expression/type-coercion",
             ExpressionTypeMismatch => "expression/type-mismatch",
             ExpressionArgumentCountMismatch => "expression/argument-count-mismatch",
+            ExpressionLiteralOutOfRange => "expression/literal-out-of-range",
             ExpressionGoTernaryUnsupported => "expression/go-ternary-unsupported",
             ImportFileNotFound => "import/file-not-found",
             ImportKindMismatch => "import/kind-mismatch",
@@ -8765,6 +8773,21 @@ fn expression_fields(e: &ExprError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![callee.clone(), expected.to_string(), actual.to_string()],
         },
+        // `expected` names the type the literal takes, metadata as for
+        // `type-mismatch`: which value the document means is its own.
+        ExprError::LiteralOutOfRange {
+            literal,
+            ty,
+            min,
+            max,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ExpressionLiteralOutOfRange,
+            stage: Stage::Expression,
+            expected: Some(vec![ty.clone()]),
+            actual: Some(literal.clone()),
+            fix: None,
+            key_fragments: vec![literal.clone(), ty.clone(), min.clone(), max.clone()],
+        },
         ExprError::GoTernary => DiagnosticPayload {
             code: DiagnosticCode::ExpressionGoTernaryUnsupported,
             stage: Stage::Expression,
@@ -11446,6 +11469,17 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:6a40bf0012c51570","code":"expression/argument-count-mismatch","stage":"expression","spec":"SCE Forge §3.4","message":"matched takes 2 argument(s), not 1","expected":["2"]}"#,
+            ),
+            (
+                "forge/expression-literal-out-of-range",
+                ExprError::LiteralOutOfRange {
+                    literal: "300".into(),
+                    ty: "uint8".into(),
+                    min: "0".into(),
+                    max: "255".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:c081db042818f4b3","code":"expression/literal-out-of-range","stage":"expression","spec":"SCE Forge §3.4","message":"300 does not fit in uint8, which holds 0 to 255","expected":["uint8"],"actual":"300"}"#,
             ),
             (
                 "forge/import-file-not-found",
@@ -14817,11 +14851,13 @@ mod tests {
             | MeshEventSchemaMismatch
             // `expression/type-mismatch`: `expected` is the declared type of
             // the place the value flows into; `expression/argument-count-
-            // mismatch`: the number of arguments the callee takes. Neither
-            // proposes an edit — which value, or which argument, is the
+            // mismatch`: the number of arguments the callee takes;
+            // `expression/literal-out-of-range`: the type the literal takes.
+            // None proposes an edit — which value, or which argument, is the
             // author's.
             | ExpressionTypeMismatch
             | ExpressionArgumentCountMismatch
+            | ExpressionLiteralOutOfRange
             | AlgorithmAppendTypeMismatch => ExpectedIsMetadata,
 
             // ── Deterministic fix or no fix; expected=None ────
@@ -15749,6 +15785,7 @@ mod tests {
                 | ExpressionParseMismatch | ExpressionUnexpectedToken
                 | ExpressionInvalidLvalue | ExpressionTypeCoercion
                 | ExpressionTypeMismatch | ExpressionArgumentCountMismatch
+                | ExpressionLiteralOutOfRange
                 | ExpressionGoTernaryUnsupported | ImportFileNotFound
                 | ImportKindMismatch | ImportNotForge | ImportReadError
                 | ManifestCircularDependency | ManifestIo
@@ -16009,9 +16046,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            384,
+            385,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 384 distinct variants to match the DiagnosticCode \
+             expected 385 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -16691,6 +16728,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             // the host's datamodel, untyped.
             | ExpressionTypeMismatch
             | ExpressionArgumentCountMismatch
+            | ExpressionLiteralOutOfRange
             | ExpressionGoTernaryUnsupported
             | ImportFileNotFound
             | ImportKindMismatch

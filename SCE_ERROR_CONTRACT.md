@@ -605,6 +605,10 @@ Concretely:
   `expression/argument-count-mismatch` populates `expected` with the
   number of arguments the callee takes (e.g. `["2"]`), a cardinality as
   above, and carries no `actual`: the arity is no text of the document.
+  `expression/literal-out-of-range` populates `expected` with the type the
+  literal takes (e.g. `["uint8"]`) and `actual` with the literal as
+  written, a leading minus included; no `fix` — which value is meant is
+  the document's.
 - `validation/attribute-rule-violated` populates `expected` with the
   rule a legal value satisfies (e.g. `["positive integer"]`) and leaves
   `fix` absent. It is `invalid-attribute`'s other half: a value outside a
@@ -770,6 +774,7 @@ references against a real document and drift silently.
 | `expression/invalid-lvalue` | `expression` | no | SCE Forge §3.4 |
 | `expression/lex` | `expression` | no | SCE Forge §3.4 |
 | `expression/literal-not-callable` | `expression` | no | W3C SCXML §B.2 |
+| `expression/literal-out-of-range` | `expression` | no | SCE Forge §3.4 |
 | `expression/member-of-non-record` | `expression` | no | SCE Accepted Subset §2.2 |
 | `expression/namespace-not-a-value` | `expression` | no | W3C SCXML §B.2 |
 | `expression/namespace-not-callable` | `expression` | no | W3C SCXML §B.2 |

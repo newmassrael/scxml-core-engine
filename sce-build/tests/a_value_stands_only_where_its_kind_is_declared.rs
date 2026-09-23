@@ -16,7 +16,9 @@
 //! on their own, and Rust, Kotlin and Go refused them in their compilers —
 //! the same document built or not by which backend was asked; rustc
 //! refused the real as an `f32` assigned to a `u16`. The only place judged
-//! was `<sce:append>`.
+//! was `<sce:append>`. An integer literal was held to nothing either: `300`
+//! as a `uint8` generated everywhere, and rustc and `go build` refused it
+//! while C, C++ and Kotlin made it 44 and Python kept 300.
 //!
 //! # What is held
 //!
@@ -24,7 +26,8 @@
 //! refuses the same document with the same record — placed at the value
 //! (or, for a count, the callee) on a row its element does not start on.
 //! The control documents are accepted everywhere: an integer stands as any
-//! integer width or as a real, and a string stands as bytes.
+//! integer width or as a real, a literal as any type that holds it, and a
+//! string stands as bytes.
 //!
 //! A callee's parameters are the ones its own document declares — an
 //! algorithm's `<sce:signature>`, an interpolation's inputs, one per axis.
@@ -253,8 +256,8 @@ const PROBE_MATCH: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 
 /// Everything the rule must still accept: an integer where a wider or a
 /// narrower integer is declared, or a real; a real made whole by `round`;
-/// a string literal read as bytes; and a call whose arguments are the
-/// kinds its parameters declare.
+/// literals at the very edges of their types; a string literal read as
+/// bytes; and a call whose arguments are the kinds its parameters declare.
 const CONTROL: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_control" version="1.0">
   <sce:import kind="algorithm" src="probe_match.scxml" as="matched"/>
@@ -268,8 +271,56 @@ const CONTROL: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
     <sce:var name="low" type="uint8" init="reading"/>
     <sce:var name="ratio" type="float64" init="reading"/>
     <sce:var name="scaled" type="uint16" init="round(ratio * 1.5)"/>
+    <sce:var name="edge" type="int8" init="-128"/>
+    <sce:var name="full" type="uint8" init="0xFF"/>
+    <sce:var name="top" type="uint8" init="255"/>
     <sce:var name="same" type="bool" init="frame === 'ab'"/>
     <sce:return expr="matched(same, reading)"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// `300` as a `uint8` local's initial value.
+const LITERAL_LOCAL: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_literal_local" version="1.0">
+  <sce:signature>
+    <sce:param name="reading" type="uint16"/>
+    <sce:return type="uint8"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="n" type="uint8"
+             init="300"/>
+    <sce:return expr="n"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// `300` meeting a `uint8` operand: the literal takes its partner's type,
+/// whatever the result flows into.
+const LITERAL_OPERAND: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_literal_operand" version="1.0">
+  <sce:signature>
+    <sce:param name="reading" type="uint8"/>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return
+        expr="reading + 300"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// `-1` passed to a `uint16` parameter — the minus is part of the literal.
+const LITERAL_NEGATIVE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_literal_negative" version="1.0">
+  <sce:import kind="algorithm" src="probe_match.scxml" as="matched"/>
+  <sce:signature>
+    <sce:param name="reading" type="uint16"/>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return
+        expr="matched(true, -1)"/>
   </sce:body>
 </scxml>
 "#;
@@ -400,6 +451,30 @@ const CASES: &[Case] = &[
         line: 11,
         col: 21,
         actual: Some("smoother.update(rawSample)"),
+    },
+    Case {
+        file: "probe_literal_local.scxml",
+        document: LITERAL_LOCAL,
+        code: "expression/literal-out-of-range",
+        line: 9,
+        col: 20,
+        actual: Some("300"),
+    },
+    Case {
+        file: "probe_literal_operand.scxml",
+        document: LITERAL_OPERAND,
+        code: "expression/literal-out-of-range",
+        line: 9,
+        col: 25,
+        actual: Some("300"),
+    },
+    Case {
+        file: "probe_literal_negative.scxml",
+        document: LITERAL_NEGATIVE,
+        code: "expression/literal-out-of-range",
+        line: 10,
+        col: 29,
+        actual: Some("-1"),
     },
 ];
 
