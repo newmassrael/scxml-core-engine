@@ -3342,6 +3342,10 @@ fn install_rewrite_filters(env: &mut Environment<'_>, syntax: Syntax) {
     env.add_filter(crate::literal_text::GUARD, crate::literal_text::guard);
 }
 
+/// Every rewritten template text this process has produced, by the syntax
+/// it was rewritten for and then by the text it was rewritten from.
+type RewrittenTemplates = HashMap<Syntax, HashMap<String, Arc<str>>>;
+
 /// A template's text as [`register_template`] hands it to minijinja: every
 /// value written into a comment encoded for the comment, every value written
 /// into a string literal escaped or guarded for it.
@@ -3361,7 +3365,7 @@ fn rewritten_template(
     content: &str,
     syntax: Syntax,
 ) -> Result<Arc<str>, minijinja::Error> {
-    static REWRITTEN: OnceLock<Mutex<HashMap<Syntax, HashMap<String, Arc<str>>>>> = OnceLock::new();
+    static REWRITTEN: OnceLock<Mutex<RewrittenTemplates>> = OnceLock::new();
     let memo = REWRITTEN.get_or_init(Default::default);
     let known = memo
         .lock()
