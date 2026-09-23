@@ -11,8 +11,9 @@ use crate::forge::symbol_mangling;
 use crate::model::SCXMLModel;
 use crate::template_lexing::Syntax;
 use minijinja::Environment;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 /// The declarations the ECMAScript filters resolve authored names
 /// against, for one document.
@@ -3312,17 +3313,26 @@ pub fn register_template(
     content: &str,
     backend: Language,
 ) -> Result<(), minijinja::Error> {
-    // The rewrite writes the filter, so the door that writes it registers it.
-    // Every environment that renders a template has come through here, which
-    // `new_env` alone could not promise: mesh builds its own environment, and
-    // there the rewritten header would have failed to render with an unknown
-    // filter.
+    let syntax = Syntax::of_template(&name, backend);
+    install_rewrite_filters(env, syntax);
+    let encoded = rewritten_template(&name, content, syntax)?;
+    env.add_template_owned(name, encoded.to_string())
+}
+
+/// The filters [`rewritten_template`] writes calls to, for a template of
+/// `syntax`.
+///
+/// The rewrite writes the filter, so the door that writes it registers it.
+/// Every environment that renders a template has come through here, which
+/// `new_env` alone could not promise: mesh builds its own environment, and
+/// there the rewritten header would have failed to render with an unknown
+/// filter.
+fn install_rewrite_filters(env: &mut Environment<'_>, syntax: Syntax) {
     env.add_filter(crate::comment_text::FILTER, crate::comment_text::filter);
     env.add_filter(
         crate::comment_text::DIRECTIVE_GUARD,
         crate::comment_text::directive_guard,
     );
-    let syntax = Syntax::of_template(&name, backend);
     // Same door, second class of place. A value landing in a COMMENT is
     // encoded for the comment; a value landing in a STRING LITERAL is escaped
     // for the literal, or guarded where the literal is raw and admits no
@@ -3330,6 +3340,39 @@ pub fn register_template(
     // other — so the passes compose and order does not matter.
     crate::filters::register_literal_escaper(env, syntax);
     env.add_filter(crate::literal_text::GUARD, crate::literal_text::guard);
+}
+
+/// A template's text as [`register_template`] hands it to minijinja: every
+/// value written into a comment encoded for the comment, every value written
+/// into a string literal escaped or guarded for it.
+///
+/// Computed once per process for each text and syntax. The rewrite is a
+/// function of those two alone — the property [`register_template`]'s own
+/// paragraph rests on — and it is the costly part of loading a template, which
+/// classifies every character several times over. `generate-w3c` builds a
+/// fresh environment for each of its 202 documents, and `forge_conformance`
+/// one for each of its compiles, so recomputing it paid that cost once per
+/// document for text that had not changed. Measured 2026-09-24 with a debug
+/// `sce-codegen` on one tree: `generate-w3c -l rust` took 800s before this
+/// and [`load_templates`] reading on demand, and 35s after, writing the same
+/// bytes.
+fn rewritten_template(
+    name: &str,
+    content: &str,
+    syntax: Syntax,
+) -> Result<Arc<str>, minijinja::Error> {
+    static REWRITTEN: OnceLock<Mutex<HashMap<Syntax, HashMap<String, Arc<str>>>>> = OnceLock::new();
+    let memo = REWRITTEN.get_or_init(Default::default);
+    let known = memo
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get(&syntax)
+        .and_then(|texts| texts.get(content))
+        .cloned();
+    if let Some(text) = known {
+        return Ok(text);
+    }
+
     let encoded = crate::comment_text::encode_template_comments(content, syntax).into_owned();
     let encoded =
         crate::literal_text::encode_template_literals(&encoded, syntax).map_err(|sites| {
@@ -3345,7 +3388,13 @@ pub fn register_template(
                 ),
             )
         })?;
-    env.add_template_owned(name, encoded.into_owned())
+    let text: Arc<str> = Arc::from(encoded.as_ref());
+    memo.lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .entry(syntax)
+        .or_default()
+        .insert(content.to_owned(), Arc::clone(&text));
+    Ok(text)
 }
 
 /// Load templates from pre-loaded string pairs (WASM-compatible).
@@ -3362,22 +3411,35 @@ fn load_template_strings(
     Ok(())
 }
 
-/// Recursively load all .jinja2 templates from a directory.
+/// Make every .jinja2 template under a directory loadable by `env`.
 ///
-/// SCE Protocol-Synthesis RFC §synth-5-O (generated-source traceability) — also loads the workspace-
-/// shared `_macros/` directory (one level up from the per-backend
-/// template root) so cross-backend shared macros like
+/// SCE Protocol-Synthesis RFC §synth-5-O (generated-source traceability) — the
+/// scope also holds the workspace-shared `_macros/` directory (one level up
+/// from the per-backend template root) so cross-backend shared macros like
 /// `_macros/sce_map_marker.jinja2` are visible to every language
 /// that calls `find_template_dir_for`. Cpp / C11 already pass the
 /// template root (their `subdir = ""`); Rust / Kotlin / Go / Python
-/// pass a per-language subdir, so without the shared-macro loader
+/// pass a per-language subdir, so without the shared-macro scope
 /// they would lose access to the cross-backend macro family. The
-/// shared load skips silently when `_macros/` is absent (vendored
+/// shared scope is simply absent when `_macros/` is (vendored
 /// builds without the macro tree).
 ///
+/// A template is read when a render first names it — by `get_template` or by
+/// another template's `import` / `include` — and not before, so a backend pays
+/// for the templates it renders rather than for everything its scope can see.
+/// That difference is most of a C++ or C11 run: both scope to the tree root,
+/// so reading everything up front put all 288 templates of every backend,
+/// forge and mesh through [`register_template`]'s rewrite for a render that
+/// uses a few dozen — measured 2026-09-24 on a one-state document with a debug
+/// `sce-codegen`, 19.6s for C++ and 15.9s for C11 against 1.5s for Go. Read on
+/// demand, the same document takes 2.7s for C++ and 3.8s for C11.
+///
+/// The scope is [`loader_template_files`], the list the depfile writer reports,
+/// so what a depfile names and what a render can read are one list.
+///
 /// `backend` is the backend the environment renders for. Every template goes
-/// through [`register_template`], which needs it to read a template whose
-/// name carries no language extension.
+/// through the rewrite [`register_template`] applies, which needs it to read a
+/// template whose name carries no language extension.
 pub fn load_templates(
     env: &mut Environment<'_>,
     dir: &Path,
@@ -3389,13 +3451,41 @@ pub fn load_templates(
             dir.display()
         )));
     }
-    load_templates_recursive(env, dir, dir, backend)?;
-    if let Some((macro_base, macro_dir)) = shared_macro_dir(dir) {
-        // base_dir = the parent so loaded names start with `_macros/...`
-        // — matching the path callers use in
-        // `{% import "_macros/sce_map_marker.jinja2" as sce_map %}`.
-        load_templates_recursive(env, &macro_base, &macro_dir, backend)?;
+    let mut scope: HashMap<String, PathBuf> = HashMap::new();
+    for (name, path) in loader_template_files(dir) {
+        if let Some(earlier) = scope.insert(name.clone(), path.clone()) {
+            // Reading everything up front let the later file win in silence;
+            // which one a render reads must not depend on walk order.
+            return Err(GenerateError::TemplateLoad(format!(
+                "two templates answer to {name}: {} and {}",
+                earlier.display(),
+                path.display()
+            )));
+        }
     }
+    // The loader runs inside a render and cannot reach the environment, so
+    // every filter a rewritten template may call is installed now — the same
+    // set reading everything up front installed.
+    let syntaxes: BTreeSet<Syntax> = scope
+        .keys()
+        .map(|name| Syntax::of_template(name, backend))
+        .collect();
+    for syntax in syntaxes {
+        install_rewrite_filters(env, syntax);
+    }
+    env.set_loader(move |name| {
+        let Some(path) = scope.get(name) else {
+            return Ok(None);
+        };
+        let content = std::fs::read_to_string(path).map_err(|e| {
+            minijinja::Error::new(
+                minijinja::ErrorKind::InvalidOperation,
+                format!("Cannot read template {}: {e}", path.display()),
+            )
+        })?;
+        let text = rewritten_template(name, &content, Syntax::of_template(name, backend))?;
+        Ok(Some(text.to_string()))
+    });
     Ok(())
 }
 
@@ -3420,8 +3510,9 @@ fn shared_macro_dir(dir: &Path) -> Option<(PathBuf, PathBuf)> {
     None
 }
 
-/// Every template file [`load_templates`] would register for `dir`, as
-/// `(registered name, path on disk)`.
+/// Every template file [`load_templates`] can read for `dir`, as
+/// `(registered name, path on disk)` — the loader's scope itself, not a
+/// description of it.
 ///
 /// Exists so a depfile can state what the render could read without
 /// re-deriving the loader's scope. Deriving it separately is not a
@@ -3431,9 +3522,10 @@ fn shared_macro_dir(dir: &Path) -> Option<(PathBuf, PathBuf)> {
 /// Editing `_macros/sce_map_marker.jinja2` therefore left their output
 /// stale while the build reported success.
 ///
-/// The name is the same string [`load_templates`] hands to
-/// `add_template_owned` — root-relative, `/`-separated, and the spelling
-/// a template's own `{% import %}` uses. It is returned rather than left
+/// The name is the one [`load_templates`] answers to — root-relative,
+/// `/`-separated, and the spelling a template's own `{% import %}` uses.
+/// A directory the walk cannot read contributes nothing, so a render that
+/// needs a template under it fails naming that template. It is returned rather than left
 /// for the caller to reconstruct because reconstruction is what broke:
 /// the depfile writer matched `Language::foreign_template_prefixes`,
 /// which are relative by definition, against each template's *absolute*
@@ -3473,41 +3565,6 @@ pub fn loader_template_files(dir: &Path) -> Vec<(String, PathBuf)> {
     found.sort();
     found.dedup();
     found
-}
-
-fn load_templates_recursive(
-    env: &mut Environment<'_>,
-    base_dir: &Path,
-    current_dir: &Path,
-    backend: Language,
-) -> Result<(), GenerateError> {
-    let entries = std::fs::read_dir(current_dir).map_err(|e| {
-        GenerateError::TemplateLoad(format!("Cannot read {}: {e}", current_dir.display()))
-    })?;
-
-    for entry in entries {
-        let entry =
-            entry.map_err(|e| GenerateError::TemplateLoad(format!("Dir entry error: {e}")))?;
-        let path = entry.path();
-        if path.is_dir() {
-            load_templates_recursive(env, base_dir, &path, backend)?;
-        } else if path.extension().and_then(|e| e.to_str()) == Some("jinja2") {
-            let rel = path
-                .strip_prefix(base_dir)
-                .map_err(|e| GenerateError::TemplateLoad(format!("Path error: {e}")))?;
-            let template_name = rel.to_string_lossy().replace('\\', "/");
-            let content = std::fs::read_to_string(&path).map_err(|e| {
-                GenerateError::TemplateLoad(format!("Cannot read template {}: {e}", path.display()))
-            })?;
-            register_template(env, template_name, &content, backend).map_err(|e| {
-                GenerateError::TemplateLoad(format!(
-                    "Template parse error in {}: {e}",
-                    path.display()
-                ))
-            })?;
-        }
-    }
-    Ok(())
 }
 
 // ── C++ post-processing ────────────────────────────────────────

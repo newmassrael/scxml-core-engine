@@ -32,8 +32,11 @@ roxmltree = "0.20"
 # `xsd_validator::validate_or_skip` returns `NotValidated(FeatureDisabled)` and
 # the parser reports it.
 libxml = { version = "0.3", optional = true }
-# Jinja2-compatible template engine (renders existing .jinja2 templates)
-minijinja = { version = "2", features = ["builtins"] }
+# Jinja2-compatible template engine (renders existing .jinja2 templates).
+# `loader` lets an environment read a template when a render first names it,
+# so a backend pays for the templates it renders rather than for the tree —
+# see `generator::load_templates`. It adds no dependency.
+minijinja = { version = "2", features = ["builtins", "loader"] }
 # Serialization for template context
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

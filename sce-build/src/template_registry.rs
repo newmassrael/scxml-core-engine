@@ -259,15 +259,18 @@ mod tests {
     ///
     /// Equality here is what makes the two sources interchangeable; if
     /// they drift, native output and WASM output drift with them.
+    ///
+    /// The filesystem side is the loader's scope. The environment itself
+    /// cannot be asked any more: it reads a template when a render names
+    /// it, so right after loading it holds none.
     #[test]
     fn embedded_set_matches_the_filesystem_set() {
         for &language in SUPPORTED_LANGUAGES {
             let dir = crate::find_template_dir_for(language);
-            let mut env = crate::generator::new_env();
-            crate::generator::load_templates(&mut env, &dir, language)
-                .expect("filesystem templates load");
-            let mut from_disk: Vec<String> =
-                env.templates().map(|(name, _)| name.to_string()).collect();
+            let mut from_disk: Vec<String> = crate::generator::loader_template_files(&dir)
+                .into_iter()
+                .map(|(name, _)| name)
+                .collect();
             let mut from_registry: Vec<String> = embedded_templates_for(language)
                 .iter()
                 .map(|&(name, _)| name.to_string())
@@ -278,6 +281,39 @@ mod tests {
                 from_disk, from_registry,
                 "{language:?}: embedded registry and filesystem tree disagree"
             );
+        }
+    }
+
+    /// Every template a language's loader can read, loads: the rewrite
+    /// accepts it and minijinja compiles it.
+    ///
+    /// Reading every template up front used to prove this on each run, as a
+    /// side effect nobody had to ask for. A template is now read only when a
+    /// render names it, so one no fixture renders — `mesh/cpp/parallel_final`
+    /// sits behind `partition_context_present` — would carry a broken tag or a
+    /// value written into a raw literal until the one render that reaches it.
+    /// This is the side effect, asked for.
+    #[test]
+    fn every_template_in_a_languages_scope_loads() {
+        for &language in SUPPORTED_LANGUAGES {
+            let dir = crate::find_template_dir_for(language);
+            let mut env = crate::generator::new_env();
+            crate::generator::load_templates(&mut env, &dir, language)
+                .expect("filesystem templates load");
+            let scope = crate::generator::loader_template_files(&dir);
+            assert!(
+                !scope.is_empty(),
+                "{language:?} has no templates in scope at {}",
+                dir.display()
+            );
+            for (name, path) in scope {
+                if let Err(e) = env.get_template(&name) {
+                    panic!(
+                        "{language:?}: {name} ({}) does not load: {e:#}",
+                        path.display()
+                    );
+                }
+            }
         }
     }
 }
