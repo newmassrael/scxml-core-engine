@@ -126,4 +126,58 @@ class SmokeTests {
         assertEquals(1, snapshot.size)
         assertEquals(2, b.size)
     }
+
+    @Test
+    fun listBufKeepsSixtyFourBitValuesWhole() {
+        // The values that a 32-bit slot would corrupt: a negative, one past
+        // 2^32, and both ends of the range.
+        val b = SceListBuf(2)
+        b.add(-5L)
+        b.add(5_000_000_001L)
+        b.add(Long.MIN_VALUE)
+        b.add(Long.MAX_VALUE)
+        assertTrue(
+            longArrayOf(-5L, 5_000_000_001L, Long.MIN_VALUE, Long.MAX_VALUE)
+                .contentEquals(b.toLongArray())
+        )
+    }
+
+    @OptIn(ExperimentalUnsignedTypes::class)
+    @Test
+    fun listBufRoundTripsUnsignedBits() {
+        // ULong.MAX_VALUE is -1 as a Long; the unsigned view must give the
+        // unsigned value back, not the signed reading of its bits.
+        val b = SceListBuf(1)
+        b.add(ULong.MAX_VALUE)
+        b.add(0x8000_0000u.toULong())
+        assertEquals(ULong.MAX_VALUE, b.toULongArray()[0])
+        assertEquals(0x8000_0000uL, b.toULongArray()[1])
+
+        val narrow = SceListBuf(1)
+        narrow.add(UByte.MAX_VALUE)
+        assertEquals(UByte.MAX_VALUE, narrow.toUByteArray()[0])
+    }
+
+    @Test
+    fun listBufRoundTripsFloatsAndBools() {
+        // A float goes through the raw bits of a Double, which is exact for
+        // every Float; -0.0 and NaN are the values a numeric cast would lose.
+        val d = SceListBuf(0)
+        d.add(-0.0)
+        d.add(Double.NaN)
+        d.add(0.1)
+        val out = d.toDoubleArray()
+        assertEquals((-0.0).toRawBits(), out[0].toRawBits())
+        assertTrue(out[1].isNaN())
+        assertEquals(0.1, out[2])
+
+        val f = SceListBuf(0)
+        f.add(1.1f)
+        assertEquals(1.1f, f.toFloatArray()[0])
+
+        val flags = SceListBuf(0)
+        flags.add(true)
+        flags.add(false)
+        assertTrue(booleanArrayOf(true, false).contentEquals(flags.toBooleanArray()))
+    }
 }

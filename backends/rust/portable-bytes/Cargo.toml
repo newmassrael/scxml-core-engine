@@ -9,7 +9,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "Profile-portable owned bytes storage (SceBytes<N>) shared by the codec and statechart-emit runtimes: unbounded Vec<u8> under the `alloc` feature, fixed heapless::Vec<u8, N> without it. One definition so the construction logic never drifts between the two consumers."
+description = "Profile-portable owned bytes and scalar-list storage (SceBytes<N>, SceOwnedList<T, N>) shared by the codec, statechart-emit and algorithm runtimes: unbounded Vec<T> under the `alloc` feature, fixed heapless::Vec<T, N> without it. One definition so the construction logic never drifts between the consumers."
 
 [lib]
 name = "sce_portable_bytes"

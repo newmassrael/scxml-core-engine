@@ -11,6 +11,12 @@
 //! logic (the fallible no-alloc copy, the advisory-`N` alloc copy) lives in
 //! exactly one place and cannot drift between the two consumers.
 //!
+//! The storage is generic over its element: [`HeapList`] / [`InlineList`]
+//! hold any `T: Copy`, and the byte types are their `u8` instances. The
+//! algorithm kind's `list<T>` buffers (SCE_FORGE.md §4.12) use the same two
+//! types, so a byte buffer and a list of `int64` grow, bound and report
+//! [`CapacityExceeded`] by one definition.
+//!
 //! `N` rides on the newtype rather than being erased to a bare `Vec<u8>`
 //! alias under `alloc`: a hand-assembled owner (a codec encode-side builder,
 //! or a typed-event inject caller) then infers the cap from the destination
@@ -44,25 +50,49 @@ extern crate alloc;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CapacityExceeded;
 
-/// Growable owned byte storage: wraps `Vec<u8>`, so `N` is advisory — the
+/// Growable owned sequence of `T`: wraps `Vec<T>`, so `N` is advisory — the
 /// on-wire protocol caps no payload, and the application-processor profile
 /// must not either. `N` still rides on the type so a downstream owned-builder
 /// infers the cap from the field rather than hardcoding it, and so a value can
-/// be transcoded into [`InlineBytes`] of the matching capacity.
+/// be transcoded into [`InlineList`] of the matching capacity.
+///
+/// Bytes are the `T = u8` case ([`HeapBytes`]); the algorithm kind's
+/// `list<T>` locals and returns are every other fixed-width scalar. One
+/// definition serves both, so the byte buffer and the list cannot drift in
+/// how they grow, bound or report overflow.
 #[cfg(feature = "alloc")]
 #[repr(transparent)]
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct HeapBytes<const N: usize>(alloc::vec::Vec<u8>, core::marker::PhantomData<[u8; N]>);
+pub struct HeapList<T, const N: usize>(alloc::vec::Vec<T>, core::marker::PhantomData<[T; N]>);
 
-/// Fixed-capacity owned byte storage: wraps `heapless::Vec<u8, N>` (the C11
-/// `char[N]` analog), so the value never allocates and `N` is a hard bound.
+/// Fixed-capacity owned sequence of `T`: wraps `heapless::Vec<T, N>` (the C11
+/// `T[N]` analog), so the value never allocates and `N` is a hard bound.
 ///
-/// Compiled on every profile — including alongside [`HeapBytes`] under `alloc`
+/// Compiled on every profile — including alongside [`HeapList`] under `alloc`
 /// — so a heap-capable program can still hold values that are guaranteed not
 /// to allocate.
 #[repr(transparent)]
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct InlineBytes<const N: usize>(heapless::Vec<u8, N>);
+pub struct InlineList<T, const N: usize>(heapless::Vec<T, N>);
+
+/// Growable owned byte storage — [`HeapList`] of `u8`.
+#[cfg(feature = "alloc")]
+pub type HeapBytes<const N: usize> = HeapList<u8, N>;
+
+/// Fixed-capacity owned byte storage — [`InlineList`] of `u8`.
+pub type InlineBytes<const N: usize> = InlineList<u8, N>;
+
+/// The list storage profile this build treats as the default, as
+/// [`SceBytes`] is for bytes.
+///
+/// ⚠ Named `SceOwnedList`, not `SceList`: `sce-forge-runtime` re-exports this
+/// crate's types and already defines a `SceList` TRAIT (its codec list
+/// containers), so the shorter name would collide there.
+#[cfg(feature = "alloc")]
+pub type SceOwnedList<T, const N: usize> = HeapList<T, N>;
+/// no-alloc build: the default list profile is the fixed-capacity form.
+#[cfg(not(feature = "alloc"))]
+pub type SceOwnedList<T, const N: usize> = InlineList<T, N>;
 
 /// The byte storage profile this build treats as the default: [`HeapBytes`]
 /// where an allocator is available, [`InlineBytes`] on the heap-free tier.
@@ -77,73 +107,73 @@ pub type SceBytes<const N: usize> = HeapBytes<N>;
 pub type SceBytes<const N: usize> = InlineBytes<N>;
 
 #[cfg(feature = "alloc")]
-impl<const N: usize> HeapBytes<N> {
-    /// Copy a borrowed `&[u8]` view into the owned form. The heap copy is
+impl<T: Copy, const N: usize> HeapList<T, N> {
+    /// Copy a borrowed `&[T]` view into the owned form. The heap copy is
     /// unbounded (`N` advisory), but the return stays a `Result` so a
     /// generated `try_into_owned` threads one `?` on every profile and the
     /// two profiles keep one call shape.
-    pub fn from_slice(s: &[u8]) -> Result<Self, CapacityExceeded> {
+    pub fn from_slice(s: &[T]) -> Result<Self, CapacityExceeded> {
         Ok(Self(s.to_vec(), core::marker::PhantomData))
     }
 
-    /// Borrow the owned bytes back as a slice — the projection an owned
+    /// Borrow the owned elements back as a slice — the projection an owned
     /// value's `as_borrowed` re-uses.
-    pub fn as_slice(&self) -> &[u8] {
+    pub fn as_slice(&self) -> &[T] {
         self.0.as_slice()
     }
 
     /// An empty buffer that grows on demand. Used by the algorithm kind's
-    /// `<sce:var type="bytes" capacity="N">` to seed a buffer that `push` /
-    /// `extend_from_slice` then fill.
+    /// `<sce:var type="bytes" capacity="N">` and `type="list<T>"` locals to
+    /// seed a buffer that `push` / `extend_from_slice` then fill.
     pub fn new() -> Self {
-        Self::default()
+        Self(alloc::vec::Vec::new(), core::marker::PhantomData)
     }
 
-    /// Append one byte. The heap form grows, so this never reports overflow;
-    /// the `Result` matches [`InlineBytes::push`] so a generated byte-building
-    /// algorithm threads one `?` per append rather than branching on the
-    /// allocator.
-    pub fn push(&mut self, b: u8) -> Result<(), CapacityExceeded> {
-        self.0.push(b);
+    /// Append one element. The heap form grows, so this never reports
+    /// overflow; the `Result` matches [`InlineList::push`] so a generated
+    /// buffer-building algorithm threads one `?` per append rather than
+    /// branching on the allocator.
+    pub fn push(&mut self, v: T) -> Result<(), CapacityExceeded> {
+        self.0.push(v);
         Ok(())
     }
 
-    /// Append a borrowed slice. Same contract as [`HeapBytes::push`].
-    pub fn extend_from_slice(&mut self, s: &[u8]) -> Result<(), CapacityExceeded> {
+    /// Append a borrowed slice. Same contract as [`HeapList::push`].
+    pub fn extend_from_slice(&mut self, s: &[T]) -> Result<(), CapacityExceeded> {
         self.0.extend_from_slice(s);
         Ok(())
     }
 }
 
-impl<const N: usize> InlineBytes<N> {
-    /// Copy a borrowed `&[u8]` view into the fixed-capacity form, raising
+impl<T: Copy, const N: usize> InlineList<T, N> {
+    /// Copy a borrowed `&[T]` view into the fixed-capacity form, raising
     /// [`CapacityExceeded`] past `N`.
-    pub fn from_slice(s: &[u8]) -> Result<Self, CapacityExceeded> {
+    pub fn from_slice(s: &[T]) -> Result<Self, CapacityExceeded> {
         heapless::Vec::from_slice(s)
             .map(Self)
             .map_err(|_| CapacityExceeded)
     }
 
-    /// Borrow the owned bytes back as a slice — the projection an owned
+    /// Borrow the owned elements back as a slice — the projection an owned
     /// value's `as_borrowed` re-uses.
-    pub fn as_slice(&self) -> &[u8] {
+    pub fn as_slice(&self) -> &[T] {
         self.0.as_slice()
     }
 
     /// An empty buffer holding the fixed capacity `N` inline.
     pub fn new() -> Self {
-        Self::default()
+        Self(heapless::Vec::new())
     }
 
-    /// Append one byte, raising [`CapacityExceeded`] once the fixed `N` is
+    /// Append one element, raising [`CapacityExceeded`] once the fixed `N` is
     /// full — never silent truncation, never a panic.
-    pub fn push(&mut self, b: u8) -> Result<(), CapacityExceeded> {
-        self.0.push(b).map_err(|_| CapacityExceeded)
+    pub fn push(&mut self, v: T) -> Result<(), CapacityExceeded> {
+        self.0.push(v).map_err(|_| CapacityExceeded)
     }
 
     /// Append a borrowed slice. Either the whole slice is appended or none is
     /// — the bound is checked before copying.
-    pub fn extend_from_slice(&mut self, s: &[u8]) -> Result<(), CapacityExceeded> {
+    pub fn extend_from_slice(&mut self, s: &[T]) -> Result<(), CapacityExceeded> {
         self.0.extend_from_slice(s).map_err(|_| CapacityExceeded)
     }
 }
@@ -159,21 +189,23 @@ impl<const N: usize> InlineBytes<N> {
 /// round-trip tests (`&[u8]`) actually consume.
 macro_rules! byte_view_parity {
     ($storage:ident) => {
-        impl<const N: usize> core::ops::Deref for $storage<N> {
-            type Target = [u8];
-            fn deref(&self) -> &[u8] {
+        impl<T, const N: usize> core::ops::Deref for $storage<T, N> {
+            type Target = [T];
+            fn deref(&self) -> &[T] {
                 self.0.as_slice()
             }
         }
 
-        impl<const N: usize> PartialEq<&[u8]> for $storage<N> {
-            fn eq(&self, other: &&[u8]) -> bool {
+        impl<T: Copy + PartialEq, const N: usize> PartialEq<&[T]> for $storage<T, N> {
+            fn eq(&self, other: &&[T]) -> bool {
                 self.as_slice() == *other
             }
         }
 
-        impl<const N: usize, const M: usize> PartialEq<&[u8; M]> for $storage<N> {
-            fn eq(&self, other: &&[u8; M]) -> bool {
+        impl<T: Copy + PartialEq, const N: usize, const M: usize> PartialEq<&[T; M]>
+            for $storage<T, N>
+        {
+            fn eq(&self, other: &&[T; M]) -> bool {
                 self.as_slice() == other.as_slice()
             }
         }
@@ -181,8 +213,8 @@ macro_rules! byte_view_parity {
 }
 
 #[cfg(feature = "alloc")]
-byte_view_parity!(HeapBytes);
-byte_view_parity!(InlineBytes);
+byte_view_parity!(HeapList);
+byte_view_parity!(InlineList);
 
 #[cfg(test)]
 mod tests {
@@ -247,6 +279,23 @@ mod tests {
         }
         assert_eq!(b.len(), 10);
         assert!(HeapBytes::<2>::from_slice(&[0; 64]).is_ok());
+    }
+
+    // A list of a wider element obeys the same bound as bytes: the fixed
+    // profile refuses past `N` and keeps what it had, the default profile
+    // holds the values in order. Bytes are one instance of this type, so the
+    // two cannot come to disagree about overflow.
+    #[test]
+    fn a_list_of_i64_is_bounded_like_bytes() {
+        let mut inline = InlineList::<i64, 2>::new();
+        assert!(inline.push(-5).is_ok());
+        assert!(inline.push(5_000_000_001).is_ok());
+        assert_eq!(inline.push(0), Err(CapacityExceeded));
+        assert_eq!(inline.as_slice(), &[-5i64, 5_000_000_001]);
+
+        let mut default = SceOwnedList::<i64, 4>::new();
+        assert!(default.extend_from_slice(&[1, -2, 3]).is_ok());
+        assert_eq!(default, &[1i64, -2, 3]);
     }
 
     // Both profiles coexist in one binary and carry the same bytes — the
