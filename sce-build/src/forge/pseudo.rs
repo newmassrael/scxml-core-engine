@@ -1041,10 +1041,9 @@ fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out<'_>) {
         AlgorithmStmt::Call { target, args, .. } => {
             // One argument per line. Joined with `, ` they were several
             // free-text values on one line, and an argument containing
-            // a comma-space would have decided where they split. ⚠ No
-            // fixture in this tree calls anything (measured: zero
-            // arguments across 587 documents), so this arm is written
-            // to the rule rather than to an example.
+            // a comma-space would have decided where they split. This arm
+            // was written to that rule before any fixture called anything;
+            // `algorithm_call_statement.scxml` now exercises both shapes.
             if args.is_empty() {
                 out.line_of(vec![
                     Part::Word(Word::Call),
@@ -1057,10 +1056,10 @@ fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out<'_>) {
                     Part::Glued(":".into()),
                 ]);
                 out.nested(|out| {
-                    for a in args {
+                    for arg in args {
                         out.line_of(vec![
                             Part::Word(Word::Arg),
-                            Part::Text(text(a).into_owned()),
+                            Part::Text(text(&arg.expr).into_owned()),
                         ]);
                     }
                 });

@@ -206,14 +206,11 @@ impl Names {
                     target,
                     target_spelling,
                     args,
-                    args_spelling,
+                    ..
                 } => {
                     self.expr(target, target_spelling.as_ref())?;
-                    // Each argument is placed only where `args` is that one
-                    // argument — `ExpressionSite` checks the spelling reads
-                    // back.
                     for arg in args {
-                        self.expr(arg, args_spelling.as_ref())?;
+                        self.expr(&arg.expr, arg.spelling.as_ref())?;
                     }
                 }
             }

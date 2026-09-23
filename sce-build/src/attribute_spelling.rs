@@ -161,6 +161,19 @@ impl AttributeSpelling {
         self.locate(range.start + lead..range.end + lead)
     }
 
+    /// What `range` of this value, decoded and then trimmed, was written as,
+    /// as a spelling of its own — for a value that holds several expressions
+    /// (`<sce:call args>`), so each is placed exactly as an attribute holding
+    /// only that one would be. `None` where
+    /// [`locate_trimmed`](Self::locate_trimmed) has no answer.
+    pub fn piece_trimmed(&self, range: Range<usize>) -> Option<Self> {
+        self.locate_trimmed(range).map(|written| Self {
+            row: written.row,
+            col: written.col,
+            written: written.text.to_string(),
+        })
+    }
+
     /// `written[from..to]` with the position it starts at, counted the way
     /// `roxmltree::Document::text_pos_at` counts: a row per `\n`, a column
     /// per character.
@@ -278,6 +291,23 @@ mod tests {
         let written = spelling.locate_trimmed(2..3).expect("the operator");
         assert_eq!(written.text, "&lt;");
         assert_eq!((written.row, written.col), (2, 4));
+    }
+
+    /// A piece of a value is placed as an attribute holding only that piece
+    /// would be: on the row it continues onto, and spelled as written.
+    #[test]
+    fn a_piece_reads_back_as_its_own_attribute() {
+        let (decoded, spelling) =
+            spelling_of("<t\n  args=\" a &amp;&amp; b,\n    c &lt; 1\"/>", "args");
+        let trimmed = decoded.trim();
+        let at = trimmed.find('c').expect("the second argument");
+        let piece = spelling
+            .piece_trimmed(at..trimmed.len())
+            .expect("the second argument is written");
+        assert!(piece.spells("c < 1"));
+        assert_eq!((piece.row(), piece.col()), (3, 5));
+        let operator = piece.locate_trimmed(2..3).expect("the operator");
+        assert_eq!((operator.text, operator.row, operator.col), ("&lt;", 3, 7));
     }
 
     /// An attribute spells the value the reader decoded from it — escapes

@@ -392,6 +392,45 @@ const ALGORITHM_CALL: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "#;
 
+/// An `<sce:call>` whose second argument names a near miss, on the row its
+/// `args` continues onto. The first argument holds a comma of its own, so
+/// the refusal lands on the name only if `args` is split where a call's
+/// argument list is.
+const ALGORITHM_CALL_ARGUMENT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_alg_call_argument" version="1.0">
+  <sce:import kind="algorithm" src="probe_match.scxml" as="matched"/>
+  <sce:signature>
+    <sce:param name="frame" type="bytes"/>
+    <sce:param name="reading" type="uint16"/>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:body>
+    <sce:call target="matched"
+              args="frame === 'a,b',
+                    readng"/>
+    <sce:return expr="reading"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// The algorithm `ALGORITHM_CALL_ARGUMENT` imports — refused nothing
+/// itself, it only has to exist.
+const PROBE_MATCH: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_match" version="1.0">
+  <sce:signature>
+    <sce:param name="same" type="bool"/>
+    <sce:param name="level" type="uint16"/>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="level"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// Documents a case imports, written beside the cases.
+const SUPPORT: &[(&str, &str)] = &[("probe_match.scxml", PROBE_MATCH)];
+
 const CASES: &[Case] = &[
     Case {
         file: "probe_transform.scxml",
@@ -561,13 +600,23 @@ const CASES: &[Case] = &[
         col: 23,
         actual: Some("telemetry"),
     },
+    Case {
+        file: "probe_alg_call_argument.scxml",
+        document: ALGORITHM_CALL_ARGUMENT,
+        code: "expression/unknown-identifier",
+        line: 12,
+        col: 21,
+        actual: Some("readng"),
+    },
 ];
 
-/// Every case, written into one directory.
+/// Every case and every document a case imports, written into one
+/// directory.
 fn fixture() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
-    for case in CASES {
-        std::fs::write(dir.path().join(case.file), case.document).expect("write case");
+    let cases = CASES.iter().map(|case| (case.file, case.document));
+    for (file, document) in cases.chain(SUPPORT.iter().copied()) {
+        std::fs::write(dir.path().join(file), document).expect("write document");
     }
     dir
 }
@@ -645,7 +694,18 @@ fn every_backend_names_the_row_and_column_of_the_refused_token() {
     for case in CASES {
         for &lang in Language::ALL {
             let wire = language_wire_name(lang);
-            let wrong = match refusal(dir.path(), &["check", case.file, "-l", wire]) {
+            // Go refuses any `<sce:import>` without the module path its
+            // generated imports are qualified by (`generate/invalid-config`),
+            // before a single expression is lowered; the others ignore it.
+            let check = [
+                "check",
+                case.file,
+                "-l",
+                wire,
+                "--go-module-prefix",
+                "example.com/probe",
+            ];
+            let wrong = match refusal(dir.path(), &check) {
                 Ok(record) => mismatches(case, &record),
                 Err(why) => vec![why],
             };

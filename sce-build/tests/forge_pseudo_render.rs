@@ -15,17 +15,18 @@
 use sce_build::forge::model::{
     AlgorithmConst, AlgorithmConstType, AlgorithmModel, AlgorithmParam, AlgorithmSignature,
     AlgorithmStmt, BackpressurePolicy, BitSize, BoundedCollectionModel, BufferPoolModel,
-    BufferPoolVariant, CachePolicy, CapacitySource, CodecField, CodecModel, CodecTestVector,
-    CodecVariant, CollectionOrdering, ConcurrencyMode, ConditionModel, DecodedField,
-    DecodedFieldValue, DecodedValue, Direction, Endian, EnumModel, EnumVariant, EventSchemaModel,
-    FilterModel, FilterType, FlagDef, FlagInput, FoldBody, ForgeDocument, ForgeField, InboxConfig,
-    InboxOrdering, InterpolationAxis, InterpolationMethod, InterpolationModel, LinkClass,
-    LinkInboundEvent, LinkModel, LinkOutboundEvent, LookupEntry, LookupModel, MissPolicy,
-    ObserverModel, OutOfBounds, OverflowPolicy, PeekByteSpec, PresentIfPredicate, PresentIfScope,
-    ProcedureAssign, ProcedureDoneParam, ProcedureHelper, ProcedureModel, ProcedureSendAction,
-    ProcedureState, ProcedureTransition, RangeRule, RateOfChangeRule, ReassemblyConfig, SceType,
-    TestVector, TestVectorValue, ThresholdMonitor, TimerModel, TlvOverflowPolicy,
-    TlvTerminateStrategy, TransformModel, ValidatorModel, ValidatorRules, VariantArm, WorkerModel,
+    BufferPoolVariant, CachePolicy, CallArg, CapacitySource, CodecField, CodecModel,
+    CodecTestVector, CodecVariant, CollectionOrdering, ConcurrencyMode, ConditionModel,
+    DecodedField, DecodedFieldValue, DecodedValue, Direction, Endian, EnumModel, EnumVariant,
+    EventSchemaModel, FilterModel, FilterType, FlagDef, FlagInput, FoldBody, ForgeDocument,
+    ForgeField, InboxConfig, InboxOrdering, InterpolationAxis, InterpolationMethod,
+    InterpolationModel, LinkClass, LinkInboundEvent, LinkModel, LinkOutboundEvent, LookupEntry,
+    LookupModel, MissPolicy, ObserverModel, OutOfBounds, OverflowPolicy, PeekByteSpec,
+    PresentIfPredicate, PresentIfScope, ProcedureAssign, ProcedureDoneParam, ProcedureHelper,
+    ProcedureModel, ProcedureSendAction, ProcedureState, ProcedureTransition, RangeRule,
+    RateOfChangeRule, ReassemblyConfig, SceType, TestVector, TestVectorValue, ThresholdMonitor,
+    TimerModel, TlvOverflowPolicy, TlvTerminateStrategy, TransformModel, ValidatorModel,
+    ValidatorRules, VariantArm, WorkerModel,
 };
 use sce_build::forge::pseudo::{render, Unsupported};
 use sce_build::provenance::RequirementId;
@@ -143,7 +144,13 @@ fn an_algorithm_renders_every_form_it_can_carry() {
                 body: vec![AlgorithmStmt::Call {
                     target: "step".to_string(),
                     target_spelling: None,
-                    args: vec!["crc".to_string(), "1".to_string()],
+                    args: ["crc", "1"]
+                        .into_iter()
+                        .map(|expr| CallArg {
+                            expr: expr.to_string(),
+                            spelling: None,
+                        })
+                        .collect(),
                     args_spelling: None,
                 }],
                 max_iter: Some(16),

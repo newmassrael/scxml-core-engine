@@ -40,7 +40,7 @@ use crate::comment_text;
 use crate::forge::model::{
     AlgorithmConst, AlgorithmConstType, AlgorithmModel, AlgorithmParam, AlgorithmSignature,
     AlgorithmStmt, BackpressurePolicy, BitSize, BoundedCollectionModel, BufferPoolModel,
-    BufferPoolVariant, CachePolicy, CodecField, CodecModel, CodecTestVector, CodecVariant,
+    BufferPoolVariant, CachePolicy, CallArg, CodecField, CodecModel, CodecTestVector, CodecVariant,
     CountRef, DecodedField, DecodedFieldValue, DecodedValue, Endian, FlagDef, FlagInput, FoldBody,
     PeekByteSpec, PresentIfPredicate, PresentIfScope, ProcedureAssign, ProcedureDoneParam,
     ProcedureHelper, ProcedureModel, ProcedureSendAction, ProcedureState, ProcedureTransition,
@@ -1626,7 +1626,10 @@ fn parse_stmt(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<AlgorithmStmt, Pars
                 line: k.number,
                 why: format!("`{}` is not a call argument", k.text),
             })?;
-            args.push(undo(a, k.number)?);
+            args.push(CallArg {
+                expr: undo(a, k.number)?,
+                spelling: None,
+            });
         }
         return Ok(AlgorithmStmt::Call {
             target: undo(target, line.number)?,

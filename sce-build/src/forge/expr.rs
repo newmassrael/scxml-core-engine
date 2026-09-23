@@ -563,17 +563,46 @@ pub fn transpile_lvalue(
 /// irrelevant there because the evaluator carries `SceType`
 /// annotations on every storage site (Var/Assign/yield) instead.
 pub(crate) fn parse_to_ast(expr: &str) -> Result<TypedExpr, Refusal> {
-    let trimmed = expr.trim();
-    if trimmed.is_empty() {
+    if expr.trim().is_empty() {
         return Err(ExprError::Empty { what: "expression" }.at(None));
     }
-    // Ranges into `expr` as the caller holds it, not into its trimmed copy —
+    let (tokens, spans) = admitted_tokens(expr)?;
+    Parser::new(&tokens, &spans).parse_expression()
+}
+
+/// Where each argument of `list` is written, for `list` a call's argument
+/// list without its parentheses — what `<sce:call args>` holds.
+///
+/// SCE Forge: the arguments of `<sce:call>` are read by the rule that reads
+/// a call's arguments between parentheses, so a comma inside a nested call
+/// or a string literal separates nothing, and an empty argument (`a,,b`, a
+/// comma leading or trailing the list) is refused at the comma that leaves
+/// it empty. A list that is empty, or only whitespace, holds no arguments.
+///
+/// The ranges index `list` as the caller holds it, as [`parse_to_ast`]'s do.
+pub(crate) fn argument_ranges(list: &str) -> Result<Vec<std::ops::Range<usize>>, Refusal> {
+    let (tokens, spans) = admitted_tokens(list)?;
+    let arguments = Parser::new(&tokens, &spans).parse_argument_list()?;
+    Ok(arguments
+        .into_iter()
+        .map(|argument| {
+            argument
+                .span
+                .expect("the parser spans every node it builds")
+        })
+        .collect())
+}
+
+/// `text`'s tokens once the Forge admission rules have passed them, with
+/// their ranges in `text` as the caller holds it.
+fn admitted_tokens(text: &str) -> Result<SpannedTokens, Refusal> {
+    // Ranges into `text` as the caller holds it, not into its trimmed copy —
     // the tokens' and a refusal's alike, so every range this returns reads
     // against the one string.
-    let lead = expr.len() - expr.trim_start().len();
+    let lead = text.len() - text.trim_start().len();
     let shift = |span: std::ops::Range<usize>| span.start + lead..span.end + lead;
     let (tokens, mut spans) =
-        tokenize_spanned(trimmed, LexMode::Forge).map_err(|refusal| Spanned {
+        tokenize_spanned(text.trim(), LexMode::Forge).map_err(|refusal| Spanned {
             span: refusal.span.map(shift),
             error: refusal.error,
         })?;
@@ -581,7 +610,7 @@ pub(crate) fn parse_to_ast(expr: &str) -> Result<TypedExpr, Refusal> {
         *span = shift(span.clone());
     }
     reject_policy_violating_tokens(&tokens, &spans)?;
-    Parser::new(&tokens, &spans).parse_expression()
+    Ok((tokens, spans))
 }
 
 /// The Forge expression language's admission rules, as a single pass over
@@ -1653,13 +1682,42 @@ impl<'a> Parser<'a> {
 
     fn parse_expression(&mut self) -> Result<TypedExpr, Refusal> {
         let expr = self.parse_conditional()?;
-        if *self.peek() != Token::Eof {
-            return Err(ExprError::UnexpectedToken {
-                token: self.peek().to_string(),
-            }
-            .at(self.span_of(self.pos)));
-        }
+        self.expect_end()?;
         Ok(expr)
+    }
+
+    /// A text that is an argument list and nothing more — see
+    /// [`argument_ranges`].
+    fn parse_argument_list(&mut self) -> Result<Vec<TypedExpr>, Refusal> {
+        let arguments = self.parse_arguments(&Token::Eof)?;
+        self.expect_end()?;
+        Ok(arguments)
+    }
+
+    /// A call's arguments: none when `closer` closes the list at once, else
+    /// `conditional (',' conditional)*`. Stops at the first token that does
+    /// not continue the list; the caller expects whatever closes it.
+    fn parse_arguments(&mut self, closer: &Token) -> Result<Vec<TypedExpr>, Refusal> {
+        let mut arguments = Vec::new();
+        if self.peek() != closer {
+            arguments.push(self.parse_conditional()?);
+            while *self.peek() == Token::Comma {
+                self.advance();
+                arguments.push(self.parse_conditional()?);
+            }
+        }
+        Ok(arguments)
+    }
+
+    /// Nothing may follow what was parsed.
+    fn expect_end(&self) -> Result<(), Refusal> {
+        if *self.peek() == Token::Eof {
+            return Ok(());
+        }
+        Err(ExprError::UnexpectedToken {
+            token: self.peek().to_string(),
+        }
+        .at(self.span_of(self.pos)))
     }
 
     fn parse_conditional(&mut self) -> Result<TypedExpr, Refusal> {
@@ -1953,14 +2011,7 @@ impl<'a> Parser<'a> {
                 }
                 Token::LParen => {
                     self.advance();
-                    let mut args = Vec::new();
-                    if *self.peek() != Token::RParen {
-                        args.push(self.parse_conditional()?);
-                        while *self.peek() == Token::Comma {
-                            self.advance();
-                            args.push(self.parse_conditional()?);
-                        }
-                    }
+                    let args = self.parse_arguments(&Token::RParen)?;
                     self.expect(&Token::RParen)?;
                     expr = self.node(
                         start,
@@ -6280,6 +6331,31 @@ mod tests {
         )
         .expect_err("an unclosed parenthesis");
         assert_eq!(unclosed.span, Some(6..6));
+    }
+
+    /// `<sce:call args>` is split where a call's parentheses would split it:
+    /// not inside a nested call or a string, and never around an argument
+    /// that is not there.
+    #[test]
+    fn an_argument_list_splits_only_at_its_own_commas() {
+        let list = " clamp(reading, 1), 'a,b' ,x ";
+        let arguments: Vec<&str> = argument_ranges(list)
+            .expect("three arguments")
+            .into_iter()
+            .map(|range| &list[range])
+            .collect();
+        assert_eq!(arguments, ["clamp(reading, 1)", "'a,b'", "x"]);
+        assert!(argument_ranges(" ").expect("no arguments").is_empty());
+
+        // An empty argument is refused at the comma that leaves it empty, and
+        // a trailing one at the end of the list, where nothing is written.
+        for (list, at) in [("a,,b", 2..3), (", a", 0..1), ("a, b,", 5..5)] {
+            let refusal = argument_ranges(list).expect_err(list);
+            assert_eq!(refusal.span, Some(at), "{list}: {}", refusal.error);
+        }
+        // Two expressions with no comma between them are not one argument.
+        let refusal = argument_ranges("a b").expect_err("a missing comma");
+        assert_eq!(refusal.span, Some(2..3), "{}", refusal.error);
     }
 
     #[test]

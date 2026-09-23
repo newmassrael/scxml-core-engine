@@ -3601,10 +3601,26 @@ pub enum AlgorithmStmt {
         // AST schema's description.)
         #[serde(skip)]
         target_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
-        args: Vec<String>,
+        args: Vec<CallArg>,
         #[serde(skip)]
         args_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     },
+}
+
+/// One argument of `<sce:call args>`, as the call's argument grammar
+/// separates it.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(transparent)]
+pub struct CallArg {
+    // ⚠ `expr` must stay the FIRST field: schemars 0.8 takes a transparent
+    // struct's schema from its first field, and the public AST schema says
+    // an argument is a string. `schema_drift` holds that.
+    pub expr: String,
+    /// Where the argument is written inside `args` — `None` for a model no
+    /// document produced.
+    #[serde(skip)]
+    pub spelling: Option<crate::attribute_spelling::AttributeSpelling>,
 }
 
 /// A name an algorithm body introduces.

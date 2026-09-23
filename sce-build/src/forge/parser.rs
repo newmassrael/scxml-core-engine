@@ -10,6 +10,7 @@ use crate::attribute_spelling::AttributeSpelling;
 use crate::forge::error::{
     ForgeError, Located, SourceLocation, ValidationError, WorkerSharedStateReason, XmlError,
 };
+use crate::forge::expression_site::ExpressionSite;
 use crate::forge::model::*;
 use crate::DocumentLabel;
 
@@ -7471,20 +7472,16 @@ fn parse_algorithm_stmt(
         }
         "call" => {
             let target = require_attr(node, "target", "<sce:call>", doc_name)?;
-            let args = node
-                .attribute("args")
-                .map(|s| {
-                    s.split(',')
-                        .map(|x| x.trim().to_string())
-                        .filter(|x| !x.is_empty())
-                        .collect()
-                })
-                .unwrap_or_default();
+            let args_spelling = AttributeSpelling::of(node, None, "args");
+            let args = match node.attribute("args") {
+                Some(list) => call_arguments(list, args_spelling.as_ref(), doc_name)?,
+                None => Vec::new(),
+            };
             Ok(AlgorithmStmt::Call {
                 target,
                 target_spelling: AttributeSpelling::of(node, None, "target"),
                 args,
-                args_spelling: AttributeSpelling::of(node, None, "args"),
+                args_spelling,
             })
         }
         other => Err(located(
@@ -7493,6 +7490,30 @@ fn parse_algorithm_stmt(
             ValidationError::UnsupportedKind(format!("<sce:{other}> in algorithm body")),
         )),
     }
+}
+
+/// The arguments `<sce:call args>` lists, split where a call's argument
+/// grammar splits them ([`crate::forge::expr::argument_ranges`]), each with
+/// where it is written. A list that grammar refuses is refused here, at the
+/// token it refuses.
+fn call_arguments(
+    list: &str,
+    spelling: Option<&AttributeSpelling>,
+    doc_name: &str,
+) -> Result<Vec<CallArg>, Located<ForgeError>> {
+    // Trimmed first: a refusal's range and every argument's range then index
+    // the text the placement reads them against.
+    let list = list.trim();
+    let ranges = crate::forge::expr::argument_ranges(list).map_err(|refusal| {
+        Located::in_file(ExpressionSite::new(list, spelling).place(refusal), doc_name)
+    })?;
+    Ok(ranges
+        .into_iter()
+        .map(|range| CallArg {
+            expr: list[range.clone()].to_string(),
+            spelling: spelling.and_then(|spelling| spelling.piece_trimmed(range)),
+        })
+        .collect())
 }
 
 /// RFC §synth-5-A `algorithm/lvalue-unsupported`: parameters are read-only
@@ -10148,5 +10169,71 @@ mod type_attr_tests {
             "{allowed:?}"
         );
         assert_eq!(read(TypeGrammar::Scalar, "uint16"), Ok(SceType::Uint16));
+    }
+}
+
+/// `<sce:call args>` is read by a call's own argument grammar, and each
+/// argument keeps where it is written.
+#[cfg(test)]
+mod call_argument_tests {
+    use super::*;
+    use crate::forge::diagnostic::SingleDiagnostic;
+
+    /// The one statement `element` is, as an algorithm body reads it.
+    fn statement(element: &str) -> Result<AlgorithmStmt, Located<ForgeError>> {
+        let xml = format!(r#"<sce:body xmlns:sce="{SCE_NAMESPACE}">{element}</sce:body>"#);
+        let doc = roxmltree::Document::parse(&xml).expect("fixture parses");
+        let node = doc
+            .root_element()
+            .first_element_child()
+            .expect("fixture has a statement");
+        parse_algorithm_stmt(&node, "t.scxml")
+    }
+
+    /// Split at the list's own commas only, each argument placed on the row
+    /// and column it starts at — the second row for the one continued there.
+    #[test]
+    fn a_comma_inside_a_call_or_a_string_separates_nothing() {
+        let stmt = statement(
+            "<sce:call target=\"matched\"\n          args=\"clamp(level, limit), 'a,b',\n                reading\"/>",
+        )
+        .expect("the call parses");
+        let AlgorithmStmt::Call { args, .. } = stmt else {
+            panic!("not a call: {stmt:?}");
+        };
+        let written: Vec<(&str, u32, u32)> = args
+            .iter()
+            .map(|arg| {
+                let at = arg.spelling.as_ref().expect("a written argument");
+                assert!(at.spells(&arg.expr), "{arg:?}");
+                (arg.expr.as_str(), at.row(), at.col())
+            })
+            .collect();
+        assert_eq!(
+            written,
+            [
+                ("clamp(level, limit)", 2, 17),
+                ("'a,b'", 2, 38),
+                ("reading", 3, 17)
+            ]
+        );
+    }
+
+    /// An argument that is not there is refused at the comma that leaves it
+    /// empty, rather than dropped.
+    #[test]
+    fn an_empty_argument_is_refused_at_the_comma_that_leaves_it() {
+        let refused = statement("<sce:call target=\"matched\"\n          args=\"reading,, 1\"/>")
+            .expect_err("an empty argument");
+        assert_eq!(
+            (refused.location.line, refused.location.col),
+            (Some(2), Some(25)),
+            "{refused:?}"
+        );
+        assert_eq!(
+            refused.diagnostic_payload().actual.as_deref(),
+            Some(","),
+            "{refused:?}"
+        );
     }
 }

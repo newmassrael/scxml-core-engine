@@ -21992,13 +21992,10 @@ fn lower_algorithm_stmt(
             );
             let lowered_args: Vec<String> = args
                 .iter()
-                .map(|a| {
-                    // An argument's range reads back onto `args` only where
-                    // `args` is that one argument; `ExpressionSite` says so
-                    // itself and places nothing otherwise.
-                    let site = ExpressionSite::new(a, args_spelling.as_ref());
+                .map(|arg| {
+                    let site = ExpressionSite::new(&arg.expr, arg.spelling.as_ref());
                     expr::transpile_typed(
-                        a,
+                        &arg.expr,
                         l.expr_target(),
                         type_ctx,
                         renames,

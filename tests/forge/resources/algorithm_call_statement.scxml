@@ -17,9 +17,14 @@
   Two calls, because the two shapes are parsed differently:
 
     * `target=` alone — `args` absent yields an empty argument list.
-    * `target=` with `args=` — a comma-separated list the parser splits
-      and trims. Two arguments, so the split is exercised rather than
-      the degenerate single-element case.
+    * `target=` with `args=` — a call's argument list, read by the rule
+      that reads one between parentheses: a comma inside a nested call or
+      a string literal separates nothing. One argument of each kind, so
+      the split is exercised rather than the degenerate single-element
+      case. ⚠ The list ends in a name, so the mutant that
+      `a_declared_attribute_must_reach_the_ir` makes of it (`…z`) is
+      still an argument list; ending in a number, the parser would refuse
+      it and the attribute would drop out of that measurement unremarked.
 
   ⚠ Cross-document resolution of the target is a later stage, as it is
   for `<sce:outbox ref>` on the worker kind; the claim here is about the
@@ -35,7 +40,7 @@
   </sce:signature>
   <sce:body>
     <sce:call target="telemetry.reset"/>
-    <sce:call target="telemetry.record" args="reading, 1"/>
+    <sce:call target="telemetry.record" args="clamp(reading, 1), 'a,b', reading"/>
     <sce:return expr="reading"/>
   </sce:body>
 </scxml>
