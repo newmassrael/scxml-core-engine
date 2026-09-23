@@ -40,10 +40,28 @@ cd "$REPO_ROOT"
 # lands without it.
 export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-0}"
 
+# Each stage names itself as it starts and says how long it took when the
+# next one does. A run of this script has been measured at three hours, and
+# a stage is only worth attacking once it is measured: the log used to say
+# which stages ran and not where the time went, so the one question a slow
+# run raises could not be answered from the run itself.
+STAGE_NAME=""
+STAGE_START=$SECONDS
+stage() {
+    if [[ -n "$STAGE_NAME" ]]; then
+        echo "    ${STAGE_NAME}: $((SECONDS - STAGE_START))s"
+    fi
+    STAGE_NAME="$1"
+    STAGE_START=$SECONDS
+    [[ -n "$STAGE_NAME" ]] && echo "==> $STAGE_NAME"
+    return 0
+}
+
+stage "Resolving sce-codegen (builds it when the binary is stale)"
 source "$REPO_ROOT/scripts/lib/sce_codegen.sh"
 CODEGEN="$(sce_codegen_require "$REPO_ROOT")"
 
-echo "==> W3C committed trees"
+stage "W3C committed trees"
 "$CODEGEN" generate-w3c -l rust
 "$CODEGEN" generate-w3c -l kotlin
 # The Go and Python W3C trees are .gitignored, so they carry no committed
@@ -57,13 +75,13 @@ echo "==> W3C committed trees"
 "$CODEGEN" generate-w3c -l go
 "$CODEGEN" generate-w3c -l python
 
-echo "==> Integration trees (Rust / Kotlin / Go committed; Python gitignored)"
+stage "Integration trees (Rust / Kotlin / Go committed; Python gitignored)"
 "$CODEGEN" generate-integration -l rust
 "$CODEGEN" generate-integration -l kotlin
 "$CODEGEN" generate-integration -l go
 "$CODEGEN" generate-integration -l python
 
-echo "==> Forge round-trip Go codec tree"
+stage "Forge round-trip Go codec tree"
 backends/go/forge-runtime/round_trip/generate.sh
 
 # EventSchema native-lowering gates (NL→IR C1 Path A). Per-backend committed
@@ -72,13 +90,13 @@ backends/go/forge-runtime/round_trip/generate.sh
 # schema sibling resolves, and lives next to its own backend's test harness.
 # Every backend (Rust, Go, Kotlin, Python; cpp/c11 gates run at CMake/CI time)
 # now lowers the typed `_event.data` guard to a script-engine-free comparison.
-echo "==> EventSchema native-lowering Rust tree"
+stage "EventSchema native-lowering Rust tree"
 scripts/regen_event_schema_native.sh
-echo "==> EventSchema native-lowering Go tree"
+stage "EventSchema native-lowering Go tree"
 scripts/regen_event_schema_native_go.sh
-echo "==> EventSchema native-lowering Kotlin tree"
+stage "EventSchema native-lowering Kotlin tree"
 scripts/regen_event_schema_native_kotlin.sh
-echo "==> EventSchema native-lowering Python tree"
+stage "EventSchema native-lowering Python tree"
 scripts/regen_event_schema_native_python.sh
 
 # W3C SCXML G.7 `<sce:action>` native host dispatch gate, driven by its own
@@ -92,7 +110,7 @@ scripts/regen_event_schema_native_python.sh
 # The other three are not here and each for its own reason: Python's module is
 # gitignored (`scripts/gates/w3c-python.sh` regenerates it), and C++ and C11
 # generate at build time from their own CMake registrations.
-echo "==> Native-action host-dispatch Rust + Go + Kotlin trees"
+stage "Native-action host-dispatch Rust + Go + Kotlin trees"
 scripts/regen_native_action.sh
 
 # W3C SCXML 6.2.5 host-served Event I/O Processor gate, and W3C SCXML 6.2.4's
@@ -106,7 +124,7 @@ scripts/regen_native_action.sh
 # `w3c-python` gate instead, because `backends/python/tests/integration/*/*_sm.py`
 # is gitignored — there is no committed artefact here for this script to keep
 # current.
-echo "==> Host-processor send Rust + Go trees"
+stage "Host-processor send Rust + Go trees"
 scripts/regen_host_processor.sh
 
 # The Kotlin half. Called here rather than only by hand: nothing else reaches
@@ -114,7 +132,7 @@ scripts/regen_host_processor.sh
 # gate regenerates only the W3C and `generate-integration` trees — so the
 # committed Kotlin host-processor trees could drift with nothing to say so.
 # Naming it here is what puts them under `regen-reproduces`.
-echo "==> Host-processor send Kotlin trees"
+stage "Host-processor send Kotlin trees"
 scripts/regen_host_processor_kotlin.sh
 
 # The AI supervision loop example. Its input is `examples/ai_loop/ai_loop.scxml`
@@ -123,14 +141,14 @@ scripts/regen_host_processor_kotlin.sh
 # know about is exactly the stale-artifact shape described for the W3C Go and
 # Python trees. Its `template-hash` covers the same template tree as everything
 # else, so a template edit invalidates it identically.
-echo "==> AI loop example Rust tree"
+stage "AI loop example Rust tree"
 scripts/regen_ai_loop.sh
 
 # The Go half of the same example, for the same reason and with one more: the
 # channels are held to a single scenario set by `ai_loop_channel_parity`, so a
 # tree that went stale here would make one engine's answers about a document
 # the others no longer generate from.
-echo "==> AI loop example Go tree"
+stage "AI loop example Go tree"
 scripts/regen_ai_loop_go.sh
 
 # The Kotlin third. Same reason as the Go one above, and the same reason
@@ -138,13 +156,13 @@ scripts/regen_ai_loop_go.sh
 # `w3c-kotlin` gate: that gate regenerates only the W3C and
 # `generate-integration` trees, so a committed Kotlin tree this script does not
 # know about could drift with nothing to say so.
-echo "==> AI loop example Kotlin tree"
+stage "AI loop example Kotlin tree"
 scripts/regen_ai_loop_kotlin.sh
 
 # The Python fourth. Same reason as the two above; named here because the
 # `generate-integration` fan-out enumerates `integration_resources/` stems and
 # this input is an example.
-echo "==> AI loop example Python tree"
+stage "AI loop example Python tree"
 scripts/regen_ai_loop_python.sh
 
 # Named here for the same reason the four above are, with a different cause:
@@ -155,18 +173,18 @@ scripts/regen_ai_loop_python.sh
 # arity is what keeps the document where it is.) The `generate-integration`
 # fan-out therefore never sees it, and a tree this script does not know about is
 # exactly the stale-artifact shape the AI-loop entries were added to prevent.
-echo "==> Transition-domain witness Rust tree"
+stage "Transition-domain witness Rust tree"
 scripts/regen_parallel_region_root_external_domain.sh
-echo "==> Transition-domain witness Go tree"
+stage "Transition-domain witness Go tree"
 scripts/regen_parallel_region_root_external_domain_go.sh
-echo "==> Transition-domain witness Kotlin tree"
+stage "Transition-domain witness Kotlin tree"
 scripts/regen_parallel_region_root_external_domain_kotlin.sh
 # The Python half emits into a gitignored module, like every other module in
 # `backends/python/tests/integration/`, so it contributes no diff here. It is
 # named anyway for the reason `regen_ai_loop_python.sh` is: this script is the
 # one place that says "regenerate everything", and a local tree whose Python
 # module is missing fails at import rather than at an assertion.
-echo "==> Transition-domain witness Python tree"
+stage "Transition-domain witness Python tree"
 scripts/regen_parallel_region_root_external_domain_python.sh
 
 # The committed Rust trees are generator output *as rustfmt leaves it*, not
@@ -183,7 +201,7 @@ scripts/regen_parallel_region_root_external_domain_python.sh
 #
 # Scoped to the crate holding the committed generated Rust rather than
 # `--all`, so the step says what it is for.
-echo "==> Formatting the committed Rust trees (rustfmt is part of their committed form)"
+stage "Formatting the committed Rust trees (rustfmt is part of their committed form)"
 cargo fmt -p sce-rust-tests
 
 # The forge conformance goldens are generated from the same templates as
@@ -200,7 +218,8 @@ cargo fmt -p sce-rust-tests
 # whole tree rather than for the parts it happened to enumerate. The
 # conformance test is the generator: with UPDATE_GOLDEN set it writes the
 # expectation instead of asserting against it.
-echo "==> Regenerating the forge conformance goldens"
+stage "Regenerating the forge conformance goldens"
 UPDATE_GOLDEN=1 cargo test -p sce-build --features cli --test forge_conformance --quiet
 
-echo "All committed §6.2.6 trees regenerated."
+stage ""
+echo "All committed §6.2.6 trees regenerated in ${SECONDS}s."
