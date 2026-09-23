@@ -1469,6 +1469,27 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
     except VerifyError as exc:
         return Verification(refusal=str(exc))
 
+    def reading(name: str, rule: dict, requests) -> object:
+        """What one output read as this round, before the binding lands it."""
+        # A send is the channel to prefer and is asked first. Failing that,
+        # the document's own declared output variable -- and failing THAT,
+        # nothing, because the only places left are ones the document never
+        # said anybody could read.
+        if rule.get("sent"):
+            return sent_value(name, rule, requests)
+        if name in declared.outputs:
+            return run.declared_value(name)
+        raise VerifyError(
+            f"output {name!r} is bound to no `sent`, and the "
+            f"document does not declare it `sce:direction=\"out\"` "
+            f"either. What is left is the active configuration, "
+            f"and a state is not an output: asserting on one would "
+            f"break when a state is renamed or split while the "
+            f"document went on doing the same thing")
+
+    # Only `held` is read here: a statechart keeps its own memory in states,
+    # and what the binding remembers for it is the slots `hold_last` names.
+    history = History()
     previous: tuple = ()
     failed: set = set()
     for case, owner, judged in rounds_of(examples.cases):
@@ -1535,6 +1556,21 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
             # machine in between, which is the whole point of it having one.
             run.observe(case, restated)
             requests = run.recorder.take()
+            # ⚠ A `hold_last` position is the SLOT's memory, and a slot does
+            # not know which rounds a record calls setup: a value written
+            # while the machine was being set up is what it holds when the
+            # judged round writes nothing. So these are landed on EVERY round,
+            # through the rule the computation path applies (`_held`). This
+            # path used to skip it -- `check` accepted a statechart binding
+            # with `hold_last`, and `verify` then reported each case whose
+            # round sent nothing as a value "the map has no entry for".
+            held_now = {name: _held(name, rule, reading(name, rule, requests), history)
+                        for name, rule in outputs.items()
+                        if rule.get("hold_last")
+                        and not (rule.get("unresolved") or rule.get("internal"))}
+            for name, value in held_now.items():
+                if value is not _NOT_WRITTEN:
+                    history.held[name] = value
             if not judged:
                 # What the machine sent while being set up is not what the
                 # case is judged on: the case's own round starts clean.
@@ -1543,22 +1579,13 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
             for name, rule in outputs.items():
                 if rule.get("unresolved") or rule.get("internal"):
                     continue
-                # A send is the channel to prefer and is asked first. Failing
-                # that, the document's own declared output variable -- and
-                # failing THAT, nothing, because the only places left are ones
-                # the document never said anybody could read.
-                if rule.get("sent"):
-                    value = sent_value(name, rule, requests)
-                elif name in declared.outputs:
-                    value = run.declared_value(name)
+                if name in held_now:
+                    if held_now[name] is _NOT_WRITTEN:
+                        # Nothing held yet: the slot is not written at all.
+                        continue
+                    value = held_now[name]
                 else:
-                    raise VerifyError(
-                        f"output {name!r} is bound to no `sent`, and the "
-                        f"document does not declare it `sce:direction=\"out\"` "
-                        f"either. What is left is the active configuration, "
-                        f"and a state is not an output: asserting on one would "
-                        f"break when a state is renamed or split while the "
-                        f"document went on doing the same thing")
+                    value = reading(name, rule, requests)
                 produced.update(output_values(name, rule, value))
         except VerifyError as exc:
             # A setup step that cannot be driven leaves the case unjudgeable,

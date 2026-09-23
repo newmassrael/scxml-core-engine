@@ -554,5 +554,144 @@ class AnOutputTheDocumentDeclaresIsReadFromIt(unittest.TestCase):
             [(r.name, r.refusal) for r in result.results])
 
 
+# A machine that speaks only when something CHANGES: entering `flashing` says
+# so, leaving it says so, and a round that changes nothing sends nothing. The
+# position it writes keeps its last value between those rounds -- which is
+# what `hold_last` says of the address, not of the document.
+SPEAKS_ON_CHANGE = """<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" datamodel="null" initial="dark" sce:kind="statechart">
+  <state id="dark">
+    <transition event="train.approaching" target="flashing"/>
+  </state>
+  <state id="flashing">
+    <onentry>
+      <send event="signal.flashing" type="x-sce-host"/>
+    </onentry>
+    <transition event="train.cleared" target="dark">
+      <send event="signal.dark" type="x-sce-host"/>
+    </transition>
+  </state>
+</scxml>
+"""
+
+HOLDING = {**BINDING, "outputs": {
+    "roadSignal": {
+        "address": "plant/out/road-signal", "field": "value",
+        "sent": {"processor": "x-sce-host"},
+        # Not a value the position can take: the round said nothing, and the
+        # slot keeps what it held. `check` accepts exactly this under
+        # `hold_last`, because a value with no entry is the one that holds.
+        "when_nothing_sent": "unchanged",
+        "map": {"signal.dark": "DARK", "signal.flashing": "FLASHING"},
+        "hold_last": True,
+    },
+}}
+
+
+def approach(name: str, expect: str | None = None, **extra) -> dict:
+    case = {"name": name,
+            "given": {"plant/in/train-approach": "APPROACHING"},
+            "drove": ["plant/in/train-approach"], **extra}
+    if expect is not None:
+        case["expect"] = {"plant/out/road-signal.value": expect}
+    return case
+
+
+@unittest.skipUnless(codegen_is_built(),
+                     "the product's generator is not built; nothing can be run")
+class AHeldPositionOutlivesTheRoundThatWroteIt(unittest.TestCase):
+    """`hold_last` on a statechart's output is applied, on every round.
+
+    ⚠ It was applied only on the computation path. The statechart path read
+    each round's sends and mapped them, so a round that sent nothing handed
+    `when_nothing_sent` to the map, found no entry, and reported the case
+    "could not be judged" -- for a binding `check` had just accepted, and that
+    the README describes as holding. Measured 2026-09-23 on a model-written
+    document: six of eight cases unjudged, every one a round in which the
+    document rightly said nothing about the held output.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = pathlib.Path(self._tmp.name)
+        self.addCleanup(self._tmp.cleanup)
+        for name in ("interface-model.yaml", "conventions.yaml"):
+            shutil.copy(CROSSING / name, self.tmp / name)
+        (self.tmp / "signal.scxml").write_text(SPEAKS_ON_CHANGE, encoding="utf-8")
+
+    def run_cases(self, cases):
+        (self.tmp / "examples.yaml").write_text(
+            yaml.safe_dump({**EXAMPLES, "cases": cases}), encoding="utf-8")
+        path = self.tmp / "b.yaml"
+        path.write_text(yaml.safe_dump(HOLDING), encoding="utf-8")
+        return verify(load_pack(self.tmp), path)
+
+    def verdict(self, result):
+        """Passed, failed, unjudged -- and how many cases left a position
+        unwritten. ⚠ The fourth is not decoration: an unwritten position does
+        not stop a pass, so without it a hold that never happened would read
+        exactly like one that did."""
+        return (result.passed, result.failed, result.unjudged,
+                sum(1 for r in result.results if r.unchecked))
+
+    def details(self, result):
+        return [(r.name, r.refusal, r.failures) for r in result.results]
+
+    def test_a_round_that_sends_nothing_keeps_what_the_last_one_wrote(self):
+        result = self.run_cases([
+            approach("a train approaches", "FLASHING"),
+            # Re-driving the approach in `flashing` selects no transition.
+            approach("the reading is restated", "FLASHING"),
+            {"name": "the train clears",
+             "given": {"plant/in/train-approach": "CLEAR"},
+             "drove": ["plant/in/train-approach"],
+             "expect": {"plant/out/road-signal.value": "DARK"}},
+        ])
+        self.assertTrue(result.ran, result.refusal)
+        self.assertEqual((3, 0, 0, 0), self.verdict(result), self.details(result))
+
+    def test_what_the_setup_wrote_is_what_the_judged_round_holds(self):
+        """⚠ The slot does not know which rounds the record calls setup. The
+        approach below is sent during the case's `before`, and the judged
+        round -- a restatement -- sends nothing, so FLASHING can only come
+        from the setup round."""
+        result = self.run_cases([
+            approach("restated after an approach", "FLASHING",
+                     before=[{"given": {"plant/in/train-approach": "APPROACHING"},
+                              "drove": ["plant/in/train-approach"]}]),
+        ])
+        self.assertTrue(result.ran, result.refusal)
+        self.assertEqual((1, 0, 0, 0), self.verdict(result), self.details(result))
+
+    def test_the_held_value_is_judged_so_a_wrong_one_fails(self):
+        """The hold is a reading, not a pass: expecting DARK where the slot
+        holds FLASHING is a failure, not something waved through."""
+        result = self.run_cases([
+            approach("a train approaches", "FLASHING"),
+            approach("the reading is restated", "DARK"),
+        ])
+        self.assertTrue(result.ran, result.refusal)
+        self.assertEqual((1, 1, 0, 0), self.verdict(result), self.details(result))
+
+    def test_before_anything_is_held_the_position_is_not_written(self):
+        """A clear reading first: `dark` acts on nothing, nothing is sent, and
+        nothing has been held -- so the position is not written. It is
+        reported as such (`unchecked`), never landed as `unchanged` or as a
+        value the map would invent."""
+        result = self.run_cases([
+            {"name": "a clear reading first",
+             "given": {"plant/in/train-approach": "CLEAR"},
+             "drove": ["plant/in/train-approach"],
+             "expect": {"plant/out/road-signal.value": "DARK"}},
+        ])
+        self.assertTrue(result.ran, result.refusal)
+        [case] = result.results
+        self.assertEqual(("", [], ["plant/out/road-signal.value"]),
+                         (case.refusal, case.failures, case.unchecked),
+                         self.details(result))
+
+
 if __name__ == "__main__":
     unittest.main()
