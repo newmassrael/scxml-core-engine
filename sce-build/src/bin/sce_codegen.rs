@@ -3121,18 +3121,10 @@ fn scxml_host_requirement_facts(path: &str) -> Option<HostRequirements> {
     analyzer::analyze(&mut model, path);
     Some(HostRequirements {
         needs_script_engine: model.needs_script_engine,
-        script_engine_causes: model
-            .script_engine_causes
-            .iter()
-            .map(|c| c.to_wire())
-            .collect(),
+        script_engine_causes: model.script_engine_cause_records(),
         needs_event_scheduler: model.needs_event_scheduler_driving(),
         needs_host_processor: !model.host_processor_causes.is_empty(),
-        host_processor_causes: model
-            .host_processor_causes
-            .iter()
-            .map(|c| c.to_wire())
-            .collect(),
+        host_processor_causes: model.host_processor_cause_records(),
     })
 }
 
@@ -3575,17 +3567,9 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
 
             report.needs_script_engine = Some(model.needs_script_engine);
             report.needs_event_scheduler = Some(model.needs_event_scheduler_driving());
-            report.script_engine_causes = model
-                .script_engine_causes
-                .iter()
-                .map(|c| c.to_wire())
-                .collect();
+            report.script_engine_causes = model.script_engine_cause_records();
             report.needs_host_processor = Some(!model.host_processor_causes.is_empty());
-            report.host_processor_causes = model
-                .host_processor_causes
-                .iter()
-                .map(|c| c.to_wire())
-                .collect();
+            report.host_processor_causes = model.host_processor_cause_records();
             // Echoed for the same reason `generate` echoes them: the
             // declaration is the build's half of a two-place contract,
             // and a consumer diffing the two manifests to confirm its
@@ -4586,19 +4570,11 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         // same statement that set the flag — not recomputed here, which
         // would re-derive it from a model later passes have since touched.
         // The flag and its explanation cannot disagree.
-        report.script_engine_causes = model
-            .script_engine_causes
-            .iter()
-            .map(|c| c.to_wire())
-            .collect();
+        report.script_engine_causes = model.script_engine_cause_records();
         // Same projection, same reason, for the sibling question: which
         // `<send>` / `<invoke>` types this build has no path for.
         report.needs_host_processor = Some(!model.host_processor_causes.is_empty());
-        report.host_processor_causes = model
-            .host_processor_causes
-            .iter()
-            .map(|c| c.to_wire())
-            .collect();
+        report.host_processor_causes = model.host_processor_cause_records();
         report
             .host_processor_types
             .clone_from(&model.host_processor_types);

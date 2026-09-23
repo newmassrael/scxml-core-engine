@@ -788,6 +788,11 @@ path = "tests/a_value_stands_only_where_its_kind_is_declared.rs"
 required-features = ["cli"]
 
 [[test]]
+name = "a_cause_is_placed_where_its_author_wrote_it"
+path = "tests/a_cause_is_placed_where_its_author_wrote_it.rs"
+required-features = ["cli"]
+
+[[test]]
 name = "value_space_coverage"
 path = "tests/value_space_coverage.rs"
 required-features = ["cli"]

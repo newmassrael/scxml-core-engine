@@ -2938,6 +2938,70 @@ impl SCXMLModel {
             || self.has_scxml_invoke()
             || self.has_hybrid_invoke()
     }
+
+    /// Where the author wrote `location`, a position this model recorded
+    /// against its expanded text, spelled as a diagnostic spells it: in the
+    /// fragment it was spliced from, or in the document under the label its
+    /// caller named. It is the move every refusal takes on its way out
+    /// ([`AuthoredPositions::authored`]), made for records that are not
+    /// refusals — the manifest's causes, which promise the anchor a
+    /// diagnostic carries.
+    ///
+    /// ⚠ The causes carried the model's own label, the file's basename,
+    /// and rows of the expanded text until 2026-09-24: a guard written in
+    /// an XInclude fragment was placed at the including file's closing tag.
+    pub fn authored_location(&self, location: &SourceLocation) -> SourceLocation {
+        let Some(positions) = &self.authored_positions else {
+            return location.clone();
+        };
+        match positions.resolve(location.line, location.col) {
+            Some((file, line, col)) => SourceLocation {
+                file,
+                line: Some(line),
+                col: location.col.map(|_| col),
+            },
+            None => SourceLocation {
+                file: positions.document.clone(),
+                ..location.clone()
+            },
+        }
+    }
+
+    /// The script-engine causes as a manifest carries them, each placed at
+    /// [`Self::authored_location`].
+    pub fn script_engine_cause_records(
+        &self,
+    ) -> Vec<crate::script_engine_analyzer::ScriptEngineCauseRecord> {
+        self.script_engine_causes
+            .iter()
+            .map(|cause| {
+                let mut record = cause.to_wire();
+                record.location = record
+                    .location
+                    .as_ref()
+                    .map(|at| self.authored_location(at));
+                record
+            })
+            .collect()
+    }
+
+    /// The host-processor causes as a manifest carries them, each placed at
+    /// [`Self::authored_location`].
+    pub fn host_processor_cause_records(
+        &self,
+    ) -> Vec<crate::host_processor_analyzer::HostProcessorCauseRecord> {
+        self.host_processor_causes
+            .iter()
+            .map(|cause| {
+                let mut record = cause.to_wire();
+                record.location = record
+                    .location
+                    .as_ref()
+                    .map(|at| self.authored_location(at));
+                record
+            })
+            .collect()
+    }
     /// True iff any state in the model declares an [`Invoke::Unsupported`]
     /// (§scxml-6.4.1 unsupported `type`). Drives the analyzer's
     /// `error.execution` event registration so `Event::Error_execution`
