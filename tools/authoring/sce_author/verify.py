@@ -579,7 +579,23 @@ def load(into: pathlib.Path, document: pathlib.Path):
         f"{into.name}.{main.stem}", main, submodule_search_locations=[str(into)])
     module = importlib.util.module_from_spec(spec)
     sys.modules[f"{into.name}.{main.stem}"] = module
-    spec.loader.exec_module(module)
+    # ⚠ An answer, not a traceback. The generator reported success and wrote
+    # code that does not import -- measured 2026-09-23, a document with a
+    # multi-target transition came back `target=State.A B`, and `verify` died
+    # on the SyntaxError with nothing saying whose fault it was. What failed
+    # is the product's lowering of a document it accepted; the report says
+    # that, and where.
+    try:
+        spec.loader.exec_module(module)
+    except Exception as exc:  # noqa: BLE001 - any import failure is the same answer
+        where = (f"{main.name}:{exc.lineno}" if isinstance(exc, SyntaxError)
+                 and exc.lineno else main.name)
+        raise VerifyError(
+            f"the product generated python for {document.name} that "
+            f"does not import ({where}: {type(exc).__name__}: {exc}). The "
+            f"generator accepted the document and wrote code it cannot run; "
+            f"that is a defect in the generator's lowering, not a verdict on "
+            f"the document") from exc
     return module
 
 
@@ -1753,7 +1769,10 @@ def verify(pack: Pack, binding_path: pathlib.Path,
             return Verification(refusal=(
                 f"{imported.name}, which {document.name} imports, could not "
                 f"be built: {built.refusal}"))
-    module = load(into, document)
+    try:
+        module = load(into, document)
+    except VerifyError as exc:
+        return Verification(refusal=str(exc))
 
     if declared.kind in STATECHART_KINDS:
         run = verify_statechart(pack, binding, module, build, declared)
