@@ -11343,9 +11343,7 @@ topology:
         // Registry seeded with one alternate name so `Fix::ReplaceOneOf`
         // candidate list is non-trivial.
         let mut registry = ForgePoolRegistry::new();
-        registry
-            .record("scout_rx_pool", ForgePoolKind::BufferPool)
-            .unwrap();
+        registry.record("scout_rx_pool", ForgePoolKind::BufferPool);
         match validate_stage_pool_references_with(&cfg, &registry, &["zenoh"]) {
             Err(DeployError::StagePoolNotDeclared {
                 machine,
@@ -11381,9 +11379,7 @@ topology:
 "##;
         let cfg: DeployConfig = serde_yaml_ng::from_str(yaml).expect("YAML parses");
         let mut registry = ForgePoolRegistry::new();
-        registry
-            .record("rx_pool_sram1", ForgePoolKind::BufferPool)
-            .unwrap();
+        registry.record("rx_pool_sram1", ForgePoolKind::BufferPool);
         validate_stage_pool_references_with(&cfg, &registry, &["zenoh"])
             .expect("registered name resolves cleanly");
     }

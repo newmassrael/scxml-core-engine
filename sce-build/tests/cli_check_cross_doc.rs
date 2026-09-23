@@ -761,6 +761,10 @@ fn needs_script_engine_is_the_union_over_the_document_set() {
     };
 
     let pure = write("pure.scxml", &statechart_minimal("pure"));
+    // A second engine-free document, for the control: a set is distinct
+    // documents, and the same path named twice is refused as one name
+    // declared twice (`manifest/duplicate-document-name`).
+    let pure_other = write("pure_other.scxml", &statechart_minimal("pure_other"));
     // `<script>` is what puts a document on the engine-backed route; the
     // rest of the document is the same minimal shape as `pure`.
     let scripted = write(
@@ -801,7 +805,7 @@ fn needs_script_engine_is_the_union_over_the_document_set() {
     // The control: without it, a `false` union would be indistinguishable
     // from a route that never consults the documents at all.
     assert!(
-        !engine_of(&[&pure, &pure]),
+        !engine_of(&[&pure, &pure_other]),
         "a set of engine-free documents needs no engine",
     );
     assert!(

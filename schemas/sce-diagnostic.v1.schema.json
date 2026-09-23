@@ -150,6 +150,8 @@
         "import/read-error",
         "manifest/circular-dependency",
         "manifest/io",
+        "manifest/duplicate-document-name",
+        "manifest/artifact-path-collision",
         "generate/invalid-config",
         "generate/template-load",
         "generate/template-render",

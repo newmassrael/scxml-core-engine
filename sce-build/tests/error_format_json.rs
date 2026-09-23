@@ -1986,3 +1986,109 @@ fn an_unreadable_input_is_a_record_for_coverage_and_unresolved() {
         );
     }
 }
+
+/// Run `orchestrate` over `inputs` (flag, path pairs) from `root` and
+/// return its one refusal.
+///
+/// `--input-root .` names a source root holding every input, so the
+/// refusal is the one under test and not the source-hash coverage check,
+/// which inputs in sibling directories would otherwise trip.
+fn orchestrate_refusal(root: &Path, inputs: &[&str]) -> (Option<i32>, serde_json::Value) {
+    let out = ScratchDir::new("orchestrate-refusal-out");
+    let mut args = vec!["orchestrate", "--input-root", "."];
+    args.extend_from_slice(inputs);
+    args.extend_from_slice(&["-l", "rust", "--output-dir", out.path().to_str().unwrap()]);
+    single_record(root, &args)
+}
+
+/// The documents of one build set share one namespace. Two inputs with
+/// one name used to pass — the second document's artifacts overwrote the
+/// first's and the run exited 0, its manifest listing one path twice.
+/// The refusal names the later input as the caller spelled it, and the
+/// earlier one as the conflicting site.
+#[test]
+fn two_documents_of_one_set_cannot_share_a_name() {
+    let dir = ScratchDir::new("xdoc-duplicate-name");
+    let root = dir.path().canonicalize().expect("canonical scratch dir");
+    let lookup = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="lookup" name="quality">
+  <datamodel>
+    <data id="level" sce:type="uint8" sce:direction="in"/>
+    <data id="grade" sce:type="string" sce:direction="out"/>
+    <data id="mapping">
+      <sce:entry key="0" value="NONE"/>
+      <sce:entry key="1" value="LOW"/>
+    </data>
+  </datamodel>
+</scxml>"#;
+    for sub in ["first", "second"] {
+        std::fs::create_dir(root.join(sub)).expect("create input dir");
+        std::fs::write(root.join(sub).join("quality.scxml"), lookup).expect("write fixture");
+    }
+    let (code, record) = orchestrate_refusal(
+        &root,
+        &[
+            "--forge",
+            "first/quality.scxml",
+            "--forge",
+            "second/quality.scxml",
+        ],
+    );
+    assert_ne!(code, Some(0), "{record}");
+    assert_eq!(
+        record["code"], "manifest/duplicate-document-name",
+        "{record}"
+    );
+    assert_eq!(
+        record["location"]["file"], "second/quality.scxml",
+        "{record}"
+    );
+    assert_eq!(record["related"][0]["role"], "conflicting-use", "{record}");
+    assert_eq!(
+        record["related"][0]["location"]["file"], "first/quality.scxml",
+        "{record}"
+    );
+}
+
+/// Distinct names do not keep two documents' artifacts apart: each kind
+/// derives its file names by its own rule, and the statechart `machine`
+/// writes `machine_sm.rs` exactly as the forge document `machine_sm`
+/// does. Refused rather than one overwriting the other.
+#[test]
+fn two_documents_of_one_set_cannot_write_one_artifact() {
+    let dir = ScratchDir::new("xdoc-artifact-collision");
+    let root = dir.path().canonicalize().expect("canonical scratch dir");
+    std::fs::write(
+        root.join("machine.scxml"),
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" name="machine" version="1.0" initial="idle"><state id="idle"/></scxml>"#,
+    )
+    .expect("write statechart");
+    std::fs::write(
+        root.join("machine_sm.scxml"),
+        r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="lookup" name="machine_sm">
+  <datamodel>
+    <data id="level" sce:type="uint8" sce:direction="in"/>
+    <data id="grade" sce:type="string" sce:direction="out"/>
+    <data id="mapping">
+      <sce:entry key="0" value="NONE"/>
+    </data>
+  </datamodel>
+</scxml>"#,
+    )
+    .expect("write forge document");
+    let (code, record) = orchestrate_refusal(
+        &root,
+        &["--scxml", "machine.scxml", "--forge", "machine_sm.scxml"],
+    );
+    assert_ne!(code, Some(0), "{record}");
+    assert_eq!(
+        record["code"], "manifest/artifact-path-collision",
+        "{record}"
+    );
+    // Forge documents are generated first, so the statechart is the
+    // second writer and the forge document the site it collides with.
+    assert_eq!(record["location"]["file"], "machine.scxml", "{record}");
+    assert_eq!(
+        record["related"][0]["location"]["file"], "machine_sm.scxml",
+        "{record}"
+    );
+}

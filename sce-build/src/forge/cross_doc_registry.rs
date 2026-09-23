@@ -82,13 +82,17 @@ impl ScxmlDocKind {
 /// consulted by SCXML validators that need to resolve a name reference
 /// (e.g. `<sce:on-sample link="X">`, `<sce:outbox ref="owner.inbox">`).
 ///
-/// Names are unique across all doc kinds — duplicates are rejected at
-/// registration time so `lookup` can return a single answer.
-/// Forge itself already enforces unique artifact names within its own
-/// build, and SCXML statechart names enter through a separate channel,
-/// so a duplicate surfacing here usually indicates either a producer
-/// bug or a name collision between an SCXML statechart and a forge
-/// doc — both worth surfacing as a build-time error.
+/// Names are unique across all doc kinds, so `lookup` has one answer —
+/// and this index is not what makes them so. The build refuses a second
+/// document of any kind under a taken name before either reaches here
+/// (`manifest/duplicate-document-name`, from the one place that knows
+/// both documents' paths), so registration only records.
+///
+/// ⚠ This comment used to say forge already enforced unique names and
+/// that a same-kind repeat was an idempotent no-op "for incremental
+/// builds". Neither held: no caller registers twice, and two link
+/// documents named alike passed straight through — the second one's
+/// artifacts overwrote the first's with the run reporting success.
 ///
 /// `stage_pools` is a sparse parallel map keyed by link names —
 /// populated only for links that declare `<sce:stage-pool ref="X"/>`
@@ -115,28 +119,19 @@ impl SceCrossDocRegistry {
         }
     }
 
-    /// Register one artifact without per-doc metadata. Returns `Err`
-    /// with the existing kind if the name is already registered with a
-    /// different kind; no-op if the same name + same kind is re-
-    /// registered (idempotent for repeat calls during incremental
-    /// builds). Use [`Self::record_document`] for production code on
-    /// forge docs and [`Self::record_statechart`] for SCXML docs —
-    /// this entry point is convenience for tests that only exercise
-    /// the kind-resolution surface.
-    pub fn record(
-        &mut self,
-        name: impl Into<String>,
-        kind: ScxmlDocKind,
-    ) -> Result<(), ScxmlDocKind> {
-        let name = name.into();
-        match self.docs.get(&name) {
-            Some(existing) if *existing == kind => Ok(()),
-            Some(existing) => Err(*existing),
-            None => {
-                self.docs.insert(name, kind);
-                Ok(())
-            }
-        }
+    /// Register one artifact without per-doc metadata. The name must not
+    /// be registered yet — the caller's namespace check guarantees it
+    /// (see the type's docs). Use [`Self::record_document`] for
+    /// production code on forge docs and [`Self::record_statechart`] for
+    /// SCXML docs — this entry point is convenience for tests that only
+    /// exercise the kind-resolution surface.
+    pub fn record(&mut self, name: impl Into<String>, kind: ScxmlDocKind) {
+        let previous = self.docs.insert(name.into(), kind);
+        debug_assert!(
+            previous.is_none(),
+            "a document name reached the cross-doc registry twice; the \
+             build's namespace check must refuse it first"
+        );
     }
 
     /// Register a forge document by its declared kind. Today's
@@ -149,33 +144,27 @@ impl SceCrossDocRegistry {
     /// them — buffer-pool refs resolve through
     /// [`super::pool_registry::ForgePoolRegistry`], which carries the
     /// slot geometry those joins also need.
-    pub fn record_document(&mut self, doc: &ForgeDocument) -> Result<(), ScxmlDocKind> {
+    pub fn record_document(&mut self, doc: &ForgeDocument) {
         match doc {
             ForgeDocument::Link(link) => {
-                self.record(link.name.clone(), ScxmlDocKind::Link)?;
+                self.record(link.name.clone(), ScxmlDocKind::Link);
                 if let Some(stage_pool) = link.stage_pool.as_ref() {
-                    // First registration wins — duplicate links are
-                    // already rejected by `record` above, so we never
-                    // reach this branch with conflicting stage_pool refs.
                     self.stage_pools
-                        .entry(link.name.clone())
-                        .or_insert_with(|| stage_pool.clone());
+                        .insert(link.name.clone(), stage_pool.clone());
                 }
-                Ok(())
             }
             ForgeDocument::Worker(worker) => self.record(worker.name.clone(), ScxmlDocKind::Worker),
             ForgeDocument::Codec(codec) => self.record(codec.name.clone(), ScxmlDocKind::Codec),
-            _ => Ok(()),
+            _ => {}
         }
     }
 
     /// Register an SCXML statechart document by its `<scxml name>`
     /// attribute. SCXML statecharts don't flow through `ForgeDocument`
     /// (separate parse pipeline), so they enter the registry through
-    /// this dedicated entry point. Returns `Err` with the existing
-    /// kind if the name collides with a previously-registered doc
-    /// (link / worker / another statechart).
-    pub fn record_statechart(&mut self, name: impl Into<String>) -> Result<(), ScxmlDocKind> {
+    /// this dedicated entry point. The name is unique by the time it
+    /// arrives, as for [`Self::record`].
+    pub fn record_statechart(&mut self, name: impl Into<String>) {
         self.record(name, ScxmlDocKind::Statechart)
     }
 
@@ -248,48 +237,25 @@ mod tests {
     fn register_and_lookup_link() {
         let mut reg = SceCrossDocRegistry::new();
         assert!(reg.is_empty());
-        reg.record("scout_link", ScxmlDocKind::Link).unwrap();
+        reg.record("scout_link", ScxmlDocKind::Link);
         assert_eq!(reg.len(), 1);
         assert_eq!(reg.lookup("scout_link"), Some(ScxmlDocKind::Link));
         assert_eq!(reg.lookup("missing"), None);
     }
 
     #[test]
-    fn record_idempotent_on_same_kind() {
-        let mut reg = SceCrossDocRegistry::new();
-        reg.record("scout_link", ScxmlDocKind::Link).unwrap();
-        // Second call with the same kind succeeds — incremental
-        // builds re-walking parsed documents must not raise.
-        reg.record("scout_link", ScxmlDocKind::Link).unwrap();
-        assert_eq!(reg.len(), 1);
-    }
-
-    #[test]
-    fn record_rejects_kind_collision() {
-        let mut reg = SceCrossDocRegistry::new();
-        reg.record("name_x", ScxmlDocKind::Link).unwrap();
-        // Same name, different kind → rejection with the existing
-        // kind label so the caller can surface a meaningful conflict
-        // diagnostic.
-        let err = reg
-            .record("name_x", ScxmlDocKind::Statechart)
-            .expect_err("kind collision must reject");
-        assert_eq!(err, ScxmlDocKind::Link);
-    }
-
-    #[test]
     fn record_statechart_separates_from_record_document() {
         let mut reg = SceCrossDocRegistry::new();
-        reg.record_statechart("session_fsm").unwrap();
+        reg.record_statechart("session_fsm");
         assert_eq!(reg.lookup("session_fsm"), Some(ScxmlDocKind::Statechart));
     }
 
     #[test]
     fn names_of_kind_returns_sorted() {
         let mut reg = SceCrossDocRegistry::new();
-        reg.record("zeta_link", ScxmlDocKind::Link).unwrap();
-        reg.record("alpha_link", ScxmlDocKind::Link).unwrap();
-        reg.record("middle_link", ScxmlDocKind::Link).unwrap();
+        reg.record("zeta_link", ScxmlDocKind::Link);
+        reg.record("alpha_link", ScxmlDocKind::Link);
+        reg.record("middle_link", ScxmlDocKind::Link);
         assert_eq!(
             reg.names_of_kind(ScxmlDocKind::Link),
             vec![
@@ -307,10 +273,10 @@ mod tests {
         // outbox validator's `Fix::ReplaceOneOf` carries every legal
         // recipient regardless of kind.
         let mut reg = SceCrossDocRegistry::new();
-        reg.record_statechart("session_fsm").unwrap();
-        reg.record("tx_loop", ScxmlDocKind::Worker).unwrap();
-        reg.record("rx_loop", ScxmlDocKind::Worker).unwrap();
-        reg.record("link_a", ScxmlDocKind::Link).unwrap();
+        reg.record_statechart("session_fsm");
+        reg.record("tx_loop", ScxmlDocKind::Worker);
+        reg.record("rx_loop", ScxmlDocKind::Worker);
+        reg.record("link_a", ScxmlDocKind::Link);
         let candidates = reg.names_of_any_kind(&[ScxmlDocKind::Statechart, ScxmlDocKind::Worker]);
         assert_eq!(
             candidates,
@@ -328,7 +294,7 @@ mod tests {
         // resolution surface) leaves `stage_pools` empty — only
         // `record_document` extracts it from a parsed `LinkModel`.
         let mut reg = SceCrossDocRegistry::new();
-        reg.record("scout_link", ScxmlDocKind::Link).unwrap();
+        reg.record("scout_link", ScxmlDocKind::Link);
         assert_eq!(reg.lookup_stage_pool("scout_link"), None);
     }
 
@@ -349,7 +315,7 @@ mod tests {
             accept_stage_copy_rate: false,
             source_location: None,
         });
-        reg.record_document(&doc).unwrap();
+        reg.record_document(&doc);
         assert_eq!(reg.lookup("scout_link"), Some(ScxmlDocKind::Link));
         assert_eq!(
             reg.lookup_stage_pool("scout_link"),
@@ -377,7 +343,7 @@ mod tests {
             accept_stage_copy_rate: false,
             source_location: None,
         });
-        reg.record_document(&doc).unwrap();
+        reg.record_document(&doc);
         assert_eq!(reg.lookup("borrow_only_link"), Some(ScxmlDocKind::Link));
         assert_eq!(reg.lookup_stage_pool("borrow_only_link"), None);
     }
@@ -399,7 +365,7 @@ mod tests {
             outbox: None,
             source_location: None,
         });
-        reg.record_document(&doc).unwrap();
+        reg.record_document(&doc);
         assert_eq!(reg.lookup("rx_loop"), Some(ScxmlDocKind::Worker));
         // Workers don't have a stage_pool; lookup stays None.
         assert_eq!(reg.lookup_stage_pool("rx_loop"), None);

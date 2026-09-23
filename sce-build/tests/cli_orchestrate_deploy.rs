@@ -560,6 +560,14 @@ fn orchestrate_manifest_reports_the_script_engine_union() {
         "session_fsm.scxml",
         &statechart_minimal("session_fsm"),
     );
+    // A second engine-free document, for the control: a set is distinct
+    // documents, and the same path named twice is refused as one name
+    // declared twice (`manifest/duplicate-document-name`).
+    let plain_other = write_doc(
+        staged.path(),
+        "idle_fsm.scxml",
+        &statechart_minimal("idle_fsm"),
+    );
     // A `cond` the static lowering cannot fold needs the engine.
     let scripted = write_doc(
         staged.path(),
@@ -611,7 +619,7 @@ fn orchestrate_manifest_reports_the_script_engine_union() {
     // the union claim is about the set rather than about a flag that is
     // always true.
     assert!(
-        !read_flag(&plain, &plain),
+        !read_flag(&plain, &plain_other),
         "a set of pure-static documents must not claim to need an engine",
     );
     assert!(

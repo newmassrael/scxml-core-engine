@@ -858,6 +858,23 @@ Optional attribute:
 Circular imports across the manifest graph are rejected as
 `manifest/circular-dependency`.
 
+The documents built together — every input of one `orchestrate` run, or
+of one `check` over a document set — share one namespace. Two of them
+declaring the same name are rejected as
+`manifest/duplicate-document-name`, whatever their kinds: a reference
+by name would have two answers, and each document's generated symbols
+derive from its name. The record is located at the later input and
+names the earlier one as a `related` site. Two inputs whose generated
+artifacts land on the same path — which distinct names do not rule
+out, since each kind derives its file names by its own rule (a
+statechart `machine` and a forge document `machine_sm` both write
+`machine_sm.rs`) — are rejected as `manifest/artifact-path-collision`
+rather than one overwriting the other.
+
+A statechart's document name is its file stem, not its `name`
+attribute, so two statecharts sharing a file name in different
+directories are one name declared twice.
+
 An import the document never names — no `enum:<alias>` type, no
 expression reading `<alias>`, no structural reference such as a codec
 body — is still resolved and checked by every rule above, but the
@@ -3119,6 +3136,8 @@ Codes that the author can avoid by writing a better SCXML /
 | `import/kind-mismatch` | Import |
 | `import/not-forge` | Import |
 | `manifest/circular-dependency` | Manifest |
+| `manifest/duplicate-document-name` | Manifest |
+| `manifest/artifact-path-collision` | Manifest |
 | `cli/unknown-language` | Cli |
 | `cli/unsupported-language` | Cli |
 | `cli/missing-metadata-field` | Cli |

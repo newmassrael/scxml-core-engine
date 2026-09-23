@@ -2982,6 +2982,7 @@ pub fn compile_scxml_with_imports(
     // forge→forge cross-references as bounded-collection element
     // types — so that surface lives on a dedicated map (decision
     // 2026-05-13).
+    let mut namespace = DocumentNamespace::default();
     let mut cross_doc = SceCrossDocRegistry::new();
     let mut pool_reg = ForgePoolRegistry::new();
     let mut workers_for_outbox: Vec<(String, forge::model::WorkerModel)> = Vec::new();
@@ -3032,20 +3033,7 @@ pub fn compile_scxml_with_imports(
         // Read + expand. This function resolves its documents from paths,
         // so it owns the preprocessor step its callers cannot reach — the
         // statechart half already does, via `compile_model`.
-        let content = load_forge_source(forge_path, &options.include_dirs)
-            .map_err(|e| {
-                Located::new(
-                    forge::error::GenerateError::InvalidConfig(format!(
-                        "compile_scxml_with_imports: cannot read {path_str}: {}",
-                        e.error
-                    ))
-                    .into(),
-                    path_str,
-                    None,
-                    None,
-                )
-            })?
-            .text;
+        let content = load_forge_source(forge_path, &options.include_dirs)?.text;
         let label = DocumentLabel::for_input_path(path_str);
         let parsed =
             forge::parser::parse_forge_with_imports(&content, label)?.ok_or_else(|| {
@@ -3060,30 +3048,9 @@ pub fn compile_scxml_with_imports(
                     None,
                 )
             })?;
-        let doc_name = parsed.document.name().to_string();
-        cross_doc.record_document(&parsed.document).map_err(|existing| {
-            Located::new(
-                forge::error::GenerateError::InvalidConfig(format!(
-                    "compile_scxml_with_imports: doc name '{doc_name}' already registered as kind '{existing_kind}'",
-                    existing_kind = existing.as_str()
-                ))
-                .into(),
-                path_str,
-                None,
-                None,
-            )
-        })?;
-        pool_reg.record_document(&parsed.document).map_err(|existing| {
-            Located::new(
-                forge::error::GenerateError::InvalidConfig(format!(
-                    "compile_scxml_with_imports: pool registry rejected '{doc_name}' (existing kind '{existing:?}')"
-                ))
-                .into(),
-                path_str,
-                None,
-                None,
-            )
-        })?;
+        namespace.claim(parsed.document.name(), path_str)?;
+        cross_doc.record_document(&parsed.document);
+        pool_reg.record_document(&parsed.document);
         // Aggregate every parsed doc's externs into the
         // build-wide slice consumed by the multi-writer atomic-
         // import check. The spec contract is "atomic imports must
@@ -3127,11 +3094,9 @@ pub fn compile_scxml_with_imports(
             }
             doc @ (forge::model::ForgeDocument::Codec(_)
             | forge::model::ForgeDocument::Procedure(_)) => {
-                // Element-type candidate map keyed by doc name; name
-                // uniqueness across the build is already enforced by
-                // `cross_doc.record_document` above (different kinds
-                // sharing a name collide there). `insert` is safe —
-                // duplicates are unreachable.
+                // Element-type candidate map keyed by doc name; the
+                // namespace claim above refuses a second document of any
+                // kind under a taken name, so `insert` never replaces.
                 let key = doc.name().to_string();
                 element_import_sources.insert(
                     key.clone(),
@@ -3205,28 +3170,14 @@ pub fn compile_scxml_with_imports(
         // and attached to each per-doc `GeneratedOutput.deps` — so
         // dropping them here is intentional, not a leak.
         let ParsedSCXML { model, .. } = compile_model(path_str)?;
-        if !model.name.is_empty() {
-            // SCXML without a `name` attribute is legal at the parser
-            // tier; skip registration so outbox refs of the form
-            // `<owner>.inbox` resolve only against named docs. The
-            // skipped doc still proceeds through cross-ref validation
-            // (it cannot be a recipient, but it can be a sender).
-            cross_doc
-                .record_statechart(model.name.clone())
-                .map_err(|existing| {
-                    Located::new(
-                        forge::error::GenerateError::InvalidConfig(format!(
-                            "compile_scxml_with_imports: statechart '{name}' collides with previously-registered kind '{existing_kind}'",
-                            name = model.name,
-                            existing_kind = existing.as_str()
-                        ))
-                        .into(),
-                        path_str,
-                        None,
-                        None,
-                    )
-                })?;
-        }
+        // A statechart's name is its file stem — `SCXMLModel::name` is the
+        // label's identifier, never the `name` attribute — so every
+        // statechart registers, and an outbox ref `<owner>.inbox` names
+        // the file. This read `if !model.name.is_empty()` under a comment
+        // about documents without a `name` attribute; the attribute never
+        // reached this value, so the branch skipped nothing.
+        namespace.claim(&model.name, path_str)?;
+        cross_doc.record_statechart(model.name.clone());
         scxml_models.push(((*scxml_path).to_path_buf(), model));
     }
     for (path, model) in &scxml_models {
@@ -3649,7 +3600,7 @@ pub fn compile_scxml_with_imports(
     // + emits). The orchestrator's unique contribution is the registry +
     // validator pass above — codegen itself remains the existing pipeline
     // so single-file callers and the orchestrator share emit paths.
-    let mut outputs: Vec<(String, generator::GeneratedOutput)> = Vec::new();
+    let mut outputs = ProducedArtifacts::default();
 
     for forge_path in forge_files {
         let path_text = forge_path.to_string_lossy();
@@ -3657,20 +3608,7 @@ pub fn compile_scxml_with_imports(
         // Read + expand. This function resolves its documents from paths,
         // so it owns the preprocessor step its callers cannot reach — the
         // statechart half already does, via `compile_model`.
-        let content = load_forge_source(forge_path, &options.include_dirs)
-            .map_err(|e| {
-                Located::new(
-                    forge::error::GenerateError::InvalidConfig(format!(
-                        "compile_scxml_with_imports: cannot read {path_str}: {}",
-                        e.error
-                    ))
-                    .into(),
-                    path_str,
-                    None,
-                    None,
-                )
-            })?
-            .text;
+        let content = load_forge_source(forge_path, &options.include_dirs)?.text;
         let basename = forge_path
             .file_name()
             .and_then(|s| s.to_str())
@@ -3680,7 +3618,7 @@ pub fn compile_scxml_with_imports(
         let effective_options = bc_options_override.as_ref().unwrap_or(options);
         let out =
             compile_forge_with_imports(&content, label, language, base_dir, effective_options)?;
-        outputs.push((basename.to_string(), out));
+        outputs.add(basename, path_str, out)?;
     }
 
     // SCE Protocol-Synthesis RFC §5.2 — codegen-entry checks
@@ -3757,7 +3695,7 @@ pub fn compile_scxml_with_imports(
                 ..Default::default()
             },
         )?;
-        outputs.push((basename.to_string(), out));
+        outputs.add(basename, path_str, out)?;
     }
 
     // ── Per-machine concurrency artifacts (§synth-5-N) ──
@@ -3804,19 +3742,115 @@ pub fn compile_scxml_with_imports(
                     // synthesised from `deploy.yaml`, not the SCXML
                     // preprocessor pipeline — they have no
                     // filesystem-anchored fragment deps to forward.
-                    outputs.push((
-                        machine_name.clone(),
+                    outputs.add(
+                        machine_name,
+                        "deploy.yaml",
                         generator::GeneratedOutput {
                             files,
                             ..Default::default()
                         },
-                    ));
+                    )?;
                 }
             }
         }
     }
 
-    Ok(outputs)
+    Ok(outputs.into_outputs())
+}
+
+/// The one namespace the documents of a build set share.
+///
+/// Each document's name is claimed once, with the path it came from, so
+/// a second claim can name both documents: the record at the later
+/// input, the earlier one as a `related` site. Kinds do not partition
+/// it — a cross-document reference resolves by name alone, and every
+/// generated symbol derives from the name.
+#[derive(Default)]
+struct DocumentNamespace {
+    claimed: std::collections::HashMap<String, String>,
+}
+
+impl DocumentNamespace {
+    fn claim(&mut self, name: &str, path: &str) -> Result<(), CompileError> {
+        match self.claimed.get(name) {
+            Some(first) => Err(forge::error::Located::new(
+                forge::error::ManifestError::DuplicateDocumentName {
+                    name: name.to_string(),
+                    first: first.clone(),
+                }
+                .into(),
+                path,
+                None,
+                None,
+            )
+            .related_to(first_declared_at(first))),
+            None => {
+                self.claimed.insert(name.to_string(), path.to_string());
+                Ok(())
+            }
+        }
+    }
+}
+
+/// Every artifact one build set writes, refusing a second writer of a
+/// path.
+///
+/// Checked as each output arrives rather than inferred from names:
+/// distinct names do not rule a collision out (each kind derives file
+/// names by its own rule: statechart `machine` and forge `machine_sm`
+/// both write `machine_sm.rs`), and whatever the cause, the output
+/// directory would keep only the last document's file.
+#[derive(Default)]
+struct ProducedArtifacts {
+    outputs: Vec<(String, generator::GeneratedOutput)>,
+    writers: std::collections::HashMap<String, String>,
+}
+
+impl ProducedArtifacts {
+    fn add(
+        &mut self,
+        basename: &str,
+        source: &str,
+        output: generator::GeneratedOutput,
+    ) -> Result<(), CompileError> {
+        for (file_name, _) in &output.files {
+            if let Some(first) = self.writers.get(file_name) {
+                return Err(forge::error::Located::new(
+                    forge::error::ManifestError::ArtifactPathCollision {
+                        artifact: file_name.clone(),
+                        first: first.clone(),
+                    }
+                    .into(),
+                    source,
+                    None,
+                    None,
+                )
+                .related_to(first_declared_at(first)));
+            }
+        }
+        for (file_name, _) in &output.files {
+            self.writers.insert(file_name.clone(), source.to_string());
+        }
+        self.outputs.push((basename.to_string(), output));
+        Ok(())
+    }
+
+    fn into_outputs(self) -> Vec<(String, generator::GeneratedOutput)> {
+        self.outputs
+    }
+}
+
+/// The earlier document of a set-level conflict, as a `related` site.
+fn first_declared_at(path: &str) -> forge::error::RelatedSite {
+    forge::error::RelatedSite {
+        role: forge::error::RelatedRole::ConflictingUse,
+        location: forge::error::SourceLocation {
+            file: path.to_string(),
+            line: None,
+            col: None,
+        },
+        actual: None,
+    }
 }
 
 /// Wire-format name for a [`generator::Language`].

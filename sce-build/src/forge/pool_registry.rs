@@ -56,11 +56,12 @@ impl ForgePoolKind {
 /// deploy.yaml validators that need to resolve a name reference (e.g.
 /// `binding.stage_pool: <pool-name>`).
 ///
-/// Names are unique across all pool kinds — duplicates are rejected at
-/// registration time so `lookup` can return a single answer. Forge
-/// itself already enforces unique artifact names within a build, so
-/// duplicates surfacing here would indicate a producer bug; the assert
-/// in `record` is a defensive belt-and-braces.
+/// Names are unique, so `lookup` has one answer — made so by the build's
+/// namespace check, which refuses a second document of any kind under a
+/// taken name before either reaches here
+/// (`manifest/duplicate-document-name`). This comment used to credit
+/// forge with that guarantee; nothing in forge held it, and a same-name
+/// repeat passed through as an "idempotent" no-op.
 #[derive(Debug, Default)]
 pub struct ForgePoolRegistry {
     pools: HashMap<String, ForgePoolKind>,
@@ -75,34 +76,23 @@ impl ForgePoolRegistry {
         }
     }
 
-    /// Register one pool artifact. Returns `Err` with the existing
-    /// kind if the name is already registered with a different kind;
-    /// no-op if the same name + same kind is re-registered (idempotent
-    /// for repeat calls during incremental builds).
-    pub fn record(
-        &mut self,
-        name: impl Into<String>,
-        kind: ForgePoolKind,
-    ) -> Result<(), ForgePoolKind> {
-        let name = name.into();
-        match self.pools.get(&name) {
-            Some(existing) if *existing == kind => Ok(()),
-            Some(existing) => Err(*existing),
-            None => {
-                self.pools.insert(name, kind);
-                Ok(())
-            }
-        }
+    /// Register one pool artifact. The name must not be registered yet —
+    /// the caller's namespace check guarantees it (see the type's docs).
+    pub fn record(&mut self, name: impl Into<String>, kind: ForgePoolKind) {
+        let previous = self.pools.insert(name.into(), kind);
+        debug_assert!(
+            previous.is_none(),
+            "a pool name reached the pool registry twice; the build's \
+             namespace check must refuse it first"
+        );
     }
 
     /// Register a forge document if its kind is a pool kind. No-op for
     /// non-pool documents — matches the "register every parsed forge
     /// document" call-site pattern without the caller having to filter.
-    pub fn record_document(&mut self, doc: &ForgeDocument) -> Result<(), ForgePoolKind> {
+    pub fn record_document(&mut self, doc: &ForgeDocument) {
         if let ForgeDocument::BufferPool(pool) = doc {
-            self.record(pool.name.clone(), ForgePoolKind::BufferPool)
-        } else {
-            Ok(())
+            self.record(pool.name.clone(), ForgePoolKind::BufferPool);
         }
     }
 
@@ -148,30 +138,18 @@ mod tests {
     fn register_and_lookup_buffer_pool() {
         let mut reg = ForgePoolRegistry::new();
         assert!(reg.is_empty());
-        reg.record("rx_pool_sram1", ForgePoolKind::BufferPool)
-            .unwrap();
+        reg.record("rx_pool_sram1", ForgePoolKind::BufferPool);
         assert_eq!(reg.len(), 1);
         assert_eq!(reg.lookup("rx_pool_sram1"), Some(ForgePoolKind::BufferPool));
         assert_eq!(reg.lookup("missing"), None);
     }
 
     #[test]
-    fn record_idempotent_on_same_kind() {
-        let mut reg = ForgePoolRegistry::new();
-        reg.record("p", ForgePoolKind::BufferPool).unwrap();
-        // Second call with the same kind succeeds — incremental builds
-        // re-walking parsed documents must not raise.
-        reg.record("p", ForgePoolKind::BufferPool).unwrap();
-        assert_eq!(reg.len(), 1);
-    }
-
-    #[test]
     fn names_of_kind_returns_sorted() {
         let mut reg = ForgePoolRegistry::new();
-        reg.record("zeta_pool", ForgePoolKind::BufferPool).unwrap();
-        reg.record("alpha_pool", ForgePoolKind::BufferPool).unwrap();
-        reg.record("middle_pool", ForgePoolKind::BufferPool)
-            .unwrap();
+        reg.record("zeta_pool", ForgePoolKind::BufferPool);
+        reg.record("alpha_pool", ForgePoolKind::BufferPool);
+        reg.record("middle_pool", ForgePoolKind::BufferPool);
         assert_eq!(
             reg.names_of_kind(ForgePoolKind::BufferPool),
             vec![
@@ -206,7 +184,7 @@ mod tests {
         };
         let doc = ForgeDocument::BufferPool(pool);
         let mut reg = ForgePoolRegistry::new();
-        reg.record_document(&doc).expect("buffer-pool registers");
+        reg.record_document(&doc);
         assert_eq!(reg.lookup("rx_pool_sram1"), Some(ForgePoolKind::BufferPool));
     }
 }

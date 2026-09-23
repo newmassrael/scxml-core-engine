@@ -801,7 +801,9 @@ references against a real document and drift silently.
 | `link/pool-ref-not-declared` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.C |
 | `link/pool-slot-smaller-than-framer-max` | `validation` | no | SCE Protocol-Synthesis RFC §5.C |
 | `link/role-listener-with-non-session-arming-trust-class` | `validation` | no |  |
+| `manifest/artifact-path-collision` | `manifest` | no |  |
 | `manifest/circular-dependency` | `manifest` | no |  |
+| `manifest/duplicate-document-name` | `manifest` | no |  |
 | `manifest/io` | `manifest` | no |  |
 | `mcu/driver-header-not-found` | `validation` | no | SCE Protocol-Synthesis RFC §5.2 |
 | `mcu/section-attribute-name-invalid` | `generate` | no | SCE Protocol-Synthesis RFC §5.2 |
