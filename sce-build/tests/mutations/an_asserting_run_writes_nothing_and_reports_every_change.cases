@@ -1,0 +1,96 @@
+# Mutation cases for "an asserting run writes nothing and reports every change".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/an_asserting_run_writes_nothing_and_reports_every_change.cases`.
+#
+# `--assert-unchanged` is the §6.2.6 drift check done on content: do all of a
+# generation without writing, and fail naming each file on disk that is not as
+# that generation would leave it. Each promise in that sentence can be broken
+# on its own and still leave a run that looks like a check:
+#
+#   - writing what it compared turns the check into a regeneration that always
+#     passes the second time;
+#   - reading an absent file as unchanged passes a tree with files missing;
+#   - dropping the findings at the end passes everything it found;
+#   - a command the flag cannot reach running anyway reports "unchanged" for
+#     writes it never saw, and `generate-w3c --clean` deletes;
+#   - a file the run reads back must come from what the run produced, and be
+#     judged on what it finally holds — the Rust suite's `mod.rs` is written,
+#     read back and extended, and either shortcut fails a tree the same
+#     generation wrote;
+#   - a file the generation would remove must be neither removed nor passed;
+#   - a child document the generation copies must be compared, not copied;
+#   - the run's own marker check must read what it produced, not the disk.
+#
+# One case per promise, and each is refused by a test in
+# `generation_can_assert_its_output_unchanged.rs`.
+
+mutation_tests -p sce-build --features cli --test generation_can_assert_its_output_unchanged
+mutation_targets sce-build/src/bin/sce_codegen.rs
+mutation_oracles sce-build/tests/generation_can_assert_its_output_unchanged.rs
+
+mutation_case "an asserting run writes the file it produced" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "            pending_tree().set(tree_key(path), Some(content.to_vec()));",
+     "            pending_tree().set(tree_key(path), Some(content.to_vec()));\n            fs::write(path, content)?;")
+PY
+
+mutation_case "an absent file is read as unchanged" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "Some(bytes) => on_disk.as_deref() != Some(bytes.as_slice()),",
+     "Some(bytes) => on_disk.as_deref().is_some_and(|d| d != bytes.as_slice()),")
+PY
+
+mutation_case "the findings are dropped and the run passes" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "    if paths.is_empty() {\n        return;\n    }\n    cli_exit(CliError::GeneratedOutputChanged {",
+     "    if paths.is_empty() || !paths.is_empty() {\n        return;\n    }\n    cli_exit(CliError::GeneratedOutputChanged {")
+PY
+
+mutation_case "a command the flag cannot reach runs anyway" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "if let Some(detail) = assert_unchanged_refusal(&cli.command) {",
+     "if let Some(detail) = assert_unchanged_refusal(&cli.command).filter(|_| false) {")
+PY
+
+mutation_case "generate-w3c --clean and --list run under the flag" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "Commands::GenerateW3c(args) if args.clean || args.list => Some(",
+     "Commands::GenerateW3c(args) if false && (args.clean || args.list) => Some(")
+PY
+
+mutation_case "a file the run reads back is read from disk" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "if let Some(existing) = read_generated(&mod_file) {",
+     "if let Ok(existing) = fs::read_to_string(&mod_file) {")
+PY
+
+mutation_case "a file the run writes twice is judged on its first write" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "        if self.content.insert(path.clone(), bytes).is_none() {\n            self.order.push(path);\n        }",
+     "        if !self.content.contains_key(&path) {\n            self.content.insert(path.clone(), bytes);\n            self.order.push(path);\n        }")
+PY
+
+mutation_case "an asserting run removes what the generation would remove" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "        OutputMode::AssertUnchanged => {\n            let doomed = if path.is_dir() {",
+     "        OutputMode::AssertUnchanged => {\n            let _ = fs::remove_file(path);\n            let doomed = if path.is_dir() {")
+PY
+
+mutation_case "a file the generation would remove is passed" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "            None => on_disk.is_some(),",
+     "            None => false,")
+PY
+
+mutation_case "an asserting run copies the child document" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "    try_emit_generated(dest, &bytes, WritePolicy::IfChanged)\n}",
+     "    fs::write(dest, &bytes)\n}")
+PY
+
+mutation_case "the run's marker check reads the disk" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "    if let Err(err) = sce_build::forge::sourcemap::validate_emitted_files_have_markers_in(\n        &RunTree,",
+     "    if let Err(err) = sce_build::forge::sourcemap::validate_emitted_files_have_markers_in(\n        &drift::OnDisk,")
+PY

@@ -128,6 +128,16 @@ enum Reach {
     /// consistent there, and the sibling gate is the one that watches
     /// that route.
     DeployRoute,
+    /// Makes the run compare what it would write with the files on disk
+    /// instead of writing them. It reaches the disk and never the document,
+    /// and `check` writes nothing, so it has nothing to compare and needs no
+    /// counterpart. Not `Emission`: its exit status is SUPPOSED to depend on
+    /// what is on disk, so the probe that holds Emission still — two runs
+    /// into two fresh directories — would fail it for doing its job. Held to
+    /// account by `a_comparison_flag_moves_the_verdict_only_by_the_disk`
+    /// instead: over the tree the same generation just wrote, it exits as
+    /// that generation did.
+    Comparison,
 }
 
 struct FlagFacts {
@@ -183,6 +193,14 @@ const GENERATE_FLAGS: &[FlagFacts] = &[
         "names the artifact's role in an emitted file set (a synth-invoke \
          child of `--parent-stem`); the one model bit it sets widens what is \
          emitted and refuses nothing",
+    ),
+    f(
+        "--assert-unchanged",
+        Reach::Comparison,
+        Some(&["--assert-unchanged"]),
+        "rust",
+        "compares what the run would write with the files on disk and writes \
+         nothing — the §6.2.6 drift check done on content",
     ),
     f(
         "--c-symbol-prefix",
@@ -594,6 +612,70 @@ fn an_emission_flag_does_not_move_a_verdict() {
         emission > 1,
         "the flag table came back with {emission} emission flag(s); the \
          comparison above would hold vacuously"
+    );
+}
+
+/// A `Comparison` flag's claim: it moves the exit status only through what is
+/// on disk, never through the document. Measured on the one tree where the
+/// disk has nothing to say — the tree the same generation just wrote — where
+/// the comparing run must exit exactly as the writing run did.
+///
+/// `SOURCE_DATE_EPOCH` is pinned for both runs: the header stamp is otherwise
+/// wall-clock, and two runs a second apart would differ in it and nothing
+/// else — a difference the flag is right to report and this claim is not
+/// about.
+#[test]
+fn a_comparison_flag_moves_the_verdict_only_by_the_disk() {
+    let run_pinned = |args: &[&str]| {
+        let out = Command::new(sce_codegen_bin())
+            .args(args)
+            .current_dir(repo_root())
+            .env("SOURCE_DATE_EPOCH", "0")
+            .output()
+            .expect("sce-codegen runs");
+        (
+            out.status.code().unwrap_or(-1),
+            String::from_utf8_lossy(&out.stderr).into_owned(),
+        )
+    };
+    let mut probed = 0;
+    for facts in GENERATE_FLAGS
+        .iter()
+        .filter(|f| f.reach == Reach::Comparison)
+    {
+        let extra = facts
+            .probe
+            .unwrap_or_else(|| panic!("`{}` is a Comparison flag with no probe", facts.flag));
+        let out = ScratchDir::new("compare");
+        let dir = out.path();
+        let base: [&str; 6] = [
+            "generate",
+            HOST_FIXTURE,
+            "-l",
+            facts.probe_lang,
+            "--output-dir",
+            &dir,
+        ];
+        let (written, written_err) = run_pinned(&base);
+        assert_eq!(
+            written, 0,
+            "the probe's writing run fails, so the comparison below measures \
+             nothing: {written_err}"
+        );
+        let mut with: Vec<&str> = base.to_vec();
+        with.extend(extra.iter().copied());
+        let (compared, compared_err) = run_pinned(&with);
+        assert_eq!(
+            compared, written,
+            "`{}` ({}) exited {compared} over the tree the same generation just \
+             wrote, where it must exit as that generation did: {compared_err}",
+            facts.flag, facts.why,
+        );
+        probed += 1;
+    }
+    assert!(
+        probed >= 1,
+        "no Comparison flag was probed, so the claim above held vacuously"
     );
 }
 

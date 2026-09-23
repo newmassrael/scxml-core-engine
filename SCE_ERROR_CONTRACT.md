@@ -986,6 +986,7 @@ references against a real document and drift silently.
 | `cli/unsupported-script-engine` | `cli` | `replace_one_of` |  |
 | `cli/usage` | `cli` | no |  |
 | `cli/write-output` | `cli` | no |  |
+| `forge/generated-output-changed` | `cli` | no | SCE Protocol-Synthesis RFC §6.2.6 |
 | `forge/source-hash-input-uncovered` | `cli` | no | SCE Protocol-Synthesis RFC §6.2.6 |
 | `forge/source-hash-mismatch` | `cli` | no | SCE Protocol-Synthesis RFC §6.2.6 |
 | `forge/source-hash-walk-unbounded` | `cli` | no | SCE Protocol-Synthesis RFC §6.2.6 |

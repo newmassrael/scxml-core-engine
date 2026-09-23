@@ -457,6 +457,49 @@ pub fn parse_embedded_hashes(content: &str) -> Option<EmbeddedHashes> {
     }
 }
 
+/// A generated output tree, as a check made during generation reads it.
+///
+/// Ordinarily the disk. An `sce-codegen --assert-unchanged` run writes
+/// nothing, so a check it makes has to read the tree that run would have
+/// left behind — the files it produced laid over the files already there.
+/// Reading the disk instead judges bytes the run never produced: the
+/// previous run's, or the hand edit the assertion exists to expose.
+pub trait GeneratedTree {
+    /// Every file under `dir`, recursively.
+    fn files_under(&self, dir: &Path) -> BTreeSet<PathBuf>;
+
+    /// The text of the file at `path`, or `None` when there is none.
+    fn read_to_string(&self, path: &Path) -> Option<String>;
+}
+
+/// The generated tree on disk.
+pub struct OnDisk;
+
+impl GeneratedTree for OnDisk {
+    fn files_under(&self, dir: &Path) -> BTreeSet<PathBuf> {
+        fn walk(dir: &Path, out: &mut BTreeSet<PathBuf>) {
+            let Ok(entries) = fs::read_dir(dir) else {
+                return;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    walk(&path, out);
+                } else {
+                    out.insert(path);
+                }
+            }
+        }
+        let mut out = BTreeSet::new();
+        walk(dir, &mut out);
+        out
+    }
+
+    fn read_to_string(&self, path: &Path) -> Option<String> {
+        fs::read_to_string(path).ok()
+    }
+}
+
 // ── internal helpers ──────────────────────────────────────────────────
 
 /// What a file looked like when its bytes were taken. Re-stat-ing every

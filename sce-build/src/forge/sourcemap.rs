@@ -563,30 +563,29 @@ pub fn read_marker(line: &str) -> Option<Result<SourceMarker, UnreadableMarker>>
 pub fn validate_emitted_files_have_markers(
     out_dir: &std::path::Path,
 ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
+    validate_emitted_files_have_markers_in(&crate::forge::drift::OnDisk, out_dir)
+}
+
+/// [`validate_emitted_files_have_markers`] over `tree` rather than the
+/// disk. A generation run checks through this, so that an
+/// `--assert-unchanged` run, which writes nothing, checks the files it
+/// produced instead of the ones it left in place — see
+/// [`GeneratedTree`](crate::forge::drift::GeneratedTree).
+pub fn validate_emitted_files_have_markers_in(
+    tree: &dyn crate::forge::drift::GeneratedTree,
+    out_dir: &std::path::Path,
+) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
     use crate::forge::drift::parse_embedded_hashes;
-    use std::collections::BTreeSet;
 
-    fn walk(dir: &std::path::Path, out: &mut BTreeSet<std::path::PathBuf>) {
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                walk(&path, out);
-            } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                if matches!(ext, "rs" | "cpp" | "h" | "kt" | "go" | "py" | "c") {
-                    out.insert(path);
-                }
-            }
-        }
-    }
+    let files = tree.files_under(out_dir).into_iter().filter(|path| {
+        matches!(
+            path.extension().and_then(|e| e.to_str()),
+            Some("rs" | "cpp" | "h" | "kt" | "go" | "py" | "c")
+        )
+    });
 
-    let mut files = BTreeSet::new();
-    walk(out_dir, &mut files);
-
-    for file in &files {
-        let Ok(content) = std::fs::read_to_string(file) else {
+    for file in files {
+        let Some(content) = tree.read_to_string(&file) else {
             continue;
         };
         if parse_embedded_hashes(&content).is_none() {

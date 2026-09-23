@@ -265,6 +265,28 @@ pub enum CliError {
     )]
     SourceHashWalkUnbounded { root: String, limit: usize },
 
+    /// Spec §synth-6.2.6, decided on content: an `--assert-unchanged` run did
+    /// all its generation without writing, and found `paths` on disk not as
+    /// that generation would leave them — `missing` of them absent, `stale`
+    /// of them present though the generation would have removed them, the
+    /// rest holding other bytes.
+    ///
+    /// Every path is named rather than the first: the run already compared
+    /// them all, and a caller repairing one at a time would rerun the whole
+    /// generation per file to find the next.
+    #[error(
+        "§6.2.6: {count} generated file(s) are not as this generation leaves them \
+         ({missing} absent, {stale} it would remove): {listed} — rerun it without \
+         --assert-unchanged, or undo the hand edit this exposes",
+        count = .paths.len(),
+        listed = .paths.join(", ")
+    )]
+    GeneratedOutputChanged {
+        paths: Vec<String>,
+        missing: usize,
+        stale: usize,
+    },
+
     /// The command line did not parse.
     ///
     /// `detail` is the argument parser's own rendering, kept verbatim
@@ -596,6 +618,22 @@ impl SingleDiagnostic for CliError {
                 // `actual` states the ceiling rather than a traversal count
                 // so the record is identical for one tree on any machine.
                 Some(format!("root={root} descent-limit={limit}")),
+                None,
+            ),
+            CliError::GeneratedOutputChanged {
+                paths,
+                missing,
+                stale,
+            } => (
+                DiagnosticCode::ForgeGeneratedOutputChanged,
+                // Keyed by the set of paths, so two runs that found the same
+                // files changed are one diagnostic and a different set is
+                // another.
+                paths.clone(),
+                Some(format!(
+                    "changed={} missing={missing} stale={stale}",
+                    paths.len()
+                )),
                 None,
             ),
             // The parser's text is the whole diagnostic, so it is also

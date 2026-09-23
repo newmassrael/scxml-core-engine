@@ -16,7 +16,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock, PoisonError};
 
 use sce_build::analyzer;
 use sce_build::cli_error::CliError;
@@ -87,25 +87,249 @@ impl SuitePackaging {
     }
 }
 
-/// Write `contents` to `path` or emit a structured `WriteOutput`
-/// diagnostic and terminate. Centralising the write+exit pattern
-/// keeps every file-writing call-site one line and guarantees
-/// `--error-format=json` is honoured uniformly.
-fn write_or_exit<P: AsRef<std::path::Path>, C: AsRef<[u8]>>(
-    fmt: ErrorFormat,
-    path: P,
-    contents: C,
-) {
-    let path = path.as_ref();
-    if let Err(e) = fs::write(path, contents) {
-        fmt.emit_and_exit(
-            &CliError::WriteOutput {
-                path: path.display().to_string(),
-                source: e,
-            },
-            "",
-        );
+// ── Generated output: written, or asserted unchanged ─────────────────
+
+/// What a generation command does with the files it produces.
+///
+/// `Write` is the ordinary run. `AssertUnchanged` is `--assert-unchanged`: the
+/// run does everything it otherwise would — produces every file, reads back
+/// what it produced, removes what it no longer produces — against a
+/// [`PendingTree`] instead of the disk, and [`finish_generated_output`] then
+/// fails it naming every file whose bytes on disk are not the ones the run
+/// would have left there.
+///
+/// That comparison is the §synth-6.2.6 drift check done on content. It is the
+/// one check that sees a hand edit, a changed template and a changed generator
+/// alike: each of them changes bytes, and none of them has to change a hash a
+/// header carries.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OutputMode {
+    Write,
+    AssertUnchanged,
+}
+
+/// Installed once by `main`, like [`ERROR_FORMAT`].
+static OUTPUT_MODE: OnceLock<OutputMode> = OnceLock::new();
+
+fn output_mode() -> OutputMode {
+    OUTPUT_MODE.get().copied().unwrap_or(OutputMode::Write)
+}
+
+/// The tree an `--assert-unchanged` run would have left behind, held in
+/// memory instead of written: every path the run touched, mapped to the bytes
+/// it would finally hold, or to `None` where the run would have removed it.
+///
+/// A record of which writes differed from disk is not enough, for two reasons
+/// with one cause — a run reads back what it wrote. The Rust suite writes a
+/// test's `mod.rs`, then reads it back to append each child module. Read from
+/// disk, that read sees the previous run's file, which already names the
+/// children, so nothing is appended; and judged write by write, the first,
+/// child-less write differs from disk. Either way a tree the same generation
+/// wrote fails. So reads go through [`read_generated`], and each path is judged
+/// once, on its final bytes, by [`finish_generated_output`].
+#[derive(Default)]
+struct PendingTree {
+    /// Paths in the order the run first touched them, which is the order the
+    /// report names them in.
+    order: Vec<PathBuf>,
+    content: BTreeMap<PathBuf, Option<Vec<u8>>>,
+}
+
+impl PendingTree {
+    const fn new() -> Self {
+        Self {
+            order: Vec::new(),
+            content: BTreeMap::new(),
+        }
     }
+
+    fn set(&mut self, path: PathBuf, bytes: Option<Vec<u8>>) {
+        if self.content.insert(path.clone(), bytes).is_none() {
+            self.order.push(path);
+        }
+    }
+}
+
+static PENDING_TREE: Mutex<PendingTree> = Mutex::new(PendingTree::new());
+
+fn pending_tree() -> std::sync::MutexGuard<'static, PendingTree> {
+    PENDING_TREE.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// The spelling a path is held under in the [`PendingTree`].
+///
+/// Lexical, since a file the run has not written yet cannot be canonicalized:
+/// `out/./mod.rs` and `out/mod.rs` are one entry. A run names its files by
+/// joining onto the directories it was given, so that is the variation there
+/// is to absorb.
+fn tree_key(path: &Path) -> PathBuf {
+    path.components().collect()
+}
+
+/// What a `Write` run does with a file whose bytes are already on disk.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum WritePolicy {
+    /// Leave it alone, so its mtime keeps saying when its bytes last changed.
+    /// The committed trees are regenerated this way.
+    IfChanged,
+    /// Write it anyway. A build system that ran the command judges it by its
+    /// outputs being newer than its inputs, and an output left untouched
+    /// would have the command run again on every build.
+    Always,
+}
+
+/// Produce one generated file: write it, or in an `--assert-unchanged` run
+/// hold it in the [`PendingTree`].
+///
+/// A file that cannot be written ends the run. [`try_emit_generated`] is the
+/// form for the callers that treat that as a warning.
+fn emit_generated(path: &Path, content: &[u8], policy: WritePolicy) {
+    try_emit_generated(path, content, policy).unwrap_or_else(|e| {
+        cli_exit(CliError::WriteOutput {
+            path: path.display().to_string(),
+            source: e,
+        })
+    })
+}
+
+/// [`emit_generated`], handing a failed write back to the caller.
+fn try_emit_generated(path: &Path, content: &[u8], policy: WritePolicy) -> std::io::Result<()> {
+    match output_mode() {
+        OutputMode::AssertUnchanged => {
+            pending_tree().set(tree_key(path), Some(content.to_vec()));
+        }
+        OutputMode::Write => {
+            let unchanged = fs::read(path).is_ok_and(|on_disk| on_disk == content);
+            if !unchanged || policy == WritePolicy::Always {
+                fs::create_dir_all(containing_dir(path)).ok();
+                fs::write(path, content)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Remove a generated file, or a directory of them, that the run no longer
+/// produces. Returns whether anything was removed from disk.
+///
+/// An `--assert-unchanged` run removes nothing and returns `false`: it marks
+/// every file the removal would take as gone from the [`PendingTree`], and
+/// [`finish_generated_output`] reports each one still on disk. Such a file is
+/// a difference like any other — the tree a regeneration leaves does not hold
+/// it.
+fn remove_generated(path: &Path) -> bool {
+    match output_mode() {
+        OutputMode::Write => {
+            if path.is_dir() {
+                fs::remove_dir_all(path).is_ok()
+            } else {
+                fs::remove_file(path).is_ok()
+            }
+        }
+        OutputMode::AssertUnchanged => {
+            let doomed = if path.is_dir() {
+                RunTree.files_under(path)
+            } else {
+                BTreeSet::from([tree_key(path)])
+            };
+            let mut tree = pending_tree();
+            for file in doomed {
+                tree.set(file, None);
+            }
+            false
+        }
+    }
+}
+
+/// Read back a file this run generated: in an `--assert-unchanged` run, what
+/// the run has produced there so far, falling back to the disk for a path it
+/// has not touched; in a `Write` run, the disk, which it has written.
+fn read_generated(path: &Path) -> Option<String> {
+    if output_mode() == OutputMode::AssertUnchanged {
+        if let Some(held) = pending_tree().content.get(&tree_key(path)) {
+            return held.clone().and_then(|bytes| String::from_utf8(bytes).ok());
+        }
+    }
+    fs::read_to_string(path).ok()
+}
+
+/// The generated tree as a check inside this run reads it: the disk, with an
+/// `--assert-unchanged` run's [`PendingTree`] laid over it.
+struct RunTree;
+
+impl drift::GeneratedTree for RunTree {
+    fn files_under(&self, dir: &Path) -> BTreeSet<PathBuf> {
+        let mut files: BTreeSet<PathBuf> = drift::OnDisk
+            .files_under(dir)
+            .into_iter()
+            .map(|path| tree_key(&path))
+            .collect();
+        if output_mode() == OutputMode::AssertUnchanged {
+            let dir = tree_key(dir);
+            for (path, held) in &pending_tree().content {
+                if !path.starts_with(&dir) {
+                    continue;
+                }
+                if held.is_some() {
+                    files.insert(path.clone());
+                } else {
+                    files.remove(path);
+                }
+            }
+        }
+        files
+    }
+
+    fn read_to_string(&self, path: &Path) -> Option<String> {
+        read_generated(path)
+    }
+}
+
+/// Make the directory a generation run writes into. An `--assert-unchanged`
+/// run writes nothing, directories included: a missing directory is reported
+/// through the files it should have held.
+fn ensure_output_dir(dir: &Path) -> std::io::Result<()> {
+    match output_mode() {
+        OutputMode::AssertUnchanged => Ok(()),
+        OutputMode::Write => fs::create_dir_all(dir),
+    }
+}
+
+/// End an `--assert-unchanged` run: judge every path in the [`PendingTree`]
+/// against the disk and fail the run naming each one that differs — bytes
+/// that differ, a file that is absent, a file the run would have removed. A
+/// `Write` run, and one where nothing differed, pass through.
+fn finish_generated_output() {
+    if output_mode() != OutputMode::AssertUnchanged {
+        return;
+    }
+    let tree = std::mem::take(&mut *pending_tree());
+    let mut paths = Vec::new();
+    let (mut missing, mut stale) = (0, 0);
+    for path in &tree.order {
+        let on_disk = fs::read(path).ok();
+        let differs = match &tree.content[path] {
+            Some(bytes) => on_disk.as_deref() != Some(bytes.as_slice()),
+            None => on_disk.is_some(),
+        };
+        if !differs {
+            continue;
+        }
+        match (&tree.content[path], &on_disk) {
+            (Some(_), None) => missing += 1,
+            (None, Some(_)) => stale += 1,
+            _ => {}
+        }
+        paths.push(path.display().to_string());
+    }
+    if paths.is_empty() {
+        return;
+    }
+    cli_exit(CliError::GeneratedOutputChanged {
+        paths,
+        missing,
+        stale,
+    });
 }
 
 /// Write a `Diagnostic` as a single NDJSON record to stderr.
@@ -160,6 +384,7 @@ fn emit_batch_failure_ndjson(err: &sce_build::forge::error::Located<ForgeError>)
     }
 }
 use sce_build::forge::drift;
+use sce_build::forge::drift::GeneratedTree;
 use sce_build::generator::{GeneratedOutput, Language};
 use sce_build::model::SCXMLModel;
 use sce_build::parser::SCXMLParser;
@@ -307,33 +532,26 @@ fn apply_drift_header(content: &str, path: &Path, ctx: &DriftContext) -> String 
     }
 }
 
-/// Drift-aware analogue of [`write_or_exit`]. Prepends the §synth-6.2.6
-/// header for source-extension files (`.rs / .cpp / .h / .kt / .go /
-/// .py / .c`) before writing; non-source files are written verbatim.
-/// `sce-codegen verify` recomputes both hashes and rejects on
-/// mismatch, fulfilling the spec invariant that every emitted file
-/// carries a drift-detectable header.
-fn write_drift_aware<P: AsRef<Path>>(fmt: ErrorFormat, path: P, content: &str, ctx: &DriftContext) {
+/// Emit a generated file with its §synth-6.2.6 header, prepended for
+/// source-extension files (`.rs / .cpp / .h / .kt / .go / .py / .c`);
+/// non-source files are emitted verbatim.
+///
+/// Written even when its bytes are already on disk ([`WritePolicy::Always`]):
+/// these are the outputs of a build system's generation step, which it judges
+/// by their being newer than their inputs.
+fn write_drift_aware<P: AsRef<Path>>(path: P, content: &str, ctx: &DriftContext) {
     let path_ref = path.as_ref();
     let headered = apply_drift_header(content, path_ref, ctx);
     let final_content = with_trailing_newline(&headered);
-    if let Err(e) = fs::write(path_ref, final_content.as_ref()) {
-        fmt.emit_and_exit(
-            &CliError::WriteOutput {
-                path: path_ref.display().to_string(),
-                source: e,
-            },
-            "",
-        );
-    }
+    emit_generated(path_ref, final_content.as_bytes(), WritePolicy::Always);
 }
 
 /// Drift-aware analogue of [`write_if_changed`]. Compares against
 /// the headered bytes so a regen with identical hashes is a no-op
 /// (preserves the mtime contract `write_if_changed` exists for).
-fn write_if_changed_drift_aware(path: &Path, content: &str, ctx: &DriftContext) -> bool {
+fn write_if_changed_drift_aware(path: &Path, content: &str, ctx: &DriftContext) {
     let final_content = apply_drift_header(content, path, ctx);
-    write_if_changed(path, &final_content)
+    write_if_changed(path, &final_content);
 }
 
 /// SCE Protocol-Synthesis RFC §synth-5-O — emit the per-machine sourcemap
@@ -970,6 +1188,22 @@ struct Cli {
     /// directory. Global — applies to every subcommand.
     #[arg(long, global = true, value_name = "PATH")]
     source_root: Option<PathBuf>,
+
+    /// Write nothing: run the whole generation in memory, and fail if the
+    /// files on disk are not as it would leave them — one it would write
+    /// that differs or is absent, one it would remove that is still there.
+    /// The §synth-6.2.6 drift check, done on content — it sees a hand edit,
+    /// a changed template and a changed generator alike, since each of them
+    /// changes bytes. Pass the same arguments that produced the files; a
+    /// tree post-processed after generating (a formatter run in place)
+    /// holds bytes the generator did not write, and cannot pass.
+    /// Accepted by `generate`, `orchestrate`, `generate-w3c` and
+    /// `generate-conformance`. `generate-integration` refuses it, because
+    /// each of its stems is a shell pipeline writing through its own copy
+    /// and formatter, which this process cannot see; so do
+    /// `generate-w3c --clean` and `--list`, which generate nothing.
+    #[arg(long, global = true)]
+    assert_unchanged: bool,
 
     /// Diagnostic output format on stderr. `human` (default) preserves
     /// the existing CLI text. `json` emits one NDJSON record per error
@@ -2501,6 +2735,12 @@ fn main() {
     if let Some(p) = cli.source_root {
         let _ = SOURCE_ROOT.set(p);
     }
+    if cli.assert_unchanged {
+        if let Some(detail) = assert_unchanged_refusal(&cli.command) {
+            cli_exit(CliError::Usage { detail });
+        }
+        let _ = OUTPUT_MODE.set(OutputMode::AssertUnchanged);
+    }
     match cli.command {
         Commands::Generate(args) => cmd_generate(*args, error_format),
         Commands::Check(args) => cmd_check(*args, error_format),
@@ -2636,6 +2876,61 @@ fn main() {
             },
         ),
     }
+    finish_generated_output();
+}
+
+/// Why `--assert-unchanged` cannot apply to `command`, or `None` when it
+/// does.
+///
+/// Every command is named rather than covered by a wildcard, so a command
+/// added later has to be placed on one side or the other: a generator that
+/// the flag silently did not reach would report "unchanged" for files it
+/// never compared.
+fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
+    const NOT_A_GENERATOR: &str = "--assert-unchanged applies only to the commands that \
+        generate files: generate, orchestrate, generate-w3c and generate-conformance";
+    match command {
+        // Both modes generate nothing, so a run in either would pass
+        // having compared nothing.
+        Commands::GenerateW3c(args) if args.clean || args.list => Some(
+            "--assert-unchanged cannot apply to generate-w3c --clean or --list: neither \
+             generates a file, so there is nothing to compare"
+                .to_string(),
+        ),
+        Commands::Generate(_)
+        | Commands::Orchestrate(_)
+        | Commands::GenerateW3c(_)
+        | Commands::GenerateConformance { .. } => None,
+        Commands::GenerateIntegration { .. } => Some(
+            "--assert-unchanged cannot apply to generate-integration: each stem is a shell \
+             pipeline writing through its own copy and formatter, out of this process's \
+             sight — regenerate and compare instead (scripts/gate regen-reproduces)"
+                .to_string(),
+        ),
+        Commands::Check(_)
+        | Commands::FixScxmlName { .. }
+        | Commands::ReadMetadata { .. }
+        | Commands::Manifest { .. }
+        | Commands::Requirements { .. }
+        | Commands::TransitionTable { .. }
+        | Commands::ReviewTable { .. }
+        | Commands::Pseudo { .. }
+        | Commands::AnnotationOverlay { .. }
+        | Commands::AcceptanceReport { .. }
+        | Commands::Accept { .. }
+        | Commands::AcceptanceCheck { .. }
+        | Commands::RequirementClosure { .. }
+        | Commands::Unresolved { .. }
+        | Commands::Coverage { .. }
+        | Commands::ListFixtures { .. }
+        | Commands::CheckAotBriefs { .. }
+        | Commands::ProvenanceRoster
+        | Commands::Expand { .. }
+        | Commands::Verify { .. }
+        | Commands::VerifyGenerator { .. }
+        | Commands::Addr2Sce { .. }
+        | Commands::Sce2Sym { .. } => Some(NOT_A_GENERATOR.to_string()),
+    }
 }
 
 // ── Subcommand: orchestrate ─────────────────────────────────────
@@ -2737,7 +3032,7 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
 
     let out_root = Path::new(output_dir);
     if !out_root.exists() {
-        if let Err(e) = fs::create_dir_all(out_root) {
+        if let Err(e) = ensure_output_dir(out_root) {
             error_format.emit_and_exit(
                 &CliError::WriteOutput {
                     path: output_dir.to_string(),
@@ -2800,7 +3095,7 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
     for (basename, generated) in &outputs {
         for (file_name, code) in &generated.files {
             let path = out_root.join(file_name);
-            write_drift_aware(error_format, &path, code, &drift_ctx);
+            write_drift_aware(&path, code, &drift_ctx);
             // Recorded at the write, not from `outputs` — §10.1 defines
             // `artifacts` as every file written, so a path that never
             // reached the disk must never reach the manifest.
@@ -2840,7 +3135,7 @@ fn emit_orchestrate_asts(
     error_format: ErrorFormat,
 ) {
     let dir_path = std::path::Path::new(dir);
-    if let Err(e) = fs::create_dir_all(dir_path) {
+    if let Err(e) = ensure_output_dir(dir_path) {
         error_format.emit_and_exit(
             &CliError::WriteOutput {
                 path: dir.to_string(),
@@ -3909,7 +4204,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                     let out = Path::new(output_dir);
                     for (filename, code) in &files {
                         let path = out.join(filename);
-                        write_drift_aware(error_format, &path, code, &drift_ctx);
+                        write_drift_aware(&path, code, &drift_ctx);
                         report.artifacts.push(path.clone());
                     }
                     if let Some(dep_path) = depfile_path {
@@ -4068,7 +4363,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
             .and_then(|s| s.to_str())
             .unwrap_or("unknown");
         let out = Path::new(output_dir);
-        fs::create_dir_all(out).unwrap_or_else(|e| {
+        ensure_output_dir(out).unwrap_or_else(|e| {
             error_format.emit_and_exit(
                 &CliError::CreateOutputDir {
                     path: out.display().to_string(),
@@ -4197,7 +4492,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
 
         for (filename, content) in &stubs {
             let path = out.join(filename);
-            write_drift_aware(error_format, &path, content, &drift_ctx);
+            write_drift_aware(&path, content, &drift_ctx);
             report.artifacts.push(path);
         }
 
@@ -4301,7 +4596,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
     // error: SCXML file not found`. The dir is also created here so
     // the synth write below has somewhere to land.
     let out_path = Path::new(output_dir);
-    fs::create_dir_all(out_path).unwrap_or_else(|e| {
+    ensure_output_dir(out_path).unwrap_or_else(|e| {
         error_format.emit_and_exit(
             &CliError::CreateOutputDir {
                 path: out_path.display().to_string(),
@@ -4346,7 +4641,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         let xml = with_trailing_newline(xml);
         let xml = xml.as_ref();
         let dst = out_path.join(format!("{stem}.scxml"));
-        if let Err(e) = fs::write(&dst, xml) {
+        if let Err(e) = try_emit_generated(&dst, xml.as_bytes(), WritePolicy::Always) {
             eprintln!(
                 "Warning: Cannot write synth SCXML to -o: {}: {e}",
                 dst.display()
@@ -4360,7 +4655,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
             let deploy_dir = Path::new(deploy_file).parent().unwrap_or(Path::new("."));
             if deploy_dir != out_path {
                 let mirror = deploy_dir.join(format!("{stem}.scxml"));
-                if let Err(e) = fs::write(&mirror, xml) {
+                if let Err(e) = try_emit_generated(&mirror, xml.as_bytes(), WritePolicy::Always) {
                     eprintln!(
                         "Warning: Cannot write synth SCXML to deploy_dir: {}: {e}",
                         mirror.display()
@@ -4407,7 +4702,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
     // The transport-only branch still threads `out_path` and the report
     // through to the mesh emit block below so depfile + sourcemap-marker
     // validation operate on the transport header alone. `out_path` +
-    // `fs::create_dir_all` ran above (before the synth-SCXML emit + the
+    // `ensure_output_dir` ran above (before the synth-SCXML emit + the
     // mesh injection chain) — the dir already exists at this point.
     let mut output_paths: Vec<PathBuf> = Vec::new();
     let mut artifact_deps = parser.preprocessor_deps().to_vec();
@@ -4488,7 +4783,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         let files = maybe_format_files(output.files, &cpp_formatter);
         for (filename, code) in &files {
             let file_path = out_path.join(filename);
-            write_drift_aware(error_format, &file_path, code, &drift_ctx);
+            write_drift_aware(&file_path, code, &drift_ctx);
             report.artifacts.push(file_path.clone());
             output_paths.push(file_path);
         }
@@ -4552,7 +4847,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
             let child_files = maybe_format_files(child_output.files, &cpp_formatter);
             for (filename, code) in &child_files {
                 let file_path = out_path.join(filename);
-                write_drift_aware(error_format, &file_path, code, &drift_ctx);
+                write_drift_aware(&file_path, code, &drift_ctx);
                 report.artifacts.push(file_path.clone());
                 output_paths.push(file_path);
             }
@@ -4587,7 +4882,8 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         let children = collect_invoke_child_names(&model);
         if lang == Language::Cpp && !children.is_empty() {
             let children_file = out_path.join(format!("{input_stem}_children.txt"));
-            write_or_exit(error_format, &children_file, children.join("\n") + "\n");
+            let listing = children.join("\n") + "\n";
+            emit_generated(&children_file, listing.as_bytes(), WritePolicy::Always);
         }
         // §scxml-6.4: Copy static invoke child SCXML files to the output
         // directory so CMake's post-processing script can find them next to the
@@ -4669,7 +4965,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                 let mesh_files = maybe_format_files(result.output.files, &cpp_formatter);
                 for (filename, code) in &mesh_files {
                     let file_path = out_path.join(filename);
-                    write_drift_aware(error_format, &file_path, code, &drift_ctx);
+                    write_drift_aware(&file_path, code, &drift_ctx);
                     report.artifacts.push(file_path.clone());
                     output_paths.push(file_path);
                 }
@@ -4708,9 +5004,10 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
     // `traceability/meta-generated-source-line-marker-missing` on
     // codegen-internal regression — surfaces immediately rather than
     // letting a broken template ship.
-    if let Err(err) =
-        sce_build::forge::sourcemap::validate_emitted_files_have_markers(Path::new(output_dir))
-    {
+    if let Err(err) = sce_build::forge::sourcemap::validate_emitted_files_have_markers_in(
+        &RunTree,
+        Path::new(output_dir),
+    ) {
         error_format.emit_and_exit(&err, "");
     }
 
@@ -4774,9 +5071,6 @@ fn copy_static_invoke_children(
         for candidate in &invoke.candidates {
             let child_scxml = format!("{}.scxml", candidate.stem);
             let dest = output_dir.join(&child_scxml);
-            if dest.exists() {
-                continue;
-            }
             // Beside the document as the author sees it first, then beside
             // the one the build may have staged. Both, because a plain
             // `generate` has only the second and a staged build has only
@@ -4789,7 +5083,7 @@ fn copy_static_invoke_children(
             .find(|p| p.exists());
             match src {
                 Some(src) => {
-                    if let Err(e) = std::fs::copy(&src, &dest) {
+                    if let Err(e) = stage_child_document(&src, &dest) {
                         eprintln!(
                             "Warning: Cannot copy invoke candidate {} to output: {e}",
                             candidate.path
@@ -4812,8 +5106,8 @@ fn copy_static_invoke_children(
         let src = source_dir.join(&child_scxml);
         let dest = output_dir.join(&child_scxml);
 
-        if src.exists() && !dest.exists() {
-            if let Err(e) = std::fs::copy(&src, &dest) {
+        if src.exists() {
+            if let Err(e) = stage_child_document(&src, &dest) {
                 eprintln!(
                     "Warning: Cannot copy static invoke child {} to output: {e}",
                     child_scxml
@@ -4821,6 +5115,19 @@ fn copy_static_invoke_children(
             }
         }
     }
+}
+
+/// Copy a child document to `dest`, next to the output that invokes it.
+///
+/// Emitted like generated output, which it is: the copy a later step reads.
+/// So it follows its source — a copy made only when `dest` was absent kept the
+/// first version it ever saw, and an edit to the child never reached the output
+/// directory again — and an `--assert-unchanged` run compares it rather than
+/// writing it. Where the build staged the child into the output directory
+/// already, `src` is `dest` and nothing moves.
+fn stage_child_document(src: &Path, dest: &Path) -> std::io::Result<()> {
+    let bytes = fs::read(src)?;
+    try_emit_generated(dest, &bytes, WritePolicy::IfChanged)
 }
 
 /// §scxml-6.4: Write the stub child for every hybrid invoke
@@ -4895,7 +5202,14 @@ struct DepfileInputs<'a> {
 /// `dependency cycle: parent_synth_inline__sce_synth_invoke__remote_inv
 /// .scxml -> itself` — taking 131 of 378 tests down with it. A file this
 /// run wrote cannot be a reason to re-run it.
+///
+/// An `--assert-unchanged` run writes no depfile and compares none: a
+/// depfile describes what a build read, not what the generator produced,
+/// and a run that writes nothing is not a build step.
 fn write_depfile(depfile_path: &str, inputs: DepfileInputs<'_>) {
+    if output_mode() == OutputMode::AssertUnchanged {
+        return;
+    }
     let DepfileInputs {
         output_paths,
         template_dir,
@@ -5196,7 +5510,7 @@ fn resolve_suite_packaging(
     // that does not exist yet canonicalises to nothing and would
     // compare unequal to every path including itself.
     let standalone = output_dir_named && {
-        if let Err(e) = fs::create_dir_all(output_root) {
+        if let Err(e) = ensure_output_dir(output_root) {
             cli_exit(CliError::CreateOutputDir {
                 path: output_root.display().to_string(),
                 source: e,
@@ -5828,7 +6142,7 @@ fn generate_w3c_unified(
                         } else {
                             backend.sm_output_base().to_path_buf()
                         };
-                        fs::create_dir_all(&test_mod_dir).unwrap_or_else(|e| {
+                        ensure_output_dir(&test_mod_dir).unwrap_or_else(|e| {
                             cli_exit(CliError::CreateOutputDir {
                                 path: test_mod_dir.display().to_string(),
                                 source: e,
@@ -5906,7 +6220,7 @@ fn generate_w3c_unified(
                                     backend.test_output_dir()
                                 };
                                 let test_file = test_file_dir.join(&test_filename);
-                                fs::create_dir_all(test_file_dir).ok();
+                                ensure_output_dir(test_file_dir).ok();
                                 write_if_changed_drift_aware(&test_file, &test_code, &drift_ctx);
 
                                 if needs_script {
@@ -6003,13 +6317,13 @@ fn generate_w3c_unified(
     // much as a full one.
     for (path, contents) in backend.suite_support_files() {
         let parent = containing_dir(&path);
-        if let Err(e) = fs::create_dir_all(&parent) {
+        if let Err(e) = ensure_output_dir(&parent) {
             cli_exit(CliError::CreateOutputDir {
                 path: parent.display().to_string(),
                 source: e,
             });
         }
-        write_or_exit(current_error_format(), &path, contents);
+        emit_generated(&path, contents.as_bytes(), WritePolicy::Always);
         outln!("  Suite support: {}", path.display());
     }
 
@@ -6092,7 +6406,9 @@ fn generate_w3c_unified(
     // meta-generator output, hand-authored sources) are silently
     // skipped per ARCHITECTURE.md "Traceability Ownership Boundary".
     for root in [backend.sm_output_base(), backend.test_output_dir()] {
-        if let Err(err) = sce_build::forge::sourcemap::validate_emitted_files_have_markers(root) {
+        if let Err(err) =
+            sce_build::forge::sourcemap::validate_emitted_files_have_markers_in(&RunTree, root)
+        {
             current_error_format().emit_and_exit(&err, "");
         }
     }
@@ -6270,8 +6586,13 @@ impl W3cBackend for RustBackend {
         // the 4-line block in place, so a plain string append below
         // the read content is safe — the headered output still has
         // exactly one §synth-6.2.6 header at the top.
+        //
+        // Read back through `read_generated`, not the disk: under
+        // `--assert-unchanged` the file `post_write_parent` produced was
+        // never written, and the disk holds the previous run's, which
+        // already names this child.
         let mod_file = test_mod_dir.join("mod.rs");
-        if let Ok(existing) = fs::read_to_string(&mod_file) {
+        if let Some(existing) = read_generated(&mod_file) {
             if !existing.contains(&format!("mod {child_name}_sm;")) {
                 let addition = format!(
                     "mod {child_name}_sm;\n\
@@ -6461,14 +6782,14 @@ impl W3cBackend for RustBackend {
                     .and_then(|n| n.to_str())
                     .is_some_and(|n| n.starts_with("test"))
             {
-                fs::remove_dir_all(&path).ok();
+                remove_generated(&path);
             }
         }
         for entry in fs::read_dir(&self.test_dir).into_iter().flatten().flatten() {
             let path = entry.path();
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                 if name.starts_with("test_") && name.ends_with(".rs") {
-                    fs::remove_file(&path).ok();
+                    remove_generated(&path);
                 }
             }
         }
@@ -6700,7 +7021,7 @@ impl W3cBackend for GoBackend {
 
     fn clean(&self) {
         if self.sm_base.exists() {
-            fs::remove_dir_all(&self.sm_base).ok();
+            remove_generated(&self.sm_base);
             outln!("Cleaned: {}", self.sm_base.display());
         }
     }
@@ -7038,13 +7359,13 @@ impl W3cBackend for KotlinBackend {
 
     fn clean(&self) {
         if self.sm_base.exists() {
-            fs::remove_dir_all(&self.sm_base).ok();
+            remove_generated(&self.sm_base);
             outln!("Cleaned: {}", self.sm_base.display());
         }
         for entry in fs::read_dir(&self.test_dir).into_iter().flatten().flatten() {
             let name = entry.file_name().to_string_lossy().to_string();
             if name.starts_with("Test") && name.ends_with(".kt") {
-                fs::remove_file(entry.path()).ok();
+                remove_generated(&entry.path());
             }
         }
         outln!("Cleaned test classes in: {}", self.test_dir.display());
@@ -7064,8 +7385,7 @@ impl W3cBackend for KotlinBackend {
                     continue;
                 }
                 let dir_test_id = &name[4..];
-                if !valid_ids.contains(dir_test_id) {
-                    fs::remove_dir_all(entry.path()).ok();
+                if !valid_ids.contains(dir_test_id) && remove_generated(&entry.path()) {
                     outln!("  Removed stale SM dir: {name}");
                     removed += 1;
                 }
@@ -7088,8 +7408,8 @@ impl W3cBackend for KotlinBackend {
                 let file_test_id = &stem[4..];
                 if !valid_ids.contains(file_test_id)
                     && !valid_lower.contains(&file_test_id.to_lowercase())
+                    && remove_generated(&entry.path())
                 {
-                    fs::remove_file(entry.path()).ok();
                     outln!("  Removed stale test: {name}");
                     removed += 1;
                 }
@@ -7166,7 +7486,7 @@ impl W3cBackend for CppBackend {
 
     fn clean(&self) {
         if self.output_dir.exists() {
-            fs::remove_dir_all(&self.output_dir).ok();
+            remove_generated(&self.output_dir);
             outln!("Cleaned: {}", self.output_dir.display());
         }
     }
@@ -7382,7 +7702,7 @@ impl W3cBackend for PythonBackend {
 
     fn clean(&self) {
         if self.sm_base.exists() {
-            fs::remove_dir_all(&self.sm_base).ok();
+            remove_generated(&self.sm_base);
             outln!("Cleaned: {}", self.sm_base.display());
         }
     }
@@ -8213,7 +8533,7 @@ fn cmd_generate_conformance(
             });
 
     let out_dir = Path::new(output_dir);
-    fs::create_dir_all(out_dir).unwrap_or_else(|e| {
+    ensure_output_dir(out_dir).unwrap_or_else(|e| {
         cli_exit(CliError::CreateOutputDir {
             path: out_dir.display().to_string(),
             source: e,
@@ -8228,12 +8548,7 @@ fn cmd_generate_conformance(
     // is the directory `render_harness` just read from, so the two
     // cannot disagree about which fixtures the header describes.
     let drift_ctx = DriftContext::compute(&resource_dir, None, &[]);
-    write_drift_aware(
-        current_error_format(),
-        &out_path,
-        &rendered.source,
-        &drift_ctx,
-    );
+    write_drift_aware(&out_path, &rendered.source, &drift_ctx);
 
     // Same depfile contract the statechart and forge routes carry. This
     // subcommand had none, so its two CMake steps declared their inputs
@@ -8996,24 +9311,9 @@ fn maybe_format_files(
 /// Normalisation runs before the comparison so a rerun that changes
 /// nothing stays a no-op, preserving the mtime contract this function
 /// exists for.
-fn write_if_changed(path: &Path, content: &str) -> bool {
+fn write_if_changed(path: &Path, content: &str) {
     let content = with_trailing_newline(content);
-    let content = content.as_ref();
-    if path.exists() {
-        if let Ok(existing) = fs::read_to_string(path) {
-            if existing == content {
-                return false;
-            }
-        }
-    }
-    fs::create_dir_all(containing_dir(path)).ok();
-    fs::write(path, content).unwrap_or_else(|e| {
-        cli_exit(CliError::WriteOutput {
-            path: path.display().to_string(),
-            source: e,
-        })
-    });
-    true
+    emit_generated(path, content.as_bytes(), WritePolicy::IfChanged);
 }
 
 impl TestInfo {

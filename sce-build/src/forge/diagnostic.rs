@@ -2861,6 +2861,19 @@ pub enum DiagnosticCode {
     #[serde(rename = "forge/source-hash-walk-unbounded")]
     ForgeSourceHashWalkUnbounded,
 
+    // ── §synth-6.2.6 drift decided on content. An `--assert-unchanged`
+    //    run did all its generation without writing, and found these files
+    //    not as it would leave them: other bytes, absent, or present though
+    //    it would remove them. Unlike `forge/source-hash-mismatch` above it
+    //    compares the bytes, so it sees what no header records: a hand
+    //    edit, a template or a generator that changed. `actual` carries how
+    //    many files differ, how many of those are absent and how many it
+    //    would remove. Repair is rerunning the same generation without the
+    //    flag (deterministic, no candidate set), or finding the hand edit
+    //    the comparison exposed. ─────────────────────────────────────────
+    #[serde(rename = "forge/generated-output-changed")]
+    ForgeGeneratedOutputChanged,
+
     // ── Traceability §synth-5-O IR provenance pre-emit guard
     //    (SCE Protocol-Synthesis RFC §synth-5-O lines 3289-3290 verbatim:
     //    "XInclude / sce:template composition MUST track per-element
@@ -3486,6 +3499,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ForgeSourceHashMismatch,
         ForgeSourceHashInputUncovered,
         ForgeSourceHashWalkUnbounded,
+        ForgeGeneratedOutputChanged,
         // Traceability §synth-5-O — IR provenance pre-emit guard
         // (SCE Protocol-Synthesis RFC §synth-5-O lines 3289-3290).
         TraceabilityScxmlLineRangeMissing,
@@ -4132,6 +4146,10 @@ impl DiagnosticCode {
             //    under the root, and this fires when that set cannot be
             //    enumerated within the walk's descent ceiling. ──
             ForgeSourceHashWalkUnbounded => Some("SCE Protocol-Synthesis RFC §6.2.6"),
+
+            // ── Same section, and the check it names as the gate: a
+            //    regeneration compared with the tree it would rewrite. ──
+            ForgeGeneratedOutputChanged => Some("SCE Protocol-Synthesis RFC §6.2.6"),
 
             // ── §synth-5-O traceability IR provenance pre-emit
             //    guard. Spec lines 3289-3290 verbatim: "Codegen failure
@@ -4859,6 +4877,7 @@ impl DiagnosticCode {
             ForgeSourceHashMismatch => "forge/source-hash-mismatch",
             ForgeSourceHashInputUncovered => "forge/source-hash-input-uncovered",
             ForgeSourceHashWalkUnbounded => "forge/source-hash-walk-unbounded",
+            ForgeGeneratedOutputChanged => "forge/generated-output-changed",
             TraceabilityScxmlLineRangeMissing => "traceability/scxml-line-range-missing",
             TraceabilityStateIdCollision => "traceability/state-id-collision",
             TraceabilitySymbolNameExceedsCIdentifierLimit => {
@@ -14240,6 +14259,23 @@ mod tests {
                 },
                 r#"{"v":1,"id":"fnv1a:a692356602400fc9","code":"forge/source-hash-walk-unbounded","stage":"cli","spec":"SCE Protocol-Synthesis RFC §6.2.6","message":"src/scxml: §6.2.6 source set exceeds 1000000 directories — a directory symlink reaching a sibling multiplies the paths under it; re-point --input-root at a tree without the aliasing, or remove it","actual":"root=src/scxml descent-limit=1000000"}"#,
             ),
+            // ── §synth-6.2.6 drift decided on content ──
+            //    Three files, one edited, one absent and one the generation
+            //    would remove, so the record shows every part of `actual`
+            //    moving and every path named.
+            (
+                "forge/generated-output-changed",
+                CliError::GeneratedOutputChanged {
+                    paths: vec![
+                        "out/door_sm.h".into(),
+                        "out/door_sm.inl".into(),
+                        "out/window_sm.h".into(),
+                    ],
+                    missing: 1,
+                    stale: 1,
+                },
+                r#"{"v":1,"id":"fnv1a:b302ebe4a184ca4b","code":"forge/generated-output-changed","stage":"cli","spec":"SCE Protocol-Synthesis RFC §6.2.6","message":"§6.2.6: 3 generated file(s) are not as this generation leaves them (1 absent, 1 it would remove): out/door_sm.h, out/door_sm.inl, out/window_sm.h — rerun it without --assert-unchanged, or undo the hand edit this exposes","actual":"changed=3 missing=1 stale=1"}"#,
+            ),
             // ── The argument parser's own failure ──
             //    Pinned as a golden because the message is not SCE's
             //    prose: it is clap's rendering, carried verbatim. If a
@@ -15344,6 +15380,11 @@ mod tests {
             //    path — re-point `--input-root` below the directory-link
             //    aliasing, or remove it — so there is no candidate set. ──
             | ForgeSourceHashWalkUnbounded
+            // ── §synth-6.2.6 content comparison. The repair is rerunning
+            //    the same generation without the flag, or undoing the hand
+            //    edit it exposed — the tool cannot tell those apart, so it
+            //    offers neither as a candidate. ──
+            | ForgeGeneratedOutputChanged
             // ── §synth-5-O IR provenance guard. Codegen-internal
             //    invariant: an empty source_location means the parser
             //    site that produced this node failed to attach a
@@ -16001,6 +16042,8 @@ mod tests {
                 | ForgeSourceHashInputUncovered
                 // §synth-6.2.6 source-set enumeration ceiling
                 | ForgeSourceHashWalkUnbounded
+                // §synth-6.2.6 content comparison (`--assert-unchanged`)
+                | ForgeGeneratedOutputChanged
                 // §synth-5-O IR provenance pre-emit guard
                 | TraceabilityScxmlLineRangeMissing
                 // §synth-5-O symbol mangling + sourcemap contract
@@ -16049,9 +16092,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            385,
+            386,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 385 distinct variants to match the DiagnosticCode \
+             expected 386 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -16948,6 +16991,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ForgeSourceHashMismatch
             | ForgeSourceHashInputUncovered
             | ForgeSourceHashWalkUnbounded
+            | ForgeGeneratedOutputChanged
             | TraceabilityScxmlLineRangeMissing
             | TraceabilityStateIdCollision
             | TraceabilitySymbolNameExceedsCIdentifierLimit

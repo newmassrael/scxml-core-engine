@@ -273,14 +273,49 @@ staged derivatives, with the same nonempty-source requirement as `generate`.
 ## 8. Verifying after the fact
 
 ```bash
+SOURCE_DATE_EPOCH=0 sce-codegen generate path/to/machine.scxml \
+    --source-root "$(git rev-parse --show-toplevel)" \
+    -o generated/ -l cpp --assert-unchanged
+```
+
+`--assert-unchanged` runs the same generation, writes nothing, and fails
+if the tree on disk is not the one that generation would leave: a file it
+would write that differs or is absent, or a file it would remove that is
+still there — `forge/generated-output-changed`, exit 20, naming every such
+file. Pass exactly the arguments and environment that produced the tree:
+the check is whether *this* invocation would change anything. It is the
+gate to use when you commit generated output. Because it compares content,
+it catches a hand edit to a generated file, a changed template and a changed
+generator, as well as changed inputs. `generate-integration`, whose stems
+are shell pipelines outside the process, refuses the flag, and so do
+`generate-w3c --clean` and `--list`, which generate nothing.
+
+The run is the whole generation, only held in memory: a file it writes and
+then reads back — the Rust suite extends each test's `mod.rs` that way —
+is read from what the run produced, and every file is judged once, on what
+it would finally hold.
+
+It compares what the generator writes, so a tree you post-process after
+generating cannot pass it: the post-processed bytes are not the generator's.
+This repository's committed Rust trees are one — they are generator output
+*as rustfmt leaves it* (`scripts/regen_all_committed_trees.sh` runs
+`cargo fmt -p sce-rust-tests` after generating) — and so is anything a
+formatter rewrites in place. Such trees are checked by regenerating the
+whole pipeline and diffing, which is what `scripts/gate regen-reproduces`
+does.
+
+```bash
 sce-codegen verify generated/ --input-root src/scxml
 ```
 
 Recomputes both hashes from the current source and template state and
 compares against the values embedded in each file. Mismatch is
-`forge/source-hash-mismatch`, exit 20. Use it as a CI gate when you commit
-generated output and want drift caught at review time rather than at the
-next regeneration.
+`forge/source-hash-mismatch`, exit 20. It reads headers, not content, so a
+hand edit that leaves the header alone passes it — use `--assert-unchanged`
+above where that matters.
+
+*Tests:* `generation_can_assert_its_output_unchanged`
+(`sce-build/tests/generation_can_assert_its_output_unchanged.rs`).
 
 ---
 
