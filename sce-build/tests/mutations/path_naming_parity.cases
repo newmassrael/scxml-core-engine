@@ -45,10 +45,18 @@ PY
 # Re-aimed 2026-09-22: the closure became the function itself
 # (`clippy::redundant_closure`) when the root moved to the first document,
 # so the anchor that quoted the closure matched nothing.
+#
+# Re-aimed again 2026-09-23: the root now comes from the first of EVERY
+# input, whose list holds `&Path`, so `first()` yields `&&Path` and the
+# function no longer fits `.map` bare — the closure came back and the
+# anchor matched nothing a second time. It quotes the call alone now, with
+# no indentation: the subject is "the root is the first input's containing
+# directory", and neither the argument's reference depth nor the column it
+# is indented to is part of that.
 mutation_case "orchestrate infers its source-set root lexically again" <<'PY'
 edit("sce-build/src/bin/sce_codegen.rs",
-     "        .map(containing_dir)",
-     "        .and_then(|p| p.parent().map(|x| x.to_path_buf()))")
+     ".map(|p| containing_dir(p))",
+     ".and_then(|p| p.parent().map(|x| x.to_path_buf()))")
 PY
 
 mutation_case "generate-conformance derives resources lexically again" <<'PY'

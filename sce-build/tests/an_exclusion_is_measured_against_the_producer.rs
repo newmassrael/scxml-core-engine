@@ -135,13 +135,28 @@ fn the_retracted_rows_send_the_reader_to_what_replaced_them() {
     );
 
     // A backend that handles hybrid invokes differently from the rest is
-    // the defect §2.13 exists to make visible, so the table has to answer
+    // the defect §2.13 exists to make visible, so the section has to answer
     // for every backend rather than for the ones that agree.
     let hybrid = section("### §2.13 ");
     for backend in ["C++", "Rust", "Go", "C11", "Python", "Kotlin"] {
         assert!(
             hybrid.contains(backend),
             "§2.13 does not say what {backend} does with a hybrid invoke"
+        );
+    }
+
+    // ⚠ Naming a backend is not answering for it. §2.13 lists all six in
+    // one sentence — the contract they share — so the loop above holds for
+    // a section that has lost the record of which backends broke that
+    // contract, which is exactly the "consensus" reading this test exists
+    // to refuse. That record is each diverging backend's own entry, bold
+    // where it begins; it is what a reader of §2.13 needs, so it is what is
+    // held here. (Before this, removing Python's entry left every assertion
+    // true, and its mutation case survived.)
+    for diverged in ["Python", "Kotlin"] {
+        assert!(
+            hybrid.contains(&format!("**{diverged}**")),
+            "§2.13 no longer records what {diverged} did differently with a hybrid invoke"
         );
     }
 }

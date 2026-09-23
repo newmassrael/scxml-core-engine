@@ -120,12 +120,24 @@ PY
 # ⚠ The anchor was a table row until §2.13 was rewritten to state the
 # divergence in prose. It is re-aimed at the SUBJECT — the sentence that
 # names Python — rather than at the shape the subject happened to take,
-# because the shape is what moved and the claim is what the oracle reads
-# (`the_retracted_rows_send_the_reader_to_what_replaced_them` requires
-# §2.13 to name all six backends).
+# because the shape is what moved and the claim is what the oracle reads.
+#
+# ⚠⚠ This case SURVIVED from that rewrite on (found red in CI 2026-09-23):
+# the oracle then required only that §2.13 NAME all six backends, and the
+# contract sentence names all six, so dropping Python's own entry changed
+# nothing it read. The oracle
+# (`the_retracted_rows_send_the_reader_to_what_replaced_them`) now also
+# requires each diverging backend's own bold entry — the record this case
+# removes — and Kotlin, the other diverging backend, has a case of its own.
 
 mutation_case "section 2.13 drops the backend that diverges" <<'PY'
 edit("docs/SCE_ACCEPTED_SUBSET.md",
      """**Python** evaluated nothing at all""",
      """**Pythen** evaluated nothing at all""")
+PY
+
+mutation_case "section 2.13 drops the other backend that diverged" <<'PY'
+edit("docs/SCE_ACCEPTED_SUBSET.md",
+     """**Kotlin** resolved the value into a document""",
+     """Kotlin resolved the value into a document""")
 PY
