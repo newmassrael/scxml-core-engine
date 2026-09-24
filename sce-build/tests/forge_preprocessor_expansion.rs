@@ -475,10 +475,11 @@ const DOC_WITH_A_SCHEMA_ERROR_AFTER_AN_INCLUDE: &str = r#"<?xml version="1.0" en
 
 /// The line [`DOC_WITH_A_SCHEMA_ERROR_AFTER_AN_INCLUDE`] spells `float65` on.
 ///
-/// The refused element's start tag is kept on this one line: libxml2 files
-/// a schema violation under the line its start tag ENDS on, so a tag
-/// spanning two lines would make this test measure that convention
-/// rather than the expansion mapping it is about.
+/// The refused element's start tag is kept on this one line, so the test
+/// measures the expansion mapping and nothing else. Where a violation sits
+/// inside a start tag spread over several lines — libxml2 names the line
+/// the tag ends on, and the validator moves it to the attribute — is
+/// `xsd_validator`'s to hold (`an_attribute_violation_is_placed_at_the_attribute`).
 const AUTHORED_SCHEMA_ERROR_LINE: u64 = 5;
 
 /// Write the fragment and `docs` into a fresh directory.

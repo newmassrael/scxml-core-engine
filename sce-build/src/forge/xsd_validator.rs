@@ -236,12 +236,122 @@ pub fn validate(xml_text: &str, source_label: &str, schema_path: &Path) -> Resul
             diagnostics: errs.into_iter().map(|e| format_error(&e)).collect(),
         })?;
 
-    schema_ctx
-        .validate_document(&doc)
-        .map_err(|errs| XsdErrors {
+    schema_ctx.validate_document(&doc).map_err(|errs| {
+        // The text libxml2 validated, read again for where each violation
+        // was written. A text this reader refuses keeps libxml2's rows.
+        let written = roxmltree::Document::parse(xml_text).ok();
+        XsdErrors {
             source_label: source_label.to_string(),
-            diagnostics: errs.into_iter().map(|e| format_error(&e)).collect(),
-        })
+            diagnostics: errs
+                .into_iter()
+                .map(|e| format_error(&e))
+                .map(|diag| match &written {
+                    Some(written) => placed_where_written(diag, written),
+                    None => diag,
+                })
+                .collect(),
+        }
+    })
+}
+
+/// `diag` placed on the row and column where the node it names was
+/// written (SCE_ERROR_CONTRACT §2.2: a location is the place to fix).
+///
+/// libxml2's schema errors carry the element's line and no column, and the
+/// line is the one its start tag ENDS on — so a violation of an attribute
+/// on the second row of a three-row start tag was reported on the third,
+/// which holds nothing about it. The node itself is not exposed, but the
+/// message names it: `Element '{uri}name'`, then `, attribute
+/// '{uri}name'` when an attribute is at fault. The element is found again
+/// by that name among those whose start tag spans the reported line, and
+/// the record moves to the attribute, or to the element's `<`.
+///
+/// Unchanged when the message names no element, when no element or more
+/// than one fits, or when the named attribute is not on the element: a
+/// row libxml2 gave is better than one guessed.
+#[cfg(feature = "xsd")]
+fn placed_where_written(diag: XsdDiag, written: &roxmltree::Document) -> XsdDiag {
+    let Some(line) = diag.line else {
+        return diag;
+    };
+    let Some((element, attribute)) = named_nodes(&diag.message) else {
+        return diag;
+    };
+    let mut spanning = written
+        .descendants()
+        .filter(|node| node.is_element() && expanded_name_is(node.tag_name(), element))
+        .filter(|node| start_tag_rows(node).contains(&line));
+    let (Some(node), None) = (spanning.next(), spanning.next()) else {
+        return diag;
+    };
+    let offset = match attribute {
+        None => node.range().start,
+        Some(attribute) => match node
+            .attributes()
+            .find(|a| a.namespace() == attribute.0 && a.name() == attribute.1)
+        {
+            Some(a) => a.range().start,
+            None => return diag,
+        },
+    };
+    let at = written.text_pos_at(offset);
+    XsdDiag {
+        line: Some(at.row),
+        col: Some(at.col),
+        ..diag
+    }
+}
+
+/// A name as libxml2 writes it in a schema error: `{uri}local`, or `local`
+/// for no namespace.
+#[cfg(feature = "xsd")]
+type ExpandedName<'a> = (Option<&'a str>, &'a str);
+
+/// The element, and the attribute when there is one, that a libxml2 schema
+/// error's message opens by naming: `Element 'E': …` or
+/// `Element 'E', attribute 'A': …`.
+#[cfg(feature = "xsd")]
+fn named_nodes(message: &str) -> Option<(ExpandedName<'_>, Option<ExpandedName<'_>>)> {
+    let rest = message.strip_prefix("Element '")?;
+    let (element, rest) = rest.split_once('\'')?;
+    let attribute = match rest.strip_prefix(", attribute '") {
+        Some(rest) => Some(expanded_name(rest.split_once('\'')?.0)),
+        None => None,
+    };
+    Some((expanded_name(element), attribute))
+}
+
+#[cfg(feature = "xsd")]
+fn expanded_name(written: &str) -> ExpandedName<'_> {
+    match written
+        .strip_prefix('{')
+        .and_then(|rest| rest.split_once('}'))
+    {
+        Some((uri, local)) => (Some(uri), local),
+        None => (None, written),
+    }
+}
+
+#[cfg(feature = "xsd")]
+fn expanded_name_is(tag: roxmltree::ExpandedName, name: ExpandedName) -> bool {
+    tag.namespace() == name.0 && tag.name() == name.1
+}
+
+/// The rows `node`'s start tag is written over, from its `<` to its `>`.
+#[cfg(feature = "xsd")]
+fn start_tag_rows(node: &roxmltree::Node) -> std::ops::RangeInclusive<u32> {
+    let document = node.document();
+    let input = document.input_text();
+    let start = node.range().start;
+    // No quoted value lies past the last attribute, so the first `>` after
+    // it closes the tag.
+    let after = node
+        .attributes()
+        .map(|a| a.range().end)
+        .max()
+        .unwrap_or(start + 1);
+    let end = input[after..].find('>').map_or(after, |i| after + i);
+    document.text_pos_at(start).row..=document.text_pos_at(end).row
 }
 
 /// Why a document was not validated. Never a failure — each variant is a
@@ -476,6 +586,79 @@ mod tests {
 
     fn schema() -> PathBuf {
         find_schema_path().expect("schemas/sce-forge.xsd must be reachable from CARGO_MANIFEST_DIR")
+    }
+
+    /// The one violation `document` has, as (line, col, message).
+    fn only_violation(document: &str) -> (Option<u32>, Option<u32>, String) {
+        let err = validate(document, "spread.scxml", &schema()).unwrap_err();
+        assert_eq!(err.diagnostics.len(), 1, "{err}");
+        let d = &err.diagnostics[0];
+        (d.line, d.col, d.message.clone())
+    }
+
+    /// A violation of an attribute is placed on the row and column the
+    /// attribute is written at — not the row its element's start tag ends
+    /// on, which is where libxml2 puts it.
+    #[test]
+    fn an_attribute_violation_is_placed_at_the_attribute() {
+        let (line, col, message) = only_violation(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="transform" name="x">
+  <datamodel>
+    <data id="a"
+          sce:type="uint8"
+          sce:direction="sideways"
+          />
+  </datamodel>
+</scxml>"#,
+        );
+        assert!(message.contains("direction"), "{message}");
+        assert_eq!((line, col), (Some(8), Some(11)), "{message}");
+    }
+
+    /// A violation of the element as a whole — a required attribute it does
+    /// not carry — is placed at the element's `<`.
+    #[test]
+    fn an_element_violation_is_placed_at_the_element() {
+        let (line, col, message) = only_violation(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="x">
+  <state id="accepting">
+    <sce:use
+        port="80"/>
+  </state>
+</scxml>"#,
+        );
+        assert!(message.contains("template"), "{message}");
+        assert_eq!((line, col), (Some(6), Some(5)), "{message}");
+    }
+
+    /// Two elements of one name are told apart by the row libxml2 gives,
+    /// so each violation moves to its own element's attribute.
+    #[test]
+    fn a_violation_moves_to_its_own_element() {
+        let err = validate(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="transform" name="x">
+  <datamodel>
+    <data id="a" sce:type="uint8"
+          sce:direction="in"/>
+    <data id="b" sce:type="uint8"
+          sce:direction="sideways"/>
+  </datamodel>
+</scxml>"#,
+            "two.scxml",
+            &schema(),
+        )
+        .unwrap_err();
+        let placed: Vec<_> = err.diagnostics.iter().map(|d| (d.line, d.col)).collect();
+        assert_eq!(placed, vec![(Some(9), Some(11))], "{err}");
     }
 
     #[test]

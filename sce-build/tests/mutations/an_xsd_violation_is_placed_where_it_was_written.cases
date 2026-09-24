@@ -1,0 +1,42 @@
+# Mutation cases for "an XSD violation is placed where it was written".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/an_xsd_violation_is_placed_where_it_was_written.cases`.
+#
+# libxml2 reports a schema violation on the row its element's start tag ends
+# on, with no column, so an attribute on an earlier row of a spread start tag
+# was reported on a row that holds nothing about it. Each case puts part of
+# that back: the placement skipped, the attribute ignored so the record stands
+# at the element, and the start tag's rows cut to its first so the element
+# libxml2 names is not found. The unit tests in `xsd_validator.rs` —
+# `an_attribute_violation_is_placed_at_the_attribute`,
+# `an_element_violation_is_placed_at_the_element`,
+# `a_violation_moves_to_its_own_element` — refuse them.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --lib
+mutation_targets sce-build/src/forge/xsd_validator.rs
+mutation_oracles sce-build/src/forge/xsd_validator.rs
+
+mutation_case "a violation keeps the row libxml2 gave" <<'PY'
+edit("sce-build/src/forge/xsd_validator.rs",
+     r'''                    Some(written) => placed_where_written(diag, written),''',
+     r'''                    Some(_) => diag,''')
+PY
+
+mutation_case "an attribute violation stands at its element" <<'PY'
+edit("sce-build/src/forge/xsd_validator.rs",
+     r'''    let offset = match attribute {
+        None => node.range().start,''',
+     r'''    let offset = match attribute.filter(|_| false) {
+        None => node.range().start,''')
+PY
+
+mutation_case "a start tag is taken to end on the row it opens" <<'PY'
+edit("sce-build/src/forge/xsd_validator.rs",
+     r'''    document.text_pos_at(start).row..=document.text_pos_at(end).row''',
+     r'''    let _ = end;
+    document.text_pos_at(start).row..=document.text_pos_at(start).row''')
+PY
