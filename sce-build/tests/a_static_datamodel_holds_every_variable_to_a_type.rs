@@ -804,6 +804,44 @@ fn a_list_read_as_a_value_is_refused() {
 }
 
 #[test]
+fn a_list_is_measured_by_len() {
+    let (ok, out) = run(
+        &["check", "-l", "kotlin"],
+        &list_doc(
+            "sce-static",
+            &format!("{DAYS}\n    <data id=\"n\" sce:type=\"uint32\" expr=\"0\"/>"),
+            r#"<state id="s">
+    <onentry><assign location="n" expr="len(days)"/></onentry>
+    <transition event="go" cond="len(days) &gt; 2" target="s"/>
+  </state>"#,
+        ),
+    );
+    assert!(
+        ok,
+        "len(days) reads a list's length, in a value and in a guard:\n{out}"
+    );
+}
+
+#[test]
+fn a_list_passed_to_a_host_action_is_refused() {
+    // A host method takes values, and a list is not one — refused with the
+    // same wording as in any other expression, not as an undeclared name.
+    let (ok, out) = run(
+        &["check"],
+        &list_doc(
+            "sce-static",
+            DAYS,
+            r#"<state id="s"><onentry><sce:action name="show"><sce:arg name="d" expr="days"/></sce:action></onentry></state>"#,
+        ),
+    );
+    assert!(!ok, "a list is no host-method argument:\n{out}");
+    assert!(
+        out.contains("expression/unsupported-construct") && out.contains("reading the list `days`"),
+        "{out}"
+    );
+}
+
+#[test]
 fn an_assignment_to_a_whole_list_is_refused() {
     let (ok, out) = run(
         &["check"],

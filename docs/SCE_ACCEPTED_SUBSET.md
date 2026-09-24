@@ -2418,9 +2418,13 @@ The appended value is judged against the element as an assignment is judged
 against its variable. The bound holds on every backend: an append to a full
 list appends nothing and raises `error.execution` (W3C SCXML 3.12.2) — unlike
 an algorithm's list, which grows past its capacity on the heap backends,
-because a machine must hold the same list wherever it runs. A list is not a
-value an expression reads, and assigning one whole is refused; both are
-`expression/unsupported-construct`. The host reads it through the snapshot.
+because a machine must hold the same list wherever it runs. An expression
+measures a list with the `len(…)` builtin — `len(picked) === 3` in a guard,
+`len(picked)` assigned to a count — and reads it no other way: a list read as
+a value (in an expression or a host action's argument) and a whole-list
+assignment are both `expression/unsupported-construct`. Iterating one with
+`<foreach>` is not admitted yet; the element-wise read is the host's, through
+the snapshot.
 A `target` that names no list is `scxml/static-datamodel-rule`, naming the
 lists there are, and so is either statement under any other data model.
 

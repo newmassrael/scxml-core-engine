@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 650ce2f72e4fe5a4cf966ce54a0964c73ad4617ce446385f874078c64955fa2f
+// source-hash: 19ecd19be2f9404a14b82c2f9ab7ddb05905712d4c77e74c22ff87f6e0e6ce33
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_list.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_list.scxml:12 :: _machine
+// SCE-MAP: static_list.scxml:13 :: _machine
 
 package com.sce.integration.static_list
 
@@ -15,6 +15,7 @@ import com.sce.runtime.*
 
 sealed interface StaticListState : State {
     data object Collecting : StaticListState
+    data object Done : StaticListState
 }
 
 // --- Events (W3C SCXML 3.12.1) ---
@@ -26,6 +27,7 @@ sealed interface StaticListEvent : Event {
     sealed interface Error : StaticListEvent {
         data object Execution : Error
     }
+    data object Full : StaticListEvent
     data object Reset : StaticListEvent
 }
 // ── NL→IR Item C1 Path A: typed `_event.data` payload classes ─────────
@@ -53,11 +55,15 @@ class StaticListStateMachine(
     /** W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`). */
     var refusals: UInt = 0.toUInt()
         private set
+    /** W3C SCXML 5.2: the `count` datamodel variable, published (`sce:direction="out"`). */
+    var count: UInt = 0.toUInt()
+        private set
 
     /** The published variables as one immutable value, in declaration order. */
     data class Data(
         val picked: List<UByte>,
         val refusals: UInt,
+        val count: UInt,
     )
 
     /**
@@ -76,6 +82,7 @@ class StaticListStateMachine(
     private fun currentData(): Data = Data(
         picked = picked,
         refusals = refusals,
+        count = count,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -154,12 +161,14 @@ class StaticListStateMachine(
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticListState? = when (stateId) {
         "collecting" -> StaticListState.Collecting
+        "done" -> StaticListState.Done
         else -> null
     }
 
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StaticListState): String = when (state) {
         is StaticListState.Collecting -> "collecting"
+        is StaticListState.Done -> "done"
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
@@ -171,12 +180,14 @@ class StaticListStateMachine(
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: StaticListState): Int = when (state) {
         is StaticListState.Collecting -> 0
+        is StaticListState.Done -> 1
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticListEvent? = when (name) {
         "day.picked" -> StaticListEvent.Day.Picked
         "error.execution" -> StaticListEvent.Error.Execution
+        "full" -> StaticListEvent.Full
         "reset" -> StaticListEvent.Reset
         else -> null
     }
@@ -185,6 +196,7 @@ class StaticListStateMachine(
     override fun eventNameOf(event: StaticListEvent): String? = when (event) {
         is StaticListEvent.Day.Picked -> "day.picked"
         is StaticListEvent.Error.Execution -> "error.execution"
+        is StaticListEvent.Full -> "full"
         is StaticListEvent.Reset -> "reset"
     }
 
@@ -197,6 +209,7 @@ class StaticListStateMachine(
         event: StaticListEvent
     ): TransitionResult<StaticListState> = when (state) {
         is StaticListState.Collecting -> processCollecting(event)
+        else -> TransitionResult.Ignored
     }
 
 
@@ -207,41 +220,54 @@ class StaticListStateMachine(
     ): TransitionResult<StaticListState> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
         event is StaticListEvent.Day.Picked -> TransitionResult.Internal(0)
+        event is StaticListEvent.Full && (picked).size == 3 -> TransitionResult.External(StaticListState.Done, StaticListState.Collecting, 1)
+
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is StaticListEvent.Reset -> TransitionResult.Internal(1)
+        event is StaticListEvent.Reset -> TransitionResult.Internal(2)
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is StaticListEvent.Error.Execution -> TransitionResult.Internal(2)
+        event is StaticListEvent.Error.Execution -> TransitionResult.Internal(3)
         else -> TransitionResult.Ignored
     }
 
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_list.scxml:12 :: _machine
+    // SCE-MAP: static_list.scxml:13 :: _machine
     override fun onEntry(state: StaticListState, pathChild: StaticListState?) {
         when (state) {
             is StaticListState.Collecting -> {
-                // SCE-MAP: static_list.scxml:19 :: collecting :: _state_body
+                // SCE-MAP: static_list.scxml:21 :: collecting :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("collecting")) return
+            }
+            is StaticListState.Done -> {
+                // SCE-MAP: static_list.scxml:34 :: done :: _state_body
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("done")) return
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
             }
         }
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_list.scxml:12 :: _machine
+    // SCE-MAP: static_list.scxml:13 :: _machine
     override fun onExit(state: StaticListState) {
         when (state) {
             is StaticListState.Collecting -> {
-                // SCE-MAP: static_list.scxml:19 :: collecting :: _state_body
+                // SCE-MAP: static_list.scxml:21 :: collecting :: _state_body
                 activeStateIds.remove("collecting")
+            }
+            is StaticListState.Done -> {
+                // SCE-MAP: static_list.scxml:34 :: done :: _state_body
+                activeStateIds.remove("done")
             }
         }
     }
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: static_list.scxml:12 :: _machine
+    // SCE-MAP: static_list.scxml:13 :: _machine
     override fun executeTransitionActions(
         source: StaticListState,
         event: StaticListEvent?,
@@ -250,26 +276,30 @@ class StaticListStateMachine(
         when (source) {
         is StaticListState.Collecting -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: static_list.scxml:20 :: collecting :: _transition_0
+                // SCE-MAP: static_list.scxml:22 :: collecting :: _transition_0
                 if (pendingDayPickedPayload == null) {
                     return
                 }
 
             if (picked.size < 3) { picked = picked + (pendingDayPickedPayload!!.dayOfMonth) } else { raisePlatformError(StaticListEvent.Error.Execution, "<sce:append target='picked'>: the list already holds its capacity of 3") }
+
+
+            count = (picked).size.toUInt()
             }
-            1 -> {
-                // SCE-MAP: static_list.scxml:23 :: collecting :: _transition_1
+            2 -> {
+                // SCE-MAP: static_list.scxml:27 :: collecting :: _transition_2
 
             picked = emptyList()
             }
-            2 -> {
-                // SCE-MAP: static_list.scxml:26 :: collecting :: _transition_2
+            3 -> {
+                // SCE-MAP: static_list.scxml:30 :: collecting :: _transition_3
 
 
             refusals = refusals + 1.toUInt()
             }
             else -> {}
         }
+        else -> {}
         }
     }
 }

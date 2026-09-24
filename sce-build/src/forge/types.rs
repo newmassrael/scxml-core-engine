@@ -77,6 +77,11 @@ pub enum InferredType {
     /// Byte array.
     Bytes,
 
+    /// A `list<T>` value — a `sce-static` statechart's list variable
+    /// (SCE Accepted Subset §2.15). Read only by `len(…)` and iterated by a
+    /// typed `<foreach>`; no emitter lowers it as an operand.
+    List(ListElem),
+
     /// The `null` literal. Has no direct SCE type; mostly used for
     /// emitter-side null-checks and rejected in arithmetic contexts.
     Null,
@@ -103,6 +108,40 @@ pub enum InferredType {
         offset: Rational,
         unit: UnitTag,
     },
+}
+
+/// The element of a [`InferredType::List`]: a fixed-width number or a
+/// `bool` — what a list admits (`AlgorithmValueType::list_elem_admitted`),
+/// kept `Copy` so the list type is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ListElem {
+    Number(NumericBaseType),
+    Bool,
+}
+
+impl ListElem {
+    /// The element a list of `ty` holds; `None` for a type no list admits.
+    pub fn of(ty: &SceType) -> Option<Self> {
+        match InferredType::from_sce_type(ty) {
+            InferredType::Int { signed, bits } => {
+                Some(Self::Number(NumericBaseType::Int { signed, bits }))
+            }
+            InferredType::Float { bits } => Some(Self::Number(NumericBaseType::Float { bits })),
+            InferredType::Bool => Some(Self::Bool),
+            _ => None,
+        }
+    }
+
+    /// The type one element has — what a `<foreach item>` over the list is.
+    pub fn element_type(self) -> InferredType {
+        match self {
+            Self::Number(NumericBaseType::Int { signed, bits }) => {
+                InferredType::Int { signed, bits }
+            }
+            Self::Number(NumericBaseType::Float { bits }) => InferredType::Float { bits },
+            Self::Bool => InferredType::Bool,
+        }
+    }
 }
 
 impl InferredType {
@@ -167,6 +206,7 @@ impl InferredType {
             Self::Null => "null".into(),
             Self::Unknown => "unknown".into(),
             Self::Quantity { .. } => "quantity".into(),
+            Self::List(elem) => format!("list<{}>", elem.element_type().describe()),
         }
     }
 
@@ -260,6 +300,9 @@ impl InferredType {
             | Self::Null
             | Self::Unknown
             | Self::Quantity { .. } => return None,
+            // Spelled from its element, so not one of the fixed spellings
+            // this returns — [`Self::describe`] names it.
+            Self::List(_) => return None,
         })
     }
 
@@ -302,7 +345,8 @@ impl InferredType {
                 NumericBaseType::Int { signed, bits } => int(signed, bits),
                 NumericBaseType::Float { bits } => float(bits),
             },
-            Self::Null | Self::Unknown => None,
+            // A list is not a scalar a host method or a field declares.
+            Self::Null | Self::Unknown | Self::List(_) => None,
         }
     }
 

@@ -3,8 +3,9 @@
   datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): a list
   variable — the days a calendar screen has picked — that starts empty, is
   filled by <sce:append> from a typed event payload, is emptied by
-  <sce:clear>, and holds at most its sce:capacity on every backend: an append
-  past the bound appends nothing and raises error.execution.
+  <sce:clear>, measured by len() — in an assignment and in a guard — and holds
+  at most its sce:capacity on every backend: an append past the bound appends
+  nothing and raises error.execution.
 
   Kotlin compile+run gate: scripts/regen_static_datamodel_kotlin.sh commits
   the generated machine, and StaticDatamodelTest.kt drives it.
@@ -15,11 +16,14 @@
   <datamodel>
     <data id="picked" sce:type="list&lt;uint8&gt;" sce:capacity="3" sce:direction="out"/>
     <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="count" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>
   <state id="collecting">
     <transition event="day.picked" type="internal">
       <sce:append target="picked" expr="_event.data.dayOfMonth"/>
+      <assign location="count" expr="len(picked)"/>
     </transition>
+    <transition event="full" cond="len(picked) === 3" target="done"/>
     <transition event="reset" type="internal">
       <sce:clear target="picked"/>
     </transition>
@@ -27,4 +31,5 @@
       <assign location="refusals" expr="refusals + 1"/>
     </transition>
   </state>
+  <final id="done"/>
 </scxml>

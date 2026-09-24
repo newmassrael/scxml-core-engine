@@ -352,6 +352,18 @@ fn static_signature(
     let ctx = static_scope.ctx(&paths, &[]);
     let mut sig = Vec::with_capacity(action.params.len());
     for arg in &action.params {
+        // A list is not a value a host method takes; refused as it is in
+        // every other expression of the document, before its type is asked.
+        if let Some(list) = static_scope.list_read_as_value(&arg.expr) {
+            return Err(crate::forge::error::Located::in_file(
+                crate::forge::expression_site::ExpressionSite::new(
+                    &arg.expr,
+                    arg.expr_spelling.as_ref(),
+                )
+                .place(crate::forge::static_datamodel::list_read_refusal(&list)),
+                diag_label,
+            ));
+        }
         let ty = static_argument_type(&ctx, arg).map_err(|refusal| match refusal {
             ArgumentRefusal::Expression(refusal) => crate::forge::error::Located::in_file(
                 crate::forge::expression_site::ExpressionSite::new(

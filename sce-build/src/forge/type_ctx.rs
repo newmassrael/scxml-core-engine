@@ -493,6 +493,25 @@ impl StaticScope {
         paths
     }
 
+    /// The first list variable `expr` reads as a value — anywhere but as
+    /// `len(…)`'s argument — or `None`. The one test every pass that judges a
+    /// `sce-static` expression applies, so a list is refused alike in a
+    /// guard, an assignment and a host action's argument.
+    pub fn list_read_as_value(&self, expr: &str) -> Option<String> {
+        crate::forge::expr::identifiers_read_as_values(expr)
+            .ok()?
+            .into_iter()
+            .find(|name| {
+                self.variables.iter().any(|v| {
+                    v.id == *name
+                        && v.value_type
+                            .as_ref()
+                            .and_then(AlgorithmValueType::list_elem)
+                            .is_some()
+                })
+            })
+    }
+
     /// The [`TypeCtx`] over this scope with `paths` ([`Self::paths`]) in it.
     pub fn ctx<'a>(
         &'a self,
@@ -536,9 +555,12 @@ fn static_statechart<'a>(
             ctx.insert_record(var.id.as_str(), RecordShape::Closed);
             continue;
         }
-        if value_type.list_elem().is_some() {
-            // Not a value an expression reads — the static data model's
-            // judge refuses a read of one by name before the scope is asked.
+        if let Some(elem) = value_type.list_elem() {
+            // Typed as a list so `len(…)` measures it; the static data
+            // model's judge refuses it anywhere it would be read as a value.
+            if let Some(elem) = crate::forge::types::ListElem::of(elem) {
+                ctx.insert_var(var.id.as_str(), InferredType::List(elem));
+            }
             continue;
         }
         let ty = value_type

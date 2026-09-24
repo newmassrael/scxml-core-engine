@@ -294,6 +294,36 @@ class StaticDatamodelTest {
     }
 
     @Test
+    fun aListIsMeasuredByLenInAnAssignmentAndInAGuard() {
+        // `count` is assigned len(picked) after each append, and `full` is
+        // taken only while len(picked) === 3.
+        val sm = StaticListStateMachine()
+        sm.initialize()
+        try {
+            pick(sm, 4)
+            pick(sm, 5)
+            assertEquals(2u, sm.count)
+            sm.send(StaticListEvent.Full)
+            sm.tick()
+            assertEquals(
+                setOf(com.sce.integration.static_list.StaticListState.Collecting),
+                sm.snapshot.value.configuration,
+                "two of three picked: the guard holds `full` back"
+            )
+            pick(sm, 6)
+            assertEquals(3u, sm.count)
+            sm.send(StaticListEvent.Full)
+            sm.tick()
+            assertEquals(
+                setOf(com.sce.integration.static_list.StaticListState.Done),
+                sm.snapshot.value.configuration
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
     fun anAppendPastTheCapacityAppendsNothingAndIsAnExecutionError() {
         // sce:capacity="3" is kept on every backend: the fourth pick finds
         // the list full, leaves it as it was, and says so with

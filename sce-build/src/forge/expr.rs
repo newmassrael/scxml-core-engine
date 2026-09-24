@@ -1506,6 +1506,33 @@ pub fn read_identifiers(raw_expr: &str) -> Result<Vec<String>, Refusal> {
     Ok(names)
 }
 
+/// [`read_identifiers`] less the names only measured: an identifier that is
+/// the sole argument of the `len(…)` builtin is asked for its length, not
+/// read as a value. What a `sce-static` list variable may appear as
+/// (SCE Accepted Subset §2.15) — anywhere else, it is a value it is not.
+pub fn identifiers_read_as_values(raw_expr: &str) -> Result<Vec<String>, Refusal> {
+    fn walk(node: &TypedExpr, names: &mut Vec<String>) {
+        if let ExprKind::Call { callee, args, .. } = &node.kind {
+            let is_len =
+                matches!(&callee.kind, ExprKind::Ident(n) | ExprKind::Raw(n) if n == "len");
+            if is_len && args.len() == 1 && matches!(args[0].kind, ExprKind::Ident(_)) {
+                return;
+            }
+        }
+        if let ExprKind::Ident(name) = &node.kind {
+            if !names.contains(name) {
+                names.push(name.clone());
+            }
+        }
+        for child in node.children() {
+            walk(child, names);
+        }
+    }
+    let mut names = Vec::new();
+    walk(&parse_to_ast(raw_expr.trim())?, &mut names);
+    Ok(names)
+}
+
 /// Replace the contents of every string literal with spaces of equal length,
 /// preserving expression length and non-string token positions.
 pub fn strip_string_literals(expr: &str) -> String {
@@ -3260,14 +3287,18 @@ fn binary_operand_type(op: BinOp, left: InferredType, right: InferredType) -> In
 // The only other text transformation C++ does is mapping quote characters in
 // string literals (single → double) and emitting `nullptr` for null.
 
-/// Recognizes the `len(<bytes|str>)` builtin — the length accessor the
-/// two-cursor keyexpr matcher uses to bound `pi < len(pattern)`. Each
+/// Recognizes the `len(<bytes|str|list>)` builtin — the length accessor the
+/// two-cursor keyexpr matcher uses to bound `pi < len(pattern)`, and the one
+/// read a `sce-static` list variable admits. Each
 /// emitter lowers it to its native length idiom (C11 `.len`, Rust
 /// `.len()`, Cpp `.size()`, Kotlin `.size`, Go/Python `len(x)`) rather
 /// than the generic `len(args)` call. Item C7 wildcard-keyexpr lowering.
 fn is_len_builtin(callee: &TypedExpr, args: &[TypedExpr]) -> bool {
     args.len() == 1
-        && matches!(args[0].ty, InferredType::Bytes | InferredType::Str)
+        && matches!(
+            args[0].ty,
+            InferredType::Bytes | InferredType::Str | InferredType::List(_)
+        )
         && matches!(&callee.kind, ExprKind::Ident(n) | ExprKind::Raw(n) if n == "len")
 }
 

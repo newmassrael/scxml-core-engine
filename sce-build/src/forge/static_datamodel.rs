@@ -136,6 +136,20 @@ pub fn check(
     Ok(())
 }
 
+/// The refusal of a list variable read as a value
+/// ([`StaticScope::list_read_as_value`]) — one wording wherever it is found.
+pub(crate) fn list_read_refusal(list: &str) -> crate::forge::expr::Refusal {
+    crate::forge::error::ExprError::UnsupportedConstruct {
+        construct: format!(
+            "reading the list `{list}` as a value (a list is filled by <sce:append>, \
+             emptied by <sce:clear>, measured by len({list}), and read by the host \
+             through the snapshot)"
+        ),
+        observed: Some(list.to_string()),
+    }
+    .at(None)
+}
+
 /// A variable's declared type; `Unknown` for an enum, whose width the
 /// inference layer declines to claim ([`InferredType::from_sce_type`]).
 fn variable_type(var: &Variable) -> InferredType {
@@ -162,10 +176,10 @@ impl<'a> Judge<'a> {
     /// `expr` judged against `expected`, refused at its own range.
     ///
     /// A `list<T>` variable is not a value an expression reads: it is filled
-    /// by `<sce:append>`, emptied by `<sce:clear>`, and read by the host
-    /// through the snapshot. Refused here, the one place every expression of
-    /// the document passes, rather than left to the scope, which would call
-    /// it undeclared.
+    /// by `<sce:append>`, emptied by `<sce:clear>`, measured by `len(…)`, and
+    /// read by the host through the snapshot. Anything but the measure is
+    /// refused here, the one place every expression of the document passes,
+    /// before the scope — which types it as a list — is asked.
     fn expr(
         &self,
         ctx: &TypeCtx<'_>,
@@ -179,20 +193,8 @@ impl<'a> Judge<'a> {
                 self.diag_label,
             )
         };
-        if let Ok(names) = crate::forge::expr::read_identifiers(expr) {
-            if let Some(list) = names.iter().find(|n| self.list_var(n).is_some()) {
-                return Err(place(
-                    crate::forge::error::ExprError::UnsupportedConstruct {
-                        construct: format!(
-                            "reading the list `{list}` as a value (a list is filled by \
-                             <sce:append>, emptied by <sce:clear>, and read by the host \
-                             through the snapshot)"
-                        ),
-                        observed: Some(list.clone()),
-                    }
-                    .at(None),
-                ));
-            }
+        if let Some(list) = self.scope.list_read_as_value(expr) {
+            return Err(place(list_read_refusal(&list)));
         }
         judge_into(expr, ctx, expected).map_err(place)
     }
