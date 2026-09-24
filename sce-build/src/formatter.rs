@@ -333,24 +333,42 @@ impl CppFormatter {
                 ))
             })?;
 
-        child
-            .stdin
-            .take()
-            .expect("stdin was piped")
-            .write_all(code.as_bytes())
-            .map_err(|e| failed(format!("could not write to clang-format: {e}")))?;
+        // The input is written from its own thread while this one reads the
+        // output, not before it. Writing it all first has two ways to lose
+        // the answer: a clang-format that refuses the input can exit before
+        // reading it, and the write then fails with a broken pipe that says
+        // nothing about why — the refusal on its stderr was never read; and a
+        // child that writes while it reads blocks on a full stdout pipe while
+        // this side blocks on a full stdin pipe, forever.
+        let mut stdin = child.stdin.take().expect("stdin was piped");
+        let (output, written) = std::thread::scope(|scope| {
+            let writer = scope.spawn(move || {
+                let written = stdin.write_all(code.as_bytes());
+                // Closing the pipe is how the child learns the input ended.
+                drop(stdin);
+                written
+            });
+            let output = child.wait_with_output();
+            let written = writer.join().expect("the stdin writer does not panic");
+            (output, written)
+        });
 
-        let output = child
-            .wait_with_output()
-            .map_err(|e| failed(format!("could not read clang-format's output: {e}")))?;
-
-        if output.status.success() {
-            Ok(String::from_utf8_lossy(&output.stdout).to_string())
-        } else {
-            Err(failed(
-                String::from_utf8_lossy(&output.stderr).trim().to_string(),
-            ))
+        let output =
+            output.map_err(|e| failed(format!("could not read clang-format's output: {e}")))?;
+        if !output.status.success() {
+            // The child's own account comes first: when it refused the
+            // input, any failure writing to it is a consequence.
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            return Err(failed(if stderr.is_empty() {
+                format!("clang-format exited with {}", output.status)
+            } else {
+                stderr
+            }));
         }
+        // A child that succeeded without reading all of its input formatted
+        // only part of it.
+        written.map_err(|e| failed(format!("could not write to clang-format: {e}")))?;
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
 
     /// Format every C/C++ source among `(filename, code)` pairs, passing any
@@ -633,6 +651,44 @@ mod tests {
 
         assert_eq!(
             formatter.format_output(vec![("m_sm.h".to_string(), "int x;".to_string())]),
+            Err(FormatFailure {
+                file: "m_sm.h".to_string(),
+                detail: "unterminated".to_string(),
+            }),
+        );
+    }
+
+    /// A clang-format that refuses the input before reading it leaves the
+    /// write to its stdin failing with a broken pipe. The refusal is still
+    /// the answer: it is what the child said about the file, and the broken
+    /// pipe is only its consequence.
+    ///
+    /// The input is larger than any pipe buffer, so the write cannot finish
+    /// before the child exits. The case the test above hits only when the
+    /// child happens to exit first — which made it fail at random — happens
+    /// here every time.
+    #[test]
+    fn a_refusal_before_the_input_is_read_is_still_the_refusal() {
+        let fixture = fixture_root("refuses-unread");
+        let bin = fixture.path().join("bin");
+        std::fs::create_dir_all(&bin).expect("create fixture dir");
+        let path = bin.join("clang-format-19");
+        std::fs::write(
+            &path,
+            "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'clang-format version 19.1.1'; exit 0; fi\necho 'unterminated' >&2; exit 1\n",
+        )
+        .expect("write refusing clang-format");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        }
+        let locator = ToolLocator::over(vec![bin], &[], BTreeMap::new());
+        let formatter = CppFormatter::with_locator(None, &locator).expect("formatter");
+
+        let large = "int x;\n".repeat(1 << 17);
+        assert_eq!(
+            formatter.format_output(vec![("m_sm.h".to_string(), large)]),
             Err(FormatFailure {
                 file: "m_sm.h".to_string(),
                 detail: "unterminated".to_string(),

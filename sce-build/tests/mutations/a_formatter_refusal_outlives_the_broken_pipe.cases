@@ -1,0 +1,58 @@
+# Mutation cases for "a clang-format refusal outlives the broken pipe".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_formatter_refusal_outlives_the_broken_pipe.cases`.
+#
+# `CppFormatter::format` wrote the whole input to clang-format's stdin before
+# it read anything back. A clang-format that refuses the input may exit before
+# reading it; the write then failed with a broken pipe and returned at once,
+# and the refusal the child wrote to stderr was never read. Measured on CI
+# 2026-09-24 (run 35968330238): the unit test for a refusing clang-format
+# failed at random with "could not write to clang-format: Broken pipe (os
+# error 32)" instead of the refusal — at random because a six-byte input
+# usually fits in the pipe before the child exits.
+#
+# The unit test `a_refusal_before_the_input_is_read_is_still_the_refusal` in
+# `formatter.rs` hands over more than any pipe holds, so the write cannot
+# finish first and the defect shows on every run. The cases put the defect
+# back in its two parts: the order of the work, and which failure is reported.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --lib
+mutation_targets sce-build/src/formatter.rs
+mutation_oracles sce-build/src/formatter.rs
+
+mutation_case "the input is written in full before the output is read" <<'PY'
+edit("sce-build/src/formatter.rs",
+     r'''        let (output, written) = std::thread::scope(|scope| {
+            let writer = scope.spawn(move || {
+                let written = stdin.write_all(code.as_bytes());
+                // Closing the pipe is how the child learns the input ended.
+                drop(stdin);
+                written
+            });
+            let output = child.wait_with_output();
+            let written = writer.join().expect("the stdin writer does not panic");
+            (output, written)
+        });''',
+     r'''        stdin
+            .write_all(code.as_bytes())
+            .map_err(|e| failed(format!("could not write to clang-format: {e}")))?;
+        drop(stdin);
+        let written: std::io::Result<()> = Ok(());
+        let output = child.wait_with_output();''')
+PY
+
+mutation_case "a failed write outranks the child's own refusal" <<'PY'
+edit("sce-build/src/formatter.rs",
+     r'''        let output =
+            output.map_err(|e| failed(format!("could not read clang-format's output: {e}")))?;
+        if !output.status.success() {''',
+     r'''        written
+            .as_ref()
+            .map_err(|e| failed(format!("could not write to clang-format: {e}")))?;
+        let output =
+            output.map_err(|e| failed(format!("could not read clang-format's output: {e}")))?;
+        if !output.status.success() {''')
+PY
