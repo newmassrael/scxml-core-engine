@@ -176,6 +176,73 @@ var WildcardInDocumentOrderAllStates = []WildcardInDocumentOrderState{
 	WildcardInDocumentOrderStateSealedTo,
 }
 
+// WildcardInDocumentOrderTarget is one token of a target list, as the document wrote
+// it (W3C SCXML 3.13): a state, or a <history> the engine dereferences.
+type WildcardInDocumentOrderTarget = sce.EntryTarget[WildcardInDocumentOrderState, sce.HistoryID]
+
+// ======================================================================
+// Document structure (W3C SCXML 3.2-3.4, 3.10)
+//
+// Package-level tables, because the structure is a fact about the document
+// and not about a run: the engine's Appendix D procedures read them through
+// the policy methods below, and a transition's target list is handed out as
+// a slice of them rather than rebuilt on every selection.
+// ======================================================================
+
+// childStatesOfWildcardInDocumentOrder is §scxml-D-getChildStates per state: its
+// <state>, <parallel> and <final> children, in document order.
+var childStatesOfWildcardInDocumentOrder = [15][]WildcardInDocumentOrderState{
+	WildcardInDocumentOrderStateGuardClosed: {WildcardInDocumentOrderStateGuardClosedLeaf},
+	WildcardInDocumentOrderStateGuardedInternal: {WildcardInDocumentOrderStateGuardedFrom, WildcardInDocumentOrderStateGuardedTo},
+	WildcardInDocumentOrderStateGuardOpen: {WildcardInDocumentOrderStateGuardOpenLeaf},
+	WildcardInDocumentOrderStateSealedInternal: {WildcardInDocumentOrderStateSealedFrom, WildcardInDocumentOrderStateSealedTo},
+}
+
+// initialTargetsOfWildcardInDocumentOrder is each compound state's initial transition
+// target, as written (§scxml-3.3).
+var initialTargetsOfWildcardInDocumentOrder = [15][]WildcardInDocumentOrderTarget{
+	WildcardInDocumentOrderStateGuardClosed: {sce.StateTarget[WildcardInDocumentOrderState, sce.HistoryID](WildcardInDocumentOrderStateGuardClosedLeaf)},
+	WildcardInDocumentOrderStateGuardedInternal: {sce.StateTarget[WildcardInDocumentOrderState, sce.HistoryID](WildcardInDocumentOrderStateGuardedFrom)},
+	WildcardInDocumentOrderStateGuardOpen: {sce.StateTarget[WildcardInDocumentOrderState, sce.HistoryID](WildcardInDocumentOrderStateGuardOpenLeaf)},
+	WildcardInDocumentOrderStateSealedInternal: {sce.StateTarget[WildcardInDocumentOrderState, sce.HistoryID](WildcardInDocumentOrderStateSealedFrom)},
+}
+
+// documentInitialTargetsOfWildcardInDocumentOrder is the target of the document's own
+// initial transition, as written (§scxml-3.2).
+var documentInitialTargetsOfWildcardInDocumentOrder = []WildcardInDocumentOrderTarget{sce.StateTarget[WildcardInDocumentOrderState, sce.HistoryID](WildcardInDocumentOrderStateGuardClosed)}
+
+// transitionTargetsOfWildcardInDocumentOrder is each transition's target list, as
+// written (§scxml-3.13), by source state and the transition's index among its
+// source's own transitions. A targetless transition's entry is empty.
+var transitionTargetsOfWildcardInDocumentOrder = [15][][]WildcardInDocumentOrderTarget{
+	WildcardInDocumentOrderStateGuardClosed: {
+		0: {sce.StateTarget[WildcardInDocumentOrderState, sce.HistoryID](WildcardInDocumentOrderStateGuardOpen)},
+	},
+	WildcardInDocumentOrderStateGuardClosedLeaf: {
+		0: {sce.StateTarget[WildcardInDocumentOrderState, sce.HistoryID](WildcardInDocumentOrderStateFailGuardIgnored)},
+	},
+	WildcardInDocumentOrderStateGuardedInternal: {
+		0: {sce.StateTarget[WildcardInDocumentOrderState, sce.HistoryID](WildcardInDocumentOrderStateGuardedTo)},
+	},
+	WildcardInDocumentOrderStateGuardedTo: {
+		0: {sce.StateTarget[WildcardInDocumentOrderState, sce.HistoryID](WildcardInDocumentOrderStateSealedInternal)},
+		1: {sce.StateTarget[WildcardInDocumentOrderState, sce.HistoryID](WildcardInDocumentOrderStateFailGuardedInternalReentered)},
+	},
+	WildcardInDocumentOrderStateGuardOpen: {
+		0: {sce.StateTarget[WildcardInDocumentOrderState, sce.HistoryID](WildcardInDocumentOrderStateFailGuardNeverFired)},
+	},
+	WildcardInDocumentOrderStateGuardOpenLeaf: {
+		0: {sce.StateTarget[WildcardInDocumentOrderState, sce.HistoryID](WildcardInDocumentOrderStateGuardedInternal)},
+	},
+	WildcardInDocumentOrderStateSealedInternal: {
+		0: {sce.StateTarget[WildcardInDocumentOrderState, sce.HistoryID](WildcardInDocumentOrderStateSealedTo)},
+	},
+	WildcardInDocumentOrderStateSealedTo: {
+		0: {sce.StateTarget[WildcardInDocumentOrderState, sce.HistoryID](WildcardInDocumentOrderStatePass)},
+		1: {sce.StateTarget[WildcardInDocumentOrderState, sce.HistoryID](WildcardInDocumentOrderStateFailSealedInternalReentered)},
+	},
+}
+
 // ======================================================================
 // Event type (W3C SCXML 3.12)
 // ======================================================================
@@ -209,13 +276,6 @@ func (e WildcardInDocumentOrderEvent) String() string {
 // ======================================================================
 
 type WildcardInDocumentOrderPolicy struct {
-	// W3C SCXML 3.13: Last transition metadata
-	lastTransitionIsInternal  bool
-	lastTransitionIsTargetless bool
-	lastTransitionSourceState WildcardInDocumentOrderState
-	// W3C SCXML 3.13: Transition action tracking
-	lastTransitionIndex   int
-	hasTransitionActions   bool
 	// W3C SCXML 5.10.1: External event flag
 	nextEventIsExternal bool
 	pendingEventName string
@@ -248,7 +308,6 @@ type WildcardInDocumentOrderPolicy struct {
 // NewWildcardInDocumentOrderPolicy creates a new policy with default values.
 func NewWildcardInDocumentOrderPolicy() WildcardInDocumentOrderPolicy {
 	return WildcardInDocumentOrderPolicy{
-		lastTransitionSourceState: WildcardInDocumentOrderStateGuardClosedLeaf,
 	}
 }
 
@@ -539,37 +598,45 @@ func (p *WildcardInDocumentOrderPolicy) GetParent(state WildcardInDocumentOrderS
 	return 0, false
 }
 
-// IsCompoundState returns true if state has children (W3C SCXML 3.3).
+// IsCompoundState returns true if state is a <state> with child states — exactly
+// the states that have an initial transition. A <parallel> is not compound
+// (W3C SCXML 3.3).
 func (p *WildcardInDocumentOrderPolicy) IsCompoundState(state WildcardInDocumentOrderState) bool {
-	switch state {
-	case WildcardInDocumentOrderStateGuardClosed:
-		return true
-	case WildcardInDocumentOrderStateGuardedInternal:
-		return true
-	case WildcardInDocumentOrderStateGuardOpen:
-		return true
-	case WildcardInDocumentOrderStateSealedInternal:
-		return true
-	}
-	return false
+	return len(initialTargetsOfWildcardInDocumentOrder[state]) > 0
 }
 
 func (p *WildcardInDocumentOrderPolicy) IsParallelState(_ WildcardInDocumentOrderState) bool { return false }
-func (p *WildcardInDocumentOrderPolicy) GetParallelRegions(_ WildcardInDocumentOrderState) []WildcardInDocumentOrderState { return nil }
 
-// IsDescendantOf returns true if desc is a descendant of anc (W3C SCXML 3.12).
-func (p *WildcardInDocumentOrderPolicy) IsDescendantOf(desc, anc WildcardInDocumentOrderState) bool {
-	current := desc
-	for {
-		parent, ok := p.GetParent(current)
-		if !ok {
-			return false
-		}
-		if parent == anc {
-			return true
-		}
-		current = parent
-	}
+// GetChildStates returns state's <state>, <parallel> and <final> children, in
+// document order — for a <parallel>, its regions (§scxml-D-getChildStates).
+func (p *WildcardInDocumentOrderPolicy) GetChildStates(state WildcardInDocumentOrderState) []WildcardInDocumentOrderState {
+	return childStatesOfWildcardInDocumentOrder[state]
+}
+
+// GetInitialTargets returns a compound state's initial transition target, as
+// written; the engine's entry procedures dereference a <history> among them
+// (W3C SCXML 3.3).
+func (p *WildcardInDocumentOrderPolicy) GetInitialTargets(state WildcardInDocumentOrderState) []WildcardInDocumentOrderTarget {
+	return initialTargetsOfWildcardInDocumentOrder[state]
+}
+
+// GetDocumentInitialTargets returns the target of the document's own initial
+// transition, as written (W3C SCXML 3.2).
+func (p *WildcardInDocumentOrderPolicy) GetDocumentInitialTargets() []WildcardInDocumentOrderTarget {
+	return documentInitialTargetsOfWildcardInDocumentOrder
+}
+
+// W3C SCXML 3.10: this document declares no <history>, so no target list names
+// one and the engine never asks the two below; answering would mean inventing
+// one.
+func (p *WildcardInDocumentOrderPolicy) GetHistoryParent(history sce.HistoryID) WildcardInDocumentOrderState {
+	panic(fmt.Sprintf("WildcardInDocumentOrderPolicy declares no <history>; asked for %d", history))
+}
+func (p *WildcardInDocumentOrderPolicy) GetHistoryDefaultTargets(history sce.HistoryID) []WildcardInDocumentOrderTarget {
+	panic(fmt.Sprintf("WildcardInDocumentOrderPolicy declares no <history>; asked for %d", history))
+}
+func (p *WildcardInDocumentOrderPolicy) HistoryValue(_ sce.HistoryID) ([]WildcardInDocumentOrderState, bool) {
+	return nil, false
 }
 
 // GetDocumentOrder returns the document order index (W3C SCXML Appendix D).
@@ -644,59 +711,6 @@ func (p *WildcardInDocumentOrderPolicy) NullEvent() WildcardInDocumentOrderEvent
 	return WildcardInDocumentOrderEventNull
 }
 
-// GetInitialChildren returns initial children of a compound state (W3C SCXML 3.6).
-func (p *WildcardInDocumentOrderPolicy) GetInitialChildren(state WildcardInDocumentOrderState) []WildcardInDocumentOrderState {
-	switch state {
-	case WildcardInDocumentOrderStateGuardClosed:
-		return []WildcardInDocumentOrderState{
-			WildcardInDocumentOrderStateGuardClosedLeaf,
-		}
-	case WildcardInDocumentOrderStateGuardedInternal:
-		return []WildcardInDocumentOrderState{
-			WildcardInDocumentOrderStateGuardedFrom,
-		}
-	case WildcardInDocumentOrderStateGuardOpen:
-		return []WildcardInDocumentOrderState{
-			WildcardInDocumentOrderStateGuardOpenLeaf,
-		}
-	case WildcardInDocumentOrderStateSealedInternal:
-		return []WildcardInDocumentOrderState{
-			WildcardInDocumentOrderStateSealedFrom,
-		}
-	}
-	return nil
-}
-
-// LastTransitionIsInternal returns the internal transition flag (W3C SCXML 3.13).
-func (p *WildcardInDocumentOrderPolicy) LastTransitionIsInternal() bool {
-	return p.lastTransitionIsInternal
-}
-
-// SetLastTransitionIsInternal sets the internal transition flag.
-func (p *WildcardInDocumentOrderPolicy) SetLastTransitionIsInternal(value bool) {
-	p.lastTransitionIsInternal = value
-}
-
-// LastTransitionIsTargetless returns the targetless transition flag (W3C SCXML 3.13).
-func (p *WildcardInDocumentOrderPolicy) LastTransitionIsTargetless() bool {
-	return p.lastTransitionIsTargetless
-}
-
-// SetLastTransitionIsTargetless sets the targetless transition flag.
-func (p *WildcardInDocumentOrderPolicy) SetLastTransitionIsTargetless(value bool) {
-	p.lastTransitionIsTargetless = value
-}
-
-// LastTransitionSourceState returns the source state of the last transition.
-func (p *WildcardInDocumentOrderPolicy) LastTransitionSourceState() WildcardInDocumentOrderState {
-	return p.lastTransitionSourceState
-}
-
-// SetLastTransitionSourceState sets the source state of the last transition.
-func (p *WildcardInDocumentOrderPolicy) SetLastTransitionSourceState(state WildcardInDocumentOrderState) {
-	p.lastTransitionSourceState = state
-}
-
 
 // SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
 func (p *WildcardInDocumentOrderPolicy) SetNextEventIsExternal(value bool) {
@@ -741,14 +755,6 @@ func (p *WildcardInDocumentOrderPolicy) GetActiveStates() []WildcardInDocumentOr
 // which is false above; the method exists because the interface is one contract.
 func (p *WildcardInDocumentOrderPolicy) SetActiveStates(_ []WildcardInDocumentOrderState) {}
 func (p *WildcardInDocumentOrderPolicy) HasExternalEventFlag() bool { return true }
-// GetInitialOrHistoryChild returns the initial child considering history (W3C SCXML 3.11).
-func (p *WildcardInDocumentOrderPolicy) GetInitialOrHistoryChild(state WildcardInDocumentOrderState) WildcardInDocumentOrderState {
-	children := p.GetInitialChildren(state)
-	if len(children) > 0 {
-		return children[0]
-	}
-	return state
-}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *WildcardInDocumentOrderPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[WildcardInDocumentOrderEvent], _ *sce.Engine[WildcardInDocumentOrderState, WildcardInDocumentOrderEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).
@@ -792,13 +798,11 @@ func (p *WildcardInDocumentOrderPolicy) ClearEventMetadata() {
 
 
 
-
-// ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
+// ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
+// configuration, runs its <onentry>, and its <initial> transition's content when
+// its initial state is entered by default.
 //line wildcard_in_document_order.scxml:48
-func (p *WildcardInDocumentOrderPolicy) ExecuteEntryActions(state WildcardInDocumentOrderState, engine *sce.Engine[WildcardInDocumentOrderState, WildcardInDocumentOrderEvent], pathChild *WildcardInDocumentOrderState) {
-	// Only a `<parallel>` machine descends into defaults here, so a machine
-	// without one has nothing to tell an ancestor entry from a target entry.
-	_ = pathChild
+func (p *WildcardInDocumentOrderPolicy) ExecuteEntryActions(state WildcardInDocumentOrderState, engine *sce.Engine[WildcardInDocumentOrderState, WildcardInDocumentOrderEvent], isDefaultEntry bool) {
 	p.ensureScriptEngine()
 	switch state {
 	case WildcardInDocumentOrderStateGuardClosed:
@@ -856,9 +860,21 @@ func (p *WildcardInDocumentOrderPolicy) ExecuteEntryActions(state WildcardInDocu
 	}
 }
 
-// ExecuteExitActions executes onexit actions for a state (W3C SCXML 3.9).
+// ExecuteHistoryDefaultContent runs a <history>'s default transition content
+// (W3C SCXML 3.10.2), after its parent's onentry (and after the parent's own
+// <initial> content) when the history was taken with nothing recorded. The
+// engine asks for it by the entry set's defaultHistoryContent answer; a history
+// that restored what it recorded runs nothing.
 //line wildcard_in_document_order.scxml:48
-func (p *WildcardInDocumentOrderPolicy) ExecuteExitActions(state WildcardInDocumentOrderState, engine *sce.Engine[WildcardInDocumentOrderState, WildcardInDocumentOrderEvent], preTransitionActive []WildcardInDocumentOrderState) {
+func (p *WildcardInDocumentOrderPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[WildcardInDocumentOrderState, WildcardInDocumentOrderEvent]) {
+	// W3C SCXML 3.10.2: no <history> in this document has default content.
+}
+
+// ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
+// removes it from the configuration, cancels its invocations and runs its
+// <onexit>.
+//line wildcard_in_document_order.scxml:48
+func (p *WildcardInDocumentOrderPolicy) ExecuteExitActions(state WildcardInDocumentOrderState, engine *sce.Engine[WildcardInDocumentOrderState, WildcardInDocumentOrderEvent], configurationBeforeExit []WildcardInDocumentOrderState) {
 	p.ensureScriptEngine()
 	switch state {
 	default:
@@ -866,188 +882,167 @@ func (p *WildcardInDocumentOrderPolicy) ExecuteExitActions(state WildcardInDocum
 	}
 }
 
-// ProcessTransition evaluates guards and takes a matching transition (W3C SCXML 3.13).
-// Returns true if a transition was taken.
+
+
+// BindCurrentEvent binds the event whose transitions are about to be selected as
+// the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
+// and not for an eventless selection, which has no event of its own.
 //line wildcard_in_document_order.scxml:48
-func (p *WildcardInDocumentOrderPolicy) ProcessTransition(currentState *WildcardInDocumentOrderState, event WildcardInDocumentOrderEvent, engine *sce.Engine[WildcardInDocumentOrderState, WildcardInDocumentOrderEvent]) bool {
-	// W3C SCXML 5.10: Bind _event system variable for guard evaluation
+func (p *WildcardInDocumentOrderPolicy) BindCurrentEvent(event WildcardInDocumentOrderEvent, engine *sce.Engine[WildcardInDocumentOrderState, WildcardInDocumentOrderEvent]) {
 	if event != WildcardInDocumentOrderEventNull {
 		// §scxml-B-2-8-1: the rung the payload got, handed to the engine
 		// rather than dropped. This is the only frame that has both the
 		// reading and the event it belongs to.
 		engine.NotePayloadReading(event, p.setCurrentEvent(p.GetEventName(event)))
 	}
-
-	// W3C SCXML 3.12: Try transitions in current state first
-	if p.tryTransitionInState(*currentState, event, currentState, engine) {
-		return true
-	}
-
-	// W3C SCXML 3.13: Eventless transitions do NOT bubble to parent states
-	if event == WildcardInDocumentOrderEventNull {
-		return false
-	}
-
-	// W3C SCXML 3.12: Hierarchical event bubbling — walk up to parent
-	checkState := *currentState
-	for {
-		parent, hasParent := p.GetParent(checkState)
-		if !hasParent {
-			break
-		}
-		if p.tryTransitionInState(parent, event, currentState, engine) {
-			return true
-		}
-		checkState = parent
-	}
-
-	return false
 }
 
-
-// tryTransitionInState checks transitions for a single state.
+// FirstEnabledTransition is Appendix D selectTransitions, the half only this
+// document can answer: the first of state's own transitions, in document order,
+// that event enables and whose guard holds. The engine walks the atomic states
+// and their ancestors and keeps the ordered set; the null event asks for
+// eventless transitions.
 //line wildcard_in_document_order.scxml:48
-func (p *WildcardInDocumentOrderPolicy) tryTransitionInState(checkState WildcardInDocumentOrderState, event WildcardInDocumentOrderEvent, currentState *WildcardInDocumentOrderState, engine *sce.Engine[WildcardInDocumentOrderState, WildcardInDocumentOrderEvent]) bool {
-	switch checkState {
+func (p *WildcardInDocumentOrderPolicy) FirstEnabledTransition(state WildcardInDocumentOrderState, event WildcardInDocumentOrderEvent, engine *sce.Engine[WildcardInDocumentOrderState, WildcardInDocumentOrderEvent]) (sce.EnabledTransition[WildcardInDocumentOrderState, sce.HistoryID], bool) {
+	switch state {
 	case WildcardInDocumentOrderStateGuardClosed:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == WildcardInDocumentOrderEventProbe {
-			*currentState = WildcardInDocumentOrderStateGuardOpen
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = WildcardInDocumentOrderStateGuardClosed
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[WildcardInDocumentOrderState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfWildcardInDocumentOrder[state][0],
+					TransitionIndex: 0,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	case WildcardInDocumentOrderStateGuardClosedLeaf:
-		// W3C SCXML 5.9.3: Runtime event descriptor matching for "*"
 		if event != WildcardInDocumentOrderEventNull && sce.MatchesEventDescriptor(p.GetEventName(event), "*") {
 			if p.evaluateGuard(`_scxml_truthy(armed)`, engine) {
-			*currentState = WildcardInDocumentOrderStateFailGuardIgnored
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = WildcardInDocumentOrderStateGuardClosedLeaf
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = false
-			return true
+				return sce.EnabledTransition[WildcardInDocumentOrderState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfWildcardInDocumentOrder[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
 	case WildcardInDocumentOrderStateGuardedInternal:
-		// W3C SCXML 5.9.3: Runtime event descriptor matching for "*"
 		if event != WildcardInDocumentOrderEventNull && sce.MatchesEventDescriptor(p.GetEventName(event), "*") {
 			if p.evaluateGuard(`_scxml_truthy(armed)`, engine) {
-			*currentState = WildcardInDocumentOrderStateGuardedTo
-			p.lastTransitionIsInternal = true
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = WildcardInDocumentOrderStateGuardedInternal
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = false
-			return true
+				return sce.EnabledTransition[WildcardInDocumentOrderState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfWildcardInDocumentOrder[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      true,
+				}, true
 			}
 		}
 	case WildcardInDocumentOrderStateGuardedTo:
-		// Eventless transition 0
 		if event == WildcardInDocumentOrderEventNull {
 			if p.evaluateGuard(`_scxml_eq(guardedEntries, 1)`, engine) {
-			*currentState = WildcardInDocumentOrderStateSealedInternal
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = WildcardInDocumentOrderStateGuardedTo
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = false
-			return true
+				return sce.EnabledTransition[WildcardInDocumentOrderState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfWildcardInDocumentOrder[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// Eventless transition 1
 		if event == WildcardInDocumentOrderEventNull {
-			*currentState = WildcardInDocumentOrderStateFailGuardedInternalReentered
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = WildcardInDocumentOrderStateGuardedTo
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = false
-			return true
+			{
+				return sce.EnabledTransition[WildcardInDocumentOrderState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfWildcardInDocumentOrder[state][1],
+					TransitionIndex: 1,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	case WildcardInDocumentOrderStateGuardOpen:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == WildcardInDocumentOrderEventProbe {
-			*currentState = WildcardInDocumentOrderStateFailGuardNeverFired
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = WildcardInDocumentOrderStateGuardOpen
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = false
-			return true
+			{
+				return sce.EnabledTransition[WildcardInDocumentOrderState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfWildcardInDocumentOrder[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	case WildcardInDocumentOrderStateGuardOpenLeaf:
-		// W3C SCXML 5.9.3: Runtime event descriptor matching for "*"
 		if event != WildcardInDocumentOrderEventNull && sce.MatchesEventDescriptor(p.GetEventName(event), "*") {
 			if p.evaluateGuard(`_scxml_truthy(armed)`, engine) {
-			*currentState = WildcardInDocumentOrderStateGuardedInternal
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = WildcardInDocumentOrderStateGuardOpenLeaf
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = false
-			return true
+				return sce.EnabledTransition[WildcardInDocumentOrderState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfWildcardInDocumentOrder[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
 	case WildcardInDocumentOrderStateSealedInternal:
-		// W3C SCXML 5.9.3: Runtime event descriptor matching for "*"
 		if event != WildcardInDocumentOrderEventNull && sce.MatchesEventDescriptor(p.GetEventName(event), "*") {
-			*currentState = WildcardInDocumentOrderStateSealedTo
-			p.lastTransitionIsInternal = true
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = WildcardInDocumentOrderStateSealedInternal
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = false
-			return true
-		}
-	case WildcardInDocumentOrderStateSealedTo:
-		// Eventless transition 0
-		if event == WildcardInDocumentOrderEventNull {
-			if p.evaluateGuard(`_scxml_eq(sealedEntries, 1)`, engine) {
-			*currentState = WildcardInDocumentOrderStatePass
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = WildcardInDocumentOrderStateSealedTo
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = false
-			return true
+			{
+				return sce.EnabledTransition[WildcardInDocumentOrderState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfWildcardInDocumentOrder[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      true,
+				}, true
 			}
 		}
-		// Eventless transition 1
+	case WildcardInDocumentOrderStateSealedTo:
 		if event == WildcardInDocumentOrderEventNull {
-			*currentState = WildcardInDocumentOrderStateFailSealedInternalReentered
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = WildcardInDocumentOrderStateSealedTo
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = false
-			return true
+			if p.evaluateGuard(`_scxml_eq(sealedEntries, 1)`, engine) {
+				return sce.EnabledTransition[WildcardInDocumentOrderState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfWildcardInDocumentOrder[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
+		}
+		if event == WildcardInDocumentOrderEventNull {
+			{
+				return sce.EnabledTransition[WildcardInDocumentOrderState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfWildcardInDocumentOrder[state][1],
+					TransitionIndex: 1,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	}
-	return false
+	return sce.EnabledTransition[WildcardInDocumentOrderState, sce.HistoryID]{}, false
 }
 
-// ExecuteTransitionActions executes actions for the last taken transition (W3C SCXML 3.13).
+// ExecuteTransitionContent runs one transition's executable content (W3C SCXML
+// 3.13), between the microstep's exits and its entries.
 //line wildcard_in_document_order.scxml:48
-func (p *WildcardInDocumentOrderPolicy) ExecuteTransitionActions(engine *sce.Engine[WildcardInDocumentOrderState, WildcardInDocumentOrderEvent]) {
+func (p *WildcardInDocumentOrderPolicy) ExecuteTransitionContent(source WildcardInDocumentOrderState, transitionIndex int, engine *sce.Engine[WildcardInDocumentOrderState, WildcardInDocumentOrderEvent]) {
 	p.ensureScriptEngine()
-	if !p.hasTransitionActions {
-		return
-	}
-	source := p.lastTransitionSourceState
-	idx := p.lastTransitionIndex
-	if source == WildcardInDocumentOrderStateGuardClosed && idx == 0 {
-		//line wildcard_in_document_order.scxml:62
+	switch source {
+	case WildcardInDocumentOrderStateGuardClosed:
+		switch transitionIndex {
+		case 0:
+			//line wildcard_in_document_order.scxml:62
 
 	// W3C SCXML 5.3: <assign location="armed" expr="true">
 	if err := p.assignVariable(`armed`, `true`); err != nil {
 		engine.Raise(sce.NewPlatformError(WildcardInDocumentOrderEventErrorExecution, "<assign> to 'armed' failed"))
 	}
 
-		return
+		}
 	}
 }

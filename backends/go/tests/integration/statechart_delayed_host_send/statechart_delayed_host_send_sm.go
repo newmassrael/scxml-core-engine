@@ -134,6 +134,55 @@ var StatechartDelayedHostSendAllStates = []StatechartDelayedHostSendState{
 	StatechartDelayedHostSendStateWaiting,
 }
 
+// StatechartDelayedHostSendTarget is one token of a target list, as the document wrote
+// it (W3C SCXML 3.13): a state, or a <history> the engine dereferences.
+type StatechartDelayedHostSendTarget = sce.EntryTarget[StatechartDelayedHostSendState, sce.HistoryID]
+
+// ======================================================================
+// Document structure (W3C SCXML 3.2-3.4, 3.10)
+//
+// Package-level tables, because the structure is a fact about the document
+// and not about a run: the engine's Appendix D procedures read them through
+// the policy methods below, and a transition's target list is handed out as
+// a slice of them rather than rebuilt on every selection.
+// ======================================================================
+
+// childStatesOfStatechartDelayedHostSend is §scxml-D-getChildStates per state: its
+// <state>, <parallel> and <final> children, in document order.
+var childStatesOfStatechartDelayedHostSend = [8][]StatechartDelayedHostSendState{
+}
+
+// initialTargetsOfStatechartDelayedHostSend is each compound state's initial transition
+// target, as written (§scxml-3.3).
+var initialTargetsOfStatechartDelayedHostSend = [8][]StatechartDelayedHostSendTarget{
+}
+
+// documentInitialTargetsOfStatechartDelayedHostSend is the target of the document's own
+// initial transition, as written (§scxml-3.2).
+var documentInitialTargetsOfStatechartDelayedHostSend = []StatechartDelayedHostSendTarget{sce.StateTarget[StatechartDelayedHostSendState, sce.HistoryID](StatechartDelayedHostSendStateWaiting)}
+
+// transitionTargetsOfStatechartDelayedHostSend is each transition's target list, as
+// written (§scxml-3.13), by source state and the transition's index among its
+// source's own transitions. A targetless transition's entry is empty.
+var transitionTargetsOfStatechartDelayedHostSend = [8][][]StatechartDelayedHostSendTarget{
+	StatechartDelayedHostSendStateArmed: {
+		0: {sce.StateTarget[StatechartDelayedHostSendState, sce.HistoryID](StatechartDelayedHostSendStateCancelling)},
+		1: {sce.StateTarget[StatechartDelayedHostSendState, sce.HistoryID](StatechartDelayedHostSendStateUnserved)},
+	},
+	StatechartDelayedHostSendStateCancelling: {
+		0: {sce.StateTarget[StatechartDelayedHostSendState, sce.HistoryID](StatechartDelayedHostSendStateCancelPending)},
+		1: {sce.StateTarget[StatechartDelayedHostSendState, sce.HistoryID](StatechartDelayedHostSendStateCancelLost)},
+	},
+	StatechartDelayedHostSendStateCancelPending: {
+		0: {sce.StateTarget[StatechartDelayedHostSendState, sce.HistoryID](StatechartDelayedHostSendStateCancelLost)},
+		1: {sce.StateTarget[StatechartDelayedHostSendState, sce.HistoryID](StatechartDelayedHostSendStatePass)},
+	},
+	StatechartDelayedHostSendStateWaiting: {
+		0: {sce.StateTarget[StatechartDelayedHostSendState, sce.HistoryID](StatechartDelayedHostSendStateTooEarly)},
+		1: {sce.StateTarget[StatechartDelayedHostSendState, sce.HistoryID](StatechartDelayedHostSendStateArmed)},
+	},
+}
+
 // ======================================================================
 // Event type (W3C SCXML 3.12)
 // ======================================================================
@@ -176,10 +225,6 @@ func (e StatechartDelayedHostSendEvent) String() string {
 // ======================================================================
 
 type StatechartDelayedHostSendPolicy struct {
-	// W3C SCXML 3.13: Last transition metadata
-	lastTransitionIsInternal  bool
-	lastTransitionIsTargetless bool
-	lastTransitionSourceState StatechartDelayedHostSendState
 	// W3C SCXML 5.10: Session ID
 	SessionID string
 	// W3C SCXML 6.4: Parent communication
@@ -194,7 +239,6 @@ type StatechartDelayedHostSendPolicy struct {
 // NewStatechartDelayedHostSendPolicy creates a new policy with default values.
 func NewStatechartDelayedHostSendPolicy() StatechartDelayedHostSendPolicy {
 	return StatechartDelayedHostSendPolicy{
-		lastTransitionSourceState: StatechartDelayedHostSendStateWaiting,
 	}
 }
 
@@ -244,29 +288,45 @@ func (p *StatechartDelayedHostSendPolicy) GetParent(state StatechartDelayedHostS
 	return 0, false
 }
 
-// IsCompoundState returns true if state has children (W3C SCXML 3.3).
+// IsCompoundState returns true if state is a <state> with child states — exactly
+// the states that have an initial transition. A <parallel> is not compound
+// (W3C SCXML 3.3).
 func (p *StatechartDelayedHostSendPolicy) IsCompoundState(state StatechartDelayedHostSendState) bool {
-	switch state {
-	}
-	return false
+	return len(initialTargetsOfStatechartDelayedHostSend[state]) > 0
 }
 
 func (p *StatechartDelayedHostSendPolicy) IsParallelState(_ StatechartDelayedHostSendState) bool { return false }
-func (p *StatechartDelayedHostSendPolicy) GetParallelRegions(_ StatechartDelayedHostSendState) []StatechartDelayedHostSendState { return nil }
 
-// IsDescendantOf returns true if desc is a descendant of anc (W3C SCXML 3.12).
-func (p *StatechartDelayedHostSendPolicy) IsDescendantOf(desc, anc StatechartDelayedHostSendState) bool {
-	current := desc
-	for {
-		parent, ok := p.GetParent(current)
-		if !ok {
-			return false
-		}
-		if parent == anc {
-			return true
-		}
-		current = parent
-	}
+// GetChildStates returns state's <state>, <parallel> and <final> children, in
+// document order — for a <parallel>, its regions (§scxml-D-getChildStates).
+func (p *StatechartDelayedHostSendPolicy) GetChildStates(state StatechartDelayedHostSendState) []StatechartDelayedHostSendState {
+	return childStatesOfStatechartDelayedHostSend[state]
+}
+
+// GetInitialTargets returns a compound state's initial transition target, as
+// written; the engine's entry procedures dereference a <history> among them
+// (W3C SCXML 3.3).
+func (p *StatechartDelayedHostSendPolicy) GetInitialTargets(state StatechartDelayedHostSendState) []StatechartDelayedHostSendTarget {
+	return initialTargetsOfStatechartDelayedHostSend[state]
+}
+
+// GetDocumentInitialTargets returns the target of the document's own initial
+// transition, as written (W3C SCXML 3.2).
+func (p *StatechartDelayedHostSendPolicy) GetDocumentInitialTargets() []StatechartDelayedHostSendTarget {
+	return documentInitialTargetsOfStatechartDelayedHostSend
+}
+
+// W3C SCXML 3.10: this document declares no <history>, so no target list names
+// one and the engine never asks the two below; answering would mean inventing
+// one.
+func (p *StatechartDelayedHostSendPolicy) GetHistoryParent(history sce.HistoryID) StatechartDelayedHostSendState {
+	panic(fmt.Sprintf("StatechartDelayedHostSendPolicy declares no <history>; asked for %d", history))
+}
+func (p *StatechartDelayedHostSendPolicy) GetHistoryDefaultTargets(history sce.HistoryID) []StatechartDelayedHostSendTarget {
+	panic(fmt.Sprintf("StatechartDelayedHostSendPolicy declares no <history>; asked for %d", history))
+}
+func (p *StatechartDelayedHostSendPolicy) HistoryValue(_ sce.HistoryID) ([]StatechartDelayedHostSendState, bool) {
+	return nil, false
 }
 
 // GetDocumentOrder returns the document order index (W3C SCXML Appendix D).
@@ -333,43 +393,6 @@ func (p *StatechartDelayedHostSendPolicy) NullEvent() StatechartDelayedHostSendE
 	return StatechartDelayedHostSendEventNull
 }
 
-// GetInitialChildren returns initial children of a compound state (W3C SCXML 3.6).
-func (p *StatechartDelayedHostSendPolicy) GetInitialChildren(state StatechartDelayedHostSendState) []StatechartDelayedHostSendState {
-	switch state {
-	}
-	return nil
-}
-
-// LastTransitionIsInternal returns the internal transition flag (W3C SCXML 3.13).
-func (p *StatechartDelayedHostSendPolicy) LastTransitionIsInternal() bool {
-	return p.lastTransitionIsInternal
-}
-
-// SetLastTransitionIsInternal sets the internal transition flag.
-func (p *StatechartDelayedHostSendPolicy) SetLastTransitionIsInternal(value bool) {
-	p.lastTransitionIsInternal = value
-}
-
-// LastTransitionIsTargetless returns the targetless transition flag (W3C SCXML 3.13).
-func (p *StatechartDelayedHostSendPolicy) LastTransitionIsTargetless() bool {
-	return p.lastTransitionIsTargetless
-}
-
-// SetLastTransitionIsTargetless sets the targetless transition flag.
-func (p *StatechartDelayedHostSendPolicy) SetLastTransitionIsTargetless(value bool) {
-	p.lastTransitionIsTargetless = value
-}
-
-// LastTransitionSourceState returns the source state of the last transition.
-func (p *StatechartDelayedHostSendPolicy) LastTransitionSourceState() StatechartDelayedHostSendState {
-	return p.lastTransitionSourceState
-}
-
-// SetLastTransitionSourceState sets the source state of the last transition.
-func (p *StatechartDelayedHostSendPolicy) SetLastTransitionSourceState(state StatechartDelayedHostSendState) {
-	p.lastTransitionSourceState = state
-}
-
 
 
 // HasParallelStates returns whether the SM has parallel states.
@@ -411,14 +434,6 @@ func (p *StatechartDelayedHostSendPolicy) GetActiveStates() []StatechartDelayedH
 func (p *StatechartDelayedHostSendPolicy) SetActiveStates(_ []StatechartDelayedHostSendState) {}
 func (p *StatechartDelayedHostSendPolicy) HasExternalEventFlag() bool { return false }
 func (p *StatechartDelayedHostSendPolicy) SetNextEventIsExternal(_ bool) {}
-// GetInitialOrHistoryChild returns the initial child considering history (W3C SCXML 3.11).
-func (p *StatechartDelayedHostSendPolicy) GetInitialOrHistoryChild(state StatechartDelayedHostSendState) StatechartDelayedHostSendState {
-	children := p.GetInitialChildren(state)
-	if len(children) > 0 {
-		return children[0]
-	}
-	return state
-}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *StatechartDelayedHostSendPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[StatechartDelayedHostSendEvent], _ *sce.Engine[StatechartDelayedHostSendState, StatechartDelayedHostSendEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).
@@ -449,13 +464,11 @@ func (p *StatechartDelayedHostSendPolicy) ClearEventMetadata() {
 
 
 
-
-// ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
+// ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
+// configuration, runs its <onentry>, and its <initial> transition's content when
+// its initial state is entered by default.
 //line statechart_delayed_host_send.scxml:55
-func (p *StatechartDelayedHostSendPolicy) ExecuteEntryActions(state StatechartDelayedHostSendState, engine *sce.Engine[StatechartDelayedHostSendState, StatechartDelayedHostSendEvent], pathChild *StatechartDelayedHostSendState) {
-	// Only a `<parallel>` machine descends into defaults here, so a machine
-	// without one has nothing to tell an ancestor entry from a target entry.
-	_ = pathChild
+func (p *StatechartDelayedHostSendPolicy) ExecuteEntryActions(state StatechartDelayedHostSendState, engine *sce.Engine[StatechartDelayedHostSendState, StatechartDelayedHostSendEvent], isDefaultEntry bool) {
 	switch state {
 	case StatechartDelayedHostSendStateCancelling:
 		//line statechart_delayed_host_send.scxml:81
@@ -590,107 +603,144 @@ func (p *StatechartDelayedHostSendPolicy) ExecuteEntryActions(state StatechartDe
 	}
 }
 
-// ExecuteExitActions executes onexit actions for a state (W3C SCXML 3.9).
+// ExecuteHistoryDefaultContent runs a <history>'s default transition content
+// (W3C SCXML 3.10.2), after its parent's onentry (and after the parent's own
+// <initial> content) when the history was taken with nothing recorded. The
+// engine asks for it by the entry set's defaultHistoryContent answer; a history
+// that restored what it recorded runs nothing.
 //line statechart_delayed_host_send.scxml:55
-func (p *StatechartDelayedHostSendPolicy) ExecuteExitActions(state StatechartDelayedHostSendState, engine *sce.Engine[StatechartDelayedHostSendState, StatechartDelayedHostSendEvent], preTransitionActive []StatechartDelayedHostSendState) {
+func (p *StatechartDelayedHostSendPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StatechartDelayedHostSendState, StatechartDelayedHostSendEvent]) {
+	// W3C SCXML 3.10.2: no <history> in this document has default content.
+}
+
+// ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
+// removes it from the configuration, cancels its invocations and runs its
+// <onexit>.
+//line statechart_delayed_host_send.scxml:55
+func (p *StatechartDelayedHostSendPolicy) ExecuteExitActions(state StatechartDelayedHostSendState, engine *sce.Engine[StatechartDelayedHostSendState, StatechartDelayedHostSendEvent], configurationBeforeExit []StatechartDelayedHostSendState) {
 	switch state {
 	default:
 		// No exit actions
 	}
 }
 
-// ProcessTransition evaluates guards and takes a matching transition (W3C SCXML 3.13).
-// Returns true if a transition was taken.
+
+
+// BindCurrentEvent binds the event whose transitions are about to be selected as
+// the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
+// and not for an eventless selection, which has no event of its own.
 //line statechart_delayed_host_send.scxml:55
-func (p *StatechartDelayedHostSendPolicy) ProcessTransition(currentState *StatechartDelayedHostSendState, event StatechartDelayedHostSendEvent, engine *sce.Engine[StatechartDelayedHostSendState, StatechartDelayedHostSendEvent]) bool {
-
-	// W3C SCXML 3.12: Try transitions in current state first
-	if p.tryTransitionInState(*currentState, event, currentState, engine) {
-		return true
-	}
-
-
-	return false
+func (p *StatechartDelayedHostSendPolicy) BindCurrentEvent(event StatechartDelayedHostSendEvent, engine *sce.Engine[StatechartDelayedHostSendState, StatechartDelayedHostSendEvent]) {
+	// This document's guards never read _event, so there is nothing to bind.
 }
 
-
-// tryTransitionInState checks transitions for a single state.
+// FirstEnabledTransition is Appendix D selectTransitions, the half only this
+// document can answer: the first of state's own transitions, in document order,
+// that event enables and whose guard holds. The engine walks the atomic states
+// and their ancestors and keeps the ordered set; the null event asks for
+// eventless transitions.
 //line statechart_delayed_host_send.scxml:55
-func (p *StatechartDelayedHostSendPolicy) tryTransitionInState(checkState StatechartDelayedHostSendState, event StatechartDelayedHostSendEvent, currentState *StatechartDelayedHostSendState, engine *sce.Engine[StatechartDelayedHostSendState, StatechartDelayedHostSendEvent]) bool {
-	switch checkState {
+func (p *StatechartDelayedHostSendPolicy) FirstEnabledTransition(state StatechartDelayedHostSendState, event StatechartDelayedHostSendEvent, engine *sce.Engine[StatechartDelayedHostSendState, StatechartDelayedHostSendEvent]) (sce.EnabledTransition[StatechartDelayedHostSendState, sce.HistoryID], bool) {
+	switch state {
 	case StatechartDelayedHostSendStateArmed:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == StatechartDelayedHostSendEventTurnDone {
-			*currentState = StatechartDelayedHostSendStateCancelling
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = StatechartDelayedHostSendStateArmed
-			return true
+			{
+				return sce.EnabledTransition[StatechartDelayedHostSendState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfStatechartDelayedHostSend[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == StatechartDelayedHostSendEventErrorExecution {
-			*currentState = StatechartDelayedHostSendStateUnserved
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = StatechartDelayedHostSendStateArmed
-			return true
+			{
+				return sce.EnabledTransition[StatechartDelayedHostSendState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfStatechartDelayedHostSend[state][1],
+					TransitionIndex: 1,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	case StatechartDelayedHostSendStateCancelling:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == StatechartDelayedHostSendEventSettle {
-			*currentState = StatechartDelayedHostSendStateCancelPending
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = StatechartDelayedHostSendStateCancelling
-			return true
+			{
+				return sce.EnabledTransition[StatechartDelayedHostSendState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfStatechartDelayedHostSend[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == StatechartDelayedHostSendEventTurnDone {
-			*currentState = StatechartDelayedHostSendStateCancelLost
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = StatechartDelayedHostSendStateCancelling
-			return true
+			{
+				return sce.EnabledTransition[StatechartDelayedHostSendState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfStatechartDelayedHostSend[state][1],
+					TransitionIndex: 1,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	case StatechartDelayedHostSendStateCancelPending:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == StatechartDelayedHostSendEventTurnDone {
-			*currentState = StatechartDelayedHostSendStateCancelLost
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = StatechartDelayedHostSendStateCancelPending
-			return true
+			{
+				return sce.EnabledTransition[StatechartDelayedHostSendState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfStatechartDelayedHostSend[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == StatechartDelayedHostSendEventFinish {
-			*currentState = StatechartDelayedHostSendStatePass
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = StatechartDelayedHostSendStateCancelPending
-			return true
+			{
+				return sce.EnabledTransition[StatechartDelayedHostSendState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfStatechartDelayedHostSend[state][1],
+					TransitionIndex: 1,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	case StatechartDelayedHostSendStateWaiting:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == StatechartDelayedHostSendEventTurnDone {
-			*currentState = StatechartDelayedHostSendStateTooEarly
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = StatechartDelayedHostSendStateWaiting
-			return true
+			{
+				return sce.EnabledTransition[StatechartDelayedHostSendState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfStatechartDelayedHostSend[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == StatechartDelayedHostSendEventProbe {
-			*currentState = StatechartDelayedHostSendStateArmed
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = StatechartDelayedHostSendStateWaiting
-			return true
+			{
+				return sce.EnabledTransition[StatechartDelayedHostSendState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfStatechartDelayedHostSend[state][1],
+					TransitionIndex: 1,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	}
-	return false
+	return sce.EnabledTransition[StatechartDelayedHostSendState, sce.HistoryID]{}, false
 }
 
-// ExecuteTransitionActions executes actions for the last taken transition (W3C SCXML 3.13).
+// ExecuteTransitionContent runs one transition's executable content (W3C SCXML
+// 3.13), between the microstep's exits and its entries.
 //line statechart_delayed_host_send.scxml:55
-func (p *StatechartDelayedHostSendPolicy) ExecuteTransitionActions(engine *sce.Engine[StatechartDelayedHostSendState, StatechartDelayedHostSendEvent]) {
+func (p *StatechartDelayedHostSendPolicy) ExecuteTransitionContent(source StatechartDelayedHostSendState, transitionIndex int, engine *sce.Engine[StatechartDelayedHostSendState, StatechartDelayedHostSendEvent]) {
+	// W3C SCXML 3.13: no transition in this document has content.
 }

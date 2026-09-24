@@ -104,6 +104,44 @@ var AutoforwardDoneInvokeAllStates = []AutoforwardDoneInvokeState{
 	AutoforwardDoneInvokeStatePhase,
 }
 
+// AutoforwardDoneInvokeTarget is one token of a target list, as the document wrote
+// it (W3C SCXML 3.13): a state, or a <history> the engine dereferences.
+type AutoforwardDoneInvokeTarget = sce.EntryTarget[AutoforwardDoneInvokeState, sce.HistoryID]
+
+// ======================================================================
+// Document structure (W3C SCXML 3.2-3.4, 3.10)
+//
+// Package-level tables, because the structure is a fact about the document
+// and not about a run: the engine's Appendix D procedures read them through
+// the policy methods below, and a transition's target list is handed out as
+// a slice of them rather than rebuilt on every selection.
+// ======================================================================
+
+// childStatesOfAutoforwardDoneInvoke is §scxml-D-getChildStates per state: its
+// <state>, <parallel> and <final> children, in document order.
+var childStatesOfAutoforwardDoneInvoke = [3][]AutoforwardDoneInvokeState{
+}
+
+// initialTargetsOfAutoforwardDoneInvoke is each compound state's initial transition
+// target, as written (§scxml-3.3).
+var initialTargetsOfAutoforwardDoneInvoke = [3][]AutoforwardDoneInvokeTarget{
+}
+
+// documentInitialTargetsOfAutoforwardDoneInvoke is the target of the document's own
+// initial transition, as written (§scxml-3.2).
+var documentInitialTargetsOfAutoforwardDoneInvoke = []AutoforwardDoneInvokeTarget{sce.StateTarget[AutoforwardDoneInvokeState, sce.HistoryID](AutoforwardDoneInvokeStatePhase)}
+
+// transitionTargetsOfAutoforwardDoneInvoke is each transition's target list, as
+// written (§scxml-3.13), by source state and the transition's index among its
+// source's own transitions. A targetless transition's entry is empty.
+var transitionTargetsOfAutoforwardDoneInvoke = [3][][]AutoforwardDoneInvokeTarget{
+	AutoforwardDoneInvokeStatePhase: {
+		1: {sce.StateTarget[AutoforwardDoneInvokeState, sce.HistoryID](AutoforwardDoneInvokeStatePass)},
+		2: {sce.StateTarget[AutoforwardDoneInvokeState, sce.HistoryID](AutoforwardDoneInvokeStateFail)},
+		3: {sce.StateTarget[AutoforwardDoneInvokeState, sce.HistoryID](AutoforwardDoneInvokeStateFail)},
+	},
+}
+
 // ======================================================================
 // Event type (W3C SCXML 3.12)
 // ======================================================================
@@ -149,13 +187,6 @@ func (e AutoforwardDoneInvokeEvent) String() string {
 // ======================================================================
 
 type AutoforwardDoneInvokePolicy struct {
-	// W3C SCXML 3.13: Last transition metadata
-	lastTransitionIsInternal  bool
-	lastTransitionIsTargetless bool
-	lastTransitionSourceState AutoforwardDoneInvokeState
-	// W3C SCXML 3.13: Transition action tracking
-	lastTransitionIndex   int
-	hasTransitionActions   bool
 	// W3C SCXML 5.10: Session ID
 	SessionID string
 	pendingInvokes []sce.PendingInvoke[AutoforwardDoneInvokeState]
@@ -176,7 +207,6 @@ type AutoforwardDoneInvokePolicy struct {
 // NewAutoforwardDoneInvokePolicy creates a new policy with default values.
 func NewAutoforwardDoneInvokePolicy() AutoforwardDoneInvokePolicy {
 	return AutoforwardDoneInvokePolicy{
-		lastTransitionSourceState: AutoforwardDoneInvokeStatePhase,
 		pendingInvokes: make([]sce.PendingInvoke[AutoforwardDoneInvokeState], 0),
 		activeInvokes:  make(map[string]*sce.ChildSession),
 	}
@@ -463,29 +493,45 @@ func (p *AutoforwardDoneInvokePolicy) GetParent(state AutoforwardDoneInvokeState
 	return 0, false
 }
 
-// IsCompoundState returns true if state has children (W3C SCXML 3.3).
+// IsCompoundState returns true if state is a <state> with child states — exactly
+// the states that have an initial transition. A <parallel> is not compound
+// (W3C SCXML 3.3).
 func (p *AutoforwardDoneInvokePolicy) IsCompoundState(state AutoforwardDoneInvokeState) bool {
-	switch state {
-	}
-	return false
+	return len(initialTargetsOfAutoforwardDoneInvoke[state]) > 0
 }
 
 func (p *AutoforwardDoneInvokePolicy) IsParallelState(_ AutoforwardDoneInvokeState) bool { return false }
-func (p *AutoforwardDoneInvokePolicy) GetParallelRegions(_ AutoforwardDoneInvokeState) []AutoforwardDoneInvokeState { return nil }
 
-// IsDescendantOf returns true if desc is a descendant of anc (W3C SCXML 3.12).
-func (p *AutoforwardDoneInvokePolicy) IsDescendantOf(desc, anc AutoforwardDoneInvokeState) bool {
-	current := desc
-	for {
-		parent, ok := p.GetParent(current)
-		if !ok {
-			return false
-		}
-		if parent == anc {
-			return true
-		}
-		current = parent
-	}
+// GetChildStates returns state's <state>, <parallel> and <final> children, in
+// document order — for a <parallel>, its regions (§scxml-D-getChildStates).
+func (p *AutoforwardDoneInvokePolicy) GetChildStates(state AutoforwardDoneInvokeState) []AutoforwardDoneInvokeState {
+	return childStatesOfAutoforwardDoneInvoke[state]
+}
+
+// GetInitialTargets returns a compound state's initial transition target, as
+// written; the engine's entry procedures dereference a <history> among them
+// (W3C SCXML 3.3).
+func (p *AutoforwardDoneInvokePolicy) GetInitialTargets(state AutoforwardDoneInvokeState) []AutoforwardDoneInvokeTarget {
+	return initialTargetsOfAutoforwardDoneInvoke[state]
+}
+
+// GetDocumentInitialTargets returns the target of the document's own initial
+// transition, as written (W3C SCXML 3.2).
+func (p *AutoforwardDoneInvokePolicy) GetDocumentInitialTargets() []AutoforwardDoneInvokeTarget {
+	return documentInitialTargetsOfAutoforwardDoneInvoke
+}
+
+// W3C SCXML 3.10: this document declares no <history>, so no target list names
+// one and the engine never asks the two below; answering would mean inventing
+// one.
+func (p *AutoforwardDoneInvokePolicy) GetHistoryParent(history sce.HistoryID) AutoforwardDoneInvokeState {
+	panic(fmt.Sprintf("AutoforwardDoneInvokePolicy declares no <history>; asked for %d", history))
+}
+func (p *AutoforwardDoneInvokePolicy) GetHistoryDefaultTargets(history sce.HistoryID) []AutoforwardDoneInvokeTarget {
+	panic(fmt.Sprintf("AutoforwardDoneInvokePolicy declares no <history>; asked for %d", history))
+}
+func (p *AutoforwardDoneInvokePolicy) HistoryValue(_ sce.HistoryID) ([]AutoforwardDoneInvokeState, bool) {
+	return nil, false
 }
 
 // GetDocumentOrder returns the document order index (W3C SCXML Appendix D).
@@ -544,43 +590,6 @@ func (p *AutoforwardDoneInvokePolicy) NullEvent() AutoforwardDoneInvokeEvent {
 	return AutoforwardDoneInvokeEventNull
 }
 
-// GetInitialChildren returns initial children of a compound state (W3C SCXML 3.6).
-func (p *AutoforwardDoneInvokePolicy) GetInitialChildren(state AutoforwardDoneInvokeState) []AutoforwardDoneInvokeState {
-	switch state {
-	}
-	return nil
-}
-
-// LastTransitionIsInternal returns the internal transition flag (W3C SCXML 3.13).
-func (p *AutoforwardDoneInvokePolicy) LastTransitionIsInternal() bool {
-	return p.lastTransitionIsInternal
-}
-
-// SetLastTransitionIsInternal sets the internal transition flag.
-func (p *AutoforwardDoneInvokePolicy) SetLastTransitionIsInternal(value bool) {
-	p.lastTransitionIsInternal = value
-}
-
-// LastTransitionIsTargetless returns the targetless transition flag (W3C SCXML 3.13).
-func (p *AutoforwardDoneInvokePolicy) LastTransitionIsTargetless() bool {
-	return p.lastTransitionIsTargetless
-}
-
-// SetLastTransitionIsTargetless sets the targetless transition flag.
-func (p *AutoforwardDoneInvokePolicy) SetLastTransitionIsTargetless(value bool) {
-	p.lastTransitionIsTargetless = value
-}
-
-// LastTransitionSourceState returns the source state of the last transition.
-func (p *AutoforwardDoneInvokePolicy) LastTransitionSourceState() AutoforwardDoneInvokeState {
-	return p.lastTransitionSourceState
-}
-
-// SetLastTransitionSourceState sets the source state of the last transition.
-func (p *AutoforwardDoneInvokePolicy) SetLastTransitionSourceState(state AutoforwardDoneInvokeState) {
-	p.lastTransitionSourceState = state
-}
-
 
 
 // HasParallelStates returns whether the SM has parallel states.
@@ -624,14 +633,6 @@ func (p *AutoforwardDoneInvokePolicy) GetActiveStates() []AutoforwardDoneInvokeS
 func (p *AutoforwardDoneInvokePolicy) SetActiveStates(_ []AutoforwardDoneInvokeState) {}
 func (p *AutoforwardDoneInvokePolicy) HasExternalEventFlag() bool { return false }
 func (p *AutoforwardDoneInvokePolicy) SetNextEventIsExternal(_ bool) {}
-// GetInitialOrHistoryChild returns the initial child considering history (W3C SCXML 3.11).
-func (p *AutoforwardDoneInvokePolicy) GetInitialOrHistoryChild(state AutoforwardDoneInvokeState) AutoforwardDoneInvokeState {
-	children := p.GetInitialChildren(state)
-	if len(children) > 0 {
-		return children[0]
-	}
-	return state
-}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *AutoforwardDoneInvokePolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[AutoforwardDoneInvokeEvent], _ *sce.Engine[AutoforwardDoneInvokeState, AutoforwardDoneInvokeEvent]) {}
 
@@ -660,13 +661,11 @@ func (p *AutoforwardDoneInvokePolicy) ClearEventMetadata() {
 
 
 
-
-// ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
+// ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
+// configuration, runs its <onentry>, and its <initial> transition's content when
+// its initial state is entered by default.
 //line autoforward_done_invoke.scxml:55
-func (p *AutoforwardDoneInvokePolicy) ExecuteEntryActions(state AutoforwardDoneInvokeState, engine *sce.Engine[AutoforwardDoneInvokeState, AutoforwardDoneInvokeEvent], pathChild *AutoforwardDoneInvokeState) {
-	// Only a `<parallel>` machine descends into defaults here, so a machine
-	// without one has nothing to tell an ancestor entry from a target entry.
-	_ = pathChild
+func (p *AutoforwardDoneInvokePolicy) ExecuteEntryActions(state AutoforwardDoneInvokeState, engine *sce.Engine[AutoforwardDoneInvokeState, AutoforwardDoneInvokeEvent], isDefaultEntry bool) {
 	switch state {
 	case AutoforwardDoneInvokeStatePhase:
 		//line autoforward_done_invoke.scxml:58
@@ -690,9 +689,21 @@ func (p *AutoforwardDoneInvokePolicy) ExecuteEntryActions(state AutoforwardDoneI
 	}
 }
 
-// ExecuteExitActions executes onexit actions for a state (W3C SCXML 3.9).
+// ExecuteHistoryDefaultContent runs a <history>'s default transition content
+// (W3C SCXML 3.10.2), after its parent's onentry (and after the parent's own
+// <initial> content) when the history was taken with nothing recorded. The
+// engine asks for it by the entry set's defaultHistoryContent answer; a history
+// that restored what it recorded runs nothing.
 //line autoforward_done_invoke.scxml:55
-func (p *AutoforwardDoneInvokePolicy) ExecuteExitActions(state AutoforwardDoneInvokeState, engine *sce.Engine[AutoforwardDoneInvokeState, AutoforwardDoneInvokeEvent], preTransitionActive []AutoforwardDoneInvokeState) {
+func (p *AutoforwardDoneInvokePolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[AutoforwardDoneInvokeState, AutoforwardDoneInvokeEvent]) {
+	// W3C SCXML 3.10.2: no <history> in this document has default content.
+}
+
+// ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
+// removes it from the configuration, cancels its invocations and runs its
+// <onexit>.
+//line autoforward_done_invoke.scxml:55
+func (p *AutoforwardDoneInvokePolicy) ExecuteExitActions(state AutoforwardDoneInvokeState, engine *sce.Engine[AutoforwardDoneInvokeState, AutoforwardDoneInvokeEvent], configurationBeforeExit []AutoforwardDoneInvokeState) {
 	// W3C SCXML 6.4: Cancel pending invokes and cleanup active children on state exit
 	switch state {
 	case AutoforwardDoneInvokeStatePhase:
@@ -715,79 +726,81 @@ func (p *AutoforwardDoneInvokePolicy) ExecuteExitActions(state AutoforwardDoneIn
 	}
 }
 
-// ProcessTransition evaluates guards and takes a matching transition (W3C SCXML 3.13).
-// Returns true if a transition was taken.
+
+
+// BindCurrentEvent binds the event whose transitions are about to be selected as
+// the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
+// and not for an eventless selection, which has no event of its own.
 //line autoforward_done_invoke.scxml:55
-func (p *AutoforwardDoneInvokePolicy) ProcessTransition(currentState *AutoforwardDoneInvokeState, event AutoforwardDoneInvokeEvent, engine *sce.Engine[AutoforwardDoneInvokeState, AutoforwardDoneInvokeEvent]) bool {
-
-	// W3C SCXML 3.12: Try transitions in current state first
-	if p.tryTransitionInState(*currentState, event, currentState, engine) {
-		return true
-	}
-
-
-	return false
+func (p *AutoforwardDoneInvokePolicy) BindCurrentEvent(event AutoforwardDoneInvokeEvent, engine *sce.Engine[AutoforwardDoneInvokeState, AutoforwardDoneInvokeEvent]) {
+	// This document's guards never read _event, so there is nothing to bind.
 }
 
-
-// tryTransitionInState checks transitions for a single state.
+// FirstEnabledTransition is Appendix D selectTransitions, the half only this
+// document can answer: the first of state's own transitions, in document order,
+// that event enables and whose guard holds. The engine walks the atomic states
+// and their ancestors and keeps the ordered set; the null event asks for
+// eventless transitions.
 //line autoforward_done_invoke.scxml:55
-func (p *AutoforwardDoneInvokePolicy) tryTransitionInState(checkState AutoforwardDoneInvokeState, event AutoforwardDoneInvokeEvent, currentState *AutoforwardDoneInvokeState, engine *sce.Engine[AutoforwardDoneInvokeState, AutoforwardDoneInvokeEvent]) bool {
-	switch checkState {
+func (p *AutoforwardDoneInvokePolicy) FirstEnabledTransition(state AutoforwardDoneInvokeState, event AutoforwardDoneInvokeEvent, engine *sce.Engine[AutoforwardDoneInvokeState, AutoforwardDoneInvokeEvent]) (sce.EnabledTransition[AutoforwardDoneInvokeState, sce.HistoryID], bool) {
+	switch state {
 	case AutoforwardDoneInvokeStatePhase:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AutoforwardDoneInvokeEventDoneInvokeInvShort {
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = true
-			p.lastTransitionSourceState = AutoforwardDoneInvokeStatePhase
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[AutoforwardDoneInvokeState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 0,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AutoforwardDoneInvokeEventSawPlatform {
-			*currentState = AutoforwardDoneInvokeStatePass
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AutoforwardDoneInvokeStatePhase
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = false
-			return true
+			{
+				return sce.EnabledTransition[AutoforwardDoneInvokeState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAutoforwardDoneInvoke[state][1],
+					TransitionIndex: 1,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AutoforwardDoneInvokeEventSawProbeOnly {
-			*currentState = AutoforwardDoneInvokeStateFail
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AutoforwardDoneInvokeStatePhase
-			p.lastTransitionIndex = 2
-			p.hasTransitionActions = false
-			return true
+			{
+				return sce.EnabledTransition[AutoforwardDoneInvokeState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAutoforwardDoneInvoke[state][2],
+					TransitionIndex: 2,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AutoforwardDoneInvokeEventErrorExecution {
-			*currentState = AutoforwardDoneInvokeStateFail
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AutoforwardDoneInvokeStatePhase
-			p.lastTransitionIndex = 3
-			p.hasTransitionActions = false
-			return true
+			{
+				return sce.EnabledTransition[AutoforwardDoneInvokeState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAutoforwardDoneInvoke[state][3],
+					TransitionIndex: 3,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	}
-	return false
+	return sce.EnabledTransition[AutoforwardDoneInvokeState, sce.HistoryID]{}, false
 }
 
-// ExecuteTransitionActions executes actions for the last taken transition (W3C SCXML 3.13).
+// ExecuteTransitionContent runs one transition's executable content (W3C SCXML
+// 3.13), between the microstep's exits and its entries.
 //line autoforward_done_invoke.scxml:55
-func (p *AutoforwardDoneInvokePolicy) ExecuteTransitionActions(engine *sce.Engine[AutoforwardDoneInvokeState, AutoforwardDoneInvokeEvent]) {
-	if !p.hasTransitionActions {
-		return
-	}
-	source := p.lastTransitionSourceState
-	idx := p.lastTransitionIndex
-	if source == AutoforwardDoneInvokeStatePhase && idx == 0 {
-		//line autoforward_done_invoke.scxml:84
+func (p *AutoforwardDoneInvokePolicy) ExecuteTransitionContent(source AutoforwardDoneInvokeState, transitionIndex int, engine *sce.Engine[AutoforwardDoneInvokeState, AutoforwardDoneInvokeEvent]) {
+	switch source {
+	case AutoforwardDoneInvokeStatePhase:
+		switch transitionIndex {
+		case 0:
+			//line autoforward_done_invoke.scxml:84
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
@@ -802,6 +815,6 @@ func (p *AutoforwardDoneInvokePolicy) ExecuteTransitionActions(engine *sce.Engin
 	}
 	}
 
-		return
+		}
 	}
 }

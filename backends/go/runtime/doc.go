@@ -8,7 +8,9 @@
 //   - Engine: the execution engine parameterized on a StatePolicy via Go generics
 //   - EventMetadata, EventWithMetadata: §scxml-5.10 event wrappers
 //   - HttpSendRequest: §scxml-C-2 BasicHTTP event processor support
-//   - Hierarchy helpers: LCA, entry/exit chains, event matching
+//   - The W3C SCXML Appendix D microstep: selection, conflict removal, exit
+//     and entry sets, history, completion (microstep.go)
+//   - Event descriptor matching (§scxml-3.12.1)
 //   - PullScheduler: delayed event scheduling (§scxml-6.2)
 //
 // This package is a 1:1 port of the Rust runtime at sce-rust-runtime/. Method

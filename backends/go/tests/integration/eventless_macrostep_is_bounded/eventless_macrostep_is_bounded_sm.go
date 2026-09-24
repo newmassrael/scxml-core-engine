@@ -116,6 +116,58 @@ var EventlessMacrostepIsBoundedAllStates = []EventlessMacrostepIsBoundedState{
 	EventlessMacrostepIsBoundedStateSpinB,
 }
 
+// EventlessMacrostepIsBoundedTarget is one token of a target list, as the document wrote
+// it (W3C SCXML 3.13): a state, or a <history> the engine dereferences.
+type EventlessMacrostepIsBoundedTarget = sce.EntryTarget[EventlessMacrostepIsBoundedState, sce.HistoryID]
+
+// ======================================================================
+// Document structure (W3C SCXML 3.2-3.4, 3.10)
+//
+// Package-level tables, because the structure is a fact about the document
+// and not about a run: the engine's Appendix D procedures read them through
+// the policy methods below, and a transition's target list is handed out as
+// a slice of them rather than rebuilt on every selection.
+// ======================================================================
+
+// childStatesOfEventlessMacrostepIsBounded is §scxml-D-getChildStates per state: its
+// <state>, <parallel> and <final> children, in document order.
+var childStatesOfEventlessMacrostepIsBounded = [5][]EventlessMacrostepIsBoundedState{
+}
+
+// initialTargetsOfEventlessMacrostepIsBounded is each compound state's initial transition
+// target, as written (§scxml-3.3).
+var initialTargetsOfEventlessMacrostepIsBounded = [5][]EventlessMacrostepIsBoundedTarget{
+}
+
+// documentInitialTargetsOfEventlessMacrostepIsBounded is the target of the document's own
+// initial transition, as written (§scxml-3.2).
+var documentInitialTargetsOfEventlessMacrostepIsBounded = []EventlessMacrostepIsBoundedTarget{sce.StateTarget[EventlessMacrostepIsBoundedState, sce.HistoryID](EventlessMacrostepIsBoundedStateIdle)}
+
+// transitionTargetsOfEventlessMacrostepIsBounded is each transition's target list, as
+// written (§scxml-3.13), by source state and the transition's index among its
+// source's own transitions. A targetless transition's entry is empty.
+var transitionTargetsOfEventlessMacrostepIsBounded = [5][][]EventlessMacrostepIsBoundedTarget{
+	EventlessMacrostepIsBoundedStateBoundedA: {
+		0: {sce.StateTarget[EventlessMacrostepIsBoundedState, sce.HistoryID](EventlessMacrostepIsBoundedStateBoundedB)},
+	},
+	EventlessMacrostepIsBoundedStateBoundedB: {
+		0: {sce.StateTarget[EventlessMacrostepIsBoundedState, sce.HistoryID](EventlessMacrostepIsBoundedStateBoundedA)},
+	},
+	EventlessMacrostepIsBoundedStateIdle: {
+		0: {sce.StateTarget[EventlessMacrostepIsBoundedState, sce.HistoryID](EventlessMacrostepIsBoundedStateIdle)},
+		1: {sce.StateTarget[EventlessMacrostepIsBoundedState, sce.HistoryID](EventlessMacrostepIsBoundedStateBoundedA)},
+		2: {sce.StateTarget[EventlessMacrostepIsBoundedState, sce.HistoryID](EventlessMacrostepIsBoundedStateSpinA)},
+	},
+	EventlessMacrostepIsBoundedStateSpinA: {
+		0: {sce.StateTarget[EventlessMacrostepIsBoundedState, sce.HistoryID](EventlessMacrostepIsBoundedStateSpinB)},
+		2: {sce.StateTarget[EventlessMacrostepIsBoundedState, sce.HistoryID](EventlessMacrostepIsBoundedStateIdle)},
+	},
+	EventlessMacrostepIsBoundedStateSpinB: {
+		0: {sce.StateTarget[EventlessMacrostepIsBoundedState, sce.HistoryID](EventlessMacrostepIsBoundedStateSpinA)},
+		1: {sce.StateTarget[EventlessMacrostepIsBoundedState, sce.HistoryID](EventlessMacrostepIsBoundedStateIdle)},
+	},
+}
+
 // ======================================================================
 // Event type (W3C SCXML 3.12)
 // ======================================================================
@@ -155,13 +207,6 @@ func (e EventlessMacrostepIsBoundedEvent) String() string {
 // ======================================================================
 
 type EventlessMacrostepIsBoundedPolicy struct {
-	// W3C SCXML 3.13: Last transition metadata
-	lastTransitionIsInternal  bool
-	lastTransitionIsTargetless bool
-	lastTransitionSourceState EventlessMacrostepIsBoundedState
-	// W3C SCXML 3.13: Transition action tracking
-	lastTransitionIndex   int
-	hasTransitionActions   bool
 	// W3C SCXML 5.10.1: External event flag
 	nextEventIsExternal bool
 	pendingEventName string
@@ -194,7 +239,6 @@ type EventlessMacrostepIsBoundedPolicy struct {
 // NewEventlessMacrostepIsBoundedPolicy creates a new policy with default values.
 func NewEventlessMacrostepIsBoundedPolicy() EventlessMacrostepIsBoundedPolicy {
 	return EventlessMacrostepIsBoundedPolicy{
-		lastTransitionSourceState: EventlessMacrostepIsBoundedStateIdle,
 	}
 }
 
@@ -463,29 +507,45 @@ func (p *EventlessMacrostepIsBoundedPolicy) GetParent(state EventlessMacrostepIs
 	return 0, false
 }
 
-// IsCompoundState returns true if state has children (W3C SCXML 3.3).
+// IsCompoundState returns true if state is a <state> with child states — exactly
+// the states that have an initial transition. A <parallel> is not compound
+// (W3C SCXML 3.3).
 func (p *EventlessMacrostepIsBoundedPolicy) IsCompoundState(state EventlessMacrostepIsBoundedState) bool {
-	switch state {
-	}
-	return false
+	return len(initialTargetsOfEventlessMacrostepIsBounded[state]) > 0
 }
 
 func (p *EventlessMacrostepIsBoundedPolicy) IsParallelState(_ EventlessMacrostepIsBoundedState) bool { return false }
-func (p *EventlessMacrostepIsBoundedPolicy) GetParallelRegions(_ EventlessMacrostepIsBoundedState) []EventlessMacrostepIsBoundedState { return nil }
 
-// IsDescendantOf returns true if desc is a descendant of anc (W3C SCXML 3.12).
-func (p *EventlessMacrostepIsBoundedPolicy) IsDescendantOf(desc, anc EventlessMacrostepIsBoundedState) bool {
-	current := desc
-	for {
-		parent, ok := p.GetParent(current)
-		if !ok {
-			return false
-		}
-		if parent == anc {
-			return true
-		}
-		current = parent
-	}
+// GetChildStates returns state's <state>, <parallel> and <final> children, in
+// document order — for a <parallel>, its regions (§scxml-D-getChildStates).
+func (p *EventlessMacrostepIsBoundedPolicy) GetChildStates(state EventlessMacrostepIsBoundedState) []EventlessMacrostepIsBoundedState {
+	return childStatesOfEventlessMacrostepIsBounded[state]
+}
+
+// GetInitialTargets returns a compound state's initial transition target, as
+// written; the engine's entry procedures dereference a <history> among them
+// (W3C SCXML 3.3).
+func (p *EventlessMacrostepIsBoundedPolicy) GetInitialTargets(state EventlessMacrostepIsBoundedState) []EventlessMacrostepIsBoundedTarget {
+	return initialTargetsOfEventlessMacrostepIsBounded[state]
+}
+
+// GetDocumentInitialTargets returns the target of the document's own initial
+// transition, as written (W3C SCXML 3.2).
+func (p *EventlessMacrostepIsBoundedPolicy) GetDocumentInitialTargets() []EventlessMacrostepIsBoundedTarget {
+	return documentInitialTargetsOfEventlessMacrostepIsBounded
+}
+
+// W3C SCXML 3.10: this document declares no <history>, so no target list names
+// one and the engine never asks the two below; answering would mean inventing
+// one.
+func (p *EventlessMacrostepIsBoundedPolicy) GetHistoryParent(history sce.HistoryID) EventlessMacrostepIsBoundedState {
+	panic(fmt.Sprintf("EventlessMacrostepIsBoundedPolicy declares no <history>; asked for %d", history))
+}
+func (p *EventlessMacrostepIsBoundedPolicy) GetHistoryDefaultTargets(history sce.HistoryID) []EventlessMacrostepIsBoundedTarget {
+	panic(fmt.Sprintf("EventlessMacrostepIsBoundedPolicy declares no <history>; asked for %d", history))
+}
+func (p *EventlessMacrostepIsBoundedPolicy) HistoryValue(_ sce.HistoryID) ([]EventlessMacrostepIsBoundedState, bool) {
+	return nil, false
 }
 
 // GetDocumentOrder returns the document order index (W3C SCXML Appendix D).
@@ -544,43 +604,6 @@ func (p *EventlessMacrostepIsBoundedPolicy) NullEvent() EventlessMacrostepIsBoun
 	return EventlessMacrostepIsBoundedEventNull
 }
 
-// GetInitialChildren returns initial children of a compound state (W3C SCXML 3.6).
-func (p *EventlessMacrostepIsBoundedPolicy) GetInitialChildren(state EventlessMacrostepIsBoundedState) []EventlessMacrostepIsBoundedState {
-	switch state {
-	}
-	return nil
-}
-
-// LastTransitionIsInternal returns the internal transition flag (W3C SCXML 3.13).
-func (p *EventlessMacrostepIsBoundedPolicy) LastTransitionIsInternal() bool {
-	return p.lastTransitionIsInternal
-}
-
-// SetLastTransitionIsInternal sets the internal transition flag.
-func (p *EventlessMacrostepIsBoundedPolicy) SetLastTransitionIsInternal(value bool) {
-	p.lastTransitionIsInternal = value
-}
-
-// LastTransitionIsTargetless returns the targetless transition flag (W3C SCXML 3.13).
-func (p *EventlessMacrostepIsBoundedPolicy) LastTransitionIsTargetless() bool {
-	return p.lastTransitionIsTargetless
-}
-
-// SetLastTransitionIsTargetless sets the targetless transition flag.
-func (p *EventlessMacrostepIsBoundedPolicy) SetLastTransitionIsTargetless(value bool) {
-	p.lastTransitionIsTargetless = value
-}
-
-// LastTransitionSourceState returns the source state of the last transition.
-func (p *EventlessMacrostepIsBoundedPolicy) LastTransitionSourceState() EventlessMacrostepIsBoundedState {
-	return p.lastTransitionSourceState
-}
-
-// SetLastTransitionSourceState sets the source state of the last transition.
-func (p *EventlessMacrostepIsBoundedPolicy) SetLastTransitionSourceState(state EventlessMacrostepIsBoundedState) {
-	p.lastTransitionSourceState = state
-}
-
 
 // SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
 func (p *EventlessMacrostepIsBoundedPolicy) SetNextEventIsExternal(value bool) {
@@ -625,14 +648,6 @@ func (p *EventlessMacrostepIsBoundedPolicy) GetActiveStates() []EventlessMacrost
 // which is false above; the method exists because the interface is one contract.
 func (p *EventlessMacrostepIsBoundedPolicy) SetActiveStates(_ []EventlessMacrostepIsBoundedState) {}
 func (p *EventlessMacrostepIsBoundedPolicy) HasExternalEventFlag() bool { return true }
-// GetInitialOrHistoryChild returns the initial child considering history (W3C SCXML 3.11).
-func (p *EventlessMacrostepIsBoundedPolicy) GetInitialOrHistoryChild(state EventlessMacrostepIsBoundedState) EventlessMacrostepIsBoundedState {
-	children := p.GetInitialChildren(state)
-	if len(children) > 0 {
-		return children[0]
-	}
-	return state
-}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *EventlessMacrostepIsBoundedPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[EventlessMacrostepIsBoundedEvent], _ *sce.Engine[EventlessMacrostepIsBoundedState, EventlessMacrostepIsBoundedEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).
@@ -676,13 +691,11 @@ func (p *EventlessMacrostepIsBoundedPolicy) ClearEventMetadata() {
 
 
 
-
-// ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
+// ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
+// configuration, runs its <onentry>, and its <initial> transition's content when
+// its initial state is entered by default.
 //line eventless_macrostep_is_bounded.scxml:53
-func (p *EventlessMacrostepIsBoundedPolicy) ExecuteEntryActions(state EventlessMacrostepIsBoundedState, engine *sce.Engine[EventlessMacrostepIsBoundedState, EventlessMacrostepIsBoundedEvent], pathChild *EventlessMacrostepIsBoundedState) {
-	// Only a `<parallel>` machine descends into defaults here, so a machine
-	// without one has nothing to tell an ancestor entry from a target entry.
-	_ = pathChild
+func (p *EventlessMacrostepIsBoundedPolicy) ExecuteEntryActions(state EventlessMacrostepIsBoundedState, engine *sce.Engine[EventlessMacrostepIsBoundedState, EventlessMacrostepIsBoundedEvent], isDefaultEntry bool) {
 	p.ensureScriptEngine()
 	switch state {
 	default:
@@ -690,9 +703,21 @@ func (p *EventlessMacrostepIsBoundedPolicy) ExecuteEntryActions(state EventlessM
 	}
 }
 
-// ExecuteExitActions executes onexit actions for a state (W3C SCXML 3.9).
+// ExecuteHistoryDefaultContent runs a <history>'s default transition content
+// (W3C SCXML 3.10.2), after its parent's onentry (and after the parent's own
+// <initial> content) when the history was taken with nothing recorded. The
+// engine asks for it by the entry set's defaultHistoryContent answer; a history
+// that restored what it recorded runs nothing.
 //line eventless_macrostep_is_bounded.scxml:53
-func (p *EventlessMacrostepIsBoundedPolicy) ExecuteExitActions(state EventlessMacrostepIsBoundedState, engine *sce.Engine[EventlessMacrostepIsBoundedState, EventlessMacrostepIsBoundedEvent], preTransitionActive []EventlessMacrostepIsBoundedState) {
+func (p *EventlessMacrostepIsBoundedPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[EventlessMacrostepIsBoundedState, EventlessMacrostepIsBoundedEvent]) {
+	// W3C SCXML 3.10.2: no <history> in this document has default content.
+}
+
+// ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
+// removes it from the configuration, cancels its invocations and runs its
+// <onexit>.
+//line eventless_macrostep_is_bounded.scxml:53
+func (p *EventlessMacrostepIsBoundedPolicy) ExecuteExitActions(state EventlessMacrostepIsBoundedState, engine *sce.Engine[EventlessMacrostepIsBoundedState, EventlessMacrostepIsBoundedEvent], configurationBeforeExit []EventlessMacrostepIsBoundedState) {
 	p.ensureScriptEngine()
 	switch state {
 	default:
@@ -700,208 +725,211 @@ func (p *EventlessMacrostepIsBoundedPolicy) ExecuteExitActions(state EventlessMa
 	}
 }
 
-// ProcessTransition evaluates guards and takes a matching transition (W3C SCXML 3.13).
-// Returns true if a transition was taken.
+
+
+// BindCurrentEvent binds the event whose transitions are about to be selected as
+// the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
+// and not for an eventless selection, which has no event of its own.
 //line eventless_macrostep_is_bounded.scxml:53
-func (p *EventlessMacrostepIsBoundedPolicy) ProcessTransition(currentState *EventlessMacrostepIsBoundedState, event EventlessMacrostepIsBoundedEvent, engine *sce.Engine[EventlessMacrostepIsBoundedState, EventlessMacrostepIsBoundedEvent]) bool {
-	// W3C SCXML 5.10: Bind _event system variable for guard evaluation
+func (p *EventlessMacrostepIsBoundedPolicy) BindCurrentEvent(event EventlessMacrostepIsBoundedEvent, engine *sce.Engine[EventlessMacrostepIsBoundedState, EventlessMacrostepIsBoundedEvent]) {
 	if event != EventlessMacrostepIsBoundedEventNull {
 		// §scxml-B-2-8-1: the rung the payload got, handed to the engine
 		// rather than dropped. This is the only frame that has both the
 		// reading and the event it belongs to.
 		engine.NotePayloadReading(event, p.setCurrentEvent(p.GetEventName(event)))
 	}
-
-	// W3C SCXML 3.12: Try transitions in current state first
-	if p.tryTransitionInState(*currentState, event, currentState, engine) {
-		return true
-	}
-
-
-	return false
 }
 
-
-// tryTransitionInState checks transitions for a single state.
+// FirstEnabledTransition is Appendix D selectTransitions, the half only this
+// document can answer: the first of state's own transitions, in document order,
+// that event enables and whose guard holds. The engine walks the atomic states
+// and their ancestors and keeps the ordered set; the null event asks for
+// eventless transitions.
 //line eventless_macrostep_is_bounded.scxml:53
-func (p *EventlessMacrostepIsBoundedPolicy) tryTransitionInState(checkState EventlessMacrostepIsBoundedState, event EventlessMacrostepIsBoundedEvent, currentState *EventlessMacrostepIsBoundedState, engine *sce.Engine[EventlessMacrostepIsBoundedState, EventlessMacrostepIsBoundedEvent]) bool {
-	switch checkState {
+func (p *EventlessMacrostepIsBoundedPolicy) FirstEnabledTransition(state EventlessMacrostepIsBoundedState, event EventlessMacrostepIsBoundedEvent, engine *sce.Engine[EventlessMacrostepIsBoundedState, EventlessMacrostepIsBoundedEvent]) (sce.EnabledTransition[EventlessMacrostepIsBoundedState, sce.HistoryID], bool) {
+	switch state {
 	case EventlessMacrostepIsBoundedStateBoundedA:
-		// Eventless transition 0
 		if event == EventlessMacrostepIsBoundedEventNull {
 			if p.evaluateGuard(`(laps < 500)`, engine) {
-			*currentState = EventlessMacrostepIsBoundedStateBoundedB
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = EventlessMacrostepIsBoundedStateBoundedA
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = true
-			return true
+				return sce.EnabledTransition[EventlessMacrostepIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfEventlessMacrostepIsBounded[state][0],
+					TransitionIndex: 0,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == EventlessMacrostepIsBoundedEventPoke {
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = true
-			p.lastTransitionSourceState = EventlessMacrostepIsBoundedStateBoundedA
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[EventlessMacrostepIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 1,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	case EventlessMacrostepIsBoundedStateBoundedB:
-		// Eventless transition 0
 		if event == EventlessMacrostepIsBoundedEventNull {
-			*currentState = EventlessMacrostepIsBoundedStateBoundedA
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = EventlessMacrostepIsBoundedStateBoundedB
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = false
-			return true
+			{
+				return sce.EnabledTransition[EventlessMacrostepIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfEventlessMacrostepIsBounded[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	case EventlessMacrostepIsBoundedStateIdle:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == EventlessMacrostepIsBoundedEventPoke {
-			*currentState = EventlessMacrostepIsBoundedStateIdle
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = EventlessMacrostepIsBoundedStateIdle
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[EventlessMacrostepIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfEventlessMacrostepIsBounded[state][0],
+					TransitionIndex: 0,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == EventlessMacrostepIsBoundedEventBounded {
-			*currentState = EventlessMacrostepIsBoundedStateBoundedA
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = EventlessMacrostepIsBoundedStateIdle
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = false
-			return true
+			{
+				return sce.EnabledTransition[EventlessMacrostepIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfEventlessMacrostepIsBounded[state][1],
+					TransitionIndex: 1,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == EventlessMacrostepIsBoundedEventSpin {
-			*currentState = EventlessMacrostepIsBoundedStateSpinA
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = EventlessMacrostepIsBoundedStateIdle
-			p.lastTransitionIndex = 2
-			p.hasTransitionActions = false
-			return true
+			{
+				return sce.EnabledTransition[EventlessMacrostepIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfEventlessMacrostepIsBounded[state][2],
+					TransitionIndex: 2,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	case EventlessMacrostepIsBoundedStateSpinA:
-		// Eventless transition 0
 		if event == EventlessMacrostepIsBoundedEventNull {
-			*currentState = EventlessMacrostepIsBoundedStateSpinB
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = EventlessMacrostepIsBoundedStateSpinA
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[EventlessMacrostepIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfEventlessMacrostepIsBounded[state][0],
+					TransitionIndex: 0,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == EventlessMacrostepIsBoundedEventPoke {
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = true
-			p.lastTransitionSourceState = EventlessMacrostepIsBoundedStateSpinA
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[EventlessMacrostepIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 1,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == EventlessMacrostepIsBoundedEventReset {
-			*currentState = EventlessMacrostepIsBoundedStateIdle
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = EventlessMacrostepIsBoundedStateSpinA
-			p.lastTransitionIndex = 2
-			p.hasTransitionActions = false
-			return true
+			{
+				return sce.EnabledTransition[EventlessMacrostepIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfEventlessMacrostepIsBounded[state][2],
+					TransitionIndex: 2,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	case EventlessMacrostepIsBoundedStateSpinB:
-		// Eventless transition 0
 		if event == EventlessMacrostepIsBoundedEventNull {
-			*currentState = EventlessMacrostepIsBoundedStateSpinA
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = EventlessMacrostepIsBoundedStateSpinB
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = false
-			return true
+			{
+				return sce.EnabledTransition[EventlessMacrostepIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfEventlessMacrostepIsBounded[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == EventlessMacrostepIsBoundedEventReset {
-			*currentState = EventlessMacrostepIsBoundedStateIdle
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = EventlessMacrostepIsBoundedStateSpinB
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = false
-			return true
+			{
+				return sce.EnabledTransition[EventlessMacrostepIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfEventlessMacrostepIsBounded[state][1],
+					TransitionIndex: 1,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	}
-	return false
+	return sce.EnabledTransition[EventlessMacrostepIsBoundedState, sce.HistoryID]{}, false
 }
 
-// ExecuteTransitionActions executes actions for the last taken transition (W3C SCXML 3.13).
+// ExecuteTransitionContent runs one transition's executable content (W3C SCXML
+// 3.13), between the microstep's exits and its entries.
 //line eventless_macrostep_is_bounded.scxml:53
-func (p *EventlessMacrostepIsBoundedPolicy) ExecuteTransitionActions(engine *sce.Engine[EventlessMacrostepIsBoundedState, EventlessMacrostepIsBoundedEvent]) {
+func (p *EventlessMacrostepIsBoundedPolicy) ExecuteTransitionContent(source EventlessMacrostepIsBoundedState, transitionIndex int, engine *sce.Engine[EventlessMacrostepIsBoundedState, EventlessMacrostepIsBoundedEvent]) {
 	p.ensureScriptEngine()
-	if !p.hasTransitionActions {
-		return
-	}
-	source := p.lastTransitionSourceState
-	idx := p.lastTransitionIndex
-	if source == EventlessMacrostepIsBoundedStateBoundedA && idx == 0 {
-		//line eventless_macrostep_is_bounded.scxml:85
+	switch source {
+	case EventlessMacrostepIsBoundedStateBoundedA:
+		switch transitionIndex {
+		case 0:
+			//line eventless_macrostep_is_bounded.scxml:85
 
 	// W3C SCXML 5.3: <assign location="laps" expr="laps + 1">
 	if err := p.assignVariable(`laps`, `_scxml_add(laps, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(EventlessMacrostepIsBoundedEventErrorExecution, "<assign> to 'laps' failed"))
 	}
 
-		return
-	}
-	if source == EventlessMacrostepIsBoundedStateBoundedA && idx == 1 {
-		//line eventless_macrostep_is_bounded.scxml:90
+		case 1:
+			//line eventless_macrostep_is_bounded.scxml:90
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(EventlessMacrostepIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
 	}
 
-		return
-	}
-	if source == EventlessMacrostepIsBoundedStateIdle && idx == 0 {
-		//line eventless_macrostep_is_bounded.scxml:72
+		}
+	case EventlessMacrostepIsBoundedStateIdle:
+		switch transitionIndex {
+		case 0:
+			//line eventless_macrostep_is_bounded.scxml:72
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(EventlessMacrostepIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
 	}
 
-		return
-	}
-	if source == EventlessMacrostepIsBoundedStateSpinA && idx == 0 {
-		//line eventless_macrostep_is_bounded.scxml:105
+		}
+	case EventlessMacrostepIsBoundedStateSpinA:
+		switch transitionIndex {
+		case 0:
+			//line eventless_macrostep_is_bounded.scxml:105
 
 	// W3C SCXML 5.3: <assign location="spins" expr="spins + 1">
 	if err := p.assignVariable(`spins`, `_scxml_add(spins, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(EventlessMacrostepIsBoundedEventErrorExecution, "<assign> to 'spins' failed"))
 	}
 
-		return
-	}
-	if source == EventlessMacrostepIsBoundedStateSpinA && idx == 1 {
-		//line eventless_macrostep_is_bounded.scxml:108
+		case 1:
+			//line eventless_macrostep_is_bounded.scxml:108
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(EventlessMacrostepIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
 	}
 
-		return
+		}
 	}
 }

@@ -110,6 +110,46 @@ var InvokePrecedesExternalDequeueSceSynthInvokeInvWatchAllStates = []InvokePrece
 	InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateWaiting,
 }
 
+// InvokePrecedesExternalDequeueSceSynthInvokeInvWatchTarget is one token of a target list, as the document wrote
+// it (W3C SCXML 3.13): a state, or a <history> the engine dereferences.
+type InvokePrecedesExternalDequeueSceSynthInvokeInvWatchTarget = sce.EntryTarget[InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, sce.HistoryID]
+
+// ======================================================================
+// Document structure (W3C SCXML 3.2-3.4, 3.10)
+//
+// Package-level tables, because the structure is a fact about the document
+// and not about a run: the engine's Appendix D procedures read them through
+// the policy methods below, and a transition's target list is handed out as
+// a slice of them rather than rebuilt on every selection.
+// ======================================================================
+
+// childStatesOfInvokePrecedesExternalDequeueSceSynthInvokeInvWatch is §scxml-D-getChildStates per state: its
+// <state>, <parallel> and <final> children, in document order.
+var childStatesOfInvokePrecedesExternalDequeueSceSynthInvokeInvWatch = [4][]InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState{
+}
+
+// initialTargetsOfInvokePrecedesExternalDequeueSceSynthInvokeInvWatch is each compound state's initial transition
+// target, as written (§scxml-3.3).
+var initialTargetsOfInvokePrecedesExternalDequeueSceSynthInvokeInvWatch = [4][]InvokePrecedesExternalDequeueSceSynthInvokeInvWatchTarget{
+}
+
+// documentInitialTargetsOfInvokePrecedesExternalDequeueSceSynthInvokeInvWatch is the target of the document's own
+// initial transition, as written (§scxml-3.2).
+var documentInitialTargetsOfInvokePrecedesExternalDequeueSceSynthInvokeInvWatch = []InvokePrecedesExternalDequeueSceSynthInvokeInvWatchTarget{sce.StateTarget[InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, sce.HistoryID](InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateWaiting)}
+
+// transitionTargetsOfInvokePrecedesExternalDequeueSceSynthInvokeInvWatch is each transition's target list, as
+// written (§scxml-3.13), by source state and the transition's index among its
+// source's own transitions. A targetless transition's entry is empty.
+var transitionTargetsOfInvokePrecedesExternalDequeueSceSynthInvokeInvWatch = [4][][]InvokePrecedesExternalDequeueSceSynthInvokeInvWatchTarget{
+	InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateSaw: {
+		0: {sce.StateTarget[InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, sce.HistoryID](InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateOrdered)},
+	},
+	InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateWaiting: {
+		0: {sce.StateTarget[InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, sce.HistoryID](InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateSaw)},
+		1: {sce.StateTarget[InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, sce.HistoryID](InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMissed)},
+	},
+}
+
 // ======================================================================
 // Event type (W3C SCXML 3.12)
 // ======================================================================
@@ -152,13 +192,6 @@ func (e InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent) String() strin
 // ======================================================================
 
 type InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy struct {
-	// W3C SCXML 3.13: Last transition metadata
-	lastTransitionIsInternal  bool
-	lastTransitionIsTargetless bool
-	lastTransitionSourceState InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState
-	// W3C SCXML 3.13: Transition action tracking
-	lastTransitionIndex   int
-	hasTransitionActions   bool
 	// W3C SCXML 5.10: Session ID
 	SessionID string
 	// W3C SCXML 6.4: Parent communication
@@ -173,7 +206,6 @@ type InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy struct {
 // NewInvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy creates a new policy with default values.
 func NewInvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy() InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy {
 	return InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy{
-		lastTransitionSourceState: InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateWaiting,
 	}
 }
 
@@ -219,29 +251,45 @@ func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) GetParent(st
 	return 0, false
 }
 
-// IsCompoundState returns true if state has children (W3C SCXML 3.3).
+// IsCompoundState returns true if state is a <state> with child states — exactly
+// the states that have an initial transition. A <parallel> is not compound
+// (W3C SCXML 3.3).
 func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) IsCompoundState(state InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState) bool {
-	switch state {
-	}
-	return false
+	return len(initialTargetsOfInvokePrecedesExternalDequeueSceSynthInvokeInvWatch[state]) > 0
 }
 
 func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) IsParallelState(_ InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState) bool { return false }
-func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) GetParallelRegions(_ InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState) []InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState { return nil }
 
-// IsDescendantOf returns true if desc is a descendant of anc (W3C SCXML 3.12).
-func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) IsDescendantOf(desc, anc InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState) bool {
-	current := desc
-	for {
-		parent, ok := p.GetParent(current)
-		if !ok {
-			return false
-		}
-		if parent == anc {
-			return true
-		}
-		current = parent
-	}
+// GetChildStates returns state's <state>, <parallel> and <final> children, in
+// document order — for a <parallel>, its regions (§scxml-D-getChildStates).
+func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) GetChildStates(state InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState) []InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState {
+	return childStatesOfInvokePrecedesExternalDequeueSceSynthInvokeInvWatch[state]
+}
+
+// GetInitialTargets returns a compound state's initial transition target, as
+// written; the engine's entry procedures dereference a <history> among them
+// (W3C SCXML 3.3).
+func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) GetInitialTargets(state InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState) []InvokePrecedesExternalDequeueSceSynthInvokeInvWatchTarget {
+	return initialTargetsOfInvokePrecedesExternalDequeueSceSynthInvokeInvWatch[state]
+}
+
+// GetDocumentInitialTargets returns the target of the document's own initial
+// transition, as written (W3C SCXML 3.2).
+func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) GetDocumentInitialTargets() []InvokePrecedesExternalDequeueSceSynthInvokeInvWatchTarget {
+	return documentInitialTargetsOfInvokePrecedesExternalDequeueSceSynthInvokeInvWatch
+}
+
+// W3C SCXML 3.10: this document declares no <history>, so no target list names
+// one and the engine never asks the two below; answering would mean inventing
+// one.
+func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) GetHistoryParent(history sce.HistoryID) InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState {
+	panic(fmt.Sprintf("InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy declares no <history>; asked for %d", history))
+}
+func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) GetHistoryDefaultTargets(history sce.HistoryID) []InvokePrecedesExternalDequeueSceSynthInvokeInvWatchTarget {
+	panic(fmt.Sprintf("InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy declares no <history>; asked for %d", history))
+}
+func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) HistoryValue(_ sce.HistoryID) ([]InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, bool) {
+	return nil, false
 }
 
 // GetDocumentOrder returns the document order index (W3C SCXML Appendix D).
@@ -300,43 +348,6 @@ func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) NullEvent() 
 	return InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEventNull
 }
 
-// GetInitialChildren returns initial children of a compound state (W3C SCXML 3.6).
-func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) GetInitialChildren(state InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState) []InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState {
-	switch state {
-	}
-	return nil
-}
-
-// LastTransitionIsInternal returns the internal transition flag (W3C SCXML 3.13).
-func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) LastTransitionIsInternal() bool {
-	return p.lastTransitionIsInternal
-}
-
-// SetLastTransitionIsInternal sets the internal transition flag.
-func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) SetLastTransitionIsInternal(value bool) {
-	p.lastTransitionIsInternal = value
-}
-
-// LastTransitionIsTargetless returns the targetless transition flag (W3C SCXML 3.13).
-func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) LastTransitionIsTargetless() bool {
-	return p.lastTransitionIsTargetless
-}
-
-// SetLastTransitionIsTargetless sets the targetless transition flag.
-func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) SetLastTransitionIsTargetless(value bool) {
-	p.lastTransitionIsTargetless = value
-}
-
-// LastTransitionSourceState returns the source state of the last transition.
-func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) LastTransitionSourceState() InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState {
-	return p.lastTransitionSourceState
-}
-
-// SetLastTransitionSourceState sets the source state of the last transition.
-func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) SetLastTransitionSourceState(state InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState) {
-	p.lastTransitionSourceState = state
-}
-
 
 
 // HasParallelStates returns whether the SM has parallel states.
@@ -378,14 +389,6 @@ func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) GetActiveSta
 func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) SetActiveStates(_ []InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState) {}
 func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) HasExternalEventFlag() bool { return false }
 func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) SetNextEventIsExternal(_ bool) {}
-// GetInitialOrHistoryChild returns the initial child considering history (W3C SCXML 3.11).
-func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) GetInitialOrHistoryChild(state InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState) InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState {
-	children := p.GetInitialChildren(state)
-	if len(children) > 0 {
-		return children[0]
-	}
-	return state
-}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent], _ *sce.Engine[InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).
@@ -416,13 +419,11 @@ func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) ClearEventMe
 
 
 
-
-// ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
+// ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
+// configuration, runs its <onentry>, and its <initial> transition's content when
+// its initial state is entered by default.
 //line invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:3
-func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) ExecuteEntryActions(state InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, engine *sce.Engine[InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent], pathChild *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState) {
-	// Only a `<parallel>` machine descends into defaults here, so a machine
-	// without one has nothing to tell an ancestor entry from a target entry.
-	_ = pathChild
+func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) ExecuteEntryActions(state InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, engine *sce.Engine[InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent], isDefaultEntry bool) {
 	switch state {
 	case InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateWaiting:
 		//line invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:5
@@ -446,80 +447,93 @@ func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) ExecuteEntry
 	}
 }
 
-// ExecuteExitActions executes onexit actions for a state (W3C SCXML 3.9).
+// ExecuteHistoryDefaultContent runs a <history>'s default transition content
+// (W3C SCXML 3.10.2), after its parent's onentry (and after the parent's own
+// <initial> content) when the history was taken with nothing recorded. The
+// engine asks for it by the entry set's defaultHistoryContent answer; a history
+// that restored what it recorded runs nothing.
 //line invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:3
-func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) ExecuteExitActions(state InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, engine *sce.Engine[InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent], preTransitionActive []InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState) {
+func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent]) {
+	// W3C SCXML 3.10.2: no <history> in this document has default content.
+}
+
+// ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
+// removes it from the configuration, cancels its invocations and runs its
+// <onexit>.
+//line invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:3
+func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) ExecuteExitActions(state InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, engine *sce.Engine[InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent], configurationBeforeExit []InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState) {
 	switch state {
 	default:
 		// No exit actions
 	}
 }
 
-// ProcessTransition evaluates guards and takes a matching transition (W3C SCXML 3.13).
-// Returns true if a transition was taken.
+
+
+// BindCurrentEvent binds the event whose transitions are about to be selected as
+// the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
+// and not for an eventless selection, which has no event of its own.
 //line invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:3
-func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) ProcessTransition(currentState *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, event InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent, engine *sce.Engine[InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent]) bool {
-
-	// W3C SCXML 3.12: Try transitions in current state first
-	if p.tryTransitionInState(*currentState, event, currentState, engine) {
-		return true
-	}
-
-
-	return false
+func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) BindCurrentEvent(event InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent, engine *sce.Engine[InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent]) {
+	// This document's guards never read _event, so there is nothing to bind.
 }
 
-
-// tryTransitionInState checks transitions for a single state.
+// FirstEnabledTransition is Appendix D selectTransitions, the half only this
+// document can answer: the first of state's own transitions, in document order,
+// that event enables and whose guard holds. The engine walks the atomic states
+// and their ancestors and keeps the ordered set; the null event asks for
+// eventless transitions.
 //line invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:3
-func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) tryTransitionInState(checkState InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, event InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent, currentState *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, engine *sce.Engine[InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent]) bool {
-	switch checkState {
+func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) FirstEnabledTransition(state InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, event InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent, engine *sce.Engine[InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent]) (sce.EnabledTransition[InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, sce.HistoryID], bool) {
+	switch state {
 	case InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateSaw:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEventProbe {
-			*currentState = InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateOrdered
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateSaw
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInvokePrecedesExternalDequeueSceSynthInvokeInvWatch[state][0],
+					TransitionIndex: 0,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	case InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateWaiting:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEventKick {
-			*currentState = InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateSaw
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateWaiting
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = false
-			return true
+			{
+				return sce.EnabledTransition[InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInvokePrecedesExternalDequeueSceSynthInvokeInvWatch[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEventProbe {
-			*currentState = InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateMissed
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateWaiting
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInvokePrecedesExternalDequeueSceSynthInvokeInvWatch[state][1],
+					TransitionIndex: 1,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	}
-	return false
+	return sce.EnabledTransition[InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, sce.HistoryID]{}, false
 }
 
-// ExecuteTransitionActions executes actions for the last taken transition (W3C SCXML 3.13).
+// ExecuteTransitionContent runs one transition's executable content (W3C SCXML
+// 3.13), between the microstep's exits and its entries.
 //line invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:3
-func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) ExecuteTransitionActions(engine *sce.Engine[InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent]) {
-	if !p.hasTransitionActions {
-		return
-	}
-	source := p.lastTransitionSourceState
-	idx := p.lastTransitionIndex
-	if source == InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateSaw && idx == 0 {
-		//line invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:15
+func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) ExecuteTransitionContent(source InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, transitionIndex int, engine *sce.Engine[InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent]) {
+	switch source {
+	case InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateSaw:
+		switch transitionIndex {
+		case 0:
+			//line invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:15
 
 	// W3C SCXML 6.2: send id="__send_2"
 	{
@@ -531,10 +545,11 @@ func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) ExecuteTrans
 	}
 	}
 
-		return
-	}
-	if source == InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateWaiting && idx == 1 {
-		//line invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:10
+		}
+	case InvokePrecedesExternalDequeueSceSynthInvokeInvWatchStateWaiting:
+		switch transitionIndex {
+		case 1:
+			//line invoke_precedes_external_dequeue__sce_synth_invoke__inv_watch.scxml:10
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
@@ -546,6 +561,6 @@ func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) ExecuteTrans
 	}
 	}
 
-		return
+		}
 	}
 }

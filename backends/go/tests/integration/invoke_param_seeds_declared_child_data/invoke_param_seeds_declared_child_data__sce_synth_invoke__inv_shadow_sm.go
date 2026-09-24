@@ -98,6 +98,44 @@ var InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowAllStates = []Invoke
 	InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateReport,
 }
 
+// InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowTarget is one token of a target list, as the document wrote
+// it (W3C SCXML 3.13): a state, or a <history> the engine dereferences.
+type InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowTarget = sce.EntryTarget[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, sce.HistoryID]
+
+// ======================================================================
+// Document structure (W3C SCXML 3.2-3.4, 3.10)
+//
+// Package-level tables, because the structure is a fact about the document
+// and not about a run: the engine's Appendix D procedures read them through
+// the policy methods below, and a transition's target list is handed out as
+// a slice of them rather than rebuilt on every selection.
+// ======================================================================
+
+// childStatesOfInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadow is §scxml-D-getChildStates per state: its
+// <state>, <parallel> and <final> children, in document order.
+var childStatesOfInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadow = [2][]InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState{
+}
+
+// initialTargetsOfInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadow is each compound state's initial transition
+// target, as written (§scxml-3.3).
+var initialTargetsOfInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadow = [2][]InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowTarget{
+}
+
+// documentInitialTargetsOfInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadow is the target of the document's own
+// initial transition, as written (§scxml-3.2).
+var documentInitialTargetsOfInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadow = []InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowTarget{sce.StateTarget[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, sce.HistoryID](InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateReport)}
+
+// transitionTargetsOfInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadow is each transition's target list, as
+// written (§scxml-3.13), by source state and the transition's index among its
+// source's own transitions. A targetless transition's entry is empty.
+var transitionTargetsOfInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadow = [2][][]InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowTarget{
+	InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateReport: {
+		0: {sce.StateTarget[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, sce.HistoryID](InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateDone)},
+		1: {sce.StateTarget[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, sce.HistoryID](InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateDone)},
+		2: {sce.StateTarget[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, sce.HistoryID](InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateDone)},
+	},
+}
+
 // ======================================================================
 // Event type (W3C SCXML 3.12)
 // ======================================================================
@@ -134,13 +172,6 @@ func (e InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent) String() 
 // ======================================================================
 
 type InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy struct {
-	// W3C SCXML 3.13: Last transition metadata
-	lastTransitionIsInternal  bool
-	lastTransitionIsTargetless bool
-	lastTransitionSourceState InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState
-	// W3C SCXML 3.13: Transition action tracking
-	lastTransitionIndex   int
-	hasTransitionActions   bool
 	// W3C SCXML 5.10.1: External event flag
 	nextEventIsExternal bool
 	pendingEventName string
@@ -173,7 +204,6 @@ type InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy struct {
 // NewInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy creates a new policy with default values.
 func NewInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy() InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy {
 	return InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy{
-		lastTransitionSourceState: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateReport,
 	}
 }
 
@@ -422,29 +452,45 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) GetPare
 	return 0, false
 }
 
-// IsCompoundState returns true if state has children (W3C SCXML 3.3).
+// IsCompoundState returns true if state is a <state> with child states — exactly
+// the states that have an initial transition. A <parallel> is not compound
+// (W3C SCXML 3.3).
 func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) IsCompoundState(state InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState) bool {
-	switch state {
-	}
-	return false
+	return len(initialTargetsOfInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadow[state]) > 0
 }
 
 func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) IsParallelState(_ InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState) bool { return false }
-func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) GetParallelRegions(_ InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState) []InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState { return nil }
 
-// IsDescendantOf returns true if desc is a descendant of anc (W3C SCXML 3.12).
-func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) IsDescendantOf(desc, anc InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState) bool {
-	current := desc
-	for {
-		parent, ok := p.GetParent(current)
-		if !ok {
-			return false
-		}
-		if parent == anc {
-			return true
-		}
-		current = parent
-	}
+// GetChildStates returns state's <state>, <parallel> and <final> children, in
+// document order — for a <parallel>, its regions (§scxml-D-getChildStates).
+func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) GetChildStates(state InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState) []InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState {
+	return childStatesOfInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadow[state]
+}
+
+// GetInitialTargets returns a compound state's initial transition target, as
+// written; the engine's entry procedures dereference a <history> among them
+// (W3C SCXML 3.3).
+func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) GetInitialTargets(state InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState) []InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowTarget {
+	return initialTargetsOfInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadow[state]
+}
+
+// GetDocumentInitialTargets returns the target of the document's own initial
+// transition, as written (W3C SCXML 3.2).
+func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) GetDocumentInitialTargets() []InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowTarget {
+	return documentInitialTargetsOfInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadow
+}
+
+// W3C SCXML 3.10: this document declares no <history>, so no target list names
+// one and the engine never asks the two below; answering would mean inventing
+// one.
+func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) GetHistoryParent(history sce.HistoryID) InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState {
+	panic(fmt.Sprintf("InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy declares no <history>; asked for %d", history))
+}
+func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) GetHistoryDefaultTargets(history sce.HistoryID) []InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowTarget {
+	panic(fmt.Sprintf("InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy declares no <history>; asked for %d", history))
+}
+func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) HistoryValue(_ sce.HistoryID) ([]InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, bool) {
+	return nil, false
 }
 
 // GetDocumentOrder returns the document order index (W3C SCXML Appendix D).
@@ -495,43 +541,6 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) NullEve
 	return InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEventNull
 }
 
-// GetInitialChildren returns initial children of a compound state (W3C SCXML 3.6).
-func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) GetInitialChildren(state InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState) []InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState {
-	switch state {
-	}
-	return nil
-}
-
-// LastTransitionIsInternal returns the internal transition flag (W3C SCXML 3.13).
-func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) LastTransitionIsInternal() bool {
-	return p.lastTransitionIsInternal
-}
-
-// SetLastTransitionIsInternal sets the internal transition flag.
-func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) SetLastTransitionIsInternal(value bool) {
-	p.lastTransitionIsInternal = value
-}
-
-// LastTransitionIsTargetless returns the targetless transition flag (W3C SCXML 3.13).
-func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) LastTransitionIsTargetless() bool {
-	return p.lastTransitionIsTargetless
-}
-
-// SetLastTransitionIsTargetless sets the targetless transition flag.
-func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) SetLastTransitionIsTargetless(value bool) {
-	p.lastTransitionIsTargetless = value
-}
-
-// LastTransitionSourceState returns the source state of the last transition.
-func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) LastTransitionSourceState() InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState {
-	return p.lastTransitionSourceState
-}
-
-// SetLastTransitionSourceState sets the source state of the last transition.
-func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) SetLastTransitionSourceState(state InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState) {
-	p.lastTransitionSourceState = state
-}
-
 
 // SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
 func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) SetNextEventIsExternal(value bool) {
@@ -576,14 +585,6 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) GetActi
 // which is false above; the method exists because the interface is one contract.
 func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) SetActiveStates(_ []InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState) {}
 func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) HasExternalEventFlag() bool { return true }
-// GetInitialOrHistoryChild returns the initial child considering history (W3C SCXML 3.11).
-func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) GetInitialOrHistoryChild(state InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState) InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState {
-	children := p.GetInitialChildren(state)
-	if len(children) > 0 {
-		return children[0]
-	}
-	return state
-}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent], _ *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).
@@ -627,13 +628,11 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) ClearEv
 
 
 
-
-// ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
+// ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
+// configuration, runs its <onentry>, and its <initial> transition's content when
+// its initial state is entered by default.
 //line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_shadow.scxml:3
-func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) ExecuteEntryActions(state InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent], pathChild *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState) {
-	// Only a `<parallel>` machine descends into defaults here, so a machine
-	// without one has nothing to tell an ancestor entry from a target entry.
-	_ = pathChild
+func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) ExecuteEntryActions(state InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent], isDefaultEntry bool) {
 	p.ensureScriptEngine()
 	switch state {
 	default:
@@ -641,9 +640,21 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) Execute
 	}
 }
 
-// ExecuteExitActions executes onexit actions for a state (W3C SCXML 3.9).
+// ExecuteHistoryDefaultContent runs a <history>'s default transition content
+// (W3C SCXML 3.10.2), after its parent's onentry (and after the parent's own
+// <initial> content) when the history was taken with nothing recorded. The
+// engine asks for it by the entry set's defaultHistoryContent answer; a history
+// that restored what it recorded runs nothing.
 //line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_shadow.scxml:3
-func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) ExecuteExitActions(state InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent], preTransitionActive []InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState) {
+func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent]) {
+	// W3C SCXML 3.10.2: no <history> in this document has default content.
+}
+
+// ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
+// removes it from the configuration, cancels its invocations and runs its
+// <onexit>.
+//line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_shadow.scxml:3
+func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) ExecuteExitActions(state InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent], configurationBeforeExit []InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState) {
 	p.ensureScriptEngine()
 	switch state {
 	default:
@@ -651,82 +662,77 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) Execute
 	}
 }
 
-// ProcessTransition evaluates guards and takes a matching transition (W3C SCXML 3.13).
-// Returns true if a transition was taken.
+
+
+// BindCurrentEvent binds the event whose transitions are about to be selected as
+// the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
+// and not for an eventless selection, which has no event of its own.
 //line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_shadow.scxml:3
-func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) ProcessTransition(currentState *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, event InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent]) bool {
-	// W3C SCXML 5.10: Bind _event system variable for guard evaluation
+func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) BindCurrentEvent(event InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent]) {
 	if event != InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEventNull {
 		// §scxml-B-2-8-1: the rung the payload got, handed to the engine
 		// rather than dropped. This is the only frame that has both the
 		// reading and the event it belongs to.
 		engine.NotePayloadReading(event, p.setCurrentEvent(p.GetEventName(event)))
 	}
-
-	// W3C SCXML 3.12: Try transitions in current state first
-	if p.tryTransitionInState(*currentState, event, currentState, engine) {
-		return true
-	}
-
-
-	return false
 }
 
-
-// tryTransitionInState checks transitions for a single state.
+// FirstEnabledTransition is Appendix D selectTransitions, the half only this
+// document can answer: the first of state's own transitions, in document order,
+// that event enables and whose guard holds. The engine walks the atomic states
+// and their ancestors and keeps the ordered set; the null event asks for
+// eventless transitions.
 //line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_shadow.scxml:3
-func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) tryTransitionInState(checkState InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, event InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent, currentState *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent]) bool {
-	switch checkState {
+func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) FirstEnabledTransition(state InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, event InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent]) (sce.EnabledTransition[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, sce.HistoryID], bool) {
+	switch state {
 	case InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateReport:
-		// Eventless transition 0
 		if event == InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEventNull {
 			if p.evaluateGuard(`(seen == "parent")`, engine) {
-			*currentState = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateDone
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateReport
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = true
-			return true
+				return sce.EnabledTransition[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadow[state][0],
+					TransitionIndex: 0,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// Eventless transition 1
 		if event == InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEventNull {
 			if p.evaluateGuard(`(seen == "child")`, engine) {
-			*currentState = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateDone
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateReport
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = true
-			return true
+				return sce.EnabledTransition[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadow[state][1],
+					TransitionIndex: 1,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// Eventless transition 2
 		if event == InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEventNull {
-			*currentState = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateDone
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateReport
-			p.lastTransitionIndex = 2
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadow[state][2],
+					TransitionIndex: 2,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	}
-	return false
+	return sce.EnabledTransition[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, sce.HistoryID]{}, false
 }
 
-// ExecuteTransitionActions executes actions for the last taken transition (W3C SCXML 3.13).
+// ExecuteTransitionContent runs one transition's executable content (W3C SCXML
+// 3.13), between the microstep's exits and its entries.
 //line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_shadow.scxml:3
-func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) ExecuteTransitionActions(engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent]) {
+func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) ExecuteTransitionContent(source InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, transitionIndex int, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowEvent]) {
 	p.ensureScriptEngine()
-	if !p.hasTransitionActions {
-		return
-	}
-	source := p.lastTransitionSourceState
-	idx := p.lastTransitionIndex
-	if source == InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateReport && idx == 0 {
-		//line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_shadow.scxml:10
+	switch source {
+	case InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateReport:
+		switch transitionIndex {
+		case 0:
+			//line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_shadow.scxml:10
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
@@ -738,10 +744,8 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) Execute
 	}
 	}
 
-		return
-	}
-	if source == InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateReport && idx == 1 {
-		//line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_shadow.scxml:13
+		case 1:
+			//line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_shadow.scxml:13
 
 	// W3C SCXML 6.2: send id="__send_1"
 	{
@@ -753,10 +757,8 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) Execute
 	}
 	}
 
-		return
-	}
-	if source == InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowStateReport && idx == 2 {
-		//line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_shadow.scxml:16
+		case 2:
+			//line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_shadow.scxml:16
 
 	// W3C SCXML 6.2: send id="__send_2"
 	{
@@ -768,6 +770,6 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvShadowPolicy) Execute
 	}
 	}
 
-		return
+		}
 	}
 }

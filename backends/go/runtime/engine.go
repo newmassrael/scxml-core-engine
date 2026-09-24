@@ -6,7 +6,6 @@ package sce
 import (
 	"fmt"
 	"log"
-	"sort"
 	"time"
 )
 
@@ -21,20 +20,20 @@ import (
 // eventOutcome is what the engine did with one event it offered to the active
 // configuration.
 //
-// This used to be a bare bool meaning "the configuration changed", which
-// answers false for two unrelated outcomes: an event no transition matched at
-// all, and a targetless internal transition that ran its actions in place.
-// Only the first is the discard §scxml-3.1.2 describes, and a
-// count keyed off the old bool would have reported a handled event as one, so
-// the two facts are spelled apart rather than inferred from each other.
-// Mirrors the Rust runtime's EventOutcome.
-type eventOutcome struct {
-	// selected is whether any transition matched the event.
-	selected bool
-	// configurationChanged is false for a targetless internal transition,
-	// which leaves the configuration alone.
-	configurationChanged bool
-}
+// Its own type rather than a bool, because the obvious bool — "the
+// configuration changed" — answers false for two unrelated outcomes: an event
+// no transition matched at all, and a microstep of targetless transitions that
+// ran their content in place. Only the first is the discard §scxml-3.1.2
+// describes, and a count keyed off that bool would report a handled event as
+// one. Mirrors the Rust runtime's EventOutcome.
+type eventOutcome int
+
+const (
+	// eventDiscarded: no transition matched the event in any active state.
+	eventDiscarded eventOutcome = iota
+	// eventTaken: a transition was selected and its microstep taken.
+	eventTaken
+)
 
 // Engine is NOT safe for concurrent use. Callers needing multi-goroutine access
 // must protect with sync.Mutex. This matches the C++ and Rust single-threaded
@@ -167,12 +166,11 @@ type Engine[S comparable, E comparable] struct {
 	hasTruncatedMacrostep       bool
 
 	// macrostepTruncated says the macrostep now in progress has already been
-	// stopped at the ceiling. The drain is reached twice per macrostep — once
-	// from executeTransition and once from the main event loop's own loop —
-	// so without this the ceiling is not a ceiling: each caller gets a fresh
-	// budget and the machine takes twice the microsteps it was allowed,
-	// counting each refusal separately. Cleared where the algorithm starts a
-	// macrostep, which is the external dequeue.
+	// stopped at the ceiling. Every host call runs Appendix D's main event
+	// loop again, so without this the ceiling is not a ceiling: each call
+	// would re-enter the inner loop with the chain it just refused, walk it to
+	// the budget again, and count each refusal separately. Cleared where the
+	// algorithm starts a macrostep, which is the external dequeue.
 	macrostepTruncated bool
 
 	// donedataAtFinal is the §scxml-5.5 + 6.3.1 stashed donedata payload
@@ -226,12 +224,13 @@ func (e *Engine[S, E]) Initialize() {
 		e.policy.InitializeDataModel(e)
 	}
 
-	// §scxml-3.3: Entry chain from root to initial leaf
-	entryChain := BuildEntryChain[S, E](e.policy, e.currentState)
-	e.executeEntryChain(entryChain)
-
-	// §scxml-3.3: Resolve currentState to the deepest initial leaf
-	e.resolveCurrentStateToLeaf()
+	// §scxml-D-interpret: enterStates([doc.initialTransition]) — the document's
+	// own initial transition, whose source is the <scxml> element, entered by
+	// the same procedure every microstep enters by. It may name several states
+	// and a <history>, so it is a target list, not a leaf to walk down to.
+	e.enterStates([]EntryTransition[S, HistoryID]{
+		{Targets: e.policy.GetDocumentInitialTargets()},
+	})
 
 	// W3C SCXML Appendix D: hand over to the outer loop. The macrostep
 	// completes on eventless transitions and internal events, then the invokes
@@ -518,9 +517,9 @@ func (e *Engine[S, E]) Policy() StatePolicy[S, E] {
 // not say what to do when something does match it and that handler fails too:
 // the failure raises the same error, the same transition answers it, and the
 // machine has no way out. Nothing in the specification bounds that, so the
-// number is this engine's to choose, and it matches checkEventlessTransitions'
-// ceiling — the sibling case of a document that cannot finish a macrostep,
-// decided the same way for the same reason.
+// number is this engine's to choose, and it is chosen beside
+// maxMacrostepMicrosteps — the sibling case of a document that cannot finish a
+// macrostep, decided the same way for the same reason.
 //
 // A hundred links is far past any repair strategy a document plausibly spells
 // (a handler that tries a fallback, then a second one, is three) and far short
@@ -1219,8 +1218,9 @@ func (e *Engine[S, E]) RunUntilCompletion(timeout, pollInterval time.Duration) b
 // Internal: microstep + macrostep implementation
 // ================================================================
 
-// runMainEventLoop is the W3C SCXML Appendix D outer loop, and the only place
-// the three exported entry points express macrostep semantics.
+// runMainEventLoop is the W3C SCXML Appendix D outer loop
+// (§scxml-D-mainEventLoop), and the only place the three exported entry points
+// express macrostep semantics.
 //
 // Appendix D names the external queue exactly once per iteration and it is
 // after invoke(inv):
@@ -1248,20 +1248,7 @@ func (e *Engine[S, E]) runMainEventLoop() {
 	for {
 		// W3C SCXML Appendix D: complete the macrostep on eventless
 		// transitions and internal events alone.
-		for {
-			e.checkEventlessTransitions()
-			if !e.internalQueue.HasEvents() {
-				break
-			}
-			e.processInternalQueue()
-			if e.macrostepTruncated {
-				// Either branch may have spent the last of the budget. Without
-				// this the loop turns forever on a chain that is no longer
-				// being drained: the queue stays non-empty precisely because
-				// the drain refused it.
-				break
-			}
-		}
+		e.completeMacrostep()
 
 		if !e.isRunning || e.isInFinalState() {
 			// W3C SCXML Appendix D's main event loop ends here, and whatever the host put on
@@ -1299,99 +1286,142 @@ func (e *Engine[S, E]) runMainEventLoop() {
 	}
 }
 
-// processInternalQueue drains the internal queue (§scxml-C-1, high priority).
+// completeMacrostep is Appendix D's inner loop: take microsteps on eventless
+// transitions and internal events until nothing is enabled by NULL and the
+// internal queue is empty — the stable configuration a macrostep ends in — or
+// until the macrostep's budget is spent.
 //
-// Bounded by the same macrostep budget the eventless branch spends, and for the
-// same reason: a <raise> answered by a transition that raises again is a
-// macrostep that never ends, exactly as a cyclic eventless transition is. Until
-// 2026-08-20 this branch had no ceiling in any of the seven engines here, so
-// that document did not return at all.
+//	while running and not macrostepDone:
+//	    enabledTransitions = selectEventlessTransitions()
+//	    if enabledTransitions.isEmpty():
+//	        if internalQueue.isEmpty():
+//	            macrostepDone = true
+//	        else:
+//	            internalEvent = internalQueue.dequeue()
+//	            datamodel["_event"] = internalEvent
+//	            enabledTransitions = selectTransitions(internalEvent)
+//	    if not enabledTransitions.isEmpty():
+//	        microstep(enabledTransitions.toList())
 //
-// Matches Rust Engine::process_internal_queue.
-func (e *Engine[S, E]) processInternalQueue() {
-	if e.macrostepTruncated {
-		// The eventless branch of this same macrostep already ran out of
-		// budget. Draining now would hand the chain a second one.
-		return
-	}
-	log.Printf("[sce] Engine::processInternalQueue: starting internal queue drain")
+// Eventless transitions are selected again after EVERY microstep, whatever took
+// it. A targetless transition that only ran content can enable one as surely as
+// a transition that entered a state, and the internal event queued behind it
+// waits until that has been asked. So does the turn after an internal event no
+// transition matched: it took no microstep, but it was bound as _event, and an
+// eventless guard may read _event.
+//
+// One budget for both branches — see maxMacrostepMicrosteps. A <raise>
+// answered by a transition that raises again is a macrostep that never ends,
+// exactly as a cyclic eventless transition is; until 2026-08-20 the internal
+// branch had no ceiling in any of the seven engines here, so that document did
+// not return at all.
+//
+// Matches Rust Engine::complete_macrostep.
+func (e *Engine[S, E]) completeMacrostep() {
+	// §scxml-D-enterStates sets running = false on entering a top-level
+	// <final>; this engine keeps isRunning for the host's Stop and asks the
+	// configuration for the other half.
+	for e.isRunning && !e.isInFinalState() && !e.macrostepTruncated {
+		enabled := e.selectTransitions(e.policy.NullEvent())
+		if len(enabled) > 0 {
+			if e.macrostepMicrostepsTaken == maxMacrostepMicrosteps {
+				// The chain is still going one microstep past the budget, so
+				// this is the case the specification calls a macrostep that
+				// does not terminate. Refuse the microstep rather than take it,
+				// and publish the refusal: the configuration left behind is not
+				// a stable one and only the count says so.
+				e.refuseMacrostep(e.currentState)
+				return
+			}
+			e.macrostepMicrostepsTaken++
+			e.microstep(enabled)
+			continue
+		}
 
-	for e.internalQueue.HasEvents() {
+		if !e.internalQueue.HasEvents() {
+			// The queue emptied, so the chain — refused or merely finished —
+			// is over. A machine whose next macrostep starts a new one starts
+			// it from zero, and the count of what was refused stays where the
+			// host reads it.
+			e.errorCascadeDepth = 0
+			return
+		}
 		if e.macrostepMicrostepsTaken == maxMacrostepMicrosteps {
-			// Work is still queued one microstep past the budget, so this is
-			// the case the specification calls a macrostep that cannot end.
-			// Refuse the microstep rather than take it: the event stays on the
-			// queue, which is where the next macrostep will find it, and the
-			// count says the configuration a host reads now is not a stable one.
-			e.recordTruncatedMacrostep(e.currentState)
-			log.Printf("[sce] Engine::processInternalQueue: macrostep still going after %d microsteps; stopped",
-				maxMacrostepMicrosteps)
+			// Work is still queued one microstep past the budget. Refuse the
+			// microstep rather than take it: the event stays on the queue,
+			// which is where the next macrostep will find it.
+			e.refuseMacrostep(e.currentState)
 			return
 		}
 		eventWithMeta, ok := e.internalQueue.Pop()
 		if !ok {
-			break
-		}
-		// §scxml-5.4.1: Stop if top-level final state reached. Same
-		// predicate as everything else that means "the machine is done" —
-		// spelling the parent check out a second time here is what let the
-		// exported one drift away from it.
-		if e.isInFinalState() {
-			log.Printf("[sce] Engine::processInternalQueue: top-level final state reached, stopping")
 			return
 		}
-		// §scxml-5.10: Populate policy metadata from event
-		e.policy.PopulateEventMetadata(&eventWithMeta.Metadata)
-		e.liftTypedPayload(eventWithMeta.Event, &eventWithMeta.Metadata)
-		// §scxml-3.12.2: the processor raises error.* into this queue and the
-		// clause says they "are ignored if no transition is found that matches
-		// them". Ignoring them is the clause; staying silent about it is not.
-		// DiscardedExternalEvents deliberately stops at the external queue
-		// because an unmatched <raise> has both ends inside the document — but
-		// the sender of an error event is this engine, so that reasoning does
-		// not reach it. The host never wrote the document, cannot see the
-		// failure in the configuration, and is the only party able to act on it.
-		//
-		// The selection runs first and unconditionally: it is what processes
-		// every internal event, and folding it into the condition below would
-		// skip it for everything that is not an error.
-		// An error raised from here on is raised by an error handler, which is
-		// the one situation the engine cannot leave to the document: the
-		// handler that failed is the same one that will answer the failure.
-		// The flag is what Raise reads to tell that apart from a first
-		// failure, and it is cleared before anything else can run so a chain
-		// cannot be attributed to the wrong event.
-		isError := IsErrorEvent(e.policy.GetEventName(eventWithMeta.Event))
-		// The chain is not ended by the drain doing something else. An earlier
-		// draft reset the depth on every non-error event, which reads as the
-		// careful choice and is the opposite: a handler that raises its own
-		// event before failing — a document that logs, then fails, which is
-		// most of them — leaves the queue alternating tick, error, tick,
-		// error…, and each tick put the ceiling back out of reach. The count
-		// needs no such guard, because it only ever rises while an error
-		// handler is running.
-		e.handlingErrorEvent = isError
-		outcome := e.executeTransition(eventWithMeta.Event)
-		e.handlingErrorEvent = false
-		if outcome.selected {
-			// Appendix D: the loop turn that selects nothing takes no
-			// microstep, so it spends no budget. Only a turn that answered the
-			// event moved the machine, and only those are what a ceiling on
-			// microsteps can be counted in.
-			e.macrostepMicrostepsTaken++
-		}
-		if !outcome.selected && isError {
-			e.unhandledErrorEvents++
-			e.lastUnhandledError = eventWithMeta.Event
-			e.hasUnhandledError = true
-			log.Printf("[sce] Engine::processInternalQueue: error event matched no transition; unhandled")
-		}
-		e.policy.ClearEventMetadata()
+		e.takeInternalEvent(eventWithMeta)
 	}
-	// The queue emptied, so the chain — refused or merely finished — is over.
-	// A machine whose next macrostep starts a new one starts it from zero, and
-	// the count of what was refused stays where the host reads it.
-	e.errorCascadeDepth = 0
+}
+
+// refuseMacrostep stops the macrostep now in progress at
+// maxMacrostepMicrosteps, from whichever branch of the inner loop found the
+// budget spent, naming stoppedIn — the state the machine is standing in, which
+// is on the walk that cannot end, rather than one the refused microstep would
+// have entered.
+func (e *Engine[S, E]) refuseMacrostep(stoppedIn S) {
+	e.recordTruncatedMacrostep(stoppedIn)
+	log.Printf("[sce] Engine::completeMacrostep: macrostep still going after %d microsteps; stopped",
+		maxMacrostepMicrosteps)
+}
+
+// takeInternalEvent binds one event taken off the internal queue as _event,
+// selects, and takes the microstep it selects (§scxml-D-mainEventLoop).
+func (e *Engine[S, E]) takeInternalEvent(eventWithMeta EventWithMetadata[E]) {
+	// §scxml-5.10: Populate policy metadata from event
+	e.policy.PopulateEventMetadata(&eventWithMeta.Metadata)
+	e.liftTypedPayload(eventWithMeta.Event, &eventWithMeta.Metadata)
+	// §scxml-3.12.2: the processor raises error.* into this queue and the
+	// clause says they "are ignored if no transition is found that matches
+	// them". Ignoring them is the clause; staying silent about it is not.
+	// DiscardedExternalEvents deliberately stops at the external queue
+	// because an unmatched <raise> has both ends inside the document — but
+	// the sender of an error event is this engine, so that reasoning does
+	// not reach it. The host never wrote the document, cannot see the
+	// failure in the configuration, and is the only party able to act on it.
+	//
+	// The selection runs first and unconditionally: it is what processes
+	// every internal event, and folding it into the condition below would
+	// skip it for everything that is not an error.
+	// An error raised from here on is raised by an error handler, which is
+	// the one situation the engine cannot leave to the document: the
+	// handler that failed is the same one that will answer the failure.
+	// The flag is what Raise reads to tell that apart from a first
+	// failure, and it is cleared before anything else can run so a chain
+	// cannot be attributed to the wrong event.
+	isError := IsErrorEvent(e.policy.GetEventName(eventWithMeta.Event))
+	// The chain is not ended by the drain doing something else. An earlier
+	// draft reset the depth on every non-error event, which reads as the
+	// careful choice and is the opposite: a handler that raises its own
+	// event before failing — a document that logs, then fails, which is
+	// most of them — leaves the queue alternating tick, error, tick,
+	// error…, and each tick put the ceiling back out of reach. The count
+	// needs no such guard, because it only ever rises while an error
+	// handler is running.
+	e.handlingErrorEvent = isError
+	outcome := e.takeEvent(eventWithMeta.Event)
+	e.handlingErrorEvent = false
+	if outcome == eventTaken {
+		// Appendix D: the loop turn that selects nothing takes no
+		// microstep, so it spends no budget. Only a turn that answered the
+		// event moved the machine, and only those are what a ceiling on
+		// microsteps can be counted in.
+		e.macrostepMicrostepsTaken++
+	}
+	if outcome == eventDiscarded && isError {
+		e.unhandledErrorEvents++
+		e.lastUnhandledError = eventWithMeta.Event
+		e.hasUnhandledError = true
+		log.Printf("[sce] Engine::takeInternalEvent: error event matched no transition; unhandled")
+	}
+	e.policy.ClearEventMetadata()
 }
 
 // processNextExternalEvent takes exactly one event off the external queue, runs
@@ -1462,7 +1492,7 @@ func (e *Engine[S, E]) processNextExternalEvent() bool {
 		// party that got the event wrong. Recorded for the external queue
 		// only: an internal <raise> that matches nothing is the document's own
 		// business, and both ends of it are in the document.
-		if !e.executeTransition(eventWithMeta.Event).selected {
+		if e.takeEvent(eventWithMeta.Event) == eventDiscarded {
 			e.discardedExternalEvents++
 			e.lastDiscardedEvent = eventWithMeta.Event
 			e.hasDiscarded = true
@@ -1519,295 +1549,177 @@ func (e *Engine[S, E]) recordTruncatedMacrostep(state S) {
 // still reported.
 const maxMacrostepMicrosteps = 1000
 
-// checkEventlessTransitions checks and executes eventless transitions until
-// stable (§scxml-3.13).
+// ================================================================
+// Appendix D over the generated policy
 //
-// Bounded at maxMacrostepMicrosteps microsteps and, when the chain is still
-// going at that point, reported through TruncatedMacrosteps — the ceiling is a
-// departure from a document the specification allows, so it is not a silent
-// one. The budget is the macrostep's, not this call's: see
-// maxMacrostepMicrosteps. Ported from Rust
-// Engine::check_eventless_transitions.
-func (e *Engine[S, E]) checkEventlessTransitions() {
-	if e.macrostepTruncated {
-		// This macrostep was already stopped at the ceiling. Re-entering the
-		// drain would hand the same chain a second budget, which is the
-		// runaway the ceiling exists to refuse.
+// The policy answers what only the document knows: which of a state's
+// transitions an event enables, what a transition's content is, what a state's
+// onentry and onexit do, what a history recorded. What Appendix D does with
+// those answers is microstep.go, written once for every machine; engineHost is
+// how this engine hands it the policy.
+//
+// A machine with a <parallel> used to take a second microstep written into its
+// generated code while every other machine took an LCA walk here. Neither was
+// the appendix's, and they disagreed about eventless selection (one never
+// looked above the atomic state, the other looked at every active state
+// without walking), about the order transition content runs in, about which
+// states a transition to an ancestor exits, and about how many targets a
+// transition has — both kept only the first.
+// ================================================================
+
+// selectTransitions is Appendix D's selectTransitions, or its
+// selectEventlessTransitions for the null event: the optimal enabled
+// transition set, in selection order.
+func (e *Engine[S, E]) selectTransitions(event E) []EnabledTransition[S, HistoryID] {
+	// §scxml-5.10: the event whose transitions are about to be selected is the
+	// _event their guards read — bound before the first guard runs.
+	e.policy.BindCurrentEvent(event, e)
+	return SelectTransitions[S, HistoryID, E](e.host(), event)
+}
+
+// microstep is Appendix D's microstep: exit, run the transitions' content,
+// enter.
+func (e *Engine[S, E]) microstep(transitions []EnabledTransition[S, HistoryID]) {
+	entry := Microstep[S, HistoryID, E](e.host(), transitions)
+	targets := make([][]EntryTarget[S, HistoryID], 0, len(transitions))
+	for _, transition := range transitions {
+		targets = append(targets, transition.Targets)
+	}
+	e.settleCurrentState(targets, entry.StatesToEnter)
+}
+
+// enterStates is Appendix D's enterStates — for the document's initial
+// transition, the whole of §scxml-D-interpret's entry into the initial
+// configuration.
+func (e *Engine[S, E]) enterStates(transitions []EntryTransition[S, HistoryID]) {
+	entry := EnterStates[S, HistoryID, E](e.host(), transitions)
+	targets := make([][]EntryTarget[S, HistoryID], 0, len(transitions))
+	for _, transition := range transitions {
+		targets = append(targets, transition.Targets)
+	}
+	e.settleCurrentState(targets, entry.StatesToEnter)
+}
+
+// takeEvent offers one event to the configuration and takes the microstep it
+// selects.
+func (e *Engine[S, E]) takeEvent(event E) eventOutcome {
+	enabled := e.selectTransitions(event)
+	if len(enabled) == 0 {
+		return eventDiscarded
+	}
+	e.microstep(enabled)
+	return eventTaken
+}
+
+// settleCurrentState points currentState at the atomic state the last
+// transition brought the machine into.
+//
+// Without a <parallel> the configuration is one chain and the entry set ends
+// on its atomic state. With one, currentState is the first state the last
+// targeted transition names, dereferenced, then down through the configuration
+// to an atomic state — the answer every backend gives. A microstep of
+// targetless transitions entered nothing and moves nothing.
+//
+// targets are the target lists as written, in selection order — the
+// microstep's enabled set, or the initial transition.
+func (e *Engine[S, E]) settleCurrentState(targets [][]EntryTarget[S, HistoryID], entered []S) {
+	if len(entered) == 0 {
 		return
 	}
-	nullEvent := e.policy.NullEvent()
-	// Microsteps taken, not loop turns: the turn that finds nothing enabled is
-	// how a macrostep ends, and counting it would spend the budget on the
-	// proof that no budget was needed. The count lives on the engine because
-	// the macrostep does — see macrostepMicrostepsTaken.
-
-	for {
-		oldState := e.currentState
-		preTransitionStates := e.GetActiveStates()
-		newState := e.currentState
-
-		tookTransition := e.policy.ProcessTransition(&newState, nullEvent, e)
-		if !tookTransition {
-			// §scxml-3.13: nothing is enabled by NULL — the macrostep reached
-			// the stable configuration the clause describes, and nothing was
-			// refused however long the chain was.
-			break
-		}
-
-		if e.macrostepMicrostepsTaken == maxMacrostepMicrosteps {
-			// The chain is still going one microstep past the budget, so this
-			// is the case the specification calls a macrostep that cannot end.
-			// Refuse the microstep rather than take it, and publish the
-			// refusal: the configuration left behind is not a stable one and
-			// only this counter says so.
-			e.recordTruncatedMacrostep(oldState)
-			log.Printf("[sce] Engine::checkEventlessTransitions: macrostep still going after %d microsteps; stopped",
-				maxMacrostepMicrosteps)
-			break
-		}
-		e.macrostepMicrostepsTaken++
-
-		e.currentState = newState
-		needsHierarchical := (oldState != newState) || !e.policy.LastTransitionIsTargetless()
-
-		if !needsHierarchical {
-			// Targetless transition -- execute actions only
-			e.policy.ExecuteTransitionActions(e)
-			continue
-		}
-
-		// Hierarchical exit/entry
-		// For parallel state machines, process_transition already performed a full
-		// microstep. Calling handleHierarchicalTransition again would double-run
-		// onexit/onentry.
-		if !e.policy.HasParallelStates() {
-			e.handleHierarchicalTransition(oldState, newState, preTransitionStates)
-		} else {
-			e.resolveCurrentStateToLeaf()
-		}
-
-		// Check for final state
-		if e.isInFinalState() {
-			break
-		}
-	}
-}
-
-// executeTransition dispatches a single transition (§scxml-3.12 / §scxml-3.13).
-//
-// Calls ProcessTransition on the policy; if it returns true, performs the
-// hierarchical exit/entry dance via handleHierarchicalTransition.
-// Matches Rust Engine::execute_transition.
-func (e *Engine[S, E]) executeTransition(event E) eventOutcome {
-	oldState := e.currentState
-	preTransitionStates := e.GetActiveStates()
-	newState := e.currentState
-
-	tookTransition := e.policy.ProcessTransition(&newState, event, e)
-	if !tookTransition {
-		return eventOutcome{}
-	}
-
-	e.currentState = newState
-	isSelfTransition := oldState == newState
-	needsHierarchical := (oldState != newState) ||
-		(isSelfTransition && !e.policy.LastTransitionIsTargetless())
-
-	if !needsHierarchical {
-		// §scxml-3.4: targetless transition -- execute actions only
-		e.policy.ExecuteTransitionActions(e)
-		return eventOutcome{selected: true}
-	}
-
-	// §scxml-3.12: Hierarchical exit/entry
-	//
-	// For parallel state machines the generated process_transition already called
-	// execute_microstep internally. Calling handleHierarchicalTransition again
-	// would double-run onexit/onentry actions.
 	if !e.policy.HasParallelStates() {
-		e.handleHierarchicalTransition(oldState, newState, preTransitionStates)
-	} else {
-		// §scxml-3.3: Still resolve the currentState leaf
-		e.resolveCurrentStateToLeaf()
+		e.currentState = entered[len(entered)-1]
+		return
 	}
-	e.checkEventlessTransitions()
-	return eventOutcome{selected: true, configurationChanged: true}
+	for i := len(targets) - 1; i >= 0; i-- {
+		effective := EffectiveTargetStates[S, HistoryID](PolicyDocument[S, E]{Policy: e.policy}, targets[i])
+		if len(effective) > 0 {
+			e.currentState = effective[0]
+			e.resolveCurrentStateToLeaf()
+			return
+		}
+	}
 }
 
-// handleHierarchicalTransition executes hierarchical exit/entry between two
-// states (§scxml-3.12 / §scxml-3.13).
+// resolveCurrentStateToLeaf settles currentState on an atomic state.
 //
-// 1:1 port of Rust Engine::handle_hierarchical_transition. Handles:
-//   - Internal vs external transition LCA calculation (W3C 5.9.2)
-//   - Active descendant exit before source exit (W3C 3.13)
-//   - Exit chain to LCA
-//   - Ancestor/self transition target re-entry (W3C 3.10, test 579)
-//   - Transition action execution between exit and entry
-//   - Entry chain from LCA to new state
-//   - No-LCA top-level case
-func (e *Engine[S, E]) handleHierarchicalTransition(oldState, newState S, preTransitionStates []S) {
-	log.Printf("[sce] Engine::handleHierarchicalTransition: %v -> %v", oldState, newState)
-
-	// §scxml-5.9.2: Determine LCA based on transition type
-	var lca S
-	var hasLCA bool
-
-	if e.policy.LastTransitionIsInternal() {
-		isSelfTransition := oldState == newState
-		isProperDescendant := !isSelfTransition && e.policy.IsDescendantOf(newState, oldState)
-		isSourceCompound := e.policy.IsCompoundState(oldState)
-
-		if isProperDescendant && isSourceCompound {
-			// §scxml-3.13: Internal to proper descendant in compound -- source is LCA
-			lca = oldState
-			hasLCA = true
-		} else {
-			// W3C 3.13/5.9.2: Non-compound source or non-descendant -- behaves as external
-			lca, hasLCA = FindLCA[S, E](e.policy, oldState, newState)
+// A transition may target a compound state, or a <parallel>, and
+// GetCurrentState must still name the atomic state the machine is IN rather
+// than one it is within.
+//
+// The descent reads the CONFIGURATION rather than recomputing initial or
+// history children: the configuration is what the microstep actually entered,
+// so a descent through it cannot disagree with what happened. Under a
+// <parallel> it takes the first region in document order, so the answer does
+// not depend on the order states happened to become active.
+func (e *Engine[S, E]) resolveCurrentStateToLeaf() {
+	active := e.GetActiveStates()
+	// A region holds one atomic state, so this descends once per level; the
+	// bound is the parent walk's own, so a parent chain that loops is reported
+	// rather than walked forever.
+	for depth := 0; depth < MaxHierarchyDepth; depth++ {
+		if !e.policy.IsCompoundState(e.currentState) && !e.policy.IsParallelState(e.currentState) {
+			return
 		}
-	} else {
-		lca, hasLCA = FindLCA[S, E](e.policy, oldState, newState)
-	}
-
-	if hasLCA {
-		lcaState := lca
-
-		// §scxml-3.13: Exit active descendants of oldState deepest first
-		descendantsToExit := make([]S, 0, 4)
-		for _, s := range preTransitionStates {
-			if s != oldState && e.policy.IsDescendantOf(s, oldState) {
-				descendantsToExit = append(descendantsToExit, s)
-			}
-		}
-		// Sort by document order descending (deeper first)
-		sort.Slice(descendantsToExit, func(i, j int) bool {
-			return e.policy.GetDocumentOrder(descendantsToExit[i]) > e.policy.GetDocumentOrder(descendantsToExit[j])
-		})
-
-		for _, descendant := range descendantsToExit {
-			log.Printf("[sce] handleHierarchicalTransition: exit descendant %v", descendant)
-			e.policy.ExecuteExitActions(descendant, e, preTransitionStates)
-		}
-
-		// §scxml-3.13: Exit from oldState up to (not including) LCA
-		exitChain := BuildExitChain[S, E](e.policy, oldState, lcaState)
-		for _, state := range exitChain {
-			log.Printf("[sce] handleHierarchicalTransition: exit %v", state)
-			e.policy.ExecuteExitActions(state, e, preTransitionStates)
-		}
-
-		// §scxml-3.10 (test 579): Ancestor/self transition -- exit and re-enter target
-		isTargetActive := false
-		for _, s := range preTransitionStates {
-			if s == newState {
-				isTargetActive = true
+		// A compound state with no active child is not a configuration this
+		// can repair, so it is left as it is rather than guessed at.
+		descended := false
+		for _, child := range e.policy.GetChildStates(e.currentState) {
+			if containsState(active, child) {
+				e.currentState = child
+				descended = true
 				break
 			}
 		}
-		if newState == lcaState && isTargetActive {
-			log.Printf("[sce] handleHierarchicalTransition: ancestor/self transition -- exit target %v", newState)
-			e.policy.ExecuteExitActions(newState, e, preTransitionStates)
+		if !descended {
+			return
 		}
-
-		// §scxml-3.13: Execute transition actions between exit and entry
-		e.policy.ExecuteTransitionActions(e)
-
-		// §scxml-3.13: Enter from LCA down to newState
-		var entryChain []S
-		if newState == lcaState {
-			// Ancestor/self case -- enter full subtree from target
-			full := BuildEntryChain[S, E](e.policy, newState)
-			entryChain = make([]S, 0, len(full))
-			for _, s := range full {
-				if s == lcaState || e.policy.IsDescendantOf(s, lcaState) {
-					entryChain = append(entryChain, s)
-				}
-			}
-		} else {
-			entryChain = BuildEntryChainFromAncestor[S, E](e.policy, newState, lcaState)
-		}
-
-		e.executeEntryChain(entryChain)
-
-		if len(entryChain) > 0 {
-			e.currentState = entryChain[len(entryChain)-1]
-		}
-
-		// §scxml-3.3: Resolve currentState to the deepest initial leaf.
-		e.resolveCurrentStateToLeaf()
-	} else {
-		// No LCA -- top-level transition, exit all ancestors of oldState
-		log.Printf("[sce] handleHierarchicalTransition: no LCA (top-level)")
-
-		current := oldState
-		hasMore := true
-		for hasMore {
-			log.Printf("[sce] handleHierarchicalTransition: exit to root: %v", current)
-			e.policy.ExecuteExitActions(current, e, preTransitionStates)
-			parent, ok := e.policy.GetParent(current)
-			if !ok {
-				hasMore = false
-			} else {
-				current = parent
-			}
-		}
-
-		e.policy.ExecuteTransitionActions(e)
-
-		entryChain := BuildEntryChain[S, E](e.policy, newState)
-		e.executeEntryChain(entryChain)
-
-		if len(entryChain) > 0 {
-			e.currentState = entryChain[len(entryChain)-1]
-		}
-
-		e.resolveCurrentStateToLeaf()
 	}
+	log.Printf("[sce] Engine::resolveCurrentStateToLeaf: exceeded %d descents from a compound state — "+
+		"the parent chain does not terminate", MaxHierarchyDepth)
 }
 
-// executeEntryChain enters a whole root-to-target chain, giving every link but
-// the last the next one as its pathChild (§scxml-D-addAncestorStatesToEnter).
-//
-// One place, because all three entry-chain walks in this engine owe the same
-// rule and a chain walked with nil throughout puts two children of one compound
-// state in the configuration.
-func (e *Engine[S, E]) executeEntryChain(entryChain []S) {
-	for i := range entryChain {
-		var pathChild *S
-		if i+1 < len(entryChain) {
-			pathChild = &entryChain[i+1]
-		}
-		log.Printf("[sce] executeEntryChain: enter %v", entryChain[i])
-		e.policy.ExecuteEntryActions(entryChain[i], e, pathChild)
-	}
+// host is this engine as microstep.go reads it.
+func (e *Engine[S, E]) host() engineHost[S, E] {
+	return engineHost[S, E]{PolicyDocument: PolicyDocument[S, E]{Policy: e.policy}, engine: e}
 }
 
-// resolveCurrentStateToLeaf walks currentState down through initial children
-// to the leaf (§scxml-3.3).
+// engineHost is this engine as microstep.go reads it — that file's Document
+// and Run interfaces state what each member answers.
 //
-// For non-parallel SMs: descends into the compound's initial child, calling
-// ExecuteEntryActions for each level, until it reaches an atomic leaf.
-//
-// For parallel SMs: the generated ExecuteEntryActions already recurses, so this
-// is just a pointer walk without entry.
-//
-// Matches Rust Engine::resolve_current_state_to_leaf.
-func (e *Engine[S, E]) resolveCurrentStateToLeaf() {
-	const maxDepth = 50
-	for i := 0; i < maxDepth; i++ {
-		if !e.policy.IsCompoundState(e.currentState) {
-			break
-		}
-		child := e.policy.GetInitialOrHistoryChild(e.currentState)
-		if child == e.currentState {
-			break // No child to descend into
-		}
-		e.currentState = child
-		if !e.policy.HasParallelStates() {
-			// Non-parallel: template doesn't recurse, so we enter here. This
-			// child IS the entry target of its own descent, so it takes its
-			// defaults — nil, not a pathChild.
-			e.policy.ExecuteEntryActions(child, e, nil)
-		}
-	}
+// The document is the policy's static tables; the history values and the
+// configuration are run-time state, which is why this holds the engine.
+type engineHost[S comparable, E comparable] struct {
+	PolicyDocument[S, E]
+	engine *Engine[S, E]
+}
+
+// Configuration implements Run. A copy, because the procedures hold it across
+// the exits and entries that change the policy's own set.
+func (h engineHost[S, E]) Configuration() []S {
+	return append([]S(nil), h.engine.GetActiveStates()...)
+}
+
+// FirstEnabledTransition implements Run.
+func (h engineHost[S, E]) FirstEnabledTransition(state S, event E) (EnabledTransition[S, HistoryID], bool) {
+	return h.engine.policy.FirstEnabledTransition(state, event, h.engine)
+}
+
+// ExitState implements Run.
+func (h engineHost[S, E]) ExitState(state S, configurationBeforeExit []S) {
+	h.engine.policy.ExecuteExitActions(state, h.engine, configurationBeforeExit)
+}
+
+// ExecuteTransitionContent implements Run.
+func (h engineHost[S, E]) ExecuteTransitionContent(transition EnabledTransition[S, HistoryID]) {
+	h.engine.policy.ExecuteTransitionContent(transition.Source, transition.TransitionIndex, h.engine)
+}
+
+// EnterState implements Run.
+func (h engineHost[S, E]) EnterState(state S, isDefaultEntry bool) {
+	h.engine.policy.ExecuteEntryActions(state, h.engine, isDefaultEntry)
+}
+
+// ExecuteHistoryDefaultContent implements Run.
+func (h engineHost[S, E]) ExecuteHistoryDefaultContent(history HistoryID) {
+	h.engine.policy.ExecuteHistoryDefaultContent(history, h.engine)
 }

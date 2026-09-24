@@ -874,8 +874,9 @@ backends/go/lua          Lua script engine via Shopify/go-lua (pure Go, no CGo)
 backends/go/tests        W3C conformance (202/202)
 ```
 
-- **Templates**: `tools/codegen/templates/go/*.go.jinja2` — 1:1 port of Rust templates
-- **Generics**: `Engine[S comparable, E comparable]` with `StatePolicy[S, E]` interface
+- **Templates**: `tools/codegen/templates/go/*.go.jinja2` — ported from the Rust templates, and answering the same questions (`process_transition` / `entry_exit_actions` / `state_machine`)
+- **The microstep**: `backends/go/runtime/microstep.go` is the runtime's one transcription of W3C SCXML Appendix D — selection, conflict removal, exit and entry sets with their `<history>` and `<initial>` defaults, `isInFinalState` — function for function with the Rust runtime's `helpers/microstep.rs` and held to the same hand-worked answers (`microstep_test.go`). `Engine[S, E]` drives it through `engineHost` and runs `mainEventLoop` in the same shape as the C++ and Rust engines. The generated policy supplies its document's tables — child states, initial and history targets as written, document order — and one-state hooks (`FirstEnabledTransition`, `ExecuteEntryActions`, `ExecuteExitActions`, `ExecuteTransitionContent`, `ExecuteHistoryDefaultContent`), for a machine with a `<parallel>` and one without alike
+- **Generics**: `Engine[S comparable, E comparable]` with `StatePolicy[S, E]` interface. A `<history>` is named by the policy's `sce.HistoryID` rather than by a third type parameter, so the type a host names does not change for a fact only the policy uses
 - **State/Event**: `type State int` + `const ( StateXxx State = iota )` pattern
 - **Scripting**: Lua via Shopify/go-lua (pure Go, no C compiler required)
 - **JSON Builtins**: `//go:embed json_builtins.lua` — shared with C++/Rust/Kotlin

@@ -92,6 +92,39 @@ var StatechartHostProcessorAllStates = []StatechartHostProcessorState{
 	StatechartHostProcessorStateDispatching,
 }
 
+// StatechartHostProcessorTarget is one token of a target list, as the document wrote
+// it (W3C SCXML 3.13): a state, or a <history> the engine dereferences.
+type StatechartHostProcessorTarget = sce.EntryTarget[StatechartHostProcessorState, sce.HistoryID]
+
+// ======================================================================
+// Document structure (W3C SCXML 3.2-3.4, 3.10)
+//
+// Package-level tables, because the structure is a fact about the document
+// and not about a run: the engine's Appendix D procedures read them through
+// the policy methods below, and a transition's target list is handed out as
+// a slice of them rather than rebuilt on every selection.
+// ======================================================================
+
+// childStatesOfStatechartHostProcessor is §scxml-D-getChildStates per state: its
+// <state>, <parallel> and <final> children, in document order.
+var childStatesOfStatechartHostProcessor = [1][]StatechartHostProcessorState{
+}
+
+// initialTargetsOfStatechartHostProcessor is each compound state's initial transition
+// target, as written (§scxml-3.3).
+var initialTargetsOfStatechartHostProcessor = [1][]StatechartHostProcessorTarget{
+}
+
+// documentInitialTargetsOfStatechartHostProcessor is the target of the document's own
+// initial transition, as written (§scxml-3.2).
+var documentInitialTargetsOfStatechartHostProcessor = []StatechartHostProcessorTarget{sce.StateTarget[StatechartHostProcessorState, sce.HistoryID](StatechartHostProcessorStateDispatching)}
+
+// transitionTargetsOfStatechartHostProcessor is each transition's target list, as
+// written (§scxml-3.13), by source state and the transition's index among its
+// source's own transitions. A targetless transition's entry is empty.
+var transitionTargetsOfStatechartHostProcessor = [1][][]StatechartHostProcessorTarget{
+}
+
 // ======================================================================
 // Event type (W3C SCXML 3.12)
 // ======================================================================
@@ -128,13 +161,6 @@ func (e StatechartHostProcessorEvent) String() string {
 // ======================================================================
 
 type StatechartHostProcessorPolicy struct {
-	// W3C SCXML 3.13: Last transition metadata
-	lastTransitionIsInternal  bool
-	lastTransitionIsTargetless bool
-	lastTransitionSourceState StatechartHostProcessorState
-	// W3C SCXML 3.13: Transition action tracking
-	lastTransitionIndex   int
-	hasTransitionActions   bool
 	// W3C SCXML 5.10.1: External event flag
 	nextEventIsExternal bool
 	pendingEventName string
@@ -167,7 +193,6 @@ type StatechartHostProcessorPolicy struct {
 // NewStatechartHostProcessorPolicy creates a new policy with default values.
 func NewStatechartHostProcessorPolicy() StatechartHostProcessorPolicy {
 	return StatechartHostProcessorPolicy{
-		lastTransitionSourceState: StatechartHostProcessorStateDispatching,
 	}
 }
 
@@ -436,29 +461,45 @@ func (p *StatechartHostProcessorPolicy) GetParent(state StatechartHostProcessorS
 	return 0, false
 }
 
-// IsCompoundState returns true if state has children (W3C SCXML 3.3).
+// IsCompoundState returns true if state is a <state> with child states — exactly
+// the states that have an initial transition. A <parallel> is not compound
+// (W3C SCXML 3.3).
 func (p *StatechartHostProcessorPolicy) IsCompoundState(state StatechartHostProcessorState) bool {
-	switch state {
-	}
-	return false
+	return len(initialTargetsOfStatechartHostProcessor[state]) > 0
 }
 
 func (p *StatechartHostProcessorPolicy) IsParallelState(_ StatechartHostProcessorState) bool { return false }
-func (p *StatechartHostProcessorPolicy) GetParallelRegions(_ StatechartHostProcessorState) []StatechartHostProcessorState { return nil }
 
-// IsDescendantOf returns true if desc is a descendant of anc (W3C SCXML 3.12).
-func (p *StatechartHostProcessorPolicy) IsDescendantOf(desc, anc StatechartHostProcessorState) bool {
-	current := desc
-	for {
-		parent, ok := p.GetParent(current)
-		if !ok {
-			return false
-		}
-		if parent == anc {
-			return true
-		}
-		current = parent
-	}
+// GetChildStates returns state's <state>, <parallel> and <final> children, in
+// document order — for a <parallel>, its regions (§scxml-D-getChildStates).
+func (p *StatechartHostProcessorPolicy) GetChildStates(state StatechartHostProcessorState) []StatechartHostProcessorState {
+	return childStatesOfStatechartHostProcessor[state]
+}
+
+// GetInitialTargets returns a compound state's initial transition target, as
+// written; the engine's entry procedures dereference a <history> among them
+// (W3C SCXML 3.3).
+func (p *StatechartHostProcessorPolicy) GetInitialTargets(state StatechartHostProcessorState) []StatechartHostProcessorTarget {
+	return initialTargetsOfStatechartHostProcessor[state]
+}
+
+// GetDocumentInitialTargets returns the target of the document's own initial
+// transition, as written (W3C SCXML 3.2).
+func (p *StatechartHostProcessorPolicy) GetDocumentInitialTargets() []StatechartHostProcessorTarget {
+	return documentInitialTargetsOfStatechartHostProcessor
+}
+
+// W3C SCXML 3.10: this document declares no <history>, so no target list names
+// one and the engine never asks the two below; answering would mean inventing
+// one.
+func (p *StatechartHostProcessorPolicy) GetHistoryParent(history sce.HistoryID) StatechartHostProcessorState {
+	panic(fmt.Sprintf("StatechartHostProcessorPolicy declares no <history>; asked for %d", history))
+}
+func (p *StatechartHostProcessorPolicy) GetHistoryDefaultTargets(history sce.HistoryID) []StatechartHostProcessorTarget {
+	panic(fmt.Sprintf("StatechartHostProcessorPolicy declares no <history>; asked for %d", history))
+}
+func (p *StatechartHostProcessorPolicy) HistoryValue(_ sce.HistoryID) ([]StatechartHostProcessorState, bool) {
+	return nil, false
 }
 
 // GetDocumentOrder returns the document order index (W3C SCXML Appendix D).
@@ -507,43 +548,6 @@ func (p *StatechartHostProcessorPolicy) NullEvent() StatechartHostProcessorEvent
 	return StatechartHostProcessorEventNull
 }
 
-// GetInitialChildren returns initial children of a compound state (W3C SCXML 3.6).
-func (p *StatechartHostProcessorPolicy) GetInitialChildren(state StatechartHostProcessorState) []StatechartHostProcessorState {
-	switch state {
-	}
-	return nil
-}
-
-// LastTransitionIsInternal returns the internal transition flag (W3C SCXML 3.13).
-func (p *StatechartHostProcessorPolicy) LastTransitionIsInternal() bool {
-	return p.lastTransitionIsInternal
-}
-
-// SetLastTransitionIsInternal sets the internal transition flag.
-func (p *StatechartHostProcessorPolicy) SetLastTransitionIsInternal(value bool) {
-	p.lastTransitionIsInternal = value
-}
-
-// LastTransitionIsTargetless returns the targetless transition flag (W3C SCXML 3.13).
-func (p *StatechartHostProcessorPolicy) LastTransitionIsTargetless() bool {
-	return p.lastTransitionIsTargetless
-}
-
-// SetLastTransitionIsTargetless sets the targetless transition flag.
-func (p *StatechartHostProcessorPolicy) SetLastTransitionIsTargetless(value bool) {
-	p.lastTransitionIsTargetless = value
-}
-
-// LastTransitionSourceState returns the source state of the last transition.
-func (p *StatechartHostProcessorPolicy) LastTransitionSourceState() StatechartHostProcessorState {
-	return p.lastTransitionSourceState
-}
-
-// SetLastTransitionSourceState sets the source state of the last transition.
-func (p *StatechartHostProcessorPolicy) SetLastTransitionSourceState(state StatechartHostProcessorState) {
-	p.lastTransitionSourceState = state
-}
-
 
 // SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
 func (p *StatechartHostProcessorPolicy) SetNextEventIsExternal(value bool) {
@@ -588,14 +592,6 @@ func (p *StatechartHostProcessorPolicy) GetActiveStates() []StatechartHostProces
 // which is false above; the method exists because the interface is one contract.
 func (p *StatechartHostProcessorPolicy) SetActiveStates(_ []StatechartHostProcessorState) {}
 func (p *StatechartHostProcessorPolicy) HasExternalEventFlag() bool { return true }
-// GetInitialOrHistoryChild returns the initial child considering history (W3C SCXML 3.11).
-func (p *StatechartHostProcessorPolicy) GetInitialOrHistoryChild(state StatechartHostProcessorState) StatechartHostProcessorState {
-	children := p.GetInitialChildren(state)
-	if len(children) > 0 {
-		return children[0]
-	}
-	return state
-}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *StatechartHostProcessorPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[StatechartHostProcessorEvent], _ *sce.Engine[StatechartHostProcessorState, StatechartHostProcessorEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).
@@ -639,13 +635,11 @@ func (p *StatechartHostProcessorPolicy) ClearEventMetadata() {
 
 
 
-
-// ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
+// ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
+// configuration, runs its <onentry>, and its <initial> transition's content when
+// its initial state is entered by default.
 //line statechart_host_processor.scxml:27
-func (p *StatechartHostProcessorPolicy) ExecuteEntryActions(state StatechartHostProcessorState, engine *sce.Engine[StatechartHostProcessorState, StatechartHostProcessorEvent], pathChild *StatechartHostProcessorState) {
-	// Only a `<parallel>` machine descends into defaults here, so a machine
-	// without one has nothing to tell an ancestor entry from a target entry.
-	_ = pathChild
+func (p *StatechartHostProcessorPolicy) ExecuteEntryActions(state StatechartHostProcessorState, engine *sce.Engine[StatechartHostProcessorState, StatechartHostProcessorEvent], isDefaultEntry bool) {
 	p.ensureScriptEngine()
 	switch state {
 	case StatechartHostProcessorStateDispatching:
@@ -717,9 +711,21 @@ func (p *StatechartHostProcessorPolicy) ExecuteEntryActions(state StatechartHost
 	}
 }
 
-// ExecuteExitActions executes onexit actions for a state (W3C SCXML 3.9).
+// ExecuteHistoryDefaultContent runs a <history>'s default transition content
+// (W3C SCXML 3.10.2), after its parent's onentry (and after the parent's own
+// <initial> content) when the history was taken with nothing recorded. The
+// engine asks for it by the entry set's defaultHistoryContent answer; a history
+// that restored what it recorded runs nothing.
 //line statechart_host_processor.scxml:27
-func (p *StatechartHostProcessorPolicy) ExecuteExitActions(state StatechartHostProcessorState, engine *sce.Engine[StatechartHostProcessorState, StatechartHostProcessorEvent], preTransitionActive []StatechartHostProcessorState) {
+func (p *StatechartHostProcessorPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StatechartHostProcessorState, StatechartHostProcessorEvent]) {
+	// W3C SCXML 3.10.2: no <history> in this document has default content.
+}
+
+// ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
+// removes it from the configuration, cancels its invocations and runs its
+// <onexit>.
+//line statechart_host_processor.scxml:27
+func (p *StatechartHostProcessorPolicy) ExecuteExitActions(state StatechartHostProcessorState, engine *sce.Engine[StatechartHostProcessorState, StatechartHostProcessorEvent], configurationBeforeExit []StatechartHostProcessorState) {
 	p.ensureScriptEngine()
 	switch state {
 	default:
@@ -727,101 +733,96 @@ func (p *StatechartHostProcessorPolicy) ExecuteExitActions(state StatechartHostP
 	}
 }
 
-// ProcessTransition evaluates guards and takes a matching transition (W3C SCXML 3.13).
-// Returns true if a transition was taken.
+
+
+// BindCurrentEvent binds the event whose transitions are about to be selected as
+// the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
+// and not for an eventless selection, which has no event of its own.
 //line statechart_host_processor.scxml:27
-func (p *StatechartHostProcessorPolicy) ProcessTransition(currentState *StatechartHostProcessorState, event StatechartHostProcessorEvent, engine *sce.Engine[StatechartHostProcessorState, StatechartHostProcessorEvent]) bool {
-	// W3C SCXML 5.10: Bind _event system variable for guard evaluation
+func (p *StatechartHostProcessorPolicy) BindCurrentEvent(event StatechartHostProcessorEvent, engine *sce.Engine[StatechartHostProcessorState, StatechartHostProcessorEvent]) {
 	if event != StatechartHostProcessorEventNull {
 		// §scxml-B-2-8-1: the rung the payload got, handed to the engine
 		// rather than dropped. This is the only frame that has both the
 		// reading and the event it belongs to.
 		engine.NotePayloadReading(event, p.setCurrentEvent(p.GetEventName(event)))
 	}
-
-	// W3C SCXML 3.12: Try transitions in current state first
-	if p.tryTransitionInState(*currentState, event, currentState, engine) {
-		return true
-	}
-
-
-	return false
 }
 
-
-// tryTransitionInState checks transitions for a single state.
+// FirstEnabledTransition is Appendix D selectTransitions, the half only this
+// document can answer: the first of state's own transitions, in document order,
+// that event enables and whose guard holds. The engine walks the atomic states
+// and their ancestors and keeps the ordered set; the null event asks for
+// eventless transitions.
 //line statechart_host_processor.scxml:27
-func (p *StatechartHostProcessorPolicy) tryTransitionInState(checkState StatechartHostProcessorState, event StatechartHostProcessorEvent, currentState *StatechartHostProcessorState, engine *sce.Engine[StatechartHostProcessorState, StatechartHostProcessorEvent]) bool {
-	switch checkState {
+func (p *StatechartHostProcessorPolicy) FirstEnabledTransition(state StatechartHostProcessorState, event StatechartHostProcessorEvent, engine *sce.Engine[StatechartHostProcessorState, StatechartHostProcessorEvent]) (sce.EnabledTransition[StatechartHostProcessorState, sce.HistoryID], bool) {
+	switch state {
 	case StatechartHostProcessorStateDispatching:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == StatechartHostProcessorEventPlainArrived {
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = true
-			p.lastTransitionSourceState = StatechartHostProcessorStateDispatching
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[StatechartHostProcessorState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 0,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == StatechartHostProcessorEventTurnDone {
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = true
-			p.lastTransitionSourceState = StatechartHostProcessorStateDispatching
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[StatechartHostProcessorState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 1,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == StatechartHostProcessorEventErrorExecution {
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = true
-			p.lastTransitionSourceState = StatechartHostProcessorStateDispatching
-			p.lastTransitionIndex = 2
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[StatechartHostProcessorState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 2,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	}
-	return false
+	return sce.EnabledTransition[StatechartHostProcessorState, sce.HistoryID]{}, false
 }
 
-// ExecuteTransitionActions executes actions for the last taken transition (W3C SCXML 3.13).
+// ExecuteTransitionContent runs one transition's executable content (W3C SCXML
+// 3.13), between the microstep's exits and its entries.
 //line statechart_host_processor.scxml:27
-func (p *StatechartHostProcessorPolicy) ExecuteTransitionActions(engine *sce.Engine[StatechartHostProcessorState, StatechartHostProcessorEvent]) {
+func (p *StatechartHostProcessorPolicy) ExecuteTransitionContent(source StatechartHostProcessorState, transitionIndex int, engine *sce.Engine[StatechartHostProcessorState, StatechartHostProcessorEvent]) {
 	p.ensureScriptEngine()
-	if !p.hasTransitionActions {
-		return
-	}
-	source := p.lastTransitionSourceState
-	idx := p.lastTransitionIndex
-	if source == StatechartHostProcessorStateDispatching && idx == 0 {
-		//line statechart_host_processor.scxml:48
+	switch source {
+	case StatechartHostProcessorStateDispatching:
+		switch transitionIndex {
+		case 0:
+			//line statechart_host_processor.scxml:48
 
 	// W3C SCXML 5.3: <assign location="plain" expr="plain + 1">
 	if err := p.assignVariable(`plain`, `_scxml_add(plain, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<assign> to 'plain' failed"))
 	}
 
-		return
-	}
-	if source == StatechartHostProcessorStateDispatching && idx == 1 {
-		//line statechart_host_processor.scxml:51
+		case 1:
+			//line statechart_host_processor.scxml:51
 
 	// W3C SCXML 5.3: <assign location="served" expr="served + 1">
 	if err := p.assignVariable(`served`, `_scxml_add(served, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<assign> to 'served' failed"))
 	}
 
-		return
-	}
-	if source == StatechartHostProcessorStateDispatching && idx == 2 {
-		//line statechart_host_processor.scxml:54
+		case 2:
+			//line statechart_host_processor.scxml:54
 
 	// W3C SCXML 5.3: <assign location="refused" expr="refused + 1">
 	if err := p.assignVariable(`refused`, `_scxml_add(refused, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(StatechartHostProcessorEventErrorExecution, "<assign> to 'refused' failed"))
 	}
 
-		return
+		}
 	}
 }
