@@ -472,6 +472,31 @@ apply_sce_test_policies(script_language_seam_test)
 
 add_test(NAME ScriptLanguageSeam COMMAND script_language_seam_test)
 
+# In() answers for the session it is evaluated in (§scxml-5.9.1). Names both
+# engines for the reason the seam target above does: each answered from other
+# sessions' configurations, and the provider alone would run only one of them.
+add_executable(in_predicate_session_scope_test
+    engine/InPredicateSessionScopeTest.cpp
+)
+
+target_include_directories(in_predicate_session_scope_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/tests
+)
+
+target_link_libraries(in_predicate_session_scope_test
+    PRIVATE
+        sce_runtime
+        GTest::gtest_main
+        pthread
+)
+
+apply_sce_test_policies(in_predicate_session_scope_test)
+
+add_test(NAME InPredicateSessionScope COMMAND in_predicate_session_scope_test)
+
 # ============================================================================
 # ECMA-262 through a Lua-LOWERED C++ artifact, compiled and run
 #

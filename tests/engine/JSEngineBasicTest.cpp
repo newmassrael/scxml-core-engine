@@ -405,24 +405,38 @@ TEST_F(JSEngineBasicTest, W3C_InFunction_StateMachineIntegration_ShouldReturnCor
     </state>
 </scxml>)";
 
+    // In() evaluated in the machine's own session, where §scxml-5.9.1 says
+    // it answers.
+    auto inMachineSession = [this](const std::string &sessionId, const std::string &expression) {
+        auto result = engine_->evaluateExpression(sessionId, expression).get();
+        EXPECT_TRUE(result.isSuccess()) << expression << " in " << sessionId;
+        return result.getValue<bool>();
+    };
+
     // Create StateMachine with controlled scope for proper lifecycle management
     // Note: Must use shared_ptr because StateMachine uses shared_from_this() internally
     {
         auto sm = std::make_shared<SCE::StateMachine>(SCE::JSEngine::instance());
         ASSERT_TRUE(sm->loadSCXMLFromString(scxml)) << "Failed to load SCXML";
         ASSERT_TRUE(sm->start()) << "Failed to start StateMachine";
+        const std::string machineSession = sm->getSessionId();
 
         // All state checks must be performed while StateMachine is alive and registered
-        expectExpressionValue("In('idle')", true);      // StateMachine should be in 'idle' state initially
-        expectExpressionValue("In('running')", false);  // StateMachine should NOT be in 'running' state initially
+        EXPECT_TRUE(inMachineSession(machineSession, "In('idle')"));
+        EXPECT_FALSE(inMachineSession(machineSession, "In('running')"));
+
+        // This fixture's own session is not the machine's: it is in no state,
+        // whatever the machine is in. It used to see the machine's
+        // configuration, because In() asked every session's state query.
+        expectExpressionValue("In('idle')", false);
 
         // Test state transition
         sm->processEvent("start", "");
-        expectExpressionValue("In('idle')", false);    // Should no longer be in 'idle'
-        expectExpressionValue("In('running')", true);  // Should now be in 'running'
+        EXPECT_FALSE(inMachineSession(machineSession, "In('idle')"));
+        EXPECT_TRUE(inMachineSession(machineSession, "In('running')"));
+        expectExpressionValue("In('running')", false);
 
         sm->stop();
-        // StateMachine is still registered but stopped - In() should reflect this
     }  // StateMachine destroyed here, automatically unregistered from JSEngine
 
     // After StateMachine destruction, In() should return false for any state

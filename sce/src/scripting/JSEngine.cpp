@@ -463,6 +463,10 @@ bool JSEngine::createSessionInternal(const std::string &sessionId, const std::st
     session.parentSessionId = parentSessionId;
 
     sessions_[sessionId] = std::move(session);
+    {
+        std::lock_guard<std::mutex> lock(stateQueryCallbacksMutex_);
+        contextSessions_[ctx] = sessionId;
+    }
 
     // §scxml-6.4: Register parent-child relationship in SessionRegistry
     // Enables engine-agnostic parent session lookup for event routing
@@ -489,6 +493,10 @@ bool JSEngine::destroySessionInternal(const std::string &sessionId) {
     SessionRegistry::instance().cleanupSession(sessionId);
 
     if (it->second.jsContext) {
+        {
+            std::lock_guard<std::mutex> lock(stateQueryCallbacksMutex_);
+            contextSessions_.erase(it->second.jsContext);
+        }
         SCE_LOG_DEBUG("JSEngine: destroySessionInternal() - Freeing JSContext for session: {}", sessionId);
         // Force garbage collection before freeing context
         if (runtime_) {
@@ -762,7 +770,7 @@ void JSEngine::setupSystemVariables(JSContext *ctx) {
         return JS_ThrowInternalError(ctx, "JSEngine instance not bound to context");
     }
     std::string stateNameStr(stateName);
-    bool result = engine->checkStateActive(stateNameStr);
+    bool result = engine->checkStateActive(ctx, stateNameStr);
 
     JS_FreeCString(ctx, stateName);
     return JS_NewBool(ctx, result);
@@ -869,20 +877,26 @@ void JSEngine::setupSystemVariables(JSContext *ctx) {
     }
 }
 
-bool JSEngine::checkStateActive(const std::string &stateName) const {
+bool JSEngine::checkStateActive(JSContext *ctx, const std::string &stateName) const {
     std::lock_guard<std::mutex> lock(stateQueryCallbacksMutex_);
 
     // §scxml-5.9.1: In() predicate function. Every engine that runs a
     // session registers its state query here — the interpreter as well as
     // the generated machines — so this tier asks a callback and never
     // reaches into the runtime tier for a state machine of its own.
-    for (const auto &pair : stateQueryCallbacks_) {
-        const auto &callback = pair.second;
-        if (callback && callback(stateName)) {
-            return true;
-        }
+    //
+    // It asks the callback of the session the expression is evaluated in,
+    // and no other: In() is about that session's configuration. This engine
+    // is one instance for every session, and asking each registered
+    // callback in turn made In('s') true in one session whenever any other
+    // session — a parent, an invoked child, an unrelated machine — was in a
+    // state of that id. A session with no state query answers false.
+    auto session = contextSessions_.find(ctx);
+    if (session == contextSessions_.end()) {
+        return false;
     }
-    return false;
+    auto callback = stateQueryCallbacks_.find(session->second);
+    return callback != stateQueryCallbacks_.end() && callback->second && callback->second(stateName);
 }
 
 bool JSEngine::registerGlobalFunction(const std::string &functionName,

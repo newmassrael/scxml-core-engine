@@ -460,6 +460,10 @@ private:
     std::mutex globalFunctionsMutex_;
     // === In() integration: each session's state query ===
     std::unordered_map<std::string, StateQueryCallback> stateQueryCallbacks_;  // sessionId -> callback
+    // The session each context evaluates for, so In() asks that session's
+    // callback and no other. Guarded by stateQueryCallbacksMutex_ with the
+    // callbacks, since In() reads both in one lookup.
+    std::unordered_map<JSContext *, std::string> contextSessions_;
     mutable std::mutex stateQueryCallbacksMutex_;
 
     // === Internal Event System ===
@@ -527,8 +531,9 @@ private:
     // Static callback functions for QuickJS
     static JSValue inFunctionWrapper(JSContext *ctx, JSValue this_val, int argc, JSValue *argv);
 
-    // Helper method for In() function
-    bool checkStateActive(const std::string &stateName) const;
+    // Helper method for In() function: whether `stateName` is active in the
+    // configuration of the session `ctx` evaluates for.
+    bool checkStateActive(JSContext *ctx, const std::string &stateName) const;
 
     static JSValue consoleFunctionWrapper(JSContext *ctx, JSValue this_val, int argc, JSValue *argv);
     static JSValue queueErrorEventWrapper(JSContext *ctx, JSValue this_val, int argc, JSValue *argv);

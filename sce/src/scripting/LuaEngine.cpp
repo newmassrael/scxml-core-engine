@@ -431,8 +431,12 @@ void LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
     // `lua_compare(LUA_OPEQ)` — the coercing comparison — where the clause
     // says `===`.
 
-    // In(stateId): §scxml-5.9.1 In() predicate
-    // Uses C++ state query callbacks
+    // In(stateId): §scxml-5.9.1 In() predicate, answered by the state query
+    // callback of the session the expression is evaluated in and no other:
+    // In() is about that session's configuration. A session with no callback
+    // answers false. Falling back to every session's callback made In('s')
+    // true whenever any session — a parent, an invoked child, an unrelated
+    // machine — was in a state of that id.
     lua_pushcfunction(L, [](lua_State *Ls) -> int {
         const char *stateId = luaL_checkstring(Ls, 1);
 
@@ -453,13 +457,6 @@ void LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
             if (it != engine->stateQueryCallbacks_.end() && it->second) {
                 lua_pushboolean(Ls, it->second(stateId) ? 1 : 0);
                 return 1;
-            }
-            // Check all callbacks (parent sessions might have In() queries)
-            for (auto &[callbackSessionId, callback] : engine->stateQueryCallbacks_) {
-                if (callback && callback(stateId)) {
-                    lua_pushboolean(Ls, 1);
-                    return 1;
-                }
             }
         }
 

@@ -1,0 +1,54 @@
+# Mutation cases for "In() answers for the session it is evaluated in".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/in_answers_for_the_evaluating_session.cases`.
+#
+# §scxml-5.9.1 defines In(stateId) over the evaluating session's configuration.
+# Both script engines are one instance for every session, and both answered
+# from other sessions: JSEngine asked every registered state query, LuaEngine
+# did so whenever the evaluating session had none of its own. Each case puts
+# one engine's defect back; `InPredicateSessionScope` refuses it at a session
+# that is in `t` being asked about `s`, which only another session is in.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^InPredicateSessionScope$'
+mutation_targets sce/src/scripting/JSEngine.cpp
+mutation_targets sce/src/scripting/LuaEngine.cpp
+mutation_oracles tests/engine/InPredicateSessionScopeTest.cpp
+
+mutation_case "QuickJS asks every session's state query" <<'PY'
+edit("sce/src/scripting/JSEngine.cpp",
+     r'''    auto session = contextSessions_.find(ctx);
+    if (session == contextSessions_.end()) {
+        return false;
+    }
+    auto callback = stateQueryCallbacks_.find(session->second);
+    return callback != stateQueryCallbacks_.end() && callback->second && callback->second(stateName);''',
+     r'''    (void)contextSessions_.find(ctx);
+    for (const auto &pair : stateQueryCallbacks_) {
+        if (pair.second && pair.second(stateName)) {
+            return true;
+        }
+    }
+    return false;''')
+PY
+
+mutation_case "Lua falls back to every session's state query" <<'PY'
+edit("sce/src/scripting/LuaEngine.cpp",
+     r'''                lua_pushboolean(Ls, it->second(stateId) ? 1 : 0);
+                return 1;
+            }
+        }''',
+     r'''                lua_pushboolean(Ls, it->second(stateId) ? 1 : 0);
+                return 1;
+            }
+            for (auto &[callbackSessionId, callback] : engine->stateQueryCallbacks_) {
+                if (callback && callback(stateId)) {
+                    lua_pushboolean(Ls, 1);
+                    return 1;
+                }
+            }
+        }''')
+PY
