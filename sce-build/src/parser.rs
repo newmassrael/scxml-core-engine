@@ -3436,10 +3436,7 @@ impl SCXMLParser {
             // Check for inline <scxml> child element (static content)
             if let Some(scxml_child_elem) = scxml_child(&content_elem, "scxml") {
                 has_inline_scxml = true;
-                // Extract inline SCXML text via roxmltree range
-                let doc_text = scxml_child_elem.document().input_text();
-                let range = scxml_child_elem.range();
-                inline_scxml_text = doc_text[range].to_string();
+                inline_scxml_text = inline_document_text(&scxml_child_elem);
             }
         }
 
@@ -3606,16 +3603,7 @@ impl SCXMLParser {
                         crate::mesh::deploy::SYNTH_INVOKE_INFIX,
                         field_suffix,
                     );
-                    let inline_with_ns = if !inline_scxml_text.contains("xmlns=") {
-                        inline_scxml_text.replacen(
-                            "<scxml",
-                            "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\"",
-                            1,
-                        )
-                    } else {
-                        inline_scxml_text.clone()
-                    };
-                    let xml_content = format!("<?xml version=\"1.0\"?>\n\n{inline_with_ns}");
+                    let xml_content = format!("<?xml version=\"1.0\"?>\n\n{inline_scxml_text}");
                     // Recursive parse uses a fresh parser instance — sharing
                     // `self` would cross-contaminate document_order_counter /
                     // invoke_counter between parent and child. Asymmetric
@@ -5691,6 +5679,35 @@ fn character_data(node: &roxmltree::Node) -> String {
 /// canonical-XML convention, which `<data>` and `<assign>` both take.
 fn serialize_node_c14n(node: &roxmltree::Node) -> String {
     serialize_node_inner(node, &inherited_bindings(node), true)
+}
+
+/// §scxml-6.4: an in-line child `<scxml>` under `<invoke><content>` as a
+/// document of its own — the text its author wrote, with the bindings it
+/// inherits from the enclosing document ([`inherited_bindings`]) declared on
+/// its root.
+///
+/// The declarations go in right after the root's name, so no line of the
+/// child moves, and the child keeps its author's text, comments included —
+/// the text the document written beside the parent for later build steps
+/// carries.
+///
+/// ⚠ Until 2026-09-24 the child was the text alone, and the SCXML namespace
+/// was added only when that text held no `xmlns=` anywhere. A child whose
+/// data carried `<books xmlns="">` arrived in no namespace, and one using a
+/// prefix its parent declared named an unbound prefix: both failed to parse,
+/// though both documents are valid (measured 2026-09-24).
+fn inline_document_text(root: &roxmltree::Node) -> String {
+    let text = &root.document().input_text()[root.range()];
+    let after_name = 1 + written_element_name(root).len();
+    let declarations: String = inherited_bindings(root)
+        .into_iter()
+        .map(namespace_declaration)
+        .collect();
+    format!(
+        "{}{declarations}{}",
+        &text[..after_name],
+        &text[after_name..]
+    )
 }
 
 /// A namespace binding as `(prefix, URI)`; the prefix `None` is the default

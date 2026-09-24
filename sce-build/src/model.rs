@@ -1308,8 +1308,9 @@ pub struct ScxmlInvokeInfo {
     #[cfg_attr(test, schemars(skip))]
     pub inline_child: Option<Box<SCXMLModel>>,
     /// Raw SCXML text the parser wrapped for [`Self::inline_child`]
-    /// (`<?xml version="1.0"?>` prologue + `<scxml>…</scxml>` body
-    /// with the W3C namespace stamped on the root). Co-populated with
+    /// (`<?xml version="1.0"?>` prologue + the `<scxml>…</scxml>` body as
+    /// its author wrote it, with the namespace bindings it inherits from
+    /// the parent declared on its root). Co-populated with
     /// `inline_child` (both `Some` or both `None`) so codegen can
     /// re-materialise the synth SCXML next to the parent's `_sm.*`
     /// in `-o` when a downstream consumer needs it on disk:
