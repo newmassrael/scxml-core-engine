@@ -71,8 +71,15 @@ fn observed_attribute<'a, 'input>(
             .map_or_else(|| a.name().to_string(), |p| format!("{p}:{}", a.name())),
         None => a.name().to_string(),
     };
+    // `actual` is the value as written (SCE_ERROR_CONTRACT.md §2.1), which is
+    // the decoded value unless it holds an entity reference (`list&lt;int64&gt;`).
+    let input = node.document().input_text();
     node.attributes()
         .find(|a| a.value() == actual)
+        .or_else(|| {
+            node.attributes()
+                .find(|a| input.get(a.range_value()) == Some(actual.as_str()))
+        })
         .or_else(|| node.attributes().find(|a| qualified(a) == actual))
         .or_else(|| {
             node.attributes()
@@ -6783,6 +6790,25 @@ fn parse_one_test_vector(
             },
         )
     })?;
+    // A test vector's `value` names one scalar. A `list<T>` return has no
+    // single-literal spelling, so it is refused here rather than read as
+    // whatever the element parser would make of it.
+    let return_type = return_type.scalar().ok_or_else(|| {
+        located(
+            node,
+            diagnostic_label,
+            ValidationError::AttributeRuleViolated {
+                element: "sce:test-vector".into(),
+                attr: "value".into(),
+                value: value_attr.to_string(),
+                rule: format!(
+                    "<sce:test-vector value> is one scalar literal, and this algorithm returns {}; \
+                     check a list-returning algorithm through the conformance harness instead",
+                    return_type.as_attr()
+                ),
+            },
+        )
+    })?;
 
     let value = parse_test_vector_value(value_attr, return_type).map_err(|reason| {
         located(
@@ -6873,7 +6899,7 @@ fn parse_algorithm_signature(
     doc_name: &str,
 ) -> Result<AlgorithmSignature, Located<ForgeError>> {
     let mut params = Vec::new();
-    let mut return_type: Option<SceType> = None;
+    let mut return_type: Option<AlgorithmValueType> = None;
     let mut returns_max_size: Option<u32> = None;
     let mut seen_return = false;
 
@@ -6906,14 +6932,32 @@ fn parse_algorithm_signature(
                         },
                     )
                 })?;
-                let sce_type = read_type_attr(
+                let sce_type = read_algorithm_value_type(
                     &child,
                     doc_name,
-                    TypeGrammar::Scalar,
                     format!("<sce:param name=\"{name}\">"),
                     "type",
                     type_str,
                 )?;
+                // v1 lists are built and returned, not passed in: a list
+                // parameter needs a borrowed view per element type on C11 and
+                // an iteration rule on every backend, which v1 does not
+                // define. Refused on the element that declares it.
+                if sce_type.list_elem().is_some() {
+                    return Err(located(
+                        &child,
+                        doc_name,
+                        ValidationError::AttributeRuleViolated {
+                            element: format!("<sce:param name=\"{name}\">"),
+                            attr: "type".into(),
+                            value: value_as_written(&child, "type", type_str),
+                            rule: "a scalar or bytes — a list<T> is a buffer an algorithm \
+                                   builds and returns; list<T> parameters are not supported in \
+                                   v1 (SCE_FORGE.md §4.12)"
+                                .into(),
+                        },
+                    ));
+                }
                 params.push(AlgorithmParam { name, sce_type });
             }
             "return" => {
@@ -6930,58 +6974,60 @@ fn parse_algorithm_signature(
                 }
                 seen_return = true;
                 if let Some(type_str) = child.attribute("type") {
-                    let sce_type = read_type_attr(
+                    let sce_type = read_algorithm_value_type(
                         &child,
                         doc_name,
-                        TypeGrammar::Scalar,
                         "<sce:return>".into(),
                         "type",
                         type_str,
                     )?;
                     return_type = Some(sce_type);
                 }
-                // Cap on a `bytes` return's output buffer (the no-alloc
-                // profile's fixed capacity). Mirrors the `<sce:helper
-                // returns-max-size>` attribute. A bytes return must declare
-                // it and nothing else has a buffer to bound, so both halves
-                // of that rule are judged here, on this element.
+                // Cap on a buffer return's output buffer — `bytes` or
+                // `list<T>` (the no-alloc profile's fixed capacity). Mirrors
+                // the `<sce:helper returns-max-size>` attribute. A buffer
+                // return must declare it and nothing else has a buffer to
+                // bound, so both halves of that rule are judged here, on this
+                // element.
                 //
                 // ⚠ Only the first half was judged, after the body was read
                 // and at the body's row; a `returns-max-size` on a scalar
                 // return was accepted and dropped (measured 2026-09-23).
-                match (&return_type, child.attribute("returns-max-size")) {
-                    (Some(SceType::Bytes), None) => {
+                let buffer_return = return_type.as_ref().filter(|t| t.is_append_buffer());
+                match (buffer_return, child.attribute("returns-max-size")) {
+                    (Some(ret), None) => {
                         return Err(located(
                             &child,
                             doc_name,
                             ValidationError::MissingAttribute {
-                                element: "<sce:return type=\"bytes\">".into(),
+                                element: format!("<sce:return type=\"{}\">", ret.as_attr()),
                                 attr: "returns-max-size".into(),
                             },
                         ));
                     }
-                    (Some(SceType::Bytes), Some(_)) => {
+                    (Some(ret), Some(_)) => {
                         returns_max_size = read_unsigned_attr(
                             &child,
                             doc_name,
-                            "<sce:return type=\"bytes\">",
+                            &format!("<sce:return type=\"{}\">", ret.as_attr()),
                             ("returns-max-size", false),
                             UnsignedInt::Positive,
                         )?;
                     }
-                    (_, None) => {}
-                    (other, Some(stray)) => {
+                    (None, None) => {}
+                    (None, Some(stray)) => {
                         return Err(located(
                             &child,
                             doc_name,
                             ValidationError::AttributeRuleViolated {
-                                element: match other {
+                                element: match &return_type {
                                     Some(ty) => format!("<sce:return type=\"{}\">", ty.as_attr()),
                                     None => "<sce:return>".into(),
                                 },
                                 attr: "returns-max-size".into(),
                                 value: stray.into(),
-                                rule: "omitted — returns-max-size bounds a bytes return only"
+                                rule: "omitted — returns-max-size bounds a bytes or list<T> \
+                                       return only"
                                     .into(),
                             },
                         ));
@@ -7404,18 +7450,17 @@ fn parse_algorithm_stmt(
         "var" => {
             let name = require_attr(node, "name", "<sce:var>", doc_name)?;
             let type_str = require_attr(node, "type", "<sce:var>", doc_name)?;
-            let sce_type = read_type_attr(
+            let sce_type = read_algorithm_value_type(
                 node,
                 doc_name,
-                TypeGrammar::Scalar,
                 format!("<sce:var name=\"{name}\">"),
                 "type",
                 &type_str,
             )?;
-            // A `bytes` local is a growable buffer seeded empty and filled
-            // via `<sce:append>`: it takes a `capacity`, which it must
-            // declare, and no `init`. A scalar takes the required `init` and
-            // no `capacity`. Each is refused here, on the element, rather
+            // A `bytes` or `list<T>` local is a growable buffer seeded empty
+            // and filled via `<sce:append>`: it takes a `capacity`, which it
+            // must declare, and no `init`. A scalar takes the required `init`
+            // and no `capacity`. Each is refused here, on the element, rather
             // than silently dropped; the rules relating the buffer to the
             // signature run once the body is read
             // (`validate_byte_buffer_build`).
@@ -7423,7 +7468,8 @@ fn parse_algorithm_stmt(
             // ⚠ The `capacity` rules ran there too, and placed every refusal
             // at `<sce:body>` — a row the attribute is not on — with a scalar's
             // capacity reported as the text `(present)` (measured 2026-09-23).
-            let (init, capacity) = if matches!(sce_type, SceType::Bytes) {
+            let (init, capacity) = if sce_type.is_append_buffer() {
+                let buffer_attr = sce_type.as_attr();
                 if let Some(stray) = node.attribute("init") {
                     return Err(located(
                         node,
@@ -7432,13 +7478,14 @@ fn parse_algorithm_stmt(
                             element: format!("<sce:var name=\"{name}\">"),
                             attr: "init".into(),
                             value: stray.into(),
-                            rule:
-                                "no init — a bytes buffer starts empty and is filled via <sce:append>"
-                                    .into(),
+                            rule: format!(
+                                "no init — a {buffer_attr} buffer starts empty and is filled via \
+                                 <sce:append>"
+                            ),
                         },
                     ));
                 }
-                let element = format!("<sce:var name=\"{name}\" type=\"bytes\">");
+                let element = format!("<sce:var name=\"{name}\" type=\"{buffer_attr}\">");
                 let capacity = read_unsigned_attr(
                     node,
                     doc_name,
@@ -7466,7 +7513,8 @@ fn parse_algorithm_stmt(
                             element: format!("<sce:var name=\"{name}\">"),
                             attr: "capacity".into(),
                             value: stray.into(),
-                            rule: "omitted — capacity is only valid on a type=\"bytes\" buffer"
+                            rule: "omitted — capacity is only valid on a type=\"bytes\" or \
+                                   type=\"list<T>\" buffer"
                                 .into(),
                         },
                     ));
@@ -7635,31 +7683,33 @@ fn call_arguments(
         .collect())
 }
 
-/// A `bytes` local as the buffer rules read it: its name, its capacity, and
-/// where each is written.
-struct BytesBuffer<'a> {
+/// A `bytes` or `list<T>` local as the buffer rules read it: its name, its
+/// type, its capacity, and where each is written.
+struct AppendBuffer<'a> {
     name: &'a str,
     name_spelling: Option<&'a AttributeSpelling>,
+    ty: &'a AlgorithmValueType,
     capacity: Option<u32>,
     capacity_spelling: Option<&'a AttributeSpelling>,
 }
 
-/// SCE byte-buffer-build (SCE_FORGE.md §4.12): every `bytes` local of the
-/// body, in document order. Recurses into block statements so a buffer
-/// declared at any nesting depth is seen.
-fn collect_bytes_buffers<'a>(stmts: &'a [AlgorithmStmt], buffers: &mut Vec<BytesBuffer<'a>>) {
+/// SCE byte-buffer-build (SCE_FORGE.md §4.12): every `bytes` or `list<T>`
+/// local of the body, in document order. Recurses into block statements so a
+/// buffer declared at any nesting depth is seen.
+fn collect_append_buffers<'a>(stmts: &'a [AlgorithmStmt], buffers: &mut Vec<AppendBuffer<'a>>) {
     for s in stmts {
         match s {
             AlgorithmStmt::Var {
                 name,
                 name_spelling,
-                sce_type: SceType::Bytes,
+                sce_type,
                 capacity,
                 capacity_spelling,
                 ..
-            } => buffers.push(BytesBuffer {
+            } if sce_type.is_append_buffer() => buffers.push(AppendBuffer {
                 name,
                 name_spelling: name_spelling.as_ref(),
+                ty: sce_type,
                 capacity: *capacity,
                 capacity_spelling: capacity_spelling.as_ref(),
             }),
@@ -7668,13 +7718,13 @@ fn collect_bytes_buffers<'a>(stmts: &'a [AlgorithmStmt], buffers: &mut Vec<Bytes
                 else_body,
                 ..
             } => {
-                collect_bytes_buffers(then_body, buffers);
+                collect_append_buffers(then_body, buffers);
                 if let Some(eb) = else_body {
-                    collect_bytes_buffers(eb, buffers);
+                    collect_append_buffers(eb, buffers);
                 }
             }
             AlgorithmStmt::While { body, .. } | AlgorithmStmt::Foreach { body, .. } => {
-                collect_bytes_buffers(body, buffers);
+                collect_append_buffers(body, buffers);
             }
             AlgorithmStmt::Var { .. }
             | AlgorithmStmt::Assign { .. }
@@ -7686,13 +7736,17 @@ fn collect_bytes_buffers<'a>(stmts: &'a [AlgorithmStmt], buffers: &mut Vec<Bytes
 }
 
 /// SCE byte-buffer-build (SCE_FORGE.md §4.12): the buffer rules that relate
-/// a `bytes` local to the rest of the document. v1 accepts a single `bytes`
-/// buffer that is the algorithm's returned output, declared with
-/// `capacity == returns-max-size`. What a `<sce:var>` or the signature's
-/// `<sce:return>` breaks on its own is refused when that element is read.
+/// a `bytes` or `list<T>` local to the rest of the document. v1 accepts a
+/// single buffer that is the algorithm's returned output, declared with the
+/// return's own type and `capacity == returns-max-size`. What a `<sce:var>`
+/// or the signature's `<sce:return>` breaks on its own is refused when that
+/// element is read.
 ///
 /// Each refusal is placed at the buffer it is about — its `name`, or its
-/// `capacity` — however deeply the buffer is nested.
+/// `capacity` — however deeply the buffer is nested. Each spells the buffer's
+/// type through [`AlgorithmValueType::as_attr`], which is `bytes` for a byte
+/// buffer, so every message a `bytes` document could already receive is
+/// unchanged.
 ///
 /// ⚠ They were placed at `<sce:body>`, whose row holds neither, with the
 /// capacity's `actual` on another row (measured 2026-09-23).
@@ -7702,23 +7756,24 @@ fn validate_byte_buffer_build(
     doc_name: &str,
 ) -> Result<(), Located<ForgeError>> {
     let mut buffers = Vec::new();
-    collect_bytes_buffers(body, &mut buffers);
+    collect_append_buffers(body, &mut buffers);
     let Some(buffer) = buffers.first() else {
         return Ok(());
     };
+    let buffer_attr = buffer.ty.as_attr();
     let place = |at: WrittenAt<'_>, refusal: ValidationError| {
         Located::in_file(at.place_reporting(refusal.into()), doc_name)
     };
 
-    // v1 supports a single bytes buffer — the returned output buffer. The
-    // second one declared is the refused one.
+    // v1 supports a single buffer — the returned output buffer. The second
+    // one declared is the refused one.
     if let Some(extra) = buffers.get(1) {
         return Err(place(
             WrittenAt::attribute(extra.name_spelling),
             ValidationError::IncompatibleAttributes {
                 element: "<sce:body>".into(),
                 detail: format!(
-                    "{} bytes buffers declared; byte-buffer-build v1 supports exactly one \
+                    "{} {buffer_attr} buffers declared; byte-buffer-build v1 supports exactly one \
                      (the returned output buffer) — SCE_FORGE.md §4.12",
                     buffers.len()
                 ),
@@ -7726,16 +7781,18 @@ fn validate_byte_buffer_build(
         ));
     }
 
-    // The buffer is the algorithm's output — the signature must return bytes.
-    if !matches!(sig.return_type, Some(SceType::Bytes)) {
+    // The buffer is the algorithm's output — the signature must return
+    // exactly the buffer's type: a `list<int64>` buffer is not a `list<int32>`
+    // return, nor a `bytes` one.
+    if sig.return_type.as_ref() != Some(buffer.ty) {
         return Err(place(
             WrittenAt::attribute(buffer.name_spelling),
             ValidationError::IncompatibleAttributes {
                 element: "<sce:body>".into(),
                 detail: format!(
-                    "bytes buffer '{}' is declared but the signature does not return \
-                     `bytes`; byte-buffer-build v1 requires the buffer to be the returned value \
-                     — SCE_FORGE.md §4.12",
+                    "{buffer_attr} buffer '{}' is declared but the signature does not return \
+                     `{buffer_attr}`; byte-buffer-build v1 requires the buffer to be the returned \
+                     value — SCE_FORGE.md §4.12",
                     buffer.name
                 ),
             },
@@ -7747,15 +7804,15 @@ fn validate_byte_buffer_build(
     // type and the C11 result struct's `bytes[N]` array must agree.
     let rms = sig
         .returns_max_size
-        .expect("a bytes return without returns-max-size is refused when it is read");
+        .expect("a buffer return without returns-max-size is refused when it is read");
     let capacity = buffer
         .capacity
-        .expect("a bytes <sce:var> without capacity is refused when it is read");
+        .expect("a buffer <sce:var> without capacity is refused when it is read");
     if capacity != rms {
         return Err(place(
             WrittenAt::value(buffer.capacity_spelling),
             ValidationError::InvalidAttribute {
-                element: format!("<sce:var name=\"{}\" type=\"bytes\">", buffer.name),
+                element: format!("<sce:var name=\"{}\" type=\"{buffer_attr}\">", buffer.name),
                 attr: "capacity".into(),
                 value: capacity.to_string(),
                 // The signature's returns-max-size is the one legal value.
@@ -9416,6 +9473,72 @@ pub(crate) fn read_type_attr(
             },
         )
     })
+}
+
+/// Read an algorithm param / local / return `type=`: a scalar in
+/// [`TypeGrammar::Scalar`], or `list<T>` over an admitted scalar `T`
+/// ([`AlgorithmValueType::list_elem_admitted`]).
+///
+/// A scalar goes through [`read_type_attr`] unchanged, so a misspelled
+/// scalar is refused with the same candidates it always was. The list form
+/// is a pattern rather than a value, so a list over an element it cannot
+/// hold is refused as a rule violation that names the rule.
+pub(crate) fn read_algorithm_value_type(
+    node: &roxmltree::Node,
+    doc_name: &str,
+    element: String,
+    attr: &str,
+    text: &str,
+) -> Result<AlgorithmValueType, Located<ForgeError>> {
+    let Some(inner) = text
+        .trim()
+        .strip_prefix("list<")
+        .and_then(|t| t.strip_suffix('>'))
+    else {
+        return read_type_attr(node, doc_name, TypeGrammar::Scalar, element, attr, text)
+            .map(AlgorithmValueType::Scalar);
+    };
+    let elem = read_type_attr(
+        node,
+        doc_name,
+        TypeGrammar::Scalar,
+        element.clone(),
+        attr,
+        inner.trim(),
+    )?;
+    if !AlgorithmValueType::list_elem_admitted(&elem) {
+        return Err(located(
+            node,
+            doc_name,
+            ValidationError::AttributeRuleViolated {
+                element,
+                attr: attr.into(),
+                value: value_as_written(node, attr, text),
+                rule: "a list element is a fixed-width number or bool — a string or bytes \
+                       element has a length of its own, so a bounded list of them has no size \
+                       to declare"
+                    .into(),
+            },
+        ));
+    }
+    Ok(AlgorithmValueType::List { elem })
+}
+
+/// `node`'s unprefixed attribute `attr`, whose decoded value is `decoded`,
+/// as the document spells it — for a record's `actual`, which
+/// SCE_ERROR_CONTRACT.md §2.1 defines as the value "as the document spells
+/// it" and §3.1.1 has a consumer find on the record's line. A `list<T>`
+/// type is the case that makes the two differ: it is written
+/// `list&lt;int64&gt;`, and the decoded `list<int64>` occurs on no line of
+/// the document. `decoded` itself when the spelling cannot be read back.
+fn value_as_written(node: &roxmltree::Node, attr: &str, decoded: &str) -> String {
+    AttributeSpelling::of(node, None, attr)
+        .and_then(|spelling| {
+            spelling
+                .locate(0..decoded.len())
+                .map(|written| written.text.to_string())
+        })
+        .unwrap_or_else(|| decoded.to_string())
 }
 
 /// Every SCE-namespace attribute name this tree reads.

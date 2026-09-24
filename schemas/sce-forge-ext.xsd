@@ -114,6 +114,23 @@
     </xs:restriction>
   </xs:simpleType>
 
+  <!-- SCE Forge Section 4.12: an algorithm parameter, return or local — a
+       scalar `sceType`, or `list<T>`, a bounded buffer. Authored as
+       `list&lt;int64&gt;` in XML. The pattern is lexical, as
+       `sceTypeOrEnumRef`'s is: it admits `list<>` over any `sceType`, and the
+       parser (`read_algorithm_value_type`, the signature rules) refuses what
+       v1 does not take — a `string`/`bytes` element, a list parameter — with
+       a diagnostic that names the rule rather than an enumeration. -->
+  <xs:simpleType name="algorithmValueType">
+    <xs:union memberTypes="sce:sceType">
+      <xs:simpleType>
+        <xs:restriction base="xs:string">
+          <xs:pattern value="list&lt;\s*(uint8|uint16|uint32|uint64|int8|int16|int32|int64|float32|float64|bool|string|bytes)\s*&gt;"/>
+        </xs:restriction>
+      </xs:simpleType>
+    </xs:union>
+  </xs:simpleType>
+
   <!-- SCE Forge Section 3.3: Data flow direction -->
   <xs:simpleType name="directionType">
     <xs:restriction base="xs:string">
@@ -1177,8 +1194,10 @@
       <xs:attribute name="name" type="sce:paramNameType" use="required"/>
       <xs:attribute name="required" type="xs:boolean"/>
       <xs:attribute name="default" type="xs:string"/>
-      <!-- RFC §synth-5-A signature param: by-value scalar or by-reference bytes. -->
-      <xs:attribute name="type" type="sce:sceType"/>
+      <!-- RFC §synth-5-A signature param: by-value scalar or by-reference bytes.
+           `list<T>` is admitted lexically so the parser's v1 refusal of a
+           list parameter (SCE_FORGE.md §4.12) is the diagnostic an author sees. -->
+      <xs:attribute name="type" type="sce:algorithmValueType"/>
     </xs:complexType>
   </xs:element>
 
@@ -1209,12 +1228,12 @@
       <!-- type=  inside <sce:signature>; expr=  inside body. The two
            are not mutually exclusive at schema level — the parser
            rejects `<sce:return type expr/>` collisions. -->
-      <xs:attribute name="type" type="sce:sceType"/>
+      <xs:attribute name="type" type="sce:algorithmValueType"/>
       <xs:attribute name="expr" type="xs:string"/>
       <!-- SCE byte-buffer-build (SCE_FORGE.md §4.12): fixed output-buffer
-           capacity for a `type="bytes"` return. Required by the parser when
-           the return type is `bytes` (the no-alloc profile's bound); ignored
-           otherwise. Mirrors `<sce:helper returns-max-size>`. -->
+           capacity for a `type="bytes"` or `type="list<T>"` return. Required
+           by the parser when the return is a buffer (the no-alloc profile's
+           bound); refused otherwise. Mirrors `<sce:helper returns-max-size>`. -->
       <xs:attribute name="returns-max-size" type="xs:positiveInteger"/>
     </xs:complexType>
   </xs:element>
@@ -1231,17 +1250,18 @@
   <!--
     Local binding. A scalar local carries `init=` (required by the parser).
 
-    SCE byte-buffer-build (SCE_FORGE.md §4.12): a `type="bytes"` local is a
-    growable output buffer instead — it carries `capacity=` (the fixed bound)
-    and NO `init=` (it starts empty and is filled forward-only via
-    `<sce:append>`). `init` is therefore relaxed from `use="required"` to
-    optional at schema level; the parser enforces "scalar ⇒ init, bytes ⇒
-    capacity, no init" with a precise structural diagnostic.
+    SCE byte-buffer-build (SCE_FORGE.md §4.12): a `type="bytes"` or
+    `type="list<T>"` local is a growable output buffer instead — it carries
+    `capacity=` (the fixed bound) and NO `init=` (it starts empty and is
+    filled forward-only via `<sce:append>`). `init` is therefore relaxed from
+    `use="required"` to optional at schema level; the parser enforces
+    "scalar ⇒ init, buffer ⇒ capacity, no init" with a precise structural
+    diagnostic.
   -->
   <xs:element name="var">
     <xs:complexType>
       <xs:attribute name="name" type="xs:NCName" use="required"/>
-      <xs:attribute name="type" type="sce:sceType" use="required"/>
+      <xs:attribute name="type" type="sce:algorithmValueType" use="required"/>
       <xs:attribute name="init" type="xs:string"/>
       <xs:attribute name="capacity" type="xs:positiveInteger"/>
     </xs:complexType>

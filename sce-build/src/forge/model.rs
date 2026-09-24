@@ -3290,15 +3290,113 @@ pub struct InlineKind {
 
 // ── Algorithm kind (RFC §synth-5-A) ──────────────────────────────────
 
+/// The type of an algorithm parameter, local or return: a scalar, or a
+/// bounded list of scalars.
+///
+/// ⚠ A list is deliberately NOT a [`SceType`] variant. `SceType` is the type
+/// of a codec field, an event-schema field, a validator input — surfaces
+/// that are scalar-only by contract (see [`AlgorithmConstType`], which keeps
+/// its build-time `array<T, N>` out of `SceType` for the same reason).
+/// Adding the variant there would hand every one of those surfaces a case
+/// to refuse. The algorithm kind is the one place a runtime-length sequence
+/// is computed and returned, so the widening lives here.
+///
+/// Serialized untagged: a scalar stays the bare string it always was
+/// (`"int64"`), so the forge-AST wire is byte-identical for every document
+/// that declares no list; a list serializes as `{"list": "int64"}`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(untagged)]
+pub enum AlgorithmValueType {
+    /// A scalar — any [`SceType`], including `bytes`.
+    Scalar(SceType),
+    /// `list<T>` — a runtime-length sequence of scalar `T`, bounded by the
+    /// `capacity` of the local that builds it or the `returns-max-size` of
+    /// the signature that returns it (SCE_FORGE.md §4.12, which states the
+    /// same bound for a `bytes` buffer).
+    List {
+        #[serde(rename = "list")]
+        elem: SceType,
+    },
+}
+
+impl AlgorithmValueType {
+    /// The scalar type, or `None` for a list.
+    pub fn scalar(&self) -> Option<&SceType> {
+        match self {
+            Self::Scalar(t) => Some(t),
+            Self::List { .. } => None,
+        }
+    }
+
+    /// The element type of a list, or `None` for a scalar.
+    pub fn list_elem(&self) -> Option<&SceType> {
+        match self {
+            Self::Scalar(_) => None,
+            Self::List { elem } => Some(elem),
+        }
+    }
+
+    /// Whether a list may hold `elem`. Fixed-width numbers and `bool` only:
+    /// a `string` or `bytes` element has a length of its own, and a bounded
+    /// list of unbounded elements has no fixed size to declare.
+    pub fn list_elem_admitted(elem: &SceType) -> bool {
+        matches!(
+            elem,
+            SceType::Uint8
+                | SceType::Uint16
+                | SceType::Uint32
+                | SceType::Uint64
+                | SceType::Int8
+                | SceType::Int16
+                | SceType::Int32
+                | SceType::Int64
+                | SceType::Float32
+                | SceType::Float64
+                | SceType::Bool
+        )
+    }
+
+    /// Read the `type=` spelling [`Self::as_attr`] writes: a scalar
+    /// [`SceType`] keyword, or `list<T>` over an admitted element. `None` for
+    /// anything else. The document parser reads the same grammar through
+    /// `parser::read_algorithm_value_type`, which adds the refusal a document
+    /// needs; this is the plain inverse for text SCE wrote itself.
+    pub fn from_attr(s: &str) -> Option<Self> {
+        let s = s.trim();
+        match s.strip_prefix("list<").and_then(|t| t.strip_suffix('>')) {
+            Some(inner) => SceType::from_attr(inner.trim())
+                .filter(Self::list_elem_admitted)
+                .map(|elem| Self::List { elem }),
+            None => SceType::from_attr(s).map(Self::Scalar),
+        }
+    }
+
+    /// Whether a local of this type is a buffer filled by `<sce:append>` —
+    /// `bytes` or `list<T>` — and so starts empty, takes `capacity` instead
+    /// of `init`, and is the one shape a buffer-returning algorithm returns.
+    pub fn is_append_buffer(&self) -> bool {
+        matches!(self, Self::Scalar(SceType::Bytes) | Self::List { .. })
+    }
+
+    /// The `type=` attribute spelling: `int64`, or `list<int64>`.
+    pub fn as_attr(&self) -> String {
+        match self {
+            Self::Scalar(t) => t.as_attr().to_string(),
+            Self::List { elem } => format!("list<{}>", elem.as_attr()),
+        }
+    }
+}
+
 /// One parameter of an algorithm signature. Parameters are by-value
-/// scalars or by-reference slices for `bytes`. Read-only in v1
-/// (assigning to a parameter raises `algorithm/lvalue-unsupported`).
+/// scalars, by-reference slices for `bytes`, or read-only lists. Read-only
+/// in v1 (assigning to a parameter raises `algorithm/lvalue-unsupported`).
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct AlgorithmParam {
     pub name: String,
     #[serde(rename = "type")]
-    pub sce_type: SceType,
+    pub sce_type: AlgorithmValueType,
 }
 
 /// Algorithm signature — parameters and return type. `return_type =
@@ -3310,7 +3408,7 @@ pub struct AlgorithmParam {
 pub struct AlgorithmSignature {
     pub params: Vec<AlgorithmParam>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub return_type: Option<SceType>,
+    pub return_type: Option<AlgorithmValueType>,
     /// Cap on the bytes a `return_type = bytes` algorithm may produce,
     /// declared via `sce:returns-max-size="N"` on the `<sce:signature>`.
     /// Required when `return_type` is `bytes` (the output buffer's fixed
@@ -3503,7 +3601,7 @@ pub enum AlgorithmStmt {
         #[serde(skip)]
         name_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
         #[serde(rename = "type")]
-        sce_type: SceType,
+        sce_type: AlgorithmValueType,
         // ⚠ This was an empty string for "no initializer", which gave the
         // absence and a value one type: every reader had to know to branch
         // on `sce_type` first, and one that did not read `""` as an
@@ -3631,12 +3729,13 @@ pub enum AlgorithmBinding<'a> {
     /// `<sce:var name type init>` — a typed local.
     Local {
         name: &'a str,
-        sce_type: &'a SceType,
+        sce_type: &'a AlgorithmValueType,
     },
     /// `<sce:foreach item in>` — the loop variable, typed by what `source`
-    /// names: a byte of a `bytes` value, or an element of a bounded
-    /// collection. Which one is a question about the imports, so the model
-    /// carries the name and the generator answers it.
+    /// names: a byte of a `bytes` value, an element of a `list<T>` value, or
+    /// an element of a bounded collection. Which one is a question about the
+    /// signature and the imports, so the model carries the name and the
+    /// generator answers it.
     ForeachItem { name: &'a str, source: &'a str },
 }
 

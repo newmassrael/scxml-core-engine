@@ -14,9 +14,9 @@
 
 use sce_build::forge::model::{
     AlgorithmConst, AlgorithmConstType, AlgorithmModel, AlgorithmParam, AlgorithmSignature,
-    AlgorithmStmt, BackpressurePolicy, BitSize, BoundedCollectionModel, BufferPoolModel,
-    BufferPoolVariant, CachePolicy, CallArg, CapacitySource, CodecField, CodecModel,
-    CodecTestVector, CodecVariant, CollectionOrdering, ConcurrencyMode, ConditionModel,
+    AlgorithmStmt, AlgorithmValueType, BackpressurePolicy, BitSize, BoundedCollectionModel,
+    BufferPoolModel, BufferPoolVariant, CachePolicy, CallArg, CapacitySource, CodecField,
+    CodecModel, CodecTestVector, CodecVariant, CollectionOrdering, ConcurrencyMode, ConditionModel,
     DecodedField, DecodedFieldValue, DecodedValue, Direction, Endian, EnumModel, EnumVariant,
     EventSchemaModel, FilterModel, FilterType, FlagDef, FlagInput, FoldBody, ForgeDocument,
     ForgeField, InboxConfig, InboxOrdering, InterpolationAxis, InterpolationMethod,
@@ -57,14 +57,14 @@ fn an_algorithm_renders_every_form_it_can_carry() {
             params: vec![
                 AlgorithmParam {
                     name: "data".to_string(),
-                    sce_type: SceType::Bytes,
+                    sce_type: AlgorithmValueType::Scalar(SceType::Bytes),
                 },
                 AlgorithmParam {
                     name: "seed".to_string(),
-                    sce_type: SceType::Uint16,
+                    sce_type: AlgorithmValueType::Scalar(SceType::Uint16),
                 },
             ],
-            return_type: Some(SceType::Bytes),
+            return_type: Some(AlgorithmValueType::Scalar(SceType::Bytes)),
             returns_max_size: Some(64),
         },
         consts: vec![
@@ -93,7 +93,7 @@ fn an_algorithm_renders_every_form_it_can_carry() {
                     body: vec![AlgorithmStmt::Var {
                         name: "acc".to_string(),
                         name_spelling: None,
-                        sce_type: SceType::Uint16,
+                        sce_type: AlgorithmValueType::Scalar(SceType::Uint16),
                         init: Some("i".to_string()),
                         init_spelling: None,
                         capacity: None,
@@ -110,7 +110,7 @@ fn an_algorithm_renders_every_form_it_can_carry() {
             AlgorithmStmt::Var {
                 name: "out".to_string(),
                 name_spelling: None,
-                sce_type: SceType::Bytes,
+                sce_type: AlgorithmValueType::Scalar(SceType::Bytes),
                 init: None,
                 init_spelling: None,
                 capacity: Some(32),
@@ -615,9 +615,9 @@ fn two_renderings_of_one_model_agree() {
         signature: AlgorithmSignature {
             params: vec![AlgorithmParam {
                 name: "x".to_string(),
-                sce_type: SceType::Uint8,
+                sce_type: AlgorithmValueType::Scalar(SceType::Uint8),
             }],
-            return_type: Some(SceType::Uint8),
+            return_type: Some(AlgorithmValueType::Scalar(SceType::Uint8)),
             returns_max_size: None,
         },
         consts: Vec::new(),

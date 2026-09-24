@@ -9,7 +9,11 @@
 
    Single-output only — RFC §synth-5-A defines algorithms as one-return-value
    bodies. Compound outputs would require structuring the return type,
-   which is Transform's territory. #}
+   which is Transform's territory.
+
+   A `list<T>` return (SCE_FORGE.md §4.12) is `Result<SceOwnedList<T, N>,
+   CapacityExceeded>`; the oracle's cases stay within N, so the harness
+   unwraps it and compares the slice element by element. #}
 {% if f.output.compare == "tolerance" %}
     let tol = tolerance(&reference);
 {% endif %}
@@ -18,11 +22,31 @@
 {% for arg_ty in f.args %}
         let arg{{ loop.index0 }} = {{ ("case[\"args\"][" ~ loop.index0 ~ "]") | rust_unmarshal(arg_ty) }};
 {% endfor %}
+{% if f.output.list_of is defined %}
+        let expected: Vec<{{ f.output.list_of | rust_type }}> = case["expected"]
+            .as_array()
+            .expect("expected must be array")
+            .iter()
+            .map(|x| {{ "x" | rust_unmarshal(f.output.list_of) }})
+            .collect();
+        let actual = fixtures::{{ f.name }}::{{ f.function }}({% for arg_ty in f.args %}{% if arg_ty == "bytes" %}&arg{{ loop.index0 }}{% else %}arg{{ loop.index0 }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %})
+            .expect("{{ f.name }}: a case within the declared capacity");
+        let actual = actual.as_slice();
+{% if f.output.compare == "tolerance" %}
+        assert_eq!(actual.len(), expected.len(), "{{ f.name }} length");
+        for (a, e) in actual.iter().zip(expected.iter()) {
+            assert_close(*a as f64, *e as f64, tol, "{{ f.name }}");
+        }
+{% else %}
+        assert_eq!(actual, expected.as_slice(), "{{ f.name }}");
+{% endif %}
+{% else %}
         let expected = {{ "case[\"expected\"]" | rust_unmarshal(f.output.type) }};
         let actual = fixtures::{{ f.name }}::{{ f.function }}({% for arg_ty in f.args %}{% if arg_ty == "bytes" %}&arg{{ loop.index0 }}{% else %}arg{{ loop.index0 }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %});
 {% if f.output.compare == "tolerance" %}
         assert_close(actual as f64, expected as f64, tol, "{{ f.name }}");
 {% else %}
         assert_eq!(actual, expected, "{{ f.name }}");
+{% endif %}
 {% endif %}
     }

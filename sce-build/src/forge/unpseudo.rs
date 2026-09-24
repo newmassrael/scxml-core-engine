@@ -39,12 +39,13 @@
 use crate::comment_text;
 use crate::forge::model::{
     AlgorithmConst, AlgorithmConstType, AlgorithmModel, AlgorithmParam, AlgorithmSignature,
-    AlgorithmStmt, BackpressurePolicy, BitSize, BoundedCollectionModel, BufferPoolModel,
-    BufferPoolVariant, CachePolicy, CallArg, CodecField, CodecModel, CodecTestVector, CodecVariant,
-    CountRef, DecodedField, DecodedFieldValue, DecodedValue, Endian, FlagDef, FlagInput, FoldBody,
-    PeekByteSpec, PresentIfPredicate, PresentIfScope, ProcedureAssign, ProcedureDoneParam,
-    ProcedureHelper, ProcedureModel, ProcedureSendAction, ProcedureState, ProcedureTransition,
-    TestVector, TestVectorValue, TlvOverflowPolicy, TlvTerminateStrategy, VariantArm,
+    AlgorithmStmt, AlgorithmValueType, BackpressurePolicy, BitSize, BoundedCollectionModel,
+    BufferPoolModel, BufferPoolVariant, CachePolicy, CallArg, CodecField, CodecModel,
+    CodecTestVector, CodecVariant, CountRef, DecodedField, DecodedFieldValue, DecodedValue, Endian,
+    FlagDef, FlagInput, FoldBody, PeekByteSpec, PresentIfPredicate, PresentIfScope,
+    ProcedureAssign, ProcedureDoneParam, ProcedureHelper, ProcedureModel, ProcedureSendAction,
+    ProcedureState, ProcedureTransition, TestVector, TestVectorValue, TlvOverflowPolicy,
+    TlvTerminateStrategy, VariantArm,
 };
 use crate::forge::model::{
     CapacitySource, CollectionOrdering, ConcurrencyMode, ConditionModel, Direction, EnumModel,
@@ -1275,7 +1276,7 @@ fn parse_algorithm(head: &Line<'_>, body: &[&Line<'_>]) -> Result<AlgorithmModel
         })?;
         params.push(AlgorithmParam {
             name: undo(pname, head.number)?,
-            sce_type: SceType::from_attr(ptype).ok_or_else(|| ParseError {
+            sce_type: AlgorithmValueType::from_attr(ptype).ok_or_else(|| ParseError {
                 line: head.number,
                 why: format!("`{ptype}` is not an sce:type"),
             })?,
@@ -1287,7 +1288,7 @@ fn parse_algorithm(head: &Line<'_>, body: &[&Line<'_>]) -> Result<AlgorithmModel
         None => (None, None),
         Some("->") => {
             let t = tail.get(1).copied().unwrap_or("");
-            let rt = SceType::from_attr(t).ok_or_else(|| ParseError {
+            let rt = AlgorithmValueType::from_attr(t).ok_or_else(|| ParseError {
                 line: head.number,
                 why: format!("`{t}` is not an sce:type"),
             })?;
@@ -1519,17 +1520,20 @@ fn parse_stmt(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<AlgorithmStmt, Pars
             (Some("cap"), Some(n)) => n.parse().ok(),
             _ => None,
         };
-        let sce_type = SceType::from_attr(type_word).ok_or_else(|| ParseError {
+        let sce_type = AlgorithmValueType::from_attr(type_word).ok_or_else(|| ParseError {
             line: line.number,
             why: format!("`{type_word}` is not an sce:type"),
         })?;
-        let init = match (init, matches!(sce_type, SceType::Bytes)) {
+        let init = match (init, sce_type.is_append_buffer()) {
             (Some(init), false) => Some(undo(init, line.number)?),
             (None, true) => None,
             (Some(_), true) => {
                 return Err(ParseError {
                     line: line.number,
-                    why: "a bytes var starts empty and has no `= <expr>`".to_string(),
+                    why: format!(
+                        "a {} var starts empty and has no `= <expr>`",
+                        sce_type.as_attr()
+                    ),
                 })
             }
             (None, false) => {

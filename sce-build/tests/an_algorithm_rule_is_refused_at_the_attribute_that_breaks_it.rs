@@ -228,6 +228,151 @@ const BUFFER_NOT_RETURNED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "#;
 
+/// A `list<T>` parameter, which v1 does not take (SCE_FORGE.md §4.12). The
+/// type is spelled with entity references, so `actual` holds them too — the
+/// decoded `list<int64>` occurs on no line of the document.
+const LIST_PARAM: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_list_param" version="1.0">
+  <sce:signature>
+    <sce:param name="days"
+               type="list&lt;int64&gt;"/>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="0"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// A `list<string>` return: an element with a length of its own.
+const LIST_OF_STRING: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_list_of_string" version="1.0">
+  <sce:signature>
+    <sce:param name="data" type="uint16"/>
+    <sce:return returns-max-size="4"
+                type="list&lt;string&gt;"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="data"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// A `list<int32>` buffer in an algorithm that returns `list<int64>` —
+/// refused at the buffer's name, as a buffer that is not returned is.
+const LIST_ELEM_MISMATCH: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_list_elem_mismatch" version="1.0">
+  <sce:signature>
+    <sce:param name="data" type="uint16"/>
+    <sce:return type="list&lt;int64&gt;" returns-max-size="4"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var type="list&lt;int32&gt;" capacity="4"
+             name="out"/>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// A `<sce:test-vector>` on a list return, whose `value=` is one scalar.
+const LIST_TEST_VECTOR: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_list_test_vector" version="1.0">
+  <sce:signature>
+    <sce:param name="data" type="uint16"/>
+    <sce:return type="list&lt;int64&gt;" returns-max-size="4"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="list&lt;int64&gt;" capacity="4"/>
+    <sce:return expr="out"/>
+  </sce:body>
+  <sce:test-vector hex="00"
+                   value="1"/>
+</scxml>
+"#;
+
+/// A list-returning algorithm the two call cases import. Accepted on its
+/// own: a host may call it; another algorithm may not.
+const LIST_CALLEE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_list_callee" version="1.0">
+  <sce:signature>
+    <sce:param name="n" type="int64"/>
+    <sce:return type="list&lt;int64&gt;" returns-max-size="4"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="list&lt;int64&gt;" capacity="4"/>
+    <sce:append target="out" expr="n"/>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// A `<sce:call>` of the list-returning algorithm by its alias.
+const LIST_CALL_BY_ALIAS: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_list_call_by_alias" version="1.0">
+  <sce:import kind="algorithm" src="probe_list_callee.scxml" as="days"/>
+  <sce:signature>
+    <sce:param name="n" type="int64"/>
+    <sce:return type="int64"/>
+  </sce:signature>
+  <sce:body>
+    <sce:call args="n"
+              target="days"/>
+    <sce:return expr="n"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// The list-returning algorithm called inside an expression — refused at
+/// the callee, from its host-only signature rather than an arity check
+/// against the empty parameter list that signature carries.
+const LIST_CALL_IN_EXPRESSION: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_list_call_in_expression" version="1.0">
+  <sce:import kind="algorithm" src="probe_list_callee.scxml" as="days"/>
+  <sce:signature>
+    <sce:param name="n" type="int64"/>
+    <sce:return type="int64"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="x" type="int64"
+             init="n + days(n)"/>
+    <sce:return expr="x"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// The same call from a validator — the stateless-import route every
+/// non-algorithm kind registers its imports through.
+const LIST_CALL_FROM_VALIDATOR: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="validator" version="1.0">
+  <sce:import src="probe_list_callee.scxml" kind="algorithm" as="days"/>
+  <datamodel>
+    <data id="raw" sce:type="int64" sce:direction="in"/>
+    <data id="valid" sce:type="bool" sce:direction="out"
+          sce:plausibility="days(raw) &gt; 0"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// The same call spelled `alias.name` — the other route to the same callee.
+const LIST_CALL_BY_NAME: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_list_call_by_name" version="1.0">
+  <sce:import kind="algorithm" src="probe_list_callee.scxml" as="days"/>
+  <sce:signature>
+    <sce:param name="n" type="int64"/>
+    <sce:return type="int64"/>
+  </sce:signature>
+  <sce:body>
+    <sce:call args="n"
+              target="days.probe_list_callee"/>
+    <sce:return expr="n"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// Documents a case imports, written beside the cases but not refusals
+/// themselves.
+const SUPPORT: &[(&str, &str)] = &[("probe_list_callee.scxml", LIST_CALLEE)];
+
 const CASES: &[Case] = &[
     Case {
         file: "probe_lvalue.scxml",
@@ -317,15 +462,106 @@ const CASES: &[Case] = &[
         col: 20,
         actual: None,
     },
+    Case {
+        file: "probe_list_param.scxml",
+        document: LIST_PARAM,
+        code: "validation/attribute-rule-violated",
+        line: 5,
+        col: 16,
+        actual: Some("list&lt;int64&gt;"),
+    },
+    Case {
+        file: "probe_list_of_string.scxml",
+        document: LIST_OF_STRING,
+        code: "validation/attribute-rule-violated",
+        line: 6,
+        col: 17,
+        actual: Some("list&lt;string&gt;"),
+    },
+    Case {
+        file: "probe_list_elem_mismatch.scxml",
+        document: LIST_ELEM_MISMATCH,
+        code: "validation/incompatible-attributes",
+        line: 9,
+        col: 20,
+        actual: None,
+    },
+    Case {
+        file: "probe_list_test_vector.scxml",
+        document: LIST_TEST_VECTOR,
+        code: "validation/attribute-rule-violated",
+        line: 12,
+        col: 20,
+        actual: Some("1"),
+    },
+    Case {
+        file: "probe_list_call_by_alias.scxml",
+        document: LIST_CALL_BY_ALIAS,
+        code: "expression/unsupported-construct",
+        line: 10,
+        col: 23,
+        actual: Some("days"),
+    },
+    Case {
+        file: "probe_list_call_by_name.scxml",
+        document: LIST_CALL_BY_NAME,
+        code: "expression/unsupported-construct",
+        line: 10,
+        col: 23,
+        actual: Some("days.probe_list_callee"),
+    },
+    Case {
+        file: "probe_list_call_in_expression.scxml",
+        document: LIST_CALL_IN_EXPRESSION,
+        code: "expression/unsupported-construct",
+        line: 10,
+        col: 24,
+        actual: Some("days"),
+    },
+    Case {
+        file: "probe_list_call_from_validator.scxml",
+        document: LIST_CALL_FROM_VALIDATOR,
+        code: "expression/unsupported-construct",
+        line: 7,
+        col: 29,
+        actual: Some("days"),
+    },
 ];
 
-/// Every case, written into one directory.
+/// Every case, and every document a case imports, written into one
+/// directory.
 fn fixture() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
     for case in CASES {
         std::fs::write(dir.path().join(case.file), case.document).expect("write case");
     }
+    for (file, document) in SUPPORT {
+        std::fs::write(dir.path().join(file), document).expect("write support document");
+    }
     dir
+}
+
+/// The document every call case imports is accepted on its own — the
+/// refusal is of the call, not of a list-returning algorithm.
+#[test]
+fn a_list_returning_algorithm_is_accepted_for_a_host() {
+    let dir = fixture();
+    let output = Command::new(codegen_bin())
+        .current_dir(dir.path())
+        .args([
+            "--error-format=json",
+            "check",
+            "probe_list_callee.scxml",
+            "-l",
+            "rust",
+        ])
+        .output()
+        .expect("run sce-codegen");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 /// The one record `sce-codegen check` prints for `file` in JSON mode, or why

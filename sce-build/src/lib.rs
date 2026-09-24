@@ -4528,9 +4528,10 @@ fn validate_and_enrich_imports(
                     ctx.qualified_call =
                         forge_qualified_call(&doc, &name, &ctx.namespace, language);
                 }
-                let (params, ret) = discover_stateless_signature(&doc);
-                ctx.param_types = params;
-                ctx.ret_type = ret;
+                let sig = discover_stateless_signature(&doc);
+                ctx.param_types = sig.params;
+                ctx.ret_type = sig.ret;
+                ctx.list_slot = sig.list_slot;
             } else {
                 // Qualify every discovered field key with the import's alias
                 // so the typed expression pipeline can look it up via the
@@ -5549,6 +5550,17 @@ fn validate_worker_inbox_ordering_placement(
     Ok(())
 }
 
+/// The call signature a stateless import exposes to its caller's type
+/// inference (see [`discover_stateless_signature`]).
+#[derive(Debug, Default)]
+struct StatelessSignature {
+    params: Vec<forge::model::SceType>,
+    ret: Option<forge::model::SceType>,
+    /// Why the import cannot be called from another algorithm (a `list<T>`
+    /// slot); when set, `params`/`ret` are empty and say nothing.
+    list_slot: Option<String>,
+}
+
 /// Extract parameter and return types for a stateless imported kind.
 ///
 /// * Transform → parameters are `inputs`, return is the first `outputs` entry
@@ -5563,10 +5575,16 @@ fn validate_worker_inbox_ordering_placement(
 /// call rules read it that way. A kind whose parameters are not known here
 /// returns no signature at all (`None` return), which leaves its calls
 /// unjudged rather than judged against a list nobody declared.
-fn discover_stateless_signature(
-    doc: &forge::model::ForgeDocument,
-) -> (Vec<forge::model::SceType>, Option<forge::model::SceType>) {
+///
+/// * Algorithm → parameters and return are the `<sce:signature>`; one with a
+///   `list<T>` slot carries no signature and names that slot in `list_slot`.
+fn discover_stateless_signature(doc: &forge::model::ForgeDocument) -> StatelessSignature {
     use forge::model::{ForgeDocument, SceType};
+    let known = |params: Vec<SceType>, ret: Option<SceType>| StatelessSignature {
+        params,
+        ret,
+        list_slot: None,
+    };
     match doc {
         ForgeDocument::Transform(m) => {
             let params: Vec<SceType> = m.inputs.iter().map(|f| f.sce_type.clone()).collect();
@@ -5575,20 +5593,20 @@ fn discover_stateless_signature(
             } else {
                 None
             };
-            (params, ret)
+            known(params, ret)
         }
         ForgeDocument::Condition(m) => {
             let params: Vec<SceType> = m.inputs.iter().map(|f| f.sce_type.clone()).collect();
-            (params, Some(SceType::Bool))
+            known(params, Some(SceType::Bool))
         }
-        ForgeDocument::Lookup(m) => (
+        ForgeDocument::Lookup(m) => known(
             vec![m.input.sce_type.clone()],
             Some(m.output.sce_type.clone()),
         ),
         // The emitted lookup takes each declared input in declaration order
         // (`render_interpolation` renders `param_str(&m.inputs)`), and the
         // parser admits only a `float64` output.
-        ForgeDocument::Interpolation(m) => (
+        ForgeDocument::Interpolation(m) => known(
             m.inputs.iter().map(|f| f.sce_type.clone()).collect(),
             Some(m.output.sce_type.clone()),
         ),
@@ -5602,16 +5620,48 @@ fn discover_stateless_signature(
         // catch-all left `param_types`/`ret_type` empty, so cross-algorithm
         // calls inferred `Unknown` (harmless for C7's verbatim-arg dispatch,
         // insufficient for the type-driven projection).
+        //
+        // A `list<T>` slot is not a `SceType` and never enters these lists:
+        // the whole signature is withheld and `list_slot` names why, so a
+        // caller refuses from that reason instead of judging a call against
+        // an emptied parameter list or an `Unknown` return (SCE_FORGE.md
+        // §4.12 — in v1 only a host calls a list-signature algorithm).
         ForgeDocument::Algorithm(m) => {
-            let params: Vec<SceType> = m
+            let list_slot = m
                 .signature
                 .params
                 .iter()
-                .map(|p| p.sce_type.clone())
-                .collect();
-            (params, m.signature.return_type.clone())
+                .find(|p| p.sce_type.scalar().is_none())
+                .map(|p| format!("takes {} `{}`", p.sce_type.as_attr(), p.name))
+                .or_else(|| {
+                    m.signature
+                        .return_type
+                        .as_ref()
+                        .filter(|t| t.scalar().is_none())
+                        .map(|t| format!("returns {}", t.as_attr()))
+                });
+            if let Some(reason) = list_slot {
+                return StatelessSignature {
+                    list_slot: Some(reason),
+                    ..StatelessSignature::default()
+                };
+            }
+            StatelessSignature {
+                params: m
+                    .signature
+                    .params
+                    .iter()
+                    .filter_map(|p| p.sce_type.scalar().cloned())
+                    .collect(),
+                ret: m
+                    .signature
+                    .return_type
+                    .as_ref()
+                    .and_then(|t| t.scalar().cloned()),
+                list_slot: None,
+            }
         }
-        _ => (Vec::new(), None),
+        _ => StatelessSignature::default(),
     }
 }
 

@@ -27,6 +27,26 @@
 		unmarshalOrFatal(t, c.Args[{{ loop.index0 }}], &arg{{ loop.index0 }}, "{{ f.name }} arg{{ loop.index0 }}")
 {% endif %}
 {% endfor %}
+{% if f.output.list_of is defined %}
+{# A `list<T>` return (SCE_FORGE.md §4.12) is a `[]T`: compared by length,
+   then element by element. #}
+		var expected []{{ f.output.list_of | go_type }}
+		unmarshalOrFatal(t, c.Expected, &expected, "{{ f.name }} expected")
+		actual := {{ f.name }}.{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+		if len(actual) != len(expected) {
+			t.Errorf("{{ f.name }}: actual=%v expected=%v", actual, expected)
+			continue
+		}
+		for __i := range expected {
+{% if f.output.compare == "tolerance" %}
+			assertClose(t, float64(actual[__i]), float64(expected[__i]), ref.FloatTolerance, "{{ f.name }}")
+{% else %}
+			if actual[__i] != expected[__i] {
+				t.Errorf("{{ f.name }}[%d]: actual=%v expected=%v", __i, actual[__i], expected[__i])
+			}
+{% endif %}
+		}
+{% else %}
 		var expected {{ f.output.type | go_type }}
 		unmarshalOrFatal(t, c.Expected, &expected, "{{ f.name }} expected")
 		actual := {{ f.name }}.{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
@@ -36,5 +56,6 @@
 		if actual != expected {
 			t.Errorf("{{ f.name }}: actual=%v expected=%v", actual, expected)
 		}
+{% endif %}
 {% endif %}
 	}

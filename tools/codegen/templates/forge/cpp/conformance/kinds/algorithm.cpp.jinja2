@@ -24,6 +24,30 @@
         auto arg{{ loop.index0 }} = c["args"][{{ loop.index0 }}].get<{{ arg_ty | cpp_type }}>();
 {% endif %}
 {% endfor %}
+{% if f.output.list_of is defined %}
+{# A `list<T>` return (SCE_FORGE.md §4.12) is a `std::vector<T>`: compared
+   by length, then element by element. `std::to_string` prints any element
+   type, signed or not, without a per-type format specifier. #}
+        auto expected = c["expected"].get<std::vector<{{ f.output.list_of | cpp_type }}>>();
+        auto actual = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+        CHECK(actual.size() == expected.size(),
+              "{{ f.name }} case %d: length actual=%zu expected=%zu",
+              i,
+              actual.size(),
+              expected.size());
+        for (std::size_t k = 0; k < expected.size() && k < actual.size(); ++k) {
+{% if f.output.compare == "tolerance" %}
+            assert_close(static_cast<double>(actual[k]), static_cast<double>(expected[k]), tol, "{{ f.name }}");
+{% else %}
+            CHECK(actual[k] == expected[k],
+                  "{{ f.name }} case %d [%zu]: actual=%s expected=%s",
+                  i,
+                  k,
+                  std::to_string(actual[k]).c_str(),
+                  std::to_string(expected[k]).c_str());
+{% endif %}
+        }
+{% else %}
         auto expected = c["expected"].get<{{ f.output.type | cpp_type }}>();
         auto actual = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
 {% if f.output.compare == "tolerance" %}
@@ -34,6 +58,7 @@
               i,
               static_cast<unsigned long long>(actual),
               static_cast<unsigned long long>(expected));
+{% endif %}
 {% endif %}
         ++i;
     }

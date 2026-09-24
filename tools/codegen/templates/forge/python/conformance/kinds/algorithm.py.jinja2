@@ -20,7 +20,17 @@
 {% endfor %}
             expected = case["expected"]
             actual = {{ f.name }}.{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+{% if f.output.list_of is defined %}
+{# A `list<T>` return (SCE_FORGE.md §4.12) is a `list`: compared by length,
+   then element by element. #}
+            self.assertEqual(len(actual), len(expected), "{{ f.name }} length")
 {% if f.output.compare == "tolerance" %}
+            for a, e in zip(actual, expected):
+                self.assert_close(a, e, "{{ f.name }}")
+{% else %}
+            self.assertEqual(list(actual), expected, "{{ f.name }}")
+{% endif %}
+{% elif f.output.compare == "tolerance" %}
             self.assert_close(actual, expected, "{{ f.name }}")
 {% else %}
             self.assertEqual(actual, expected, "{{ f.name }}")

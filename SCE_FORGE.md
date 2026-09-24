@@ -1306,6 +1306,34 @@ Rust imports `SceBytes` / `CapacityExceeded` from the shared `backends/rust/port
 | `algorithm/append-target-not-buffer` | Validation | `<sce:append target>` is not a declared bytes buffer |
 | `algorithm/append-type-mismatch` | Validation | `<sce:append expr>` is neither `uint8` nor `bytes` |
 
+#### Bounded list — `list<T>`
+
+Some algorithms produce a data-dependent number of *numbers* rather than bytes — the occurrences of a recurrence rule inside a window, the indices that match a predicate. `list<T>` is byte-buffer-build over a fixed-width element: the same three primitives, the same v1 scope, and the same overflow contract, with `T` in place of a byte.
+
+- **`T`** is a fixed-width number or `bool`: `uint8`…`uint64`, `int8`…`int64`, `float32`, `float64`, `bool`. A `string` or `bytes` element is refused — an element with a length of its own gives a bounded list no fixed size to declare. In XML the type is written `type="list&lt;int64&gt;"`.
+- **`<sce:var name="out" type="list<int64>" capacity="N"/>`** — starts empty, takes `capacity` and no `init`, exactly as a bytes buffer does.
+- **`<sce:append target="out" expr="..."/>`** — pushes one element. The value is lowered into the element's slot by the same rule as a typed assignment: an integer slot takes an integer, a real slot any number, and a wrong-kind value is refused with the code an assignment would get.
+- **`<sce:return type="list<int64>" returns-max-size="N"/>`** — required, and equal to the buffer's `capacity`. The buffer's type must equal the return type.
+
+| Backend | Buffer | Append overflow | Return shape |
+|---------|--------|-----------------|--------------|
+| Rust | `SceOwnedList<T, N>` (`backends/rust/portable-bytes`; no-alloc `heapless::Vec<T, N>`, `alloc` = `Vec<T>`) | `?` → `CapacityExceeded` | `Result<SceOwnedList<T, N>, CapacityExceeded>` |
+| C11 | by-value `<symbol>_result_t { T items[N]; size_t len; bool ok; }` | sets `ok = false` and returns | the result struct |
+| C++ | `std::vector<T>`, `reserve(N)` | grows | `std::vector<T>` |
+| Go | `make([]T, 0, N)` | grows | `[]T` |
+| Python | `list` | grows | `list[T]` |
+| Kotlin | `SceListBuf(N)` (`sce_forge_runtime`, `Long` slots) | grows | the element's primitive array — `LongArray`, `IntArray`, …, `UIntArray`, `DoubleArray`, `BooleanArray` |
+
+`SceBytes<N>` is `SceOwnedList<u8, N>` under another name — one bounded-buffer type in the Rust runtime, not two. Kotlin's `SceListBuf` holds every element in a 64-bit slot and converts once at the return, so one buffer class serves every `T` without boxing.
+
+**v1 scope — a list crosses only the host boundary.** A `list<T>` is something an algorithm builds and hands to its host:
+
+- a `list<T>` **parameter** is refused (`validation/attribute-rule-violated`);
+- an algorithm whose signature takes or returns a list cannot be **called from another algorithm**, in either the `<sce:call>` statement or an expression (`expression/unsupported-construct`, at the call target). Its signature is kept out of the caller's type table rather than entered with an unknown type, so the refusal comes from that fact and never from a call that went unjudged;
+- a `<sce:test-vector>` on a list-returning algorithm is refused — the vector's `value=` is a scalar.
+
+**Executed on every backend**: `tests/forge/resources/algorithm_weekly_expand.scxml` runs in the numerical conformance harness (`fixtures.json` output `{"list_of": "i64"}`), compared by length and element. Its cases include an empty result and one that fills the buffer to its declared capacity exactly. No case overflows: past the capacity the backends differ by the contract above, so such a case would measure that difference rather than the algorithm.
+
 ---
 
 ## 5. Kind Composition

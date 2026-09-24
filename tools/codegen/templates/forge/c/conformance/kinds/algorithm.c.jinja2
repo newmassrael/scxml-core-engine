@@ -10,7 +10,22 @@
    carries a fixed-cap `uint8_t input_arg<i>[256]` + `size_t input_arg<i>_len`
    pair on the case struct; we memcpy into a fresh `sce_forge_bytes_t`
    per case to make every invocation start from a clean buffer. Numeric
-   args copy into the case struct directly. #}
+   args copy into the case struct directly.
+
+   A `list<T>` return (SCE_FORGE.md §4.12) is the algorithm's
+   `<fn>_result_t { items[N], len, ok }`. Its expected elements are baked
+   into an array as long as the longest case (at least one slot, since C11
+   has no empty array), and compared by `ok`, then length, then element. #}
+{% if f.output.list_of is defined %}
+{% set ns = namespace(width=1) %}
+{% for c in f.cases %}
+{% if c.expected | length > ns.width %}
+{% set ns.width = c.expected | length %}
+{% endif %}
+{% endfor %}
+{% set signed_elem = f.output.list_of in ["i32", "i64"] %}
+{% set float_elem = f.output.list_of in ["f32", "f64"] %}
+{% endif %}
 static void test_{{ f.name }}(void) {
     static const struct {
 {% for arg_ty in f.args %}
@@ -21,7 +36,12 @@ static void test_{{ f.name }}(void) {
         {{ arg_ty | c_type }} input_arg{{ loop.index0 }};
 {% endif %}
 {% endfor %}
+{% if f.output.list_of is defined %}
+        {{ f.output.list_of | c_type }} expected[{{ ns.width }}];
+        size_t  expected_len;
+{% else %}
         {{ f.output.type | c_type }} expected;
+{% endif %}
     } cases[] = {
 {% for c in f.cases %}
         {
@@ -33,7 +53,12 @@ static void test_{{ f.name }}(void) {
             .input_arg{{ loop.index0 }} = {{ c.args[loop.index0] | c_literal(arg_ty) }},
 {% endif %}
 {% endfor %}
+{% if f.output.list_of is defined %}
+            .expected = { {% for v in c.expected %}{{ v | c_literal(f.output.list_of) }}, {% else %}0{% endfor %} },
+            .expected_len = {{ c.expected | length }},
+{% else %}
             .expected = {{ c.expected | c_literal(f.output.type) }},
+{% endif %}
         },
 {% endfor %}
     };
@@ -48,6 +73,38 @@ static void test_{{ f.name }}(void) {
         {{ arg_ty | c_type }} arg{{ loop.index0 }} = cases[i].input_arg{{ loop.index0 }};
 {% endif %}
 {% endfor %}
+{% if f.output.list_of is defined %}
+        {{ f.function }}_result_t actual = {{ f.function }}({% for arg_ty in f.args %}{% if arg_ty == "bytes" %}(sce_forge_bytes_view_t){ arg{{ loop.index0 }}.data, arg{{ loop.index0 }}.len }{% else %}arg{{ loop.index0 }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %});
+        if (!actual.ok || actual.len != cases[i].expected_len) {
+            fprintf(stderr,
+                "FAIL: {{ f.name }} case %zu: ok=%d len=%zu expected_len=%zu\n",
+                i, (int)actual.ok, actual.len, cases[i].expected_len);
+            ++g_failures;
+            continue;
+        }
+        for (size_t k = 0; k < actual.len; ++k) {
+{% if f.output.compare == "tolerance" %}
+            if (!close_enough((double)actual.items[k], (double)cases[i].expected[k], FLOAT_TOL)) {
+{% else %}
+            if (actual.items[k] != cases[i].expected[k]) {
+{% endif %}
+{% if float_elem %}
+                fprintf(stderr,
+                    "FAIL: {{ f.name }} case %zu [%zu]: actual=%.17g expected=%.17g\n",
+                    i, k, (double)actual.items[k], (double)cases[i].expected[k]);
+{% elif signed_elem %}
+                fprintf(stderr,
+                    "FAIL: {{ f.name }} case %zu [%zu]: actual=%lld expected=%lld\n",
+                    i, k, (long long)actual.items[k], (long long)cases[i].expected[k]);
+{% else %}
+                fprintf(stderr,
+                    "FAIL: {{ f.name }} case %zu [%zu]: actual=%llu expected=%llu\n",
+                    i, k, (unsigned long long)actual.items[k], (unsigned long long)cases[i].expected[k]);
+{% endif %}
+                ++g_failures;
+            }
+        }
+{% else %}
         {{ f.output.type | c_type }} actual = {{ f.function }}({% for arg_ty in f.args %}{% if arg_ty == "bytes" %}(sce_forge_bytes_view_t){ arg{{ loop.index0 }}.data, arg{{ loop.index0 }}.len }{% else %}arg{{ loop.index0 }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %});
 {% if f.output.compare == "tolerance" %}
         if (!close_enough((double)actual, (double)cases[i].expected, FLOAT_TOL)) {
@@ -63,6 +120,7 @@ static void test_{{ f.name }}(void) {
                 i, (unsigned long long)actual, (unsigned long long)cases[i].expected);
             ++g_failures;
         }
+{% endif %}
 {% endif %}
     }
 }

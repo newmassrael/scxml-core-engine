@@ -47,8 +47,8 @@ use crate::forge::error::ForgeError;
 use crate::forge::expr;
 use crate::forge::expression_site::ExpressionSite;
 use crate::forge::model::{
-    AlgorithmConstType, AlgorithmStmt, CodecVariant, Cycle, ForgeDocument, ForgeField, ForgeImport,
-    SceType,
+    AlgorithmConstType, AlgorithmStmt, AlgorithmValueType, CodecVariant, Cycle, ForgeDocument,
+    ForgeField, ForgeImport, SceType,
 };
 
 /// The aliases of `imports` that `document` or its `cycles` name.
@@ -103,6 +103,13 @@ impl Names {
         }
     }
 
+    /// An algorithm type names what its scalar, or its list's element, names.
+    fn value_ty(&mut self, ty: &AlgorithmValueType) {
+        match ty {
+            AlgorithmValueType::Scalar(t) | AlgorithmValueType::List { elem: t } => self.ty(t),
+        }
+    }
+
     /// Every name the expression reads as a value, callees included —
     /// `frame.len` reads `frame`, `crc(x)` reads `crc` and `x`. `spelling`
     /// is the attribute it was read from, which places a refusal of it;
@@ -153,7 +160,7 @@ impl Names {
                     init_spelling,
                     ..
                 } => {
-                    self.ty(sce_type);
+                    self.value_ty(sce_type);
                     self.opt_expr(init.as_deref(), init_spelling.as_ref())?;
                 }
                 // A target is an lvalue in expression syntax — `x`,
@@ -290,9 +297,12 @@ impl Names {
                 Ok(())
             }
             ForgeDocument::Algorithm(m) => {
-                m.signature.params.iter().for_each(|p| self.ty(&p.sce_type));
+                m.signature
+                    .params
+                    .iter()
+                    .for_each(|p| self.value_ty(&p.sce_type));
                 if let Some(ret) = &m.signature.return_type {
-                    self.ty(ret);
+                    self.value_ty(ret);
                 }
                 for c in &m.consts {
                     match &c.sce_type {

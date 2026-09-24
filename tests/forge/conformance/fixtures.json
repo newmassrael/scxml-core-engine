@@ -1069,6 +1069,23 @@
       }
     },
     {
+      "name": "algorithm_weekly_expand",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "algorithm_weekly_expand",
+      "args": [
+        "i64",
+        "u8",
+        "i64",
+        "i64",
+        "i64"
+      ],
+      "output": {
+        "list_of": "i64",
+        "compare": "equality"
+      }
+    },
+    {
       "name": "codec_dma_aligned_basic",
       "kind": "codec",
       "ref_section": "codecs",

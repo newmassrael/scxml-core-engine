@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Weekly recurrence expansion: every day in [window_start, window_end) on
+  or after `dtstart` whose weekday is set in `mask` (bit 0 = Monday, day 0
+  = 1970-01-01, a Thursday) and whose week since `dtstart` is a multiple
+  of `interval`.
+
+  Exercises a `list<int64>` return (SCE_FORGE.md §4.12): a buffer local
+  declared with a capacity, filled forward-only by <sce:append>, and
+  returned by name. The oracle's cases stay within the capacity, where
+  every backend agrees; past it Rust/C11 fail and the heap backends grow.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="algorithm"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="dtstart" type="int64"/>
+    <sce:param name="mask" type="uint8"/>
+    <sce:param name="interval" type="int64"/>
+    <sce:param name="window_start" type="int64"/>
+    <sce:param name="window_end" type="int64"/>
+    <sce:return type="list&lt;int64&gt;" returns-max-size="366"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="list&lt;int64&gt;" capacity="366"/>
+    <sce:var name="d" type="int64" init="window_start &gt; dtstart ? window_start : dtstart"/>
+    <sce:while cond="d &lt; window_end" max-iter="366">
+      <sce:var name="weekday" type="int64" init="(d + 3) % 7"/>
+      <sce:var name="week" type="int64" init="(d - dtstart) / 7"/>
+      <sce:if cond="((mask &gt;&gt; weekday) &amp; 1) === 1 &amp;&amp; week % interval === 0">
+        <sce:append target="out" expr="d"/>
+      </sce:if>
+      <sce:assign target="d" expr="d + 1"/>
+    </sce:while>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

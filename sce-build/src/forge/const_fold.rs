@@ -487,15 +487,20 @@ fn eval_stmt(
             init,
             ..
         } => {
-            // Only a bytes buffer lacks an initializer, and a build-time
-            // fold computes scalar values — there is nothing to fold a
-            // buffer into.
-            let init = init.as_deref().ok_or_else(|| {
+            // Only a buffer (`bytes` or `list<T>`) lacks an initializer, and a
+            // build-time fold computes scalar values — there is nothing to
+            // fold a buffer into.
+            let not_foldable = || {
                 ConstFoldKind::NotFoldable(format!(
-                    "local '{name}' is a bytes buffer, and a build-time fold computes scalars"
+                    "local '{name}' is a {} buffer, and a build-time fold computes scalars",
+                    sce_type.as_attr()
                 ))
-            })?;
-            let value = eval_expr_typed(init, scope, sce_type)?;
+            };
+            let init = init.as_deref().ok_or_else(not_foldable)?;
+            // A local with an initializer is a scalar; `scalar()` states that
+            // rather than assuming it.
+            let scalar = sce_type.scalar().ok_or_else(not_foldable)?;
+            let value = eval_expr_typed(init, scope, scalar)?;
             scope.declare(name, value);
             Ok(())
         }
@@ -977,7 +982,7 @@ mod tests {
             body: vec![AlgorithmStmt::Var {
                 name: "doubled".into(),
                 name_spelling: None,
-                sce_type: SceType::Uint16,
+                sce_type: crate::forge::model::AlgorithmValueType::Scalar(SceType::Uint16),
                 init: Some("i + i".into()),
                 init_spelling: None,
                 capacity: None,
@@ -1014,7 +1019,7 @@ mod tests {
                 AlgorithmStmt::Var {
                     name: "c".into(),
                     name_spelling: None,
-                    sce_type: SceType::Uint16,
+                    sce_type: crate::forge::model::AlgorithmValueType::Scalar(SceType::Uint16),
                     init: Some("i << 8".into()),
                     init_spelling: None,
                     capacity: None,
@@ -1023,7 +1028,7 @@ mod tests {
                 AlgorithmStmt::Var {
                     name: "bit".into(),
                     name_spelling: None,
-                    sce_type: SceType::Uint16,
+                    sce_type: crate::forge::model::AlgorithmValueType::Scalar(SceType::Uint16),
                     init: Some("0".into()),
                     init_spelling: None,
                     capacity: None,

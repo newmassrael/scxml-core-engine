@@ -25,6 +25,17 @@
     }
   },
   "definitions": {
+    "AlgorithmOutput": {
+      "description": "What an algorithm fixture's single call returns: one scalar, or a `list<T>`. Untagged so a scalar output keeps its `{type, compare}` spelling; the list form is told apart by `list_of`.",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/ListOutput"
+        },
+        {
+          "$ref": "#/definitions/ScalarOutput"
+        }
+      ]
+    },
     "CanonicalType": {
       "description": "Canonical primitive types used across the manifest. Each per-language template maps these to its native type system.",
       "oneOf": [
@@ -576,7 +587,7 @@
               ]
             },
             "output": {
-              "$ref": "#/definitions/ScalarOutput"
+              "$ref": "#/definitions/AlgorithmOutput"
             }
           }
         }
@@ -614,6 +625,23 @@
           "$ref": "#/definitions/StubKind"
         }
       }
+    },
+    "ListOutput": {
+      "description": "List output descriptor for an algorithm that returns `list<T>` (SCE_FORGE.md §4.12): `expected` is a JSON array, compared element by element and by length. `list_of` names the element's canonical type; `compare` applies to each element.\n\n⚠ Cases stay within the declared capacity. Past it the backends differ by contract (Rust/C11 fail, the heap backends grow), so an overflowing case would measure that difference rather than the algorithm.",
+      "type": "object",
+      "required": [
+        "compare",
+        "list_of"
+      ],
+      "properties": {
+        "compare": {
+          "$ref": "#/definitions/CompareMode"
+        },
+        "list_of": {
+          "$ref": "#/definitions/CanonicalType"
+        }
+      },
+      "additionalProperties": false
     },
     "LookupMissPolicy": {
       "description": "`kind = \"lookup\"` miss-handling policy. Mirrors `forge::model::MissPolicy` but stays in the conformance manifest namespace so the harness manifest parser does not have to depend on the SCE Forge model types.\n\n`Error`: the generated function returns the language's optional type; fixtures must hit a key on every input (happy-path only) and the harness fragment unwraps with `.expect()` / `.value()` / `?: error()`.\n\n`Default`: the generated function returns the raw value with a fallback; fixtures may include miss inputs that test the fallback path. The reference oracle simply lists the expected fallback value for those cases.",

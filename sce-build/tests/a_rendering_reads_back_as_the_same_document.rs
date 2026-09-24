@@ -305,7 +305,8 @@ fn every_field_clause_survives_the_round_trip() {
 #[test]
 fn a_local_reads_back_with_exactly_the_initializer_its_type_allows() {
     use sce_build::forge::model::{
-        AlgorithmModel, AlgorithmParam, AlgorithmSignature, AlgorithmStmt, ForgeDocument, SceType,
+        AlgorithmModel, AlgorithmParam, AlgorithmSignature, AlgorithmStmt, AlgorithmValueType,
+        ForgeDocument, SceType,
     };
 
     let document = ForgeDocument::Algorithm(AlgorithmModel {
@@ -313,9 +314,9 @@ fn a_local_reads_back_with_exactly_the_initializer_its_type_allows() {
         signature: AlgorithmSignature {
             params: vec![AlgorithmParam {
                 name: "b".to_string(),
-                sce_type: SceType::Uint8,
+                sce_type: AlgorithmValueType::Scalar(SceType::Uint8),
             }],
-            return_type: Some(SceType::Bytes),
+            return_type: Some(AlgorithmValueType::Scalar(SceType::Bytes)),
             returns_max_size: Some(4),
         },
         consts: Vec::new(),
@@ -323,7 +324,7 @@ fn a_local_reads_back_with_exactly_the_initializer_its_type_allows() {
             AlgorithmStmt::Var {
                 name: "out".to_string(),
                 name_spelling: None,
-                sce_type: SceType::Bytes,
+                sce_type: AlgorithmValueType::Scalar(SceType::Bytes),
                 init: None,
                 init_spelling: None,
                 capacity: Some(4),
@@ -332,7 +333,7 @@ fn a_local_reads_back_with_exactly_the_initializer_its_type_allows() {
             AlgorithmStmt::Var {
                 name: "n".to_string(),
                 name_spelling: None,
-                sce_type: SceType::Uint8,
+                sce_type: AlgorithmValueType::Scalar(SceType::Uint8),
                 init: Some("b".to_string()),
                 init_spelling: None,
                 capacity: None,

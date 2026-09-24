@@ -18,11 +18,31 @@
 {% for arg_ty in f.args %}
             val arg{{ loop.index0 }} = {{ ("args[" ~ loop.index0 ~ "]") | kt_unmarshal(arg_ty) }}
 {% endfor %}
+{% if f.output.list_of is defined %}
+{# A `list<T>` return (SCE_FORGE.md §4.12) is the element's primitive array
+   (`LongArray`, `UIntArray`, ...). Both sides compare as `List<T>`, so
+   one spelling serves every element type; an unsigned array is still an
+   experimental type, hence the opt-in on the one local that holds it. #}
+            val expected = case.jsonObject["expected"]!!.jsonArray.map { {{ "it" | kt_unmarshal(f.output.list_of) }} }
+{% if f.output.list_of in ["u8", "u16", "u32", "u64"] %}
+            @OptIn(ExperimentalUnsignedTypes::class)
+{% endif %}
+            val actual = {{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %}).toList()
+{% if f.output.compare == "tolerance" %}
+            assertEquals(expected.size, actual.size, "{{ f.name }} length")
+            for (i in expected.indices) {
+                assertClose(actual[i].toDouble(), expected[i].toDouble(), "{{ f.name }}")
+            }
+{% else %}
+            assertEquals(expected, actual, "{{ f.name }}")
+{% endif %}
+{% else %}
             val expected = {{ "case.jsonObject[\"expected\"]!!" | kt_unmarshal(f.output.type) }}
             val actual = {{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
 {% if f.output.compare == "tolerance" %}
             assertClose(actual.toDouble(), expected.toDouble(), "{{ f.name }}")
 {% else %}
             assertEquals(expected, actual, "{{ f.name }}")
+{% endif %}
 {% endif %}
         }

@@ -79,6 +79,13 @@ fn insert_stateless_imports<'a>(ctx: &mut TypeCtx<'a>, imports: &'a [ImportConte
         if imp.is_stateful {
             continue;
         }
+        // An algorithm with a `list<T>` slot has no signature to register,
+        // and skipping it would leave its calls unjudged: it is registered
+        // as callable only by a host, which is what refuses the call.
+        if let Some(slot) = &imp.list_slot {
+            ctx.insert_func(imp.alias.as_str(), FuncSig::host_only(slot.as_str()));
+            continue;
+        }
         let Some(ret_ty) = imp.ret_type.as_ref() else {
             continue;
         };
@@ -88,7 +95,14 @@ fn insert_stateless_imports<'a>(ctx: &mut TypeCtx<'a>, imports: &'a [ImportConte
             .map(InferredType::from_sce_type)
             .collect();
         let ret = InferredType::from_sce_type(ret_ty);
-        ctx.insert_func(imp.alias.as_str(), FuncSig { params, ret });
+        ctx.insert_func(
+            imp.alias.as_str(),
+            FuncSig {
+                params,
+                ret,
+                host_only: None,
+            },
+        );
     }
 }
 
@@ -133,6 +147,7 @@ fn insert_stateful_imports<'a>(ctx: &mut TypeCtx<'a>, imports: &'a [ImportContex
                 FuncSig {
                     params,
                     ret: InferredType::from_sce_type(ret_ty),
+                    host_only: None,
                 },
             );
         }
@@ -305,7 +320,14 @@ fn insert_procedure_helpers<'a>(ctx: &mut TypeCtx<'a>, helpers: &'a [ProcedureHe
     for h in helpers {
         let params: Vec<InferredType> = h.args.iter().map(InferredType::from_sce_type).collect();
         let ret = InferredType::from_sce_type(&h.returns);
-        ctx.insert_func(h.name.as_str(), FuncSig { params, ret });
+        ctx.insert_func(
+            h.name.as_str(),
+            FuncSig {
+                params,
+                ret,
+                host_only: None,
+            },
+        );
     }
 }
 

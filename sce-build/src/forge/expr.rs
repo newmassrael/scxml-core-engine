@@ -490,6 +490,21 @@ pub(crate) fn slot_admits(slot: InferredType, got: InferredType) -> bool {
     }
 }
 
+/// The refusal of a call to an imported algorithm whose signature has a
+/// `list<T>` slot (`slot` names it: "returns list<int64>"), under either
+/// form — an expression's `days(n)` or a `<sce:call target="days">`. In v1
+/// a list crosses only the host boundary (SCE_FORGE.md §4.12). One text for
+/// both forms, so the two read alike.
+pub(crate) fn host_only_call(target: &str, slot: &str, observed: Option<String>) -> ExprError {
+    ExprError::UnsupportedConstruct {
+        construct: format!(
+            "a call to algorithm `{target}`, which {slot} \
+             (v1: only a host calls an algorithm with a list<T> slot)"
+        ),
+        observed,
+    }
+}
+
 /// `value`, of a kind `slot` does not admit, refused at its range — which
 /// `source` is the text of, and the refusal reports as written.
 fn type_mismatch(slot: InferredType, value: &TypedExpr, source: &str) -> Refusal {
@@ -725,6 +740,16 @@ fn reject_call_argument_mismatches(
             _ => None,
         };
         if let Some((name, signature)) = registered {
+            // Before arity: a host-only signature declares no parameters, and
+            // "expects 0 arguments" would name a rule nobody wrote.
+            if let Some(slot) = &signature.host_only {
+                let observed = callee
+                    .span
+                    .clone()
+                    .and_then(|span| source.get(span))
+                    .map(str::to_string);
+                return Err(host_only_call(&name, slot, observed).at(callee.span.clone()));
+            }
             if args.len() != signature.params.len() {
                 return Err(ExprError::ArgumentCount {
                     callee: name,
@@ -6015,6 +6040,7 @@ mod tests {
             FuncSig {
                 params: vec![InferredType::Bytes, InferredType::Bytes],
                 ret: InferredType::Bool,
+                host_only: None,
             },
         );
         ctx.insert_var("entry.pattern", InferredType::Str);
@@ -6893,6 +6919,7 @@ mod tests {
             FuncSig {
                 params: vec![int(false, 16)],
                 ret: float(64),
+                host_only: None,
             },
         );
         let out = transpile_typed(
@@ -6915,6 +6942,7 @@ mod tests {
             FuncSig {
                 params: vec![],
                 ret: InferredType::Bytes,
+                host_only: None,
             },
         );
         // frame.encode()[0] should infer Index on Bytes → u8
@@ -7148,6 +7176,7 @@ mod tests {
             FuncSig {
                 params: Vec::new(),
                 ret: InferredType::Bytes,
+                host_only: None,
             },
         );
         ctx.insert_record("_event", RecordShape::Open);

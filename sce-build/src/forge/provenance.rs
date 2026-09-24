@@ -616,7 +616,9 @@ mod tests {
                 name: "alg".into(),
                 signature: AlgorithmSignature {
                     params: Vec::new(),
-                    return_type: Some(SceType::Uint8),
+                    return_type: Some(crate::forge::model::AlgorithmValueType::Scalar(
+                        SceType::Uint8,
+                    )),
                     returns_max_size: None,
                 },
                 consts: Vec::new(),

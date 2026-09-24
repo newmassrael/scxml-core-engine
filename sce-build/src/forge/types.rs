@@ -629,6 +629,28 @@ pub struct FuncSig {
     pub params: Vec<InferredType>,
     /// Return type.
     pub ret: InferredType,
+    /// Why no expression may call this function whatever its arguments —
+    /// `None` for every callable one. Set for an imported algorithm whose
+    /// signature takes or returns a `list<T>` (the text names the slot,
+    /// e.g. "returns list<int64>"): in v1 only a host calls it
+    /// (SCE_FORGE.md §4.12). Built by [`FuncSig::host_only`].
+    ///
+    /// ⚠ `params` and `ret` are empty then and say nothing. The refusal
+    /// comes from this reason, never from an arity or kind check against a
+    /// signature nobody declared, and never from an `Unknown` that reads as
+    /// "not judged".
+    pub host_only: Option<String>,
+}
+
+impl FuncSig {
+    /// The signature of a function only a host may call, and why.
+    pub fn host_only(reason: impl Into<String>) -> Self {
+        Self {
+            params: Vec::new(),
+            ret: InferredType::Unknown,
+            host_only: Some(reason.into()),
+        }
+    }
 }
 
 /// Type context for expression inference. Built by the generator from a
@@ -1198,6 +1220,7 @@ mod tests {
             FuncSig {
                 params: vec![int(false, 16)],
                 ret: float(64),
+                host_only: None,
             },
         );
         assert!(ctx.lookup_func("temp_xform").is_some());

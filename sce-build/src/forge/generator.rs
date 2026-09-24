@@ -82,6 +82,18 @@ pub struct ImportContext {
     #[serde(skip)]
     pub ret_type: Option<SceType>,
 
+    /// For an imported algorithm whose signature takes or returns a
+    /// `list<T>`: why it cannot be called from another algorithm (e.g.
+    /// "returns list<int64>"). `None` for every other import.
+    ///
+    /// ⚠ The list slot is deliberately NOT in `param_types` / `ret_type`: an
+    /// `InferredType::Unknown` there reads as "not judged" and the call would
+    /// pass unchecked, and an emptied parameter list reads as zero-arity. A
+    /// caller refuses from this reason instead (v1: a list-signature
+    /// algorithm is callable only from a host — SCE_FORGE.md §4.12).
+    #[serde(skip)]
+    pub list_slot: Option<String>,
+
     /// For stateful kinds: member fields exposed to user expressions as
     /// `alias_.field_name` (or equivalent member access syntax). Each entry
     /// maps a field name (as seen in the user's SCXML expression) to its
@@ -631,6 +643,7 @@ fn resolve_single_import(
         qualified_call: String::new(),
         param_types: Vec::new(),
         ret_type: None,
+        list_slot: None,
         member_field_types: Vec::new(),
         member_method_sigs: Vec::new(),
         go_init_expr,
@@ -21073,14 +21086,22 @@ fn collect_bc_foreach_member_types(
     }
 }
 
-/// SCE byte-buffer-build (§4.12): collect the declared `capacity` of every
-/// `<sce:var type="bytes" capacity="N">` buffer local in an algorithm body,
-/// keyed by the SCXML name. The C11 append lowering reads it to bound the
-/// result struct's `bytes[N]` array. Recurses into block statements so a
+/// A buffer local of an algorithm body — `bytes` or `list<T>` — as the
+/// lowering reads it: its declared capacity and its type.
+#[derive(Debug, Clone)]
+struct AppendBufferDecl {
+    cap: u32,
+    ty: crate::forge::model::AlgorithmValueType,
+}
+
+/// SCE byte-buffer-build (§4.12): collect every `<sce:var type="bytes">` or
+/// `type="list<T>"` buffer local in an algorithm body, keyed by the SCXML
+/// name. The append lowering reads it to pick the operation and, on C11, to
+/// bound the result struct's fixed array. Recurses into block statements so a
 /// buffer declared at any nesting depth is registered.
-fn collect_bytes_buffer_caps(
+fn collect_append_buffers(
     stmts: &[AlgorithmStmt],
-    out: &mut std::collections::HashMap<String, u32>,
+    out: &mut std::collections::HashMap<String, AppendBufferDecl>,
 ) {
     for s in stmts {
         match s {
@@ -21090,9 +21111,15 @@ fn collect_bytes_buffer_caps(
                 capacity,
                 ..
             } => {
-                if matches!(sce_type, SceType::Bytes) {
+                if sce_type.is_append_buffer() {
                     if let Some(cap) = capacity {
-                        out.insert(name.clone(), *cap);
+                        out.insert(
+                            name.clone(),
+                            AppendBufferDecl {
+                                cap: *cap,
+                                ty: sce_type.clone(),
+                            },
+                        );
                     }
                 }
             }
@@ -21101,18 +21128,168 @@ fn collect_bytes_buffer_caps(
                 else_body,
                 ..
             } => {
-                collect_bytes_buffer_caps(then_body, out);
+                collect_append_buffers(then_body, out);
                 if let Some(eb) = else_body {
-                    collect_bytes_buffer_caps(eb, out);
+                    collect_append_buffers(eb, out);
                 }
             }
             AlgorithmStmt::While { body, .. } | AlgorithmStmt::Foreach { body, .. } => {
-                collect_bytes_buffer_caps(body, out);
+                collect_append_buffers(body, out);
             }
             AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
             | AlgorithmStmt::Return { .. }
             | AlgorithmStmt::Call { .. } => {}
+        }
+    }
+}
+
+/// Per-backend spelling of an algorithm `list<T>` (SCE_FORGE.md §4.12,
+/// generalised from the `bytes` buffer). One place answers every question a
+/// list asks of a backend, so the declaration, the append, the return and the
+/// signature cannot disagree about which container is in use.
+///
+/// The containers follow the `bytes` table: Rust the profile-portable
+/// `SceOwnedList<T, N>` (fixed on the heap-free tier, growable with `alloc`),
+/// C11 a by-value result struct with a fixed `items[N]`, C++ `std::vector`,
+/// Go a slice, Python a `list`, Kotlin the runtime's `SceListBuf` returned as
+/// the primitive array of the element (an unsigned element as the stdlib's
+/// unsigned array view over the same bits).
+struct ListSpelling<'a> {
+    lang: crate::generator::Language,
+    elem: &'a SceType,
+    elem_name: String,
+}
+
+impl<'a> ListSpelling<'a> {
+    fn new(l: &LangCtx, elem: &'a SceType) -> Self {
+        Self {
+            lang: l.lang,
+            elem,
+            elem_name: l.type_name(elem).into_owned(),
+        }
+    }
+
+    /// The function's return type for a list of capacity `cap`.
+    fn return_type(&self, cap: u32, primary_symbol: &str) -> String {
+        use crate::generator::Language;
+        let t = &self.elem_name;
+        match self.lang {
+            Language::Rust => format!("Result<SceOwnedList<{t}, {cap}>, CapacityExceeded>"),
+            Language::C11 => format!("{primary_symbol}_result_t"),
+            Language::Cpp => format!("std::vector<{t}>"),
+            Language::Go => format!("[]{t}"),
+            Language::Python => format!("list[{t}]"),
+            Language::Kotlin => self.kotlin_array_type().to_string(),
+        }
+    }
+
+    /// The C11 result struct a list-returning function hands back by value.
+    fn c11_result_typedef(&self, cap: u32, primary_symbol: &str) -> String {
+        let t = &self.elem_name;
+        format!(
+            "typedef struct {{\n    {t} items[{cap}];\n    size_t len;\n    bool ok;\n}} {primary_symbol}_result_t;\n\n"
+        )
+    }
+
+    /// Declaration of an empty buffer local of capacity `cap`.
+    fn declare(
+        &self,
+        pad: &str,
+        local: &str,
+        cap: u32,
+        c11_result: &str,
+        rust_mut: &str,
+    ) -> String {
+        use crate::generator::Language;
+        let t = &self.elem_name;
+        match self.lang {
+            Language::Rust => {
+                format!(
+                    "{pad}let {rust_mut}{local}: SceOwnedList<{t}, {cap}> = SceOwnedList::new();\n"
+                )
+            }
+            Language::Cpp => {
+                format!("{pad}std::vector<{t}> {local};\n{pad}{local}.reserve({cap});\n")
+            }
+            Language::C11 => format!("{pad}{c11_result} {local} = {{ .len = 0u, .ok = true }};\n"),
+            Language::Go => format!("{pad}{local} := make([]{t}, 0, {cap})\n"),
+            // A `list` exposes no pre-size API; the capacity reaches the
+            // Python backend through the return's `returns-max-size`, as for
+            // `bytearray`.
+            Language::Python => format!("{pad}{local}: list[{t}] = []\n"),
+            Language::Kotlin => format!("{pad}val {local} = SceListBuf({cap})\n"),
+        }
+    }
+
+    /// Append one element `e`, already lowered into the element's slot.
+    /// Overflow is fallible on the bounded backends and grows the others,
+    /// exactly as for `bytes`.
+    fn push(&self, pad: &str, local: &str, e: &str, cap: u32) -> String {
+        use crate::generator::Language;
+        let t = &self.elem_name;
+        match self.lang {
+            Language::Rust => format!("{pad}{local}.push({e})?;\n"),
+            Language::Cpp => format!("{pad}{local}.push_back(static_cast<{t}>({e}));\n"),
+            Language::C11 => format!(
+                "{pad}if ({local}.len < {cap}u) {{ {local}.items[{local}.len++] = ({t})({e}); }} else {{ {local}.ok = false; return {local}; }}\n"
+            ),
+            Language::Go => format!("{pad}{local} = append({local}, {t}({e}))\n"),
+            Language::Python => format!("{pad}{local}.append({e})\n"),
+            Language::Kotlin => format!("{pad}{local}.add({e})\n"),
+        }
+    }
+
+    /// Return the finished buffer in the function's declared return shape.
+    fn return_stmt(&self, pad: &str, local: &str) -> String {
+        use crate::generator::Language;
+        match self.lang {
+            Language::Rust => format!("{pad}return Ok({local});\n"),
+            Language::Cpp | Language::C11 => format!("{pad}return {local};\n"),
+            Language::Go | Language::Python => format!("{pad}return {local}\n"),
+            Language::Kotlin => format!("{pad}return {local}.{}()\n", self.kotlin_to_array()),
+        }
+    }
+
+    /// Whether the Kotlin return type is one of the stdlib's unsigned
+    /// arrays, which sit behind `ExperimentalUnsignedTypes`.
+    fn kotlin_needs_unsigned_opt_in(&self) -> bool {
+        self.elem.is_unsigned()
+    }
+
+    fn kotlin_array_type(&self) -> &'static str {
+        match self.elem {
+            SceType::Int64 => "LongArray",
+            SceType::Int32 => "IntArray",
+            SceType::Int16 => "ShortArray",
+            SceType::Int8 => "ByteArray",
+            SceType::Uint64 => "ULongArray",
+            SceType::Uint32 => "UIntArray",
+            SceType::Uint16 => "UShortArray",
+            SceType::Uint8 => "UByteArray",
+            SceType::Float64 => "DoubleArray",
+            SceType::Float32 => "FloatArray",
+            SceType::Bool => "BooleanArray",
+            // `AlgorithmValueType::list_elem_admitted` keeps every other
+            // type out of a list before any backend renders.
+            other => unreachable!("list<{}> is refused by the parser", other.as_attr()),
+        }
+    }
+
+    fn kotlin_to_array(&self) -> &'static str {
+        match self.elem {
+            SceType::Int64 => "toLongArray",
+            SceType::Int32 => "toIntArray",
+            SceType::Int16 => "toShortArray",
+            SceType::Int8 => "toByteArray",
+            SceType::Uint64 => "toULongArray",
+            SceType::Uint32 => "toUIntArray",
+            SceType::Uint16 => "toUShortArray",
+            SceType::Uint8 => "toUByteArray",
+            SceType::Float64 => "toDoubleArray",
+            SceType::Float32 => "toFloatArray",
+            SceType::Bool => "toBooleanArray",
+            other => unreachable!("list<{}> is refused by the parser", other.as_attr()),
         }
     }
 }
@@ -21126,8 +21303,9 @@ struct AlgorithmBodyCfg<'a> {
     type_ctx: &'a crate::forge::types::TypeCtx<'a>,
     renames: &'a std::collections::HashMap<&'a str, &'a str>,
     return_ty: crate::forge::types::InferredType,
+    return_value: Option<&'a crate::forge::model::AlgorithmValueType>,
     imports: &'a [ImportContext],
-    bytes_buffer_caps: &'a std::collections::HashMap<String, u32>,
+    append_buffers: &'a std::collections::HashMap<String, AppendBufferDecl>,
     c11_result_type: Option<&'a str>,
 }
 
@@ -21162,8 +21340,9 @@ fn lower_algorithm_body(
         renames: cfg.renames,
         assigned: &assigned,
         return_ty: cfg.return_ty,
+        return_value: cfg.return_value,
         imports: cfg.imports,
-        bytes_buffer_caps: cfg.bytes_buffer_caps,
+        append_buffers: cfg.append_buffers,
         c11_result_type: cfg.c11_result_type,
     };
     for s in stmts {
@@ -21230,18 +21409,21 @@ struct AlgorithmLowerCtx<'a> {
     renames: &'a std::collections::HashMap<&'a str, &'a str>,
     assigned: &'a std::collections::HashSet<String>,
     return_ty: crate::forge::types::InferredType,
+    /// The declared return as written — needed for a `list<T>` return, which
+    /// `return_ty` (an [`InferredType`]) has no case for.
+    return_value: Option<&'a crate::forge::model::AlgorithmValueType>,
     imports: &'a [ImportContext],
-    /// SCE byte-buffer-build (§4.12): declared capacity of every
-    /// `<sce:var type="bytes" capacity="N">` local, keyed by the SCXML name.
-    /// The C11 backend reads it to bound the result struct's `bytes[N]`
-    /// array on each `<sce:append>`; Rust bakes the bound into
-    /// `SceBytes<N>` so it never consults this map.
-    bytes_buffer_caps: &'a std::collections::HashMap<String, u32>,
+    /// SCE byte-buffer-build (§4.12): every `bytes` / `list<T>` buffer local
+    /// with its declared capacity and type, keyed by the SCXML name. The
+    /// append lowering reads the type to pick the operation; C11 reads the
+    /// capacity to bound the result struct's fixed array on each
+    /// `<sce:append>`; Rust bakes the bound into its container type.
+    append_buffers: &'a std::collections::HashMap<String, AppendBufferDecl>,
     /// SCE byte-buffer-build (§4.12): the C11 result-struct typedef name
-    /// (`<symbol>_result_t`) when the algorithm returns `bytes`, else `None`.
-    /// The bytes `<sce:var>` lowers to a by-value local of this type (the
-    /// no-malloc carrier that doubles as the return value). Other backends
-    /// use a language-native growable buffer and ignore this.
+    /// (`<symbol>_result_t`) when the algorithm returns a buffer, else
+    /// `None`. The buffer `<sce:var>` lowers to a by-value local of this type
+    /// (the no-malloc carrier that doubles as the return value). Other
+    /// backends use a language-native growable buffer and ignore this.
     c11_result_type: Option<&'a str>,
 }
 
@@ -21270,8 +21452,9 @@ fn lower_algorithm_stmt(
         renames,
         assigned,
         return_ty,
+        return_value,
         imports,
-        bytes_buffer_caps,
+        append_buffers,
         c11_result_type,
     } = ctx;
     match s {
@@ -21301,12 +21484,13 @@ fn lower_algorithm_stmt(
             // `MAX_ENCODED_BYTES`). Pre-sizing is an allocation hint only — a
             // growable backend still grows past `capacity` rather than failing,
             // which is the §4.12 backend table's documented behaviour.
-            if matches!(sce_type, SceType::Bytes) {
+            if sce_type.is_append_buffer() {
                 let local = l.local_id(name);
                 let cap = capacity.ok_or_else(|| {
                     GenerateError::InvalidConfig(format!(
-                        "algorithm bytes buffer '{name}' has no `capacity` — the \
-                         byte-buffer-build validator must reject this before codegen"
+                        "algorithm {} buffer '{name}' has no `capacity` — the \
+                         byte-buffer-build validator must reject this before codegen",
+                        sce_type.as_attr()
                     ))
                 })?;
                 // A buffer is always appended to, so Rust needs `let mut`;
@@ -21316,6 +21500,24 @@ fn lower_algorithm_stmt(
                 } else {
                     ""
                 };
+                // A `list<T>` takes the list spelling; a `bytes` buffer keeps
+                // the byte containers below, byte-for-byte as before.
+                if let Some(elem) = sce_type.list_elem() {
+                    let result_ty = match lang {
+                        Language::C11 => c11_result_type.ok_or_else(|| {
+                            GenerateError::InvalidConfig(format!(
+                                "algorithm list buffer '{name}' lowered for C11 with no \
+                                 result-struct type — the algorithm must declare the list \
+                                 return (byte-buffer-build validator gates this)"
+                            ))
+                        })?,
+                        _ => "",
+                    };
+                    out.push_str(
+                        &ListSpelling::new(l, elem).declare(pad, &local, cap, result_ty, rust_mut),
+                    );
+                    return Ok(());
+                }
                 let line = match lang {
                     Language::Rust => {
                         format!("{pad}let {rust_mut}{local}: SceBytes<{cap}> = SceBytes::new();\n")
@@ -21351,6 +21553,13 @@ fn lower_algorithm_stmt(
                 GenerateError::InvalidConfig(format!(
                     "algorithm local '{name}' has no initializer — the parser requires \
                      one on every local that is not a bytes buffer"
+                ))
+            })?;
+            // Every buffer returned above, so what reaches here is a scalar.
+            let sce_type = sce_type.scalar().ok_or_else(|| {
+                GenerateError::InvalidConfig(format!(
+                    "algorithm local '{name}' of type {} reached the scalar lowering",
+                    sce_type.as_attr()
                 ))
             })?;
             let site = ExpressionSite::new(init, init_spelling.as_ref());
@@ -21447,16 +21656,16 @@ fn lower_algorithm_stmt(
             let target_key = target.trim();
             let target_site = ExpressionSite::new(target, target_spelling.as_ref());
             let rhs_site = ExpressionSite::new(rhs, expr_spelling.as_ref());
-            // The target must be a declared `<sce:var type="bytes">` buffer.
-            // Codegen-time check (mirrors the foreach-source-not-iterable
-            // precedent — fires from the same lowering pass that has the
-            // buffer table). C11 then bounds every append against the
-            // buffer's declared capacity; the other backends carry the
-            // bound in the buffer type itself.
-            let cap_n = match bytes_buffer_caps.get(target_key) {
-                Some(n) => *n,
+            // The target must be a declared `<sce:var type="bytes">` or
+            // `type="list<T>"` buffer. Codegen-time check (mirrors the
+            // foreach-source-not-iterable precedent — fires from the same
+            // lowering pass that has the buffer table). C11 then bounds every
+            // append against the buffer's declared capacity; the other
+            // backends carry the bound in the buffer type itself.
+            let buffer = match append_buffers.get(target_key) {
+                Some(decl) => decl,
                 None => {
-                    let mut candidates: Vec<String> = bytes_buffer_caps.keys().cloned().collect();
+                    let mut candidates: Vec<String> = append_buffers.keys().cloned().collect();
                     candidates.sort();
                     let refusal: ForgeError =
                         crate::forge::error::ValidationError::AlgorithmAppendTargetNotBuffer {
@@ -21467,7 +21676,25 @@ fn lower_algorithm_stmt(
                     return Err(target_site.locate(Some(0..target_key.len())).place(refusal));
                 }
             };
+            let cap_n = buffer.cap;
             let local = l.local_id(target_key);
+            // A `list<T>` takes one element, lowered into the element's slot:
+            // `transpile_into` judges the value against the slot the way every
+            // other typed write does (an integer slot takes integers only, a
+            // real slot any number), so a wrong-kind element is refused by the
+            // same rule and code as a wrong-kind assignment.
+            if let Some(elem) = buffer.ty.list_elem() {
+                let e = expr::transpile_into(
+                    rhs,
+                    l.expr_target(),
+                    type_ctx,
+                    renames,
+                    InferredType::from_sce_type(elem),
+                )
+                .map_err(|refusal| rhs_site.place(refusal))?;
+                out.push_str(&ListSpelling::new(l, elem).push(pad, &local, &e, cap_n));
+                return Ok(());
+            }
             // The RHS static type selects the operation: a `bytes` value
             // extends the buffer, a `uint8` value pushes one byte. A wider
             // integer would silently truncate, so it is rejected — the author
@@ -21680,7 +21907,7 @@ fn lower_algorithm_stmt(
                         ..
                     } = st
                     {
-                        if matches!(sce_type, SceType::Uint8) {
+                        if sce_type.scalar() == Some(&SceType::Uint8) {
                             // The stranded local is what the record names, so
                             // it is placed at that local's `name`.
                             let refusal: ForgeError = crate::forge::error::ValidationError::AlgorithmForeachSourceBcWithBytesItemType {
@@ -21926,6 +22153,37 @@ fn lower_algorithm_stmt(
             expr_spelling,
         } => {
             let line = match e {
+                // A `list<T>` return (v1): the returned value is the buffer
+                // local of that type, named as written — the same rule a
+                // `bytes` return has in its validator, read here by name
+                // because `InferredType` has no list case to judge an
+                // expression against.
+                Some(rhs) if return_value.and_then(|t| t.list_elem()).is_some() => {
+                    let elem = return_value
+                        .and_then(|t| t.list_elem())
+                        .expect("guarded by the arm");
+                    let site = ExpressionSite::new(rhs, expr_spelling.as_ref());
+                    let name = rhs.trim();
+                    let is_the_buffer = append_buffers
+                        .get(name)
+                        .is_some_and(|decl| decl.ty.list_elem() == Some(elem));
+                    if !is_the_buffer {
+                        let at = site.locate(Some(0..name.len()));
+                        let refusal: ForgeError =
+                            crate::forge::error::ExprError::UnsupportedConstruct {
+                                construct: format!(
+                                    "a list<{}> return that is not the list<{}> buffer local \
+                                 (v1 returns the buffer an algorithm builds, by name)",
+                                    elem.as_attr(),
+                                    elem.as_attr()
+                                ),
+                                observed: at.observed(),
+                            }
+                            .into();
+                        return Err(at.place(refusal));
+                    }
+                    ListSpelling::new(l, elem).return_stmt(pad, &l.local_id(name))
+                }
                 Some(rhs) => {
                     // Coerce to the function's declared return type so
                     // strict-typing targets (Kotlin's `UShort`,
@@ -22110,7 +22368,7 @@ fn resolve_call_target<'a>(
             .iter()
             .find(|i| i.alias == trimmed && i.is_callable_algorithm())
         {
-            return Ok(CallTarget::Algorithm(imp));
+            return algorithm_call_target(imp, trimmed, site);
         }
         let mut candidates: Vec<String> = imports
             .iter()
@@ -22177,12 +22435,31 @@ fn resolve_call_target<'a>(
         }
         // An imported algorithm defines one callable, its own declared name.
         "algorithm" if imp.is_callable_algorithm() && method == imp.document_name => {
-            Ok(CallTarget::Algorithm(imp))
+            algorithm_call_target(imp, trimmed, site)
         }
         "algorithm" => Err(method_unknown(vec![imp.document_name.clone()])),
         // No other kind defines a callable an algorithm body may reach.
         _ => Err(method_unknown(Vec::new())),
     }
+}
+
+/// An imported algorithm as a `<sce:call>` target, under either spelling
+/// (`eq` or `eq.bytes_equal`) — refused when its signature has a `list<T>`
+/// slot. SCE_FORGE.md §4.12: in v1 a list crosses only the host boundary,
+/// so an algorithm that takes or returns one is called by a host and never
+/// by another algorithm. The refusal is placed at the whole target as
+/// written.
+fn algorithm_call_target<'a>(
+    imp: &'a ImportContext,
+    trimmed: &str,
+    site: &ExpressionSite<'_>,
+) -> Result<CallTarget<'a>, ForgeError> {
+    let Some(slot) = &imp.list_slot else {
+        return Ok(CallTarget::Algorithm(imp));
+    };
+    let at = site.locate(Some(0..trimmed.len()));
+    let refusal: ForgeError = expr::host_only_call(trimmed, slot, at.observed()).into();
+    Err(at.place(refusal))
 }
 
 /// A bounded collection's read-only `method` called on the collection the
@@ -22521,11 +22798,14 @@ fn render_algorithm(
     // fault. This renderer used to refuse a duplicate parameter itself, as
     // `generate/invalid-config` — a rendering-stage code, so `check` filed
     // it as six backend gaps and exited 0 (measured 2026-09-21).
+    // A `list<T>` parameter is refused by the parser in v1, so every
+    // parameter here is a scalar; `filter_map` states that rather than
+    // assuming it.
     let mut env_pairs: Vec<(String, SceType)> = m
         .signature
         .params
         .iter()
-        .map(|p| (p.name.clone(), p.sce_type.clone()))
+        .filter_map(|p| p.sce_type.scalar().map(|t| (p.name.clone(), t.clone())))
         .collect();
     // An item over a bounded collection is an element — a record whose
     // fields `member_field_pairs` below registers when the element schema
@@ -22540,7 +22820,17 @@ fn render_algorithm(
     let mut record_items: Vec<(&str, RecordShape)> = Vec::new();
     for binding in m.body_bindings() {
         let ty = match binding {
-            crate::forge::model::AlgorithmBinding::Local { sce_type, .. } => sce_type.clone(),
+            // A `list<T>` local is a buffer read by name — the `<sce:append>`
+            // target and the returned value — and never as an expression
+            // operand, so it is left out of the expression type context.
+            // Registering it as `Unknown` would let `out + 1` through
+            // unjudged; left out, such a use is refused as an unknown name.
+            crate::forge::model::AlgorithmBinding::Local { sce_type, .. } => {
+                match sce_type.scalar() {
+                    Some(t) => t.clone(),
+                    None => continue,
+                }
+            }
             crate::forge::model::AlgorithmBinding::ForeachItem { name, source } => {
                 if let Some(imp) = bounded_collection_import(imports, source) {
                     let schema_known = imp
@@ -22642,6 +22932,12 @@ fn render_algorithm(
     // rewrites the callee spelling — not its type.
     for imp in imports {
         if imp.kind == "algorithm" {
+            // A `list<T>` slot has no signature to register: the alias is
+            // registered as callable only by a host (SCE_FORGE.md §4.12).
+            if let Some(slot) = &imp.list_slot {
+                type_ctx.insert_func(imp.alias.as_str(), FuncSig::host_only(slot.as_str()));
+                continue;
+            }
             let params = imp
                 .param_types
                 .iter()
@@ -22651,7 +22947,14 @@ fn render_algorithm(
                 .ret_type
                 .as_ref()
                 .map_or(InferredType::Unknown, InferredType::from_sce_type);
-            type_ctx.insert_func(imp.alias.as_str(), FuncSig { params, ret });
+            type_ctx.insert_func(
+                imp.alias.as_str(),
+                FuncSig {
+                    params,
+                    ret,
+                    host_only: None,
+                },
+            );
         }
     }
 
@@ -22661,12 +22964,26 @@ fn render_algorithm(
     // declared `<sce:param>` entries. Existing algorithm fixtures
     // without imports are unaffected (BC-import filter is empty →
     // params_str byte-identical to v1).
+    // A `list<T>` parameter is refused by the parser in v1; one reaching here
+    // is a gate that failed, and it says so rather than emitting a signature.
     let declared_params: Vec<String> = m
         .signature
         .params
         .iter()
-        .map(|p| algorithm_format_param(&l, &p.name, &p.sce_type))
-        .collect();
+        .map(|p| {
+            p.sce_type
+                .scalar()
+                .map(|t| algorithm_format_param(&l, &p.name, t))
+                .ok_or_else(|| {
+                    GenerateError::InvalidConfig(format!(
+                        "algorithm '{}' parameter '{}' is {}, which the parser refuses in v1",
+                        m.name,
+                        p.name,
+                        p.sce_type.as_attr()
+                    ))
+                })
+        })
+        .collect::<Result<_, _>>()?;
     let bc_import_params: Vec<String> = imports
         .iter()
         .filter(|imp| imp.kind == "bounded-collection")
@@ -22689,7 +23006,29 @@ fn render_algorithm(
     // `()`.
     let primary_symbol = forge_algorithm_symbol(&m.name, lang);
     let bytes_return_cap = m.signature.returns_max_size;
-    let return_type = match (&m.signature.return_type, lang) {
+    let declared_return = m.signature.return_type.as_ref();
+    let return_scalar = declared_return.and_then(|t| t.scalar());
+    // A `list<T>` return (SCE_FORGE.md §4.12, generalised from `bytes`):
+    // one spelling for the signature, the preamble and the C11 struct.
+    let return_list = declared_return
+        .and_then(|t| t.list_elem())
+        .map(|elem| ListSpelling::new(&l, elem));
+    let list_return_cap = match &return_list {
+        Some(_) => Some(bytes_return_cap.ok_or_else(|| {
+            GenerateError::InvalidConfig(format!(
+                "algorithm '{}' returns a list but declares no `sce:returns-max-size` — \
+                 the parser refuses this before codegen",
+                m.name
+            ))
+        })?),
+        None => None,
+    };
+    let return_type = match (return_scalar, lang) {
+        _ if return_list.is_some() => return_list
+            .as_ref()
+            .zip(list_return_cap)
+            .map(|(list, cap)| list.return_type(cap, &primary_symbol))
+            .expect("guarded by the arm"),
         (Some(SceType::Bytes), _) => {
             let n = bytes_return_cap.ok_or_else(|| {
                 GenerateError::InvalidConfig(format!(
@@ -22720,19 +23059,18 @@ fn render_algorithm(
     // append bound) and the C11 result-struct type name. Empty / `None` for
     // every algorithm that declares no `bytes` buffer, so non-bytes
     // algorithms stay byte-identical.
-    let mut bytes_buffer_caps: std::collections::HashMap<String, u32> =
+    let mut append_buffers: std::collections::HashMap<String, AppendBufferDecl> =
         std::collections::HashMap::new();
-    collect_bytes_buffer_caps(&m.body, &mut bytes_buffer_caps);
-    let c11_result_type = match (&m.signature.return_type, lang) {
-        (Some(SceType::Bytes), Language::C11) => Some(format!("{primary_symbol}_result_t")),
+    collect_append_buffers(&m.body, &mut append_buffers);
+    let returns_buffer = declared_return.is_some_and(|t| t.is_append_buffer());
+    let c11_result_type = match lang {
+        Language::C11 if returns_buffer => Some(format!("{primary_symbol}_result_t")),
         _ => None,
     };
     // SCE byte-buffer-build (§4.12): the C++ buffer/return lower to
-    // `std::vector<std::uint8_t>`, which needs `<vector>`. Gate the include so
-    // algorithms without a byte buffer keep their previous header surface
-    // byte-equivalent.
-    let needs_vector =
-        matches!(&m.signature.return_type, Some(SceType::Bytes)) || !bytes_buffer_caps.is_empty();
+    // `std::vector`, which needs `<vector>`. Gate the include so algorithms
+    // without a buffer keep their previous header surface byte-equivalent.
+    let needs_vector = returns_buffer || !append_buffers.is_empty();
 
     // SCE byte-buffer-build (§4.12): a `bytes`-returning algorithm is no
     // longer self-contained — Rust imports the shared owned-bytes type from
@@ -22747,7 +23085,25 @@ fn render_algorithm(
     // `MutableList<Byte>`, which boxes every byte into an `Object[]` slot and
     // then walks the list again at `toByteArray()`. The declared `capacity`
     // is a byte count, and a `ByteArray`-backed buffer is what spends it.
-    let buffer_build_preamble = match (&m.signature.return_type, lang) {
+    let buffer_build_preamble = match (return_scalar, lang) {
+        // A `list<T>` return carries the same dependency trade, through the
+        // same two runtimes: Rust's leaf crate holds the generic owned list
+        // the byte type is an instance of, and Kotlin's runtime the one
+        // 64-bit-slot buffer every list element fits.
+        _ if return_list.is_some() => {
+            let list = return_list.as_ref().expect("guarded by the arm");
+            match lang {
+                Language::Rust => {
+                    "use sce_portable_bytes::{SceOwnedList, CapacityExceeded};\n\n".to_string()
+                }
+                Language::Kotlin => "import com.sce.forge.runtime.SceListBuf\n\n".to_string(),
+                Language::C11 => list.c11_result_typedef(
+                    list_return_cap.expect("checked when building return_type"),
+                    &primary_symbol,
+                ),
+                Language::Cpp | Language::Go | Language::Python => String::new(),
+            }
+        }
         (Some(SceType::Bytes), Language::Rust) => {
             "use sce_portable_bytes::{SceBytes, CapacityExceeded};\n\n".to_string()
         }
@@ -22794,11 +23150,11 @@ fn render_algorithm(
         .iter()
         .map(|(k, v)| (k.as_str(), v.as_str()))
         .collect();
-    let return_ty_inferred = m
-        .signature
-        .return_type
-        .as_ref()
-        .map_or(InferredType::Unknown, InferredType::from_sce_type);
+    // A `list<T>` return has no `InferredType`; its `<sce:return>` is lowered
+    // by name from `return_value` (see the Return arm), so `Unknown` here is
+    // never used to judge an expression.
+    let return_ty_inferred =
+        return_scalar.map_or(InferredType::Unknown, InferredType::from_sce_type);
     let body = lower_algorithm_body(
         &m.body,
         &AlgorithmBodyCfg {
@@ -22806,8 +23162,9 @@ fn render_algorithm(
             type_ctx: &type_ctx,
             renames: &const_renames,
             return_ty: return_ty_inferred,
+            return_value: declared_return,
             imports,
-            bytes_buffer_caps: &bytes_buffer_caps,
+            append_buffers: &append_buffers,
             c11_result_type: c11_result_type.as_deref(),
         },
         1,
@@ -22817,7 +23174,7 @@ fn render_algorithm(
         .signature
         .params
         .iter()
-        .any(|p| matches!(p.sce_type, SceType::Bytes));
+        .any(|p| p.sce_type.scalar() == Some(&SceType::Bytes));
 
     // W1 symbol-name SSOT: the function declaration reads `primary_symbol`
     // instead of selecting a casing per backend. The module identity vars
@@ -22864,6 +23221,13 @@ fn render_algorithm(
     ctx.insert("consts_prelude".into(), consts_prelude.into());
     ctx.insert("needs_std_array".into(), needs_std_array.into());
     ctx.insert("needs_vector".into(), needs_vector.into());
+    // A `list<T>` of an unsigned element returns the stdlib's unsigned array
+    // (`ULongArray`, …), which is behind the same opt-in as an unsigned
+    // const table.
+    let kotlin_needs_opt_in_unsigned = kotlin_needs_opt_in_unsigned
+        || return_list
+            .as_ref()
+            .is_some_and(|list| list.kotlin_needs_unsigned_opt_in());
     ctx.insert(
         "kotlin_needs_opt_in_unsigned".into(),
         kotlin_needs_opt_in_unsigned.into(),
@@ -22983,7 +23347,9 @@ fn render_algorithm_test_vector_sidecar(
     // (else it rejects with InvalidAttribute) and that the value
     // matches a bool/integer scalar. The signature shape is enforced
     // here so the emitter can lower the hex bytes unambiguously.
-    if m.signature.params.len() != 1 || !matches!(m.signature.params[0].sce_type, SceType::Bytes) {
+    if m.signature.params.len() != 1
+        || m.signature.params[0].sce_type.scalar() != Some(&SceType::Bytes)
+    {
         return Err(ForgeError::from(
             crate::forge::error::GenerateError::unsupported(format!(
                 "algorithm '{name}': <sce:test-vector> v1 only supports algorithms with a single \
@@ -22994,12 +23360,19 @@ fn render_algorithm_test_vector_sidecar(
         ));
     }
 
-    let return_type = m.signature.return_type.as_ref().ok_or_else(|| {
-        ForgeError::from(crate::forge::error::GenerateError::unsupported(format!(
-            "algorithm '{name}': <sce:test-vector> requires a non-void return type",
-            name = m.name,
-        )))
-    })?;
+    // A test vector names one scalar; the parser refuses one on a `list<T>`
+    // return, so a list return reads as "no scalar return" here.
+    let return_type = m
+        .signature
+        .return_type
+        .as_ref()
+        .and_then(|t| t.scalar())
+        .ok_or_else(|| {
+            ForgeError::from(crate::forge::error::GenerateError::unsupported(format!(
+                "algorithm '{name}': <sce:test-vector> requires a non-void return type",
+                name = m.name,
+            )))
+        })?;
     let l = LangCtx::new(lang, imports);
     let return_type_native = l.type_name(return_type).to_string();
     let snake = filters::to_snake_case(m.name.clone());
@@ -24062,6 +24435,7 @@ mod tests {
             qualified_call: String::new(),
             param_types: Vec::new(),
             ret_type: None,
+            list_slot: None,
             member_field_types: Vec::new(),
             member_method_sigs: Vec::new(),
             go_init_expr: String::new(),
@@ -24691,6 +25065,7 @@ mod tests {
                 qualified_call: String::new(),
                 param_types: Vec::new(),
                 ret_type: None,
+                list_slot: None,
                 member_field_types: Vec::new(),
                 member_method_sigs: Vec::new(),
                 go_init_expr: String::new(),
@@ -24728,6 +25103,7 @@ mod tests {
                 qualified_call: String::new(),
                 param_types: Vec::new(),
                 ret_type: None,
+                list_slot: None,
                 member_field_types: Vec::new(),
                 member_method_sigs: Vec::new(),
                 go_init_expr: String::new(),

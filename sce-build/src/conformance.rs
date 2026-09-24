@@ -99,6 +99,33 @@ pub struct ScalarOutput {
     pub function: Option<String>,
 }
 
+/// List output descriptor for an algorithm that returns `list<T>`
+/// (SCE_FORGE.md §4.12): `expected` is a JSON array, compared element by
+/// element and by length. `list_of` names the element's canonical type;
+/// `compare` applies to each element.
+///
+/// ⚠ Cases stay within the declared capacity. Past it the backends differ
+/// by contract (Rust/C11 fail, the heap backends grow), so an overflowing
+/// case would measure that difference rather than the algorithm.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct ListOutput {
+    pub list_of: CanonicalType,
+    pub compare: CompareMode,
+}
+
+/// What an algorithm fixture's single call returns: one scalar, or a
+/// `list<T>`. Untagged so a scalar output keeps its `{type, compare}`
+/// spelling; the list form is told apart by `list_of`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(untagged)]
+pub enum AlgorithmOutput {
+    List(ListOutput),
+    Scalar(ScalarOutput),
+}
+
 /// Compound output descriptor for fixtures whose `expected` JSON value is an
 /// object with multiple named fields, each computed by a distinct free function.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -525,7 +552,7 @@ pub enum FixtureSpec {
     /// fixture name (mirrors `Transform`'s flat-scope prefix).
     Algorithm {
         args: Vec<CanonicalType>,
-        output: ScalarOutput,
+        output: AlgorithmOutput,
         /// Exported function symbol — equals the algorithm `<sce:name>` in
         /// snake-case for Rust/C11. Carried in the manifest because RFC §synth-5-A
         /// allows the algorithm name to differ from the fixture file name
@@ -1171,10 +1198,20 @@ impl Manifest {
                 }
                 FixtureSpec::Algorithm {
                     args,
+                    output,
                     function,
                     has_test_vectors,
-                    ..
                 } => {
+                    if let AlgorithmOutput::List(list) = output {
+                        if matches!(list.list_of, CanonicalType::String | CanonicalType::Bytes) {
+                            return Err(format!(
+                                "fixture {}: algorithm `list_of` must be a \
+                                 scalar element type — list<T> admits no \
+                                 string or bytes element (SCE_FORGE.md §4.12)",
+                                f.name
+                            ));
+                        }
+                    }
                     if function.is_empty() {
                         return Err(format!(
                             "fixture {}: algorithm `function` must not be \
