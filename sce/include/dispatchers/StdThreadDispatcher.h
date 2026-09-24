@@ -82,8 +82,7 @@ public:
     void start() override {
         // Join existing timer thread if still running
         if (timerThread_.joinable()) {
-            stopRequested_.store(true);
-            cvTimer_.notify_all();
+            stopTimerThread();
             timerThread_.join();
         }
 
@@ -103,8 +102,8 @@ public:
      * The run() method will return after processing current task.
      */
     void stop() override {
-        EventDispatcherBase::stop();  // Sets stopRequested_ and notifies cv_
-        cvTimer_.notify_all();        // Wake up timer thread
+        EventDispatcherBase::stop();  // Sets stopRequested_ under mutex_ and notifies cv_
+        stopTimerThread();
     }
 
     /**
@@ -214,6 +213,26 @@ protected:
     }
 
 private:
+    /**
+     * @brief Publish a stop to the timer thread and wake it
+     *
+     * The timer thread reads `stopRequested_` in its wait predicate under
+     * `timerMutex_`, not under the `mutex_` that `EventDispatcherBase::stop`
+     * stores it under, so that store does not order it against this thread's
+     * wait: the flag and the notify could both land between the predicate read
+     * and the block, and the wakeup be lost (see `EventDispatcherBase::stop`).
+     * Storing it under `timerMutex_` as well is what orders it. The wait is
+     * bounded by the poll interval, so a lost wakeup here cost up to that
+     * interval on every stop that met it, not a hang.
+     */
+    void stopTimerThread() {
+        {
+            std::lock_guard<std::mutex> lock(timerMutex_);
+            stopRequested_.store(true);
+        }
+        cvTimer_.notify_all();
+    }
+
     /**
      * @brief Timer polling thread main loop
      *

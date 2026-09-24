@@ -28,12 +28,11 @@ EventSchedulerImpl::EventSchedulerImpl(EventExecutionCallback executionCallback)
 }
 
 EventSchedulerImpl::~EventSchedulerImpl() {
-    shutdownRequested_ = true;
+    requestThreadsStop();
 
 #ifdef __EMSCRIPTEN__
     // WASM: No threads to clean up
 #else
-    callbackShutdownRequested_ = true;
     callbackCondition_.notify_all();
     timerCondition_.notify_all();
 
@@ -236,6 +235,27 @@ size_t EventSchedulerImpl::getScheduledEventCount() const {
     return sendIdIndex_.size();
 }
 
+void EventSchedulerImpl::requestThreadsStop() {
+    // Each flag is read by a wait's predicate under that wait's mutex, so each
+    // is stored under it. A waiter reads its predicate and only then blocks; a
+    // flag stored without the mutex can land between those two steps, its
+    // notification with it, and the waiter then sleeps through the stop — the
+    // join that follows never returns. Being atomic does not prevent that: the
+    // race is about ordering against the wait, not about tearing. It hung a
+    // join in EventDispatcherBase::stop (2026-08-16) and in the script
+    // executor's shutdown (2026-09-25), each fixed where it was measured.
+    {
+        std::unique_lock<std::shared_mutex> lock(mutex_);
+        shutdownRequested_ = true;
+    }
+#ifndef __EMSCRIPTEN__
+    {
+        std::lock_guard<std::mutex> lock(callbackQueueMutex_);
+        callbackShutdownRequested_ = true;
+    }
+#endif
+}
+
 void EventSchedulerImpl::shutdown(bool waitForCompletion) {
     bool alreadyShutdown = !running_.exchange(false);
 
@@ -243,12 +263,11 @@ void EventSchedulerImpl::shutdown(bool waitForCompletion) {
         SCE_LOG_DEBUG("EventSchedulerImpl: Shutting down scheduler (waitForCompletion={})", waitForCompletion);
     }
 
-    shutdownRequested_ = true;
+    requestThreadsStop();
 
 #ifdef __EMSCRIPTEN__
     // WASM: No threads to signal
 #else
-    callbackShutdownRequested_ = true;
     callbackCondition_.notify_all();
 
     bool calledFromSchedulerThread = isInSchedulerThread_;
@@ -607,7 +626,15 @@ std::vector<ScheduledEventInfo> EventSchedulerImpl::getScheduledEvents() const {
 }
 
 void EventSchedulerImpl::setMode(SchedulerMode mode) {
-    mode_.store(mode, std::memory_order_release);
+    {
+        // The parked timer thread reads the mode in its wait predicate under
+        // `mutex_`, so it is stored under it, for the reason
+        // `requestThreadsStop` gives: stored without it, a switch back to
+        // AUTOMATIC could leave that thread parked, and the events already
+        // queued unfired until something else happened to wake it.
+        std::unique_lock<std::shared_mutex> lock(mutex_);
+        mode_.store(mode, std::memory_order_release);
+    }
     SCE_LOG_INFO("EventSchedulerImpl: Scheduler mode set to {}",
                  mode == SchedulerMode::AUTOMATIC ? "AUTOMATIC" : "MANUAL");
 #ifndef __EMSCRIPTEN__
