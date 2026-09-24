@@ -720,8 +720,7 @@ fn owning_state(node: &roxmltree::Node) -> String {
         .to_string()
 }
 
-/// Refuse what SCE's statically typed data model does not accept, and a
-/// declared type under any data model that does not read one
+/// Refuse what SCE's statically typed data model does not accept
 /// (docs/SCE_ACCEPTED_SUBSET.md §2.15).
 ///
 /// Under `sce-static` a variable is a native field of the generated
@@ -732,11 +731,13 @@ fn owning_state(node: &roxmltree::Node) -> String {
 /// model does not have; a native `<script><cpp>` / `<kt>` block is admitted
 /// for the reason [`enforce_datamodel_languages`] admits it.
 ///
-/// Under any other data model an `sce:type` on `<data>` is read by
-/// nothing, so it is refused rather than left to look as if it constrained
-/// the variable. A `<data sce:kind>` declares a kind, not a variable, and
-/// is left to its own rules. Walks SCXML-namespace elements only, and
-/// skips a nested `<scxml>`, which declares its own data model.
+/// Under any other data model this enforces nothing. An `sce:type` there is
+/// not stray: with `sce:direction` it is the statechart's typed input and
+/// output declaration the authoring tool drives a machine through
+/// (`tools/authoring`), so it is read — only not as a field type.
+/// A `<data sce:kind>` declares a kind, not a variable, and is left to its
+/// own rules. Walks SCXML-namespace elements only, and skips a nested
+/// `<scxml>`, which declares its own data model.
 fn enforce_static_datamodel(
     root: &roxmltree::Node,
     datamodel: Datamodel,
@@ -744,6 +745,9 @@ fn enforce_static_datamodel(
 ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
     use crate::forge::model::SCE_NAMESPACE;
 
+    if datamodel != Datamodel::SceStatic {
+        return Ok(());
+    }
     let refused = |pos: roxmltree::TextPos,
                    construct: String,
                    rule: &str,
@@ -764,7 +768,6 @@ fn enforce_static_datamodel(
         )
     };
     let element_row = |node: &roxmltree::Node| node.document().text_pos_at(node.range().start);
-    let is_static = datamodel == Datamodel::SceStatic;
 
     let mut stack: Vec<roxmltree::Node> = root.children().filter(|n| n.is_element()).collect();
     while let Some(node) = stack.pop() {
@@ -778,52 +781,38 @@ fn enforce_static_datamodel(
 
         if name == "data" && node.attribute((SCE_NAMESPACE, "kind")).is_none() {
             let id = node.attribute("id").unwrap_or("");
-            let declared = attribute_as_written_ns(&node, Some(SCE_NAMESPACE), "type");
-            if !is_static {
-                if let Some((written, pos)) = declared {
-                    return Err(refused(
-                        pos,
-                        format!("sce:type=\"{written}\""),
-                        "a declared type is read only under datamodel=\"sce-static\" — \
-                         declare that data model, or remove sce:type",
-                        &node,
-                        (!written.is_empty()).then(|| written.to_string()),
-                    ));
-                }
-            } else {
-                if declared.is_none() {
-                    return Err(refused(
-                        element_row(&node),
-                        format!("<data id=\"{id}\">"),
-                        "every <data> declares its type with sce:type",
-                        &node,
-                        Some(name.to_string()),
-                    ));
-                }
-                if let Some((written, pos)) = attribute_as_written(&node, "src") {
-                    return Err(refused(
-                        pos,
-                        format!("src=\"{written}\""),
-                        "a variable's initial value is its expr, written in the Forge \
-                         expression language — src is read at run time and has no type",
-                        &node,
-                        (!written.is_empty()).then(|| written.to_string()),
-                    ));
-                }
-                if !inline_data_value(&node).is_empty() {
-                    return Err(refused(
-                        element_row(&node),
-                        format!("<data id=\"{id}\"> with in-line content"),
-                        "a variable's initial value is its expr, written in the Forge \
-                         expression language — in-line content has no type",
-                        &node,
-                        Some(name.to_string()),
-                    ));
-                }
+            if attribute_as_written_ns(&node, Some(SCE_NAMESPACE), "type").is_none() {
+                return Err(refused(
+                    element_row(&node),
+                    format!("<data id=\"{id}\">"),
+                    "every <data> declares its type with sce:type",
+                    &node,
+                    Some(name.to_string()),
+                ));
+            }
+            if let Some((written, pos)) = attribute_as_written(&node, "src") {
+                return Err(refused(
+                    pos,
+                    format!("src=\"{written}\""),
+                    "a variable's initial value is its expr, written in the Forge \
+                     expression language — src is read at run time and has no type",
+                    &node,
+                    (!written.is_empty()).then(|| written.to_string()),
+                ));
+            }
+            if !inline_data_value(&node).is_empty() {
+                return Err(refused(
+                    element_row(&node),
+                    format!("<data id=\"{id}\"> with in-line content"),
+                    "a variable's initial value is its expr, written in the Forge \
+                     expression language — in-line content has no type",
+                    &node,
+                    Some(name.to_string()),
+                ));
             }
         }
 
-        if is_static && name == "script" && !is_native_script_block(&node) {
+        if name == "script" && !is_native_script_block(&node) {
             return Err(refused(
                 element_row(&node),
                 "<script>".to_string(),
@@ -2303,12 +2292,15 @@ impl SCXMLParser {
             String::new()
         };
         let id = data.attribute("id").unwrap_or("").to_string();
-        // `sce:type` is present exactly under `datamodel="sce-static"` —
-        // `enforce_static_datamodel` has refused it everywhere else, and
-        // its absence there. The grammar is a field's (`sceTypeOrEnumRef`):
-        // a datamodel variable is typed the way an event-schema field is.
+        // `sce:type` is the variable's field type only under
+        // `datamodel="sce-static"`, where `enforce_static_datamodel` has
+        // already required it. Elsewhere it is the typed I/O declaration the
+        // authoring tool reads beside `sce:direction`, and the model does not
+        // carry it. The grammar is a field's (`sceTypeOrEnumRef`): a
+        // datamodel variable is typed the way an event-schema field is.
         let value_type = data
             .attribute((SCE_NAMESPACE, "type"))
+            .filter(|_| model.datamodel == Datamodel::SceStatic)
             .map(|text| {
                 crate::forge::parser::read_type_attr(
                     data,

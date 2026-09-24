@@ -2331,7 +2331,12 @@ line of the element or attribute that breaks it:
 | `<data src>` | The initial value is `expr` — `src` is read at run time and has no type |
 | `<data>` with in-line content | The initial value is `expr` — in-line content has no type |
 | `<script>` with script text | No scripting language; a native `<script><cpp>` / `<kt>` block is admitted, as under `null` |
-| `sce:type` on `<data>` under `null` or `ecmascript` | A declared type is read only under `sce-static` |
+
+Under `null` or `ecmascript` an `sce:type` on `<data>` is not refused and
+not a field type: with `sce:direction` and `sce:initial` it is the
+statechart's typed input and output declaration that the authoring tool
+(`tools/authoring`) drives a machine through. `sce-static` is the model
+that makes the same attribute the variable's type.
 
 `sce:type` is a field's type grammar — a scalar keyword or `enum:<alias>`
 naming an enum the document imports — and is read with the same reader,

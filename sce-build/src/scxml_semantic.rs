@@ -391,15 +391,12 @@ pub enum ScxmlSemanticError {
     /// A construct that breaks a rule of SCE's statically typed data
     /// model (`datamodel="sce-static"`, docs/SCE_ACCEPTED_SUBSET.md
     /// §2.15): a `<data>` with no `sce:type`, a `<data>` initialised from
-    /// `src` or in-line content, a `<script>` carrying script text, or an
-    /// `sce:type` on a `<data>` under a data model that never reads it.
+    /// `src` or in-line content, or a `<script>` carrying script text.
     ///
     /// Its own code rather than a share of the Null model's: those rules
     /// are §scxml-B-1's, and these are SCE's own definition of a
     /// platform-defined value, so the section an author needs to read is
-    /// a different one. The last case sits here too because its repair
-    /// is the same section — either declare the model that reads a type,
-    /// or drop the type.
+    /// a different one.
     #[error("{construct} is not accepted under datamodel=\"{datamodel}\": {rule}")]
     StaticDatamodelRule {
         /// What appeared, for the message (`<script>`, `<data id="x">`,

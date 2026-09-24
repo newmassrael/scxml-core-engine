@@ -827,8 +827,10 @@ pub struct Variable {
     pub var_type: String,
     /// The type `sce:type` declares, in the Forge value-type grammar.
     /// Present exactly when the document declares
-    /// [`Datamodel::SceStatic`], which requires it on every `<data>` and
-    /// admits it nowhere else (docs/SCE_ACCEPTED_SUBSET.md §2.15).
+    /// [`Datamodel::SceStatic`], which requires it on every `<data>`
+    /// (docs/SCE_ACCEPTED_SUBSET.md §2.15). Under any other data model an
+    /// `sce:type` is the authoring tool's typed I/O declaration and is not
+    /// carried here.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value_type: Option<crate::forge::model::AlgorithmValueType>,
     /// The `sce:type` attribute as written and where, so a rule that

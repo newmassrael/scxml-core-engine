@@ -152,18 +152,20 @@ fn script_text_is_refused_under_the_static_data_model() {
 }
 
 #[test]
-fn a_declared_type_under_a_model_that_never_reads_it_is_refused() {
-    // Under `ecmascript` nothing reads `sce:type`, so admitting it would
-    // leave an attribute that looks as if it constrained the variable.
+fn a_declared_type_under_ecmascript_is_the_authoring_io_declaration() {
+    // Under `ecmascript`, `sce:type` with `sce:direction` is the typed
+    // input/output declaration the authoring tool drives a statechart
+    // through. The first cut of this model refused it as unread, and the
+    // authoring suite's run-driven cases went red in CI: the attribute was
+    // read, only not by the generator.
     let (ok, out) = run(
         &["check"],
         &doc(
             "ecmascript",
-            r#"<data id="count" sce:type="uint32" expr="0"/>"#,
+            r#"<data id="count" sce:type="int32" sce:direction="out" expr="0"/>"#,
         ),
     );
-    assert!(!ok, "sce:type under ecmascript constrains nothing:\n{out}");
-    assert_refused_at(&out, "scxml/static-datamodel-rule", 5);
+    assert!(ok, "the authoring I/O declaration is admitted:\n{out}");
 }
 
 #[test]
