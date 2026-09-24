@@ -1,0 +1,21 @@
+# Mutation cases for "a done event's XML content is its value".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_done_events_xml_content_is_its_value.cases`.
+#
+# The case puts the defect back: `<donedata><content>` read by its text
+# alone, so content that is only XML arrives as no content. The unit test
+# `xml_content_is_the_done_events_value` in `parser.rs` refuses it.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --lib
+mutation_targets sce-build/src/parser.rs
+mutation_oracles sce-build/src/parser.rs
+
+mutation_case "a content's XML children are not read" <<'PY'
+edit("sce-build/src/parser.rs",
+     r'''                let value = inline_data_value(&content_elem);''',
+     r'''                let _ = inline_data_value;
+                let value = character_data(&content_elem);''')
+PY

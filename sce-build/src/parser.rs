@@ -3973,14 +3973,21 @@ impl SCXMLParser {
         //     no script engine required. This is the `sce_base`-linkable
         //     path for native-only (`cpp:` / `kt:`) state machines.
         //   - Omitted → None.
+        //
+        // The children are read by `inline_data_value`, the one reading
+        // `<data>` and `<assign>` take: element children serialise, anything
+        // else is the text. Until 2026-09-24 this read the text alone, so a
+        // `<content>` holding only XML (`<result code="7">finished</result>`)
+        // arrived as no content — the done event carried nothing, with exit
+        // 0 and no diagnostic — while the interpreter passed the XML on.
         if let Some(content_elem) = scxml_child(elem, "content") {
             dd.content_location = source_location_of(&content_elem, source_name);
             dd.content_spelling = AttributeSpelling::of(&content_elem, None, "expr");
             if let Some(expr) = content_elem.attribute("expr") {
                 dd.content = crate::model::DoneDataContent::Expression(expr.to_string());
             } else {
-                let text = character_data(&content_elem);
-                let trimmed = text.trim();
+                let value = inline_data_value(&content_elem);
+                let trimmed = value.trim();
                 if !trimmed.is_empty() {
                     dd.content = if datamodel == Datamodel::Null {
                         crate::model::DoneDataContent::Literal(trimmed.to_string())
@@ -6359,6 +6366,53 @@ mod tests {
             ),
             ""
         );
+    }
+
+    // ── <donedata><content> read as a value ──────────────────
+
+    /// The `<content>` of the final state `done`, under `datamodel`.
+    fn donedata_content(datamodel: &str, content: &str) -> crate::model::DoneDataContent {
+        let model = SCXMLParser::new()
+            .parse_string(
+                &format!(
+                    r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="{datamodel}" initial="done">
+  <final id="done"><donedata><content>{content}</content></donedata></final>
+</scxml>"#
+                ),
+                "t.scxml",
+            )
+            .expect("the document parses");
+        model.states["done"]
+            .donedata
+            .clone()
+            .expect("the final state has donedata")
+            .content
+    }
+
+    /// Element children are the value, as they are for `<data>`: a
+    /// `<content>` holding only XML used to read as no content at all. The
+    /// fragment declares the default namespace it inherits from the
+    /// document, as every inline XML value does.
+    #[test]
+    fn xml_content_is_the_done_events_value() {
+        let content = r#"<result code="7">finished</result>"#;
+        let xml = r#"<result xmlns="http://www.w3.org/2005/07/scxml" code="7">finished</result>"#;
+        match donedata_content("ecmascript", content) {
+            crate::model::DoneDataContent::InlineText(text) => assert_eq!(text, xml),
+            other => panic!("expected the XML as inline text, got {other:?}"),
+        }
+        match donedata_content("null", content) {
+            crate::model::DoneDataContent::Literal(text) => assert_eq!(text, xml),
+            other => panic!("expected the XML as a literal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn text_content_is_still_read_as_text() {
+        match donedata_content("ecmascript", "  inline payload  ") {
+            crate::model::DoneDataContent::InlineText(text) => assert_eq!(text, "inline payload"),
+            other => panic!("expected inline text, got {other:?}"),
+        }
     }
 
     // ── parse_delay_to_ms ────────────────────────────────────
