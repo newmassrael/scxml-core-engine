@@ -248,7 +248,65 @@ const DATA_ROW: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "#;
 
+/// An inline `<script>` body, the refused method on its second statement's
+/// row — which is neither the `<script>` tag's row nor the body's first.
+const INLINE_SCRIPT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript" initial="a">
+  <datamodel>
+    <data id="count" expr="0"/>
+    <data id="words" expr="['b','a']"/>
+    <data id="n" expr="0"/>
+  </datamodel>
+  <state id="a">
+    <onentry>
+      <script>
+        n = count + 1;
+        n = words.map(1).length;
+      </script>
+    </onentry>
+    <transition event="go" target="b"/>
+  </state>
+  <final id="b"/>
+</scxml>
+"#;
+
+/// A top-level `<script>` whose body opens in a CDATA section and goes on
+/// with entities, so the column counts the section's markers and each
+/// entity as written.
+const GLOBAL_SCRIPT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript" initial="a">
+  <datamodel>
+    <data id="count" expr="0"/>
+    <data id="words" expr="['b','a']"/>
+    <data id="n" expr="0"/>
+  </datamodel>
+  <script><![CDATA[
+n = count < 1;
+]]>n = count &gt; 0 &amp;&amp; words.map(1).length;</script>
+  <state id="a">
+    <transition event="go" target="b"/>
+  </state>
+  <final id="b"/>
+</scxml>
+"#;
+
 const CASES: &[Case] = &[
+    Case {
+        file: "inline_script.scxml",
+        document: INLINE_SCRIPT,
+        code: "expression/unsupported-builtin",
+        line: 12,
+        col: 18,
+        actual: ".map",
+    },
+    Case {
+        file: "global_script.scxml",
+        document: GLOBAL_SCRIPT,
+        code: "expression/unsupported-builtin",
+        line: 10,
+        col: 37,
+        actual: ".map",
+    },
     Case {
         file: "continued_cond.scxml",
         document: CONTINUED_COND,

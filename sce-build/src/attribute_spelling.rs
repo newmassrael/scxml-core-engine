@@ -43,15 +43,54 @@
 //! tree's readers refuse a DTD, so that second case is a defence rather
 //! than a path. A refusal that cannot be placed exactly says less rather
 //! than something false.
+//!
+//! # An element's character data
+//!
+//! A `<script>` or `<finalize>` body is an expression read from an
+//! element's character data rather than from an attribute, and its
+//! refusals were placed on the element's row whatever row the refused
+//! token sat on. [`AttributeSpelling::of_character_data`] spells that text
+//! the same way: the element's content as written, decoded by the rules of
+//! character data rather than of an attribute value — line breaks are
+//! kept, a CDATA section is literal, and a comment or processing
+//! instruction contributes nothing. Every question above is then answered
+//! for a body exactly as for an attribute.
 
 use std::ops::Range;
 
-/// An attribute value as written, and the row and column it starts on.
+/// An attribute value — or an element's character data — as written, and
+/// the row and column it starts on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttributeSpelling {
     row: u32,
     col: u32,
     written: String,
+    decoding: Decoding,
+}
+
+/// The rules a spelling's text decodes by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Decoding {
+    /// An attribute value (XML 1.0 §3.3.3).
+    Attribute,
+    /// An element's character data (XML 1.0 §2.4, §2.7, §2.11).
+    CharacterData,
+}
+
+/// One decoded character and the written bytes that produced it.
+#[derive(Debug, Clone, Copy)]
+struct Unit {
+    at: usize,
+    len: usize,
+    produced: char,
+}
+
+/// A spelling decoded as far as its decoding reaches: every unit up to the
+/// end, or up to the first text that has no answer here — a DTD entity,
+/// whose replacement text is not written in the spelling.
+struct Decoded {
+    units: Vec<Unit>,
+    complete: bool,
 }
 
 /// The attributes of one element that carry no namespace, each as written
@@ -119,7 +158,41 @@ impl AttributeSpelling {
             row: at.row,
             col: at.col,
             written: document.input_text()[range].to_string(),
+            decoding: Decoding::Attribute,
         })
+    }
+
+    /// The character data of `node` — every text and CDATA child, in
+    /// document order, and nothing of a comment or processing instruction —
+    /// as written, with the row and column it starts on.
+    ///
+    /// `None` for an element with no content, and for one with an element
+    /// child, whose text around the child this does not follow. It is also
+    /// `None` unless the decoding reads back to exactly the character data
+    /// the tree holds, so a body the check reads and the spelling that
+    /// places its refusals cannot disagree.
+    pub fn of_character_data(node: &roxmltree::Node) -> Option<Self> {
+        if node.children().any(|child| child.is_element()) {
+            return None;
+        }
+        let document = node.document();
+        let input = document.input_text();
+        let start = node.first_child()?.range().start;
+        let element = &input[node.range()];
+        let end = node.range().start + element.rfind("</")?;
+        let at = document.text_pos_at(start);
+        let spelling = Self {
+            row: at.row,
+            col: at.col,
+            written: input.get(start..end)?.to_string(),
+            decoding: Decoding::CharacterData,
+        };
+        let held: String = node
+            .children()
+            .filter(|child| child.is_text())
+            .filter_map(|child| child.text())
+            .collect();
+        (spelling.decoded()? == held).then_some(spelling)
     }
 
     /// The 1-based row the value's first character sits on.
@@ -139,23 +212,66 @@ impl AttributeSpelling {
         if range.start > range.end {
             return None;
         }
-        let (mut decoded, mut at) = (0usize, 0usize);
-        let mut start = None;
-        loop {
-            if start.is_none() && decoded == range.start {
-                start = Some(at);
+        // Only the decoded prefix is placed: a range reaching past a DTD
+        // entity runs out of units before its end and has no answer.
+        let Decoded { units, .. } = self.units();
+        // The written offset a decoded offset starts at, and the one it ends
+        // at: the same place, except where a unit produced nothing — a
+        // comment between two characters of a body — which belongs to
+        // neither side of the boundary.
+        let (mut decoded, mut from, mut to) = (0usize, None, None);
+        let mut previous_end = 0usize;
+        for unit in &units {
+            if decoded == range.start && from.is_none() {
+                from = Some(unit.at);
             }
-            if let Some(from) = start {
-                if decoded == range.end {
-                    return Some(self.written(from, at));
-                }
+            if decoded == range.end && from.is_some() {
+                to = Some(previous_end);
+                break;
             }
-            if decoded > range.end || (start.is_none() && decoded > range.start) {
+            if decoded > range.end {
                 return None;
             }
-            let (written, produced) = step(self.written.get(at..)?)?;
-            at += written;
-            decoded += produced.len_utf8();
+            decoded += unit.produced.len_utf8();
+            previous_end = unit.at + unit.len;
+        }
+        if decoded == range.start && from.is_none() {
+            from = Some(previous_end);
+        }
+        if decoded == range.end && to.is_none() {
+            to = Some(previous_end);
+        }
+        let (from, to) = (from?, to?);
+        (from <= to).then(|| self.written(from, to))
+    }
+
+    /// This spelling decoded, as the characters it produces and the written
+    /// bytes each came from — up to the first text with no answer here, a
+    /// DTD entity or a markup construct character data does not hold.
+    fn units(&self) -> Decoded {
+        let mut units = Vec::with_capacity(self.written.len());
+        let mut at = 0usize;
+        while at < self.written.len() {
+            let next = match self.decoding {
+                Decoding::Attribute => step(&self.written[at..]).map(|(len, produced)| {
+                    units.push(Unit { at, len, produced });
+                    at + len
+                }),
+                Decoding::CharacterData => character_data_step(&self.written, at, &mut units),
+            };
+            match next {
+                Some(next) => at = next,
+                None => {
+                    return Decoded {
+                        units,
+                        complete: false,
+                    }
+                }
+            }
+        }
+        Decoded {
+            units,
+            complete: true,
         }
     }
 
@@ -180,14 +296,8 @@ impl AttributeSpelling {
     /// This value as the reader decoded it, or `None` when it reaches a DTD
     /// entity, whose replacement text is not written here.
     fn decoded(&self) -> Option<String> {
-        let mut decoded = String::with_capacity(self.written.len());
-        let mut at = 0usize;
-        while at < self.written.len() {
-            let (written, produced) = step(&self.written[at..])?;
-            decoded.push(produced);
-            at += written;
-        }
-        Some(decoded)
+        let Decoded { units, complete } = self.units();
+        complete.then(|| units.iter().map(|unit| unit.produced).collect())
     }
 
     /// [`locate`](Self::locate) for a range of this value decoded and then
@@ -196,15 +306,20 @@ impl AttributeSpelling {
     /// a model that stored its value already trimmed is placed as exactly
     /// as one that did not.
     pub fn locate_trimmed(&self, range: Range<usize>) -> Option<Written<'_>> {
-        let (mut lead, mut at) = (0usize, 0usize);
-        while at < self.written.len() {
-            let (written, produced) = step(&self.written[at..])?;
-            if !produced.is_whitespace() {
-                break;
-            }
-            at += written;
-            lead += produced.len_utf8();
+        let Decoded { units, complete } = self.units();
+        let leading = units
+            .iter()
+            .take_while(|unit| unit.produced.is_whitespace())
+            .count();
+        // Whitespace up to a DTD entity may go on into its replacement text,
+        // so how much the trim dropped is not known here.
+        if leading == units.len() && !complete {
+            return None;
         }
+        let lead: usize = units[..leading]
+            .iter()
+            .map(|unit| unit.produced.len_utf8())
+            .sum();
         self.locate(range.start + lead..range.end + lead)
     }
 
@@ -218,6 +333,7 @@ impl AttributeSpelling {
             row: written.row,
             col: written.col,
             written: written.text.to_string(),
+            decoding: self.decoding,
         })
     }
 
@@ -266,6 +382,75 @@ fn step(rest: &str) -> Option<(usize, char)> {
             let c = rest.chars().next()?;
             Some((c.len_utf8(), c))
         }
+    }
+}
+
+/// One step of character-data decoding at `written[at..]`: pushes the units
+/// it produces and answers where the next step starts, or `None` for text
+/// character data does not hold — a DTD entity, or an element's tag. The
+/// rules the tree's reader applies:
+///
+/// - a line break written `\r\n`, or a lone `\r`, decodes to `\n` (XML 1.0
+///   §2.11), inside a CDATA section as everywhere else;
+/// - a CDATA section's content decodes to itself, its markers to nothing;
+/// - a comment or processing instruction decodes to nothing;
+/// - a predefined entity or a character reference to the character it names.
+fn character_data_step(written: &str, at: usize, units: &mut Vec<Unit>) -> Option<usize> {
+    const CDATA_OPEN: &str = "<![CDATA[";
+    let rest = &written[at..];
+    if let Some(body) = rest.strip_prefix(CDATA_OPEN) {
+        let body_at = at + CDATA_OPEN.len();
+        let close = body.find("]]>")?;
+        let mut i = 0usize;
+        while i < close {
+            let chunk = &body[i..close];
+            let (len, produced) = match line_break(chunk) {
+                Some(len) => (len, '\n'),
+                None => {
+                    let c = chunk.chars().next()?;
+                    (c.len_utf8(), c)
+                }
+            };
+            units.push(Unit {
+                at: body_at + i,
+                len,
+                produced,
+            });
+            i += len;
+        }
+        return Some(body_at + close + "]]>".len());
+    }
+    if rest.starts_with("<!--") {
+        return Some(at + rest.find("-->")? + "-->".len());
+    }
+    if rest.starts_with("<?") {
+        return Some(at + rest.find("?>")? + "?>".len());
+    }
+    if rest.starts_with('<') {
+        return None;
+    }
+    let (len, produced) = match line_break(rest) {
+        Some(len) => (len, '\n'),
+        None if rest.starts_with('&') => {
+            let end = rest.find(';')?;
+            (end + 1, reference(&rest[1..end])?)
+        }
+        None => {
+            let c = rest.chars().next()?;
+            (c.len_utf8(), c)
+        }
+    };
+    units.push(Unit { at, len, produced });
+    Some(at + len)
+}
+
+/// The written length of the line break at the head of `rest` — `\r\n` or a
+/// lone `\r` or `\n` — or `None` when it holds none there.
+fn line_break(rest: &str) -> Option<usize> {
+    match rest.as_bytes() {
+        [b'\r', b'\n', ..] => Some(2),
+        [b'\r', ..] | [b'\n', ..] => Some(1),
+        _ => None,
     }
 }
 
@@ -463,5 +648,64 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// The character data of the root element of `document`, as the tree
+    /// holds it, and its spelling.
+    fn body_of(document: &str) -> (String, Option<AttributeSpelling>) {
+        let document = roxmltree::Document::parse(document).expect("the fixture parses");
+        let node = document.root_element();
+        let held = node
+            .children()
+            .filter(|child| child.is_text())
+            .filter_map(|child| child.text())
+            .collect();
+        (held, AttributeSpelling::of_character_data(&node))
+    }
+
+    /// A statement on the third row of a body is placed on that row, at its
+    /// column — not at the `<script>` tag.
+    #[test]
+    fn a_token_in_a_body_is_placed_on_its_row() {
+        let (held, spelling) = body_of("<script>\n  a = 1;\n  b = conut;\n</script>");
+        let spelling = spelling.expect("a body");
+        let at = held.find("conut").unwrap();
+        let written = spelling.locate(at..at + 5).expect("the name");
+        assert_eq!((written.text, written.row, written.col), ("conut", 3, 7));
+        let trimmed = held.trim();
+        let at = trimmed.find("conut").unwrap();
+        let written = spelling.locate_trimmed(at..at + 5).expect("the name");
+        assert_eq!((written.row, written.col), (3, 7));
+    }
+
+    /// Every way a body is written decodes to the text the tree holds, and a
+    /// range of that text is placed at the spelling that produced it: an
+    /// entity as the entity, a CDATA section's content as itself, a `\r\n` as
+    /// the one line break it decodes to, a comment as nothing.
+    #[test]
+    fn a_body_decodes_to_the_text_the_tree_holds() {
+        let (held, spelling) = body_of(
+            "<script>x = a &lt; b;\r\n<!-- note --><![CDATA[y = c < d;\r\n]]>z = e;</script>",
+        );
+        assert_eq!(held, "x = a < b;\ny = c < d;\nz = e;");
+        let spelling = spelling.expect("a body");
+        let entity = held.find('<').unwrap();
+        let written = spelling.locate(entity..entity + 1).expect("the entity");
+        assert_eq!((written.text, written.row, written.col), ("&lt;", 1, 15));
+        let literal = held.rfind('<').unwrap();
+        let written = spelling.locate(literal..literal + 1).expect("the literal");
+        assert_eq!((written.text, written.row, written.col), ("<", 2, 29));
+        let last = held.find('z').unwrap();
+        let written = spelling.locate(last..last + 1).expect("the last row");
+        assert_eq!((written.text, written.row, written.col), ("z", 3, 4));
+    }
+
+    /// An element child is text around a child this does not follow, and an
+    /// empty element has nothing to spell.
+    #[test]
+    fn a_body_with_an_element_or_nothing_has_no_spelling() {
+        assert!(body_of("<script>a<b/>c</script>").1.is_none());
+        assert!(body_of("<script></script>").1.is_none());
+        assert!(body_of("<script/>").1.is_none());
     }
 }

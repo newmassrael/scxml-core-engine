@@ -1,0 +1,32 @@
+# Mutation cases for "a script body's refusal names the row it was written on".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_script_bodys_refusal_names_its_row.cases`.
+#
+# Each case puts one half of the defect back. A `<script>` body carried no
+# spelling, so a refusal of a statement in it stood at the `<script>` tag's
+# row, which does not hold the token it names; and an inline body is read
+# untrimmed, so a range of it read back onto the trimmed spelling lands past
+# the token by the whitespace the body opens with. The integration test
+# `every_backend_names_the_row_and_column_of_the_refused_token` refuses both
+# through its `inline_script` and `global_script` cases.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test an_ecmascript_refusal_names_the_token_it_refuses
+mutation_targets sce-build/src/ecmascript_acceptance.rs
+mutation_oracles sce-build/tests/an_ecmascript_refusal_names_the_token_it_refuses.rs
+
+mutation_case "an inline body is checked without its spelling" <<'PY'
+edit("sce-build/src/ecmascript_acceptance.rs",
+     r'''                at,
+                action.content_spelling.as_ref(),''',
+     r'''                at,
+                None,''')
+PY
+
+mutation_case "a body's range is read as a range of the trimmed text" <<'PY'
+edit("sce-build/src/ecmascript_acceptance.rs",
+     r'''                let lead = self.source.len() - self.source.trim_start().len();''',
+     r'''                let lead = 0;''')
+PY

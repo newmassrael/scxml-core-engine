@@ -410,6 +410,14 @@ pub struct Action {
     /// this element and so not in [`Self::spellings`].
     #[serde(skip)]
     pub contentexpr_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+    /// A `<script>` body as written and where — the element text
+    /// [`Self::content`] was read from, so a refusal of a statement in it is
+    /// placed on the row that statement sits on rather than at the
+    /// `<script>` tag. `None` for any other action, for a body read from a
+    /// `src`, and for one whose written text does not decode to exactly the
+    /// body ([`crate::attribute_spelling::AttributeSpelling::of_character_data`]).
+    #[serde(skip)]
+    pub content_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     /// `sce:req` requirement IDs attached to this executable-content
     /// element. See [`Transition::req`] for the wire-format contract.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

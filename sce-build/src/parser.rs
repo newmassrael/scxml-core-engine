@@ -2329,6 +2329,11 @@ impl SCXMLParser {
             // than copying the one it happened to need.
             let mut script = stamped_action("script", &child, source_name)?;
             script.content = content.trim().to_string();
+            // A `src` body was read from another file, and `content` holds
+            // it rather than this element's text.
+            if src.is_empty() {
+                script.content_spelling = AttributeSpelling::of_character_data(&child);
+            }
             model.global_scripts.push(script);
             // [`NeedsScriptEngineCause::GlobalScript`] —
             // derived post-parse from `model.global_scripts`.
@@ -3279,6 +3284,7 @@ impl SCXMLParser {
                 }
                 if !found_native {
                     action.content = character_data(child);
+                    action.content_spelling = AttributeSpelling::of_character_data(child);
                     // [`NeedsScriptEngineCause::InlineScriptAction`] —
                     // inline `<script>` body requires runtime evaluation.
                 }

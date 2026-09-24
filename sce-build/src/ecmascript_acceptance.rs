@@ -39,6 +39,8 @@
 //! the set this module reports are the same set. A site this walker
 //! forgets, or one it invents, reds that test.
 
+use std::ops::Range;
+
 use crate::attribute_spelling::AttributeSpelling;
 use crate::ecmascript::{DocumentScope, ExprError, Refusal};
 use crate::forge::error::{AsWritten, SourceLocation};
@@ -108,9 +110,9 @@ pub struct RefusedExpression {
     pub source: String,
     pub error: ExprError,
     /// Where the refused token was written — its row and column when the
-    /// attribute carrying the expression spells it, the owning element's
-    /// otherwise (a `<script>` body is no attribute) — in the file its author
-    /// wrote it in.
+    /// attribute or `<script>` body carrying the expression spells it, the
+    /// owning element's otherwise (a `<finalize>` body is synthesized) — in
+    /// the file its author wrote it in.
     pub location: Option<SourceLocation>,
     /// The refused token as the document spells it, when [`Self::location`]
     /// was read off the attribute and the token lies on one row — what the
@@ -169,10 +171,11 @@ pub struct ExpressionSite {
     pub source: String,
     /// The owning element's own coordinate, when the parser recorded one.
     pub location: Option<SourceLocation>,
-    /// The attribute the expression was read from, as written and where —
-    /// what places a refusal at its token. `None` for a body (`<script>`,
-    /// `<finalize>`), which is element text rather than an attribute, and
-    /// for a model no document produced.
+    /// The attribute or `<script>` body the expression was read from, as
+    /// written and where — what places a refusal at its token. `None` for a
+    /// `<finalize>` body, which the parser synthesizes from the element's
+    /// actions rather than reads as text, and for a model no document
+    /// produced.
     pub spelling: Option<AttributeSpelling>,
 }
 
@@ -187,6 +190,25 @@ impl ExpressionSite {
     /// only supported way to lower a site.
     pub fn lower(&self, scope: &DocumentScope) -> Result<String, Refusal> {
         self.role.lower(&self.source, scope)
+    }
+
+    /// `span` of a refusal [`Self::lower`] raised, as a range of this
+    /// site's source TRIMMED — the range
+    /// [`crate::forge::expression_site::ExpressionSite::locate`] reads back
+    /// onto a spelling. A body is read as given, so its range moves back by
+    /// the whitespace it opens with; one that falls inside that whitespace
+    /// is no range of the trimmed text, and asks for the body itself.
+    fn trimmed_span(&self, span: Option<Range<usize>>) -> Option<Range<usize>> {
+        let span = span?;
+        match self.role {
+            ExpressionRole::Script => {
+                let lead = self.source.len() - self.source.trim_start().len();
+                Some(span.start.checked_sub(lead)?..span.end.checked_sub(lead)?)
+            }
+            ExpressionRole::Value | ExpressionRole::Condition | ExpressionRole::Location => {
+                Some(span)
+            }
+        }
     }
 }
 
@@ -213,7 +235,7 @@ pub fn sites(model: &SCXMLModel) -> Vec<ExpressionSite> {
             "<script>",
             &script.content,
             script.source_location.as_ref(),
-            None,
+            script.content_spelling.as_ref(),
             &mut into,
         );
     }
@@ -273,10 +295,10 @@ pub fn refusals(model: &SCXMLModel, document: &str) -> Vec<RefusedExpression> {
                 &site.source,
                 site.spelling.as_ref(),
             )
-            .locate(refusal.span.clone());
-            // The token's row and column where the attribute spells the
-            // expression; the owning element's where nothing does — a body
-            // is element text, not an attribute.
+            .locate(site.trimmed_span(refusal.span.clone()));
+            // The token's row and column where the attribute or body spells
+            // the expression; the owning element's where nothing does — a
+            // `<finalize>` body is text the parser wrote, not the author.
             let expanded = match placed.line {
                 Some(line) => Some(SourceLocation {
                     file: site
@@ -662,7 +684,7 @@ fn check_action(action: &Action, into: &mut Collector) {
                 "<script>",
                 &action.content,
                 at,
-                None,
+                action.content_spelling.as_ref(),
                 into,
             );
         }
