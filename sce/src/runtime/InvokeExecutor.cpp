@@ -631,33 +631,49 @@ bool SCXMLInvokeHandler::cancelInvoke(const std::string &invokeid) {
 
     SCE_LOG_DEBUG("SCXMLInvokeHandler: Cancelling invoke: {} with session: {}", invokeid, session.sessionId);
 
-    // W3C SCXML Test 252: Track cancelled child session FIRST to enable filtering
-    // This must happen BEFORE cancelEventsForSession() to prevent race condition:
-    // 1. Add to cancelledChildSessions_ first
-    // 2. Any processEvent() calls will be filtered by shouldFilterCancelledInvokeEvent()
-    // 3. Then cancelEventsForSession() removes queued events
-    // Use bounded FIFO cache to prevent memory leak
-    size_t cacheSize;
-    {
-        std::lock_guard<std::mutex> lock(cancelledSessionsMutex_);
+    // §scxml-6.4: cancelling stops a session that is still running, and what
+    // that session sends from then on is not the parent's to process (W3C
+    // SCXML Test 252). A session that is no longer running has already ended
+    // on its own — it entered a top-level <final>, ran its exit handlers and
+    // sent done.invoke — so there is nothing left to stop, and what it sent
+    // before it ended is still the parent's: done.invoke is the last event an
+    // invoked session generates, and it arrives even when the invoking state
+    // has been left in the meantime (W3C SCXML Test 236). Discarding it went
+    // unnoticed while the raiser delivered queued events from a local copy of
+    // its queue and without their origin session, so neither the purge nor
+    // the filter below could reach one.
+    const StateMachine *child = session.smContext ? session.smContext->get() : nullptr;
+    const bool stillRunning = child != nullptr && child->isRunning();
 
-        // Only add if not already present (prevents duplicate entries in deque)
-        if (cancelledChildSessions_.insert(session.sessionId).second) {
-            // Successfully inserted new entry - add to FIFO order
-            cancelledSessionsOrder_.push_back(session.sessionId);
+    if (stillRunning) {
+        // W3C SCXML Test 252: Track cancelled child session FIRST to enable filtering
+        // This must happen BEFORE cancelEventsForSession() to prevent race condition:
+        // 1. Add to cancelledChildSessions_ first
+        // 2. Any processEvent() calls will be filtered by shouldFilterCancelledInvokeEvent()
+        // 3. Then cancelEventsForSession() removes queued events
+        // Use bounded FIFO cache to prevent memory leak
+        size_t cacheSize;
+        {
+            std::lock_guard<std::mutex> lock(cancelledSessionsMutex_);
 
-            // Enforce bounded cache by removing oldest entries
-            if (cancelledSessionsOrder_.size() > MAX_CANCELLED_SESSIONS) {
-                std::string oldest = cancelledSessionsOrder_.front();
-                cancelledSessionsOrder_.pop_front();
-                cancelledChildSessions_.erase(oldest);
-                SCE_LOG_DEBUG("SCXMLInvokeHandler: Evicted oldest cancelled session from cache: {}", oldest);
+            // Only add if not already present (prevents duplicate entries in deque)
+            if (cancelledChildSessions_.insert(session.sessionId).second) {
+                // Successfully inserted new entry - add to FIFO order
+                cancelledSessionsOrder_.push_back(session.sessionId);
+
+                // Enforce bounded cache by removing oldest entries
+                if (cancelledSessionsOrder_.size() > MAX_CANCELLED_SESSIONS) {
+                    std::string oldest = cancelledSessionsOrder_.front();
+                    cancelledSessionsOrder_.pop_front();
+                    cancelledChildSessions_.erase(oldest);
+                    SCE_LOG_DEBUG("SCXMLInvokeHandler: Evicted oldest cancelled session from cache: {}", oldest);
+                }
             }
+            cacheSize = cancelledSessionsOrder_.size();
         }
-        cacheSize = cancelledSessionsOrder_.size();
+        SCE_LOG_DEBUG("SCXMLInvokeHandler: Added cancelled child session to filter list: {} (cache size: {})",
+                      session.sessionId, cacheSize);
     }
-    SCE_LOG_DEBUG("SCXMLInvokeHandler: Added cancelled child session to filter list: {} (cache size: {})",
-                  session.sessionId, cacheSize);
 
     // Cancel pending events in child's EventDispatcher
     if (session.eventDispatcher) {
@@ -666,15 +682,18 @@ bool SCXMLInvokeHandler::cancelInvoke(const std::string &invokeid) {
                       session.sessionId);
     }
 
-    // W3C SCXML Test 252: Cancel queued events in parent's EventRaiser
-    // This prevents processing events that child sent before invoke was cancelled
-    // Must happen AFTER adding to cancelledChildSessions_ to enable filtering
-    if (auto parentSM = parentStateMachine_.lock()) {
-        if (auto parentEventRaiser = parentSM->getEventRaiser()) {
-            size_t cancelledQueued = parentEventRaiser->cancelEventsForSession(session.sessionId);
-            if (cancelledQueued > 0) {
-                SCE_LOG_INFO("SCXMLInvokeHandler: Cancelled {} queued event(s) in parent EventRaiser for session: {}",
-                             cancelledQueued, session.sessionId);
+    if (stillRunning) {
+        // W3C SCXML Test 252: Cancel queued events in parent's EventRaiser
+        // This prevents processing events that child sent before invoke was cancelled
+        // Must happen AFTER adding to cancelledChildSessions_ to enable filtering
+        if (auto parentSM = parentStateMachine_.lock()) {
+            if (auto parentEventRaiser = parentSM->getEventRaiser()) {
+                size_t cancelledQueued = parentEventRaiser->cancelEventsForSession(session.sessionId);
+                if (cancelledQueued > 0) {
+                    SCE_LOG_INFO(
+                        "SCXMLInvokeHandler: Cancelled {} queued event(s) in parent EventRaiser for session: {}",
+                        cancelledQueued, session.sessionId);
+                }
             }
         }
     }

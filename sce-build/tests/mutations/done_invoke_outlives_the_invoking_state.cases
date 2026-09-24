@@ -1,0 +1,43 @@
+# Mutation cases for §scxml-6.4 — what cancelling an invocation may discard.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/done_invoke_outlives_the_invoking_state.cases`.
+#
+# Cancelling stops a session that is still running, and what that session
+# sends from then on is not the parent's to process (W3C SCXML Test 252). A
+# session that already ended — it entered a top-level <final>, ran its exit
+# handlers and sent done.invoke — has nothing left to stop, and what it sent
+# before it ended is still the parent's: Test 236 leaves the invoking state on
+# the event the child's exit handler sent, and takes done.invoke after it.
+#
+# Measured 2026-09-24 on the Interpreter's move onto Appendix D's main event
+# loop: Test 236 failed on the C++ W3C suite, the pybind11 suite and the ctest
+# W3C target at once. The cancel had always purged the parent's queue of the
+# session's events and filtered the rest. What kept that from reaching
+# done.invoke was the delivery it replaced, as its code reads: the raiser took
+# the whole queue into a local list before dispatching any of it, so the purge
+# found nothing left to remove, and handed each event over without its origin
+# session, so the filter could not recognise it.
+#
+# The Test 252 half — a running session's later events stay discarded — has no
+# case here. Its witness is W3C SCXML Test 252 itself, which the W3C suites run
+# on every channel; no integration test holds it, and this harness reaches the
+# W3C suites only through a ctest target that runs all 404 cases.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^IntegrationTests$'
+mutation_targets sce/src/runtime/InvokeExecutor.cpp
+mutation_oracles tests/integration/DoneInvokeOutlivesTheInvokingStateTest.cpp
+
+# ── C++ Interpreter: a session that ended is cancelled as if running ──
+#
+# The defect as it shipped: the cancel does not ask whether the session is
+# still running, so a child that ended before its invoking state was left
+# loses the done.invoke it sent last.
+
+mutation_case "a cancel discards what a session that already ended sent" <<'PY'
+edit("sce/src/runtime/InvokeExecutor.cpp",
+     """    const bool stillRunning = child != nullptr && child->isRunning();""",
+     """    const bool stillRunning = child != nullptr;""")
+PY
