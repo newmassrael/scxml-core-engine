@@ -361,6 +361,22 @@ pub struct ImportContext {
     /// nothing. `None` for every other import. Not template context.
     #[serde(skip)]
     pub transform_state_read: Option<crate::forge::previous_value::FirstRead>,
+    /// For an imported `sce:kind="event-schema"`: the record type an
+    /// algorithm's `record:<alias>` names. `None` for every other import.
+    #[serde(skip)]
+    pub record: Option<RecordImport>,
+}
+
+/// An imported event-schema as a record type (SCE_FORGE.md §4.12): the
+/// payload struct's name on this backend and the schema's fields, UNCONVERTED
+/// — each backend spells a field through [`event_schema_field_ident`], the
+/// rule the struct itself was emitted by.
+#[derive(Debug, Clone)]
+pub struct RecordImport {
+    /// e.g. Rust `hlc::HlcPayload`, C11 `HlcPayload_t`.
+    pub qualified_type: String,
+    /// `(id, type)` in declaration order.
+    pub fields: Vec<(String, SceType)>,
 }
 
 impl ImportContext {
@@ -668,6 +684,7 @@ fn resolve_single_import(
         enum_underlying: None,
         enum_is_open: false,
         transform_state_read: None,
+        record: None,
     }
 }
 
@@ -1987,6 +2004,42 @@ fn render_enum(
 // (`enum_includes` for cpp/c, `enum_use_paths` for rust,
 // `enum_kotlin_packages` for kotlin, `go_enum_imports` for go,
 // `python_enum_imports` for python).
+/// The identifier an event-schema field `id` has on `lang`'s payload struct:
+/// PascalCase on Go (the field must be exported), snake_case on Rust (the
+/// crate denies `non_snake_case`), the id as written everywhere else.
+///
+/// ⚠ ONE rule for the struct and for every access to it. An algorithm that
+/// takes a `record:<alias>` reads `a.wallTime`, and that member has to name
+/// the field `render_event_schema` declared — so both ask this.
+pub(crate) fn event_schema_field_ident(id: &str, lang: crate::generator::Language) -> String {
+    use crate::generator::Language;
+    match lang {
+        Language::Go => filters::to_pascal_case(id.to_string()),
+        Language::Rust => filters::to_snake_case(id.to_string()),
+        Language::Cpp | Language::C11 | Language::Kotlin | Language::Python => id.to_string(),
+    }
+}
+
+/// The name another document uses for the payload struct the event-schema
+/// document `schema_name` declares — `<Pascal>Payload`, qualified the way
+/// that document's import brings it into scope on `lang` (the same matrix
+/// `enum_qualified_type` records for an enum).
+pub(crate) fn event_schema_payload_type(
+    schema_name: &str,
+    lang: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    let pascal = filters::to_pascal_case(schema_name.to_string());
+    let snake = filters::to_snake_case(schema_name.to_string());
+    match lang {
+        Language::Cpp => format!("SCE::Generated::{pascal}::{pascal}Payload"),
+        Language::Rust => format!("{snake}::{pascal}Payload"),
+        Language::Kotlin => format!("{pascal}Payload"),
+        Language::Go | Language::Python => format!("{snake}.{pascal}Payload"),
+        Language::C11 => format!("{pascal}Payload_t"),
+    }
+}
+
 fn render_event_schema(
     env: &minijinja::Environment,
     m: &EventSchemaModel,
@@ -2019,8 +2072,8 @@ fn render_event_schema(
         .iter()
         .map(|f| {
             let resolved = l.type_name(&f.sce_type);
-            let go_field_name = filters::to_pascal_case(f.id.clone());
-            let rs_field_name = filters::to_snake_case(f.id.clone());
+            let go_field_name = event_schema_field_ident(&f.id, crate::generator::Language::Go);
+            let rs_field_name = event_schema_field_ident(&f.id, crate::generator::Language::Rust);
             serde_json::json!({
                 "id": f.id,
                 "cpp_type": resolved,
@@ -21000,6 +21053,102 @@ fn algorithm_format_param(l: &LangCtx, name: &str, ty: &SceType) -> String {
     l.place_param(name, &algorithm_param_type(l, ty))
 }
 
+/// The record type `record:<alias>` names, judged for what v1 can carry
+/// (SCE_FORGE.md §4.12): an imported event-schema whose every field is a
+/// fixed-width number, a `bool` or an enum. A `string` or `bytes` field has a
+/// length of its own, which the C11 struct does not carry and the Rust one
+/// holds in an allocation, so such a schema is refused as a record type.
+/// Refused at `spelling`, the `type` attribute that names it.
+fn resolve_record<'i>(
+    imports: &'i [ImportContext],
+    alias: &str,
+    spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
+    element: &str,
+) -> Result<&'i RecordImport, ForgeError> {
+    use crate::forge::error::ValidationError;
+    use crate::forge::expression_site::WrittenAt;
+    use crate::forge::model::AlgorithmValueType;
+    let refuse = |rule: String| -> ForgeError {
+        WrittenAt::value(spelling).place_reporting(
+            ValidationError::AttributeRuleViolated {
+                element: element.to_string(),
+                attr: "type".into(),
+                value: format!("{}{alias}", AlgorithmValueType::RECORD_PREFIX),
+                rule,
+            }
+            .into(),
+        )
+    };
+    let record = imports
+        .iter()
+        .find(|imp| imp.alias == alias)
+        .and_then(|imp| imp.record.as_ref())
+        .ok_or_else(|| refuse(format!("an import `{alias}` of kind event-schema")))?;
+    if let Some((id, ty)) = record.fields.iter().find(|(_, ty)| {
+        !(AlgorithmValueType::list_elem_admitted(ty) || matches!(ty, SceType::Enum(_)))
+    }) {
+        return Err(refuse(format!(
+            "a schema of fixed-width fields — `{alias}` declares `{id}` as {}, and a string or \
+             bytes field is not carried by a record in v1",
+            ty.as_attr()
+        )));
+    }
+    Ok(record)
+}
+
+/// Every record local of `body` — `(name, alias, type spelling)` — nested
+/// bodies included. The names are also in `AlgorithmModel::body_bindings`;
+/// this walk adds where each type is written, which a refusal of the record
+/// type is placed at.
+fn record_locals(
+    body: &[AlgorithmStmt],
+) -> Vec<(
+    &str,
+    &str,
+    Option<&crate::attribute_spelling::AttributeSpelling>,
+)> {
+    let mut out = Vec::new();
+    fn walk<'b>(
+        stmts: &'b [AlgorithmStmt],
+        out: &mut Vec<(
+            &'b str,
+            &'b str,
+            Option<&'b crate::attribute_spelling::AttributeSpelling>,
+        )>,
+    ) {
+        for s in stmts {
+            match s {
+                AlgorithmStmt::RecordVar {
+                    name,
+                    alias,
+                    type_spelling,
+                    ..
+                } => out.push((name, alias, type_spelling.as_ref())),
+                AlgorithmStmt::If {
+                    then_body,
+                    else_body,
+                    ..
+                } => {
+                    walk(then_body, out);
+                    if let Some(eb) = else_body {
+                        walk(eb, out);
+                    }
+                }
+                AlgorithmStmt::While { body, .. } | AlgorithmStmt::Foreach { body, .. } => {
+                    walk(body, out)
+                }
+                AlgorithmStmt::Var { .. }
+                | AlgorithmStmt::Assign { .. }
+                | AlgorithmStmt::Append { .. }
+                | AlgorithmStmt::Return { .. }
+                | AlgorithmStmt::Call { .. } => {}
+            }
+        }
+    }
+    walk(body, &mut out);
+    out
+}
+
 /// The bounded-collection import a `<sce:foreach in>` names, if it names one.
 /// Anything else a foreach may iterate is a `bytes` value.
 ///
@@ -21078,6 +21227,7 @@ fn collect_bc_foreach_member_types(
                 collect_bc_foreach_member_types(body, imports, schemas, out, out_len);
             }
             AlgorithmStmt::Var { .. }
+            | AlgorithmStmt::RecordVar { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
             | AlgorithmStmt::Return { .. }
@@ -21136,7 +21286,8 @@ fn collect_append_buffers(
             AlgorithmStmt::While { body, .. } | AlgorithmStmt::Foreach { body, .. } => {
                 collect_append_buffers(body, out);
             }
-            AlgorithmStmt::Assign { .. }
+            AlgorithmStmt::RecordVar { .. }
+            | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
             | AlgorithmStmt::Return { .. }
             | AlgorithmStmt::Call { .. } => {}
@@ -21307,6 +21458,7 @@ struct AlgorithmBodyCfg<'a> {
     imports: &'a [ImportContext],
     append_buffers: &'a std::collections::HashMap<String, AppendBufferDecl>,
     c11_result_type: Option<&'a str>,
+    records: &'a std::collections::HashMap<String, String>,
 }
 
 /// Lower an algorithm body into a multi-line code string in the target
@@ -21344,6 +21496,7 @@ fn lower_algorithm_body(
         imports: cfg.imports,
         append_buffers: cfg.append_buffers,
         c11_result_type: cfg.c11_result_type,
+        records: cfg.records,
     };
     for s in stmts {
         lower_algorithm_stmt(s, &ctx, &pad, indent, &mut out)?;
@@ -21391,6 +21544,7 @@ fn collect_algorithm_assigned_roots(
                 collect_algorithm_assigned_roots(body, out);
             }
             AlgorithmStmt::Var { .. }
+            | AlgorithmStmt::RecordVar { .. }
             | AlgorithmStmt::Return { .. }
             | AlgorithmStmt::Call { .. } => {}
         }
@@ -21425,6 +21579,10 @@ struct AlgorithmLowerCtx<'a> {
     /// (the no-malloc carrier that doubles as the return value). Other
     /// backends use a language-native growable buffer and ignore this.
     c11_result_type: Option<&'a str>,
+    /// Every record parameter and local (SCE_FORGE.md §4.12), keyed by the
+    /// SCXML name, to the event-schema alias that types it — what a member
+    /// assignment, a record local and a record return are judged against.
+    records: &'a std::collections::HashMap<String, String>,
 }
 
 /// Lower one statement. Every refusal is placed at the attribute it names,
@@ -21456,6 +21614,7 @@ fn lower_algorithm_stmt(
         imports,
         append_buffers,
         c11_result_type,
+        records,
     } = ctx;
     match s {
         AlgorithmStmt::Var {
@@ -21611,12 +21770,168 @@ fn lower_algorithm_stmt(
             };
             out.push_str(&line);
         }
+        // SCE_FORGE.md §4.12: a record local, built whole in one statement.
+        // Every schema field is given exactly once and nothing else; each
+        // value is lowered into its field's slot the way a typed assignment
+        // is; the fields are written in the SCHEMA's order, which C and C++
+        // designated initializers require and which keeps every backend's
+        // statement in one order whatever order the author wrote.
+        AlgorithmStmt::RecordVar {
+            name,
+            name_spelling,
+            alias,
+            type_spelling,
+            fields,
+        } => {
+            use crate::forge::error::ValidationError;
+            use crate::forge::expression_site::WrittenAt;
+            let element = format!("<sce:var name=\"{name}\">");
+            let record = resolve_record(imports, alias, type_spelling.as_ref(), &element)?;
+            let field_refusal = |at: WrittenAt<'_>, value: &str, rule: String| -> ForgeError {
+                at.place_reporting(
+                    ValidationError::AttributeRuleViolated {
+                        element: "<sce:field>".into(),
+                        attr: "name".into(),
+                        value: value.to_string(),
+                        rule,
+                    }
+                    .into(),
+                )
+            };
+            let declared: Vec<&str> = record.fields.iter().map(|(id, _)| id.as_str()).collect();
+            let mut given: std::collections::HashMap<&str, &crate::forge::model::RecordFieldInit> =
+                std::collections::HashMap::new();
+            for f in fields {
+                if !declared.contains(&f.name.as_str()) {
+                    return Err(field_refusal(
+                        WrittenAt::value(f.name_spelling.as_ref()),
+                        &f.name,
+                        format!("a field of {alias}: one of {}", declared.join(", ")),
+                    ));
+                }
+                if given.insert(f.name.as_str(), f).is_some() {
+                    return Err(field_refusal(
+                        WrittenAt::value(f.name_spelling.as_ref()),
+                        &f.name,
+                        format!("given once — `{}` is already given above", f.name),
+                    ));
+                }
+            }
+            if let Some(missing) = declared.iter().find(|id| !given.contains_key(*id)) {
+                return Err(WrittenAt::value(name_spelling.as_ref()).place_reporting(
+                    ValidationError::AttributeRuleViolated {
+                        element,
+                        attr: "name".into(),
+                        value: name.clone(),
+                        rule: format!(
+                            "a record built whole — every field of {alias} given by a \
+                             <sce:field>, and `{missing}` is not"
+                        ),
+                    }
+                    .into(),
+                ));
+            }
+            let mut inits: Vec<(String, String)> = Vec::new();
+            for (id, ty) in &record.fields {
+                let f = given[id.as_str()];
+                let site = ExpressionSite::new(&f.expr, f.expr_spelling.as_ref());
+                let value = expr::transpile_into(
+                    &f.expr,
+                    l.expr_target(),
+                    type_ctx,
+                    renames,
+                    InferredType::from_sce_type(ty),
+                )
+                .map_err(|refusal| site.place(refusal))?;
+                inits.push((event_schema_field_ident(id, lang), value));
+            }
+            let local = l.local_id(name);
+            let ty = &record.qualified_type;
+            let joined = |sep: &str| {
+                inits
+                    .iter()
+                    .map(|(field, value)| format!("{field}{sep}{value}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            let line = match lang {
+                Language::Rust => {
+                    let rust_mut = if assigned.contains(name.as_str()) {
+                        "mut "
+                    } else {
+                        ""
+                    };
+                    format!(
+                        "{pad}let {rust_mut}{local} = {ty} {{ {} }};\n",
+                        joined(": ")
+                    )
+                }
+                Language::Cpp => {
+                    let designated = inits
+                        .iter()
+                        .map(|(field, value)| format!(".{field} = {value}"))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!("{pad}{ty} {local}{{{designated}}};\n")
+                }
+                Language::C11 => {
+                    let designated = inits
+                        .iter()
+                        .map(|(field, value)| format!(".{field} = {value}"))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!("{pad}{ty} {local} = {{{designated}}};\n")
+                }
+                Language::Go => format!("{pad}{local} := {ty}{{{}}}\n", joined(": ")),
+                Language::Python => format!("{pad}{local} = {ty}({})\n", joined("=")),
+                Language::Kotlin => format!("{pad}var {local} = {ty}({})\n", joined(" = ")),
+            };
+            out.push_str(&line);
+        }
         AlgorithmStmt::Assign {
             target,
             target_spelling,
             expr: rhs,
             expr_spelling,
         } => {
+            // SCE_FORGE.md §4.12: a record is updated a field at a time. A
+            // whole-record assignment has no v1 meaning (there is no record
+            // expression to assign from), and Kotlin's data class fields are
+            // `val`, so its field update is a `copy`.
+            let trimmed_target = target.trim();
+            if records.contains_key(trimmed_target) {
+                let site = ExpressionSite::new(target, target_spelling.as_ref());
+                let at = site.locate(Some(0..trimmed_target.len()));
+                let refusal: ForgeError = crate::forge::error::ExprError::UnsupportedConstruct {
+                    construct: format!(
+                        "an assignment to the whole record `{trimmed_target}` (v1 updates a \
+                         record one field at a time: `{trimmed_target}.<field>`)"
+                    ),
+                    observed: at.observed(),
+                }
+                .into();
+                return Err(at.place(refusal));
+            }
+            if matches!(lang, Language::Kotlin) {
+                if let Some((root, field)) = trimmed_target.split_once('.') {
+                    if records.contains_key(root.trim()) {
+                        let target_site = ExpressionSite::new(target, target_spelling.as_ref());
+                        let (_, lhs_ty) =
+                            expr::transpile_lvalue(target, l.expr_target(), type_ctx, renames)
+                                .map_err(|refusal| target_site.place(refusal))?;
+                        let rhs_site = ExpressionSite::new(rhs, expr_spelling.as_ref());
+                        let rhs_lowered =
+                            expr::transpile_into(rhs, l.expr_target(), type_ctx, renames, lhs_ty)
+                                .map_err(|refusal| rhs_site.place(refusal))?;
+                        let local = l.local_id(root.trim());
+                        let field = event_schema_field_ident(field.trim(), lang);
+                        out.push_str(&format!(
+                            "{pad}{local} = {local}.copy({field} = {rhs_lowered})\n"
+                        ));
+                        return Ok(());
+                    }
+                }
+            }
             let target_site = ExpressionSite::new(target, target_spelling.as_ref());
             let (lhs, lhs_ty) = expr::transpile_lvalue(target, l.expr_target(), type_ctx, renames)
                 .map_err(|refusal| target_site.place(refusal))?;
@@ -22183,6 +22498,38 @@ fn lower_algorithm_stmt(
                         return Err(at.place(refusal));
                     }
                     ListSpelling::new(l, elem).return_stmt(pad, &l.local_id(name))
+                }
+                // A record return (SCE_FORGE.md §4.12): the returned value is
+                // a record parameter or local of the same schema, by name —
+                // there is no record expression to lower otherwise.
+                Some(rhs) if return_value.and_then(|t| t.record_alias()).is_some() => {
+                    let alias = return_value
+                        .and_then(|t| t.record_alias())
+                        .expect("guarded by the arm");
+                    let site = ExpressionSite::new(rhs, expr_spelling.as_ref());
+                    let name = rhs.trim();
+                    if records.get(name).map(String::as_str) != Some(alias) {
+                        let at = site.locate(Some(0..name.len()));
+                        let refusal: ForgeError =
+                            crate::forge::error::ExprError::UnsupportedConstruct {
+                                construct: format!(
+                                    "a record:{alias} return that is not a record:{alias} \
+                                     parameter or local (v1 returns a record by name)"
+                                ),
+                                observed: at.observed(),
+                            }
+                            .into();
+                        return Err(at.place(refusal));
+                    }
+                    let local = l.local_id(name);
+                    match lang {
+                        Language::Python | Language::Kotlin | Language::Go => {
+                            format!("{pad}return {local}\n")
+                        }
+                        Language::Rust | Language::Cpp | Language::C11 => {
+                            format!("{pad}return {local};\n")
+                        }
+                    }
                 }
                 Some(rhs) => {
                     // Coerce to the function's declared return type so
@@ -22848,6 +23195,8 @@ fn render_algorithm(
                 }
                 SceType::Uint8
             }
+            // Registered with its fields from the record bindings below.
+            crate::forge::model::AlgorithmBinding::RecordLocal { .. } => continue,
         };
         env_pairs.push((binding.name().to_string(), ty));
     }
@@ -22876,12 +23225,58 @@ fn render_algorithm(
         );
     }
 
+    // SCE_FORGE.md §4.12 records: every `record:<alias>` parameter and local
+    // is a closed record whose members are the schema's fields, typed as the
+    // schema types them — registered the way a collection element's are —
+    // and each member access is renamed to the field identifier the payload
+    // struct was emitted with on this backend (`event_schema_field_ident`),
+    // through the local's own backend identifier.
+    let mut record_names: Vec<&str> = Vec::new();
+    let mut record_renames: Vec<(String, String)> = Vec::new();
+    let record_bindings = m
+        .signature
+        .params
+        .iter()
+        .filter_map(|p| {
+            p.sce_type.record_alias().map(|alias| {
+                (
+                    p.name.as_str(),
+                    alias,
+                    p.type_spelling.as_ref(),
+                    format!("<sce:param name=\"{}\">", p.name),
+                )
+            })
+        })
+        .chain(
+            record_locals(&m.body)
+                .into_iter()
+                .map(|(name, alias, spelling)| {
+                    (name, alias, spelling, format!("<sce:var name=\"{name}\">"))
+                }),
+        )
+        .collect::<Vec<_>>();
+    for (name, alias, spelling, element) in &record_bindings {
+        let record = resolve_record(imports, alias, *spelling, element)?;
+        record_names.push(name);
+        let local = l.local_id(name);
+        for (id, ty) in &record.fields {
+            member_field_pairs.push((format!("{name}.{id}"), ty.clone()));
+            record_renames.push((
+                format!("{name}.{id}"),
+                format!("{local}.{}", event_schema_field_ident(id, lang)),
+            ));
+        }
+    }
+
     let mut type_ctx = TypeCtx::new();
     for (name, ty) in &env_pairs {
         type_ctx.insert_var(name.as_str(), InferredType::from_sce_type(ty));
     }
     for &(name, shape) in &record_items {
         type_ctx.insert_record(name, shape);
+    }
+    for name in &record_names {
+        type_ctx.insert_record(name, RecordShape::Closed);
     }
     for (name, ty) in &member_field_pairs {
         type_ctx.insert_var(name.as_str(), InferredType::from_sce_type(ty));
@@ -22971,19 +23366,31 @@ fn render_algorithm(
         .params
         .iter()
         .map(|p| {
+            // A record is passed by value: its fields are fixed-width, so the
+            // struct is plain data on every backend (SCE_FORGE.md §4.12).
+            if let Some(alias) = p.sce_type.record_alias() {
+                let record = resolve_record(
+                    imports,
+                    alias,
+                    p.type_spelling.as_ref(),
+                    &format!("<sce:param name=\"{}\">", p.name),
+                )?;
+                return Ok(l.place_param(&p.name, &record.qualified_type));
+            }
             p.sce_type
                 .scalar()
                 .map(|t| algorithm_format_param(&l, &p.name, t))
-                .ok_or_else(|| {
+                .ok_or_else(|| -> ForgeError {
                     GenerateError::InvalidConfig(format!(
                         "algorithm '{}' parameter '{}' is {}, which the parser refuses in v1",
                         m.name,
                         p.name,
                         p.sce_type.as_attr()
                     ))
+                    .into()
                 })
         })
-        .collect::<Result<_, _>>()?;
+        .collect::<Result<_, ForgeError>>()?;
     let bc_import_params: Vec<String> = imports
         .iter()
         .filter(|imp| imp.kind == "bounded-collection")
@@ -23023,11 +23430,20 @@ fn render_algorithm(
         })?),
         None => None,
     };
+    // A record return (SCE_FORGE.md §4.12) is the imported payload struct,
+    // by value on every backend.
+    let return_record = match declared_return.and_then(|t| t.record_alias()) {
+        Some(alias) => Some(resolve_record(imports, alias, None, "<sce:return>")?),
+        None => None,
+    };
     let return_type = match (return_scalar, lang) {
         _ if return_list.is_some() => return_list
             .as_ref()
             .zip(list_return_cap)
             .map(|(list, cap)| list.return_type(cap, &primary_symbol))
+            .expect("guarded by the arm"),
+        _ if return_record.is_some() => return_record
+            .map(|record| record.qualified_type.clone())
             .expect("guarded by the arm"),
         (Some(SceType::Bytes), _) => {
             let n = bytes_return_cap.ok_or_else(|| {
@@ -23146,6 +23562,7 @@ fn render_algorithm(
             const_renames_owned.push((imp.alias.clone(), imp.qualified_call.clone()));
         }
     }
+    const_renames_owned.extend(record_renames.iter().cloned());
     let const_renames: std::collections::HashMap<&str, &str> = const_renames_owned
         .iter()
         .map(|(k, v)| (k.as_str(), v.as_str()))
@@ -23155,6 +23572,10 @@ fn render_algorithm(
     // never used to judge an expression.
     let return_ty_inferred =
         return_scalar.map_or(InferredType::Unknown, InferredType::from_sce_type);
+    let records: std::collections::HashMap<String, String> = record_bindings
+        .iter()
+        .map(|(name, alias, _, _)| (name.to_string(), alias.to_string()))
+        .collect();
     let body = lower_algorithm_body(
         &m.body,
         &AlgorithmBodyCfg {
@@ -23166,6 +23587,7 @@ fn render_algorithm(
             imports,
             append_buffers: &append_buffers,
             c11_result_type: c11_result_type.as_deref(),
+            records: &records,
         },
         1,
     )?;
@@ -24458,6 +24880,7 @@ mod tests {
             enum_underlying: None,
             enum_is_open: false,
             transform_state_read: None,
+            record: None,
         }
     }
 
@@ -25088,6 +25511,7 @@ mod tests {
                 enum_underlying: None,
                 enum_is_open: false,
                 transform_state_read: None,
+                record: None,
             },
             ImportContext {
                 alias: "c".to_string(),
@@ -25126,6 +25550,7 @@ mod tests {
                 enum_underlying: None,
                 enum_is_open: false,
                 transform_state_read: None,
+                record: None,
             },
         ];
         let (has, _all, _stateful) = build_template_imports(&imports);

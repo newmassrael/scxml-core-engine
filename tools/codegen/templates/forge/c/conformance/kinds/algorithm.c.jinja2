@@ -15,7 +15,13 @@
    A `list<T>` return (SCE_FORGE.md §4.12) is the algorithm's
    `<fn>_result_t { items[N], len, ok }`. Its expected elements are baked
    into an array as long as the longest case (at least one slot, since C11
-   has no empty array), and compared by `ok`, then length, then element. #}
+   has no empty array), and compared by `ok`, then length, then element.
+
+   A record argument or output (SCE_FORGE.md §4.12) is the event-schema's
+   `<Pascal>Payload_t`, baked into the case table with a designated
+   initializer per field and compared field by field; `fields` carries each
+   field's C name, derived from the schema document when the harness
+   renders. #}
 {% if f.output.list_of is defined %}
 {% set ns = namespace(width=1) %}
 {% for c in f.cases %}
@@ -29,14 +35,18 @@
 static void test_{{ f.name }}(void) {
     static const struct {
 {% for arg_ty in f.args %}
-{% if arg_ty == "bytes" %}
+{% if arg_ty.record is defined %}
+        {{ arg_ty.record | to_pascal_case }}Payload_t input_arg{{ loop.index0 }};
+{% elif arg_ty == "bytes" %}
         uint8_t input_arg{{ loop.index0 }}[256];
         size_t  input_arg{{ loop.index0 }}_len;
 {% else %}
         {{ arg_ty | c_type }} input_arg{{ loop.index0 }};
 {% endif %}
 {% endfor %}
-{% if f.output.list_of is defined %}
+{% if f.output.record is defined %}
+        {{ f.output.record | to_pascal_case }}Payload_t expected;
+{% elif f.output.list_of is defined %}
         {{ f.output.list_of | c_type }} expected[{{ ns.width }}];
         size_t  expected_len;
 {% else %}
@@ -46,14 +56,19 @@ static void test_{{ f.name }}(void) {
 {% for c in f.cases %}
         {
 {% for arg_ty in f.args %}
-{% if arg_ty == "bytes" %}
-            .input_arg{{ loop.index0 }} = {{ c.args[loop.index0] | c_literal(arg_ty) }},
-            .input_arg{{ loop.index0 }}_len = {{ c.args[loop.index0] | length }},
+{% set ai = loop.index0 %}
+{% if arg_ty.record is defined %}
+            .input_arg{{ ai }} = { {% for fld in arg_ty.fields %}.{{ fld.ident }} = {{ c.args[ai][fld.name] | c_literal(fld.type) }}, {% endfor %}},
+{% elif arg_ty == "bytes" %}
+            .input_arg{{ ai }} = {{ c.args[ai] | c_literal(arg_ty) }},
+            .input_arg{{ ai }}_len = {{ c.args[ai] | length }},
 {% else %}
-            .input_arg{{ loop.index0 }} = {{ c.args[loop.index0] | c_literal(arg_ty) }},
+            .input_arg{{ ai }} = {{ c.args[ai] | c_literal(arg_ty) }},
 {% endif %}
 {% endfor %}
-{% if f.output.list_of is defined %}
+{% if f.output.record is defined %}
+            .expected = { {% for fld in f.output.fields %}.{{ fld.ident }} = {{ c.expected[fld.name] | c_literal(fld.type) }}, {% endfor %}},
+{% elif f.output.list_of is defined %}
             .expected = { {% for v in c.expected %}{{ v | c_literal(f.output.list_of) }}, {% else %}0{% endfor %} },
             .expected_len = {{ c.expected | length }},
 {% else %}
@@ -65,7 +80,9 @@ static void test_{{ f.name }}(void) {
     const size_t n = sizeof(cases) / sizeof(cases[0]);
     for (size_t i = 0; i < n; ++i) {
 {% for arg_ty in f.args %}
-{% if arg_ty == "bytes" %}
+{% if arg_ty.record is defined %}
+        {{ arg_ty.record | to_pascal_case }}Payload_t arg{{ loop.index0 }} = cases[i].input_arg{{ loop.index0 }};
+{% elif arg_ty == "bytes" %}
         sce_forge_bytes_t arg{{ loop.index0 }} = {0};
         memcpy(arg{{ loop.index0 }}.data, cases[i].input_arg{{ loop.index0 }}, cases[i].input_arg{{ loop.index0 }}_len);
         arg{{ loop.index0 }}.len = cases[i].input_arg{{ loop.index0 }}_len;
@@ -73,7 +90,17 @@ static void test_{{ f.name }}(void) {
         {{ arg_ty | c_type }} arg{{ loop.index0 }} = cases[i].input_arg{{ loop.index0 }};
 {% endif %}
 {% endfor %}
-{% if f.output.list_of is defined %}
+{% if f.output.record is defined %}
+        {{ f.output.record | to_pascal_case }}Payload_t actual = {{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+{% for fld in f.output.fields %}
+        if (actual.{{ fld.ident }} != cases[i].expected.{{ fld.ident }}) {
+            fprintf(stderr,
+                "FAIL: {{ f.name }} case %zu: {{ fld.name }} actual=%lld expected=%lld\n",
+                i, (long long)actual.{{ fld.ident }}, (long long)cases[i].expected.{{ fld.ident }});
+            ++g_failures;
+        }
+{% endfor %}
+{% elif f.output.list_of is defined %}
         {{ f.function }}_result_t actual = {{ f.function }}({% for arg_ty in f.args %}{% if arg_ty == "bytes" %}(sce_forge_bytes_view_t){ arg{{ loop.index0 }}.data, arg{{ loop.index0 }}.len }{% else %}arg{{ loop.index0 }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %});
         if (!actual.ok || actual.len != cases[i].expected_len) {
             fprintf(stderr,

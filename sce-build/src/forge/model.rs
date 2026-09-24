@@ -3318,22 +3318,39 @@ pub enum AlgorithmValueType {
         #[serde(rename = "list")]
         elem: SceType,
     },
+    /// `record:<alias>` — a value of the struct an imported
+    /// `sce:kind="event-schema"` document declares, named by that import's
+    /// alias. Its fields are the schema's, read at import resolution, not
+    /// here: this names the type the way `enum:<alias>` names an enum
+    /// (SCE_FORGE.md §4.12).
+    Record {
+        #[serde(rename = "record")]
+        alias: String,
+    },
 }
 
 impl AlgorithmValueType {
-    /// The scalar type, or `None` for a list.
+    /// The scalar type, or `None` for a list or a record.
     pub fn scalar(&self) -> Option<&SceType> {
         match self {
             Self::Scalar(t) => Some(t),
-            Self::List { .. } => None,
+            Self::List { .. } | Self::Record { .. } => None,
         }
     }
 
-    /// The element type of a list, or `None` for a scalar.
+    /// The element type of a list, or `None` for a scalar or a record.
     pub fn list_elem(&self) -> Option<&SceType> {
         match self {
-            Self::Scalar(_) => None,
             Self::List { elem } => Some(elem),
+            Self::Scalar(_) | Self::Record { .. } => None,
+        }
+    }
+
+    /// The import alias a record names, or `None` for a scalar or a list.
+    pub fn record_alias(&self) -> Option<&str> {
+        match self {
+            Self::Record { alias } => Some(alias),
+            Self::Scalar(_) | Self::List { .. } => None,
         }
     }
 
@@ -3364,6 +3381,12 @@ impl AlgorithmValueType {
     /// needs; this is the plain inverse for text SCE wrote itself.
     pub fn from_attr(s: &str) -> Option<Self> {
         let s = s.trim();
+        if let Some(alias) = s.strip_prefix(Self::RECORD_PREFIX) {
+            let alias = alias.trim();
+            return (!alias.is_empty()).then(|| Self::Record {
+                alias: alias.to_string(),
+            });
+        }
         match s.strip_prefix("list<").and_then(|t| t.strip_suffix('>')) {
             Some(inner) => SceType::from_attr(inner.trim())
                 .filter(Self::list_elem_admitted)
@@ -3372,6 +3395,9 @@ impl AlgorithmValueType {
         }
     }
 
+    /// The prefix of a record type's spelling, `record:<alias>`.
+    pub const RECORD_PREFIX: &'static str = "record:";
+
     /// Whether a local of this type is a buffer filled by `<sce:append>` —
     /// `bytes` or `list<T>` — and so starts empty, takes `capacity` instead
     /// of `init`, and is the one shape a buffer-returning algorithm returns.
@@ -3379,19 +3405,21 @@ impl AlgorithmValueType {
         matches!(self, Self::Scalar(SceType::Bytes) | Self::List { .. })
     }
 
-    /// The `type=` attribute spelling: `int64`, or `list<int64>`.
+    /// The `type=` attribute spelling: `int64`, `list<int64>`, or
+    /// `record:<alias>`.
     pub fn as_attr(&self) -> String {
         match self {
             Self::Scalar(t) => t.as_attr().to_string(),
             Self::List { elem } => format!("list<{}>", elem.as_attr()),
+            Self::Record { alias } => format!("{}{alias}", Self::RECORD_PREFIX),
         }
     }
 }
 
 /// One parameter of an algorithm signature. Parameters are by-value
-/// scalars or by-reference slices for `bytes`; a `list<T>` parameter is
-/// refused in v1 (SCE_FORGE.md §4.12), so the type is always a scalar once
-/// parsed. Read-only in v1 (assigning to a parameter raises
+/// scalars, by-reference slices for `bytes`, or by-value records
+/// (`record:<alias>`, SCE_FORGE.md §4.12); a `list<T>` parameter is refused
+/// in v1. Read-only in v1 (assigning to a parameter raises
 /// `algorithm/lvalue-unsupported`).
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
@@ -3399,6 +3427,11 @@ pub struct AlgorithmParam {
     pub name: String,
     #[serde(rename = "type")]
     pub sce_type: AlgorithmValueType,
+    /// The `type` attribute as written — where a refusal of the type is
+    /// placed once the import it names is resolved (a record whose schema
+    /// the algorithm cannot take).
+    #[serde(skip)]
+    pub type_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
 }
 
 /// Algorithm signature — parameters and return type. `return_type =
@@ -3618,6 +3651,27 @@ pub enum AlgorithmStmt {
         #[serde(skip)]
         capacity_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     },
+    /// `<sce:var name=... type="record:<alias>">` with one
+    /// `<sce:field name=... expr=.../>` per field of the schema — a record
+    /// local, built whole (SCE_FORGE.md §4.12). Every field is given, none
+    /// twice, and none the schema does not declare; those rules need the
+    /// schema and are judged where the import is resolved. Afterwards a field
+    /// is updated with `<sce:assign target="r.field">`.
+    ///
+    /// A variant of its own rather than a `Var` with a field list: a record
+    /// local takes no `init` and no `capacity`, and every reader of `Var`
+    /// would otherwise have to know to look for a third shape.
+    RecordVar {
+        name: String,
+        #[serde(skip)]
+        name_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+        /// The import alias of the event-schema the record is typed by.
+        #[serde(rename = "record")]
+        alias: String,
+        #[serde(skip)]
+        type_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+        fields: Vec<RecordFieldInit>,
+    },
     /// `<sce:assign target="lvalue" expr="..."/>` — mutates an existing
     /// l-value. SCE's `validate_lvalue_shape` accepts an identifier or a
     /// one-level member access only; a computed index (`buf[i]`) is rejected
@@ -3725,6 +3779,20 @@ pub struct CallArg {
     pub spelling: Option<crate::attribute_spelling::AttributeSpelling>,
 }
 
+/// One `<sce:field name=... expr=.../>` of a record local
+/// ([`AlgorithmStmt::RecordVar`]): the schema field it gives and the
+/// expression that gives it.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct RecordFieldInit {
+    pub name: String,
+    #[serde(skip)]
+    pub name_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+    pub expr: String,
+    #[serde(skip)]
+    pub expr_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+}
+
 /// A name an algorithm body introduces.
 #[derive(Debug, Clone, Copy)]
 pub enum AlgorithmBinding<'a> {
@@ -3739,15 +3807,18 @@ pub enum AlgorithmBinding<'a> {
     /// signature and the imports, so the model carries the name and the
     /// generator answers it.
     ForeachItem { name: &'a str, source: &'a str },
+    /// `<sce:var name type="record:<alias>">` — a record local, typed by the
+    /// imported event-schema `alias` names.
+    RecordLocal { name: &'a str, alias: &'a str },
 }
 
 impl<'a> AlgorithmBinding<'a> {
     /// The introduced name, borrowed for as long as the model lives.
     pub fn name(self) -> &'a str {
         match self {
-            AlgorithmBinding::Local { name, .. } | AlgorithmBinding::ForeachItem { name, .. } => {
-                name
-            }
+            AlgorithmBinding::Local { name, .. }
+            | AlgorithmBinding::ForeachItem { name, .. }
+            | AlgorithmBinding::RecordLocal { name, .. } => name,
         }
     }
 }
@@ -3764,6 +3835,9 @@ fn collect_algorithm_bindings<'a>(stmts: &'a [AlgorithmStmt], out: &mut Vec<Algo
         match s {
             AlgorithmStmt::Var { name, sce_type, .. } => {
                 out.push(AlgorithmBinding::Local { name, sce_type });
+            }
+            AlgorithmStmt::RecordVar { name, alias, .. } => {
+                out.push(AlgorithmBinding::RecordLocal { name, alias });
             }
             AlgorithmStmt::Foreach {
                 item, source, body, ..

@@ -315,7 +315,7 @@
       "description": "Type carried by an `<sce:const>` declaration. Scalar form is the only shape produced by hand-authored algorithm bodies (RFC §synth-5-A); the array form is reserved for `sce:compute-at=\"build\"` consts whose body is an `<sce:fold>` block (RFC §synth-5-F build-time const-fold). Keeping array out of [`SceType`] keeps the parameter / var / field surfaces scalar-only, which is the v1 contract everywhere else."
     },
     "AlgorithmParam": {
-      "description": "One parameter of an algorithm signature. Parameters are by-value scalars or by-reference slices for `bytes`; a `list<T>` parameter is refused in v1 (SCE_FORGE.md §4.12), so the type is always a scalar once parsed. Read-only in v1 (assigning to a parameter raises `algorithm/lvalue-unsupported`).",
+      "description": "One parameter of an algorithm signature. Parameters are by-value scalars, by-reference slices for `bytes`, or by-value records (`record:<alias>`, SCE_FORGE.md §4.12); a `list<T>` parameter is refused in v1. Read-only in v1 (assigning to a parameter raises `algorithm/lvalue-unsupported`).",
       "properties": {
         "name": {
           "type": "string"
@@ -401,6 +401,37 @@
             "name",
             "stmt",
             "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:var name=... type=\"record:<alias>\">` with one `<sce:field name=... expr=.../>` per field of the schema — a record local, built whole (SCE_FORGE.md §4.12). Every field is given, none twice, and none the schema does not declare; those rules need the schema and are judged where the import is resolved. Afterwards a field is updated with `<sce:assign target=\"r.field\">`.\n\nA variant of its own rather than a `Var` with a field list: a record local takes no `init` and no `capacity`, and every reader of `Var` would otherwise have to know to look for a third shape.",
+          "properties": {
+            "fields": {
+              "items": {
+                "$ref": "#/definitions/RecordFieldInit"
+              },
+              "type": "array"
+            },
+            "name": {
+              "type": "string"
+            },
+            "record": {
+              "description": "The import alias of the event-schema the record is typed by.",
+              "type": "string"
+            },
+            "stmt": {
+              "enum": [
+                "record_var"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "fields",
+            "name",
+            "record",
+            "stmt"
           ],
           "type": "object"
         },
@@ -617,6 +648,18 @@
           },
           "required": [
             "list"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`record:<alias>` — a value of the struct an imported `sce:kind=\"event-schema\"` document declares, named by that import's alias. Its fields are the schema's, read at import resolution, not here: this names the type the way `enum:<alias>` names an enum (SCE_FORGE.md §4.12).",
+          "properties": {
+            "record": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "record"
           ],
           "type": "object"
         }
@@ -5051,6 +5094,22 @@
     "Rational": {
       "pattern": "^-?\\d+(/\\d+)?$",
       "type": "string"
+    },
+    "RecordFieldInit": {
+      "description": "One `<sce:field name=... expr=.../>` of a record local ([`AlgorithmStmt::RecordVar`]): the schema field it gives and the expression that gives it.",
+      "properties": {
+        "expr": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "expr",
+        "name"
+      ],
+      "type": "object"
     },
     "SceType": {
       "description": "Canonical SCE type — used in `sce:type` attributes. Language-specific mappings are in the generator module (SRP).",

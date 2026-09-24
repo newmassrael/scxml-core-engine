@@ -1334,6 +1334,52 @@ Some algorithms produce a data-dependent number of *numbers* rather than bytes �
 
 **Executed on every backend**: `tests/forge/resources/algorithm_weekly_expand.scxml` runs in the numerical conformance harness (`fixtures.json` output `{"list_of": "i64"}`), compared by length and element. Its cases include an empty result and one that fills the buffer to its declared capacity exactly. No case overflows: past the capacity the backends differ by the contract above, so such a case would measure that difference rather than the algorithm.
 
+#### Records — `record:<alias>`
+
+A value that is several numbers at once — a clock stamp of wall time, counter and node, a span of start and end — is one parameter, one local and one return rather than several. Its type is the struct an imported **event-schema** document declares, named by the import's alias the way `enum:<alias>` names an enum:
+
+```xml
+<sce:import kind="event-schema" src="event_schema_hlc.scxml" as="Hlc"/>
+<sce:signature>
+  <sce:param name="prev" type="record:Hlc"/>
+  <sce:param name="now" type="int64"/>
+  <sce:return type="record:Hlc"/>
+</sce:signature>
+<sce:body>
+  <sce:var name="next" type="record:Hlc">
+    <sce:field name="wallTime" expr="now &gt; prev.wallTime ? now : prev.wallTime"/>
+    <sce:field name="counter" expr="0"/>
+    <sce:field name="nodeId" expr="prev.nodeId"/>
+  </sce:var>
+  <sce:if cond="next.wallTime === prev.wallTime">
+    <sce:assign target="next.counter" expr="prev.counter + 1"/>
+  </sce:if>
+  <sce:return expr="next"/>
+</sce:body>
+```
+
+- **The schema's fields are fixed-width numbers, `bool` or `enum:`** (v1). A schema with a `string` or `bytes` field is refused as a record type: such a field has a length of its own, which the C11 payload struct does not carry and the Rust one holds in an allocation.
+- **Read** a field with `r.<field id>`. It is typed as the schema types it, and each backend spells it the way the payload struct was emitted — Rust `snake_case`, Go `PascalCase`, the id as written elsewhere — from the one rule both use.
+- **Pass** a record by value on every backend: its fields are plain data. A record parameter is read-only, like every parameter.
+- **Build** a record local whole: one `<sce:field name expr>` per schema field, each exactly once and no other. There is no record literal, so the local takes no `init`.
+- **Update** it one field at a time, `<sce:assign target="r.<field>">`. Assigning a whole record (`target="r"`) is refused. Kotlin's data-class fields are `val`, so there the update lowers to `r = r.copy(<field> = …)`.
+- **Return** a record parameter or local of the return's schema, by name.
+
+| Backend | Record type | Built as |
+|---------|-------------|----------|
+| Rust | `<schema>::<Pascal>Payload` | struct literal, `let mut` when a field is updated |
+| C11 | `<Pascal>Payload_t` | designated initializer |
+| C++ | `SCE::Generated::<Pascal>::<Pascal>Payload` | designated initializer |
+| Go | `<schema>.<Pascal>Payload` | composite literal |
+| Python | `<schema>.<Pascal>Payload` | keyword arguments |
+| Kotlin | `<Pascal>Payload` | named arguments; field updates through `copy` |
+
+The fields are written in the SCHEMA's order whatever order the author gave them — which C and C++ designated initializers require, and which keeps every backend's statement in one order.
+
+**v1 scope.** As with lists, an algorithm with a record in its signature is called only by a host: another algorithm's call of it is refused (`expression/unsupported-construct`), since nothing yet proves the caller and the callee name the same schema.
+
+**Executed on every backend**: `algorithm_hlc_compare` (two record parameters) and `algorithm_hlc_tick` (record parameter, record local, field update, record return) run in the numerical conformance harness. A record argument or output is written in the manifest as `{"record": "<event-schema fixture>"}`, and its fields are read from that schema document when the harness renders — never written beside it, so the harness cannot disagree with the struct the generator emits.
+
 ---
 
 ## 5. Kind Composition

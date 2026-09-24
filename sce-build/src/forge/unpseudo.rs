@@ -1280,6 +1280,7 @@ fn parse_algorithm(head: &Line<'_>, body: &[&Line<'_>]) -> Result<AlgorithmModel
                 line: head.number,
                 why: format!("`{ptype}` is not an sce:type"),
             })?,
+            type_spelling: None,
         });
     }
 
@@ -1524,6 +1525,37 @@ fn parse_stmt(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<AlgorithmStmt, Pars
             line: line.number,
             why: format!("`{type_word}` is not an sce:type"),
         })?;
+        // A record local is its declaration plus one nested `field = expr`
+        // line per field — the shape `pseudo` writes.
+        if let Some(alias) = sce_type.record_alias() {
+            if init.is_some() {
+                return Err(ParseError {
+                    line: line.number,
+                    why: "a record var has no `= <expr>`; its fields are the lines under it"
+                        .to_string(),
+                });
+            }
+            let mut fields = Vec::new();
+            for kid in kids {
+                let (field, expr) = kid.text.split_once(" = ").ok_or_else(|| ParseError {
+                    line: kid.number,
+                    why: "a record field needs `<field> = <expr>`".to_string(),
+                })?;
+                fields.push(crate::forge::model::RecordFieldInit {
+                    name: undo(field, kid.number)?,
+                    name_spelling: None,
+                    expr: undo(expr, kid.number)?,
+                    expr_spelling: None,
+                });
+            }
+            return Ok(AlgorithmStmt::RecordVar {
+                name: undo(name, line.number)?,
+                name_spelling: None,
+                alias: alias.to_string(),
+                type_spelling: None,
+                fields,
+            });
+        }
         let init = match (init, sce_type.is_append_buffer()) {
             (Some(init), false) => Some(undo(init, line.number)?),
             (None, true) => None,

@@ -115,15 +115,60 @@ pub struct ListOutput {
     pub compare: CompareMode,
 }
 
-/// What an algorithm fixture's single call returns: one scalar, or a
-/// `list<T>`. Untagged so a scalar output keeps its `{type, compare}`
-/// spelling; the list form is told apart by `list_of`.
+/// What an algorithm fixture's single call returns: one scalar, a
+/// `list<T>`, or a record. Untagged so a scalar output keeps its
+/// `{type, compare}` spelling; the list form is told apart by `list_of`, the
+/// record form by `record`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(untagged)]
 pub enum AlgorithmOutput {
     List(ListOutput),
+    Record(RecordRef),
     Scalar(ScalarOutput),
+}
+
+/// One argument of an algorithm fixture: a canonical scalar (`"i64"`), or a
+/// record typed by an event-schema fixture (`{"record": "<fixture>"}`) —
+/// SCE_FORGE.md §4.12. Untagged so a scalar argument keeps its bare-string
+/// spelling.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(untagged)]
+pub enum AlgorithmArg {
+    Scalar(CanonicalType),
+    Record(RecordRef),
+}
+
+/// A record argument or output: the event-schema fixture whose payload
+/// struct types it. The oracle writes the value as a JSON object keyed by
+/// the schema's field ids, and each fragment builds or reads the struct
+/// field by field.
+///
+/// ⚠ `fields` is DERIVED, never written: it is read at harness-render time
+/// from the event-schema document itself (`<name>.scxml`), the one place
+/// the fields are declared, so the harness cannot disagree with the struct
+/// the generator emits. A manifest that carries it is refused.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct RecordRef {
+    pub record: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fields: Vec<RecordFieldSpec>,
+}
+
+/// One field of a record, as the rendering language spells it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct RecordFieldSpec {
+    /// The schema's field id — the oracle's JSON key.
+    pub name: String,
+    /// The field's identifier on the payload struct in this language
+    /// (`forge::generator::event_schema_field_ident`).
+    pub ident: String,
+    #[serde(rename = "type")]
+    pub ty: CanonicalType,
 }
 
 /// Compound output descriptor for fixtures whose `expected` JSON value is an
@@ -551,7 +596,7 @@ pub enum FixtureSpec {
     /// fragment can call it directly; in C11 the harness prepends the
     /// fixture name (mirrors `Transform`'s flat-scope prefix).
     Algorithm {
-        args: Vec<CanonicalType>,
+        args: Vec<AlgorithmArg>,
         output: AlgorithmOutput,
         /// Exported function symbol — equals the algorithm `<sce:name>` in
         /// snake-case for Rust/C11. Carried in the manifest because RFC §synth-5-A
@@ -1212,6 +1257,38 @@ impl Manifest {
                             ));
                         }
                     }
+                    // A record names an event-schema fixture of this manifest,
+                    // and its fields are that document's, derived when the
+                    // harness renders — never written here.
+                    let records = args
+                        .iter()
+                        .filter_map(|a| match a {
+                            AlgorithmArg::Record(r) => Some(r),
+                            AlgorithmArg::Scalar(_) => None,
+                        })
+                        .chain(match output {
+                            AlgorithmOutput::Record(r) => Some(r),
+                            AlgorithmOutput::List(_) | AlgorithmOutput::Scalar(_) => None,
+                        });
+                    for r in records {
+                        let names_a_schema = self.fixtures.iter().any(|g| {
+                            g.name == r.record && matches!(g.spec, FixtureSpec::EventSchema { .. })
+                        });
+                        if !names_a_schema {
+                            return Err(format!(
+                                "fixture {}: record `{}` names no event-schema \
+                                 fixture in this manifest",
+                                f.name, r.record
+                            ));
+                        }
+                        if !r.fields.is_empty() {
+                            return Err(format!(
+                                "fixture {}: record `{}` carries `fields`, which are \
+                                 derived from the event-schema document; remove them",
+                                f.name, r.record
+                            ));
+                        }
+                    }
                     if function.is_empty() {
                         return Err(format!(
                             "fixture {}: algorithm `function` must not be \
@@ -1774,6 +1851,61 @@ fn read_transform_holder(
     }
 }
 
+/// The fields of the record an event-schema fixture declares, as `language`
+/// spells them — read from the document with the parse the generator reads,
+/// so a record argument or output is built against the struct that is
+/// actually emitted (SCE_FORGE.md §4.12).
+fn read_record_fields(
+    resource_dir: &Path,
+    record: &str,
+    language: Language,
+) -> Result<Vec<RecordFieldSpec>, String> {
+    use crate::forge::model::{ForgeDocument, SceType};
+    let path = resource_dir.join(format!("{record}.scxml"));
+    let text = crate::load_forge_source(&path, &[])
+        .map_err(|e| format!("cannot read {}: {e}", path.display()))?
+        .positions
+        .expanded;
+    let Some(ForgeDocument::EventSchema(m)) =
+        crate::forge::parser::parse_forge(&text, crate::DocumentLabel::symmetric(record))
+            .map_err(|e| format!("{}: {e}", path.display()))?
+    else {
+        return Err(format!(
+            "record `{record}`: {} is not an event-schema document",
+            path.display()
+        ));
+    };
+    m.fields
+        .iter()
+        .map(|f| {
+            let ty = match &f.sce_type {
+                SceType::Bool => CanonicalType::Bool,
+                SceType::Uint8 => CanonicalType::U8,
+                SceType::Uint16 => CanonicalType::U16,
+                SceType::Uint32 => CanonicalType::U32,
+                SceType::Uint64 => CanonicalType::U64,
+                SceType::Int32 => CanonicalType::I32,
+                SceType::Int64 => CanonicalType::I64,
+                SceType::Float32 => CanonicalType::F32,
+                SceType::Float64 => CanonicalType::F64,
+                other => {
+                    return Err(format!(
+                        "record `{record}`: field `{}` is {}, which the harness has no \
+                         canonical type for",
+                        f.id,
+                        other.as_attr()
+                    ))
+                }
+            };
+            Ok(RecordFieldSpec {
+                name: f.id.clone(),
+                ident: crate::forge::generator::event_schema_field_ident(&f.id, language),
+                ty,
+            })
+        })
+        .collect()
+}
+
 fn read_validator_has_state(scxml_path: &Path) -> Result<bool, String> {
     let text = std::fs::read_to_string(scxml_path)
         .map_err(|e| format!("cannot read {}: {e}", scxml_path.display()))?;
@@ -2223,12 +2355,23 @@ pub fn render_harness(
                 };
             }
             FixtureSpec::Algorithm {
+                args,
+                output,
                 function,
                 has_test_vectors,
-                ..
             } => {
                 let scxml_path = resource_dir.join(format!("{}.scxml", fixture_name));
                 *has_test_vectors = has_test_vectors_in_file(&scxml_path)?;
+                // A record's fields come from its event-schema document, as
+                // this language spells them.
+                for arg in args.iter_mut() {
+                    if let AlgorithmArg::Record(r) = arg {
+                        r.fields = read_record_fields(resource_dir, &r.record, language)?;
+                    }
+                }
+                if let AlgorithmOutput::Record(r) = output {
+                    r.fields = read_record_fields(resource_dir, &r.record, language)?;
+                }
                 // Symbol-name SSOT: lower the manifest's `function` to the
                 // exact per-language symbol the algorithm template defines,
                 // via the one helper the product codegen and the cross-doc

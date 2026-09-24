@@ -25,11 +25,25 @@
     }
   },
   "definitions": {
+    "AlgorithmArg": {
+      "description": "One argument of an algorithm fixture: a canonical scalar (`\"i64\"`), or a record typed by an event-schema fixture (`{\"record\": \"<fixture>\"}`) — SCE_FORGE.md §4.12. Untagged so a scalar argument keeps its bare-string spelling.",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/CanonicalType"
+        },
+        {
+          "$ref": "#/definitions/RecordRef"
+        }
+      ]
+    },
     "AlgorithmOutput": {
-      "description": "What an algorithm fixture's single call returns: one scalar, or a `list<T>`. Untagged so a scalar output keeps its `{type, compare}` spelling; the list form is told apart by `list_of`.",
+      "description": "What an algorithm fixture's single call returns: one scalar, a `list<T>`, or a record. Untagged so a scalar output keeps its `{type, compare}` spelling; the list form is told apart by `list_of`, the record form by `record`.",
       "anyOf": [
         {
           "$ref": "#/definitions/ListOutput"
+        },
+        {
+          "$ref": "#/definitions/RecordRef"
         },
         {
           "$ref": "#/definitions/ScalarOutput"
@@ -569,7 +583,7 @@
             "args": {
               "type": "array",
               "items": {
-                "$ref": "#/definitions/CanonicalType"
+                "$ref": "#/definitions/AlgorithmArg"
               }
             },
             "function": {
@@ -650,6 +664,47 @@
         "error",
         "default"
       ]
+    },
+    "RecordFieldSpec": {
+      "description": "One field of a record, as the rendering language spells it.",
+      "type": "object",
+      "required": [
+        "ident",
+        "name",
+        "type"
+      ],
+      "properties": {
+        "ident": {
+          "description": "The field's identifier on the payload struct in this language (`forge::generator::event_schema_field_ident`).",
+          "type": "string"
+        },
+        "name": {
+          "description": "The schema's field id — the oracle's JSON key.",
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/definitions/CanonicalType"
+        }
+      }
+    },
+    "RecordRef": {
+      "description": "A record argument or output: the event-schema fixture whose payload struct types it. The oracle writes the value as a JSON object keyed by the schema's field ids, and each fragment builds or reads the struct field by field.\n\n⚠ `fields` is DERIVED, never written: it is read at harness-render time from the event-schema document itself (`<name>.scxml`), the one place the fields are declared, so the harness cannot disagree with the struct the generator emits. A manifest that carries it is refused.",
+      "type": "object",
+      "required": [
+        "record"
+      ],
+      "properties": {
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RecordFieldSpec"
+          }
+        },
+        "record": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
     },
     "ScalarOutput": {
       "description": "Scalar output descriptor for fixtures whose `expected` JSON value is a single primitive.",

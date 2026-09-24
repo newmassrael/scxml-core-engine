@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A hybrid logical clock stamp: wall-clock milliseconds, a counter that
+  orders events within one millisecond, and the node that issued it.
+
+  The record type the algorithm fixtures `algorithm_hlc_compare` and
+  `algorithm_hlc_tick` take and return (`record:Hlc`, SCE_FORGE.md §4.12).
+  The field ids are camelCase on purpose: Rust spells them snake_case and Go
+  PascalCase, so a member access that is not renamed through the rule that
+  emitted the struct does not compile on those two arms.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="event_schema_hlc"
+       sce:event-name="hlc.stamp">
+  <datamodel>
+    <data id="wallTime" sce:type="int64" sce:direction="in"/>
+    <data id="counter" sce:type="uint32" sce:direction="in"/>
+    <data id="nodeId" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

@@ -103,10 +103,13 @@ impl Names {
         }
     }
 
-    /// An algorithm type names what its scalar, or its list's element, names.
+    /// An algorithm type names what its scalar, or its list's element, names
+    /// — and a record names its event-schema import, which is otherwise used
+    /// nowhere a value is read and would be pruned from the generated code.
     fn value_ty(&mut self, ty: &AlgorithmValueType) {
         match ty {
             AlgorithmValueType::Scalar(t) | AlgorithmValueType::List { elem: t } => self.ty(t),
+            AlgorithmValueType::Record { alias } => self.name(alias),
         }
     }
 
@@ -162,6 +165,12 @@ impl Names {
                 } => {
                     self.value_ty(sce_type);
                     self.opt_expr(init.as_deref(), init_spelling.as_ref())?;
+                }
+                AlgorithmStmt::RecordVar { alias, fields, .. } => {
+                    self.name(alias);
+                    for f in fields {
+                        self.expr(&f.expr, f.expr_spelling.as_ref())?;
+                    }
                 }
                 // A target is an lvalue in expression syntax — `x`,
                 // `buf[i]` — so it is read the way an expression is.

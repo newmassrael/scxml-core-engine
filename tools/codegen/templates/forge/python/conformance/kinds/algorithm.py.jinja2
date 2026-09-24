@@ -11,16 +11,32 @@
    passed through directly. The oracle delivers `bytes` arguments as a
    JSON array of integers, which we convert via `bytes(...)`. #}
         for case in spec["cases"]:
+{# A record argument or output (SCE_FORGE.md §4.12) is the event-schema's
+   dataclass, built by keyword from a JSON object keyed by the schema's
+   field ids and read back attribute by attribute; `fields` carries each
+   field's Python name, derived from the schema document when the harness
+   renders. #}
 {% for arg_ty in f.args %}
-{% if arg_ty == "bytes" %}
-            arg{{ loop.index0 }} = bytes(case["args"][{{ loop.index0 }}])
+{% set ai = loop.index0 %}
+{% if arg_ty.record is defined %}
+            arg{{ ai }} = {{ arg_ty.record }}.{{ arg_ty.record | to_pascal_case }}Payload(
+{% for fld in arg_ty.fields %}
+                {{ fld.ident }}=case["args"][{{ ai }}]["{{ fld.name }}"],
+{% endfor %}
+            )
+{% elif arg_ty == "bytes" %}
+            arg{{ ai }} = bytes(case["args"][{{ ai }}])
 {% else %}
-            arg{{ loop.index0 }} = case["args"][{{ loop.index0 }}]
+            arg{{ ai }} = case["args"][{{ ai }}]
 {% endif %}
 {% endfor %}
             expected = case["expected"]
             actual = {{ f.name }}.{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
-{% if f.output.list_of is defined %}
+{% if f.output.record is defined %}
+{% for fld in f.output.fields %}
+            self.assertEqual(actual.{{ fld.ident }}, expected["{{ fld.name }}"], "{{ f.name }}.{{ fld.name }}")
+{% endfor %}
+{% elif f.output.list_of is defined %}
 {# A `list<T>` return (SCE_FORGE.md §4.12) is a `list`: compared by length,
    then element by element. #}
             self.assertEqual(len(actual), len(expected), "{{ f.name }} length")

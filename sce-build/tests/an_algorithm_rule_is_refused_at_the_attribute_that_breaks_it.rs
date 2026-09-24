@@ -371,7 +371,104 @@ const LIST_CALL_BY_NAME: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 
 /// Documents a case imports, written beside the cases but not refusals
 /// themselves.
-const SUPPORT: &[(&str, &str)] = &[("probe_list_callee.scxml", LIST_CALLEE)];
+/// A two-field event-schema the record cases type their values by.
+const SCHEMA_HLC: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" sce:kind="event-schema" name="probe_schema_hlc" sce:event-name="hlc.stamp">
+  <datamodel>
+    <data id="wallTime" sce:type="int64" sce:direction="in"/>
+    <data id="counter" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// An event-schema with a `string` field, which a record cannot carry in v1.
+const SCHEMA_NAMED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" sce:kind="event-schema" name="probe_schema_named" sce:event-name="named.thing">
+  <datamodel>
+    <data id="label" sce:type="string" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// A record parameter typed by a schema with a `string` field — refused at
+/// the `type` that names it (SCE_FORGE.md §4.12).
+const RECORD_STRING_FIELD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_record_string_field" version="1.0">
+  <sce:import kind="event-schema" src="probe_schema_named.scxml" as="Named"/>
+  <sce:signature>
+    <sce:param name="n"
+               type="record:Named"/>
+    <sce:return type="uint8"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="0"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// A record local that leaves a schema field out — refused at its name.
+const RECORD_MISSING_FIELD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_record_missing_field" version="1.0">
+  <sce:import kind="event-schema" src="probe_schema_hlc.scxml" as="Hlc"/>
+  <sce:signature>
+    <sce:param name="w" type="int64"/>
+    <sce:return type="record:Hlc"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var type="record:Hlc"
+             name="r">
+      <sce:field name="wallTime" expr="w"/>
+    </sce:var>
+    <sce:return expr="r"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// A `<sce:field>` the schema does not declare — refused at its name.
+const RECORD_UNKNOWN_FIELD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_record_unknown_field" version="1.0">
+  <sce:import kind="event-schema" src="probe_schema_hlc.scxml" as="Hlc"/>
+  <sce:signature>
+    <sce:param name="w" type="int64"/>
+    <sce:return type="record:Hlc"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="r" type="record:Hlc">
+      <sce:field name="wallTime" expr="w"/>
+      <sce:field expr="0"
+                 name="counterr"/>
+    </sce:var>
+    <sce:return expr="r"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// An assignment to a whole record, which v1 updates a field at a time —
+/// refused at its target.
+const RECORD_WHOLE_ASSIGN: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_record_whole_assign" version="1.0">
+  <sce:import kind="event-schema" src="probe_schema_hlc.scxml" as="Hlc"/>
+  <sce:signature>
+    <sce:param name="p" type="record:Hlc"/>
+    <sce:return type="record:Hlc"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="r" type="record:Hlc">
+      <sce:field name="wallTime" expr="p.wallTime"/>
+      <sce:field name="counter" expr="p.counter"/>
+    </sce:var>
+    <sce:assign expr="p"
+                target="r"/>
+    <sce:return expr="r"/>
+  </sce:body>
+</scxml>
+"#;
+
+const SUPPORT: &[(&str, &str)] = &[
+    ("probe_list_callee.scxml", LIST_CALLEE),
+    ("probe_schema_hlc.scxml", SCHEMA_HLC),
+    ("probe_schema_named.scxml", SCHEMA_NAMED),
+];
 
 const CASES: &[Case] = &[
     Case {
@@ -525,6 +622,38 @@ const CASES: &[Case] = &[
         line: 7,
         col: 29,
         actual: Some("days"),
+    },
+    Case {
+        file: "probe_record_string_field.scxml",
+        document: RECORD_STRING_FIELD,
+        code: "validation/attribute-rule-violated",
+        line: 6,
+        col: 22,
+        actual: Some("record:Named"),
+    },
+    Case {
+        file: "probe_record_missing_field.scxml",
+        document: RECORD_MISSING_FIELD,
+        code: "validation/attribute-rule-violated",
+        line: 10,
+        col: 20,
+        actual: Some("r"),
+    },
+    Case {
+        file: "probe_record_unknown_field.scxml",
+        document: RECORD_UNKNOWN_FIELD,
+        code: "validation/attribute-rule-violated",
+        line: 12,
+        col: 24,
+        actual: Some("counterr"),
+    },
+    Case {
+        file: "probe_record_whole_assign.scxml",
+        document: RECORD_WHOLE_ASSIGN,
+        code: "expression/unsupported-construct",
+        line: 14,
+        col: 25,
+        actual: Some("r"),
     },
 ];
 

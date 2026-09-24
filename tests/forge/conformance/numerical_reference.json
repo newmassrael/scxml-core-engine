@@ -1511,6 +1511,65 @@
           "note": "every day of 1970 and 1971-01-01: the buffer filled to its declared capacity (366) exactly, and the loop to its max-iter"
         }
       ]
+    },
+    "algorithm_hlc_compare": {
+      "fixture": "algorithm_hlc_compare",
+      "signature": "(a: record:Hlc, b: record:Hlc) -> u8",
+      "formula": "1 when (a.wallTime, a.counter, a.nodeId) > (b.wallTime, b.counter, b.nodeId) lexicographically, else 0",
+      "cases": [
+        {
+          "args": [{ "wallTime": 1727000000500, "counter": 0, "nodeId": 7 }, { "wallTime": 1727000000400, "counter": 9, "nodeId": 9 }],
+          "expected": 1,
+          "note": "later wall time wins whatever the counter"
+        },
+        {
+          "args": [{ "wallTime": 1727000000400, "counter": 3, "nodeId": 1 }, { "wallTime": 1727000000400, "counter": 2, "nodeId": 9 }],
+          "expected": 1,
+          "note": "same wall time: the higher counter is later"
+        },
+        {
+          "args": [{ "wallTime": 1727000000400, "counter": 3, "nodeId": 1 }, { "wallTime": 1727000000400, "counter": 3, "nodeId": 2 }],
+          "expected": 0,
+          "note": "full tie but the node id: node 1 is not later than node 2"
+        },
+        {
+          "args": [{ "wallTime": 1727000000400, "counter": 3, "nodeId": 5 }, { "wallTime": 1727000000400, "counter": 3, "nodeId": 5 }],
+          "expected": 0,
+          "note": "identical stamps: not later"
+        },
+        {
+          "args": [{ "wallTime": -5, "counter": 0, "nodeId": 1 }, { "wallTime": -6, "counter": 4, "nodeId": 1 }],
+          "expected": 1,
+          "note": "negative wall times (before the epoch) still order by value"
+        }
+      ]
+    },
+    "algorithm_hlc_tick": {
+      "fixture": "algorithm_hlc_tick",
+      "signature": "(prev: record:Hlc, now: i64, node: u64) -> record:Hlc",
+      "formula": "wallTime = max(now, prev.wallTime); counter = prev.counter + 1 when wallTime == prev.wallTime else 0; nodeId = node",
+      "cases": [
+        {
+          "args": [{ "wallTime": 1727000000400, "counter": 3, "nodeId": 1 }, 1727000000500, 2],
+          "expected": { "wallTime": 1727000000500, "counter": 0, "nodeId": 2 },
+          "note": "the clock moved on: wall time advances, counter resets"
+        },
+        {
+          "args": [{ "wallTime": 1727000000400, "counter": 3, "nodeId": 1 }, 1727000000400, 2],
+          "expected": { "wallTime": 1727000000400, "counter": 4, "nodeId": 2 },
+          "note": "the clock did not move: the counter advances"
+        },
+        {
+          "args": [{ "wallTime": 1727000000400, "counter": 3, "nodeId": 1 }, 1727000000300, 2],
+          "expected": { "wallTime": 1727000000400, "counter": 4, "nodeId": 2 },
+          "note": "the clock went backwards: wall time holds, the counter advances"
+        },
+        {
+          "args": [{ "wallTime": 0, "counter": 4294967294, "nodeId": 9 }, 0, 9],
+          "expected": { "wallTime": 0, "counter": 4294967295, "nodeId": 9 },
+          "note": "counter one below uint32 max advances to the max"
+        }
+      ]
     }
   },
   "stateful_filters": {
@@ -3800,6 +3859,17 @@
         { "name": "sensorId", "value": 4660, "sce_type": "uint16" },
         { "name": "reading", "value": -12345, "sce_type": "int32" },
         { "name": "status", "value": 200, "sce_type": "uint8" }
+      ]
+    },
+    "event_schema_hlc": {
+      "fixture": "EventSchemaHlc",
+      "signature": "struct EventSchemaHlcPayload { int64 wallTime; uint32 counter; uint64 nodeId; }",
+      "description": "A hybrid logical clock stamp, the record type the algorithm fixtures algorithm_hlc_compare and algorithm_hlc_tick take and return (SCE_FORGE.md §4.12). A SHAPE claim like every event-schema fixture: names, order, and that a value reads back. The field ids are camelCase so the Rust and Go arms, which respell them, are exercised.",
+      "event_name": "hlc.stamp",
+      "fields": [
+        { "name": "wallTime", "value": 1727000000400, "sce_type": "int64" },
+        { "name": "counter", "value": 3, "sce_type": "uint32" },
+        { "name": "nodeId", "value": 7, "sce_type": "uint64" }
       ]
     }
   }

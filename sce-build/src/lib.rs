@@ -4511,6 +4511,22 @@ fn validate_and_enrich_imports(
                 ctx.enum_underlying = Some(em.underlying_type.clone());
                 ctx.enum_is_open = !em.strict_variants;
             }
+            // An imported event-schema is the record type an algorithm's
+            // `record:<alias>` names (SCE_FORGE.md §4.12). Its struct name
+            // and its fields are captured here, where the schema is in hand,
+            // so the algorithm renders against them without reopening it.
+            if let forge::model::ForgeDocument::EventSchema(sm) = &doc {
+                ctx.record = Some(forge::generator::RecordImport {
+                    qualified_type: forge::generator::event_schema_payload_type(
+                        &sm.name, *language,
+                    ),
+                    fields: sm
+                        .fields
+                        .iter()
+                        .map(|f| (f.id.clone(), f.sce_type.clone()))
+                        .collect(),
+                });
+            }
             // Whether the imported transform keeps state is recorded here,
             // where its model is in hand, and judged once the importing
             // document's use of it is known — see `transform_state_read`.

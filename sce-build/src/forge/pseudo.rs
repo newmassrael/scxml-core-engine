@@ -957,6 +957,26 @@ fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out<'_>) {
                 init
             ));
         }
+        // A record local is built whole: the declaration, then one nested
+        // `field = expr` line per field, in the order the author gave them.
+        AlgorithmStmt::RecordVar {
+            name,
+            alias,
+            fields,
+            ..
+        } => {
+            out.line(&format!(
+                "var {}: {}{}",
+                text(name),
+                crate::forge::model::AlgorithmValueType::RECORD_PREFIX,
+                text(alias)
+            ));
+            out.nested(|out| {
+                for f in fields {
+                    out.line(&format!("{} = {}", text(&f.name), text(&f.expr)));
+                }
+            });
+        }
         AlgorithmStmt::Assign { target, expr, .. } => {
             out.line(&format!("{} = {}", text(target), text(expr)));
         }

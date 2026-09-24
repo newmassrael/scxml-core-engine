@@ -13,8 +13,18 @@
     const auto &spec = ref["{{ f.ref_section }}"]["{{ f.name }}"];
     int i = 0;
     for (const auto &c : spec["cases"]) {
+{# A record argument or output (SCE_FORGE.md §4.12) is the event-schema's
+   payload struct, filled and read field by field from a JSON object keyed
+   by the schema's field ids; `fields` carries each field's C++ name,
+   derived from the schema document when the harness renders. #}
 {% for arg_ty in f.args %}
-{% if arg_ty == "bytes" %}
+{% set ai = loop.index0 %}
+{% if arg_ty.record is defined %}
+        SCE::Generated::{{ arg_ty.record | to_pascal_case }}::{{ arg_ty.record | to_pascal_case }}Payload arg{{ ai }}{};
+{% for fld in arg_ty.fields %}
+        arg{{ ai }}.{{ fld.ident }} = c["args"][{{ ai }}]["{{ fld.name }}"].get<{{ fld.type | cpp_type }}>();
+{% endfor %}
+{% elif arg_ty == "bytes" %}
         std::vector<std::uint8_t> arg{{ loop.index0 }}_buf;
         for (const auto &b : c["args"][{{ loop.index0 }}]) {
             arg{{ loop.index0 }}_buf.push_back(static_cast<std::uint8_t>(b.get<unsigned int>()));
@@ -24,7 +34,16 @@
         auto arg{{ loop.index0 }} = c["args"][{{ loop.index0 }}].get<{{ arg_ty | cpp_type }}>();
 {% endif %}
 {% endfor %}
-{% if f.output.list_of is defined %}
+{% if f.output.record is defined %}
+        auto actual = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+{% for fld in f.output.fields %}
+        CHECK(actual.{{ fld.ident }} == c["expected"]["{{ fld.name }}"].get<{{ fld.type | cpp_type }}>(),
+              "{{ f.name }} case %d: {{ fld.name }} actual=%s expected=%s",
+              i,
+              std::to_string(actual.{{ fld.ident }}).c_str(),
+              std::to_string(c["expected"]["{{ fld.name }}"].get<{{ fld.type | cpp_type }}>()).c_str());
+{% endfor %}
+{% elif f.output.list_of is defined %}
 {# A `list<T>` return (SCE_FORGE.md §4.12) is a `std::vector<T>`: compared
    by length, then element by element. `std::to_string` prints any element
    type, signed or not, without a per-type format specifier. #}

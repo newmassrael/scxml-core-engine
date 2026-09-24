@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Hybrid logical clock order: 1 when stamp `a` is later than stamp `b`, else
+  0 — wall time first, then the counter, then the node id as the tie-break.
+
+  Exercises record parameters (SCE_FORGE.md §4.12): two `record:Hlc` values
+  passed by value and read field by field.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="algorithm"
+       version="1.0">
+  <sce:import kind="event-schema" src="event_schema_hlc.scxml" as="Hlc"/>
+  <sce:signature>
+    <sce:param name="a" type="record:Hlc"/>
+    <sce:param name="b" type="record:Hlc"/>
+    <sce:return type="uint8"/>
+  </sce:signature>
+  <sce:body>
+    <sce:if cond="a.wallTime !== b.wallTime">
+      <sce:return expr="a.wallTime &gt; b.wallTime ? 1 : 0"/>
+    </sce:if>
+    <sce:if cond="a.counter !== b.counter">
+      <sce:return expr="a.counter &gt; b.counter ? 1 : 0"/>
+    </sce:if>
+    <sce:return expr="a.nodeId &gt; b.nodeId ? 1 : 0"/>
+  </sce:body>
+</scxml>

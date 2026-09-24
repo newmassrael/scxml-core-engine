@@ -15,10 +15,29 @@
         val cases = ref["{{ f.ref_section }}"]!!.jsonObject["{{ f.name }}"]!!.jsonObject["cases"]!!.jsonArray
         for (case in cases) {
             val args = case.jsonObject["args"]!!.jsonArray
+{# A record argument or output (SCE_FORGE.md §4.12) is the event-schema's
+   data class, named fully qualified so this fragment needs no import of
+   its own; `fields` carries each field's Kotlin name, derived from the
+   schema document when the harness renders. #}
 {% for arg_ty in f.args %}
-            val arg{{ loop.index0 }} = {{ ("args[" ~ loop.index0 ~ "]") | kt_unmarshal(arg_ty) }}
+{% set i = loop.index0 %}
+{% if arg_ty.record is defined %}
+            val arg{{ i }} = com.sce.generated.{{ arg_ty.record }}.{{ arg_ty.record | to_pascal_case }}Payload(
+{% for fld in arg_ty.fields %}
+                {{ fld.ident }} = {{ ("args[" ~ i ~ "].jsonObject[\"" ~ fld.name ~ "\"]!!") | kt_unmarshal(fld.type) }},
 {% endfor %}
-{% if f.output.list_of is defined %}
+            )
+{% else %}
+            val arg{{ i }} = {{ ("args[" ~ i ~ "]") | kt_unmarshal(arg_ty) }}
+{% endif %}
+{% endfor %}
+{% if f.output.record is defined %}
+            val actual = {{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+            val expected = case.jsonObject["expected"]!!.jsonObject
+{% for fld in f.output.fields %}
+            assertEquals({{ ("expected[\"" ~ fld.name ~ "\"]!!") | kt_unmarshal(fld.type) }}, actual.{{ fld.ident }}, "{{ f.name }}.{{ fld.name }}")
+{% endfor %}
+{% elif f.output.list_of is defined %}
 {# A `list<T>` return (SCE_FORGE.md §4.12) is the element's primitive array
    (`LongArray`, `UIntArray`, ...). Both sides compare as `List<T>`, so
    one spelling serves every element type; an unsigned array is still an

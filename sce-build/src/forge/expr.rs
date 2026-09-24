@@ -491,15 +491,16 @@ pub(crate) fn slot_admits(slot: InferredType, got: InferredType) -> bool {
 }
 
 /// The refusal of a call to an imported algorithm whose signature has a
-/// `list<T>` slot (`slot` names it: "returns list<int64>"), under either
-/// form — an expression's `days(n)` or a `<sce:call target="days">`. In v1
-/// a list crosses only the host boundary (SCE_FORGE.md §4.12). One text for
-/// both forms, so the two read alike.
+/// `list<T>` or record slot (`slot` names it: "returns list<int64>",
+/// "takes record:Hlc `a`"), under either form — an expression's `days(n)` or
+/// a `<sce:call target="days">`. In v1 a list or a record crosses only the
+/// host boundary (SCE_FORGE.md §4.12). One text for both forms, so the two
+/// read alike.
 pub(crate) fn host_only_call(target: &str, slot: &str, observed: Option<String>) -> ExprError {
     ExprError::UnsupportedConstruct {
         construct: format!(
             "a call to algorithm `{target}`, which {slot} \
-             (v1: only a host calls an algorithm with a list<T> slot)"
+             (v1: only a host calls an algorithm with a list<T> or record slot)"
         ),
         observed,
     }

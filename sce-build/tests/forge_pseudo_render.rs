@@ -58,10 +58,12 @@ fn an_algorithm_renders_every_form_it_can_carry() {
                 AlgorithmParam {
                     name: "data".to_string(),
                     sce_type: AlgorithmValueType::Scalar(SceType::Bytes),
+                    type_spelling: None,
                 },
                 AlgorithmParam {
                     name: "seed".to_string(),
                     sce_type: AlgorithmValueType::Scalar(SceType::Uint16),
+                    type_spelling: None,
                 },
             ],
             return_type: Some(AlgorithmValueType::Scalar(SceType::Bytes)),
@@ -618,6 +620,7 @@ fn two_renderings_of_one_model_agree() {
             params: vec![AlgorithmParam {
                 name: "x".to_string(),
                 sce_type: AlgorithmValueType::Scalar(SceType::Uint8),
+                type_spelling: None,
             }],
             return_type: Some(AlgorithmValueType::Scalar(SceType::Uint8)),
             returns_max_size: None,

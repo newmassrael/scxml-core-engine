@@ -12,10 +12,28 @@
    is then converted to `[]byte` at the call site — same workaround the
    codec fragment uses for `Encoded []int` (see harness.go.jinja2 codecCase).
    Numeric args unmarshal directly into their canonical Go scalar type. #}
+{# A record argument or output (SCE_FORGE.md §4.12) is the event-schema's
+   payload struct. The oracle's JSON object unmarshals into an anonymous
+   struct whose tags are the schema's field ids, and the payload is filled
+   from it field by field; `fields` carries each field's Go name, derived
+   from the schema document when the harness renders. #}
 	cases := ref.pureCases(t, "{{ f.ref_section }}", "{{ f.name }}")
 	for _, c := range cases {
 {% for arg_ty in f.args %}
-{% if arg_ty == "bytes" %}
+{% set i = loop.index0 %}
+{% if arg_ty.record is defined %}
+		var arg{{ i }}_src struct {
+{% for fld in arg_ty.fields %}
+			{{ fld.ident }} {{ fld.type | go_type }} `json:"{{ fld.name }}"`
+{% endfor %}
+		}
+		unmarshalOrFatal(t, c.Args[{{ i }}], &arg{{ i }}_src, "{{ f.name }} arg{{ i }}")
+		arg{{ i }} := {{ arg_ty.record }}.{{ arg_ty.record | to_pascal_case }}Payload{
+{% for fld in arg_ty.fields %}
+			{{ fld.ident }}: arg{{ i }}_src.{{ fld.ident }},
+{% endfor %}
+		}
+{% elif arg_ty == "bytes" %}
 		var arg{{ loop.index0 }}_buf []int
 		unmarshalOrFatal(t, c.Args[{{ loop.index0 }}], &arg{{ loop.index0 }}_buf, "{{ f.name }} arg{{ loop.index0 }}")
 		arg{{ loop.index0 }} := make([]byte, len(arg{{ loop.index0 }}_buf))
@@ -27,7 +45,20 @@
 		unmarshalOrFatal(t, c.Args[{{ loop.index0 }}], &arg{{ loop.index0 }}, "{{ f.name }} arg{{ loop.index0 }}")
 {% endif %}
 {% endfor %}
-{% if f.output.list_of is defined %}
+{% if f.output.record is defined %}
+		var expected struct {
+{% for fld in f.output.fields %}
+			{{ fld.ident }} {{ fld.type | go_type }} `json:"{{ fld.name }}"`
+{% endfor %}
+		}
+		unmarshalOrFatal(t, c.Expected, &expected, "{{ f.name }} expected")
+		actual := {{ f.name }}.{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+{% for fld in f.output.fields %}
+		if actual.{{ fld.ident }} != expected.{{ fld.ident }} {
+			t.Errorf("{{ f.name }}.{{ fld.name }}: actual=%v expected=%v", actual.{{ fld.ident }}, expected.{{ fld.ident }})
+		}
+{% endfor %}
+{% elif f.output.list_of is defined %}
 {# A `list<T>` return (SCE_FORGE.md §4.12) is a `[]T`: compared by length,
    then element by element. #}
 		var expected []{{ f.output.list_of | go_type }}

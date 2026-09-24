@@ -504,6 +504,11 @@ fn eval_stmt(
             scope.declare(name, value);
             Ok(())
         }
+        // A fold computes the scalar elements of a build-time array; a
+        // record is not a value it can hold.
+        AlgorithmStmt::RecordVar { name, alias, .. } => Err(ConstFoldKind::NotFoldable(format!(
+            "local '{name}' is a record:{alias}, and a build-time fold computes scalars"
+        ))),
         AlgorithmStmt::Assign { target, expr, .. } => {
             let target = target.trim();
             // Identifier-only LValues in fold bodies. Member/Index

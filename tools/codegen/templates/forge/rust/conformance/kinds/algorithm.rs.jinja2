@@ -13,16 +13,39 @@
 
    A `list<T>` return (SCE_FORGE.md §4.12) is `Result<SceOwnedList<T, N>,
    CapacityExceeded>`; the oracle's cases stay within N, so the harness
-   unwraps it and compares the slice element by element. #}
+   unwraps it and compares the slice element by element.
+
+   A record argument or output (SCE_FORGE.md §4.12) is the event-schema's
+   payload struct, built from and compared against a JSON object keyed by
+   the schema's field ids; `fields` carries each field's Rust identifier,
+   derived from the schema document when the harness renders. #}
 {% if f.output.compare == "tolerance" %}
     let tol = tolerance(&reference);
 {% endif %}
     let spec = &reference["{{ f.ref_section }}"]["{{ f.name }}"];
     for case in spec["cases"].as_array().expect("cases must be array") {
 {% for arg_ty in f.args %}
-        let arg{{ loop.index0 }} = {{ ("case[\"args\"][" ~ loop.index0 ~ "]") | rust_unmarshal(arg_ty) }};
+{% set i = loop.index0 %}
+{% if arg_ty.record is defined %}
+        let arg{{ i }} = fixtures::{{ arg_ty.record }}::{{ arg_ty.record | to_pascal_case }}Payload {
+{% for fld in arg_ty.fields %}
+            {{ fld.ident }}: {{ ("case[\"args\"][" ~ i ~ "][\"" ~ fld.name ~ "\"]") | rust_unmarshal(fld.type) }},
 {% endfor %}
-{% if f.output.list_of is defined %}
+        };
+{% else %}
+        let arg{{ i }} = {{ ("case[\"args\"][" ~ i ~ "]") | rust_unmarshal(arg_ty) }};
+{% endif %}
+{% endfor %}
+{% if f.output.record is defined %}
+        let actual = fixtures::{{ f.name }}::{{ f.function }}({% for arg_ty in f.args %}{% if arg_ty == "bytes" %}&arg{{ loop.index0 }}{% else %}arg{{ loop.index0 }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %});
+{% for fld in f.output.fields %}
+        assert_eq!(
+            actual.{{ fld.ident }},
+            {{ ("case[\"expected\"][\"" ~ fld.name ~ "\"]") | rust_unmarshal(fld.type) }},
+            "{{ f.name }}.{{ fld.name }}"
+        );
+{% endfor %}
+{% elif f.output.list_of is defined %}
         let expected: Vec<{{ f.output.list_of | rust_type }}> = case["expected"]
             .as_array()
             .expect("expected must be array")

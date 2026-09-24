@@ -6790,9 +6790,9 @@ fn parse_one_test_vector(
             },
         )
     })?;
-    // A test vector's `value` names one scalar. A `list<T>` return has no
-    // single-literal spelling, so it is refused here rather than read as
-    // whatever the element parser would make of it.
+    // A test vector's `value` names one scalar. A `list<T>` or record return
+    // has no single-literal spelling, so it is refused here rather than read
+    // as whatever the element parser would make of it.
     let return_type = return_type.scalar().ok_or_else(|| {
         located(
             node,
@@ -6803,7 +6803,7 @@ fn parse_one_test_vector(
                 value: value_attr.to_string(),
                 rule: format!(
                     "<sce:test-vector value> is one scalar literal, and this algorithm returns {}; \
-                     check a list-returning algorithm through the conformance harness instead",
+                     check it through the conformance harness instead",
                     return_type.as_attr()
                 ),
             },
@@ -6958,7 +6958,11 @@ fn parse_algorithm_signature(
                         },
                     ));
                 }
-                params.push(AlgorithmParam { name, sce_type });
+                params.push(AlgorithmParam {
+                    name,
+                    sce_type,
+                    type_spelling: AttributeSpelling::of(&child, None, "type"),
+                });
             }
             "return" => {
                 if seen_return {
@@ -7457,6 +7461,55 @@ fn parse_algorithm_stmt(
                 "type",
                 &type_str,
             )?;
+            // A record local is built whole from one `<sce:field>` per schema
+            // field (SCE_FORGE.md §4.12). It takes neither `init` (there is no
+            // record literal) nor `capacity` (it is not a buffer). Which fields
+            // it must give is the schema's, judged where the import resolves.
+            if let Some(alias) = sce_type.record_alias() {
+                for stray in ["init", "capacity"] {
+                    if let Some(value) = node.attribute(stray) {
+                        return Err(located(
+                            node,
+                            doc_name,
+                            ValidationError::AttributeRuleViolated {
+                                element: format!("<sce:var name=\"{name}\">"),
+                                attr: stray.into(),
+                                value: value.into(),
+                                rule: format!(
+                                    "omitted — a record local is built from one <sce:field> \
+                                     per field of {alias}"
+                                ),
+                            },
+                        ));
+                    }
+                }
+                let mut fields = Vec::new();
+                for child in node.children().filter(|n| n.is_element()) {
+                    if child.tag_name().namespace() != Some(SCE_NAMESPACE)
+                        || child.tag_name().name() != "field"
+                    {
+                        return Err(unexpected_child(
+                            &child,
+                            doc_name,
+                            format!("<sce:var name=\"{name}\">"),
+                            &["field"],
+                        ));
+                    }
+                    fields.push(RecordFieldInit {
+                        name: require_attr(&child, "name", "<sce:field>", doc_name)?,
+                        name_spelling: AttributeSpelling::of(&child, None, "name"),
+                        expr: require_attr(&child, "expr", "<sce:field>", doc_name)?,
+                        expr_spelling: AttributeSpelling::of(&child, None, "expr"),
+                    });
+                }
+                return Ok(AlgorithmStmt::RecordVar {
+                    name,
+                    name_spelling: AttributeSpelling::of(node, None, "name"),
+                    alias: alias.to_string(),
+                    type_spelling: AttributeSpelling::of(node, None, "type"),
+                    fields,
+                });
+            }
             // A `bytes` or `list<T>` local is a growable buffer seeded empty
             // and filled via `<sce:append>`: it takes a `capacity`, which it
             // must declare, and no `init`. A scalar takes the required `init`
@@ -7727,6 +7780,7 @@ fn collect_append_buffers<'a>(stmts: &'a [AlgorithmStmt], buffers: &mut Vec<Appe
                 collect_append_buffers(body, buffers);
             }
             AlgorithmStmt::Var { .. }
+            | AlgorithmStmt::RecordVar { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
             | AlgorithmStmt::Return { .. }
@@ -7877,6 +7931,7 @@ fn reject_param_assignment(
                 reject_param_assignment(body, sig, doc_name)?;
             }
             AlgorithmStmt::Var { .. }
+            | AlgorithmStmt::RecordVar { .. }
             | AlgorithmStmt::Return { .. }
             | AlgorithmStmt::Call { .. } => {}
         }
@@ -9402,6 +9457,13 @@ fn sce_attr(node: &roxmltree::Node, local_name: &str) -> Option<String> {
 /// The aliases of every `<sce:import kind="enum">` in `node`'s document —
 /// the only names an `enum:<alias>` type may use there.
 fn enum_import_aliases(node: &roxmltree::Node) -> Vec<String> {
+    import_aliases_of(node, ForgeKind::Enum)
+}
+
+/// The aliases of every `<sce:import kind="…">` of `kind` on the document
+/// `node` belongs to — what a type spelling that names an import (`enum:`,
+/// `record:`) may name.
+fn import_aliases_of(node: &roxmltree::Node, kind: ForgeKind) -> Vec<String> {
     node.document()
         .root_element()
         .children()
@@ -9409,7 +9471,7 @@ fn enum_import_aliases(node: &roxmltree::Node) -> Vec<String> {
             c.is_element()
                 && c.tag_name().name() == "import"
                 && c.tag_name().namespace() == Some(SCE_NAMESPACE)
-                && c.attribute("kind") == Some(ForgeKind::Enum.as_attr())
+                && c.attribute("kind") == Some(kind.as_attr())
         })
         .filter_map(|c| c.attribute("as").map(str::to_string))
         .collect()
@@ -9490,6 +9552,32 @@ pub(crate) fn read_algorithm_value_type(
     attr: &str,
     text: &str,
 ) -> Result<AlgorithmValueType, Located<ForgeError>> {
+    // `record:<alias>` names the struct an imported event-schema declares.
+    // The alias is judged here, against this document's imports, the way
+    // `enum:<alias>` is; what the schema's fields are is judged where the
+    // import is resolved, since only there is the schema read.
+    if let Some(alias) = text.trim().strip_prefix(AlgorithmValueType::RECORD_PREFIX) {
+        let alias = alias.trim();
+        let schemas = import_aliases_of(node, ForgeKind::EventSchema);
+        if schemas.iter().any(|a| a == alias) {
+            return Ok(AlgorithmValueType::Record {
+                alias: alias.to_string(),
+            });
+        }
+        return Err(located(
+            node,
+            doc_name,
+            ValidationError::InvalidAttribute {
+                element,
+                attr: attr.into(),
+                value: text.to_string(),
+                allowed: schemas
+                    .iter()
+                    .map(|a| format!("{}{a}", AlgorithmValueType::RECORD_PREFIX))
+                    .collect(),
+            },
+        ));
+    }
     let Some(inner) = text
         .trim()
         .strip_prefix("list<")

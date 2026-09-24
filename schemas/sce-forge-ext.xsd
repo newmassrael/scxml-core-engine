@@ -128,6 +128,14 @@
           <xs:pattern value="list&lt;\s*(uint8|uint16|uint32|uint64|int8|int16|int32|int64|float32|float64|bool|string|bytes)\s*&gt;"/>
         </xs:restriction>
       </xs:simpleType>
+      <!-- `record:<alias>` — the struct an imported event-schema declares.
+           Lexical, as `enum:<alias>` is: the parser judges the alias
+           against the document's imports and the schema's fields. -->
+      <xs:simpleType>
+        <xs:restriction base="xs:string">
+          <xs:pattern value="record:[A-Za-z_][A-Za-z0-9_]*"/>
+        </xs:restriction>
+      </xs:simpleType>
     </xs:union>
   </xs:simpleType>
 
@@ -1258,8 +1266,24 @@
     "scalar ⇒ init, buffer ⇒ capacity, no init" with a precise structural
     diagnostic.
   -->
+  <!--
+    A `type="record:<alias>"` local (SCE_FORGE.md §4.12) is built whole from
+    one `<sce:field name expr>` per field of the imported event-schema, and
+    takes no `init`. `field` is declared LOCALLY here: the global
+    `sce:field` is the codec's byte-layout field, a different element that
+    happens to share the name. Which fields a record must give is the
+    schema's, judged by the parser once the import is resolved.
+  -->
   <xs:element name="var">
     <xs:complexType>
+      <xs:sequence>
+        <xs:element name="field" minOccurs="0" maxOccurs="unbounded">
+          <xs:complexType>
+            <xs:attribute name="name" type="xs:NCName" use="required"/>
+            <xs:attribute name="expr" type="xs:string" use="required"/>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
       <xs:attribute name="name" type="xs:NCName" use="required"/>
       <xs:attribute name="type" type="sce:algorithmValueType" use="required"/>
       <xs:attribute name="init" type="xs:string"/>

@@ -315,6 +315,7 @@ fn a_local_reads_back_with_exactly_the_initializer_its_type_allows() {
             params: vec![AlgorithmParam {
                 name: "b".to_string(),
                 sce_type: AlgorithmValueType::Scalar(SceType::Uint8),
+                type_spelling: None,
             }],
             return_type: Some(AlgorithmValueType::Scalar(SceType::Bytes)),
             returns_max_size: Some(4),
