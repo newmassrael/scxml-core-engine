@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "d70a2b4a83",
+  "embed_version": "7126da05f4",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 292,
+  "symbol_count": 298,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -467,6 +467,23 @@
     },
     {
       "header": "core/ConfigurationHelper.h",
+      "kind": "enum",
+      "name": "SCE::Core::SpecificationBreach",
+      "values": [
+        "None",
+        "Ancestor",
+        "NotParallel",
+        "OutsideContainer"
+      ]
+    },
+    {
+      "header": "core/ConfigurationHelper.h",
+      "kind": "function",
+      "name": "SCE::Core::checkStateSpecification<T>",
+      "signature": "SpecificationVerdict<State> SCE::Core::checkStateSpecification<T>(const std::vector<State> &, const std::optional<State> &, ParentOf, IsParallel)"
+    },
+    {
+      "header": "core/ConfigurationHelper.h",
       "kind": "function",
       "name": "SCE::Core::configurationRejectionText",
       "signature": "const char * SCE::Core::configurationRejectionText(ConfigurationRejection) noexcept"
@@ -482,6 +499,17 @@
       "kind": "function",
       "name": "SCE::Core::validateConfiguration<T>",
       "signature": "ConfigurationRejection SCE::Core::validateConfiguration<T>(const std::vector<typename Policy::State> &, typename Policy::State)"
+    },
+    {
+      "header": "core/ConfigurationHelper.h",
+      "kind": "struct",
+      "members": [
+        "field SpecificationBreach breach",
+        "field State first",
+        "field State second",
+        "field std::optional<State> meet"
+      ],
+      "name": "SCE::Core::SpecificationVerdict<T>"
     },
     {
       "header": "core/ConflictResolutionHelper.h",
@@ -504,6 +532,65 @@
       "kind": "class",
       "members": [],
       "name": "SCE::Core::EntryExitHelper<T>"
+    },
+    {
+      "header": "core/EntrySetHelper.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Core::EntryTarget<T>"
+    },
+    {
+      "header": "core/EntrySetHelper.h",
+      "kind": "struct",
+      "members": [
+        "field State source",
+        "field bool hasActions",
+        "field bool isInternal",
+        "field int transitionIndex",
+        "field std::vector<EntryTarget<State, History>> targets",
+        "method EntryTransition<State, History> () const toEntryTransition",
+        "method bool () const noexcept isTargetless"
+      ],
+      "name": "SCE::Core::EnabledTransition<T>"
+    },
+    {
+      "header": "core/EntrySetHelper.h",
+      "kind": "struct",
+      "members": [
+        "field bool isInternal",
+        "field std::optional<State> source",
+        "field std::vector<EntryTarget<State, History>> targets"
+      ],
+      "name": "SCE::Core::EntryTransition<T>"
+    },
+    {
+      "header": "core/EntrySetHelper.h",
+      "kind": "struct",
+      "members": [
+        "field std::vector<State> statesForDefaultEntry",
+        "field std::vector<State> statesToEnter",
+        "field std::vector<std::pair<State, History>> defaultHistoryContent",
+        "method bool (const State &) const contains",
+        "method bool (const State &) const isDefaultEntry",
+        "method std::optional<History> (const State &) const defaultHistoryContentOf"
+      ],
+      "name": "SCE::Core::EntrySet<T>"
+    },
+    {
+      "header": "core/EntrySetHelper.h",
+      "kind": "struct",
+      "members": [
+        "template FunctionTemplateDecl addAncestorStatesToEnter",
+        "template FunctionTemplateDecl addDescendantStatesToEnter",
+        "template FunctionTemplateDecl addOnce",
+        "template FunctionTemplateDecl addRegionDefaults",
+        "template FunctionTemplateDecl computeEntrySet",
+        "template FunctionTemplateDecl getEffectiveTargetStates",
+        "template FunctionTemplateDecl getProperAncestors",
+        "template FunctionTemplateDecl getTransitionDomain",
+        "template FunctionTemplateDecl setDefaultHistoryContent"
+      ],
+      "name": "SCE::Core::EntrySetAlgorithms"
     },
     {
       "header": "core/EventMatchingHelper.h",
@@ -575,10 +662,7 @@
       "header": "core/HierarchicalStateHelper.h",
       "kind": "struct",
       "members": [
-        "template FunctionTemplateDecl buildEntryChainFromAncestor",
-        "template FunctionTemplateDecl buildExitChain",
         "template FunctionTemplateDecl findLCA",
-        "template FunctionTemplateDecl findLCCA",
         "template FunctionTemplateDecl isDescendantOf"
       ],
       "name": "SCE::Core::HierarchicalAlgorithms"
@@ -785,12 +869,6 @@
       "name": "SCE::Core::ParallelConfigurationHelper"
     },
     {
-      "header": "core/ParallelExitEntryHelper.h",
-      "kind": "class",
-      "members": [],
-      "name": "SCE::Core::ParallelExitEntryHelper"
-    },
-    {
       "header": "core/ParallelStateHelper.h",
       "kind": "class",
       "members": [],
@@ -828,12 +906,6 @@
       "kind": "function",
       "name": "SCE::payloadReadingOfText",
       "signature": "PayloadReading SCE::payloadReadingOfText(const std::string &)"
-    },
-    {
-      "header": "core/StateEntryHelper.h",
-      "kind": "class",
-      "members": [],
-      "name": "SCE::Core::StateEntryHelper"
     },
     {
       "header": "core/StatePolicyConcepts.h",

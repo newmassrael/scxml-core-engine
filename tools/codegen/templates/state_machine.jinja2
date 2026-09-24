@@ -107,14 +107,12 @@
 {% endif %}
 #include "core/TransitionHelper.h"
 #include "core/HistoryHelper.h"
-#include "core/StateEntryHelper.h"
 #include "core/EntryExitHelper.h"
 {% if model.needs_event_matching_helper %}
 #include "core/EventMatchingHelper.h"
 {% endif %}
 {% if model.has_parallel_states %}
 #include "core/ParallelStateHelper.h"
-#include "core/ParallelExitEntryHelper.h"
 #include "core/ParallelTransitionHelper.h"
 #include "core/HierarchicalStateHelper.h"
 #include "core/ConflictResolutionHelper.h"
@@ -184,38 +182,6 @@
     // Debug logging disabled in release builds
     #define AOT_DEBUG(...)
 #endif
-
-// Transition execution macro - compresses repetitive transition code
-#ifdef AOT_EXECUTE_TRANSITION
-#undef AOT_EXECUTE_TRANSITION
-#endif
-{% if model.has_parallel_states %}
-#define AOT_EXECUTE_TRANSITION(SRC, TGT, IDX, HAS_ACTIONS, IS_INTERNAL, IS_TARGETLESS) \
-    do { \
-        AOT_DEBUG("AOT processTransition: Transition matched in state {}", static_cast<int>(SRC)); \
-        lastTransitionSourceState_ = SRC; \
-        lastTransitionIsInternal_ = IS_INTERNAL; \
-        lastTransitionIsTargetless_ = IS_TARGETLESS; \
-        if (collectMode != nullptr) { \
-            AOT_DEBUG("AOT processTransition: Collecting transition {} -> {}", static_cast<int>(SRC), static_cast<int>(TGT)); \
-            collectMode->push_back(TransitionInfo(SRC, TGT, IDX, HAS_ACTIONS, IS_INTERNAL, IS_TARGETLESS)); \
-        } else { \
-            AOT_DEBUG("AOT processTransition: State transition {} -> {}", static_cast<int>(currentState), static_cast<int>(TGT)); \
-            currentState = TGT; \
-            transitionTaken = true; \
-        } \
-    } while(0)
-{% else %}
-#define AOT_EXECUTE_TRANSITION(SRC, TGT, IDX, HAS_ACTIONS, IS_INTERNAL, IS_TARGETLESS) \
-    do { \
-        AOT_DEBUG("AOT processTransition: Transition matched in state {} -> {}", static_cast<int>(SRC), static_cast<int>(TGT)); \
-        lastTransitionSourceState_ = SRC; \
-        lastTransitionIsInternal_ = IS_INTERNAL; \
-        lastTransitionIsTargetless_ = IS_TARGETLESS; \
-        currentState = TGT; \
-        transitionTaken = true; \
-    } while(0)
-{% endif %}
 
 {# ═══ Named Context: precompute template parameter/argument lists ═══ #}
 {# Contexts with cpp_type use concrete types (no template param needed).    #}
@@ -288,26 +254,14 @@ enum class Event : uint8_t {
     {% endfor %}
 };
 
-{% if model.has_parallel_states %}
-{# Transition descriptor for W3C SCXML Appendix D optimal transition set #}
-/**
- * @brief Transition information for microstep execution
- *
- * W3C SCXML Appendix D: Optimal enabled transition set execution requires
- * collecting all enabled transitions before executing any (atomic microstep).
- */
-struct TransitionInfo {
-    State source;              // W3C SCXML 3.13: Source state of transition
-    State target;              // Target state of transition
-    int transitionIndex;       // Index of transition in source state (for executeTransitionActions)
-    bool hasActions;           // Whether transition has executable content
-    bool isInternal;           // W3C SCXML 3.13: Whether transition is type="internal"
-    bool isTargetless;         // W3C SCXML 5.9.2: Whether transition has no target (consumes event only)
-
-    TransitionInfo(State src, State tgt, int idx, bool actions, bool internal = false, bool targetless = false)
-        : source(src), target(tgt), transitionIndex(idx), hasActions(actions), isInternal(internal), isTargetless(targetless) {}
+{# History enum: W3C SCXML 3.10 pseudo-states. They are named in target lists
+   and never in a configuration, so they are not States. Empty when the
+   document declares none. #}
+enum class History : uint8_t {
+    {% for history_id in model.history_states | list | sort %}
+    {{ history_id | capitalize }}{{ "," if not loop.last }}
+    {% endfor %}
 };
-{% endif %}
 
 {% if event_payload_active %}
 // ── NL→IR Item C1 Path A: typed `_event.data` payload channel ─────────
@@ -325,6 +279,11 @@ template <{{ _tpl_params | join(', ') }}>
 struct {{ model.name }}Policy {
     using State = ::SCE::Generated::{{ cpp_ns_prefix }}{{ model.name }}{% if model.partition_self_name %}::P_{{ model.partition_self_name }}{% endif %}::State;
     using Event = ::SCE::Generated::{{ cpp_ns_prefix }}{{ model.name }}{% if model.partition_self_name %}::P_{{ model.partition_self_name }}{% endif %}::Event;
+    using History = ::SCE::Generated::{{ cpp_ns_prefix }}{{ model.name }}{% if model.partition_self_name %}::P_{{ model.partition_self_name }}{% endif %}::History;
+    // W3C SCXML Appendix D: one token of a target list, and one transition
+    // the engine's selection found enabled.
+    using EntryTargetT = ::SCE::Core::EntryTarget<State, History>;
+    using TransitionInfo = ::SCE::Core::EnabledTransition<State, History>;
 {% for ctx in model.context_objects %}
     using {{ ctx.id | capitalize }}Type = {{ ctx.cpp_type if ctx.cpp_type else (ctx.id | capitalize + 'T') }};
 {% endfor %}
@@ -619,15 +578,6 @@ struct {{ model.name }}Policy {
     mutable ::std::mutex activeStatesMutex_;
     {% endif %}
 
-    // W3C SCXML 3.13: Track last transition for deferred action execution
-    // W3C SCXML 3.4: Also needed for parallel states to track actual transition source
-    mutable State lastTransitionSourceState_{};
-{% if model.has_transition_actions %}
-    mutable size_t lastTransitionIndex_ = 0;
-    mutable bool hasTransitionActions_ = false;
-{% endif %}
-    mutable bool lastTransitionIsInternal_ = false;  // W3C SCXML 3.13: Track internal transition type
-    mutable bool lastTransitionIsTargetless_ = false;  // W3C SCXML 5.9.2: Track targetless transition (consumes event only)
     // Default constructor (lazy initialization, no immediate resource allocation)
     {{ model.name }}Policy() = default;
 

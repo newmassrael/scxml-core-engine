@@ -6,28 +6,17 @@
 # Appendix D asks two different questions with two functions.
 # `addDescendantStatesToEnter` gives a compound state its default child and is
 # called for the transition's TARGET; `addAncestorStatesToEnter` walks the
-# states between the target and the LCCA and adds them WITHOUT defaults. In the
-# C++ AOT backend that difference is spelled as `pathChild`: the entry walk
-# hands every link BEFORE the target the next one, and `nullopt` from the
-# target onwards, and `executeEntryActions` adds a default child only when
-# `pathChild` is empty.
+# states between the target and the domain and adds them WITHOUT defaults. The
+# C++ engines ask both through `EntrySetAlgorithms` in
+# `sce/include/core/EntrySetHelper.h`, the one transcription of the appendix
+# the generated code and the engine share — so that is where the mutations go.
 #
-# ⚠ The target is the TEMPLATE, and that was measured rather than assumed.
-# The first draft of this file aimed at `executeOnEntryChain` in
-# `sce/include/static/StaticExecutionEngine.h`, which computes exactly the same
-# `pathChild` — and both cases came back INCONCLUSIVE and SURVIVED. Applying
-# the mutation by hand, rebuilding for 28s and running the oracles showed all
-# 21 green: the generated transition code computes its OWN `pathChild` and
-# never reaches the engine's copy for this shape of transition. A mutation that
-# does not reach the code under test proves nothing about the tests that miss
-# it.
-#
-# The template does reach the build, which was also measured rather than
-# assumed: `add_custom_command`'s `DEPENDS` names only the SCXML and the
-# codegen binary, so the templates look like non-dependencies — but a dry run
-# after editing this file schedules `SCE: Generating ai_loop (cpp) from SCXML`,
-# because the `Checking sce-codegen against the sources it was built from` step
-# covers them.
+# ⚠ This file used to aim at the generated transition code's own `pathChild`
+# walk in `process_transition.jinja2`, measured as the path this shape of
+# transition actually took. That walk is gone: every AOT microstep now enters
+# the entry set `computeEntrySet` returns, so the helper is the code under test
+# and a mutation of it reaches the oracles below through every generated
+# machine.
 #
 # Why the clause needs a witness at all. It is asserted in three places and
 # was witnessed in none: `integration_resources/ancestor_entry_is_not_default_entry/`
@@ -43,41 +32,42 @@
 # the worked example the extra child is `priming`, whose `<onentry>` sends the
 # opening prompt. The symptom was a supervised session being re-sent its
 # opening prompt every time a person answered a dialog. Nothing crashed.
-#
-# Both cases keep every local in use. A mutation that leaves `reachedTarget`
-# written and never read does not compile under `-Werror`, and a case that
-# cannot build has no witness at all — the round reports INCONCLUSIVE and the
-# clause stays unmeasured, which is the state this file exists to end.
 
 mutation_ctest --test-dir build -R '^IntegrationTests$'
-mutation_targets tools/codegen/templates/process_transition.jinja2
+mutation_targets sce/include/core/EntrySetHelper.h
 mutation_oracles tests/integration/AncestorEntryIsNotDefaultEntryAotTest.cpp
 mutation_oracles tests/integration/AiLoopAotTest.cpp
 
-# ── The ancestor half is applied to the wrong half of the chain ────
+# ── An ancestor is entered as though it were a target ──────────────
 #
-# Dropping the `!` gives `pathChild` to the links AFTER the target and
-# `nullopt` to the ancestors before it, which is Appendix D read backwards:
-# every ancestor now takes its default initial child. One character, and it is
-# the shape a reader writing this loop from the spec's prose can land on,
-# because "the state we have reached" and "the states on the way to it" are one
-# word apart.
+# The ancestor walk hands each state it adds to addDescendantStatesToEnter
+# instead of adding it alone, so every compound state between the target and
+# the domain takes its default initial child as well as the child the target
+# lies in. It is the shape a reader writing the walk from the prose can land
+# on, because "enter this state" and "enter this state by default" are one
+# call apart.
 
-mutation_case "ancestors take their default child and the target does not" <<'PY'
-edit("tools/codegen/templates/process_transition.jinja2",
-     "                        (!reachedTarget && chainIdx + 1 < entryChain.size())",
-     "                        (reachedTarget && chainIdx + 1 < entryChain.size())")
+mutation_case "an ancestor on the way to the target takes its default child" <<'PY'
+edit("sce/include/core/EntrySetHelper.h",
+     """            addOnce(entry.statesToEnter, anc);
+            if (doc.isParallel(anc)) {
+                addRegionDefaults(anc, doc, entry);
+            }""",
+     """            addDescendantStatesToEnter(Target<Doc>::onState(anc), doc, entry);""")
 PY
 
-# ── The walk believes it is already past the target ────────────────
+# ── A region already taken is given its default too ────────────────
 #
-# The same defect reached from the other end: seeding the flag true makes every
-# link read as "at or after the target", so the whole chain is entered with
-# `nullopt` and every compound state on it takes its default. Worth pinning
-# separately because it survives any rewrite of the conditional above.
+# The same defect reached from the other end: the `<parallel>` exception —
+# every region is entered — applied without its own exception, so the region
+# the entry set already descends into gets its default child as well. Worth
+# pinning separately because it survives any rewrite of the walk above.
 
-mutation_case "the whole entry chain is walked as though it were the target" <<'PY'
-edit("tools/codegen/templates/process_transition.jinja2",
-     "                bool reachedTarget = false;",
-     "                bool reachedTarget = true;")
+mutation_case "a parallel ancestor defaults the region the target lies in" <<'PY'
+edit("sce/include/core/EntrySetHelper.h",
+     """            if (!taken) {
+                addDescendantStatesToEnter(Target<Doc>::onState(child), doc, entry);
+            }""",
+     """            (void)taken;
+            addDescendantStatesToEnter(Target<Doc>::onState(child), doc, entry);""")
 PY

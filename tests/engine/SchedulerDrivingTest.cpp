@@ -36,12 +36,18 @@
 namespace {
 
 enum class TinyState { Waiting, Done };
-enum class TinyEvent { Timeout };
+// `NONE` first, as every generated policy spells it: `Event()` is the event an
+// eventless selection asks with, and it must not be `timeout`.
+enum class TinyEvent { NONE, Timeout };
+enum class TinyHistory {};
 
 /// The shape every policy below shares: two states, one event, no actions.
 struct TinyPolicyBase {
     using State = TinyState;
     using Event = TinyEvent;
+    using History = TinyHistory;
+    using EntryTargetT = SCE::Core::EntryTarget<State, History>;
+    using TransitionInfo = SCE::Core::EnabledTransition<State, History>;
 
     static constexpr bool HAS_PARALLEL_STATES = false;
 
@@ -53,6 +59,7 @@ struct TinyPolicyBase {
         return s == TinyState::Done;
     }
 
+    // ── the tree: two top-level atomic states ──
     static constexpr std::optional<State> getParent(State) noexcept {
         return std::nullopt;
     }
@@ -61,13 +68,37 @@ struct TinyPolicyBase {
         return false;
     }
 
-    static constexpr State getInitialChild(State s) noexcept {
-        return s;
+    static constexpr bool isParallelState(State) noexcept {
+        return false;
     }
 
-    /// §scxml-3.10: no compound state here, so there is no child to restore.
-    State getInitialOrHistoryChild(State s) const noexcept {
-        return s;
+    static std::vector<State> getChildStates(State) {
+        return {};
+    }
+
+    static constexpr int getDocumentOrder(State s) noexcept {
+        return static_cast<int>(s);
+    }
+
+    static std::vector<EntryTargetT> getInitialTargets(State) {
+        return {};
+    }
+
+    static std::vector<EntryTargetT> getDocumentInitialTargets() {
+        return {EntryTargetT::onState(TinyState::Waiting)};
+    }
+
+    // ── no <history> here, so nothing below is ever asked ──
+    static State getHistoryParent(History) {
+        return TinyState::Waiting;
+    }
+
+    static std::vector<EntryTargetT> getHistoryDefaultTargets(History) {
+        return {};
+    }
+
+    std::optional<std::vector<State>> historyValue(History) const {
+        return std::nullopt;
     }
 
     static std::string getStateName(State s) {
@@ -82,30 +113,29 @@ struct TinyPolicyBase {
         return name == "timeout" ? std::optional<Event>{TinyEvent::Timeout} : std::nullopt;
     }
 
-    // §scxml-3.13: the engine writes the last transition's shape back onto the
-    // policy; the static_asserts in StaticExecutionEngine name these exactly.
-    mutable bool lastTransitionIsInternal_ = false;
-    mutable bool lastTransitionIsTargetless_ = false;
-    mutable State lastTransitionSourceState_ = TinyState::Waiting;
+    // §scxml-3.8 / 3.9: no document here has entry, exit or transition
+    // content, so the engine's calls land on empty bodies.
+    template <typename Engine> void bindCurrentEvent(Event, Engine &) {}
 
-    // §scxml-3.8 / 3.9: no document here has entry or exit content, so the
-    // engine's calls land on empty bodies.
-    template <typename Engine> void executeEntryActions(State, Engine &, std::optional<State> = std::nullopt) {}
+    template <typename Engine> void executeEntryActions(State, Engine &, bool) {}
 
     template <typename Engine> void executeExitActions(State, Engine &, const std::vector<State> &) {}
 
-    template <typename Engine> void executeTransitionActions(Engine &) {}
+    template <typename Engine> void executeTransitionActions(State, int, Engine &) {}
+
+    template <typename Engine> void executeHistoryDefaultContent(History, Engine &) {}
+
+    template <typename Engine> void deliverReadyParentSends(Engine &) {}
 
     // §scxml-3.12: `timeout` moves waiting to done; nothing else transitions.
     // What is under test is which entry point delivers that event, not the
     // transition itself.
-    template <typename Engine> bool processTransition(State &state, Event event, Engine &) {
+    template <typename Engine>
+    std::optional<TransitionInfo> firstEnabledTransition(State state, Event event, Engine &) {
         if (state == TinyState::Waiting && event == TinyEvent::Timeout) {
-            lastTransitionSourceState_ = state;
-            state = TinyState::Done;
-            return true;
+            return TransitionInfo{TinyState::Waiting, {EntryTargetT::onState(TinyState::Done)}, 0, false, false};
         }
-        return false;
+        return std::nullopt;
     }
 };
 

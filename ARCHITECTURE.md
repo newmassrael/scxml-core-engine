@@ -681,17 +681,23 @@ Helpers distributed across `sce/include/core/` and `sce/include/common/`:
 | Helper | W3C Section | Purpose |
 |--------|-------------|---------|
 | `EventQueueManager` | 3.12.1 | Internal event queue (FIFO) |
-| `HierarchicalStateHelper` | 3.7, 3.8, 3.12 | LCA calculation, entry/exit chains |
+| `HierarchicalStateHelper` | 3.13, D | Ancestry and descendancy, the domain-candidate filter |
 | `ForeachHelper` | 4.6 | Loop variable declaration and type preservation |
 | `InvokeHelper` | 6.4 | Invoke lifecycle (defer/cancel/execute pattern) |
 | `TransitionHelper` | 3.13 | Transition selection and execution |
 | `ConflictResolutionHelper` | D.2 | Optimal transition set selection |
 | `ParallelTransitionHelper` (`ExitSetAlgorithms`) | D.2 | `getTransitionDomain` + `computeExitSet` over the configuration |
+| `EntrySetHelper` (`EntrySetAlgorithms`) | D.2, 3.3, 3.6, 3.10 | `computeEntrySet` and its callees: target sets, default entry, history dereference, entry order |
 | `ParallelStateHelper` | 3.4 | Parallel region orchestration |
 | `HistoryHelper` | 3.11 | History state recording/restoration |
 | `EntryExitHelper` | 3.7, 3.8 | State entry/exit action execution |
 | `EventMatchingHelper` | 5.9.3 | Event descriptor prefix matching |
-| `StateEntryHelper` | 3.3 | Compound state initial child resolution |
+
+The AOT engine's microstep is written once, in `StaticExecutionEngine`, over
+these helpers: the generated policy answers which transition of a state an
+event enables and what one state's entry, exit or transition content does,
+and the engine does everything Appendix D does with those answers — for a
+machine with a `<parallel>` and one without alike.
 
 **`common/`** — Action/data primitive helpers:
 

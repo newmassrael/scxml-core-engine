@@ -88,13 +88,11 @@ namespace {
 struct MinimalPolicy {
     enum class State : std::uint8_t { S0, Done };
     enum class Event : std::uint8_t { NONE, Tick };
+    enum class History : std::uint8_t {};
+    using EntryTargetT = ::SCE::Core::EntryTarget<State, History>;
 
     static constexpr bool HAS_PARALLEL_STATES = false;
     static constexpr bool NEEDS_SCRIPT_ENGINE = false;
-
-    mutable State lastTransitionSourceState_{};
-    mutable bool lastTransitionIsInternal_ = false;
-    mutable bool lastTransitionIsTargetless_ = false;
 
     MinimalPolicy() = default;
 
@@ -114,8 +112,32 @@ struct MinimalPolicy {
         return false;
     }
 
-    [[nodiscard]] static constexpr State getInitialChild(State s) noexcept {
-        return s;
+    [[nodiscard]] static constexpr bool isParallelState(State) noexcept {
+        return false;
+    }
+
+    [[nodiscard]] static std::vector<State> getChildStates(State) {
+        return {};
+    }
+
+    [[nodiscard]] static constexpr int getDocumentOrder(State s) noexcept {
+        return static_cast<int>(s);
+    }
+
+    [[nodiscard]] static std::vector<EntryTargetT> getInitialTargets(State) {
+        return {};
+    }
+
+    [[nodiscard]] static std::vector<EntryTargetT> getDocumentInitialTargets() {
+        return {EntryTargetT::onState(State::S0)};
+    }
+
+    [[nodiscard]] static State getHistoryParent(History) {
+        return State::S0;
+    }
+
+    [[nodiscard]] static std::vector<EntryTargetT> getHistoryDefaultTargets(History) {
+        return {};
     }
 
     [[nodiscard]] std::string getEventName(Event) const {

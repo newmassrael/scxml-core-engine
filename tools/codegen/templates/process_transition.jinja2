@@ -2,163 +2,80 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
 {#
-    Process Transition Template (Jinja2)
+    Transition Selection Template (Jinja2)
 
-    Last Modified: 2025-10-23
-    ARCHITECTURE.md Version: 2025-10-23
+    What the generated policy knows and the engine does not: which of a
+    state's transitions an event enables, and what each transition's content
+    is. Everything else Appendix D does with a transition — the walk from each
+    atomic state up through its ancestors, the ordered set, conflict removal,
+    the exit set, the entry set — is written once, in StaticExecutionEngine,
+    over the structure state_machine_inl.jinja2 emits.
 
-    ARCHITECTURE.md Compliance (Lines 311-491):
-    - Zero Duplication: Matches Interpreter's hierarchical event processing logic
-    - Single Source of Truth: Hierarchical transition checking from W3C SCXML 3.12
-    - Event Matching: Uses EventMatchingHelper for W3C SCXML 5.9.3 compliance
-    - Long-Term Correctness: Complete Interpreter replication, no simplified workarounds
+    It used to be written here as well, in two shapes: machines with a
+    `<parallel>` collected, resolved and ran their own microstep here, while
+    every other machine moved `currentState` here and let the engine walk an
+    LCA. The two disagreed about eventless selection (one never looked above
+    the atomic state, the other looked at every active state without
+    walking), about the order transition content runs in, and about how many
+    targets a transition has — both kept only the first.
 
-    Helper Classes Used (in this template):
-    - ParallelTransitionHelper: Appendix D microstepProcedure (microstep execution) - lines 355-390, 414-416
-    - EventMatchingHelper: W3C SCXML 5.9.3 (event descriptor matching) - lines 525-531
-    - HierarchicalStateHelper: W3C SCXML 3.7/3.8 (hierarchical entry/exit chains) - line 427
-    
-    Helper Classes Used by Other Templates (referenced for context):
-    - HistoryHelper: W3C SCXML 3.11 (history state recording) - see entry_exit_actions.jinja2
-    - GuardHelper: W3C SCXML 5.9.2 (condition evaluation) - inline in this template
-    - SendHelper: W3C SCXML 6.2 (event scheduling) - see send.jinja2
-    - ForeachHelper: W3C SCXML 4.6 (foreach loop) - see foreach.jinja2
-
-    Critical Fix (2025-10-23):
-    - Fixed lastTransitionSourceState_ tracking for transitions without actions
-    - Ensures hierarchical exit/entry uses correct source state (W3C SCXML 3.4)
+    Generates:
+    - bindCurrentEvent(event, engine)            §scxml-5.10 `_event` for the guards
+    - firstEnabledTransition(state, event, engine)  the per-state half of selection
+    - executeTransitionActions(source, index, engine)
+    - deliverReadyParentSends(engine)            §scxml-6.4.2 delayed sends to #_parent
 #}
-
-{% macro restore_history_or_transition(transition) %}
-{% if transition.history_target is defined %}
-                    // W3C SCXML 3.11: Restore history or use default transition (matches Interpreter logic)
-                    if (history_{{ transition.history_target }}.has_value()) {
-                        // Restore from recorded history (may contain multiple states for parallel regions)
-                        const auto& recordedStates = history_{{ transition.history_target }}.value();
-                        if (!recordedStates.empty()) {
-                            // For simple state machines (no parallel), restore first state
-                            // For parallel state machines, engine will handle multiple states
-                            currentState = recordedStates[0];
-                            AOT_DEBUG("AOT processTransition: Restored history {} -> {} ({} states recorded)",
-                                     "{{ transition.history_target }}", static_cast<int>(currentState), recordedStates.size());
-                        } else {
-{% set history_info = model.history_states[transition.history_target] %}
-{% set leaf_target = history_info.leaf_target %}
-                            // W3C SCXML 3.11: Empty history was recorded (valid scenario) - use default transition
-                            currentState = State::{{ leaf_target | capitalize }};
-                            AOT_DEBUG("AOT processTransition: Empty history for {{ transition.history_target }}, using default transition -> {}", static_cast<int>(currentState));
-                        }
-                    } else {
-{% set history_info = model.history_states[transition.history_target] %}
-{% set leaf_target = history_info.leaf_target %}
-                        // History never recorded - use default transition
-                        currentState = State::{{ leaf_target | capitalize }};
-                        AOT_DEBUG("AOT processTransition: No history recorded for {{ transition.history_target }}, using default transition -> {}", static_cast<int>(currentState));
-                    }
-                    transitionTaken = true;
-{% else %}
-                    AOT_DEBUG("AOT processTransition: State transition {} -> {}", static_cast<int>(currentState), static_cast<int>(State::{{ transition.target | capitalize }}));
-                    currentState = State::{{ transition.target | capitalize }};
-                    transitionTaken = true;
-{% endif %}
-{% endmacro %}
-
-{% macro transition_execution_or_collection(trans, trans_index) %}
-{% if trans.target %}
-{% if trans.history_target is defined %}
-                    // W3C SCXML 3.11: History transition - resolve target at runtime
-                    State resolvedHistoryTarget_{{ trans.history_target }};
-                    if (history_{{ trans.history_target }}.has_value()) {
-                        const auto& recordedStates = history_{{ trans.history_target }}.value();
-                        if (!recordedStates.empty()) {
-                            resolvedHistoryTarget_{{ trans.history_target }} = recordedStates[0];
-                            AOT_DEBUG("AOT processTransition: Resolved history {{ trans.history_target }} -> {} ({} states recorded)",
-                                     static_cast<int>(resolvedHistoryTarget_{{ trans.history_target }}), recordedStates.size());
-                        } else {
-{% set history_info = model.history_states[trans.history_target] %}
-{% set leaf_target = history_info.leaf_target %}
-                            resolvedHistoryTarget_{{ trans.history_target }} = State::{{ leaf_target | capitalize }};
-                            AOT_DEBUG("AOT processTransition: Empty history for {{ trans.history_target }}, using default -> {}", static_cast<int>(resolvedHistoryTarget_{{ trans.history_target }}));
-                        }
-                    } else {
-{% set history_info = model.history_states[trans.history_target] %}
-{% set leaf_target = history_info.leaf_target %}
-                        resolvedHistoryTarget_{{ trans.history_target }} = State::{{ leaf_target | capitalize }};
-                        AOT_DEBUG("AOT processTransition: No history for {{ trans.history_target }}, using default -> {}", static_cast<int>(resolvedHistoryTarget_{{ trans.history_target }}));
-                    }
-
-{% if model.has_parallel_states %}
-                    // W3C SCXML Appendix D + 3.10: Support collection mode for history transitions
-                    if (collectMode != nullptr) {
-                        collectMode->push_back(TransitionInfo(checkState, resolvedHistoryTarget_{{ trans.history_target }}, {{ trans_index }}, {{ 'true' if trans.actions else 'false' }}, {{ 'true' if (trans.type == 'internal' or not trans.target) else 'false' }}, false));
-                    } else {
-                        currentState = resolvedHistoryTarget_{{ trans.history_target }};
-                        transitionTaken = true;
-                    }
-{% else %}
-                    currentState = resolvedHistoryTarget_{{ trans.history_target }};
-                    transitionTaken = true;
-{% endif %}
-{% else %}
-                    AOT_EXECUTE_TRANSITION(checkState, State::{{ trans.target | capitalize }}, {{ trans_index }}, {{ 'true' if trans.actions else 'false' }}, {{ 'true' if (trans.type == 'internal' or not trans.target) else 'false' }}, false);
-{% endif %}
-{% else %}
-                    // W3C SCXML 5.9.2: Targetless internal transition (consumes event only)
-{% if model.has_parallel_states %}
-                    if (collectMode != nullptr) {
-                        collectMode->push_back(TransitionInfo(checkState, checkState, {{ trans_index }}, {{ 'true' if trans.actions else 'false' }}, true, true));
-                    } else {
-                        transitionTaken = true;
-                    }
-{% else %}
-                    transitionTaken = true;
-{% endif %}
-{% endif %}
-{% endmacro %}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {%- import '_macros/sce_annotation_marker.jinja2' as annot %}
+{%- import '_macros/cpp_entry_target.jinja2' as et %}
 
-{# SCE Protocol-Synthesis RFC §synth-5-O — function-scope SCE-MAP markers
-   above the per-function `processTransition`, `executeMicrostep`,
-   `tryTransitionInState`, and `executeTransitionActions` headers.
-   The `#line` directive remaps subsequent line positions for the
-   function body; each successive function gets its own marker so
-   per-function attribution stays coherent across the translation
-   unit. #}
+{# The guard a transition is taken under, in the one form this machine can
+   evaluate it: a host C++ expression, a pure In() predicate, a natively
+   lowered typed-payload comparison, the script engine, or a value decided at
+   build time. #}
+{% macro guard_expr(trans) -%}
+{%- if trans.is_cpp_condition -%}{{ trans.cond_cpp_transformed }}
+{%- elif trans.is_pure_in_predicate -%}{{ trans.cond_cpp }}
+{%- elif trans.native_payload_guard -%}{{ trans.native_payload_guard }}
+{%- elif model.needs_script_engine -%}this->safeEvaluateGuard(scriptEngine, sessionId_.value(), {{ trans.cond | to_script_source_guard }}, engine)
+{%- else -%}{{ 'true' if trans.cond_constant else 'false' }}
+{%- endif -%}
+{%- endmacro %}
+
+{# Whether `trans` answers `event`: an eventless transition only an eventless
+   selection, a transition with an event descriptor only a named event —
+   §scxml-3.13 selects the two kinds in separate passes. #}
+{% macro event_match(trans) -%}
+{%- if not trans.event -%}event == Event::NONE
+{%- elif trans.needs_string_matching -%}event != Event::NONE && ::SCE::Core::EventMatchingHelper::matchesEventDescriptor({{ model.name }}Policy::getEventName(event), "{{ trans.event }}")
+{%- elif trans.matching_enum_values | length > 0 -%}{% for ev in trans.matching_enum_values %}event == Event::{{ ev | replace('.', '_') | replace('-', '_') | capitalize }}{{ ' || ' if not loop.last }}{% endfor %}
+{%- else -%}false
+{%- endif -%}
+{%- endmacro %}
+
+public:
     {{ sce_map.source_marker(model.source_location, "cpp", symbol_artifact=sce_artifact.machine) }}
+    // §scxml-5.10: the event whose transitions are about to be selected is the
+    // `_event` their guards read — bound before the first guard runs, and not
+    // for an eventless selection, which has no event of its own.
     template <typename Engine>
-    // W3C SCXML 3.13: Always non-static (uses lastTransitionSourceState_ via tryTransitionInState)
-    [[gnu::hot]]
-    bool processTransition(State& currentState, [[maybe_unused]] Event event, [[maybe_unused]] Engine& engine) {
+    void bindCurrentEvent([[maybe_unused]] Event event, [[maybe_unused]] Engine& engine) {
 {%- if model.needs_script_engine %}
-        // W3C SCXML 5.3: Ensure JSEngine initialized (lazy init for runtime operations)
-        // Note: Datamodel initialization happens in StaticExecutionEngine::initialize()
         this->ensureScriptEngine();
 {%- endif %}
-{# W3C SCXML 5.10: Event data for scheduled events handled via EventWithMetadata #}
-{# scheduledEventData_ map retrieval removed - engine.tick() passes eventData through raiseExternal() #}
 {%- if model.needs_event_name or model.needs_event_type %}
-
-
-        // W3C SCXML 5.10: Store event name and type for _event.name and _event.type binding
-        if (event != Event()) {  // Skip for eventless transitions
+        if (event != Event()) {
 {% if model.needs_event_name %}
             pendingEventName_ = {{ model.name }}Policy::getEventName(event);
 {% endif %}
 {% if model.needs_event_type %}
             pendingEventType_ = this->getEventType(pendingEventName_);
 {% endif %}
-            AOT_DEBUG("AOT processTransition: Set pendingEventName='{}', pendingEventType='{}'", pendingEventName_, pendingEventType_);
+            AOT_DEBUG("AOT bindCurrentEvent: pendingEventName='{}', pendingEventType='{}'", pendingEventName_, pendingEventType_);
         }
 {%- endif %}
 {%- if model.needs_script_engine and (model.needs_event_name or model.needs_event_data or model.needs_event_origin) %}
-
-
-        // W3C SCXML 5.10: Set _event variable in JSEngine
-        // Only set _event when processing actual events, not during eventless transition checks
         if (event != Event() && (!pendingEventName_.empty() || !pendingEventData_.empty() || !pendingEventOrigin_.empty())) {
-            AOT_DEBUG("AOT processTransition: Setting _event (name='{}', data='{}', type='{}', sendId='{}', origin='{}', invokeId='{}')",
-                      pendingEventName_, pendingEventData_, pendingEventType_, pendingEventSendId_, pendingEventOrigin_, pendingEventInvokeId_);
             // §scxml-B-2-8-1: the rung the payload got, handed to the engine
             // rather than dropped. This is the only frame that has both the
             // reading and the event it belongs to.
@@ -170,659 +87,84 @@
             engine.notePayloadReading(event, payloadReading);
         }
 {%- endif %}
-
-        AOT_DEBUG("AOT processTransition: Called with event={}, currentState={}", static_cast<int>(event), static_cast<int>(currentState));
-        bool transitionTaken = false;
-
-{% if model.has_parallel_states %}
-        // W3C SCXML 3.4 + 3.12 + Appendix D: Parallel state transition handling
-        // activeStates_ contains all currently active states (parallel regions have multiple)
-        AOT_DEBUG("AOT processTransition: Checking {} active states", activeStates_.size());
-
-        // Appendix D mainEventLoop: Different handling for eventless vs external events
-        if (event == Event()) {
-            // ==================== EVENTLESS TRANSITIONS: Collection → Execution ====================
-            // W3C SCXML Appendix D: Collect ALL enabled transitions before executing (optimal transition set)
-
-            ::std::vector<TransitionInfo> enabledTransitions;
-            ::std::vector<State> statesToCheck = activeStates_;
-
-            // Sort by document order for consistent processing
-            ::std::sort(statesToCheck.begin(), statesToCheck.end(),
-                       [](State a, State b) {
-                           return getDocumentOrder(a) < getDocumentOrder(b);
-                       });
-            AOT_DEBUG("AOT processTransition: Collecting eventless transitions from {} active states", statesToCheck.size());
-
-            // W3C SCXML Appendix D Step 1: Collect all enabled eventless transitions (optimal transition set)
-            for (State activeState : statesToCheck) {
-                // W3C SCXML 3.13: Eventless transitions CAN originate from ANY active state
-                // Unlike external events (which require atomic states), eventless transitions
-                // are checked on atomic, compound, and parallel states
-                // Preemption rule still applies: transitions in child states preempt parent states
-                AOT_DEBUG("AOT processTransition: Checking eventless transition in state {} (compound={}, parallel={})",
-                         static_cast<int>(activeState), isCompoundState(activeState), isParallelState(activeState));
-
-                // W3C SCXML 3.13: Eventless transitions do NOT bubble to parent states
-                // Only check the current active state (not hierarchy)
-                tryTransitionInState(activeState, event, currentState, transitionTaken, engine, &enabledTransitions);
-            }
-
-            AOT_DEBUG("AOT processTransition: Collected {} enabled eventless transitions", enabledTransitions.size());
-
-            // Appendix D removeConflictingTransitions: Remove conflicting transitions (optimal transition set)
-            if (!enabledTransitions.empty()) {
-                enabledTransitions = removeConflictingTransitions(enabledTransitions, activeStates_);
-                AOT_DEBUG("AOT processTransition: After conflict resolution: {} transitions", enabledTransitions.size());
-            }
-
-            // W3C SCXML Appendix D Steps 2-5: Execute as atomic microstep (exit → transition → enter)
-            if (!enabledTransitions.empty()) {
-                executeMicrostep(enabledTransitions, currentState, transitionTaken, engine);
-            }
-        } else {
-            // ==================== EXTERNAL EVENTS: Collection → Execution ====================
-            // W3C SCXML Appendix D: For parallel states, ALL events use microstep (not just eventless)
-            // Collect ALL enabled transitions before executing (optimal transition set)
-
-            ::std::vector<TransitionInfo> enabledTransitions;
-
-#ifndef NDEBUG
-            // Debug: Check activeStates_ for duplicates
-            AOT_DEBUG("AOT processTransition: activeStates_ contains {} states", activeStates_.size());
-            for (State s : activeStates_) {
-                AOT_DEBUG("AOT processTransition: activeStates_ entry: {}", static_cast<int>(s));
-            }
-#endif
-
-            // W3C SCXML 3.13: Collect transitions from ALL active states (optimal transition set)
-            // IMPORTANT: Only check atomic states for normal events (W3C SCXML 3.13: "optimally enabled by E in an atomic state in C")
-            // EXCEPTION: done.state events MUST be checked on parallel/compound states (W3C SCXML 3.13 test570)
-            // Atomic state = neither compound nor parallel
-            for (State activeState : activeStates_) {
-                bool isNonAtomic = isCompoundState(activeState) || isParallelState(activeState);
-                
-                // W3C SCXML 3.13: Check if this is a done.state event
-                // done.state events are generated when parallel/compound states complete
-                // `std::string_view::starts_with` is C++20. Generated code must
-                // build at C++17, which is the standard the mesh runtime library
-                // publishes to its consumers, so this uses the portable spelling
-                // already used elsewhere in the tree (SendHelper.h).
-                bool isDoneStateEvent = (event != Event::NONE) &&
-                    std::string_view({{ model.name }}Policy::getEventName(event)).rfind("done.state.", 0) == 0;
-                
-                // Skip non-atomic states UNLESS processing done.state event
-                if (isNonAtomic && !isDoneStateEvent) {
-                    AOT_DEBUG("AOT processTransition: Skipping non-atomic state {} (compound={}, parallel={}) for non-done.state event",
-                              static_cast<int>(activeState), isCompoundState(activeState), isParallelState(activeState));
-                    continue;
-                }
-
-                if (isNonAtomic) {
-                    AOT_DEBUG("AOT processTransition: Checking done.state event in non-atomic state {} (compound={}, parallel={})",
-                              static_cast<int>(activeState), isCompoundState(activeState), isParallelState(activeState));
-                } else {
-                    AOT_DEBUG("AOT processTransition: Checking external event in atomic state {}", static_cast<int>(activeState));
-                }
-
-                State checkState = activeState;
-
-                // W3C SCXML 3.12: Hierarchical event bubbling (innermost to outermost)
-                // Check from current active state up through parent hierarchy
-                while (true) {
-                    // Try to find a matching transition in checkState (collection mode)
-                    bool foundTransition = tryTransitionInState(checkState, event, currentState, transitionTaken, engine, &enabledTransitions);
-
-                    if (foundTransition) {
-                        AOT_DEBUG("AOT processTransition: Found transition in state {}", static_cast<int>(checkState));
-                        break;  // Transition collected, exit hierarchy check for THIS active state
-                    }
-
-                    // W3C SCXML 3.12: Move to parent state for hierarchical event bubbling
-                    auto parent = {{ model.name }}Policy::getParent(checkState);
-                    if (!parent.has_value()) {
-                        // Reached root, no more parents to check
-                        break;
-                    }
-
-                    AOT_DEBUG("AOT processTransition: No transition in state {}, checking parent state {}",
-                              static_cast<int>(checkState), static_cast<int>(parent.value()));
-                    checkState = parent.value();
-                }
-
-                // W3C SCXML 3.13: Continue checking other active states (parallel regions)
-                // Preemption rule applies within each atomic state's hierarchy, not globally
-            }
-
-            AOT_DEBUG("AOT processTransition: Collected {} enabled external transitions", enabledTransitions.size());
-
-            // Appendix D removeConflictingTransitions: Remove conflicting transitions (optimal transition set)
-            if (!enabledTransitions.empty()) {
-                enabledTransitions = removeConflictingTransitions(enabledTransitions, activeStates_);
-                AOT_DEBUG("AOT processTransition: After conflict resolution: {} transitions", enabledTransitions.size());
-            }
-
-            // W3C SCXML Appendix D Steps 2-5: Execute as atomic microstep (exit → transition → enter)
-            if (!enabledTransitions.empty()) {
-                executeMicrostep(enabledTransitions, currentState, transitionTaken, engine);
-            }
-        }
-{% else %}
-{% if model.has_hierarchy %}
-        // W3C SCXML 3.12: Hierarchical event processing (innermost to outermost)
-        // Check transitions from current state up through parent hierarchy
-        State checkState = currentState;
-
-        while (true) {
-            // Try to find a matching transition in checkState
-            bool foundTransition = tryTransitionInState(checkState, event, currentState, transitionTaken, engine);
-
-            if (foundTransition) SCE_LIKELY {
-                break;  // Transition taken, exit hierarchy check
-            }
-
-            // W3C SCXML 3.13: Eventless transitions do NOT bubble to parent states
-            if (event == Event()) SCE_UNLIKELY {
-                break;
-            }
-
-            // W3C SCXML 3.12: Move to parent state for hierarchical event bubbling (external events only)
-            auto parent = {{ model.name }}Policy::getParent(checkState);
-            if (!parent.has_value()) SCE_UNLIKELY {
-                break;
-            }
-
-            AOT_DEBUG("AOT processTransition: No transition in state {}, checking parent state {}",
-                      static_cast<int>(checkState), static_cast<int>(parent.value()));
-            checkState = parent.value();
-        }
-{% else %}
-        // Flat state machine: no hierarchy, direct transition check
-        tryTransitionInState(currentState, event, currentState, transitionTaken, engine);
-{% endif %}
-{% endif %}
-
-{% if model.needs_parent_template %}
-        // W3C SCXML 6.4.2: Process ready delayed sends to parent
-        // ARCHITECTURE.md Zero Duplication: Uses SendSchedulingHelper (Single Source of Truth)
-        // SCE_MESH.md §9.6: Gated on needs_parent_template — remote invoke workers
-        // emit `<send target="#_parent">` through performMeshSend (no parentSendScheduler_).
-        //
-        // §scxml-6.2.2: due is judged against the engine's clock, the same one
-        // the deadline was armed from — a queue that read its own would answer
-        // a different question on a host that owns time.
-        {
-            typename ParentStateMachine::Event readyEvent;
-            std::string readyEventData;
-            while (parentSendScheduler_.popReadyEvent(engine.nowMs(), readyEvent, readyEventData)) {
-                AOT_DEBUG("Delivering delayed send to parent");
-                parent_->raiseExternal(readyEvent);
-            }
-        }
-
-{% endif %}
-        {# W3C SCXML 6.2: Scheduled event polling handled by StaticExecutionEngine::tick() #}
-        {# Policy-level polling removed - engine.tick() properly polls scheduler_ and calls raiseExternal() #}
-
-        return transitionTaken;
     }
 
-private:
-{% if model.has_parallel_states %}
-    {% include 'conflict_resolution.jinja2' %}
-
-    // Appendix D microstepProcedure: Execute microstep with proper ordering
-    // ARCHITECTURE.MD: Zero Duplication Principle - Uses ParallelTransitionHelper (Single Source of Truth)
-    // Exit all → Transition content all → Enter all
     {{ sce_map.source_marker(model.source_location, "cpp", symbol_artifact=sce_artifact.machine) }}
-    template <typename Engine>
-    void executeMicrostep(const ::std::vector<TransitionInfo>& transitions,
-                         [[maybe_unused]] State& currentState,
-                         bool& transitionTaken,
-                         Engine& engine) {
-        if (transitions.empty()) {
-            return;
-        }
-
-        AOT_DEBUG("AOT executeMicrostep: Executing {} transitions as atomic microstep", transitions.size());
-
-        // Convert TransitionInfo to ParallelTransitionHelper::Transition
-        ::std::vector<::SCE::Core::ParallelTransitionHelper::Transition<State>> helperTransitions;
-        helperTransitions.reserve(transitions.size());  // Pre-allocate capacity
-        // W3C SCXML Appendix D: Construct transitions directly in vector to avoid GCC -Warray-bounds false positive
-        for (const auto& trans : transitions) {
-            helperTransitions.emplace_back(
-                trans.source,
-                ::std::vector<State>{trans.target},
-                trans.transitionIndex,
-                trans.hasActions,
-                trans.isInternal,
-                trans.isTargetless
-            );
-        }
-
-        // Appendix D exitStates Step 1 & 2: Compute and exit states (Helper)
-        auto statesToExit = ::SCE::Core::ParallelTransitionHelper::computeStatesToExit<State, {{ model.name }}Policy>(
-            helperTransitions, activeStates_
-        );
-
-        AOT_DEBUG("AOT executeMicrostep: Exiting {} states in reverse document order", statesToExit.size());
-
-        ::std::vector<State> activeStatesSnapshot = activeStates_;  // For history tracking
-        for (State state : statesToExit) {
-            AOT_DEBUG("AOT executeMicrostep: Exiting state {}", static_cast<int>(state));
-            {{ model.name }}Policy::executeExitActions(state, engine, activeStatesSnapshot);
-            
-            // Remove from activeStates_
-            activeStates_.erase(
-                ::std::remove(activeStates_.begin(), activeStates_.end(), state),
-                activeStates_.end()
-            );
-        }
-
-        // Appendix D executeTransitionContent Step 3: Execute transition content in document order (Helper)
-        auto sortedBySource = ::SCE::Core::ParallelTransitionHelper::sortTransitionsBySource<State, {{ model.name }}Policy>(
-            helperTransitions
-        );
-
-        AOT_DEBUG("AOT executeMicrostep: Executing {} transition contents in document order", sortedBySource.size());
-
-        for (const auto& trans : sortedBySource) {
-            if (trans.hasActions) {
-                AOT_DEBUG("AOT executeMicrostep: Transition {} -> {} (index {}, hasActions={})",
-                         static_cast<int>(trans.source), static_cast<int>(trans.targets[0]), 
-                         trans.transitionIndex, trans.hasActions);
-                
-                // Store transition info for executeTransitionActions()
-                lastTransitionSourceState_ = trans.source;
-{% if model.has_transition_actions %}
-                lastTransitionIndex_ = trans.transitionIndex;
-                hasTransitionActions_ = true;
-{% endif %}
-                executeTransitionActions(engine);
-{% if model.has_transition_actions %}
-                hasTransitionActions_ = false;
-{% endif %}
-            }
-        }
-
-        // Appendix D enterStates Step 4-5: Enter target states with hierarchical entry (Helper)
-        auto sortedByTarget = ::SCE::Core::ParallelTransitionHelper::sortTransitionsByTarget<State, {{ model.name }}Policy>(
-            helperTransitions
-        );
-
-        AOT_DEBUG("AOT executeMicrostep: Entering {} target states in document order", sortedByTarget.size());
-
-        for (const auto& trans : sortedByTarget) {
-            if (!trans.targets.empty()) {
-                State target = trans.targets[0];
-
-                // W3C SCXML 5.9.2: Targetless internal transitions (consumes event only, no exit/enter)
-                // Actions already executed above, skip state entry (no state change)
-                if (trans.isTargetless) {
-                    AOT_DEBUG("AOT executeMicrostep: Targetless internal transition {} (actions executed, no state change)", static_cast<int>(trans.source));
-                    continue;  // Skip entry for targetless transition
-                }
-
-                AOT_DEBUG("AOT executeMicrostep: Building hierarchical entry chain for target {}", static_cast<int>(target));
-                
-                // W3C SCXML 3.13: Build hierarchical entry chain from root to target
-                // This ensures parallel parents are re-entered with all their regions
-                auto entryChain = ::SCE::Core::HierarchicalStateHelper<{{ model.name }}Policy>::buildEntryChain(target);
-                
-                // §scxml-D: every link BEFORE the target is an ANCESTOR of it,
-                // and `addAncestorStatesToEnter` adds an ancestor WITHOUT its
-                // default initial child — the entry set already holds the next
-                // link. The target itself, and everything after it, goes
-                // through `addDescendantStatesToEnter`. Passing the next link
-                // as `pathChild` is what expresses that, and it is also what
-                // stops a `<parallel>` ancestor from handing a default to the
-                // very region the chain is descending into.
-                //
-                // `reachedTarget` is load-bearing rather than defensive:
-                // `buildEntryChain` does not stop at the target — it appends
-                // the target's own default initial descendants, and it names
-                // only `getInitialChild`, leaving the intermediate levels of a
-                // DEEP `initial` to `executeEntryActions`. Treating that tail
-                // as an ancestor chain suppresses exactly the descent it was
-                // appended to trigger; measured 2026-08-15, W3C test364 (deep
-                // `initial="s11p112 s11p122"`) failed on the AOT engine.
-                bool reachedTarget = false;
-                for (::std::size_t chainIdx = 0; chainIdx < entryChain.size(); ++chainIdx) {
-                    const State state = entryChain[chainIdx];
-                    if (state == target) {
-                        reachedTarget = true;
-                    }
-                    const ::std::optional<State> pathChild =
-                        (!reachedTarget && chainIdx + 1 < entryChain.size())
-                            ? ::std::optional<State>(entryChain[chainIdx + 1])
-                            : ::std::nullopt;
-                    // Skip if already active (parallel states may have entered this via recursive entry)
-                    bool alreadyActive = false;
-                    for (State s : activeStates_) {
-                        if (s == state) {
-                            alreadyActive = true;
-                            break;
-                        }
-                    }
-                    if (alreadyActive) {
-                        // W3C SCXML 3.13: Internal transitions - parallel state already active
-                        // Skip onentry actions, but still enter all parallel regions (they may have been exited)
-                        if (isParallelState(state)) {
-                            AOT_DEBUG("AOT executeMicrostep: Parallel state {} already active, re-entering regions", static_cast<int>(state));
-                            auto regions = getParallelRegions(state);
-                            for (const auto& region : regions) {
-                                // §scxml-D: the region the chain descends into
-                                // is entered by the next loop iteration, with
-                                // the target's own path — not with a default.
-                                if (pathChild.has_value() && pathChild.value() == region) {
-                                    continue;
-                                }
-                                // Check if region needs re-entry (may have been exited by transition)
-                                bool regionActive = false;
-                                for (State s : activeStates_) {
-                                    if (s == region) {
-                                        regionActive = true;
-                                        break;
-                                    }
-                                }
-                                if (!regionActive) {
-                                    AOT_DEBUG("AOT executeMicrostep: Re-entering parallel region {}", static_cast<int>(region));
-                                    executeEntryActions(region, engine);
-                                    
-                                    // W3C SCXML 3.3: If region is compound, enter initial child
-                                    if (isCompoundState(region)) {
-                                        State initialChild = getInitialChild(region);
-                                        if (initialChild != region) {
-                                            AOT_DEBUG("AOT executeMicrostep: Entering initial child {} of region {}",
-                                                     static_cast<int>(initialChild), static_cast<int>(region));
-                                            executeEntryActions(initialChild, engine);
-                                        }
-                                    }
-                                }
-                            }
-                        } else {
-                            AOT_DEBUG("AOT executeMicrostep: State {} already active, skipping entry", static_cast<int>(state));
-                        }
-                        continue;
-                    }
-                    
-                    AOT_DEBUG("AOT executeMicrostep: Hierarchical entry for state {}", static_cast<int>(state));
-                    executeEntryActions(state, engine, pathChild);
-                }
-
-                // W3C SCXML 3.4: For transitions within parallel states, maintain currentState at parallel level
-                // In parallel states, multiple regions are active - currentState should be the parallel state context
-                State finalState = target;
-                auto parentOpt = {{ model.name }}Policy::getParent(target);
-                if (parentOpt.has_value()) {
-                    State parent = parentOpt.value();
-                    if ({{ model.name }}Policy::isParallelState(parent)) {
-                        // Target is a child of a parallel state, set currentState to the parallel state
-                        finalState = parent;
-                        AOT_DEBUG("AOT executeMicrostep: Target {} is child of parallel state {}, setting currentState to parallel",
-                                  static_cast<int>(target), static_cast<int>(parent));
-                    }
-                }
-                currentState = finalState;  // Update to deepest entered state (or parallel state if within parallel)
-            }
-        }
-
-        transitionTaken = true;
-        AOT_DEBUG("AOT executeMicrostep: Microstep completed, activeStates count={}", activeStates_.size());
-    }
-{% endif %}
-
-    // W3C SCXML 3.12: Helper method for hierarchical transition checking
-{% if model.has_parallel_states %}
-    // W3C SCXML Appendix D: Supports both immediate execution and collection modes
-    // - collectMode = nullptr: Immediate execution (traditional behavior)
-    // - collectMode = vector: Collection only (for optimal transition set)
-{% endif %}
-    {{ sce_map.source_marker(model.source_location, "cpp", symbol_artifact=sce_artifact.machine) }}
+    // Appendix D selectTransitions, the half only this document can answer:
+    // the first of `state`'s own transitions, in document order, that `event`
+    // enables. The engine walks the atomic states and their ancestors and
+    // keeps the ordered set. `Event::NONE` asks for eventless transitions.
     template <typename Engine>
     [[gnu::hot]]
-    bool tryTransitionInState([[maybe_unused]] State checkState, [[maybe_unused]] Event event,
-                              [[maybe_unused]] State& currentState, [[maybe_unused]] bool& transitionTaken,
-                              [[maybe_unused]] Engine& engine{{ ', [[maybe_unused]] ::std::vector<TransitionInfo>* collectMode = nullptr' if model.has_parallel_states else '' }}) {
-        switch (checkState) {
+    ::std::optional<TransitionInfo> firstEnabledTransition([[maybe_unused]] State state, [[maybe_unused]] Event event,
+                                                          [[maybe_unused]] Engine& engine) {
+        switch (state) {
 {% for state_id, state in model.states | dictsort %}
-        case State::{{ state_id | capitalize }}:
 {% if state.transitions %}
-{% set event_transitions = state.transitions | selectattr('event') | list %}
-{% set eventless_transitions = state.transitions | rejectattr('event') | list %}
-{% if event_transitions %}
-{# W3C SCXML 3.12: Process transitions in strict document order (no grouping) #}
-{# W3C SCXML 3.12.1: Prefix matching is applied during event comparison #}
-{# Example: event="entering" matches "entering", "entering.s011", "entering.s012", etc. #}
-{# CRITICAL: More specific events (entering.s011) must be checked BEFORE general events (entering) #}
-{# Document order ensures this: if SCXML has entering.s011 before entering, check in that order #}
-{% set prev_event = namespace(value='') %}
-{% for trans in event_transitions %}
-{# Generate event matching condition: enum comparison or runtime string matching #}
-{% if trans.needs_string_matching %}
-            // W3C SCXML 5.9.3: Runtime event descriptor matching (wildcards/patterns/multi-token)
-            if (event != Event::NONE && ::SCE::Core::EventMatchingHelper::matchesEventDescriptor(
-                {{ model.name }}Policy::getEventName(event), "{{ trans.event }}")) {
-{% elif trans.matching_enum_values | length == 1 %}
-            // W3C SCXML 5.9.3: Direct enum comparison (exact match, no prefix matching needed)
-            if (event == Event::{{ trans.matching_enum_values[0] | replace('.', '_') | replace('-', '_') | capitalize }}) {
-{% elif trans.matching_enum_values | length > 1 %}
-            // W3C SCXML 5.9.3: Precomputed prefix match — "{{ trans.event }}" matches {{ trans.matching_enum_values | length }} events
-            if ({% for ev in trans.matching_enum_values %}event == Event::{{ ev | replace('.', '_') | replace('-', '_') | capitalize }}{{ ' || ' if not loop.last }}{% endfor %}) {
-{% else %}
-            // W3C SCXML 5.9.3: Event "{{ trans.event }}" has no matching enum values in this SM
-            // This is unreachable in well-formed SCXML — kept as defensive guard
-            if (false) {
-{% endif %}
-{# Initialize JSEngine if needed (only once per transition) #}
-{% if model.needs_script_engine %}
+        case State::{{ state_id | capitalize }}:
+{% for trans in state.transitions %}
+            if ({{ event_match(trans) }}) {
+{% if trans.cond %}
+{% if model.needs_script_engine and not trans.is_cpp_condition and not trans.is_pure_in_predicate and not trans.native_payload_guard %}
                 this->ensureScriptEngine();
                 [[maybe_unused]] auto& scriptEngine = getScriptEngine();
 {% endif %}
-{# Process single transition with its condition #}
-{% if trans.cond %}
-{% if trans.is_cpp_condition %}
-                // Direct C++ condition evaluation (cpp: prefix)
-                if ({{ trans.cond_cpp_transformed }}) SCE_LIKELY {
-{% elif trans.is_pure_in_predicate %}
-                // W3C SCXML 5.9.2: Pure In() predicate - direct C++ call (no JSEngine)
-                if ({{ trans.cond_cpp }}) SCE_LIKELY {
-{% elif trans.native_payload_guard %}
-                // NL→IR Item C1 Path A: native typed `_event.data` guard — cond
-                // "{{ trans.cond }}" lowered to a tag-checked field comparison on
-                // the lifted pending<Event>Payload_ (no script engine).
-                if ({{ trans.native_payload_guard }}) SCE_LIKELY {
-{% elif model.needs_script_engine %}
-                // W3C SCXML 5.9: ECMAScript expression - JSEngine evaluation
-                if (this->safeEvaluateGuard(scriptEngine, sessionId_.value(), {{ trans.cond | to_script_source_guard }}, engine)) SCE_LIKELY {
+                if ({{ guard_expr(trans) }}) {
 {% else %}
-                // W3C SCXML 5.9: cond="{{ trans.cond }}" decided at build time
-                if ({{ 'true' if trans.cond_constant else 'false' }}) SCE_LIKELY {
+                {
 {% endif %}
-                    AOT_DEBUG("AOT processTransition: Event matched descriptor '{{ trans.event }}' in state {}", static_cast<int>(checkState));
-// W3C SCXML 3.4: Track transition source for hierarchical exit/entry (ALWAYS needed by checkEventlessTransitions)
-                    lastTransitionSourceState_ = checkState;
-{% if model.has_transition_actions %}
-// W3C SCXML 3.13: Store transition for deferred execution (use original index)
-                    lastTransitionIndex_ = {{ trans.transition_index }};
-                    hasTransitionActions_ = {{ 'true' if trans.actions else 'false' }};
-{% endif %}
-// W3C SCXML 3.13: Track internal transition type (ALWAYS needed by StaticExecutionEngine::handleHierarchicalTransition)
-                    lastTransitionIsInternal_ = {{ 'true' if (trans.type == 'internal' or not trans.target) else 'false' }};
-// W3C SCXML 5.9.2: Track targetless transition (consumes event only, no exit/enter)
-                    lastTransitionIsTargetless_ = {{ 'true' if not trans.target else 'false' }};
-{{ transition_execution_or_collection(trans, trans.transition_index) }}
-                    return true;  // Transition found
-                }
-{% else %}
-                {  // Unconditional transition
-                    AOT_DEBUG("AOT processTransition: Event matched descriptor '{{ trans.event }}' in state {}", static_cast<int>(checkState));
-// W3C SCXML 3.4: Track transition source for hierarchical exit/entry (ALWAYS needed by checkEventlessTransitions)
-                    lastTransitionSourceState_ = checkState;
-{% if model.has_transition_actions %}
-// W3C SCXML 3.13: Store transition for deferred execution (use original index)
-                    lastTransitionIndex_ = {{ trans.transition_index }};
-                    hasTransitionActions_ = {{ 'true' if trans.actions else 'false' }};
-{% endif %}
-// W3C SCXML 3.13: Track internal transition type (ALWAYS needed by StaticExecutionEngine::handleHierarchicalTransition)
-                    lastTransitionIsInternal_ = {{ 'true' if (trans.type == 'internal' or not trans.target) else 'false' }};
-// W3C SCXML 5.9.2: Track targetless transition (consumes event only, no exit/enter)
-                    lastTransitionIsTargetless_ = {{ 'true' if not trans.target else 'false' }};
-{{ transition_execution_or_collection(trans, trans.transition_index) }}
-                    return true;  // Transition found
-                }
-{% endif %}
-            }
-{% endfor %}
-{% endif %}
-{% if eventless_transitions %}
-{% set has_any_guard = namespace(value=False) %}
-{% for trans in eventless_transitions %}
-{% if trans.cond %}
-{% set has_any_guard.value = True %}
-{% endif %}
-{% endfor %}
-{% if has_any_guard.value %}
-{% set first_uses_script_engine = eventless_transitions[0].cond and model.needs_script_engine %}
-{% if first_uses_script_engine %}
-            {
-                this->ensureScriptEngine();
-                [[maybe_unused]] auto& scriptEngine = getScriptEngine();
-{% endif %}
-{% set first_trans = namespace(value=True) %}
-{% for transition in eventless_transitions %}
-{% if transition.cond %}
-{% if first_trans.value %}
-{% if transition.is_cpp_condition %}
-                // Direct C++ condition evaluation (cpp: prefix)
-                if ({{ transition.cond_cpp_transformed }}) {
-{% elif transition.is_pure_in_predicate %}
-                // W3C SCXML 5.9.2: Pure In() predicate - direct C++ call (no JSEngine)
-                if ({{ transition.cond_cpp }}) {
-{% elif model.needs_script_engine %}
-                // W3C SCXML 5.9: ECMAScript expression - JSEngine evaluation
-                if (this->safeEvaluateGuard(scriptEngine, sessionId_.value(), {{ transition.cond | to_script_source_guard }}, engine)) {
-{% else %}
-                // W3C SCXML 5.9: cond="{{ transition.cond }}" decided at build time
-            if ({{ 'true' if transition.cond_constant else 'false' }}) {
-{% endif %}
-{% set first_trans.value = False %}
-{% else %}
-{% if transition.is_cpp_condition %}
-                // Direct C++ condition evaluation (cpp: prefix)
-                } else if ({{ transition.cond_cpp_transformed }}) {
-{% elif transition.is_pure_in_predicate %}
-                // W3C SCXML 5.9.2: Pure In() predicate - direct C++ call (no JSEngine)
-                } else if ({{ transition.cond_cpp }}) {
-{% elif model.needs_script_engine and first_uses_script_engine %}
-                // W3C SCXML 5.9: ECMAScript expression - JSEngine evaluation
-                } else if (this->safeEvaluateGuard(scriptEngine, sessionId_.value(), {{ transition.cond | to_script_source_guard }}, engine)) {
-{% else %}
-                // W3C SCXML 5.9: cond="{{ transition.cond }}" decided at build time
-            } else if ({{ 'true' if transition.cond_constant else 'false' }}) {
-{% endif %}
-{% endif %}
-{% else %}
-{% if not first_trans.value %}
-                } else {
-{% endif %}
-{% set first_trans.value = False %}
-{% endif %}
-// W3C SCXML 3.4: Track transition source for hierarchical exit/entry (ALWAYS needed by checkEventlessTransitions)
-                    lastTransitionSourceState_ = checkState;
-{% if model.has_transition_actions %}
-// W3C SCXML 3.13: Store transition for deferred execution (use original index)
-                    lastTransitionIndex_ = {{ transition.transition_index }};
-                    hasTransitionActions_ = {{ 'true' if transition.actions else 'false' }};
-{% endif %}
-// W3C SCXML 3.13: Track internal transition type (ALWAYS needed by StaticExecutionEngine::handleHierarchicalTransition)
-                    lastTransitionIsInternal_ = {{ 'true' if transition.type == 'internal' else 'false' }};
-// W3C SCXML 5.9.2: Track targetless transition (consumes event only, no exit/enter)
-                    lastTransitionIsTargetless_ = {{ 'true' if not transition.target else 'false' }};
-{{ transition_execution_or_collection(transition, transition.transition_index) }}
-                    return true;  // Eventless transition found
-{% endfor %}
-{% if eventless_transitions[0].cond %}
-{% if model.needs_script_engine %}
+                    AOT_DEBUG("AOT firstEnabledTransition: {{ state_id }} transition {{ trans.transition_index }} is enabled");
+                    return TransitionInfo{State::{{ state_id | capitalize }},
+                                          { {%- for t in trans.targets %}{{ et.entry_target(t, model.history_states) }}{{ ", " if not loop.last }}{% endfor -%} },
+                                          {{ trans.transition_index }}, {{ 'true' if trans.actions else 'false' }},
+                                          {{ 'true' if trans.type == 'internal' else 'false' }}};
                 }
             }
-{% else %}
-            }
-{% endif %}
-{% else %}
-                }
-{% endif %}
-{% else %}
-{% for transition in eventless_transitions %}
-// W3C SCXML 3.4: Track transition source for hierarchical exit/entry (ALWAYS needed by checkEventlessTransitions)
-                    lastTransitionSourceState_ = checkState;
-{% if model.has_transition_actions %}
-// W3C SCXML 3.13: Store transition for deferred execution (use original index)
-                    lastTransitionIndex_ = {{ transition.transition_index }};
-                    hasTransitionActions_ = {{ 'true' if transition.actions else 'false' }};
-{% endif %}
-// W3C SCXML 3.13: Track internal transition type (ALWAYS needed by StaticExecutionEngine::handleHierarchicalTransition)
-                    lastTransitionIsInternal_ = {{ 'true' if transition.type == 'internal' else 'false' }};
-// W3C SCXML 5.9.2: Track targetless transition (consumes event only, no exit/enter)
-                    lastTransitionIsTargetless_ = {{ 'true' if not transition.target else 'false' }};
-{{ transition_execution_or_collection(transition, transition.transition_index) }}
-                    return true;  // Unconditional eventless transition
 {% endfor %}
+            return ::std::nullopt;
 {% endif %}
-{% endif %}
-{% endif %}
-            return false;  // No transition in this state
 {% endfor %}
         default:
-            return false;
+            return ::std::nullopt;
         }
     }
 
-public:
-    // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
     {{ sce_map.source_marker(model.source_location, "cpp", symbol_artifact=sce_artifact.machine) }}
+    // W3C SCXML 3.13: a transition's executable content, run by the engine
+    // between the microstep's exits and its entries.
     template <typename Engine>
-    void executeTransitionActions([[maybe_unused]] Engine& engine) {
+    void executeTransitionActions([[maybe_unused]] State source, [[maybe_unused]] int transitionIndex,
+                                  [[maybe_unused]] Engine& engine) {
 {% if model.has_transition_actions %}
-        if (!hasTransitionActions_) {
-            AOT_DEBUG("AOT executeTransitionActions: No actions to execute");
-            return;
-        }
-
-        AOT_DEBUG("AOT executeTransitionActions: Executing actions for state {} transition {}", 
-                  static_cast<int>(lastTransitionSourceState_), lastTransitionIndex_);
-
-        // Switch on source state, then transition index
-        switch (lastTransitionSourceState_) {
+        switch (source) {
 {% for state_id, state in model.states | dictsort %}
-{% if state.transitions %}
+{% if state.transitions | selectattr('actions') | list %}
         case State::{{ state_id | capitalize }}:
-            {
-                switch (lastTransitionIndex_) {
+            switch (transitionIndex) {
 {% for trans in state.transitions %}
-                case {{ loop.index0 }}:  // Transition {{ loop.index0 }}
-{{ annot.annotation_block(trans, "cpp", "                    ") }}{% if trans.source_location %}
-                    {{ sce_map.source_marker(trans.source_location, "cpp", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
+{% if trans.actions %}
+            case {{ trans.transition_index }}:
+{{ annot.annotation_block(trans, "cpp", "                ") }}{% if trans.source_location %}
+                {{ sce_map.source_marker(trans.source_location, "cpp", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
 {% endif %}
-                    {
-                        AOT_DEBUG("AOT executeTransitionActions: Executing transition {{ loop.index0 }} actions");
+                {
+                    AOT_DEBUG("AOT executeTransitionActions: {{ state_id }} transition {{ trans.transition_index }}");
 {% if model.needs_script_engine %}
-                        this->ensureScriptEngine();
-                        [[maybe_unused]] auto& scriptEngine = getScriptEngine();
+                    this->ensureScriptEngine();
+                    [[maybe_unused]] auto& scriptEngine = getScriptEngine();
 {% endif %}
 {% for action in trans.actions %}
 {%- if action.req or action.unresolved %}
-{{ annot.annotation_block(action, "cpp", "                        ") -}}
+{{ annot.annotation_block(action, "cpp", "                    ") -}}
 {%- endif %}
 {% include 'actions/' + action.type + '.jinja2' %}
 {% endfor %}
-                    }
-                    break;
-{% endfor %}
-                default:
-                    break;
                 }
+                break;
+{% endif %}
+{% endfor %}
+            default:
+                break;
             }
             break;
 {% endif %}
@@ -830,13 +172,28 @@ public:
         default:
             break;
         }
-
-        // Reset flags after execution
-        hasTransitionActions_ = false;
 {% else %}
-        // W3C SCXML 3.13: No transition actions (Zero Overhead - empty method)
-        AOT_DEBUG("AOT executeTransitionActions: No transition actions in this state machine");
+        // W3C SCXML 3.13: no transition in this document has content.
 {% endif %}
     }
 
-
+    {{ sce_map.source_marker(model.source_location, "cpp", symbol_artifact=sce_artifact.machine) }}
+    // W3C SCXML 6.4.2: delayed sends to the parent that have come due. The
+    // engine calls this after every selection, microstep or not.
+    // SCE_MESH.md §9.6: gated on needs_parent_template — remote invoke workers
+    // emit `<send target="#_parent">` through performMeshSend instead.
+    //
+    // §scxml-6.2.2: due is judged against the engine's clock, the same one
+    // the deadline was armed from — a queue that read its own would answer
+    // a different question on a host that owns time.
+    template <typename Engine>
+    void deliverReadyParentSends([[maybe_unused]] Engine& engine) {
+{% if model.needs_parent_template %}
+        typename ParentStateMachine::Event readyEvent;
+        std::string readyEventData;
+        while (parentSendScheduler_.popReadyEvent(engine.nowMs(), readyEvent, readyEventData)) {
+            AOT_DEBUG("Delivering delayed send to parent");
+            parent_->raiseExternal(readyEvent);
+        }
+{% endif %}
+    }

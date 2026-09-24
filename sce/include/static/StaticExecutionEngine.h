@@ -27,12 +27,15 @@
 #include "common/SendSchedulingHelper.h"
 #include "core/AOTEventQueue.h"
 #include "core/ConfigurationHelper.h"
+#include "core/ConflictResolutionHelper.h"
+#include "core/EntrySetHelper.h"
 #include "core/EventMatchingHelper.h"
 #include "core/EventMetadata.h"
 #include "core/EventProcessingAlgorithms.h"
 #include "core/EventQueueManager.h"
 #include "core/HierarchicalStateHelper.h"
 #include "core/HistoryHelper.h"
+#include "core/ParallelTransitionHelper.h"
 // §scxml-6.2.5: the request/reply shape a host-declared Event I/O Processor is
 // dispatched with. A `core/` header for the same reason `PayloadReading.h` is
 // one — it is a fact about a `<send>`, not about any engine's interface, and
@@ -206,26 +209,16 @@ template <SCE::Core::EventNamingPolicy StatePolicy> class StaticExecutionEngine 
 #else
 template <typename StatePolicy> class StaticExecutionEngine {
 #endif
-    // ── Compile-time verification of required member variables ──
-    // StatePolicy is generated as a struct (public members), verified via requires expression.
-#if __cpp_concepts >= 202002L
-    static_assert(
-        requires(StatePolicy p) {
-            { p.lastTransitionIsInternal_ } -> std::convertible_to<bool>;
-        }, "StatePolicy must have member: mutable bool lastTransitionIsInternal_");
-    static_assert(
-        requires(StatePolicy p) {
-            { p.lastTransitionIsTargetless_ } -> std::convertible_to<bool>;
-        }, "StatePolicy must have member: mutable bool lastTransitionIsTargetless_");
-    static_assert(
-        requires(StatePolicy p) {
-            { p.lastTransitionSourceState_ } -> std::convertible_to<typename StatePolicy::State>;
-        }, "StatePolicy must have member: mutable State lastTransitionSourceState_");
-#endif
 
 public:
     using State = typename StatePolicy::State;
     using Event = typename StatePolicy::Event;
+    /// A `<history>` pseudo-state. Never a member of the configuration, only
+    /// of target lists, which is why it is not a State.
+    using History = typename StatePolicy::History;
+    /// One member of Appendix D's `enabledTransitions`, as the policy's
+    /// selection answers it.
+    using TransitionInfo = SCE::Core::EnabledTransition<State, History>;
 
     /**
      * @brief How many links an `error.*` chain may have before the engine
@@ -338,166 +331,260 @@ public:
     };
 
 private:
-    /**
-     * @brief Handle hierarchical exit and entry for state transition
-     *
-     * @details
-     * ARCHITECTURE.md: Extract duplicate code from the event-queue drains
-     * §scxml-3.13: Compute LCA and execute hierarchical exit/entry
-     *
-     * @param oldState State before transition
-     * @param newState State after transition
-     * @param preTransitionStates Active states before transition (for history recording)
-     */
-    // C++17-compatible named empty callable (replaces decltype([] {}))
-    struct NoOpAction {
-        void operator()() const {}
+    // ── Appendix D over the generated policy ─────────────────────────────
+    //
+    // The policy answers what only the document knows: which of a state's
+    // transitions an event enables, what a transition's content is, what a
+    // state's onentry and onexit do, what a history recorded. Everything
+    // Appendix D does with those answers is written here, once, for every
+    // machine. A machine with a `<parallel>` used to take a second microstep
+    // written into its generated code while every other machine took an LCA
+    // walk here, and the two disagreed about eventless selection, about the
+    // order transition content runs in, and about how many targets a
+    // transition has.
+
+    /// The document as Appendix D's entry procedures read it — see
+    /// `SCE::Core::EntrySetAlgorithms` for what each member answers. The
+    /// structure is the policy's static tables; only the history values are
+    /// run-time state, which is why this holds the policy.
+    struct EntryDoc {
+        using State = typename StatePolicy::State;
+        using History = typename StatePolicy::History;
+
+        const StatePolicy &policy;
+
+        std::optional<State> parentOf(const State &s) const {
+            return StatePolicy::getParent(s);
+        }
+
+        bool isCompound(const State &s) const {
+            return SCE::Core::HierarchicalStateHelper<StatePolicy>::isTransitionDomainCandidate(s);
+        }
+
+        bool isParallel(const State &s) const {
+            return StatePolicy::isParallelState(s);
+        }
+
+        std::vector<State> childStates(const State &s) const {
+            return StatePolicy::getChildStates(s);
+        }
+
+        std::vector<SCE::Core::EntryTarget<State, History>> initialTargets(const State &s) const {
+            return StatePolicy::getInitialTargets(s);
+        }
+
+        State historyParent(const History &h) const {
+            return StatePolicy::getHistoryParent(h);
+        }
+
+        std::optional<std::vector<State>> historyValue(const History &h) const {
+            return policy.historyValue(h);
+        }
+
+        std::vector<SCE::Core::EntryTarget<State, History>> historyDefaultTargets(const History &h) const {
+            return StatePolicy::getHistoryDefaultTargets(h);
+        }
+
+        int documentOrder(const State &s) const {
+            return StatePolicy::getDocumentOrder(s);
+        }
     };
 
-    template <typename TransitionActionFn = NoOpAction>
-    void handleHierarchicalTransition(State oldState, State newState, const std::vector<State> &preTransitionStates,
-                                      TransitionActionFn &&transitionAction = {}) {
-        SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Transition {} -> {}", static_cast<int>(oldState),
-                      static_cast<int>(newState));
+    /// A transition's targets with every `<history>` dereferenced — to what
+    /// it recorded or, before its parent was ever exited, to its default. The
+    /// domain, and so the exit set, is a question about these.
+    std::vector<State> effectiveTargetsOf(const TransitionInfo &t) const {
+        return SCE::Core::EntrySetAlgorithms::getEffectiveTargetStates(t.targets, EntryDoc{policy_});
+    }
 
-        // §scxml-3.13: Determine LCA based on transition type
-        std::optional<State> lca;
-        if (policy_.lastTransitionIsInternal_) {
-            // §scxml-3.13: Internal transitions whose target is NOT a proper descendant behave as external
-            bool isSelfTransition = (oldState == newState);
-            bool isProperDescendant =
-                !isSelfTransition &&
-                SCE::Core::HierarchicalStateHelper<StatePolicy>::isDescendantOf(newState, oldState);
+    /// The exit-set view of a transition: its source and effective targets.
+    SCE::Core::ParallelTransitionHelper::Transition<State> exitViewOf(const TransitionInfo &t) const {
+        return SCE::Core::ParallelTransitionHelper::Transition<State>(
+            t.source, effectiveTargetsOf(t), t.transitionIndex, t.hasActions, t.isInternal, t.isTargetless());
+    }
 
-            // §scxml-3.13: Check if source is compound state (test 533)
-            // Parallel states and atomic states are NOT compound - internal transitions from them behave as external
-            bool isSourceCompound = StatePolicy::isCompoundState(oldState);
+    /**
+     * @brief Appendix D's selectTransitions, or its selectEventlessTransitions
+     *        when @p event is `Event()`
+     *
+     * @return The optimal enabled transition set, in selection order
+     */
+    std::vector<TransitionInfo> selectTransitions(Event event) {
+        policy_.bindCurrentEvent(event, *this);
 
-            if (isProperDescendant && isSourceCompound) {
-                // §scxml-3.13: Internal transition to proper descendant in compound state - source is LCA (don't
-                // exit source)
-                lca = oldState;  // Source is the LCA - don't exit it
-                SCE_LOG_DEBUG(
-                    "AOT handleHierarchicalTransition: Internal transition (proper descendant, compound source) "
-                    "- source {} is LCA",
-                    static_cast<int>(oldState));
-            } else {
-                // §scxml-3.13: Non-compound source or non-descendant - behaves as external
-                // Use normal LCA calculation, then target==LCA check handles exit/re-entry
-                lca = SCE::Core::HierarchicalStateHelper<StatePolicy>::findLCA(oldState, newState);
-                SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Internal transition (non-compound source or "
-                              "non-descendant) - behaves as "
-                              "external, LCA={}",
-                              lca.has_value() ? static_cast<int>(lca.value()) : -1);
-            }
-        } else {
-            // §scxml-3.13: External transition - find LCA normally
-            lca = SCE::Core::HierarchicalStateHelper<StatePolicy>::findLCA(oldState, newState);
-        }
-
-        if (lca.has_value()) {
-            // §scxml-3.13: First exit any active descendants of oldState (deepest first)
-            std::vector<State> descendantsToExit;
-            for (const auto &activeState : preTransitionStates) {
-                if (activeState != oldState &&
-                    SCE::Core::HierarchicalStateHelper<StatePolicy>::isDescendantOf(activeState, oldState)) {
-                    descendantsToExit.push_back(activeState);
-                }
-            }
-            // Sort by state enum value (proxy for document order - deeper states have higher values)
-            std::sort(descendantsToExit.begin(), descendantsToExit.end(),
-                      [](State a, State b) { return static_cast<int>(a) > static_cast<int>(b); });
-
-            for (const auto &descendant : descendantsToExit) {
-                SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Exit descendant {} of oldState {}",
-                              static_cast<int>(descendant), static_cast<int>(oldState));
-                executeOnExit(descendant, preTransitionStates);
-            }
-
-            // §scxml-3.13: Exit states from oldState up to (but not including) LCA
-            auto exitChain = SCE::Core::HierarchicalStateHelper<StatePolicy>::buildExitChain(oldState, lca.value());
-            for (const auto &state : exitChain) {
-                SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Hierarchical exit state {}", static_cast<int>(state));
-                executeOnExit(state, preTransitionStates);
-            }
-
-            // §scxml-3.10 (test 579): Ancestor transition (target == LCA)
-            // When transitioning to self or ancestor, the target must also be exited and re-entered
-            // This is how Interpreter handles internal self-transitions to satisfy W3C 5.9.2
-            bool isTargetActive = std::find(preTransitionStates.begin(), preTransitionStates.end(), newState) !=
-                                  preTransitionStates.end();
-            if (newState == lca.value() && isTargetActive) {
-                SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Ancestor/self transition - exit target {} (W3C 3.10)",
-                              static_cast<int>(newState));
-                executeOnExit(newState, preTransitionStates);
-            }
-
-            // §scxml-3.13: Execute transition actions AFTER exit, BEFORE entry
-            SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Executing transition actions");
-            transitionAction();
-
-            // §scxml-3.13: Enter states from LCA down to newState (including initial children)
-            std::vector<State> entryChain;
-
-            // §scxml-3.10: If target == LCA (ancestor/self transition), enter full subtree from target
-            if (newState == lca.value()) {
-                SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Ancestor/self transition - enter target {} and its "
-                              "initial children (W3C 3.10)",
-                              static_cast<int>(newState));
-                // Build full entry chain from root, then keep only states at/below LCA
-                auto fullChain = SCE::Core::HierarchicalStateHelper<StatePolicy>::buildEntryChain(newState, policy_);
-                for (const auto &s : fullChain) {
-                    // Include state if it's at or below LCA (check if LCA is ancestor of s or s == LCA)
-                    if (s == lca.value() ||
-                        SCE::Core::HierarchicalStateHelper<StatePolicy>::isDescendantOf(s, lca.value())) {
-                        entryChain.push_back(s);
-                    }
-                }
-            } else {
-                // Normal case: enter from LCA's child down to newState
-                entryChain =
-                    SCE::Core::HierarchicalStateHelper<StatePolicy>::buildEntryChainFromParent(newState, lca.value());
-            }
-
-            executeOnEntryChain(entryChain, newState);
-
-            // §scxml-3.11: Update currentState to deepest entered state
-            if (!entryChain.empty()) {
-                currentState_ = entryChain.back();
-                SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Updated currentState_ to {}",
-                              static_cast<int>(currentState_));
-            }
-        } else {
-            // No LCA (top-level transition) - exit all ancestors of oldState
-            SCE_LOG_DEBUG("AOT handleHierarchicalTransition: No LCA (top-level transition)");
-
-            State current = oldState;
-            while (true) {
-                SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Exit state {} (to root)", static_cast<int>(current));
-                executeOnExit(current, preTransitionStates);
-
-                auto parent = StatePolicy::getParent(current);
-                if (!parent.has_value()) {
-                    break;  // Reached root
-                }
-                current = parent.value();
-            }
-
-            // §scxml-3.13: Execute transition actions AFTER exit, BEFORE entry
-            SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Executing transition actions (no LCA)");
-            transitionAction();
-
-            // Enter full hierarchy from root to newState
-            auto entryChain = SCE::Core::HierarchicalStateHelper<StatePolicy>::buildEntryChain(newState, policy_);
-            executeOnEntryChain(entryChain, newState);
-
-            // §scxml-3.11: Update currentState to deepest entered state
-            if (!entryChain.empty()) {
-                currentState_ = entryChain.back();
-                SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Updated currentState_ to {}",
-                              static_cast<int>(currentState_));
+        const std::vector<State> configuration = getActiveStates();
+        std::vector<State> atomicStates;
+        for (const State &s : configuration) {
+            if (!StatePolicy::isCompoundState(s) && !StatePolicy::isParallelState(s)) {
+                atomicStates.push_back(s);
             }
         }
+        std::sort(atomicStates.begin(), atomicStates.end(), [](const State &a, const State &b) {
+            return StatePolicy::getDocumentOrder(a) < StatePolicy::getDocumentOrder(b);
+        });
+
+        std::vector<TransitionInfo> enabled;
+        for (const State &atomic : atomicStates) {
+            // §scxml-D-selectTransitions: the atomic state first, then its
+            // proper ancestors, and the first enabled transition in document
+            // order ends the walk for this atomic state. The set is ORDERED
+            // and a set: two atomic states under one ancestor both reach its
+            // transition, and it is one transition, taken once. With
+            // `Event()` this is §scxml-D-selectEventlessTransitions, the same
+            // walk over transitions that have no event.
+            for (std::optional<State> s = atomic; s.has_value(); s = StatePolicy::getParent(*s)) {
+                std::optional<TransitionInfo> found = policy_.firstEnabledTransition(*s, event, *this);
+                if (!found.has_value()) {
+                    continue;
+                }
+                const bool seen = std::any_of(enabled.begin(), enabled.end(), [&found](const TransitionInfo &t) {
+                    return t.source == found->source && t.transitionIndex == found->transitionIndex;
+                });
+                if (!seen) {
+                    enabled.push_back(std::move(*found));
+                }
+                break;
+            }
+        }
+        return removeConflictingTransitions(enabled, configuration);
+    }
+
+    std::vector<TransitionInfo> removeConflictingTransitions(const std::vector<TransitionInfo> &enabled,
+                                                             const std::vector<State> &configuration) const {
+        if (enabled.size() < 2) {
+            return enabled;
+        }
+        // §scxml-D-removeConflictingTransitions: two transitions conflict when
+        // their exit sets intersect, and exit sets are read off the
+        // configuration over each transition's EFFECTIVE targets — a
+        // `<history>` target is as deep as what it recorded.
+        using Resolver = SCE::Core::ConflictResolutionHelper<StatePolicy>;
+        std::vector<typename Resolver::TransitionDescriptor> descriptors;
+        descriptors.reserve(enabled.size());
+        for (const TransitionInfo &t : enabled) {
+            typename Resolver::TransitionDescriptor d(t.source, effectiveTargetsOf(t), t.transitionIndex, t.hasActions,
+                                                      t.isInternal, t.isTargetless());
+            d.exitSet = Resolver::computeExitSet(t.source, d.targets, t.isInternal, t.isTargetless(), configuration);
+            descriptors.push_back(std::move(d));
+        }
+        const auto kept = Resolver::removeConflictingTransitions(descriptors);
+        std::vector<TransitionInfo> result;
+        for (const TransitionInfo &t : enabled) {
+            const bool survives =
+                std::any_of(kept.begin(), kept.end(), [&t](const typename Resolver::TransitionDescriptor &d) {
+                    return d.source == t.source && d.transitionIndex == t.transitionIndex;
+                });
+            if (survives) {
+                result.push_back(t);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * @brief Appendix D's microstep: exit, run the transitions' content, enter
+     */
+    void microstep(const std::vector<TransitionInfo> &transitions) {
+        // §scxml-D-microstepProcedure: every exit, then every transition's content,
+        // then every entry — for the whole set at once, which is what lets
+        // the regions of a `<parallel>` each take their own transition in one
+        // step.
+        exitStates(transitions);
+        executeTransitionContent(transitions);
+        std::vector<SCE::Core::EntryTransition<State, History>> entering;
+        entering.reserve(transitions.size());
+        for (const TransitionInfo &t : transitions) {
+            entering.push_back(t.toEntryTransition());
+        }
+        enterStates(entering);
+    }
+
+    void exitStates(const std::vector<TransitionInfo> &transitions) {
+        // §scxml-D-exitStates: the union of the transitions' exit sets, exited
+        // in exitOrder. Each history is recorded from the configuration as it
+        // stood BEFORE the first exit, which is the snapshot handed to every
+        // onexit below.
+        const std::vector<State> configuration = getActiveStates();
+        std::vector<SCE::Core::ParallelTransitionHelper::Transition<State>> views;
+        views.reserve(transitions.size());
+        for (const TransitionInfo &t : transitions) {
+            views.push_back(exitViewOf(t));
+        }
+        for (const State &s :
+             SCE::Core::ParallelTransitionHelper::computeStatesToExit<State, StatePolicy>(views, configuration)) {
+            policy_.executeExitActions(s, *this, configuration);
+        }
+    }
+
+    void executeTransitionContent(const std::vector<TransitionInfo> &transitions) {
+        // §scxml-D-executeTransitionContent: in the order the transitions were
+        // selected, which is not their sources' document order once an
+        // ancestor's transition is reached from a later region.
+        for (const TransitionInfo &t : transitions) {
+            if (t.hasActions) {
+                policy_.executeTransitionActions(t.source, t.transitionIndex, *this);
+            }
+        }
+    }
+
+    void enterStates(const std::vector<SCE::Core::EntryTransition<State, History>> &transitions) {
+        const EntryDoc doc{policy_};
+        const auto entry = SCE::Core::EntrySetAlgorithms::computeEntrySet(transitions, doc);
+        for (const State &s : entry.statesToEnter) {
+            // §scxml-D-enterStates: onentry, then the initial transition's
+            // content if and only if this state's initial state is being
+            // entered by default, then a history's default content owed to it.
+            policy_.executeEntryActions(s, *this, entry.isDefaultEntry(s));
+            if (const auto history = entry.defaultHistoryContentOf(s)) {
+                policy_.executeHistoryDefaultContent(*history, *this);
+            }
+        }
+        settleCurrentState(transitions, entry.statesToEnter);
+    }
+
+    /**
+     * @brief Point `currentState_` at the atomic state the last transition
+     *        brought the machine into
+     *
+     * Without a `<parallel>` the configuration is one chain and the entry set
+     * ends on its atomic state. With one, `currentState_` is the first state
+     * the last transition names, dereferenced, then down through the
+     * configuration to an atomic state — the answer every backend gives.
+     */
+    void settleCurrentState(const std::vector<SCE::Core::EntryTransition<State, History>> &transitions,
+                            const std::vector<State> &entered) {
+        if (entered.empty()) {
+            return;
+        }
+        if constexpr (!StatePolicy::HAS_PARALLEL_STATES) {
+            currentState_ = entered.back();
+        } else {
+            for (auto it = transitions.rbegin(); it != transitions.rend(); ++it) {
+                const std::vector<State> targets =
+                    SCE::Core::EntrySetAlgorithms::getEffectiveTargetStates(it->targets, EntryDoc{policy_});
+                if (!targets.empty()) {
+                    currentState_ = targets.front();
+                    resolveCurrentStateToLeaf();
+                    return;
+                }
+            }
+        }
+    }
+
+    /**
+     * @brief Select, and take the microstep if anything was selected
+     *
+     * The one place a selection meets the policy's delayed-send delivery: it
+     * ran at the end of every selection before the microstep moved here, and
+     * still does, whether or not a transition was taken.
+     */
+    std::vector<TransitionInfo> selectAndTakeMicrostep(Event event) {
+        std::vector<TransitionInfo> enabled = selectTransitions(event);
+        if (!enabled.empty()) {
+            microstep(enabled);
+        }
+        policy_.deliverReadyParentSends(*this);
+        return enabled;
     }
 
     /**
@@ -511,111 +598,65 @@ private:
     }
 
     /**
-     * @brief Execute a state transition with hierarchical exit/entry handling
+     * @brief Offer one event to the configuration and take the microstep it
+     *        selects
      *
      * §scxml-3.13: Single Source of Truth for transition execution across all
      * processing paths (event queues, direct processEvent, eventless transitions).
      *
      * Callers customize one axis of variation via a template callback:
-     * - postTransition: work after hierarchical handling, before eventless check
+     * - postTransition: work after the microstep, before the eventless check
      *   (queue path: nothing; direct path: runMainEventLoop)
      *
-     * W3C SCXML Appendix D: who performs exit/entry is *not* an axis of
-     * variation, because it is fixed by the document's shape rather than by the
-     * caller. A policy with parallel states routes every event — external and
-     * eventless alike — through `executeMicrostep`, which owns the whole
-     * exit → transition content → entry sequence and maintains `activeStates_`
-     * itself. Any exit/entry this function adds on top of that is a second
-     * application: `executeExitActions` removes its argument from the
-     * configuration, so re-exiting `oldState` after the microstep has already
-     * re-entered it drops that region's leaf while leaving the region's
-     * ancestors active. The region then holds no atomic state and can never
-     * fire again. `checkEventlessTransitions` already states this invariant for
-     * its own path; expressing it once, here, is what keeps the two paths from
-     * disagreeing.
-     *
-     * @tparam PostTransitionFn Callable() for post-hierarchical work
+     * @tparam PostTransitionFn Callable() for post-microstep work
      * @param event Event to process
-     * @param postTransition Post-hierarchical work before eventless check
-     * @return true if a hierarchical state change occurred
+     * @param postTransition Post-microstep work before the eventless check
+     * @return what the event did — see EventOutcome
      */
     template <typename PostTransitionFn>
     EventOutcome executeTransition(Event event, PostTransitionFn &&postTransition) {
-        State oldState = currentState_;
-        std::vector<State> preTransitionStates = getActiveStates();
-        if (!policy_.processTransition(currentState_, event, *this)) {
+        const State oldState = currentState_;
+        const std::vector<TransitionInfo> taken = selectAndTakeMicrostep(event);
+        if (taken.empty()) {
             return EventOutcome{};
         }
 
-        // §scxml-3.13: Self-transitions (target = source) exit and re-enter the state
-        // §scxml-3.13: Targetless transitions consume event only (no exit/enter)
-        bool isSelfTransition = (oldState == currentState_);
-        bool needsHierarchicalHandling =
-            (oldState != currentState_) || (isSelfTransition && !policy_.lastTransitionIsTargetless_);
-
-        if (!needsHierarchicalHandling) {
-            // §scxml-3.13: Targetless transition - execute actions without state change
-            policy_.executeTransitionActions(*this);
-            // W3C SCXML Appendix D's main event loop returns to
-            // `selectEventlessTransitions()` after EVERY microstep and drains
-            // the internal queue in the same inner loop, without asking whether
-            // the microstep moved the machine. Returning here instead ended the
-            // macrostep at a transition that ran content: whatever that content
-            // enabled was never walked, and whatever it raised stayed on the
-            // queue, so the host was handed a configuration the clause calls
-            // unstable with nothing anywhere saying so. This is the same work
-            // the state-changing path below does, in the same order.
-            postTransition();
-            checkEventlessTransitions();
-            // The transition itself moved nothing; the chain it opened may
-            // have. This asks the machine rather than the transition, so a
-            // chain that reaches a top-level `<final>` still notifies the
-            // parent — see this struct's contract for why the two facts are
-            // spelled apart.
-            return EventOutcome{/*selected=*/true, /*configurationChanged=*/currentState_ != oldState};
-        }
-
-        // §scxml-3.13: State transition requires hierarchical exit/entry
-        if constexpr (!StatePolicy::HAS_PARALLEL_STATES) {
-            handleHierarchicalTransition(oldState, currentState_, preTransitionStates,
-                                         [this] { policy_.executeTransitionActions(*this); });
-        }
-        // W3C SCXML Appendix D: a parallel policy needs no exit/entry here —
-        // `executeMicrostep` has already exited, run the transition content and
-        // entered. See this function's contract above for why adding to it
-        // costs a region its leaf. What it does not do is settle
-        // `currentState_`, which is the next statement's job.
-        else {
-            resolveCurrentStateToLeaf();
-        }
+        // W3C SCXML Appendix D's main event loop returns to
+        // `selectEventlessTransitions()` after EVERY microstep and drains the
+        // internal queue in the same inner loop, without asking whether the
+        // microstep moved the machine — a targetless transition that only ran
+        // content opens a chain as surely as one that entered a state.
         postTransition();
         checkEventlessTransitions();
-        return EventOutcome{/*selected=*/true, /*configurationChanged=*/true};
+
+        // A microstep of targetless transitions moved nothing itself; the chain
+        // it opened may have. This asks the machine rather than the transition,
+        // so a chain that reaches a top-level `<final>` still notifies the
+        // parent — see EventOutcome's contract for why the two facts are
+        // spelled apart.
+        const bool entered =
+            std::any_of(taken.begin(), taken.end(), [](const TransitionInfo &t) { return !t.isTargetless(); });
+        return EventOutcome{/*selected=*/true, /*configurationChanged=*/entered || currentState_ != oldState};
     }
 
     /**
      * @brief Settle `currentState_` on an atomic state
      *
-     * `executeMicrostep` leaves `currentState_` on the last transition target
-     * it processed, and a target may be a compound state. The configuration is
-     * then right and this one field is not: `getCurrentState()` names a state
-     * the machine is *within* rather than the atomic state it is *in*.
-     *
-     * Measured 2026-08-13 on a two-region `<parallel>` whose transition
-     * targets a compound state: the active set was
-     * `[run | counter | drive | within | outer | a]` and `getCurrentState()`
-     * answered `outer`. `sce_rust_runtime`'s `resolve_current_state_to_leaf`
-     * and the Go engine's `resolveCurrentStateToLeaf` both answer `a`, so C++
-     * was the one backend of three disagreeing on a public accessor that 105
-     * files in this repository read.
+     * A transition may target a compound state, or a `<parallel>`, and
+     * `getCurrentState()` must still name the atomic state the machine is
+     * *in* rather than one it is *within*. Measured 2026-08-13 on a two-region
+     * `<parallel>` whose transition targets a compound state: the active set
+     * was `[run | counter | drive | within | outer | a]` and
+     * `getCurrentState()` answered `outer`, while `sce_rust_runtime`'s
+     * `resolve_current_state_to_leaf` and the Go engine's
+     * `resolveCurrentStateToLeaf` both answer `a`.
      *
      * The descent reads the CONFIGURATION rather than recomputing initial or
-     * history children, which the other two backends do. That is deliberate:
-     * `activeStates_` is what the microstep actually entered, so a descent
-     * through it cannot disagree with what happened. Recomputing can — the
-     * generated microstep builds its entry chain from plain initial children
-     * while `getInitialOrHistoryChild` is history-aware, and the two answers
-     * part company exactly when a `<history>` is involved.
+     * history children: the configuration is what the microstep actually
+     * entered, so a descent through it cannot disagree with what happened.
+     * Under a `<parallel>` it takes the first region in document order, so
+     * the answer does not depend on the order states happened to become
+     * active.
      */
     void resolveCurrentStateToLeaf() {
         // A region holds one atomic state, so this descends once per level.
@@ -624,16 +665,16 @@ private:
         constexpr int MAX_DESCENTS = 50;
         const std::vector<State> active = getActiveStates();
         for (int depth = 0; depth < MAX_DESCENTS; ++depth) {
-            if (!StatePolicy::isCompoundState(currentState_)) {
+            if (!StatePolicy::isCompoundState(currentState_) && !StatePolicy::isParallelState(currentState_)) {
                 return;
             }
-            const auto child = std::find_if(active.begin(), active.end(), [this](State candidate) {
-                const auto parent = StatePolicy::getParent(candidate);
-                return parent.has_value() && parent.value() == currentState_;
+            const std::vector<State> children = StatePolicy::getChildStates(currentState_);
+            const auto child = std::find_if(children.begin(), children.end(), [&active](State candidate) {
+                return std::find(active.begin(), active.end(), candidate) != active.end();
             });
             // A compound state with no active child is not a configuration
             // this can repair, so it is left as it is rather than guessed at.
-            if (child == active.end()) {
+            if (child == children.end()) {
                 return;
             }
             currentState_ = *child;
@@ -1677,51 +1718,6 @@ public:
 
 protected:
     /**
-     * @brief Execute entry actions for a state (§scxml-3.8)
-     *
-     * Entry actions are executable content that runs when entering a state.
-     * This includes <onentry> blocks which may contain <raise>, <assign>, etc.
-     *
-     * Supports both static (stateless) and non-static (stateful) policies.
-     * Static methods can also be called through an instance in C++.
-     *
-     * @param state State being entered
-     * @param pathChild The child of @p state the entry set already holds, when
-     *        @p state is merely an ANCESTOR of the entry target. Such a state
-     *        is entered without its default initial child; `nullopt` means
-     *        @p state is the target itself and takes its defaults. See
-     *        `integration_resources/ancestor_entry_is_not_default_entry/`.
-     */
-    void executeOnEntry(State state, std::optional<State> pathChild = std::nullopt) {
-        // Call through policy instance (works for both static and non-static)
-        policy_.executeEntryActions(state, *this, pathChild);
-    }
-
-    /// Enter a whole root-to-target chain, giving every link BEFORE the target
-    /// the next one as its `pathChild`. One place, because the entry-chain
-    /// walks in this engine owe the same rule and a chain walked with `nullopt`
-    /// throughout puts two children of one compound state in the configuration.
-    ///
-    /// The chain does not stop at @p target: `buildEntryChain` appends the
-    /// target's own default initial descendants, and names only
-    /// `getInitialChild`, leaving the intermediate levels of a DEEP `initial`
-    /// to `executeEntryActions`. Everything from the target onwards therefore
-    /// takes its defaults — treating that tail as an ancestor chain suppresses
-    /// exactly the descent it was appended to trigger.
-    template <typename Chain> void executeOnEntryChain(const Chain &entryChain, State target) {
-        bool reachedTarget = false;
-        for (std::size_t i = 0; i < entryChain.size(); ++i) {
-            if (entryChain[i] == target) {
-                reachedTarget = true;
-            }
-            const std::optional<State> pathChild =
-                (!reachedTarget && i + 1 < entryChain.size()) ? std::optional<State>(entryChain[i + 1]) : std::nullopt;
-            SCE_LOG_DEBUG("AOT executeOnEntryChain: entering {}", static_cast<int>(entryChain[i]));
-            executeOnEntry(entryChain[i], pathChild);
-        }
-    }
-
-    /**
      * @brief Execute exit actions for a state (§scxml-3.9)
      *
      * Exit actions are executable content that runs when exiting a state.
@@ -2109,122 +2105,49 @@ protected:
         // lives on the engine because the macrostep does — see
         // `macrostepMicrostepsTaken_`.
 
-        // §scxml-3.13: Use shared algorithm (Single Source of Truth)
-        // Note: Eventless transitions can raise new internal events, use internal queue
-        SCE::Core::AOTEventQueue<EventWithMetadata> adapter(internalQueue_);
-
         while (true) {
-            State oldState = currentState_;
-            std::vector<State> preTransitionStates = getActiveStates();  // §scxml-3.11: Capture before transition
             SCE_LOG_DEBUG("AOT checkEventlessTransitions: Microstep {}, currentState={}", macrostepMicrostepsTaken_,
                           static_cast<int>(currentState_));
 
-            // Call processTransition with default event for eventless transitions
-            if (policy_.processTransition(currentState_, Event(), *this)) {
-                if (macrostepMicrostepsTaken_ == MAX_MACROSTEP_MICROSTEPS) {
-                    // The chain is still going one microstep past the budget,
-                    // so this is the case the specification's Principles and
-                    // Constraints call a macrostep that does not terminate.
-                    // Refuse the microstep rather than take it, and publish
-                    // the refusal: the configuration left behind is not a
-                    // stable one and only this counter says so. The machine
-                    // keeps running — the specification allows the document, so
-                    // declining to run it forever is a fact to report, not
-                    // grounds to kill a session whose other states still work.
-                    //
-                    // `processTransition` only selects for a non-parallel
-                    // machine — the exit / body / entry chain is
-                    // `handleHierarchicalTransition`'s below — so putting
-                    // `currentState_` back is what makes the refusal exact.
-                    // A parallel policy runs `executeMicrostep` inside the
-                    // call instead, so there the microstep is already taken
-                    // and the ceiling holds one microstep later; the count
-                    // means the same thing either way.
-                    if constexpr (!StatePolicy::HAS_PARALLEL_STATES) {
-                        currentState_ = oldState;
-                    }
-                    recordTruncatedMacrostep(currentState_);
-                    SCE_LOG_ERROR(
-                        "StaticExecutionEngine: macrostep still going after {} microsteps; stopped taking them",
-                        MAX_MACROSTEP_MICROSTEPS);
-                    break;
-                }
-                ++macrostepMicrostepsTaken_;
-                // §scxml-3.4: For parallel states, use actual transition source state
-                State actualSourceState = policy_.lastTransitionSourceState_;
-                SCE_LOG_DEBUG("AOT checkEventlessTransitions: Transition taken from {} to {} (actual source: {})",
-                              static_cast<int>(oldState), static_cast<int>(currentState_),
-                              static_cast<int>(actualSourceState));
-                if (oldState != currentState_) {
-                    // W3C SCXML Appendix D: For parallel states, executeMicrostep already handled exit/transition/entry
-                    // Only call handleHierarchicalTransition for non-parallel state machines
-                    if constexpr (!StatePolicy::HAS_PARALLEL_STATES) {
-                        // ARCHITECTURE.MD: Zero Duplication - use shared helper
-                        // §scxml-3.13: Pass transition action callback for correct execution order
-                        // §scxml-3.4: Use actualSourceState for correct hierarchical exit/entry
-                        handleHierarchicalTransition(actualSourceState, currentState_, preTransitionStates,
-                                                     [this] { policy_.executeTransitionActions(*this); });
-                    } else {
-                        SCE_LOG_DEBUG(
-                            "AOT checkEventlessTransitions: Parallel state machine - executeMicrostep handled "
-                            "all transitions");
-                    }
-
-                    // §scxml-3.13: Internal events are processed AFTER stable configuration is reached
-                    // Continue loop to check for more eventless transitions first
-                } else if (policy_.lastTransitionIsTargetless_) {
-                    // §scxml-3.13: a transition with no `target` exits and
-                    // enters nothing and runs its content in place. The
-                    // configuration is unchanged by definition, so a loop that
-                    // continued only on a changed configuration selected this
-                    // transition and then dropped it — the content never ran,
-                    // and the chain ended one microstep early. Running it here
-                    // is the same decision `executeTransition` makes for the
-                    // event-driven case, read off the same policy flag.
-                    policy_.executeTransitionActions(*this);
-                } else {
-                    // §scxml-3.13: a self transition with a target exits and
-                    // re-enters its state, which is work even though the
-                    // configuration ends where it started. The ceiling above is
-                    // what stops the chain it can open; leaving early instead
-                    // skipped the exit and entry the clause requires.
-                    if constexpr (!StatePolicy::HAS_PARALLEL_STATES) {
-                        handleHierarchicalTransition(actualSourceState, currentState_, preTransitionStates,
-                                                     [this] { policy_.executeTransitionActions(*this); });
-                    }
-                }
-            } else {
-                // §scxml-3.13: No eventless transition available - stable configuration reached
-                // Internal events will be processed by caller (runMainEventLoop or step)
+            const std::vector<TransitionInfo> enabled = selectTransitions(Event());
+            if (enabled.empty()) {
+                // §scxml-3.13: nothing enabled by NULL — the configuration is
+                // stable. Internal events are the caller's to drain
+                // (runMainEventLoop or step).
+                policy_.deliverReadyParentSends(*this);
                 break;
             }
+            if (macrostepMicrostepsTaken_ == MAX_MACROSTEP_MICROSTEPS) {
+                // The chain is still going one microstep past the budget, so
+                // this is the case the specification's Principles and
+                // Constraints call a macrostep that does not terminate. The
+                // microstep is refused rather than taken — selection moves
+                // nothing, so refusing it is exact — and the refusal is
+                // published: the configuration left behind is not a stable one
+                // and only this counter says so. The machine keeps running; the
+                // specification allows the document, so declining to run it
+                // forever is a fact to report, not grounds to kill a session
+                // whose other states still work.
+                policy_.deliverReadyParentSends(*this);
+                recordTruncatedMacrostep(currentState_);
+                SCE_LOG_ERROR("StaticExecutionEngine: macrostep still going after {} microsteps; stopped taking them",
+                              MAX_MACROSTEP_MICROSTEPS);
+                break;
+            }
+            ++macrostepMicrostepsTaken_;
+            // A targetless transition takes a microstep too: it runs its
+            // content in place, and the chain it opens is walked like any other.
+            microstep(enabled);
+            policy_.deliverReadyParentSends(*this);
         }
 
-        // §scxml-3.13: Check if we reached a top-level final state after eventless transitions
-        // For parallel states, check if any active state is a top-level final state
-        if constexpr (StatePolicy::HAS_PARALLEL_STATES) {
-            auto activeStates = getActiveStates();
-            for (const auto &state : activeStates) {
-                if (StatePolicy::isFinalState(state) && StatePolicy::getParent(state) == std::nullopt) {
-                    SCE_LOG_INFO(
-                        "AOT checkEventlessTransitions: Reached top-level final state {}, halting processing (W3C "
-                        "SCXML 3.13)",
-                        static_cast<int>(state));
-                    currentState_ = state;  // W3C SCXML: Update currentState_ for getCurrentState()
-                    SCE_LOG_DEBUG("AOT checkEventlessTransitions: After update, getCurrentState() = {}",
-                                  static_cast<int>(getCurrentState()));
-                    stop();
-                    break;
-                }
-            }
-        } else {
-            // For non-parallel states, check currentState_
-            if (StatePolicy::isFinalState(currentState_) && StatePolicy::getParent(currentState_) == std::nullopt) {
-                SCE_LOG_INFO("AOT checkEventlessTransitions: Reached top-level final state {}, halting processing (W3C "
-                             "SCXML 3.13)",
-                             static_cast<int>(currentState_));
-                stop();
-            }
+        // §scxml-3.13: a macrostep that entered a top-level final state halts
+        // the machine.
+        if (isInFinalState()) {
+            SCE_LOG_INFO("AOT checkEventlessTransitions: Reached top-level final state {}, halting processing (W3C "
+                         "SCXML 3.13)",
+                         static_cast<int>(currentState_));
+            stop();
         }
     }
 
@@ -2255,20 +2178,14 @@ public:
             policy_.initializeDataModel(*this);
         }
 
-        // §scxml-3.3: Use HierarchicalStateHelper for correct entry order
-        auto entryChain = SCE::Core::HierarchicalStateHelper<StatePolicy>::buildEntryChain(currentState_);
-
-        // Execute entry actions from root to leaf (ancestor first).
-        //
-        // Every link here takes its defaults — this is deliberately NOT
-        // `executeOnEntryChain`. §scxml-D-addAncestorStatesToEnter is about a
-        // state on the way to a target somebody NAMED; this chain is the
-        // opposite, a default descent whose leaf the policy has already
-        // resolved. Measured 2026-08-15: passing the next link here suppressed
-        // `s1`'s deep `initial="s11p112 s11p122"` and W3C test364 failed.
-        for (const auto &state : entryChain) {
-            executeOnEntry(state);
-        }
+        // §scxml-D-interpret: enterStates([doc.initialTransition]) — the
+        // document's own initial transition, whose source is the <scxml>
+        // element and whose domain is therefore the whole document. A target
+        // set, a deep initial, an initial naming a <history>: the entry
+        // procedures answer all of them, so nothing here resolves a leaf
+        // first.
+        enterStates({SCE::Core::EntryTransition<State, History>{std::nullopt, StatePolicy::getDocumentInitialTargets(),
+                                                                /*isInternal=*/false}});
 
         // §scxml-D-mainEventLoop: hand over to the outer loop. The macrostep
         // completes on eventless transitions and internal events, then the

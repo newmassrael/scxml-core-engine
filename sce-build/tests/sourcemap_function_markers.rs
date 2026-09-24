@@ -226,8 +226,9 @@ fn cpp_statechart_emits_per_function_markers() {
     // `entry_exit_actions.jinja2` + `process_transition.jinja2`, both
     // included from `state_machine_inl.jinja2`. Assert the per-
     // function `#line` directives surface in the `.inl` file —
-    // executeEntryActions, executeExitActions, processTransition,
-    // executeMicrostep, tryTransitionInState, executeTransitionActions.
+    // executeEntryActions, executeExitActions, executeHistoryDefaultContent,
+    // bindCurrentEvent, firstEnabledTransition, executeTransitionActions,
+    // deliverReadyParentSends.
     let inl = pick(&artifacts, "inl");
     let count = count_markers(inl, "sm_probe.scxml");
     assert!(

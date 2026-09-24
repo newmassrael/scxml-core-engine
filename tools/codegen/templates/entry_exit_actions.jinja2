@@ -9,9 +9,11 @@
 
     W3C SCXML 3.7/3.8/3.9: Entry and exit action execution.
 
-    Generates:
-    - executeEntryActions(state, engine)
+    Generates, each for ONE state — which states a microstep enters and exits
+    is the engine's Appendix D entry and exit set:
+    - executeEntryActions(state, engine, defaultEntry)
     - executeExitActions(state, engine, preTransitionActive)
+    - executeHistoryDefaultContent(history, engine)
 
     Invoke lifecycle methods (executePendingInvokes, tickChildren, forwardToAutoforward,
     executeFinalizeForChildEvent) are in invoke_methods.jinja2.
@@ -32,8 +34,9 @@
     - SendSchedulingHelper: W3C SCXML 6.2 (ARCHITECTURE.md lines 873-884)
 
     Features Implemented:
-    - W3C SCXML 3.4: Parallel state auto-entry (enter all child regions)
+    - W3C SCXML 3.3.2: <initial> content, on default entry only
     - W3C SCXML 3.7.1: Parallel state done.state event generation
+    - W3C SCXML 3.10.2: <history> default content
     - W3C SCXML 3.8: Onexit handlers with datamodel updates
     - W3C SCXML 3.9: Entry/exit action execution
     - W3C SCXML 6.4: Static invoke lifecycle management
@@ -56,14 +59,13 @@
    directive's effect for the rest of the translation unit. #}
     {{ sce_map.source_marker(model.source_location, "cpp", symbol_artifact=sce_artifact.machine) }}
     template <typename Engine>
-{# §scxml-D: `pathChild` is what tells addDescendantStatesToEnter (nullopt —
-   `state` is the entry TARGET and takes its defaults) from
-   addAncestorStatesToEnter (the child of `state` the entry set already holds,
-   so `state` takes none — except that a `<parallel>` still gives its OTHER
-   regions theirs). Defaulted so the target-entry call sites, which are every
-   other one, read exactly as they did. #}
-{% if not model.execute_entry_actions_needs_this %}    [[gnu::hot]] static void executeEntryActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] ::std::optional<State> pathChild = ::std::nullopt) {
-{% else %}    [[gnu::hot]] void executeEntryActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] ::std::optional<State> pathChild = ::std::nullopt) {
+{# One state's entry, and nothing below it: which states a microstep enters is
+   the engine's Appendix D entry set, entered front to back, so this neither
+   enters regions nor descends to an initial child. `defaultEntry` is the entry
+   set's statesForDefaultEntry answer — whether this state's initial transition
+   content runs. #}
+{% if not model.execute_entry_actions_needs_this %}    [[gnu::hot]] static void executeEntryActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] bool defaultEntry) {
+{% else %}    [[gnu::hot]] void executeEntryActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] bool defaultEntry) {
 {% endif %}
 {% if model.has_parallel_states or model.uses_in_predicate %}
         // W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel states and In() predicate
@@ -415,26 +417,20 @@
 {% endif %}
 {% endif %}
 {% if state.initial_transition_actions %}
-                // W3C SCXML 3.3.2: Execute <initial> transition executable content
-                // This content executes AFTER parent onentry and BEFORE child state entry
+                // §scxml-D-enterStates: the <initial> transition's content runs
+                // after this state's onentry, and only when its initial state is
+                // entered by DEFAULT — not when the state is entered on the way
+                // to a deeper target. Its own scope, so an error that stops the
+                // block (§scxml-4.9) stops this block and not the rest of the
+                // state's entry.
+                if (defaultEntry) {
+                    [&]() {
 {% for action in state.initial_transition_actions %}
-                {% set in_entry_exit = true %}
-                {% include 'actions/' + action.type + '.jinja2' %}
+                        {% set in_entry_exit = true %}
+                        {% include 'actions/' + action.type + '.jinja2' %}
 
 {% endfor %}
-{% endif %}
-{% if state.initial_history_id %}
-                // W3C SCXML 3.11: Initial transition targets history state {{ state.initial_history_id }}
-                // Execute history default transition executable content if no history is stored
-                if (!history_{{ state.initial_history_id }}.has_value() || history_{{ state.initial_history_id }}->empty()) {
-                    AOT_DEBUG("AOT history: No stored history for {{ state.initial_history_id }}, executing default transition actions");
-{% for action in state.initial_history_default_actions %}
-                    {% set in_entry_exit = true %}
-                    {% include 'actions/' + action.type + '.jinja2' %}
-
-{% endfor %}
-                } else {
-                    AOT_DEBUG("AOT history: Found stored history for {{ state.initial_history_id }}, skipping default transition actions");
+                    }();
                 }
 {% endif %}
 {% if state.is_final and state.donedata %}
@@ -583,70 +579,29 @@
             break;
         }
 {% endif %}{# model.has_entry_actions #}
-{% if model.has_parallel_states %}
+    }
 
-        // W3C SCXML 3.4: If entering parallel state, enter all child regions and their initial children
-        // This ensures parallel states behave like Interpreter (auto-enter all regions)
-        //
-        // §scxml-D-addDescendantStatesToEnter: a `<parallel>` hands out defaults
-        // even when it is only an ancestor — that is Appendix D's one exception
-        // to the ancestor rule. The exception has its own exception: not the
-        // region the entry set is already descending into. `pathChild` names it,
-        // and giving that one its default too is what leaves two children of it
-        // active at once.
-        if (isParallelState(state)) {
-            AOT_DEBUG("AOT executeEntryActions: State {} is parallel, entering child regions", static_cast<int>(state));
-            auto regions = getParallelRegions(state);
-            for (const auto& region : regions) {
-                if (pathChild.has_value() && pathChild.value() == region) {
-                    AOT_DEBUG("AOT executeEntryActions: Region {} is on the entry path, no default", static_cast<int>(region));
-                    continue;
-                }
-                AOT_DEBUG("AOT executeEntryActions: Entering parallel region {}", static_cast<int>(region));
-                executeEntryActions(region, engine);
+    {{ sce_map.source_marker(model.source_location, "cpp", symbol_artifact=sce_artifact.machine) }}
+    // §scxml-3.10.2: a <history>'s default transition content, run after its
+    // parent's onentry (and after the parent's own <initial> content) when the
+    // history was taken with nothing recorded. The engine asks for it by the
+    // entry set's defaultHistoryContent answer; a history that restored what it
+    // recorded runs nothing.
+    template <typename Engine>
+    void executeHistoryDefaultContent([[maybe_unused]] History history, [[maybe_unused]] Engine& engine) {
+{% for history_id, history_info in model.history_states | dictsort %}
+{% if history_info.default_actions %}
+        if (history == History::{{ history_id | capitalize }}) {
+            AOT_DEBUG("AOT executeHistoryDefaultContent: {{ history_id }}");
+{% for action in history_info.default_actions %}
+            {% set in_entry_exit = true %}
+            {% include 'actions/' + action.type + '.jinja2' %}
 
-                // W3C SCXML 3.3: If region is compound, enter initial child
-                if (isCompoundState(region)) {
-                    State initialChild = getInitialChild(region);
-                    if (initialChild != region) {
-                        AOT_DEBUG("AOT executeEntryActions: Entering initial child {} of region {}",
-                                 static_cast<int>(initialChild), static_cast<int>(region));
-                        executeEntryActions(initialChild, engine);
-                    }
-                }
-            }
-        }
-
-        // W3C SCXML 3.3: If entering compound state (non-parallel), enter initial child
-        // W3C SCXML 3.6: Support deep initial targets (space-separated descendant state IDs)
-        //
-        // §scxml-D-addAncestorStatesToEnter: not when `state` is merely on the
-        // way to a deeper target. The entry set already holds `pathChild`, and a
-        // compound state holds one child at a time.
-        if (isCompoundState(state) && !isParallelState(state) && !pathChild.has_value()) {
-            // W3C SCXML 3.6: Check if state has multiple or deep initial targets
-            switch (state) {
-            {% for state_id, state in model.states | dictsort %}
-            {% if state.initial_children and state.initial_children|length > 0 %}
-            case State::{{ state_id | capitalize }}:
-                AOT_DEBUG("AOT executeEntryActions: State {} has initial children, delegating to StateEntryHelper",
-                         static_cast<int>(state));
-                enterDeepInitialTargets_{{ state_id | capitalize }}(engine);
-                break;
-            {% endif %}
-            {% endfor %}
-            default:
-                    // No explicit initial children - use single initial child
-                    State initialChild = getInitialChild(state);
-                    if (initialChild != state) {
-                        AOT_DEBUG("AOT executeEntryActions: State {} is compound, entering initial child {}",
-                                 static_cast<int>(state), static_cast<int>(initialChild));
-                        executeEntryActions(initialChild, engine);
-                    }
-                    break;
-            }
+{% endfor %}
+            return;
         }
 {% endif %}
+{% endfor %}
     }
 
     {{ sce_map.source_marker(model.source_location, "cpp", symbol_artifact=sce_artifact.machine) }}
@@ -687,44 +642,8 @@
 {% else %}    [[gnu::hot]] void executeExitActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
 {% endif %}
 
-{% if model.has_parallel_states %}
-        // W3C SCXML 3.4 + 3.13: Parallel state exit order
-        // Matches Interpreter's exitParallelStateAndDescendants() logic
-        AOT_DEBUG("AOT executeExitActions: Checking if state {} is parallel", static_cast<int>(state));
-        if (isParallelState(state)) {
-            AOT_DEBUG("AOT executeExitActions: State {} IS parallel, collecting active descendants", static_cast<int>(state));
-
-            // W3C SCXML 3.4: Collect all active descendants of this parallel state
-            // Matches Interpreter's collectDescendantStates() - exit ALL active descendants, not just direct regions
-            ::std::vector<State> descendantsToExit;
-            for (State activeState : activeStates_) {
-                if (activeState != state && isDescendantOf(activeState, state)) {
-                    descendantsToExit.push_back(activeState);
-                    AOT_DEBUG("AOT executeExitActions: Found active descendant {} of parallel state {}",
-                             static_cast<int>(activeState), static_cast<int>(state));
-                }
-            }
-
-            AOT_DEBUG("AOT executeExitActions: Found {} active descendants to exit", descendantsToExit.size());
-
-            // W3C SCXML 3.13: Sort descendants by reverse document order (deepest states exit first)
-            ::std::sort(descendantsToExit.begin(), descendantsToExit.end(),
-                       [](State a, State b) {
-                           return getDocumentOrder(a) > getDocumentOrder(b);
-                       });
-
-            // Exit each active descendant (deepest first)
-            for (State descendant : descendantsToExit) {
-                AOT_DEBUG("AOT executeExitActions: Exiting active descendant {}", static_cast<int>(descendant));
-                executeExitActions(descendant, engine, activeStatesBeforeTransition);
-            }
-
-            AOT_DEBUG("AOT executeExitActions: All active descendants exited, now exiting parallel state {} itself", static_cast<int>(state));
-            // After exiting all descendants, fall through to exit parallel state itself
-        } else {
-            AOT_DEBUG("AOT executeExitActions: State {} is NOT parallel, proceeding to switch", static_cast<int>(state));
-        }
-{% endif %}
+{# One state's exit, and nothing below it: the engine's Appendix D exit set
+   already holds every active descendant, in exit order, ahead of this state. #}
 {% if model.has_parallel_states or model.uses_in_predicate %}
         // W3C SCXML 3.4/3.12.1: Remove state from active configuration (parallel states and In() predicate)
         AOT_DEBUG("AOT executeExitActions: Removing state {} from activeStates", static_cast<int>(state));
@@ -737,8 +656,10 @@
         }
 {% endif %}
         {% if model.history_states %}
-        // W3C SCXML 3.11: Record history before exiting compound states (matches Interpreter logic)
-        // Use pre-transition active states (captured before processTransition modified currentState_)
+        // W3C SCXML 3.10: Record history as this state exits, from the
+        // configuration the microstep started from — the engine snapshots it
+        // before the first exit, so every history in one microstep reads the
+        // same configuration.
         const std::vector<State>& activeStates = activeStatesBeforeTransition;
         
         {% for history_id, history_info in model.history_states | dictsort %}

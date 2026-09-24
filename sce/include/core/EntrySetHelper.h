@@ -96,6 +96,32 @@ template <typename State, typename History> struct EntryTransition {
 };
 
 /**
+ * @brief A transition selection enabled: one member of Appendix D's
+ *        `enabledTransitions`
+ *
+ * What the microstep reads of it — its source, its target list as written,
+ * whether it is internal — plus the index its source state knows it by, so
+ * the policy that owns its executable content can run it. A transition with
+ * no targets exits and enters nothing and only runs its content.
+ */
+template <typename State, typename History> struct EnabledTransition {
+    State source{};
+    std::vector<EntryTarget<State, History>> targets;
+    int transitionIndex = 0;
+    bool hasActions = false;
+    bool isInternal = false;
+
+    [[nodiscard]] bool isTargetless() const noexcept {
+        return targets.empty();
+    }
+
+    /// The same transition as the entry procedures see it.
+    [[nodiscard]] EntryTransition<State, History> toEntryTransition() const {
+        return EntryTransition<State, History>{source, targets, isInternal};
+    }
+};
+
+/**
  * @brief What a microstep enters: the appendix's three out-parameters
  *
  * `statesToEnter` is already sorted into entry order, so an engine enters it
@@ -274,6 +300,9 @@ struct EntrySetAlgorithms {
             const auto &history = target.history();
             const auto parent = doc.historyParent(history);
             const auto recorded = doc.historyValue(history);
+            // §scxml-3.10: a transition to a history behaves as a transition
+            // to the configuration it stored, or — before its parent was ever
+            // visited — to its default stored configuration.
             if (recorded.has_value() && !recorded->empty()) {
                 // §scxml-D-addDescendantStatesToEnter: a history that has
                 // recorded a configuration enters it, and the ancestors
@@ -307,7 +336,9 @@ struct EntrySetAlgorithms {
         if (doc.isCompound(state)) {
             // §scxml-D-addDescendantStatesToEnter: a compound state entered
             // as a target is entered by DEFAULT — the one condition under
-            // which its initial transition's content runs.
+            // which its initial transition's content runs. Its initial
+            // transition names the child or children it enters (§scxml-3.3),
+            // possibly several and possibly deep (§scxml-3.6).
             addOnce(entry.statesForDefaultEntry, state);
             const auto initial = doc.initialTargets(state);
             for (const auto &child : initial) {
@@ -370,6 +401,8 @@ private:
 
     template <typename Doc>
     static void addRegionDefaults(const typename Doc::State &parallel, const Doc &doc, Set<Doc> &entry) {
+        // §scxml-3.4: every child of an active <parallel> is active, so a
+        // region nothing on the set descends into is entered by default.
         const auto parentOf = [&doc](const typename Doc::State &s) { return doc.parentOf(s); };
         for (const auto &child : doc.childStates(parallel)) {
             const bool taken =

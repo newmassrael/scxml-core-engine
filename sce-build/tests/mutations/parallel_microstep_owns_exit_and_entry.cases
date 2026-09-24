@@ -1,6 +1,9 @@
-# Mutation cases for W3C SCXML Appendix D — in a document with `<parallel>`,
-# `executeMicrostep` owns exit, transition content and entry, and nothing above
-# it may repeat any of the three.
+# Mutation cases for W3C SCXML Appendix D — the engine's `microstep` owns
+# exit, transition content and entry, and nothing above it may repeat any of
+# the three. (It was the generated `executeMicrostep` when this file was
+# written, for documents with a `<parallel>` only; every AOT microstep is the
+# engine's one procedure now, and the caller it must not be doubled by is
+# `executeTransition`.)
 #
 # Run with
 # `scripts/mutate sce-build/tests/mutations/parallel_microstep_owns_exit_and_entry.cases`.
@@ -37,38 +40,34 @@ mutation_oracles tests/integration/ParallelSelfTransitionKeepsItsLeafAotTest.cpp
 # ── Exit and entry applied twice ───────────────────────────────────
 #
 # §scxml-D-microstepProcedure runs exit → transition content → entry as one
-# atomic step, and for a parallel policy `processTransition` has already
-# completed all three before `executeTransition` regains control. Adding a
-# caller-supplied exit/entry on top reads as symmetry with the non-parallel
-# branch above it and is a second application: `executeExitActions` removes its
-# argument from the active configuration, so re-exiting `oldState` after the
-# microstep has already re-entered it takes that state back out. It is not put
-# back, because `currentState_` names the last transition the microstep
-# processed, which belongs to a DIFFERENT region.
+# atomic step, and `selectAndTakeMicrostep` has completed all three before
+# `executeTransition` regains control. Adding a caller-supplied exit/entry on
+# top is a second application: `executeExitActions` removes its argument from
+# the active configuration, so re-exiting `oldState` after the microstep has
+# already re-entered it takes that state back out. It is not put back, because
+# `currentState_` names the state the LAST transition settled on, which can
+# belong to a DIFFERENT region.
 #
 # The trigger needs all three of: one event enabling a transition in two
 # regions, one of those being a self-transition, and the two regions resting at
 # different depths. Drop any one and the configuration survives — which is why
 # the symmetric, equal-depth fixtures in the W3C corpus never sampled it.
 #
-# ⚠ The edit inserts INTO the existing parallel branch rather than creating one.
-# An earlier revision appended `} else { ... }` to the `if constexpr` above,
-# which compiled when it was written and stopped compiling the moment
-# `e819e013e8` gave that `if` an `else` of its own — two `else` clauses on one
-# `if`. The harness reported INCONCLUSIVE rather than SURVIVED, which is the
-# whole reason it distinguishes them, but nothing ran this file between the two
-# commits, so the guard sat unproven for a day. A mutation edit that anchors on
-# the shape of neighbouring code is a claim about that shape, and this one now
-# anchors on the branch it is actually restoring the defect into.
+# ⚠ A mutation edit that anchors on the shape of neighbouring code is a claim
+# about that shape. This one anchors on the empty-selection return the extra
+# exit/entry would sit behind, which is the statement the defect was restored
+# after in both of the engine's earlier shapes.
 
 mutation_case "a parallel transition exits and enters a second time" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     """        else {
-            resolveCurrentStateToLeaf();
+     """        const std::vector<TransitionInfo> taken = selectAndTakeMicrostep(event);
+        if (taken.empty()) {
+            return EventOutcome{};
         }""",
-     """        else {
-            executeOnExit(oldState, preTransitionStates);
-            executeOnEntry(currentState_);
-            resolveCurrentStateToLeaf();
-        }""")
+     """        const std::vector<TransitionInfo> taken = selectAndTakeMicrostep(event);
+        if (taken.empty()) {
+            return EventOutcome{};
+        }
+        executeOnExit(oldState, getActiveStates());
+        policy_.executeEntryActions(currentState_, *this, false);""")
 PY

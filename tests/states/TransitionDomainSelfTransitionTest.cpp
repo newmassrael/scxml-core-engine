@@ -88,18 +88,18 @@ struct EnumPolicy {
         return s == S::Run || s == S::Drive || s == S::Running || s == S::Budget;
     }
 
-    static State getInitialChild(State s) {
+    static std::vector<State> getChildStates(State s) {
         switch (s) {
         case S::Run:
-            return S::Drive;
+            return {S::Drive, S::Budget};
         case S::Drive:
-            return S::Running;
+            return {S::Running};
         case S::Running:
-            return S::Working;
+            return {S::Working, S::Judging};
         case S::Budget:
-            return S::Within;
+            return {S::Within};
         default:
-            return s;
+            return {};
         }
     }
 
@@ -147,10 +147,14 @@ TEST(TransitionDomainSelfTransition, DomainOfASelfTransitionIsTheParent) {
            "excludes the state itself, so a self-transition's domain is the parent. Answering "
            "`within` leaves `computeExitSet` with no stopping point on its climb.";
 
-    const auto enumDomain = Core::HierarchicalStateHelper<EnumPolicy>::findLCA(S::Within, S::Within);
+    // The generated code asks Appendix D's getTransitionDomain itself, over the
+    // enum; it must answer the same parent.
+    const auto enumDomain = Core::ExitSetAlgorithms::getTransitionDomain(
+        S::Within, std::vector<S>{S::Within}, /*isInternal=*/false, [](S s) { return EnumPolicy::getParent(s); },
+        [](S s) { return EnumPolicy::isCompoundState(s) && !EnumPolicy::isParallelState(s); });
     ASSERT_TRUE(enumDomain.has_value());
-    EXPECT_EQ(enumDomain.value(), S::Budget) << "the enum instantiation must answer the same as the string one — both "
-                                                "engines reach the domain through this one procedure";
+    EXPECT_EQ(enumDomain.value(), S::Budget) << "the enum instantiation must answer the same as the string one — a "
+                                                "self-transition's domain is its parent in both engines";
 }
 
 TEST(TransitionDomainSelfTransition, ExitSetOfASelfTransitionIsTheStateAlone) {
@@ -176,11 +180,11 @@ TEST(TransitionDomainSelfTransition, ASelfTransitionDoesNotPreemptASiblingRegion
     // engines actually take, with exit sets from the helper pinned above.
     using CR = Core::ConflictResolutionHelper<EnumPolicy>;
 
-    CR::TransitionDescriptor deep(S::Working, S::Judging);
-    deep.exitSet = CR::computeExitSet(S::Working, S::Judging, false, false, kConfiguration);
+    CR::TransitionDescriptor deep(S::Working, {S::Judging});
+    deep.exitSet = CR::computeExitSet(S::Working, {S::Judging}, false, false, kConfiguration);
 
-    CR::TransitionDescriptor self(S::Within, S::Within);
-    self.exitSet = CR::computeExitSet(S::Within, S::Within, false, false, kConfiguration);
+    CR::TransitionDescriptor self(S::Within, {S::Within});
+    self.exitSet = CR::computeExitSet(S::Within, {S::Within}, false, false, kConfiguration);
 
     const auto selected = CR::removeConflictingTransitions({deep, self});
 
@@ -210,11 +214,11 @@ TEST(TransitionDomainSelfTransition, IntersectionAloneReachesTheAppendixVerdict)
     // preempted by it.
     using CR = Core::ConflictResolutionHelper<EnumPolicy>;
 
-    CR::TransitionDescriptor crossRegion(S::Working, S::Within);
-    crossRegion.exitSet = CR::computeExitSet(S::Working, S::Within, false, false, kConfiguration);
+    CR::TransitionDescriptor crossRegion(S::Working, {S::Within});
+    crossRegion.exitSet = CR::computeExitSet(S::Working, {S::Within}, false, false, kConfiguration);
 
-    CR::TransitionDescriptor sibling(S::Within, S::Within);
-    sibling.exitSet = CR::computeExitSet(S::Within, S::Within, false, false, kConfiguration);
+    CR::TransitionDescriptor sibling(S::Within, {S::Within});
+    sibling.exitSet = CR::computeExitSet(S::Within, {S::Within}, false, false, kConfiguration);
 
     const auto selected = CR::removeConflictingTransitions({crossRegion, sibling});
 

@@ -46,10 +46,15 @@ mutation_oracles tests/integration/TargetlessTransitionCompletesMacrostepAotTest
 
 mutation_case "the aot engine returns from a targetless transition without walking the chain" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     """            postTransition();
-            checkEventlessTransitions();
-            // The transition itself moved nothing; the chain it opened may""",
-     """            // The transition itself moved nothing; the chain it opened may""")
+     """        // content opens a chain as surely as one that entered a state.
+        postTransition();
+        checkEventlessTransitions();""",
+     """        // content opens a chain as surely as one that entered a state.
+        if (std::all_of(taken.begin(), taken.end(), [](const TransitionInfo &t) { return t.isTargetless(); })) {
+            return EventOutcome{/*selected=*/true, /*configurationChanged=*/false};
+        }
+        postTransition();
+        checkEventlessTransitions();""")
 PY
 
 # ── C++ AOT: the queue the transition filled ───────────────────────
@@ -63,9 +68,14 @@ PY
 
 mutation_case "the aot engine skips the queue drain after a targetless transition" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     """            postTransition();
-            checkEventlessTransitions();""",
-     """            checkEventlessTransitions();""")
+     """        // content opens a chain as surely as one that entered a state.
+        postTransition();
+        checkEventlessTransitions();""",
+     """        // content opens a chain as surely as one that entered a state.
+        if (std::any_of(taken.begin(), taken.end(), [](const TransitionInfo &t) { return !t.isTargetless(); })) {
+            postTransition();
+        }
+        checkEventlessTransitions();""")
 PY
 
 # ── C++ AOT: the targetless link inside the chain ──────────────────
@@ -73,21 +83,19 @@ PY
 # The drain selected the transition and then dropped it, because the loop
 # continued only on a changed configuration. The content never ran, so the
 # chain ended one microstep early with the machine resting where that link
-# began — `chained == 1, polished == 0` in the fixture's terms.
-#
-# The mutation removes the RUN, not the arm: an arm removed entirely falls into
-# the self-transition branch below it, which runs the actions too, and the
-# round would be measuring nothing.
+# began — `chained == 1, polished == 0` in the fixture's terms. The mutation
+# restores exactly that: a microstep of targetless transitions is counted and
+# left untaken.
 
 mutation_case "the aot drain selects a targetless microstep and runs none of it" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     """                    // is the same decision `executeTransition` makes for the
-                    // event-driven case, read off the same policy flag.
-                    policy_.executeTransitionActions(*this);
-                } else {""",
-     """                    // is the same decision `executeTransition` makes for the
-                    // event-driven case, read off the same policy flag.
-                } else {""")
+     """            // content in place, and the chain it opens is walked like any other.
+            microstep(enabled);""",
+     """            // content in place, and the chain it opens is walked like any other.
+            if (std::all_of(enabled.begin(), enabled.end(), [](const TransitionInfo &t) { return t.isTargetless(); })) {
+                break;
+            }
+            microstep(enabled);""")
 PY
 
 # ── C++ AOT: the self transition that still has work ───────────────
@@ -101,20 +109,21 @@ PY
 # That outcome exists because this case SURVIVED without it — the first draft
 # of this file said in as many words that the fixture could not separate the
 # two, which is a case with no witness rather than a case. Writing the witness
-# was the repair.
+# was the repair. The mutation restores the "configuration did not change"
+# shortcut in the one microstep every transition now takes: a transition that
+# names its own source runs its content and neither exits nor enters.
 
 mutation_case "the aot drain drops the exit and entry of an eventless self transition" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     """                    if constexpr (!StatePolicy::HAS_PARALLEL_STATES) {
-                        handleHierarchicalTransition(actualSourceState, currentState_, preTransitionStates,
-                                                     [this] { policy_.executeTransitionActions(*this); });
-                    }
-                }
-            } else {
-                // §scxml-3.13: No eventless transition available - stable configuration reached""",
-     """                }
-            } else {
-                // §scxml-3.13: No eventless transition available - stable configuration reached""")
+     """    void microstep(const std::vector<TransitionInfo> &transitions) {""",
+     """    void microstep(const std::vector<TransitionInfo> &transitions) {
+        if (std::all_of(transitions.begin(), transitions.end(), [this](const TransitionInfo &t) {
+                const std::vector<State> targets = effectiveTargetsOf(t);
+                return targets.size() == 1 && targets.front() == t.source;
+            })) {
+            executeTransitionContent(transitions);
+            return;
+        }""")
 PY
 
 # ── C++ Interpreter: the chain the transition opened ───────────────

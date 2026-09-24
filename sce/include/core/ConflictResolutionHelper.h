@@ -52,7 +52,9 @@ struct ConflictResolutionAlgorithms {
      */
     template <typename StateType> struct TransitionDescriptor {
         StateType source{};
-        StateType target{};
+        /// The transition's effective targets — a history already
+        /// dereferenced — which is what its exit set was computed from.
+        std::vector<StateType> targets;
         std::vector<StateType> exitSet;
         int transitionIndex = 0;
         bool hasActions = false;    // §scxml-3.13: Transition action metadata
@@ -62,9 +64,9 @@ struct ConflictResolutionAlgorithms {
 
         TransitionDescriptor() = default;
 
-        TransitionDescriptor(StateType src, StateType tgt, int idx = 0, bool actions = false, bool internal = false,
-                             bool targetless = false)
-            : source(std::move(src)), target(std::move(tgt)), transitionIndex(idx), hasActions(actions),
+        TransitionDescriptor(StateType src, std::vector<StateType> tgts, int idx = 0, bool actions = false,
+                             bool internal = false, bool targetless = false)
+            : source(std::move(src)), targets(std::move(tgts)), transitionIndex(idx), hasActions(actions),
               isInternal(internal), isTargetless(targetless) {}
     };
 
@@ -116,12 +118,12 @@ struct ConflictResolutionAlgorithms {
             //
             // Selection stops at the first enabled transition of a state, so
             // within one microstep a source contributes at most one transition
-            // and (source, target) identifies it. `transitionIndex` deliberately
+            // and (source, targets) identifies it. `transitionIndex` deliberately
             // takes no part: each region numbers its own walk, so two regions
             // reporting the same ancestor transition disagree about it.
             const bool alreadySelected = std::any_of(filteredTransitions.begin(), filteredTransitions.end(),
                                                      [&t1](const TransitionDescriptor<StateType> &seen) {
-                                                         return seen.source == t1.source && seen.target == t1.target;
+                                                         return seen.source == t1.source && seen.targets == t1.targets;
                                                      });
             if (alreadySelected) {
                 continue;
@@ -207,7 +209,7 @@ struct ConflictResolutionAlgorithms {
  * - W3C SCXML Perfect Compliance: Full implementation of Appendix D.2 algorithm
  */
 #if __cpp_concepts >= 202002L
-template <ParallelStatePolicy StatePolicy> class ConflictResolutionHelper {
+template <HierarchyPolicy StatePolicy> class ConflictResolutionHelper {
 #else
 template <typename StatePolicy> class ConflictResolutionHelper {
 #endif
@@ -229,7 +231,7 @@ public:
      * Single Source of Truth - same algorithm used by AOT engine microstep execution.
      *
      * @param source Source state of transition
-     * @param target Target state of transition
+     * @param targets The transition's effective targets
      * @param configuration The currently active states
      * @return Exit set (states to be exited)
      *
@@ -245,17 +247,17 @@ public:
      * // Given hierarchy: S0 -> { S01 -> S011, S02 }, configuration [S0, S01, S011]
      * // Transition from S011 to S02
      * auto exitSet = ConflictResolutionHelper<Policy>::computeExitSet(
-     *     State::S011, State::S02, false, false, {State::S0, State::S01, State::S011});
+     *     State::S011, {State::S02}, false, false, {State::S0, State::S01, State::S011});
      * // Returns: [S01, S011] (the active proper descendants of the domain S0)
      * @endcode
      */
-    static std::vector<State> computeExitSet(State source, State target, bool isInternal, bool isTargetless,
-                                             const std::vector<State> &configuration) {
+    static std::vector<State> computeExitSet(State source, const std::vector<State> &targets, bool isInternal,
+                                             bool isTargetless, const std::vector<State> &configuration) {
         // ARCHITECTURE.MD Zero Duplication: Delegate to ParallelTransitionHelper
         // Construct minimal Transition descriptor for exit set computation
         typename ParallelTransitionHelper::Transition<State> trans;
         trans.source = source;
-        trans.targets = {target};
+        trans.targets = targets;
         trans.isInternal = isInternal;      // §scxml-3.13: Pass internal transition type
         trans.isTargetless = isTargetless;  // §scxml-3.13: Pass targetless transition flag
 
@@ -265,8 +267,8 @@ public:
         // Convert unordered_set to vector for conflict resolution algorithm
         std::vector<State> exitSet(exitSetUnordered.begin(), exitSetUnordered.end());
 
-        SCE_LOG_DEBUG("ConflictResolutionHelper::computeExitSet: Transition {} -> {} exits {} states",
-                      static_cast<int>(source), static_cast<int>(target), exitSet.size());
+        SCE_LOG_DEBUG("ConflictResolutionHelper::computeExitSet: Transition from {} to {} target(s) exits {} states",
+                      static_cast<int>(source), targets.size(), exitSet.size());
 
         return exitSet;
     }

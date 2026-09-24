@@ -974,7 +974,9 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
             for (const auto &t : allEnabledTransitions) {
                 ConflictResolutionAlgorithms::TransitionDescriptor<std::string> desc;
                 desc.source = t.source;
-                desc.target = t.target;
+                // One target: the Interpreter still selects a single one per
+                // transition, and its microstep below enters exactly that.
+                desc.targets = {t.target};
                 desc.exitSet = t.exitSet;
                 desc.transitionIndex = t.transitionIndex;
                 desc.hasActions = t.hasActions;
@@ -1003,7 +1005,7 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
             for (const auto &desc : descriptors) {
                 TransitionDescriptorString optimalTrans;
                 optimalTrans.source = desc.source;
-                optimalTrans.target = desc.target;
+                optimalTrans.target = desc.targets.front();
                 optimalTrans.event = "";  // Event already processed, not stored in descriptor
                 optimalTrans.exitSet = desc.exitSet;
                 optimalTrans.transitionIndex = desc.transitionIndex;
@@ -1023,11 +1025,11 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                 for (const auto &desc : descriptors) {
                     if (desc.isExternal) {
                         hasExternalTransition = true;
-                        externalTransitionTarget = desc.target;
+                        externalTransitionTarget = desc.targets.front();
                         externalTransitionSource = desc.source;
                         SCE_LOG_INFO("StateMachine: Optimal set contains external transition: {} -> {} "
                                      "(§scxml-D-removeConflictingTransitions)",
-                                     desc.source, desc.target);
+                                     desc.source, desc.targets.front());
                         break;
                     }
                 }
@@ -1091,7 +1093,8 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                 ImmediateModeGuard immediateModeGuard(eventRaiser_, false);
 
                 for (const auto &desc : descriptors) {
-                    SCE_LOG_INFO("StateMachine: Microstep execute transition: {} -> {}", desc.source, desc.target);
+                    SCE_LOG_INFO("StateMachine: Microstep execute transition: {} -> {}", desc.source,
+                                 desc.targets.front());
 
                     // Find the transition node and execute its actions
                     auto sourceStateNode = model_->findStateById(desc.source);
@@ -1102,7 +1105,7 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                             const auto &targets = transition->getTargets();
 
                             // W3C SCXML: Targetless internal transitions (source == target)
-                            if (desc.source == desc.target && targets.empty()) {
+                            if (desc.source == desc.targets.front() && targets.empty()) {
                                 const auto &events = transition->getEvents();
                                 for (const auto &event : events) {
                                     if (event == eventName || event == "*") {
@@ -1112,7 +1115,7 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                                 }
                             }
                             // Normal transition - match by target
-                            else if (!targets.empty() && targets[0] == desc.target) {
+                            else if (!targets.empty() && targets[0] == desc.targets.front()) {
                                 isMatch = true;
                             }
 
@@ -1192,10 +1195,10 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
 
                     // Enter all target states
                     for (const auto &desc : descriptors) {
-                        SCE_LOG_DEBUG("StateMachine: Microstep enter target state: {}", desc.target);
+                        SCE_LOG_DEBUG("StateMachine: Microstep enter target state: {}", desc.targets.front());
 
                         // Find which region this target belongs to and update its state
-                        auto targetStateNode = model_->findStateById(desc.target);
+                        auto targetStateNode = model_->findStateById(desc.targets.front());
                         if (targetStateNode && targetStateNode->getParent()) {
                             const auto &regions = parallelState->getRegions();
                             for (const auto &region : regions) {
@@ -1217,13 +1220,13 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                                         return false;
                                     };
 
-                                    if (isDescendant(regionRoot, desc.target)) {
+                                    if (isDescendant(regionRoot, desc.targets.front())) {
                                         // This region contains the target - update its current state
                                         auto concreteRegion = std::dynamic_pointer_cast<ConcurrentRegion>(region);
                                         if (concreteRegion) {
-                                            concreteRegion->setCurrentState(desc.target);
+                                            concreteRegion->setCurrentState(desc.targets.front());
                                             SCE_LOG_DEBUG("StateMachine: Region {} entered state {}", region->getId(),
-                                                          desc.target);
+                                                          desc.targets.front());
 
                                             // §scxml-3.13: Update hierarchy manager for parallel region transitions
                                             // (Test 570 fix) Must keep hierarchy manager in sync with region's internal
@@ -1247,12 +1250,13 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                                             // executor, and seven parallel
                                             // drivers say so.
                                             const bool alreadyInConfiguration =
-                                                hierarchyManager_ && hierarchyManager_->isStateActive(desc.target);
+                                                hierarchyManager_ &&
+                                                hierarchyManager_->isStateActive(desc.targets.front());
                                             if (hierarchyManager_) {
-                                                hierarchyManager_->enterState(desc.target);
+                                                hierarchyManager_->enterState(desc.targets.front());
                                                 SCE_LOG_DEBUG(
                                                     "StateMachine: Updated hierarchyManager - entered state: {}",
-                                                    desc.target);
+                                                    desc.targets.front());
                                             }
 
                                             // Execute entry actions, only where
@@ -3104,7 +3108,7 @@ bool StateMachine::checkEventlessTransitions() {
         for (const auto &trans : enabledTransitions) {
             Helper::TransitionDescriptor<std::string> desc;
             desc.source = trans.sourceState->getId();
-            desc.target = trans.targetState;
+            desc.targets = {trans.targetState};
             desc.transitionIndex = static_cast<int>(descriptors.size());
 
             // Exit set already computed in computeExitSet()
@@ -3131,7 +3135,7 @@ bool StateMachine::checkEventlessTransitions() {
         for (const auto &desc : filtered) {
             // Find original transition by matching source and target
             for (const auto &trans : enabledTransitions) {
-                if (trans.sourceState->getId() == desc.source && trans.targetState == desc.target) {
+                if (trans.sourceState->getId() == desc.source && trans.targetState == desc.targets.front()) {
                     filteredTransitions.push_back(trans);
                     break;
                 }

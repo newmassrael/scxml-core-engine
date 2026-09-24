@@ -40,19 +40,17 @@ mutation_oracles tests/integration/EventlessMacrostepIsBoundedAotTest.cpp tests/
 # allows and no host can act on. Left alone it does not return, so the ctest
 # entry's own TIMEOUT is the witness.
 #
-# The ceiling is disabled at its condition rather than by deleting the `break`,
-# and the difference is not cosmetic: measured 2026-08-20, dropping the `break`
-# is an EQUIVALENT mutation here and it SURVIVED a full round. The refusal
-# restores `currentState_` before it breaks, so an engine that fell through
-# would find `oldState == currentState_` on the next line and leave through the
-# "transition taken but state didn't change" exit instead — same behaviour, no
-# test can see it. A mutant has to remove the decision, not one of its two
-# exits.
+# The ceiling is disabled at its condition, so the decision itself is what is
+# removed. (Measured 2026-08-20 on the engine as it then stood: dropping only
+# the `break` was an EQUIVALENT mutation, because the refusal had to put back
+# a `currentState_` that selection had already moved. Selection moves nothing
+# now — the microstep is a separate call after the ceiling — so the refusal is
+# exact, and a mutant still has to remove the decision rather than one exit.)
 
 mutation_case "the cpp engine takes the microstep past the ceiling anyway" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     """                if (macrostepMicrostepsTaken_ == MAX_MACROSTEP_MICROSTEPS) {""",
-     """                if (false) {""")
+     """            if (macrostepMicrostepsTaken_ == MAX_MACROSTEP_MICROSTEPS) {""",
+     """            if (false) {""")
 PY
 
 # ── C++ AOT: stopping the machine over it ──────────────────────────
@@ -63,11 +61,11 @@ PY
 
 mutation_case "the cpp engine stops the machine at the ceiling" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     """                    recordTruncatedMacrostep(currentState_);
-                    SCE_LOG_ERROR(""",
-     """                    recordTruncatedMacrostep(currentState_);
-                    stop();
-                    SCE_LOG_ERROR(""")
+     """                recordTruncatedMacrostep(currentState_);
+                SCE_LOG_ERROR("StaticExecutionEngine: macrostep still going after {} microsteps; stopped taking them",""",
+     """                recordTruncatedMacrostep(currentState_);
+                stop();
+                SCE_LOG_ERROR("StaticExecutionEngine: macrostep still going after {} microsteps; stopped taking them",""")
 PY
 
 # ── C++ AOT: the off-by-one ────────────────────────────────────────
@@ -80,25 +78,29 @@ PY
 
 mutation_case "the cpp ceiling fires before the chain is over" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     """                ++macrostepMicrostepsTaken_;
-                // §scxml-3.4: For parallel states, use actual transition source state""",
-     """                macrostepMicrostepsTaken_ += 2;
-                // §scxml-3.4: For parallel states, use actual transition source state""")
+     """            ++macrostepMicrostepsTaken_;
+            // A targetless transition takes a microstep too: it runs its""",
+     """            macrostepMicrostepsTaken_ += 2;
+            // A targetless transition takes a microstep too: it runs its""")
 PY
 
-# ── C++ AOT: putting the selected microstep back ───────────────────
+# ── C++ AOT: taking the microstep it refused ───────────────────────
 #
-# `processTransition` writes `currentState_` as it selects, so refusing without
-# restoring leaves the machine one microstep past where it stopped — and the
-# state the count names is then not the state it stopped in.
+# The refusal is recorded and the microstep taken anyway, which leaves the
+# machine one microstep past where it says it stopped — the state the count
+# names is then not the state it stopped in.
 
-mutation_case "the cpp engine keeps the microstep it refused" <<'PY'
+mutation_case "the cpp engine takes the microstep it refused" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     """                    if constexpr (!StatePolicy::HAS_PARALLEL_STATES) {
-                        currentState_ = oldState;
-                    }
-                    recordTruncatedMacrostep(currentState_);""",
-     """                    recordTruncatedMacrostep(currentState_);""")
+     """                              MAX_MACROSTEP_MICROSTEPS);
+                break;
+            }
+            ++macrostepMicrostepsTaken_;""",
+     """                              MAX_MACROSTEP_MICROSTEPS);
+                microstep(enabled);
+                break;
+            }
+            ++macrostepMicrostepsTaken_;""")
 PY
 
 # ── C++ AOT: the count ─────────────────────────────────────────────

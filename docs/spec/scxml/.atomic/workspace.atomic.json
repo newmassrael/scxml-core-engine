@@ -320,11 +320,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "handleHierarchicalTransition",
-          "kind": "implements"
-        },
-        {
           "file": "sce/src/runtime/StateHierarchyManager.cpp",
           "symbol": "StateHierarchyManager::enterState",
           "kind": "implements"
@@ -395,11 +390,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/include/core/HierarchicalStateHelper.h",
-          "symbol": "buildEntryChain",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/runtime/HistoryManager.h",
           "symbol": "HistoryManager",
           "kind": "implements"
@@ -465,6 +455,11 @@
         {
           "file": "backends/go/runtime/engine.go",
           "symbol": "handleHierarchicalTransition",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/EntrySetHelper.h",
+          "symbol": "addDescendantStatesToEnter",
           "kind": "implements"
         }
       ],
@@ -573,11 +568,6 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "getActiveStates",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "handleHierarchicalTransition",
           "kind": "implements"
         },
         {
@@ -1465,10 +1455,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/include/core/ParallelExitEntryHelper.h",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/core/ParallelStateHelper.h",
           "kind": "implements"
         },
@@ -1495,16 +1481,6 @@
         {
           "file": "sce/include/core/ParallelTransitionHelper.h",
           "symbol": "transitionIndex",
-          "kind": "references"
-        },
-        {
-          "file": "sce/include/core/StateEntryHelper.h",
-          "symbol": "calculateAncestorPath",
-          "kind": "references"
-        },
-        {
-          "file": "sce/include/core/StateEntryHelper.h",
-          "symbol": "optimizeEntryOrder",
           "kind": "references"
         },
         {
@@ -1575,11 +1551,6 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "executeTransition",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "handleHierarchicalTransition",
           "kind": "implements"
         },
         {
@@ -1750,16 +1721,6 @@
         {
           "file": "sce/include/core/HierarchicalStateHelper.h",
           "symbol": "HierarchicalAlgorithms",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/core/HierarchicalStateHelper.h",
-          "symbol": "buildEntryChainFromParent",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/core/HierarchicalStateHelper.h",
-          "symbol": "buildExitChain",
           "kind": "implements"
         },
         {
@@ -2371,6 +2332,16 @@
           "file": "sce-build/src/forge/generator.rs",
           "symbol": "build_rust_event_payload",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "selectTransitions",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "microstep",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -2657,15 +2628,6 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "sce/include/core/HierarchicalStateHelper.h",
-          "symbol": "buildEntryChain",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/core/ParallelExitEntryHelper.h",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/model/SCXMLModel.h",
           "symbol": "getInitialState",
           "kind": "references"
@@ -2733,11 +2695,6 @@
         {
           "file": "sce/include/states/IConcurrentRegion.h",
           "symbol": "setDesiredInitialChild",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "initialize",
           "kind": "implements"
         },
         {
@@ -2999,6 +2956,11 @@
           "file": "sce-build/src/parser.rs",
           "symbol": "parse_states",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/core/EntrySetHelper.h",
+          "symbol": "addDescendantStatesToEnter",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -3088,16 +3050,6 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "sce/include/core/HierarchicalStateHelper.h",
-          "symbol": "addParallelRegions",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/core/HierarchicalStateHelper.h",
-          "symbol": "buildEntryChain",
-          "kind": "references"
-        },
-        {
           "file": "sce/include/core/ParallelCompletionHelper.h",
           "symbol": "ParallelCompletionHelper",
           "kind": "implements"
@@ -3110,10 +3062,6 @@
         {
           "file": "sce/include/core/ParallelConfigurationHelper.h",
           "symbol": "ParallelConfigurationHelper",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/core/ParallelExitEntryHelper.h",
           "kind": "implements"
         },
         {
@@ -3389,6 +3337,11 @@
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "set_active_states",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/core/EntrySetHelper.h",
+          "symbol": "addRegionDefaults",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -3567,16 +3520,6 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "sce/include/core/StateEntryHelper.h",
-          "symbol": "StateEntryHelper",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/core/StateEntryHelper.h",
-          "symbol": "enterDeepTargets",
-          "kind": "implements"
-        },
-        {
           "file": "sce-build/src/kotlin.rs",
           "kind": "references"
         },
@@ -3607,6 +3550,11 @@
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "get_initial_children",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/core/EntrySetHelper.h",
+          "symbol": "addDescendantStatesToEnter",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -3908,11 +3856,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/include/core/StateEntryHelper.h",
-          "symbol": "enterDeepTargets",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/model/IStateNode.h",
           "symbol": "addEntryActionBlock",
           "kind": "implements"
@@ -3988,11 +3931,6 @@
           "kind": "references"
         },
         {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "executeOnEntry",
-          "kind": "implements"
-        },
-        {
           "file": "sce-build/src/forge/event_schema_check.rs",
           "kind": "references"
         },
@@ -4044,6 +3982,11 @@
         {
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "execute_entry_actions",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "enterStates",
           "kind": "implements"
         }
       ],
@@ -14431,11 +14374,6 @@
           "kind": "references"
         },
         {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "initialize",
-          "kind": "references"
-        },
-        {
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::processStateTransitions",
           "kind": "implements"
@@ -14484,16 +14422,6 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "sce/include/core/HierarchicalStateHelper.h",
-          "symbol": "addParallelRegions",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/core/HierarchicalStateHelper.h",
-          "symbol": "buildEntryChain",
-          "kind": "implements"
-        },
-        {
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "_enter_target_step",
           "kind": "implements"
@@ -14536,11 +14464,6 @@
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
       "bindings": [
-        {
-          "file": "sce/include/core/ParallelExitEntryHelper.h",
-          "symbol": "computeEntryOrder",
-          "kind": "implements"
-        },
         {
           "file": "sce-build/src/model.rs",
           "symbol": "Transition",
@@ -14633,10 +14556,6 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "sce/include/core/ParallelTransitionHelper.h",
-          "kind": "references"
-        },
-        {
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::executeTransitionMicrostep",
           "kind": "implements"
@@ -14655,6 +14574,11 @@
           "file": "sce/include/core/EntrySetHelper.h",
           "symbol": "computeEntrySet",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "enterStates",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14691,6 +14615,11 @@
         {
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::processEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "executeTransitionContent",
           "kind": "implements"
         }
       ],
@@ -14757,6 +14686,11 @@
         {
           "file": "sce/src/runtime/StateHierarchyManager.cpp",
           "symbol": "StateHierarchyManager::exitHierarchicalState",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "exitStates",
           "kind": "implements"
         }
       ],
@@ -15036,6 +14970,11 @@
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::start",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "initialize",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -15275,6 +15214,11 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "BatchedTransition",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "microstep",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -15312,11 +15256,6 @@
         {
           "file": "sce/include/core/ConflictResolutionHelper.h",
           "symbol": "removeConflictingTransitions",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/core/HierarchicalStateHelper.h",
-          "symbol": "isDescendantOf",
           "kind": "implements"
         },
         {
@@ -15373,6 +15312,11 @@
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "_remove_conflicting_transitions",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "removeConflictingTransitions",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -15405,6 +15349,11 @@
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "_process_internal_queue",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "selectTransitions",
           "kind": "implements"
         }
       ],
@@ -15448,6 +15397,11 @@
           "file": "sce/include/core/ConflictResolutionHelper.h",
           "symbol": "removeConflictingTransitions",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "selectTransitions",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -17099,6 +17053,156 @@
       "target_kind": "section",
       "target_id": "scxml-5.8",
       "reason": "symbol spelled as the code resolver reads it: PugiXMLElement::getTextContent"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.10",
+      "reason": "handleHierarchicalTransition is removed: every AOT microstep now runs Appendix D (selectTransitions, microstep, exitStates, enterStates) in StaticExecutionEngine, and a history target is dereferenced by EntrySetAlgorithms::addDescendantStatesToEnter, which carries the replacement binding."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.10",
+      "reason": "buildEntryChain is removed with the per-target entry chains; history restoration is EntrySetAlgorithms::addDescendantStatesToEnter now."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.11",
+      "reason": "handleHierarchicalTransition is removed; the AOT microstep is the Appendix D procedure in StaticExecutionEngine::microstep. Section 3.11 keeps its other implementing bindings."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "handleHierarchicalTransition is removed; selection and execution are StaticExecutionEngine::selectTransitions and StaticExecutionEngine::microstep, which carry the replacement bindings."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "buildEntryChainFromParent is removed with the per-target entry chains; entry is EntrySetAlgorithms::computeEntrySet."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "buildExitChain is removed; the exit set is ExitSetAlgorithms::computeExitSet over the configuration."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "ParallelExitEntryHelper.h is deleted: none of its functions had a caller, and its computeEntryOrder was a second, unreachable definition of the entry order EntrySetAlgorithms::computeEntrySet computes."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "StateEntryHelper.h is deleted: deep initial targets are addDescendantStatesToEnter's work in EntrySetAlgorithms."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "StateEntryHelper.h is deleted: entry order is computeEntrySet's document-order sort in EntrySetAlgorithms."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "buildEntryChain is removed; a compound state's default entry is EntrySetAlgorithms::addDescendantStatesToEnter, which carries the replacement binding."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "ParallelExitEntryHelper.h is deleted: no function in it had a caller."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "addParallelRegions is removed with the recursive entry; every region of an entered parallel is entered by EntrySetAlgorithms::addRegionDefaults, which carries the replacement binding."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "buildEntryChain is removed with the per-target entry chains."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "ParallelExitEntryHelper.h is deleted: no function in it had a caller."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.6",
+      "reason": "StateEntryHelper.h is deleted: a multi-token or deep initial is entered by EntrySetAlgorithms::addDescendantStatesToEnter, which carries the replacement binding."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.6",
+      "reason": "StateEntryHelper.h is deleted with enterDeepTargets."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.8",
+      "reason": "StateEntryHelper.h is deleted; onentry runs per state in entry order from StaticExecutionEngine::enterStates."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.8",
+      "reason": "executeOnEntry is removed; StaticExecutionEngine::enterStates runs each state's onentry in entry order and carries the replacement binding."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-addDescendantStatesToEnter",
+      "reason": "addParallelRegions is removed; the procedure is EntrySetAlgorithms::addDescendantStatesToEnter, already bound."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-addDescendantStatesToEnter",
+      "reason": "buildEntryChain is removed; the procedure is EntrySetAlgorithms::addDescendantStatesToEnter, already bound."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-computeEntrySet",
+      "reason": "ParallelExitEntryHelper.h is deleted: computeEntryOrder had no caller and was a second definition of the procedure EntrySetAlgorithms::computeEntrySet implements."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-removeConflictingTransitions",
+      "reason": "The policy-bound isDescendantOf no longer carries a conflict-resolution citation: the helper was cut down to ancestry questions when the per-target entry and exit chains went, and conflict resolution cites and binds ConflictResolutionHelper.h itself."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-enterStates",
+      "reason": "ParallelTransitionHelper.h no longer has anything to do with entry: sortTransitionsByTarget, the only code that cited enterStates here, is removed, and entry is EntrySetAlgorithms plus StaticExecutionEngine::enterStates."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "initialize no longer walks a HierarchicalStateHelper entry chain; it enters the document's initial transition through enterStates (bound to scxml-D-interpret), and default entry of compound states is EntrySetAlgorithms::addDescendantStatesToEnter."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-addAncestorStatesToEnter",
+      "reason": "initialize no longer explains why its entry chain skips the ancestor rule; the chain is gone and the rule lives in EntrySetAlgorithms::addAncestorStatesToEnter, already bound."
     }
   ],
   "frames": {},

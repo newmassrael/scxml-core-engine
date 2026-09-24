@@ -10,16 +10,17 @@
     DO NOT include the output .inl file directly - it is part of the Policy struct.
 
     Contents:
-    - getInitialChildren(), getInitialChild(), getInitialOrHistoryChild()
-    - enterDeepInitialTargets_XXX() per compound state
+    - The structure Appendix D's procedures read: children in document order,
+      initial and history target lists, document order, history values
     - Parallel state methods (if applicable)
     - Entry/exit action implementations (entry_exit_actions.jinja2)
     - Invoke lifecycle methods (invoke_methods.jinja2)
-    - Transition processing (process_transition.jinja2)
+    - Transition selection and content (process_transition.jinja2)
     - Script engine helpers (scriptengine_helpers.jinja2)
     - Utility methods (utility_methods.jinja2)
 #}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{%- import '_macros/cpp_entry_target.jinja2' as et %}
     // SCE Protocol-Synthesis RFC §synth-5-O: SCE-MAP marker anchoring
     // these method implementations to the `<scxml>` root position.
     {{ sce_map.source_marker(model.source_location, "cpp", module_level=true, symbol_artifact=sce_artifact.machine) }}
@@ -30,75 +31,13 @@
     // This file is #include'd from the corresponding _sm.h inside the struct body
     // ============================================================================
 
-    // W3C SCXML 3.6: Get initial children of compound state (supports space-separated descendant targets)
-    static std::vector<State> getInitialChildren(State state) {
-        switch (state) {
-        {% for state_id, state in model.states | dictsort %}
-        {% if state.initial_children %}
-        case State::{{ state_id | capitalize }}:
-            return {
-                {%- for child in state.initial_children -%}
-                State::{{ child | capitalize }}{{ ", " if not loop.last else "" }}
-                {%- endfor -%}
-            };
-        {% endif %}
-        {% endfor %}
-        default:
-            return {};  // Not compound or no initial child
-        }
-    }
+    // ── The document's structure, as Appendix D's procedures read it ─────
+    // Emitted for every machine: its microstep is the engine's one procedure,
+    // parallel or not.
 
-    // W3C SCXML 3.3: Get single initial child (backward compatibility - returns first child)
-    static State getInitialChild(State state) {
-        auto children = getInitialChildren(state);
-        return children.empty() ? state : children[0];
-    }
-
-    // W3C SCXML 3.11: Get initial or history-restored child of compound state
-    // Non-static version that checks history before returning initial child
-    State getInitialOrHistoryChild(State state) const {
-        switch (state) {
-        {% for state_id, state in model.states | dictsort %}
-        {% if state.initial_history_id %}
-        case State::{{ state_id | capitalize }}:
-            // W3C SCXML 3.11: Check history for {{ state.initial_history_id }}
-            if (history_{{ state.initial_history_id }}.has_value() && !history_{{ state.initial_history_id }}->empty()) {
-                return history_{{ state.initial_history_id }}->front();  // Restore to first state in history
-            }
-            return getInitialChild(State::{{ state_id | capitalize }});  // No history, use default
-        {% elif state.initial_children %}
-        case State::{{ state_id | capitalize }}:
-            return getInitialChild(State::{{ state_id | capitalize }});
-        {% endif %}
-        {% endfor %}
-        default:
-            return state;  // Not compound or no initial child
-        }
-    }
-
-    // W3C SCXML 3.6: Enter deep initial targets (delegate to StateEntryHelper)
-    {% for state_id, state in model.states | dictsort %}
-    {% if state.initial_children and state.initial_children|length > 0 %}
-    template <typename Engine>
-    void enterDeepInitialTargets_{{ state_id | capitalize }}(Engine& engine) {
-        // W3C SCXML 3.6: Deep initial targets for {{ state_id }}: initial="{{ state.initial }}"
-        // Delegate to StateEntryHelper (ARCHITECTURE.md Zero Duplication Principle)
-        auto targets = getInitialChildren(State::{{ state_id | capitalize }});
-
-        // W3C SCXML 3.6: Use StateEntryHelper as Single Source of Truth
-        ::SCE::Core::StateEntryHelper::enterDeepTargets<State>(
-            State::{{ state_id | capitalize }},
-            targets,
-            [](State s) -> std::optional<State> { return {{ model.name }}Policy::getParent(s); },
-            [this, &engine](State s) { this->executeEntryActions(s, engine); }
-        );
-    }
-    {% endif %}
-    {% endfor %}
-
+    // W3C SCXML 3.4: whether `state` is a <parallel>
+    [[nodiscard]] static constexpr bool isParallelState([[maybe_unused]] State state) noexcept {
 {% if model.has_parallel_states %}
-    // W3C SCXML 3.4: Check if state is a parallel state
-    static bool isParallelState(State state) {
         switch (state) {
         {% for state_id, state in model.states | dictsort %}
         {% if state.is_parallel %}
@@ -109,8 +48,91 @@
         default:
             return false;
         }
+{% else %}
+        return false;
+{% endif %}
     }
 
+    // W3C SCXML 3.13: document order, which is also entry order
+    [[nodiscard]] static constexpr int getDocumentOrder([[maybe_unused]] State state) noexcept {
+        switch (state) {
+        {% for state_id, state in model.states | dictsort %}
+        case State::{{ state_id | capitalize }}:
+            return {{ state.document_order }};
+        {% endfor %}
+        default:
+            return 0;
+        }
+    }
+
+    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+    // children, in document order
+    static ::std::vector<State> getChildStates([[maybe_unused]] State state) {
+        switch (state) {
+        {% for state_id, state in model.states | dictsort %}
+        {% if state.children %}
+        case State::{{ state_id | capitalize }}:
+            return { {% for child in state.children %}State::{{ child | capitalize }}{{ ", " if not loop.last }}{% endfor %} };
+        {% endif %}
+        {% endfor %}
+        default:
+            return {};
+        }
+    }
+
+    // §scxml-3.3: a compound state's initial transition target, as written —
+    // the entry procedures dereference a <history> among them
+    static ::std::vector<EntryTargetT> getInitialTargets([[maybe_unused]] State state) {
+        switch (state) {
+        {% for state_id, state in model.states | dictsort %}
+        {% if state.initial_targets %}
+        case State::{{ state_id | capitalize }}:
+            return { {% for t in state.initial_targets %}{{ et.entry_target(t, model.history_states) }}{{ ", " if not loop.last }}{% endfor %} };
+        {% endif %}
+        {% endfor %}
+        default:
+            return {};
+        }
+    }
+
+    // §scxml-3.2: the target of the document's own initial transition, as written
+    static ::std::vector<EntryTargetT> getDocumentInitialTargets() {
+        return { {% for t in model.initial_targets %}{{ et.entry_target(t, model.history_states) }}{{ ", " if not loop.last }}{% endfor %} };
+    }
+
+    // §scxml-3.10: the state a <history> is declared in
+    static State getHistoryParent([[maybe_unused]] History history) {
+{% for history_id, info in model.history_states | dictsort %}
+        if (history == History::{{ history_id | capitalize }}) {
+            return State::{{ info.parent | capitalize }};
+        }
+{% endfor %}
+        // Unreachable: every History enumerator is answered above.
+        return initialState();
+    }
+
+    // §scxml-3.10.2: a <history>'s default transition target, as written
+    static ::std::vector<EntryTargetT> getHistoryDefaultTargets([[maybe_unused]] History history) {
+{% for history_id, info in model.history_states | dictsort %}
+        if (history == History::{{ history_id | capitalize }}) {
+            return { {% for t in info.default_targets %}{{ et.entry_target(t, model.history_states) }}{{ ", " if not loop.last }}{% endfor %} };
+        }
+{% endfor %}
+        return {};
+    }
+
+    // §scxml-3.10: what a <history> recorded when its parent was last exited;
+    // nullopt before that ever happened
+    ::std::optional<::std::vector<State>> historyValue([[maybe_unused]] History history) const {
+{% for history_id, info in model.history_states | dictsort %}
+        if (history == History::{{ history_id | capitalize }}) {
+            return history_{{ history_id }};
+        }
+{% endfor %}
+        return ::std::nullopt;
+    }
+
+{% if model.has_parallel_states %}
     // W3C SCXML 3.4: Get child regions of a parallel state
     static ::std::vector<State> getParallelRegions(State state) {
         switch (state) {
@@ -127,18 +149,6 @@
     // ARCHITECTURE.MD: Zero Duplication - delegates to HierarchicalStateHelper
     static bool isDescendantOf(State descendant, State ancestor) {
         return ::SCE::Core::HierarchicalStateHelper<{{ model.name }}Policy>::isDescendantOf(descendant, ancestor);
-    }
-
-    // W3C SCXML 3.13: Get document order for exit order tie-breaking
-    static int getDocumentOrder(State state) {
-        switch (state) {
-        {% for state_id, state in model.states | dictsort %}
-        case State::{{ state_id | capitalize }}:
-            return {{ state.document_order }};
-        {% endfor %}
-        default:
-            return 0;
-        }
     }
 {% endif %}
 

@@ -1,0 +1,18 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+{#
+   One token of a target list — a transition's `target`, a state's initial
+   transition, a `<history>`'s default — as the C++ policy spells it.
+
+   A `<history>` is not a state and has no State enumerator: it is named in
+   the policy's History enum, and the engine's entry procedures dereference it
+   to what it recorded or to its default. Every other token is a State.
+
+   `history_states` is the model's map of history ids, passed in rather than
+   read from the caller's context because an imported macro does not see it.
+#}
+{% macro entry_target(token, history_states) -%}
+{%- if token in history_states -%}EntryTargetT::onHistory(History::{{ token | capitalize }})
+{%- else -%}EntryTargetT::onState(State::{{ token | capitalize }})
+{%- endif -%}
+{%- endmacro %}

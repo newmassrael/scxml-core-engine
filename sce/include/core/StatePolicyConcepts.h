@@ -130,35 +130,38 @@ struct HasChildSessionDeliveryTrait<
 // helper classes, and generated StatePolicy structs.
 //
 // Layered design — each level adds requirements incrementally:
-//   HierarchyPolicy     → basic tree traversal (getParent, isCompoundState)
-//   BaseStatePolicy     → engine essentials (initialState, isFinalState, enums)
+//   HierarchyPolicy     → the document tree Appendix D walks (parents,
+//                         children in document order, compound / parallel)
+//   BaseStatePolicy     → engine essentials (initial and history targets,
+//                         isFinalState, enums)
 //   EventNamingPolicy   → event name ↔ enum conversion
 //   StateNamingPolicy   → state enum → SCXML id string
 //   ParallelStatePolicy → parallel state extensions (isParallelState, regions)
 //
-// NOTE: Engine-dependent checks (processTransition, executeEntryActions, etc.)
-// are intentionally NOT in concepts due to circular dependency:
+// NOTE: Engine-dependent checks (firstEnabledTransition, executeEntryActions,
+// etc.) are intentionally NOT in concepts due to circular dependency:
 //   StaticExecutionEngine<P> requires P, but P's methods take Engine& parameter.
-// These are verified via static_assert inside StaticExecutionEngine instead.
-//
-// NOTE: Member variable checks (lastTransitionIsInternal_, etc.) are also
-// verified via static_assert because concepts cannot distinguish between
-// member variables and member functions with the same syntax when accessed
-// through friend declarations.
+// The engine's calls to them are what checks them.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Level 1: Hierarchy Policy — minimal tree traversal
-// Used by: HierarchicalStateHelper, HierarchicalAlgorithms
+// Level 1: Hierarchy Policy — the document tree
+// Used by: HierarchicalStateHelper, ParallelTransitionHelper,
+//          ConflictResolutionHelper, StaticExecutionEngine
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Minimal state hierarchy navigation capability.
-/// Any policy used with HierarchicalStateHelper must satisfy this.
+/// The state tree the Appendix D procedures walk: parents, children in
+/// document order, and which states are compound or parallel.
+/// `isCompoundState` answers true for a `<state>` with child states; what it
+/// answers for a `<parallel>` is not part of the contract — policies differ —
+/// so a caller that must tell the two apart asks `isParallelState` as well.
 template <typename P>
 concept HierarchyPolicy = requires { typename P::State; } && requires(typename P::State s) {
     { P::getParent(s) } -> std::same_as<std::optional<typename P::State>>;
     { P::isCompoundState(s) } -> std::convertible_to<bool>;
-    { P::getInitialChild(s) } -> std::same_as<typename P::State>;
+    { P::isParallelState(s) } -> std::convertible_to<bool>;
+    { P::getChildStates(s) } -> std::convertible_to<std::vector<typename P::State>>;
+    { P::getDocumentOrder(s) } -> std::convertible_to<int>;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -166,15 +169,22 @@ concept HierarchyPolicy = requires { typename P::State; } && requires(typename P
 // Used by: StaticExecutionEngine (template constraint)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Core state identification and lifecycle capability.
+/// Core state identification and lifecycle capability, and the target lists
+/// the entry procedures dereference: every compound state's initial
+/// transition, the document's, and every `<history>`'s default.
 /// Every StatePolicy used with StaticExecutionEngine must satisfy this.
 template <typename P>
 concept BaseStatePolicy = HierarchyPolicy<P> && requires {
     typename P::Event;
+    typename P::History;
     { P::HAS_PARALLEL_STATES } -> std::convertible_to<bool>;
-} && requires(typename P::State s) {
+    P::getDocumentInitialTargets();
+} && requires(typename P::State s, typename P::History h) {
     { P::initialState() } -> std::same_as<typename P::State>;
     { P::isFinalState(s) } -> std::convertible_to<bool>;
+    P::getInitialTargets(s);
+    { P::getHistoryParent(h) } -> std::same_as<typename P::State>;
+    P::getHistoryDefaultTargets(h);
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -207,9 +217,7 @@ concept StateNamingPolicy = BaseStatePolicy<P> && requires(typename P::State s) 
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Level 4: Parallel State Policy — parallel state extensions
-// Used by: ParallelTransitionHelper, ParallelStateHelper,
-//          ParallelCompletionHelper, ParallelExitEntryHelper,
-//          ConflictResolutionHelper
+// Used by: ParallelStateHelper, ParallelCompletionHelper
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Parallel state navigation and ordering capability.
