@@ -610,15 +610,16 @@ fn enforce_datamodel_languages(
     if datamodel != Datamodel::Null {
         return Ok(());
     }
+    // The state a refused construct belongs to is the nearest state
+    // element holding it, and a `<final>` is one as much as a `<state>` or
+    // a `<parallel>`: a construct in a final state's `<onentry>` or
+    // `<donedata>` names that state, not the one around it.
     fn owning_state(node: &roxmltree::Node) -> String {
-        let mut cur = node.parent();
-        while let Some(n) = cur {
-            if n.tag_name().name() == "state" || n.tag_name().name() == "parallel" {
-                return n.attribute("id").unwrap_or("").to_string();
-            }
-            cur = n.parent();
-        }
-        String::new()
+        node.ancestors()
+            .find(|ancestor| is_scxml_state_element(ancestor))
+            .and_then(|state| state.attribute("id"))
+            .unwrap_or("")
+            .to_string()
     }
     // Each refusal is placed where its `actual` is: the refused element's
     // own row, or the row of the attribute holding the refused value.
@@ -5967,6 +5968,93 @@ mod tests {
                 Some(3),
                 Some("Accepting.AwaitingInitSyn")
             )]
+        );
+    }
+
+    // ── the state a null data model refusal names ────────────
+
+    /// The `state` a null data model refusal names, for a document whose
+    /// root holds `body`. It is one of the record's key fragments, so it
+    /// decides which refusals share an `id`.
+    fn state_the_null_datamodel_refusal_names(body: &str) -> String {
+        let err = SCXMLParser::new()
+            .parse_string(
+                &format!(
+                    r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="null" initial="outer">
+{body}
+</scxml>"#
+                ),
+                "t.scxml",
+            )
+            .expect_err("the null data model refuses the construct");
+        match &err.error {
+            crate::forge::error::ForgeError::Scxml(refusal) => match refusal.as_ref() {
+                ScxmlSemanticError::NullDatamodelForbidsConstruct { state, .. } => state.clone(),
+                other => panic!("expected a null data model refusal, got {other:?}"),
+            },
+            other => panic!("expected an SCXML refusal, got {other:?}"),
+        }
+    }
+
+    /// A `<final>` is a state, so what its `<onentry>` holds is its own.
+    /// The refusal used to name the state around it, and so shared its
+    /// `id` with the same construct in that state's own `<onentry>`.
+    #[test]
+    fn a_refusal_in_a_final_state_names_the_final_state() {
+        assert_eq!(
+            state_the_null_datamodel_refusal_names(
+                r#"<state id="outer" initial="work">
+  <state id="work"><transition event="go" target="f"/></state>
+  <final id="f"><onentry><assign location="x" expr="1"/></onentry></final>
+</state>"#
+            ),
+            "f"
+        );
+    }
+
+    /// A top-level `<final>` has no state around it, and the refusal of
+    /// its `<donedata>` named none at all.
+    #[test]
+    fn a_refusal_in_a_top_level_final_states_donedata_names_that_state() {
+        assert_eq!(
+            state_the_null_datamodel_refusal_names(
+                r#"<state id="outer"><transition event="go" target="f"/></state>
+<final id="f"><donedata><param name="code" expr="7"/></donedata></final>"#
+            ),
+            "f"
+        );
+    }
+
+    #[test]
+    fn a_refusal_names_the_nearest_state_holding_it() {
+        assert_eq!(
+            state_the_null_datamodel_refusal_names(
+                r#"<state id="outer" initial="inner">
+  <state id="inner"><onentry><assign location="x" expr="1"/></onentry></state>
+</state>"#
+            ),
+            "inner"
+        );
+        assert_eq!(
+            state_the_null_datamodel_refusal_names(
+                r#"<parallel id="outer">
+  <onentry><assign location="x" expr="1"/></onentry>
+  <state id="a"/>
+  <state id="b"/>
+</parallel>"#
+            ),
+            "outer"
+        );
+    }
+
+    #[test]
+    fn a_refusal_at_document_scope_names_no_state() {
+        assert_eq!(
+            state_the_null_datamodel_refusal_names(
+                r#"<datamodel><data id="x"/></datamodel>
+<state id="outer"/>"#
+            ),
+            ""
         );
     }
 
