@@ -258,6 +258,20 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
         return nullptr;
     }
 
+    // §scxml-4.10: executable content of another namespace is not SCXML's,
+    // whatever its local name, and every caller hands this function a child
+    // as it stands — `StateNodeParser` sends each child of an <onentry> or
+    // <onexit> here without asking `isActionNode` first. So the namespace is
+    // decided here, where every path passes, and a foreign element reads as
+    // no action rather than as the SCXML element its local name spells.
+    //
+    // ⚠ Until 2026-09-24 only `isActionNode` asked, so `<x:raise>` in an
+    // <onentry> still raised and `<x:if>` still branched on that path.
+    if (!ParsingCommon::isScxmlNamespace(actionElement)) {
+        SCE_LOG_DEBUG("ActionParser: '{}' is not SCXML's executable content; skipped", actionElement->getName());
+        return nullptr;
+    }
+
     // Determine action type from element name
     std::string elementName = actionElement->getName();
     size_t colonPos = elementName.find(':');

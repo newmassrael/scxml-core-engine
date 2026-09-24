@@ -1,0 +1,24 @@
+# Mutation cases for "an element of another vocabulary is not read as
+# SCXML's executable content" — the interpreter's half of sce-build's
+# `a_foreign_element_is_not_read_as_scxml`.
+#
+# Run with `scripts/mutate tests/mutations/foreign_executable_content.cases`.
+#
+# `ActionParser::parseActionNode` is where every path that turns a child into
+# an action passes: `StateNodeParser` hands each child of an <onentry> or
+# <onexit> to it without asking `isActionNode` first. Deciding the namespace
+# only in the predicates left that path reading `<x:raise>` as a raise and
+# `<x:if>` as an if. The case puts the entry check back to what it was.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R "^ForeignExecutableContentTests$"
+mutation_targets sce/src/parsing/ActionParser.cpp
+mutation_oracles tests/parsing/ForeignExecutableContent_test.cpp
+
+mutation_case "a foreign element reaching the action parser is read by its local name" <<'PY'
+edit("sce/src/parsing/ActionParser.cpp",
+     '    if (!ParsingCommon::isScxmlNamespace(actionElement)) {',
+     '    if (false && !ParsingCommon::isScxmlNamespace(actionElement)) {')
+PY

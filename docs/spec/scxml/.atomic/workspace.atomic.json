@@ -4288,6 +4288,11 @@
           "file": "sce/src/parsing/ActionParser.cpp",
           "symbol": "SCE::ActionParser::isSpecialExecutableContent",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/parsing/ActionParser.cpp",
+          "symbol": "SCE::ActionParser::parseActionNode",
+          "kind": "references"
         }
       ],
       "coverage_expectation": "out_of_scope_here",
