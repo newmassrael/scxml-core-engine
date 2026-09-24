@@ -170,6 +170,67 @@ var InvokeParamSeedsDeclaredChildDataAllStates = []InvokeParamSeedsDeclaredChild
 	InvokeParamSeedsDeclaredChildDataStateUnmatched,
 }
 
+// InvokeParamSeedsDeclaredChildDataTarget is one token of a target list, as the document wrote
+// it (W3C SCXML 3.13): a state, or a <history> the engine dereferences.
+type InvokeParamSeedsDeclaredChildDataTarget = sce.EntryTarget[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID]
+
+// ======================================================================
+// Document structure (W3C SCXML 3.2-3.4, 3.10)
+//
+// Package-level tables, because the structure is a fact about the document
+// and not about a run: the engine's Appendix D procedures read them through
+// the policy methods below, and a transition's target list is handed out as
+// a slice of them rather than rebuilt on every selection.
+// ======================================================================
+
+// childStatesOfInvokeParamSeedsDeclaredChildData is §scxml-D-getChildStates per state: its
+// <state>, <parallel> and <final> children, in document order.
+var childStatesOfInvokeParamSeedsDeclaredChildData = [14][]InvokeParamSeedsDeclaredChildDataState{
+}
+
+// initialTargetsOfInvokeParamSeedsDeclaredChildData is each compound state's initial transition
+// target, as written (§scxml-3.3).
+var initialTargetsOfInvokeParamSeedsDeclaredChildData = [14][]InvokeParamSeedsDeclaredChildDataTarget{
+}
+
+// documentInitialTargetsOfInvokeParamSeedsDeclaredChildData is the target of the document's own
+// initial transition, as written (§scxml-3.2).
+var documentInitialTargetsOfInvokeParamSeedsDeclaredChildData = []InvokeParamSeedsDeclaredChildDataTarget{sce.StateTarget[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID](InvokeParamSeedsDeclaredChildDataStateShadowed)}
+
+// transitionTargetsOfInvokeParamSeedsDeclaredChildData is each transition's target list, as
+// written (§scxml-3.13), by source state and the transition's index among its
+// source's own transitions. A targetless transition's entry is empty.
+var transitionTargetsOfInvokeParamSeedsDeclaredChildData = [14][][]InvokeParamSeedsDeclaredChildDataTarget{
+	InvokeParamSeedsDeclaredChildDataStateInfinite: {
+		0: {sce.StateTarget[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID](InvokeParamSeedsDeclaredChildDataStatePass)},
+		1: {sce.StateTarget[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID](InvokeParamSeedsDeclaredChildDataStateFailInfiniteParamLost)},
+		2: {sce.StateTarget[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID](InvokeParamSeedsDeclaredChildDataStateFailInfiniteParamCollapsed)},
+		3: {sce.StateTarget[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID](InvokeParamSeedsDeclaredChildDataStateFailInfiniteParamLost)},
+	},
+	InvokeParamSeedsDeclaredChildDataStateNamelistPhase: {
+		0: {sce.StateTarget[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID](InvokeParamSeedsDeclaredChildDataStateInfinite)},
+		1: {sce.StateTarget[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID](InvokeParamSeedsDeclaredChildDataStateFailNamelistValueLost)},
+		2: {sce.StateTarget[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID](InvokeParamSeedsDeclaredChildDataStateFailNamelistValueLost)},
+	},
+	InvokeParamSeedsDeclaredChildDataStateShadowed: {
+		0: {sce.StateTarget[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID](InvokeParamSeedsDeclaredChildDataStateSoleName)},
+		1: {sce.StateTarget[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID](InvokeParamSeedsDeclaredChildDataStateFailChildEvaluatedTheExpression)},
+		2: {sce.StateTarget[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID](InvokeParamSeedsDeclaredChildDataStateFailShadowSeedLost)},
+		3: {sce.StateTarget[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID](InvokeParamSeedsDeclaredChildDataStateFailShadowSeedLost)},
+	},
+	InvokeParamSeedsDeclaredChildDataStateSoleName: {
+		0: {sce.StateTarget[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID](InvokeParamSeedsDeclaredChildDataStateUnmatched)},
+		1: {sce.StateTarget[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID](InvokeParamSeedsDeclaredChildDataStateFailParentOnlyExprLost)},
+		2: {sce.StateTarget[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID](InvokeParamSeedsDeclaredChildDataStateFailParentOnlyExprLost)},
+	},
+	InvokeParamSeedsDeclaredChildDataStateUnmatched: {
+		0: {sce.StateTarget[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID](InvokeParamSeedsDeclaredChildDataStateNamelistPhase)},
+		1: {sce.StateTarget[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID](InvokeParamSeedsDeclaredChildDataStateFailUnmatchedParamEnteredTheChild)},
+		2: {sce.StateTarget[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID](InvokeParamSeedsDeclaredChildDataStateFailDeclaredParamLost)},
+		3: {sce.StateTarget[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID](InvokeParamSeedsDeclaredChildDataStateFailDeclaredParamLost)},
+	},
+}
+
 // ======================================================================
 // Event type (W3C SCXML 3.12)
 // ======================================================================
@@ -218,10 +279,6 @@ func (e InvokeParamSeedsDeclaredChildDataEvent) String() string {
 // ======================================================================
 
 type InvokeParamSeedsDeclaredChildDataPolicy struct {
-	// W3C SCXML 3.13: Last transition metadata
-	lastTransitionIsInternal  bool
-	lastTransitionIsTargetless bool
-	lastTransitionSourceState InvokeParamSeedsDeclaredChildDataState
 	// W3C SCXML 5.10.1: External event flag
 	nextEventIsExternal bool
 	pendingEventName string
@@ -266,7 +323,6 @@ type InvokeParamSeedsDeclaredChildDataPolicy struct {
 // NewInvokeParamSeedsDeclaredChildDataPolicy creates a new policy with default values.
 func NewInvokeParamSeedsDeclaredChildDataPolicy() InvokeParamSeedsDeclaredChildDataPolicy {
 	return InvokeParamSeedsDeclaredChildDataPolicy{
-		lastTransitionSourceState: InvokeParamSeedsDeclaredChildDataStateShadowed,
 		pendingInvokes: make([]sce.PendingInvoke[InvokeParamSeedsDeclaredChildDataState], 0),
 		activeInvokes:  make(map[string]*sce.ChildSession),
 	}
@@ -1162,29 +1218,45 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) GetParent(state InvokeParamSee
 	return 0, false
 }
 
-// IsCompoundState returns true if state has children (W3C SCXML 3.3).
+// IsCompoundState returns true if state is a <state> with child states — exactly
+// the states that have an initial transition. A <parallel> is not compound
+// (W3C SCXML 3.3).
 func (p *InvokeParamSeedsDeclaredChildDataPolicy) IsCompoundState(state InvokeParamSeedsDeclaredChildDataState) bool {
-	switch state {
-	}
-	return false
+	return len(initialTargetsOfInvokeParamSeedsDeclaredChildData[state]) > 0
 }
 
 func (p *InvokeParamSeedsDeclaredChildDataPolicy) IsParallelState(_ InvokeParamSeedsDeclaredChildDataState) bool { return false }
-func (p *InvokeParamSeedsDeclaredChildDataPolicy) GetParallelRegions(_ InvokeParamSeedsDeclaredChildDataState) []InvokeParamSeedsDeclaredChildDataState { return nil }
 
-// IsDescendantOf returns true if desc is a descendant of anc (W3C SCXML 3.12).
-func (p *InvokeParamSeedsDeclaredChildDataPolicy) IsDescendantOf(desc, anc InvokeParamSeedsDeclaredChildDataState) bool {
-	current := desc
-	for {
-		parent, ok := p.GetParent(current)
-		if !ok {
-			return false
-		}
-		if parent == anc {
-			return true
-		}
-		current = parent
-	}
+// GetChildStates returns state's <state>, <parallel> and <final> children, in
+// document order — for a <parallel>, its regions (§scxml-D-getChildStates).
+func (p *InvokeParamSeedsDeclaredChildDataPolicy) GetChildStates(state InvokeParamSeedsDeclaredChildDataState) []InvokeParamSeedsDeclaredChildDataState {
+	return childStatesOfInvokeParamSeedsDeclaredChildData[state]
+}
+
+// GetInitialTargets returns a compound state's initial transition target, as
+// written; the engine's entry procedures dereference a <history> among them
+// (W3C SCXML 3.3).
+func (p *InvokeParamSeedsDeclaredChildDataPolicy) GetInitialTargets(state InvokeParamSeedsDeclaredChildDataState) []InvokeParamSeedsDeclaredChildDataTarget {
+	return initialTargetsOfInvokeParamSeedsDeclaredChildData[state]
+}
+
+// GetDocumentInitialTargets returns the target of the document's own initial
+// transition, as written (W3C SCXML 3.2).
+func (p *InvokeParamSeedsDeclaredChildDataPolicy) GetDocumentInitialTargets() []InvokeParamSeedsDeclaredChildDataTarget {
+	return documentInitialTargetsOfInvokeParamSeedsDeclaredChildData
+}
+
+// W3C SCXML 3.10: this document declares no <history>, so no target list names
+// one and the engine never asks the two below; answering would mean inventing
+// one.
+func (p *InvokeParamSeedsDeclaredChildDataPolicy) GetHistoryParent(history sce.HistoryID) InvokeParamSeedsDeclaredChildDataState {
+	panic(fmt.Sprintf("InvokeParamSeedsDeclaredChildDataPolicy declares no <history>; asked for %d", history))
+}
+func (p *InvokeParamSeedsDeclaredChildDataPolicy) GetHistoryDefaultTargets(history sce.HistoryID) []InvokeParamSeedsDeclaredChildDataTarget {
+	panic(fmt.Sprintf("InvokeParamSeedsDeclaredChildDataPolicy declares no <history>; asked for %d", history))
+}
+func (p *InvokeParamSeedsDeclaredChildDataPolicy) HistoryValue(_ sce.HistoryID) ([]InvokeParamSeedsDeclaredChildDataState, bool) {
+	return nil, false
 }
 
 // GetDocumentOrder returns the document order index (W3C SCXML Appendix D).
@@ -1267,43 +1339,6 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) NullEvent() InvokeParamSeedsDe
 	return InvokeParamSeedsDeclaredChildDataEventNull
 }
 
-// GetInitialChildren returns initial children of a compound state (W3C SCXML 3.6).
-func (p *InvokeParamSeedsDeclaredChildDataPolicy) GetInitialChildren(state InvokeParamSeedsDeclaredChildDataState) []InvokeParamSeedsDeclaredChildDataState {
-	switch state {
-	}
-	return nil
-}
-
-// LastTransitionIsInternal returns the internal transition flag (W3C SCXML 3.13).
-func (p *InvokeParamSeedsDeclaredChildDataPolicy) LastTransitionIsInternal() bool {
-	return p.lastTransitionIsInternal
-}
-
-// SetLastTransitionIsInternal sets the internal transition flag.
-func (p *InvokeParamSeedsDeclaredChildDataPolicy) SetLastTransitionIsInternal(value bool) {
-	p.lastTransitionIsInternal = value
-}
-
-// LastTransitionIsTargetless returns the targetless transition flag (W3C SCXML 3.13).
-func (p *InvokeParamSeedsDeclaredChildDataPolicy) LastTransitionIsTargetless() bool {
-	return p.lastTransitionIsTargetless
-}
-
-// SetLastTransitionIsTargetless sets the targetless transition flag.
-func (p *InvokeParamSeedsDeclaredChildDataPolicy) SetLastTransitionIsTargetless(value bool) {
-	p.lastTransitionIsTargetless = value
-}
-
-// LastTransitionSourceState returns the source state of the last transition.
-func (p *InvokeParamSeedsDeclaredChildDataPolicy) LastTransitionSourceState() InvokeParamSeedsDeclaredChildDataState {
-	return p.lastTransitionSourceState
-}
-
-// SetLastTransitionSourceState sets the source state of the last transition.
-func (p *InvokeParamSeedsDeclaredChildDataPolicy) SetLastTransitionSourceState(state InvokeParamSeedsDeclaredChildDataState) {
-	p.lastTransitionSourceState = state
-}
-
 
 // SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
 func (p *InvokeParamSeedsDeclaredChildDataPolicy) SetNextEventIsExternal(value bool) {
@@ -1350,14 +1385,6 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) GetActiveStates() []InvokePara
 // which is false above; the method exists because the interface is one contract.
 func (p *InvokeParamSeedsDeclaredChildDataPolicy) SetActiveStates(_ []InvokeParamSeedsDeclaredChildDataState) {}
 func (p *InvokeParamSeedsDeclaredChildDataPolicy) HasExternalEventFlag() bool { return true }
-// GetInitialOrHistoryChild returns the initial child considering history (W3C SCXML 3.11).
-func (p *InvokeParamSeedsDeclaredChildDataPolicy) GetInitialOrHistoryChild(state InvokeParamSeedsDeclaredChildDataState) InvokeParamSeedsDeclaredChildDataState {
-	children := p.GetInitialChildren(state)
-	if len(children) > 0 {
-		return children[0]
-	}
-	return state
-}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[InvokeParamSeedsDeclaredChildDataEvent], _ *sce.Engine[InvokeParamSeedsDeclaredChildDataState, InvokeParamSeedsDeclaredChildDataEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).
@@ -1401,13 +1428,11 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ClearEventMetadata() {
 
 
 
-
-// ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
+// ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
+// configuration, runs its <onentry>, and its <initial> transition's content when
+// its initial state is entered by default.
 //line invoke_param_seeds_declared_child_data.scxml:84
-func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteEntryActions(state InvokeParamSeedsDeclaredChildDataState, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataState, InvokeParamSeedsDeclaredChildDataEvent], pathChild *InvokeParamSeedsDeclaredChildDataState) {
-	// Only a `<parallel>` machine descends into defaults here, so a machine
-	// without one has nothing to tell an ancestor entry from a target entry.
-	_ = pathChild
+func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteEntryActions(state InvokeParamSeedsDeclaredChildDataState, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataState, InvokeParamSeedsDeclaredChildDataEvent], isDefaultEntry bool) {
 	p.ensureScriptEngine()
 	switch state {
 	case InvokeParamSeedsDeclaredChildDataStateInfinite:
@@ -1465,9 +1490,21 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteEntryActions(state Invo
 	}
 }
 
-// ExecuteExitActions executes onexit actions for a state (W3C SCXML 3.9).
+// ExecuteHistoryDefaultContent runs a <history>'s default transition content
+// (W3C SCXML 3.10.2), after its parent's onentry (and after the parent's own
+// <initial> content) when the history was taken with nothing recorded. The
+// engine asks for it by the entry set's defaultHistoryContent answer; a history
+// that restored what it recorded runs nothing.
 //line invoke_param_seeds_declared_child_data.scxml:84
-func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteExitActions(state InvokeParamSeedsDeclaredChildDataState, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataState, InvokeParamSeedsDeclaredChildDataEvent], preTransitionActive []InvokeParamSeedsDeclaredChildDataState) {
+func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataState, InvokeParamSeedsDeclaredChildDataEvent]) {
+	// W3C SCXML 3.10.2: no <history> in this document has default content.
+}
+
+// ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
+// removes it from the configuration, cancels its invocations and runs its
+// <onexit>.
+//line invoke_param_seeds_declared_child_data.scxml:84
+func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteExitActions(state InvokeParamSeedsDeclaredChildDataState, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataState, InvokeParamSeedsDeclaredChildDataEvent], configurationBeforeExit []InvokeParamSeedsDeclaredChildDataState) {
 	p.ensureScriptEngine()
 	// W3C SCXML 6.4: Cancel pending invokes and cleanup active children on state exit
 	switch state {
@@ -1514,186 +1551,239 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteExitActions(state Invok
 	}
 }
 
-// ProcessTransition evaluates guards and takes a matching transition (W3C SCXML 3.13).
-// Returns true if a transition was taken.
+
+
+// BindCurrentEvent binds the event whose transitions are about to be selected as
+// the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
+// and not for an eventless selection, which has no event of its own.
 //line invoke_param_seeds_declared_child_data.scxml:84
-func (p *InvokeParamSeedsDeclaredChildDataPolicy) ProcessTransition(currentState *InvokeParamSeedsDeclaredChildDataState, event InvokeParamSeedsDeclaredChildDataEvent, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataState, InvokeParamSeedsDeclaredChildDataEvent]) bool {
-	// W3C SCXML 5.10: Bind _event system variable for guard evaluation
+func (p *InvokeParamSeedsDeclaredChildDataPolicy) BindCurrentEvent(event InvokeParamSeedsDeclaredChildDataEvent, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataState, InvokeParamSeedsDeclaredChildDataEvent]) {
 	if event != InvokeParamSeedsDeclaredChildDataEventNull {
 		// §scxml-B-2-8-1: the rung the payload got, handed to the engine
 		// rather than dropped. This is the only frame that has both the
 		// reading and the event it belongs to.
 		engine.NotePayloadReading(event, p.setCurrentEvent(p.GetEventName(event)))
 	}
-
-	// W3C SCXML 3.12: Try transitions in current state first
-	if p.tryTransitionInState(*currentState, event, currentState, engine) {
-		return true
-	}
-
-
-	return false
 }
 
-
-// tryTransitionInState checks transitions for a single state.
+// FirstEnabledTransition is Appendix D selectTransitions, the half only this
+// document can answer: the first of state's own transitions, in document order,
+// that event enables and whose guard holds. The engine walks the atomic states
+// and their ancestors and keeps the ordered set; the null event asks for
+// eventless transitions.
 //line invoke_param_seeds_declared_child_data.scxml:84
-func (p *InvokeParamSeedsDeclaredChildDataPolicy) tryTransitionInState(checkState InvokeParamSeedsDeclaredChildDataState, event InvokeParamSeedsDeclaredChildDataEvent, currentState *InvokeParamSeedsDeclaredChildDataState, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataState, InvokeParamSeedsDeclaredChildDataEvent]) bool {
-	switch checkState {
+func (p *InvokeParamSeedsDeclaredChildDataPolicy) FirstEnabledTransition(state InvokeParamSeedsDeclaredChildDataState, event InvokeParamSeedsDeclaredChildDataEvent, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataState, InvokeParamSeedsDeclaredChildDataEvent]) (sce.EnabledTransition[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID], bool) {
+	switch state {
 	case InvokeParamSeedsDeclaredChildDataStateInfinite:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InvokeParamSeedsDeclaredChildDataEventSeedOk {
-			*currentState = InvokeParamSeedsDeclaredChildDataStatePass
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InvokeParamSeedsDeclaredChildDataStateInfinite
-			return true
+			{
+				return sce.EnabledTransition[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInvokeParamSeedsDeclaredChildData[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InvokeParamSeedsDeclaredChildDataEventSeedMissing {
-			*currentState = InvokeParamSeedsDeclaredChildDataStateFailInfiniteParamLost
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InvokeParamSeedsDeclaredChildDataStateInfinite
-			return true
+			{
+				return sce.EnabledTransition[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInvokeParamSeedsDeclaredChildData[state][1],
+					TransitionIndex: 1,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InvokeParamSeedsDeclaredChildDataEventSeedCollapsed {
-			*currentState = InvokeParamSeedsDeclaredChildDataStateFailInfiniteParamCollapsed
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InvokeParamSeedsDeclaredChildDataStateInfinite
-			return true
+			{
+				return sce.EnabledTransition[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInvokeParamSeedsDeclaredChildData[state][2],
+					TransitionIndex: 2,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InvokeParamSeedsDeclaredChildDataEventErrorExecution {
-			*currentState = InvokeParamSeedsDeclaredChildDataStateFailInfiniteParamLost
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InvokeParamSeedsDeclaredChildDataStateInfinite
-			return true
+			{
+				return sce.EnabledTransition[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInvokeParamSeedsDeclaredChildData[state][3],
+					TransitionIndex: 3,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	case InvokeParamSeedsDeclaredChildDataStateNamelistPhase:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InvokeParamSeedsDeclaredChildDataEventSeedOk {
-			*currentState = InvokeParamSeedsDeclaredChildDataStateInfinite
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InvokeParamSeedsDeclaredChildDataStateNamelistPhase
-			return true
+			{
+				return sce.EnabledTransition[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInvokeParamSeedsDeclaredChildData[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InvokeParamSeedsDeclaredChildDataEventSeedMissing {
-			*currentState = InvokeParamSeedsDeclaredChildDataStateFailNamelistValueLost
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InvokeParamSeedsDeclaredChildDataStateNamelistPhase
-			return true
+			{
+				return sce.EnabledTransition[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInvokeParamSeedsDeclaredChildData[state][1],
+					TransitionIndex: 1,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InvokeParamSeedsDeclaredChildDataEventErrorExecution {
-			*currentState = InvokeParamSeedsDeclaredChildDataStateFailNamelistValueLost
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InvokeParamSeedsDeclaredChildDataStateNamelistPhase
-			return true
+			{
+				return sce.EnabledTransition[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInvokeParamSeedsDeclaredChildData[state][2],
+					TransitionIndex: 2,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	case InvokeParamSeedsDeclaredChildDataStateShadowed:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InvokeParamSeedsDeclaredChildDataEventSeedOk {
-			*currentState = InvokeParamSeedsDeclaredChildDataStateSoleName
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InvokeParamSeedsDeclaredChildDataStateShadowed
-			return true
+			{
+				return sce.EnabledTransition[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInvokeParamSeedsDeclaredChildData[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InvokeParamSeedsDeclaredChildDataEventSeedShadowed {
-			*currentState = InvokeParamSeedsDeclaredChildDataStateFailChildEvaluatedTheExpression
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InvokeParamSeedsDeclaredChildDataStateShadowed
-			return true
+			{
+				return sce.EnabledTransition[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInvokeParamSeedsDeclaredChildData[state][1],
+					TransitionIndex: 1,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InvokeParamSeedsDeclaredChildDataEventSeedMissing {
-			*currentState = InvokeParamSeedsDeclaredChildDataStateFailShadowSeedLost
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InvokeParamSeedsDeclaredChildDataStateShadowed
-			return true
+			{
+				return sce.EnabledTransition[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInvokeParamSeedsDeclaredChildData[state][2],
+					TransitionIndex: 2,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InvokeParamSeedsDeclaredChildDataEventErrorExecution {
-			*currentState = InvokeParamSeedsDeclaredChildDataStateFailShadowSeedLost
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InvokeParamSeedsDeclaredChildDataStateShadowed
-			return true
+			{
+				return sce.EnabledTransition[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInvokeParamSeedsDeclaredChildData[state][3],
+					TransitionIndex: 3,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	case InvokeParamSeedsDeclaredChildDataStateSoleName:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InvokeParamSeedsDeclaredChildDataEventSeedOk {
-			*currentState = InvokeParamSeedsDeclaredChildDataStateUnmatched
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InvokeParamSeedsDeclaredChildDataStateSoleName
-			return true
+			{
+				return sce.EnabledTransition[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInvokeParamSeedsDeclaredChildData[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InvokeParamSeedsDeclaredChildDataEventSeedMissing {
-			*currentState = InvokeParamSeedsDeclaredChildDataStateFailParentOnlyExprLost
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InvokeParamSeedsDeclaredChildDataStateSoleName
-			return true
+			{
+				return sce.EnabledTransition[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInvokeParamSeedsDeclaredChildData[state][1],
+					TransitionIndex: 1,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InvokeParamSeedsDeclaredChildDataEventErrorExecution {
-			*currentState = InvokeParamSeedsDeclaredChildDataStateFailParentOnlyExprLost
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InvokeParamSeedsDeclaredChildDataStateSoleName
-			return true
+			{
+				return sce.EnabledTransition[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInvokeParamSeedsDeclaredChildData[state][2],
+					TransitionIndex: 2,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	case InvokeParamSeedsDeclaredChildDataStateUnmatched:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InvokeParamSeedsDeclaredChildDataEventSeedOk {
-			*currentState = InvokeParamSeedsDeclaredChildDataStateNamelistPhase
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InvokeParamSeedsDeclaredChildDataStateUnmatched
-			return true
+			{
+				return sce.EnabledTransition[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInvokeParamSeedsDeclaredChildData[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InvokeParamSeedsDeclaredChildDataEventSeedLeaked {
-			*currentState = InvokeParamSeedsDeclaredChildDataStateFailUnmatchedParamEnteredTheChild
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InvokeParamSeedsDeclaredChildDataStateUnmatched
-			return true
+			{
+				return sce.EnabledTransition[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInvokeParamSeedsDeclaredChildData[state][1],
+					TransitionIndex: 1,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InvokeParamSeedsDeclaredChildDataEventSeedMissing {
-			*currentState = InvokeParamSeedsDeclaredChildDataStateFailDeclaredParamLost
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InvokeParamSeedsDeclaredChildDataStateUnmatched
-			return true
+			{
+				return sce.EnabledTransition[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInvokeParamSeedsDeclaredChildData[state][2],
+					TransitionIndex: 2,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InvokeParamSeedsDeclaredChildDataEventErrorExecution {
-			*currentState = InvokeParamSeedsDeclaredChildDataStateFailDeclaredParamLost
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InvokeParamSeedsDeclaredChildDataStateUnmatched
-			return true
+			{
+				return sce.EnabledTransition[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInvokeParamSeedsDeclaredChildData[state][3],
+					TransitionIndex: 3,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	}
-	return false
+	return sce.EnabledTransition[InvokeParamSeedsDeclaredChildDataState, sce.HistoryID]{}, false
 }
 
-// ExecuteTransitionActions executes actions for the last taken transition (W3C SCXML 3.13).
+// ExecuteTransitionContent runs one transition's executable content (W3C SCXML
+// 3.13), between the microstep's exits and its entries.
 //line invoke_param_seeds_declared_child_data.scxml:84
-func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteTransitionActions(engine *sce.Engine[InvokeParamSeedsDeclaredChildDataState, InvokeParamSeedsDeclaredChildDataEvent]) {
+func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteTransitionContent(source InvokeParamSeedsDeclaredChildDataState, transitionIndex int, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataState, InvokeParamSeedsDeclaredChildDataEvent]) {
+	// W3C SCXML 3.13: no transition in this document has content.
 }

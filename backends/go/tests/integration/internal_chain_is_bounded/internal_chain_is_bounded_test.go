@@ -11,8 +11,7 @@
 // answered by a transition that raises again. Measured 2026-08-20 before the
 // ceiling reached this branch, ProcessEvent on the fixture's spin document did
 // not return on this engine — the internal drain had no budget at all, and
-// checkEventlessTransitions' hundred was spent on the branch that was not
-// running.
+// the eventless branch's hundred was spent on the branch that was not running.
 //
 // Fixture: integration_resources/internal_chain_is_bounded/internal_chain_is_bounded.scxml
 // (canonical, shared with the C++ / C11 / Kotlin / Python / Rust channels).

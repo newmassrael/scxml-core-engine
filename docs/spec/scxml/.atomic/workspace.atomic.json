@@ -373,11 +373,6 @@
           "kind": "references"
         },
         {
-          "file": "backends/go/runtime/engine.go",
-          "symbol": "handleHierarchicalTransition",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/core/EntrySetHelper.h",
           "symbol": "addDescendantStatesToEnter",
           "kind": "implements"
@@ -411,6 +406,21 @@
           "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "add_descendant_states_to_enter",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/microstep.go",
+          "symbol": "AddDescendantStatesToEnter",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/microstep.go",
+          "symbol": "HistoryID",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/policy.go",
+          "symbol": "StatePolicy",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -496,6 +506,11 @@
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "execute_history_default_content",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/policy.go",
+          "symbol": "StatePolicy",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -555,11 +570,6 @@
           "file": "backends/go/runtime/engine.go",
           "symbol": "GetActiveStates",
           "kind": "references"
-        },
-        {
-          "file": "backends/go/runtime/policy.go",
-          "symbol": "StatePolicy",
-          "kind": "implements"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
@@ -721,31 +731,6 @@
         {
           "file": "backends/go/runtime/engine.go",
           "symbol": "ProcessEvent",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/go/runtime/engine.go",
-          "symbol": "executeTransition",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/go/runtime/engine.go",
-          "symbol": "handleHierarchicalTransition",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/go/runtime/hierarchy.go",
-          "symbol": "BuildEntryChainFromAncestor",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/go/runtime/hierarchy.go",
-          "symbol": "BuildExitChain",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/go/runtime/hierarchy.go",
-          "symbol": "FindLCA",
           "kind": "implements"
         },
         {
@@ -951,6 +936,10 @@
           "file": "sce/src/runtime/EventRaiserImpl.h",
           "symbol": "sequence",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/doc.go",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -1013,11 +1002,6 @@
         {
           "file": "backends/go/runtime/engine.go",
           "symbol": "UnhandledErrorEvents",
-          "kind": "references"
-        },
-        {
-          "file": "backends/go/runtime/engine.go",
-          "symbol": "processInternalQueue",
           "kind": "references"
         },
         {
@@ -1257,6 +1241,11 @@
         {
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "take_internal_event",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "takeInternalEvent",
           "kind": "implements"
         }
       ],
@@ -1665,26 +1654,6 @@
           "file": "sce-build/src/scxml_references.rs",
           "symbol": "validate",
           "kind": "references"
-        },
-        {
-          "file": "backends/go/runtime/engine.go",
-          "symbol": "checkEventlessTransitions",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/go/runtime/engine.go",
-          "symbol": "entryChain",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/go/runtime/engine.go",
-          "symbol": "executeTransition",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/go/runtime/engine.go",
-          "symbol": "handleHierarchicalTransition",
-          "kind": "implements"
         },
         {
           "file": "backends/go/runtime/policy.go",
@@ -2155,6 +2124,11 @@
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "get_document_initial_targets",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/policy.go",
+          "symbol": "StatePolicy",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -2336,31 +2310,6 @@
           "kind": "references"
         },
         {
-          "file": "backends/go/runtime/engine.go",
-          "symbol": "Initialize",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/go/runtime/engine.go",
-          "symbol": "executeTransition",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/go/runtime/engine.go",
-          "symbol": "handleHierarchicalTransition",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/go/runtime/engine.go",
-          "symbol": "resolveCurrentStateToLeaf",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/go/runtime/hierarchy.go",
-          "symbol": "BuildEntryChain",
-          "kind": "implements"
-        },
-        {
           "file": "backends/go/runtime/policy.go",
           "symbol": "StatePolicy",
           "kind": "implements"
@@ -2447,6 +2396,11 @@
         {
           "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "add_descendant_states_to_enter",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/microstep.go",
+          "symbol": "AddDescendantStatesToEnter",
           "kind": "references"
         }
       ],
@@ -2588,11 +2542,6 @@
           "kind": "implements"
         },
         {
-          "file": "backends/go/runtime/engine.go",
-          "symbol": "executeTransition",
-          "kind": "implements"
-        },
-        {
           "file": "backends/go/runtime/policy.go",
           "symbol": "StatePolicy",
           "kind": "references"
@@ -2719,6 +2668,15 @@
           "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "_add_region_defaults",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/microstep.go",
+          "symbol": "addRegionDefaults",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/microstep_test.go",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -2914,11 +2872,6 @@
           "kind": "references"
         },
         {
-          "file": "backends/go/runtime/policy.go",
-          "symbol": "StatePolicy",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/core/EntrySetHelper.h",
           "symbol": "addDescendantStatesToEnter",
           "kind": "implements"
@@ -2931,6 +2884,11 @@
         {
           "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "add_descendant_states_to_enter",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/microstep.go",
+          "symbol": "AddDescendantStatesToEnter",
           "kind": "references"
         }
       ],
@@ -3450,6 +3408,11 @@
         {
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "execute_exit_actions",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/policy.go",
+          "symbol": "StatePolicy",
           "kind": "implements"
         }
       ],
@@ -4911,11 +4874,6 @@
         },
         {
           "file": "backends/go/runtime/engine.go",
-          "symbol": "processInternalQueue",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/go/runtime/engine.go",
           "symbol": "processNextExternalEvent",
           "kind": "implements"
         },
@@ -5111,6 +5069,16 @@
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "bind_current_event",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "takeInternalEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "selectTransitions",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -6154,13 +6122,6 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-5.4",
       "decision_status": "active",
-      "bindings": [
-        {
-          "file": "backends/go/runtime/engine.go",
-          "symbol": "processInternalQueue",
-          "kind": "implements"
-        }
-      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -7189,11 +7150,6 @@
         {
           "file": "sce-build/src/parser.rs",
           "kind": "references"
-        },
-        {
-          "file": "backends/go/runtime/engine.go",
-          "symbol": "lca",
-          "kind": "implements"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt",
@@ -12463,11 +12419,6 @@
           "kind": "references"
         },
         {
-          "file": "backends/go/runtime/engine.go",
-          "symbol": "processInternalQueue",
-          "kind": "references"
-        },
-        {
           "file": "backends/go/runtime/event_queue.go",
           "symbol": "EventQueueManager",
           "kind": "implements"
@@ -13567,11 +13518,6 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "backends/go/runtime/engine.go",
-          "symbol": "executeEntryChain",
-          "kind": "implements"
-        },
-        {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "applyTransitionFrom",
           "kind": "implements"
@@ -13599,6 +13545,11 @@
         {
           "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "add_ancestor_states_to_enter",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/microstep.go",
+          "symbol": "AddAncestorStatesToEnter",
           "kind": "implements"
         }
       ],
@@ -13643,6 +13594,11 @@
           "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "add_descendant_states_to_enter",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/microstep.go",
+          "symbol": "AddDescendantStatesToEnter",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -13685,6 +13641,11 @@
         {
           "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "compute_entry_set",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/microstep.go",
+          "symbol": "ComputeEntrySet",
           "kind": "implements"
         }
       ],
@@ -13759,6 +13720,21 @@
           "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "compute_states_to_exit",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/microstep.go",
+          "symbol": "ComputeExitSet",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/microstep.go",
+          "symbol": "ComputeStatesToExit",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/microstep.go",
+          "symbol": "IsTargetless",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -13852,6 +13828,21 @@
           "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "compute_entry_set",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/microstep.go",
+          "symbol": "EnterStates",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/microstep.go",
+          "symbol": "ComputeEntrySet",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "completeMacrostep",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -13894,6 +13885,15 @@
           "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "execute_transition_content",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/microstep.go",
+          "symbol": "ExecuteTransitionContent",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/microstep_test.go",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14010,6 +14010,21 @@
           "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "recorded_history",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/microstep.go",
+          "symbol": "ComputeStatesToExit",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/microstep.go",
+          "symbol": "ExitStates",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/microstep.go",
+          "symbol": "RecordedHistory",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14063,6 +14078,15 @@
           "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "_find_lcca",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/microstep.go",
+          "symbol": "findLCCA",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/microstep_test.go",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14111,6 +14135,16 @@
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "get_child_states",
           "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/policy.go",
+          "symbol": "StatePolicy",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/microstep.go",
+          "symbol": "Document",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14154,6 +14188,11 @@
           "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "_add_effective_target_states",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/microstep.go",
+          "symbol": "addEffectiveTargetStates",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14179,11 +14218,6 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "backends/go/runtime/hierarchy.go",
-          "symbol": "IsDescendantOfByWalk",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/core/EntrySetHelper.h",
           "symbol": "getProperAncestors",
           "kind": "implements"
@@ -14196,6 +14230,11 @@
         {
           "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "_proper_ancestors",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/microstep.go",
+          "symbol": "properAncestors",
           "kind": "implements"
         }
       ],
@@ -14265,6 +14304,11 @@
           "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "transition_domain",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/microstep.go",
+          "symbol": "TransitionDomain",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14322,6 +14366,21 @@
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "initialize",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/microstep.go",
+          "symbol": "EnterStates",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "Initialize",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "enterStates",
           "kind": "implements"
         }
       ],
@@ -14516,6 +14575,16 @@
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::takeNextExternalEvent",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "runMainEventLoop",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "takeInternalEvent",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14577,6 +14646,11 @@
         {
           "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "microstep",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/microstep.go",
+          "symbol": "Microstep",
           "kind": "implements"
         }
       ],
@@ -14661,6 +14735,11 @@
           "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "remove_conflicting_transitions",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/microstep.go",
+          "symbol": "RemoveConflictingTransitions",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14703,6 +14782,11 @@
         {
           "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "select_transitions",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/microstep.go",
+          "symbol": "SelectTransitions",
           "kind": "implements"
         }
       ],
@@ -14760,6 +14844,11 @@
         {
           "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "select_transitions",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/microstep.go",
+          "symbol": "SelectTransitions",
           "kind": "implements"
         }
       ],
@@ -18050,6 +18139,228 @@
       "target_kind": "section",
       "target_id": "scxml-D-GlobalVariables",
       "reason": "Stage G: §scxml-D-GlobalVariables is an exempt (non-normative) section, so a binding to it references rather than implements - __init__ declares the configuration and historyValue globals the section names"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.10",
+      "reason": "Stage F, the Go backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (microstep.go) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12",
+      "reason": "Stage F, the Go backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (microstep.go) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage F, the Go backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (microstep.go) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage F, the Go backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (microstep.go) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12",
+      "reason": "Stage F, the Go backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (microstep.go) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage F, the Go backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (microstep.go) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage F, the Go backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (microstep.go) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "Stage F, the Go backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (microstep.go) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12.2",
+      "reason": "Stage F, the Go backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (microstep.go) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10",
+      "reason": "Stage F, the Go backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (microstep.go) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.4.1",
+      "reason": "Stage F, the Go backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (microstep.go) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-1",
+      "reason": "Stage F, the Go backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (microstep.go) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage F, the Go backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (microstep.go) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage F, the Go backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (microstep.go) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.9.2",
+      "reason": "Stage F, the Go backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (microstep.go) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-addAncestorStatesToEnter",
+      "reason": "Stage F, the Go backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (microstep.go) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12",
+      "reason": "Stage F, the Go backend onto Appendix D: hierarchy.go is gone; its LCA and chain builders gave way to microstep.go's walks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12",
+      "reason": "Stage F, the Go backend onto Appendix D: hierarchy.go is gone; its LCA and chain builders gave way to microstep.go's walks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12",
+      "reason": "Stage F, the Go backend onto Appendix D: hierarchy.go is gone; its LCA and chain builders gave way to microstep.go's walks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage F, the Go backend onto Appendix D: hierarchy.go is gone; its LCA and chain builders gave way to microstep.go's walks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-getProperAncestors",
+      "reason": "Stage F, the Go backend onto Appendix D: hierarchy.go is gone; getProperAncestors is microstep.go's properAncestors"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage F, the Go backend onto Appendix D: the initial configuration is entered by the document's initial transition through the runtime's enterStates (§scxml-D-interpret), not an entry chain down to a leaf"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage F, the Go backend onto Appendix D: resolveCurrentStateToLeaf now descends through the configuration the microstep entered; it no longer enters initial children"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.11",
+      "reason": "Stage F, the Go backend onto Appendix D: the history contract is §scxml-3.10 (<history>), bound on the new HistoryValue / GetHistory* / ExecuteExitActions docs"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.6",
+      "reason": "Stage F, the Go backend onto Appendix D: deep and multi-target initial entry is the runtime's entry set over GetInitialTargets; the policy no longer resolves initial children"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-getChildStates",
+      "reason": "Stage F: a Go interface method is not a symbol of its own - a citation in the StatePolicy body resolves to StatePolicy, so the binding sits there"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage F: a Go interface method is not a symbol of its own - a citation in the StatePolicy body resolves to StatePolicy, so the binding sits there"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.2",
+      "reason": "Stage F: a Go interface method is not a symbol of its own - a citation in the StatePolicy body resolves to StatePolicy, so the binding sits there"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.10",
+      "reason": "Stage F: a Go interface method is not a symbol of its own - a citation in the StatePolicy body resolves to StatePolicy, so the binding sits there"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.10.2",
+      "reason": "Stage F: a Go interface method is not a symbol of its own - a citation in the StatePolicy body resolves to StatePolicy, so the binding sits there"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.10",
+      "reason": "Stage F: a Go interface method is not a symbol of its own - a citation in the StatePolicy body resolves to StatePolicy, so the binding sits there"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10",
+      "reason": "Stage F: a Go interface method is not a symbol of its own - a citation in the StatePolicy body resolves to StatePolicy, so the binding sits there"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage F: a Go interface method is not a symbol of its own - a citation in the StatePolicy body resolves to StatePolicy, so the binding sits there"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage F: a Go interface method is not a symbol of its own - a citation in the StatePolicy body resolves to StatePolicy, so the binding sits there"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.10",
+      "reason": "Stage F: a Go interface method is not a symbol of its own - a citation in the StatePolicy body resolves to StatePolicy, so the binding sits there"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.10.2",
+      "reason": "Stage F: a Go interface method is not a symbol of its own - a citation in the StatePolicy body resolves to StatePolicy, so the binding sits there"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-getChildStates",
+      "reason": "Stage F: a Go interface method is not a symbol of its own - a citation in the Document body resolves to Document, so the binding sits there"
     }
   ],
   "frames": {},

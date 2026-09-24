@@ -14,6 +14,22 @@ package sce
 // etc.) are methods returning bool -- the Go compiler cannot const-fold these
 // like Rust, but the generated implementations return constant values.
 //
+// # What the policy answers, and what it does not
+//
+// The policy answers what only the document knows: its structure, which of a
+// state's transitions an event enables, what a transition's content is, what a
+// state's onentry and onexit do, what a history recorded. What W3C SCXML
+// Appendix D does with those answers — the walk from each atomic state up
+// through its ancestors, the ordered set, conflict removal, the exit set, the
+// entry set — is microstep.go, written once for every machine. Every instance
+// method below answers for ONE state or ONE transition.
+//
+// # History identity
+//
+// A <history> is named by a HistoryID the policy issues, not by a type of its
+// own: Engine[S, E] is the type a host names, and a third type parameter on it
+// would change that for every host to carry a fact only the policy uses.
+//
 // # Static vs Instance Methods
 //
 // Rust distinguishes static methods (no &self) from instance methods (&mut self).
@@ -28,7 +44,11 @@ type StatePolicy[S comparable, E comparable] interface {
 	// constant data from these methods.
 	// ================================================================
 
-	// InitialState returns the initial state of the root <scxml> element (§scxml-3.3).
+	// InitialState returns the state the engine names before Initialize enters
+	// the initial configuration (§scxml-3.2).
+	//
+	// Not what Initialize enters: that is the document's initial transition,
+	// GetDocumentInitialTargets, which may name several states and a <history>.
 	InitialState() S
 
 	// IsFinalState returns whether state is a <final> state (§scxml-3.7).
@@ -38,23 +58,39 @@ type StatePolicy[S comparable, E comparable] interface {
 	// return indicates whether a parent exists (false for root children).
 	GetParent(state S) (S, bool)
 
-	// IsCompoundState returns whether state is a compound state (has children, §scxml-3.3).
+	// IsCompoundState returns whether state is a compound state: a <state> with
+	// child states (§scxml-3.3). A <parallel> answers false — this is Appendix
+	// D's isCompoundState, and it decides which ancestors can be a transition's
+	// domain.
 	IsCompoundState(state S) bool
 
 	// IsParallelState returns whether state is a <parallel> state (§scxml-3.4).
-	// Only meaningful when HasParallelStates() returns true.
 	IsParallelState(state S) bool
 
-	// GetParallelRegions returns the child regions of a parallel state (§scxml-3.4).
-	// Only meaningful when HasParallelStates() returns true.
-	GetParallelRegions(state S) []S
+	// GetChildStates is §scxml-D-getChildStates: state's <state>, <parallel>
+	// and <final> children, in document order — for a <parallel>, its regions.
+	GetChildStates(state S) []S
 
-	// IsDescendantOf returns whether desc is a (proper or improper) descendant
-	// of anc in the hierarchy. Used by §scxml-3.12 LCA calculation.
-	IsDescendantOf(desc, anc S) bool
+	// GetInitialTargets is a compound state's initial transition target, as
+	// written (§scxml-3.3) — one entry per token of `initial` or of the
+	// <initial> element's transition, or the first child state when the
+	// document names none. Empty for every state that is not compound.
+	GetInitialTargets(state S) []EntryTarget[S, HistoryID]
+
+	// GetDocumentInitialTargets is the target of the document's own initial
+	// transition, as written (§scxml-3.2) — what Initialize enters, from the
+	// <scxml> element.
+	GetDocumentInitialTargets() []EntryTarget[S, HistoryID]
+
+	// GetHistoryParent is the state a <history> is declared in (§scxml-3.10).
+	GetHistoryParent(history HistoryID) S
+
+	// GetHistoryDefaultTargets is a <history>'s default transition target, as
+	// written — its default stored state configuration (§scxml-3.10.2).
+	GetHistoryDefaultTargets(history HistoryID) []EntryTarget[S, HistoryID]
 
 	// GetDocumentOrder returns the document order index of state (W3C SCXML Appendix D).
-	// Used for deterministic exit ordering and optimal transition set selection.
+	// Document order is also entry order, and its reverse is exit order.
 	GetDocumentOrder(state S) int
 
 	// GetEventName returns the human-readable name of event (e.g., "error.execution").
@@ -74,10 +110,10 @@ type StatePolicy[S comparable, E comparable] interface {
 	// state this document declares, or (zero, false) otherwise.
 	//
 	// Required (no default) for the reason GetStateName is: the mapping is
-	// structural, and a default could only ever answer false. A policy that had
-	// not emitted the table would then report every recorded configuration as
-	// unknown — which a caller reads as "this run has no history" rather than
-	// as a policy that is incomplete. Mirrors GetEventFromName, which is
+	// structural, and a default could only ever answer false. A policy that
+	// had not emitted the table would then report every recorded configuration
+	// as unknown — which a caller reads as "this run has no history" rather
+	// than as a policy that is incomplete. Mirrors GetEventFromName, which is
 	// required for the same reason on the event side.
 	//
 	// This is what lets a configuration cross a process. A host can only record
@@ -94,89 +130,84 @@ type StatePolicy[S comparable, E comparable] interface {
 	GetStateFromName(name string) (S, bool)
 
 	// NullEvent returns the sentinel event value for eventless transition dispatch
-	// (§scxml-3.13). Generated code produces a Null variant.
+	// (§scxml-3.13). The engine passes it to FirstEnabledTransition when it
+	// selects eventless transitions.
 	NullEvent() E
 
-	// GetInitialChildren returns the initial children of a compound state (§scxml-3.6).
-	// Returns the resolved initial child state(s) for deep initial targets.
-	GetInitialChildren(state S) []S
-
-	// GetInitialOrHistoryChild returns the initial child considering history
-	// (§scxml-3.11). Non-static: checks history before returning initial child.
-	GetInitialOrHistoryChild(state S) S
-
 	// ================================================================
-	// Required mutable field accessors
-	//
-	// These replace the Rust accessors for last_transition_is_internal_,
-	// last_transition_is_targetless_, and last_transition_source_state_.
-	// Generated code emits these as trivial getters/setters over struct fields.
+	// Run-time state the entry procedures read
 	// ================================================================
 
-	// LastTransitionIsInternal returns whether the most recently taken transition
-	// was of type internal (§scxml-3.13).
-	LastTransitionIsInternal() bool
-
-	// SetLastTransitionIsInternal sets the "last transition is internal" flag.
-	SetLastTransitionIsInternal(value bool)
-
-	// LastTransitionIsTargetless returns whether the most recently taken transition
-	// was targetless (no target attribute).
-	LastTransitionIsTargetless() bool
-
-	// SetLastTransitionIsTargetless sets the "last transition is targetless" flag.
-	SetLastTransitionIsTargetless(value bool)
-
-	// LastTransitionSourceState returns the actual source state of the last transition.
-	LastTransitionSourceState() S
-
-	// SetLastTransitionSourceState sets the last transition source state.
-	SetLastTransitionSourceState(state S)
+	// HistoryValue reports what history recorded when its parent was last
+	// exited, and false before that ever happened (§scxml-3.10).
+	HistoryValue(history HistoryID) ([]S, bool)
 
 	// ================================================================
 	// Instance methods -- generated executable content
 	//
 	// These mirror Rust policy methods that take &mut Engine<Self> as a parameter.
 	// Generated code mutates the policy via the receiver and calls engine methods
-	// through the engine parameter.
+	// through the engine parameter. Each answers for ONE state or ONE
+	// transition: which states a microstep exits and enters, and in which
+	// order, is the engine's Appendix D procedure, not the policy's.
 	// ================================================================
 
-	// ExecuteEntryActions executes <onentry> actions for state (§scxml-3.7)
-	// and gives state the descendants Appendix D says it is owed.
+	// BindCurrentEvent binds the event whose transitions are about to be
+	// selected as the _event their guards read (§scxml-5.10).
 	//
-	// pathChild is what tells Appendix D's two entry functions apart, and it is
-	// the whole of the difference between them:
+	// Called once per selection, before the first guard runs, and with the
+	// NullEvent for an eventless selection — which has no event of its own, so
+	// a policy binds nothing for it. A document whose guards never read _event
+	// has nothing to bind.
+	BindCurrentEvent(event E, engine *Engine[S, E])
+
+	// FirstEnabledTransition is Appendix D selectTransitions, the half only the
+	// document can answer: the first of state's own transitions, in document
+	// order, that event enables and whose guard holds. The NullEvent asks for
+	// eventless transitions.
 	//
-	//   nil          state is the entry TARGET, so addDescendantStatesToEnter
-	//                applies: a compound state takes its default initial child
-	//                and a <parallel> takes every region.
-	//   non-nil      state is merely an ANCESTOR on the way to a deeper target,
-	//                and *pathChild is the one of its children the entry set
-	//                already holds. addAncestorStatesToEnter adds it WITHOUT
-	//                its default; the single exception is a <parallel>, whose
-	//                OTHER regions still take theirs because nothing is
-	//                entering inside them.
+	// The only place a guard is evaluated. The engine walks the atomic states
+	// and their ancestors and keeps the ordered set.
+	FirstEnabledTransition(state S, event E, engine *Engine[S, E]) (EnabledTransition[S, HistoryID], bool)
+
+	// ExecuteTransitionContent executes one transition's executable content
+	// (§scxml-3.13 — run between the microstep's exits and its entries).
 	//
-	// Answering both with the nil behaviour is what leaves two children of one
-	// compound state active at once — measured 2026-08-15 across five backends,
-	// and pinned by integration_resources/ancestor_entry_is_not_default_entry/.
-	// May raise internal events via engine.Raise(), schedule delayed sends, etc.
-	ExecuteEntryActions(state S, engine *Engine[S, E], pathChild *S)
+	// transitionIndex is the one FirstEnabledTransition reported for source.
+	ExecuteTransitionContent(source S, transitionIndex int, engine *Engine[S, E])
 
-	// ExecuteExitActions executes <onexit> actions for state (§scxml-3.8).
-	// The preTransitionActive slice captures the active configuration before the
-	// transition began, for history state recording (§scxml-3.11).
-	ExecuteExitActions(state S, engine *Engine[S, E], preTransitionActive []S)
+	// ExecuteEntryActions enters state (§scxml-3.8): adds it to the
+	// configuration, runs its <onentry>, and its initial transition's content
+	// when isDefaultEntry. May raise internal events via engine.Raise(),
+	// schedule delayed sends, and defer <invoke> starts until the macrostep
+	// ends (§scxml-6.4).
+	//
+	// One state, and nothing below it: which states a microstep enters is the
+	// engine's Appendix D entry set, entered front to back, so this neither
+	// enters regions nor descends to an initial child. isDefaultEntry is the
+	// entry set's statesForDefaultEntry answer — a compound state entered only
+	// as an ANCESTOR of a deeper target was not entered by default, and its
+	// initial transition content does not run (pinned by
+	// integration_resources/ancestor_entry_is_not_default_entry/). For a
+	// <final>, this is also what the appendix does on entering one.
+	ExecuteEntryActions(state S, engine *Engine[S, E], isDefaultEntry bool)
 
-	// ProcessTransition evaluates guards and takes a matching transition (§scxml-3.13).
-	// The currentState parameter is an in/out pointer: the engine passes its current
-	// state; generated code updates it to the transition's target if a transition is taken.
-	// Returns true if a transition was taken.
-	ProcessTransition(currentState *S, event E, engine *Engine[S, E]) bool
+	// ExecuteExitActions exits state (§scxml-3.9): records its histories, runs
+	// its <onexit>, cancels its invocations and removes it from the
+	// configuration.
+	//
+	// One state, and nothing below it: the engine's Appendix D exit set already
+	// holds every active descendant, in exit order, ahead of this state.
+	// configurationBeforeExit is the configuration as it stood before the
+	// microstep's first exit, which every history of the microstep is recorded
+	// from (§scxml-3.10).
+	ExecuteExitActions(state S, engine *Engine[S, E], configurationBeforeExit []S)
 
-	// ExecuteTransitionActions executes transition action blocks for the
-	// currently-matched transition (§scxml-3.13 -- between exit and entry).
-	ExecuteTransitionActions(engine *Engine[S, E])
+	// ExecuteHistoryDefaultContent runs a <history>'s default transition
+	// content (§scxml-3.10.2), after its parent's onentry (and after the
+	// parent's own initial content) when the history was taken with nothing
+	// recorded.
+	ExecuteHistoryDefaultContent(history HistoryID, engine *Engine[S, E])
 
 	// ================================================================
 	// Feature flags (Rust associated const bool equivalents)
@@ -218,11 +249,10 @@ type StatePolicy[S comparable, E comparable] interface {
 	HasChildTick() bool
 
 	// ================================================================
-	// Optional instance methods (default no-op behavior)
+	// Optional instance methods
 	//
-	// Generated code overrides these when the corresponding feature flag is true.
-	// For Go, the generated struct embeds a DefaultPolicyBehavior to get default
-	// implementations, then overrides only what it needs.
+	// Every generated policy implements all of these; one a document does not
+	// need is emitted as a no-op, under the feature flag above that says so.
 	// ================================================================
 
 	// InitializeDataModel initializes the datamodel via the script engine (§scxml-5.3).
@@ -282,4 +312,65 @@ type StatePolicy[S comparable, E comparable] interface {
 
 	// ClearEventMetadata clears pending event metadata after transition processing.
 	ClearEventMetadata()
+}
+
+// PolicyDocument is a policy as microstep.go's procedures read the document:
+// its static tables, and what each <history> recorded.
+//
+// The engine drives the procedures through it, and generated code asks two of
+// them directly — whether a <parallel> has completed (IsInFinalState) and what
+// a <history> records as its parent exits (RecordedHistory) — so both read the
+// one transcription rather than a copy written into each machine.
+type PolicyDocument[S comparable, E comparable] struct {
+	Policy StatePolicy[S, E]
+}
+
+// ParentOf implements Document.
+func (d PolicyDocument[S, E]) ParentOf(state S) (S, bool) { return d.Policy.GetParent(state) }
+
+// IsCompound implements Document.
+func (d PolicyDocument[S, E]) IsCompound(state S) bool { return d.Policy.IsCompoundState(state) }
+
+// IsParallel implements Document.
+func (d PolicyDocument[S, E]) IsParallel(state S) bool { return d.Policy.IsParallelState(state) }
+
+// IsFinal implements Document.
+func (d PolicyDocument[S, E]) IsFinal(state S) bool { return d.Policy.IsFinalState(state) }
+
+// ChildStates implements Document.
+func (d PolicyDocument[S, E]) ChildStates(state S) []S { return d.Policy.GetChildStates(state) }
+
+// InitialTargets implements Document.
+func (d PolicyDocument[S, E]) InitialTargets(state S) []EntryTarget[S, HistoryID] {
+	return d.Policy.GetInitialTargets(state)
+}
+
+// HistoryParent implements Document.
+func (d PolicyDocument[S, E]) HistoryParent(history HistoryID) S {
+	return d.Policy.GetHistoryParent(history)
+}
+
+// HistoryValue implements Document.
+func (d PolicyDocument[S, E]) HistoryValue(history HistoryID) ([]S, bool) {
+	return d.Policy.HistoryValue(history)
+}
+
+// HistoryDefaultTargets implements Document.
+func (d PolicyDocument[S, E]) HistoryDefaultTargets(history HistoryID) []EntryTarget[S, HistoryID] {
+	return d.Policy.GetHistoryDefaultTargets(history)
+}
+
+// DocumentOrder implements Document.
+func (d PolicyDocument[S, E]) DocumentOrder(state S) int { return d.Policy.GetDocumentOrder(state) }
+
+// IsInFinalState is Appendix D's isInFinalState over this document and
+// configuration — see the package function of the same name.
+func (d PolicyDocument[S, E]) IsInFinalState(state S, configuration []S) bool {
+	return IsInFinalState[S, HistoryID](d, state, configuration)
+}
+
+// RecordedHistory is what a <history> of parent records as parent exits —
+// see the package function of the same name.
+func (d PolicyDocument[S, E]) RecordedHistory(parent S, deep bool, configurationBeforeExit []S) []S {
+	return RecordedHistory[S, HistoryID](d, parent, deep, configurationBeforeExit)
 }

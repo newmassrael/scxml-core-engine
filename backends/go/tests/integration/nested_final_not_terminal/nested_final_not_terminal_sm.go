@@ -110,6 +110,47 @@ var NestedFinalNotTerminalAllStates = []NestedFinalNotTerminalState{
 	NestedFinalNotTerminalStateRunning,
 }
 
+// NestedFinalNotTerminalTarget is one token of a target list, as the document wrote
+// it (W3C SCXML 3.13): a state, or a <history> the engine dereferences.
+type NestedFinalNotTerminalTarget = sce.EntryTarget[NestedFinalNotTerminalState, sce.HistoryID]
+
+// ======================================================================
+// Document structure (W3C SCXML 3.2-3.4, 3.10)
+//
+// Package-level tables, because the structure is a fact about the document
+// and not about a run: the engine's Appendix D procedures read them through
+// the policy methods below, and a transition's target list is handed out as
+// a slice of them rather than rebuilt on every selection.
+// ======================================================================
+
+// childStatesOfNestedFinalNotTerminal is §scxml-D-getChildStates per state: its
+// <state>, <parallel> and <final> children, in document order.
+var childStatesOfNestedFinalNotTerminal = [4][]NestedFinalNotTerminalState{
+	NestedFinalNotTerminalStatePhase: {NestedFinalNotTerminalStateRunning, NestedFinalNotTerminalStatePhaseDone},
+}
+
+// initialTargetsOfNestedFinalNotTerminal is each compound state's initial transition
+// target, as written (§scxml-3.3).
+var initialTargetsOfNestedFinalNotTerminal = [4][]NestedFinalNotTerminalTarget{
+	NestedFinalNotTerminalStatePhase: {sce.StateTarget[NestedFinalNotTerminalState, sce.HistoryID](NestedFinalNotTerminalStateRunning)},
+}
+
+// documentInitialTargetsOfNestedFinalNotTerminal is the target of the document's own
+// initial transition, as written (§scxml-3.2).
+var documentInitialTargetsOfNestedFinalNotTerminal = []NestedFinalNotTerminalTarget{sce.StateTarget[NestedFinalNotTerminalState, sce.HistoryID](NestedFinalNotTerminalStatePhase)}
+
+// transitionTargetsOfNestedFinalNotTerminal is each transition's target list, as
+// written (§scxml-3.13), by source state and the transition's index among its
+// source's own transitions. A targetless transition's entry is empty.
+var transitionTargetsOfNestedFinalNotTerminal = [4][][]NestedFinalNotTerminalTarget{
+	NestedFinalNotTerminalStatePhase: {
+		0: {sce.StateTarget[NestedFinalNotTerminalState, sce.HistoryID](NestedFinalNotTerminalStatePass)},
+	},
+	NestedFinalNotTerminalStateRunning: {
+		0: {sce.StateTarget[NestedFinalNotTerminalState, sce.HistoryID](NestedFinalNotTerminalStatePhaseDone)},
+	},
+}
+
 // ======================================================================
 // Event type (W3C SCXML 3.12)
 // ======================================================================
@@ -140,10 +181,6 @@ func (e NestedFinalNotTerminalEvent) String() string {
 // ======================================================================
 
 type NestedFinalNotTerminalPolicy struct {
-	// W3C SCXML 3.13: Last transition metadata
-	lastTransitionIsInternal  bool
-	lastTransitionIsTargetless bool
-	lastTransitionSourceState NestedFinalNotTerminalState
 	// W3C SCXML 5.10: Session ID
 	SessionID string
 	// W3C SCXML 6.4: Parent communication
@@ -158,7 +195,6 @@ type NestedFinalNotTerminalPolicy struct {
 // NewNestedFinalNotTerminalPolicy creates a new policy with default values.
 func NewNestedFinalNotTerminalPolicy() NestedFinalNotTerminalPolicy {
 	return NestedFinalNotTerminalPolicy{
-		lastTransitionSourceState: NestedFinalNotTerminalStateRunning,
 	}
 }
 
@@ -208,31 +244,45 @@ func (p *NestedFinalNotTerminalPolicy) GetParent(state NestedFinalNotTerminalSta
 	return 0, false
 }
 
-// IsCompoundState returns true if state has children (W3C SCXML 3.3).
+// IsCompoundState returns true if state is a <state> with child states — exactly
+// the states that have an initial transition. A <parallel> is not compound
+// (W3C SCXML 3.3).
 func (p *NestedFinalNotTerminalPolicy) IsCompoundState(state NestedFinalNotTerminalState) bool {
-	switch state {
-	case NestedFinalNotTerminalStatePhase:
-		return true
-	}
-	return false
+	return len(initialTargetsOfNestedFinalNotTerminal[state]) > 0
 }
 
 func (p *NestedFinalNotTerminalPolicy) IsParallelState(_ NestedFinalNotTerminalState) bool { return false }
-func (p *NestedFinalNotTerminalPolicy) GetParallelRegions(_ NestedFinalNotTerminalState) []NestedFinalNotTerminalState { return nil }
 
-// IsDescendantOf returns true if desc is a descendant of anc (W3C SCXML 3.12).
-func (p *NestedFinalNotTerminalPolicy) IsDescendantOf(desc, anc NestedFinalNotTerminalState) bool {
-	current := desc
-	for {
-		parent, ok := p.GetParent(current)
-		if !ok {
-			return false
-		}
-		if parent == anc {
-			return true
-		}
-		current = parent
-	}
+// GetChildStates returns state's <state>, <parallel> and <final> children, in
+// document order — for a <parallel>, its regions (§scxml-D-getChildStates).
+func (p *NestedFinalNotTerminalPolicy) GetChildStates(state NestedFinalNotTerminalState) []NestedFinalNotTerminalState {
+	return childStatesOfNestedFinalNotTerminal[state]
+}
+
+// GetInitialTargets returns a compound state's initial transition target, as
+// written; the engine's entry procedures dereference a <history> among them
+// (W3C SCXML 3.3).
+func (p *NestedFinalNotTerminalPolicy) GetInitialTargets(state NestedFinalNotTerminalState) []NestedFinalNotTerminalTarget {
+	return initialTargetsOfNestedFinalNotTerminal[state]
+}
+
+// GetDocumentInitialTargets returns the target of the document's own initial
+// transition, as written (W3C SCXML 3.2).
+func (p *NestedFinalNotTerminalPolicy) GetDocumentInitialTargets() []NestedFinalNotTerminalTarget {
+	return documentInitialTargetsOfNestedFinalNotTerminal
+}
+
+// W3C SCXML 3.10: this document declares no <history>, so no target list names
+// one and the engine never asks the two below; answering would mean inventing
+// one.
+func (p *NestedFinalNotTerminalPolicy) GetHistoryParent(history sce.HistoryID) NestedFinalNotTerminalState {
+	panic(fmt.Sprintf("NestedFinalNotTerminalPolicy declares no <history>; asked for %d", history))
+}
+func (p *NestedFinalNotTerminalPolicy) GetHistoryDefaultTargets(history sce.HistoryID) []NestedFinalNotTerminalTarget {
+	panic(fmt.Sprintf("NestedFinalNotTerminalPolicy declares no <history>; asked for %d", history))
+}
+func (p *NestedFinalNotTerminalPolicy) HistoryValue(_ sce.HistoryID) ([]NestedFinalNotTerminalState, bool) {
+	return nil, false
 }
 
 // GetDocumentOrder returns the document order index (W3C SCXML Appendix D).
@@ -283,47 +333,6 @@ func (p *NestedFinalNotTerminalPolicy) NullEvent() NestedFinalNotTerminalEvent {
 	return NestedFinalNotTerminalEventNull
 }
 
-// GetInitialChildren returns initial children of a compound state (W3C SCXML 3.6).
-func (p *NestedFinalNotTerminalPolicy) GetInitialChildren(state NestedFinalNotTerminalState) []NestedFinalNotTerminalState {
-	switch state {
-	case NestedFinalNotTerminalStatePhase:
-		return []NestedFinalNotTerminalState{
-			NestedFinalNotTerminalStateRunning,
-		}
-	}
-	return nil
-}
-
-// LastTransitionIsInternal returns the internal transition flag (W3C SCXML 3.13).
-func (p *NestedFinalNotTerminalPolicy) LastTransitionIsInternal() bool {
-	return p.lastTransitionIsInternal
-}
-
-// SetLastTransitionIsInternal sets the internal transition flag.
-func (p *NestedFinalNotTerminalPolicy) SetLastTransitionIsInternal(value bool) {
-	p.lastTransitionIsInternal = value
-}
-
-// LastTransitionIsTargetless returns the targetless transition flag (W3C SCXML 3.13).
-func (p *NestedFinalNotTerminalPolicy) LastTransitionIsTargetless() bool {
-	return p.lastTransitionIsTargetless
-}
-
-// SetLastTransitionIsTargetless sets the targetless transition flag.
-func (p *NestedFinalNotTerminalPolicy) SetLastTransitionIsTargetless(value bool) {
-	p.lastTransitionIsTargetless = value
-}
-
-// LastTransitionSourceState returns the source state of the last transition.
-func (p *NestedFinalNotTerminalPolicy) LastTransitionSourceState() NestedFinalNotTerminalState {
-	return p.lastTransitionSourceState
-}
-
-// SetLastTransitionSourceState sets the source state of the last transition.
-func (p *NestedFinalNotTerminalPolicy) SetLastTransitionSourceState(state NestedFinalNotTerminalState) {
-	p.lastTransitionSourceState = state
-}
-
 
 
 // HasParallelStates returns whether the SM has parallel states.
@@ -365,14 +374,6 @@ func (p *NestedFinalNotTerminalPolicy) GetActiveStates() []NestedFinalNotTermina
 func (p *NestedFinalNotTerminalPolicy) SetActiveStates(_ []NestedFinalNotTerminalState) {}
 func (p *NestedFinalNotTerminalPolicy) HasExternalEventFlag() bool { return false }
 func (p *NestedFinalNotTerminalPolicy) SetNextEventIsExternal(_ bool) {}
-// GetInitialOrHistoryChild returns the initial child considering history (W3C SCXML 3.11).
-func (p *NestedFinalNotTerminalPolicy) GetInitialOrHistoryChild(state NestedFinalNotTerminalState) NestedFinalNotTerminalState {
-	children := p.GetInitialChildren(state)
-	if len(children) > 0 {
-		return children[0]
-	}
-	return state
-}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *NestedFinalNotTerminalPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[NestedFinalNotTerminalEvent], _ *sce.Engine[NestedFinalNotTerminalState, NestedFinalNotTerminalEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).
@@ -403,13 +404,11 @@ func (p *NestedFinalNotTerminalPolicy) ClearEventMetadata() {
 
 
 
-
-// ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
+// ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
+// configuration, runs its <onentry>, and its <initial> transition's content when
+// its initial state is entered by default.
 //line nested_final_not_terminal.scxml:41
-func (p *NestedFinalNotTerminalPolicy) ExecuteEntryActions(state NestedFinalNotTerminalState, engine *sce.Engine[NestedFinalNotTerminalState, NestedFinalNotTerminalEvent], pathChild *NestedFinalNotTerminalState) {
-	// Only a `<parallel>` machine descends into defaults here, so a machine
-	// without one has nothing to tell an ancestor entry from a target entry.
-	_ = pathChild
+func (p *NestedFinalNotTerminalPolicy) ExecuteEntryActions(state NestedFinalNotTerminalState, engine *sce.Engine[NestedFinalNotTerminalState, NestedFinalNotTerminalEvent], isDefaultEntry bool) {
 	switch state {
 	case NestedFinalNotTerminalStatePhaseDone:
 		//line nested_final_not_terminal.scxml:48
@@ -420,74 +419,76 @@ func (p *NestedFinalNotTerminalPolicy) ExecuteEntryActions(state NestedFinalNotT
 	}
 }
 
-// ExecuteExitActions executes onexit actions for a state (W3C SCXML 3.9).
+// ExecuteHistoryDefaultContent runs a <history>'s default transition content
+// (W3C SCXML 3.10.2), after its parent's onentry (and after the parent's own
+// <initial> content) when the history was taken with nothing recorded. The
+// engine asks for it by the entry set's defaultHistoryContent answer; a history
+// that restored what it recorded runs nothing.
 //line nested_final_not_terminal.scxml:41
-func (p *NestedFinalNotTerminalPolicy) ExecuteExitActions(state NestedFinalNotTerminalState, engine *sce.Engine[NestedFinalNotTerminalState, NestedFinalNotTerminalEvent], preTransitionActive []NestedFinalNotTerminalState) {
+func (p *NestedFinalNotTerminalPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[NestedFinalNotTerminalState, NestedFinalNotTerminalEvent]) {
+	// W3C SCXML 3.10.2: no <history> in this document has default content.
+}
+
+// ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
+// removes it from the configuration, cancels its invocations and runs its
+// <onexit>.
+//line nested_final_not_terminal.scxml:41
+func (p *NestedFinalNotTerminalPolicy) ExecuteExitActions(state NestedFinalNotTerminalState, engine *sce.Engine[NestedFinalNotTerminalState, NestedFinalNotTerminalEvent], configurationBeforeExit []NestedFinalNotTerminalState) {
 	switch state {
 	default:
 		// No exit actions
 	}
 }
 
-// ProcessTransition evaluates guards and takes a matching transition (W3C SCXML 3.13).
-// Returns true if a transition was taken.
+
+
+// BindCurrentEvent binds the event whose transitions are about to be selected as
+// the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
+// and not for an eventless selection, which has no event of its own.
 //line nested_final_not_terminal.scxml:41
-func (p *NestedFinalNotTerminalPolicy) ProcessTransition(currentState *NestedFinalNotTerminalState, event NestedFinalNotTerminalEvent, engine *sce.Engine[NestedFinalNotTerminalState, NestedFinalNotTerminalEvent]) bool {
-
-	// W3C SCXML 3.12: Try transitions in current state first
-	if p.tryTransitionInState(*currentState, event, currentState, engine) {
-		return true
-	}
-
-	// W3C SCXML 3.13: Eventless transitions do NOT bubble to parent states
-	if event == NestedFinalNotTerminalEventNull {
-		return false
-	}
-
-	// W3C SCXML 3.12: Hierarchical event bubbling — walk up to parent
-	checkState := *currentState
-	for {
-		parent, hasParent := p.GetParent(checkState)
-		if !hasParent {
-			break
-		}
-		if p.tryTransitionInState(parent, event, currentState, engine) {
-			return true
-		}
-		checkState = parent
-	}
-
-	return false
+func (p *NestedFinalNotTerminalPolicy) BindCurrentEvent(event NestedFinalNotTerminalEvent, engine *sce.Engine[NestedFinalNotTerminalState, NestedFinalNotTerminalEvent]) {
+	// This document's guards never read _event, so there is nothing to bind.
 }
 
-
-// tryTransitionInState checks transitions for a single state.
+// FirstEnabledTransition is Appendix D selectTransitions, the half only this
+// document can answer: the first of state's own transitions, in document order,
+// that event enables and whose guard holds. The engine walks the atomic states
+// and their ancestors and keeps the ordered set; the null event asks for
+// eventless transitions.
 //line nested_final_not_terminal.scxml:41
-func (p *NestedFinalNotTerminalPolicy) tryTransitionInState(checkState NestedFinalNotTerminalState, event NestedFinalNotTerminalEvent, currentState *NestedFinalNotTerminalState, engine *sce.Engine[NestedFinalNotTerminalState, NestedFinalNotTerminalEvent]) bool {
-	switch checkState {
+func (p *NestedFinalNotTerminalPolicy) FirstEnabledTransition(state NestedFinalNotTerminalState, event NestedFinalNotTerminalEvent, engine *sce.Engine[NestedFinalNotTerminalState, NestedFinalNotTerminalEvent]) (sce.EnabledTransition[NestedFinalNotTerminalState, sce.HistoryID], bool) {
+	switch state {
 	case NestedFinalNotTerminalStatePhase:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == NestedFinalNotTerminalEventResume {
-			*currentState = NestedFinalNotTerminalStatePass
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = NestedFinalNotTerminalStatePhase
-			return true
+			{
+				return sce.EnabledTransition[NestedFinalNotTerminalState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfNestedFinalNotTerminal[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	case NestedFinalNotTerminalStateRunning:
-		// Eventless transition 0
 		if event == NestedFinalNotTerminalEventNull {
-			*currentState = NestedFinalNotTerminalStatePhaseDone
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = NestedFinalNotTerminalStateRunning
-			return true
+			{
+				return sce.EnabledTransition[NestedFinalNotTerminalState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfNestedFinalNotTerminal[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	}
-	return false
+	return sce.EnabledTransition[NestedFinalNotTerminalState, sce.HistoryID]{}, false
 }
 
-// ExecuteTransitionActions executes actions for the last taken transition (W3C SCXML 3.13).
+// ExecuteTransitionContent runs one transition's executable content (W3C SCXML
+// 3.13), between the microstep's exits and its entries.
 //line nested_final_not_terminal.scxml:41
-func (p *NestedFinalNotTerminalPolicy) ExecuteTransitionActions(engine *sce.Engine[NestedFinalNotTerminalState, NestedFinalNotTerminalEvent]) {
+func (p *NestedFinalNotTerminalPolicy) ExecuteTransitionContent(source NestedFinalNotTerminalState, transitionIndex int, engine *sce.Engine[NestedFinalNotTerminalState, NestedFinalNotTerminalEvent]) {
+	// W3C SCXML 3.13: no transition in this document has content.
 }

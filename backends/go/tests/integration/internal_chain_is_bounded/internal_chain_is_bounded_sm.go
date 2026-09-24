@@ -122,6 +122,47 @@ var InternalChainIsBoundedAllStates = []InternalChainIsBoundedState{
 	InternalChainIsBoundedStateSpin,
 }
 
+// InternalChainIsBoundedTarget is one token of a target list, as the document wrote
+// it (W3C SCXML 3.13): a state, or a <history> the engine dereferences.
+type InternalChainIsBoundedTarget = sce.EntryTarget[InternalChainIsBoundedState, sce.HistoryID]
+
+// ======================================================================
+// Document structure (W3C SCXML 3.2-3.4, 3.10)
+//
+// Package-level tables, because the structure is a fact about the document
+// and not about a run: the engine's Appendix D procedures read them through
+// the policy methods below, and a transition's target list is handed out as
+// a slice of them rather than rebuilt on every selection.
+// ======================================================================
+
+// childStatesOfInternalChainIsBounded is §scxml-D-getChildStates per state: its
+// <state>, <parallel> and <final> children, in document order.
+var childStatesOfInternalChainIsBounded = [6][]InternalChainIsBoundedState{
+}
+
+// initialTargetsOfInternalChainIsBounded is each compound state's initial transition
+// target, as written (§scxml-3.3).
+var initialTargetsOfInternalChainIsBounded = [6][]InternalChainIsBoundedTarget{
+}
+
+// documentInitialTargetsOfInternalChainIsBounded is the target of the document's own
+// initial transition, as written (§scxml-3.2).
+var documentInitialTargetsOfInternalChainIsBounded = []InternalChainIsBoundedTarget{sce.StateTarget[InternalChainIsBoundedState, sce.HistoryID](InternalChainIsBoundedStateIdle)}
+
+// transitionTargetsOfInternalChainIsBounded is each transition's target list, as
+// written (§scxml-3.13), by source state and the transition's index among its
+// source's own transitions. A targetless transition's entry is empty.
+var transitionTargetsOfInternalChainIsBounded = [6][][]InternalChainIsBoundedTarget{
+	InternalChainIsBoundedStateIdle: {
+		0: {sce.StateTarget[InternalChainIsBoundedState, sce.HistoryID](InternalChainIsBoundedStateIdle)},
+		1: {sce.StateTarget[InternalChainIsBoundedState, sce.HistoryID](InternalChainIsBoundedStateBounded)},
+		2: {sce.StateTarget[InternalChainIsBoundedState, sce.HistoryID](InternalChainIsBoundedStateSpin)},
+		3: {sce.StateTarget[InternalChainIsBoundedState, sce.HistoryID](InternalChainIsBoundedStateResuming)},
+		4: {sce.StateTarget[InternalChainIsBoundedState, sce.HistoryID](InternalChainIsBoundedStateAlt)},
+		5: {sce.StateTarget[InternalChainIsBoundedState, sce.HistoryID](InternalChainIsBoundedStateIgnoring)},
+	},
+}
+
 // ======================================================================
 // Event type (W3C SCXML 3.12)
 // ======================================================================
@@ -182,13 +223,6 @@ func (e InternalChainIsBoundedEvent) String() string {
 // ======================================================================
 
 type InternalChainIsBoundedPolicy struct {
-	// W3C SCXML 3.13: Last transition metadata
-	lastTransitionIsInternal  bool
-	lastTransitionIsTargetless bool
-	lastTransitionSourceState InternalChainIsBoundedState
-	// W3C SCXML 3.13: Transition action tracking
-	lastTransitionIndex   int
-	hasTransitionActions   bool
 	// W3C SCXML 5.10.1: External event flag
 	nextEventIsExternal bool
 	pendingEventName string
@@ -221,7 +255,6 @@ type InternalChainIsBoundedPolicy struct {
 // NewInternalChainIsBoundedPolicy creates a new policy with default values.
 func NewInternalChainIsBoundedPolicy() InternalChainIsBoundedPolicy {
 	return InternalChainIsBoundedPolicy{
-		lastTransitionSourceState: InternalChainIsBoundedStateIdle,
 	}
 }
 
@@ -578,29 +611,45 @@ func (p *InternalChainIsBoundedPolicy) GetParent(state InternalChainIsBoundedSta
 	return 0, false
 }
 
-// IsCompoundState returns true if state has children (W3C SCXML 3.3).
+// IsCompoundState returns true if state is a <state> with child states — exactly
+// the states that have an initial transition. A <parallel> is not compound
+// (W3C SCXML 3.3).
 func (p *InternalChainIsBoundedPolicy) IsCompoundState(state InternalChainIsBoundedState) bool {
-	switch state {
-	}
-	return false
+	return len(initialTargetsOfInternalChainIsBounded[state]) > 0
 }
 
 func (p *InternalChainIsBoundedPolicy) IsParallelState(_ InternalChainIsBoundedState) bool { return false }
-func (p *InternalChainIsBoundedPolicy) GetParallelRegions(_ InternalChainIsBoundedState) []InternalChainIsBoundedState { return nil }
 
-// IsDescendantOf returns true if desc is a descendant of anc (W3C SCXML 3.12).
-func (p *InternalChainIsBoundedPolicy) IsDescendantOf(desc, anc InternalChainIsBoundedState) bool {
-	current := desc
-	for {
-		parent, ok := p.GetParent(current)
-		if !ok {
-			return false
-		}
-		if parent == anc {
-			return true
-		}
-		current = parent
-	}
+// GetChildStates returns state's <state>, <parallel> and <final> children, in
+// document order — for a <parallel>, its regions (§scxml-D-getChildStates).
+func (p *InternalChainIsBoundedPolicy) GetChildStates(state InternalChainIsBoundedState) []InternalChainIsBoundedState {
+	return childStatesOfInternalChainIsBounded[state]
+}
+
+// GetInitialTargets returns a compound state's initial transition target, as
+// written; the engine's entry procedures dereference a <history> among them
+// (W3C SCXML 3.3).
+func (p *InternalChainIsBoundedPolicy) GetInitialTargets(state InternalChainIsBoundedState) []InternalChainIsBoundedTarget {
+	return initialTargetsOfInternalChainIsBounded[state]
+}
+
+// GetDocumentInitialTargets returns the target of the document's own initial
+// transition, as written (W3C SCXML 3.2).
+func (p *InternalChainIsBoundedPolicy) GetDocumentInitialTargets() []InternalChainIsBoundedTarget {
+	return documentInitialTargetsOfInternalChainIsBounded
+}
+
+// W3C SCXML 3.10: this document declares no <history>, so no target list names
+// one and the engine never asks the two below; answering would mean inventing
+// one.
+func (p *InternalChainIsBoundedPolicy) GetHistoryParent(history sce.HistoryID) InternalChainIsBoundedState {
+	panic(fmt.Sprintf("InternalChainIsBoundedPolicy declares no <history>; asked for %d", history))
+}
+func (p *InternalChainIsBoundedPolicy) GetHistoryDefaultTargets(history sce.HistoryID) []InternalChainIsBoundedTarget {
+	panic(fmt.Sprintf("InternalChainIsBoundedPolicy declares no <history>; asked for %d", history))
+}
+func (p *InternalChainIsBoundedPolicy) HistoryValue(_ sce.HistoryID) ([]InternalChainIsBoundedState, bool) {
+	return nil, false
 }
 
 // GetDocumentOrder returns the document order index (W3C SCXML Appendix D).
@@ -675,43 +724,6 @@ func (p *InternalChainIsBoundedPolicy) NullEvent() InternalChainIsBoundedEvent {
 	return InternalChainIsBoundedEventNull
 }
 
-// GetInitialChildren returns initial children of a compound state (W3C SCXML 3.6).
-func (p *InternalChainIsBoundedPolicy) GetInitialChildren(state InternalChainIsBoundedState) []InternalChainIsBoundedState {
-	switch state {
-	}
-	return nil
-}
-
-// LastTransitionIsInternal returns the internal transition flag (W3C SCXML 3.13).
-func (p *InternalChainIsBoundedPolicy) LastTransitionIsInternal() bool {
-	return p.lastTransitionIsInternal
-}
-
-// SetLastTransitionIsInternal sets the internal transition flag.
-func (p *InternalChainIsBoundedPolicy) SetLastTransitionIsInternal(value bool) {
-	p.lastTransitionIsInternal = value
-}
-
-// LastTransitionIsTargetless returns the targetless transition flag (W3C SCXML 3.13).
-func (p *InternalChainIsBoundedPolicy) LastTransitionIsTargetless() bool {
-	return p.lastTransitionIsTargetless
-}
-
-// SetLastTransitionIsTargetless sets the targetless transition flag.
-func (p *InternalChainIsBoundedPolicy) SetLastTransitionIsTargetless(value bool) {
-	p.lastTransitionIsTargetless = value
-}
-
-// LastTransitionSourceState returns the source state of the last transition.
-func (p *InternalChainIsBoundedPolicy) LastTransitionSourceState() InternalChainIsBoundedState {
-	return p.lastTransitionSourceState
-}
-
-// SetLastTransitionSourceState sets the source state of the last transition.
-func (p *InternalChainIsBoundedPolicy) SetLastTransitionSourceState(state InternalChainIsBoundedState) {
-	p.lastTransitionSourceState = state
-}
-
 
 // SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
 func (p *InternalChainIsBoundedPolicy) SetNextEventIsExternal(value bool) {
@@ -756,14 +768,6 @@ func (p *InternalChainIsBoundedPolicy) GetActiveStates() []InternalChainIsBounde
 // which is false above; the method exists because the interface is one contract.
 func (p *InternalChainIsBoundedPolicy) SetActiveStates(_ []InternalChainIsBoundedState) {}
 func (p *InternalChainIsBoundedPolicy) HasExternalEventFlag() bool { return true }
-// GetInitialOrHistoryChild returns the initial child considering history (W3C SCXML 3.11).
-func (p *InternalChainIsBoundedPolicy) GetInitialOrHistoryChild(state InternalChainIsBoundedState) InternalChainIsBoundedState {
-	children := p.GetInitialChildren(state)
-	if len(children) > 0 {
-		return children[0]
-	}
-	return state
-}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *InternalChainIsBoundedPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[InternalChainIsBoundedEvent], _ *sce.Engine[InternalChainIsBoundedState, InternalChainIsBoundedEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).
@@ -807,13 +811,11 @@ func (p *InternalChainIsBoundedPolicy) ClearEventMetadata() {
 
 
 
-
-// ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
+// ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
+// configuration, runs its <onentry>, and its <initial> transition's content when
+// its initial state is entered by default.
 //line internal_chain_is_bounded.scxml:90
-func (p *InternalChainIsBoundedPolicy) ExecuteEntryActions(state InternalChainIsBoundedState, engine *sce.Engine[InternalChainIsBoundedState, InternalChainIsBoundedEvent], pathChild *InternalChainIsBoundedState) {
-	// Only a `<parallel>` machine descends into defaults here, so a machine
-	// without one has nothing to tell an ancestor entry from a target entry.
-	_ = pathChild
+func (p *InternalChainIsBoundedPolicy) ExecuteEntryActions(state InternalChainIsBoundedState, engine *sce.Engine[InternalChainIsBoundedState, InternalChainIsBoundedEvent], isDefaultEntry bool) {
 	p.ensureScriptEngine()
 	switch state {
 	default:
@@ -821,9 +823,21 @@ func (p *InternalChainIsBoundedPolicy) ExecuteEntryActions(state InternalChainIs
 	}
 }
 
-// ExecuteExitActions executes onexit actions for a state (W3C SCXML 3.9).
+// ExecuteHistoryDefaultContent runs a <history>'s default transition content
+// (W3C SCXML 3.10.2), after its parent's onentry (and after the parent's own
+// <initial> content) when the history was taken with nothing recorded. The
+// engine asks for it by the entry set's defaultHistoryContent answer; a history
+// that restored what it recorded runs nothing.
 //line internal_chain_is_bounded.scxml:90
-func (p *InternalChainIsBoundedPolicy) ExecuteExitActions(state InternalChainIsBoundedState, engine *sce.Engine[InternalChainIsBoundedState, InternalChainIsBoundedEvent], preTransitionActive []InternalChainIsBoundedState) {
+func (p *InternalChainIsBoundedPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[InternalChainIsBoundedState, InternalChainIsBoundedEvent]) {
+	// W3C SCXML 3.10.2: no <history> in this document has default content.
+}
+
+// ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
+// removes it from the configuration, cancels its invocations and runs its
+// <onexit>.
+//line internal_chain_is_bounded.scxml:90
+func (p *InternalChainIsBoundedPolicy) ExecuteExitActions(state InternalChainIsBoundedState, engine *sce.Engine[InternalChainIsBoundedState, InternalChainIsBoundedEvent], configurationBeforeExit []InternalChainIsBoundedState) {
 	p.ensureScriptEngine()
 	switch state {
 	default:
@@ -831,247 +845,255 @@ func (p *InternalChainIsBoundedPolicy) ExecuteExitActions(state InternalChainIsB
 	}
 }
 
-// ProcessTransition evaluates guards and takes a matching transition (W3C SCXML 3.13).
-// Returns true if a transition was taken.
+
+
+// BindCurrentEvent binds the event whose transitions are about to be selected as
+// the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
+// and not for an eventless selection, which has no event of its own.
 //line internal_chain_is_bounded.scxml:90
-func (p *InternalChainIsBoundedPolicy) ProcessTransition(currentState *InternalChainIsBoundedState, event InternalChainIsBoundedEvent, engine *sce.Engine[InternalChainIsBoundedState, InternalChainIsBoundedEvent]) bool {
-	// W3C SCXML 5.10: Bind _event system variable for guard evaluation
+func (p *InternalChainIsBoundedPolicy) BindCurrentEvent(event InternalChainIsBoundedEvent, engine *sce.Engine[InternalChainIsBoundedState, InternalChainIsBoundedEvent]) {
 	if event != InternalChainIsBoundedEventNull {
 		// §scxml-B-2-8-1: the rung the payload got, handed to the engine
 		// rather than dropped. This is the only frame that has both the
 		// reading and the event it belongs to.
 		engine.NotePayloadReading(event, p.setCurrentEvent(p.GetEventName(event)))
 	}
-
-	// W3C SCXML 3.12: Try transitions in current state first
-	if p.tryTransitionInState(*currentState, event, currentState, engine) {
-		return true
-	}
-
-
-	return false
 }
 
-
-// tryTransitionInState checks transitions for a single state.
+// FirstEnabledTransition is Appendix D selectTransitions, the half only this
+// document can answer: the first of state's own transitions, in document order,
+// that event enables and whose guard holds. The engine walks the atomic states
+// and their ancestors and keeps the ordered set; the null event asks for
+// eventless transitions.
 //line internal_chain_is_bounded.scxml:90
-func (p *InternalChainIsBoundedPolicy) tryTransitionInState(checkState InternalChainIsBoundedState, event InternalChainIsBoundedEvent, currentState *InternalChainIsBoundedState, engine *sce.Engine[InternalChainIsBoundedState, InternalChainIsBoundedEvent]) bool {
-	switch checkState {
+func (p *InternalChainIsBoundedPolicy) FirstEnabledTransition(state InternalChainIsBoundedState, event InternalChainIsBoundedEvent, engine *sce.Engine[InternalChainIsBoundedState, InternalChainIsBoundedEvent]) (sce.EnabledTransition[InternalChainIsBoundedState, sce.HistoryID], bool) {
+	switch state {
 	case InternalChainIsBoundedStateAlt:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InternalChainIsBoundedEventTick {
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = true
-			p.lastTransitionSourceState = InternalChainIsBoundedStateAlt
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[InternalChainIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 0,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// Eventless transition 1
 		if event == InternalChainIsBoundedEventNull {
 			if p.evaluateGuard(`_scxml_eq(pending, 1)`, engine) {
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = true
-			p.lastTransitionSourceState = InternalChainIsBoundedStateAlt
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = true
-			return true
+				return sce.EnabledTransition[InternalChainIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 1,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InternalChainIsBoundedEventPoke {
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = true
-			p.lastTransitionSourceState = InternalChainIsBoundedStateAlt
-			p.lastTransitionIndex = 2
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[InternalChainIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 2,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	case InternalChainIsBoundedStateBounded:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InternalChainIsBoundedEventLink {
 			if p.evaluateGuard(`(laps < 999)`, engine) {
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = true
-			p.lastTransitionSourceState = InternalChainIsBoundedStateBounded
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = true
-			return true
+				return sce.EnabledTransition[InternalChainIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 0,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InternalChainIsBoundedEventLink {
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = true
-			p.lastTransitionSourceState = InternalChainIsBoundedStateBounded
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[InternalChainIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 1,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InternalChainIsBoundedEventPoke {
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = true
-			p.lastTransitionSourceState = InternalChainIsBoundedStateBounded
-			p.lastTransitionIndex = 2
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[InternalChainIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 2,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	case InternalChainIsBoundedStateIdle:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InternalChainIsBoundedEventPoke {
-			*currentState = InternalChainIsBoundedStateIdle
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InternalChainIsBoundedStateIdle
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[InternalChainIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInternalChainIsBounded[state][0],
+					TransitionIndex: 0,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InternalChainIsBoundedEventBounded {
-			*currentState = InternalChainIsBoundedStateBounded
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InternalChainIsBoundedStateIdle
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[InternalChainIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInternalChainIsBounded[state][1],
+					TransitionIndex: 1,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InternalChainIsBoundedEventSpin {
-			*currentState = InternalChainIsBoundedStateSpin
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InternalChainIsBoundedStateIdle
-			p.lastTransitionIndex = 2
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[InternalChainIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInternalChainIsBounded[state][2],
+					TransitionIndex: 2,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InternalChainIsBoundedEventResume {
-			*currentState = InternalChainIsBoundedStateResuming
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InternalChainIsBoundedStateIdle
-			p.lastTransitionIndex = 3
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[InternalChainIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInternalChainIsBounded[state][3],
+					TransitionIndex: 3,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InternalChainIsBoundedEventAlternate {
-			*currentState = InternalChainIsBoundedStateAlt
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InternalChainIsBoundedStateIdle
-			p.lastTransitionIndex = 4
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[InternalChainIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInternalChainIsBounded[state][4],
+					TransitionIndex: 4,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InternalChainIsBoundedEventUnanswered {
-			*currentState = InternalChainIsBoundedStateIgnoring
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InternalChainIsBoundedStateIdle
-			p.lastTransitionIndex = 5
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[InternalChainIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInternalChainIsBounded[state][5],
+					TransitionIndex: 5,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	case InternalChainIsBoundedStateIgnoring:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InternalChainIsBoundedEventBeatless {
 			if p.evaluateGuard(`(ignores < 999)`, engine) {
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = true
-			p.lastTransitionSourceState = InternalChainIsBoundedStateIgnoring
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = true
-			return true
+				return sce.EnabledTransition[InternalChainIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 0,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InternalChainIsBoundedEventBeatless {
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = true
-			p.lastTransitionSourceState = InternalChainIsBoundedStateIgnoring
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[InternalChainIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 1,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InternalChainIsBoundedEventPoke {
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = true
-			p.lastTransitionSourceState = InternalChainIsBoundedStateIgnoring
-			p.lastTransitionIndex = 2
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[InternalChainIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 2,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	case InternalChainIsBoundedStateResuming:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InternalChainIsBoundedEventBeat {
 			if p.evaluateGuard(`(beats < 1499)`, engine) {
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = true
-			p.lastTransitionSourceState = InternalChainIsBoundedStateResuming
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = true
-			return true
+				return sce.EnabledTransition[InternalChainIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 0,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InternalChainIsBoundedEventBeat {
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = true
-			p.lastTransitionSourceState = InternalChainIsBoundedStateResuming
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[InternalChainIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 1,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InternalChainIsBoundedEventPoke {
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = true
-			p.lastTransitionSourceState = InternalChainIsBoundedStateResuming
-			p.lastTransitionIndex = 2
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[InternalChainIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 2,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	case InternalChainIsBoundedStateSpin:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InternalChainIsBoundedEventLink {
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = true
-			p.lastTransitionSourceState = InternalChainIsBoundedStateSpin
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[InternalChainIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 0,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == InternalChainIsBoundedEventPoke {
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = true
-			p.lastTransitionSourceState = InternalChainIsBoundedStateSpin
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[InternalChainIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 1,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	}
-	return false
+	return sce.EnabledTransition[InternalChainIsBoundedState, sce.HistoryID]{}, false
 }
 
-// ExecuteTransitionActions executes actions for the last taken transition (W3C SCXML 3.13).
+// ExecuteTransitionContent runs one transition's executable content (W3C SCXML
+// 3.13), between the microstep's exits and its entries.
 //line internal_chain_is_bounded.scxml:90
-func (p *InternalChainIsBoundedPolicy) ExecuteTransitionActions(engine *sce.Engine[InternalChainIsBoundedState, InternalChainIsBoundedEvent]) {
+func (p *InternalChainIsBoundedPolicy) ExecuteTransitionContent(source InternalChainIsBoundedState, transitionIndex int, engine *sce.Engine[InternalChainIsBoundedState, InternalChainIsBoundedEvent]) {
 	p.ensureScriptEngine()
-	if !p.hasTransitionActions {
-		return
-	}
-	source := p.lastTransitionSourceState
-	idx := p.lastTransitionIndex
-	if source == InternalChainIsBoundedStateAlt && idx == 0 {
-		//line internal_chain_is_bounded.scxml:212
+	switch source {
+	case InternalChainIsBoundedStateAlt:
+		switch transitionIndex {
+		case 0:
+			//line internal_chain_is_bounded.scxml:212
 
 	// W3C SCXML 5.3: <assign location="alts" expr="alts + 1">
 	if err := p.assignVariable(`alts`, `_scxml_add(alts, 1)`); err != nil {
@@ -1084,10 +1106,8 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionActions(engine *sce.Engi
 		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'pending' failed"))
 	}
 
-		return
-	}
-	if source == InternalChainIsBoundedStateAlt && idx == 1 {
-		//line internal_chain_is_bounded.scxml:216
+		case 1:
+			//line internal_chain_is_bounded.scxml:216
 
 	// W3C SCXML 5.3: <assign location="pending" expr="0">
 	if err := p.assignVariable(`pending`, `0`); err != nil {
@@ -1097,20 +1117,19 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionActions(engine *sce.Engi
 
 	engine.Raise(sce.NewEventWithMetadata(InternalChainIsBoundedEventTick))
 
-		return
-	}
-	if source == InternalChainIsBoundedStateAlt && idx == 2 {
-		//line internal_chain_is_bounded.scxml:220
+		case 2:
+			//line internal_chain_is_bounded.scxml:220
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
 	}
 
-		return
-	}
-	if source == InternalChainIsBoundedStateBounded && idx == 0 {
-		//line internal_chain_is_bounded.scxml:154
+		}
+	case InternalChainIsBoundedStateBounded:
+		switch transitionIndex {
+		case 0:
+			//line internal_chain_is_bounded.scxml:154
 
 	// W3C SCXML 5.3: <assign location="laps" expr="laps + 1">
 	if err := p.assignVariable(`laps`, `_scxml_add(laps, 1)`); err != nil {
@@ -1120,75 +1139,63 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionActions(engine *sce.Engi
 
 	engine.Raise(sce.NewEventWithMetadata(InternalChainIsBoundedEventLink))
 
-		return
-	}
-	if source == InternalChainIsBoundedStateBounded && idx == 1 {
-		//line internal_chain_is_bounded.scxml:158
+		case 1:
+			//line internal_chain_is_bounded.scxml:158
 
 	// W3C SCXML 5.3: <assign location="laps" expr="laps + 1">
 	if err := p.assignVariable(`laps`, `_scxml_add(laps, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'laps' failed"))
 	}
 
-		return
-	}
-	if source == InternalChainIsBoundedStateBounded && idx == 2 {
-		//line internal_chain_is_bounded.scxml:163
+		case 2:
+			//line internal_chain_is_bounded.scxml:163
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
 	}
 
-		return
-	}
-	if source == InternalChainIsBoundedStateIdle && idx == 0 {
-		//line internal_chain_is_bounded.scxml:123
+		}
+	case InternalChainIsBoundedStateIdle:
+		switch transitionIndex {
+		case 0:
+			//line internal_chain_is_bounded.scxml:123
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
 	}
 
-		return
-	}
-	if source == InternalChainIsBoundedStateIdle && idx == 1 {
-		//line internal_chain_is_bounded.scxml:126
+		case 1:
+			//line internal_chain_is_bounded.scxml:126
 
 	engine.Raise(sce.NewEventWithMetadata(InternalChainIsBoundedEventLink))
 
-		return
-	}
-	if source == InternalChainIsBoundedStateIdle && idx == 2 {
-		//line internal_chain_is_bounded.scxml:129
+		case 2:
+			//line internal_chain_is_bounded.scxml:129
 
 	engine.Raise(sce.NewEventWithMetadata(InternalChainIsBoundedEventLink))
 
-		return
-	}
-	if source == InternalChainIsBoundedStateIdle && idx == 3 {
-		//line internal_chain_is_bounded.scxml:132
+		case 3:
+			//line internal_chain_is_bounded.scxml:132
 
 	engine.Raise(sce.NewEventWithMetadata(InternalChainIsBoundedEventBeat))
 
-		return
-	}
-	if source == InternalChainIsBoundedStateIdle && idx == 4 {
-		//line internal_chain_is_bounded.scxml:135
+		case 4:
+			//line internal_chain_is_bounded.scxml:135
 
 	engine.Raise(sce.NewEventWithMetadata(InternalChainIsBoundedEventTick))
 
-		return
-	}
-	if source == InternalChainIsBoundedStateIdle && idx == 5 {
-		//line internal_chain_is_bounded.scxml:138
+		case 5:
+			//line internal_chain_is_bounded.scxml:138
 
 	engine.Raise(sce.NewEventWithMetadata(InternalChainIsBoundedEventBeatless))
 
-		return
-	}
-	if source == InternalChainIsBoundedStateIgnoring && idx == 0 {
-		//line internal_chain_is_bounded.scxml:245
+		}
+	case InternalChainIsBoundedStateIgnoring:
+		switch transitionIndex {
+		case 0:
+			//line internal_chain_is_bounded.scxml:245
 
 	// W3C SCXML 5.3: <assign location="ignores" expr="ignores + 1">
 	if err := p.assignVariable(`ignores`, `_scxml_add(ignores, 1)`); err != nil {
@@ -1201,30 +1208,27 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionActions(engine *sce.Engi
 
 	engine.Raise(sce.NewEventWithMetadata(InternalChainIsBoundedEventBeatless))
 
-		return
-	}
-	if source == InternalChainIsBoundedStateIgnoring && idx == 1 {
-		//line internal_chain_is_bounded.scxml:250
+		case 1:
+			//line internal_chain_is_bounded.scxml:250
 
 	// W3C SCXML 5.3: <assign location="ignores" expr="ignores + 1">
 	if err := p.assignVariable(`ignores`, `_scxml_add(ignores, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'ignores' failed"))
 	}
 
-		return
-	}
-	if source == InternalChainIsBoundedStateIgnoring && idx == 2 {
-		//line internal_chain_is_bounded.scxml:253
+		case 2:
+			//line internal_chain_is_bounded.scxml:253
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
 	}
 
-		return
-	}
-	if source == InternalChainIsBoundedStateResuming && idx == 0 {
-		//line internal_chain_is_bounded.scxml:193
+		}
+	case InternalChainIsBoundedStateResuming:
+		switch transitionIndex {
+		case 0:
+			//line internal_chain_is_bounded.scxml:193
 
 	// W3C SCXML 5.3: <assign location="beats" expr="beats + 1">
 	if err := p.assignVariable(`beats`, `_scxml_add(beats, 1)`); err != nil {
@@ -1234,30 +1238,27 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionActions(engine *sce.Engi
 
 	engine.Raise(sce.NewEventWithMetadata(InternalChainIsBoundedEventBeat))
 
-		return
-	}
-	if source == InternalChainIsBoundedStateResuming && idx == 1 {
-		//line internal_chain_is_bounded.scxml:197
+		case 1:
+			//line internal_chain_is_bounded.scxml:197
 
 	// W3C SCXML 5.3: <assign location="beats" expr="beats + 1">
 	if err := p.assignVariable(`beats`, `_scxml_add(beats, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'beats' failed"))
 	}
 
-		return
-	}
-	if source == InternalChainIsBoundedStateResuming && idx == 2 {
-		//line internal_chain_is_bounded.scxml:200
+		case 2:
+			//line internal_chain_is_bounded.scxml:200
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
 	}
 
-		return
-	}
-	if source == InternalChainIsBoundedStateSpin && idx == 0 {
-		//line internal_chain_is_bounded.scxml:175
+		}
+	case InternalChainIsBoundedStateSpin:
+		switch transitionIndex {
+		case 0:
+			//line internal_chain_is_bounded.scxml:175
 
 	// W3C SCXML 5.3: <assign location="links" expr="links + 1">
 	if err := p.assignVariable(`links`, `_scxml_add(links, 1)`); err != nil {
@@ -1267,16 +1268,14 @@ func (p *InternalChainIsBoundedPolicy) ExecuteTransitionActions(engine *sce.Engi
 
 	engine.Raise(sce.NewEventWithMetadata(InternalChainIsBoundedEventLink))
 
-		return
-	}
-	if source == InternalChainIsBoundedStateSpin && idx == 1 {
-		//line internal_chain_is_bounded.scxml:179
+		case 1:
+			//line internal_chain_is_bounded.scxml:179
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(InternalChainIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
 	}
 
-		return
+		}
 	}
 }

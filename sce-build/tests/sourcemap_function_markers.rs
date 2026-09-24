@@ -274,8 +274,9 @@ fn go_statechart_emits_per_function_markers() {
     let go = pick(&artifacts, "go");
     let count = count_markers(go, "sm_probe.scxml");
     // 0b emitted 1 comment-form module-level marker. 0c adds `//line`
-    // directives above ExecuteEntryActions, ExecuteExitActions,
-    // ProcessTransition, tryTransitionInState, ExecuteTransitionActions.
+    // directives above ExecuteEntryActions, ExecuteHistoryDefaultContent,
+    // ExecuteExitActions, BindCurrentEvent, FirstEnabledTransition and
+    // ExecuteTransitionContent.
     // The comment-form module marker counts via "SCE-MAP" substring;
     // `//line` directives count via the fixture basename appearing on
     // them (we wrote them as `//line {file}:N`).

@@ -104,6 +104,51 @@ var ErrorCascadeIsBoundedAllStates = []ErrorCascadeIsBoundedState{
 	ErrorCascadeIsBoundedStateSettling,
 }
 
+// ErrorCascadeIsBoundedTarget is one token of a target list, as the document wrote
+// it (W3C SCXML 3.13): a state, or a <history> the engine dereferences.
+type ErrorCascadeIsBoundedTarget = sce.EntryTarget[ErrorCascadeIsBoundedState, sce.HistoryID]
+
+// ======================================================================
+// Document structure (W3C SCXML 3.2-3.4, 3.10)
+//
+// Package-level tables, because the structure is a fact about the document
+// and not about a run: the engine's Appendix D procedures read them through
+// the policy methods below, and a transition's target list is handed out as
+// a slice of them rather than rebuilt on every selection.
+// ======================================================================
+
+// childStatesOfErrorCascadeIsBounded is §scxml-D-getChildStates per state: its
+// <state>, <parallel> and <final> children, in document order.
+var childStatesOfErrorCascadeIsBounded = [3][]ErrorCascadeIsBoundedState{
+}
+
+// initialTargetsOfErrorCascadeIsBounded is each compound state's initial transition
+// target, as written (§scxml-3.3).
+var initialTargetsOfErrorCascadeIsBounded = [3][]ErrorCascadeIsBoundedTarget{
+}
+
+// documentInitialTargetsOfErrorCascadeIsBounded is the target of the document's own
+// initial transition, as written (§scxml-3.2).
+var documentInitialTargetsOfErrorCascadeIsBounded = []ErrorCascadeIsBoundedTarget{sce.StateTarget[ErrorCascadeIsBoundedState, sce.HistoryID](ErrorCascadeIsBoundedStateIdle)}
+
+// transitionTargetsOfErrorCascadeIsBounded is each transition's target list, as
+// written (§scxml-3.13), by source state and the transition's index among its
+// source's own transitions. A targetless transition's entry is empty.
+var transitionTargetsOfErrorCascadeIsBounded = [3][][]ErrorCascadeIsBoundedTarget{
+	ErrorCascadeIsBoundedStateIdle: {
+		0: {sce.StateTarget[ErrorCascadeIsBoundedState, sce.HistoryID](ErrorCascadeIsBoundedStateIdle)},
+		1: {sce.StateTarget[ErrorCascadeIsBoundedState, sce.HistoryID](ErrorCascadeIsBoundedStateIdle)},
+		2: {sce.StateTarget[ErrorCascadeIsBoundedState, sce.HistoryID](ErrorCascadeIsBoundedStateSettling)},
+		3: {sce.StateTarget[ErrorCascadeIsBoundedState, sce.HistoryID](ErrorCascadeIsBoundedStateRunaway)},
+	},
+	ErrorCascadeIsBoundedStateRunaway: {
+		3: {sce.StateTarget[ErrorCascadeIsBoundedState, sce.HistoryID](ErrorCascadeIsBoundedStateIdle)},
+	},
+	ErrorCascadeIsBoundedStateSettling: {
+		2: {sce.StateTarget[ErrorCascadeIsBoundedState, sce.HistoryID](ErrorCascadeIsBoundedStateIdle)},
+	},
+}
+
 // ======================================================================
 // Event type (W3C SCXML 3.12)
 // ======================================================================
@@ -149,13 +194,6 @@ func (e ErrorCascadeIsBoundedEvent) String() string {
 // ======================================================================
 
 type ErrorCascadeIsBoundedPolicy struct {
-	// W3C SCXML 3.13: Last transition metadata
-	lastTransitionIsInternal  bool
-	lastTransitionIsTargetless bool
-	lastTransitionSourceState ErrorCascadeIsBoundedState
-	// W3C SCXML 3.13: Transition action tracking
-	lastTransitionIndex   int
-	hasTransitionActions   bool
 	// W3C SCXML 5.10.1: External event flag
 	nextEventIsExternal bool
 	pendingEventName string
@@ -188,7 +226,6 @@ type ErrorCascadeIsBoundedPolicy struct {
 // NewErrorCascadeIsBoundedPolicy creates a new policy with default values.
 func NewErrorCascadeIsBoundedPolicy() ErrorCascadeIsBoundedPolicy {
 	return ErrorCascadeIsBoundedPolicy{
-		lastTransitionSourceState: ErrorCascadeIsBoundedStateIdle,
 	}
 }
 
@@ -479,29 +516,45 @@ func (p *ErrorCascadeIsBoundedPolicy) GetParent(state ErrorCascadeIsBoundedState
 	return 0, false
 }
 
-// IsCompoundState returns true if state has children (W3C SCXML 3.3).
+// IsCompoundState returns true if state is a <state> with child states — exactly
+// the states that have an initial transition. A <parallel> is not compound
+// (W3C SCXML 3.3).
 func (p *ErrorCascadeIsBoundedPolicy) IsCompoundState(state ErrorCascadeIsBoundedState) bool {
-	switch state {
-	}
-	return false
+	return len(initialTargetsOfErrorCascadeIsBounded[state]) > 0
 }
 
 func (p *ErrorCascadeIsBoundedPolicy) IsParallelState(_ ErrorCascadeIsBoundedState) bool { return false }
-func (p *ErrorCascadeIsBoundedPolicy) GetParallelRegions(_ ErrorCascadeIsBoundedState) []ErrorCascadeIsBoundedState { return nil }
 
-// IsDescendantOf returns true if desc is a descendant of anc (W3C SCXML 3.12).
-func (p *ErrorCascadeIsBoundedPolicy) IsDescendantOf(desc, anc ErrorCascadeIsBoundedState) bool {
-	current := desc
-	for {
-		parent, ok := p.GetParent(current)
-		if !ok {
-			return false
-		}
-		if parent == anc {
-			return true
-		}
-		current = parent
-	}
+// GetChildStates returns state's <state>, <parallel> and <final> children, in
+// document order — for a <parallel>, its regions (§scxml-D-getChildStates).
+func (p *ErrorCascadeIsBoundedPolicy) GetChildStates(state ErrorCascadeIsBoundedState) []ErrorCascadeIsBoundedState {
+	return childStatesOfErrorCascadeIsBounded[state]
+}
+
+// GetInitialTargets returns a compound state's initial transition target, as
+// written; the engine's entry procedures dereference a <history> among them
+// (W3C SCXML 3.3).
+func (p *ErrorCascadeIsBoundedPolicy) GetInitialTargets(state ErrorCascadeIsBoundedState) []ErrorCascadeIsBoundedTarget {
+	return initialTargetsOfErrorCascadeIsBounded[state]
+}
+
+// GetDocumentInitialTargets returns the target of the document's own initial
+// transition, as written (W3C SCXML 3.2).
+func (p *ErrorCascadeIsBoundedPolicy) GetDocumentInitialTargets() []ErrorCascadeIsBoundedTarget {
+	return documentInitialTargetsOfErrorCascadeIsBounded
+}
+
+// W3C SCXML 3.10: this document declares no <history>, so no target list names
+// one and the engine never asks the two below; answering would mean inventing
+// one.
+func (p *ErrorCascadeIsBoundedPolicy) GetHistoryParent(history sce.HistoryID) ErrorCascadeIsBoundedState {
+	panic(fmt.Sprintf("ErrorCascadeIsBoundedPolicy declares no <history>; asked for %d", history))
+}
+func (p *ErrorCascadeIsBoundedPolicy) GetHistoryDefaultTargets(history sce.HistoryID) []ErrorCascadeIsBoundedTarget {
+	panic(fmt.Sprintf("ErrorCascadeIsBoundedPolicy declares no <history>; asked for %d", history))
+}
+func (p *ErrorCascadeIsBoundedPolicy) HistoryValue(_ sce.HistoryID) ([]ErrorCascadeIsBoundedState, bool) {
+	return nil, false
 }
 
 // GetDocumentOrder returns the document order index (W3C SCXML Appendix D).
@@ -560,43 +613,6 @@ func (p *ErrorCascadeIsBoundedPolicy) NullEvent() ErrorCascadeIsBoundedEvent {
 	return ErrorCascadeIsBoundedEventNull
 }
 
-// GetInitialChildren returns initial children of a compound state (W3C SCXML 3.6).
-func (p *ErrorCascadeIsBoundedPolicy) GetInitialChildren(state ErrorCascadeIsBoundedState) []ErrorCascadeIsBoundedState {
-	switch state {
-	}
-	return nil
-}
-
-// LastTransitionIsInternal returns the internal transition flag (W3C SCXML 3.13).
-func (p *ErrorCascadeIsBoundedPolicy) LastTransitionIsInternal() bool {
-	return p.lastTransitionIsInternal
-}
-
-// SetLastTransitionIsInternal sets the internal transition flag.
-func (p *ErrorCascadeIsBoundedPolicy) SetLastTransitionIsInternal(value bool) {
-	p.lastTransitionIsInternal = value
-}
-
-// LastTransitionIsTargetless returns the targetless transition flag (W3C SCXML 3.13).
-func (p *ErrorCascadeIsBoundedPolicy) LastTransitionIsTargetless() bool {
-	return p.lastTransitionIsTargetless
-}
-
-// SetLastTransitionIsTargetless sets the targetless transition flag.
-func (p *ErrorCascadeIsBoundedPolicy) SetLastTransitionIsTargetless(value bool) {
-	p.lastTransitionIsTargetless = value
-}
-
-// LastTransitionSourceState returns the source state of the last transition.
-func (p *ErrorCascadeIsBoundedPolicy) LastTransitionSourceState() ErrorCascadeIsBoundedState {
-	return p.lastTransitionSourceState
-}
-
-// SetLastTransitionSourceState sets the source state of the last transition.
-func (p *ErrorCascadeIsBoundedPolicy) SetLastTransitionSourceState(state ErrorCascadeIsBoundedState) {
-	p.lastTransitionSourceState = state
-}
-
 
 // SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
 func (p *ErrorCascadeIsBoundedPolicy) SetNextEventIsExternal(value bool) {
@@ -641,14 +657,6 @@ func (p *ErrorCascadeIsBoundedPolicy) GetActiveStates() []ErrorCascadeIsBoundedS
 // which is false above; the method exists because the interface is one contract.
 func (p *ErrorCascadeIsBoundedPolicy) SetActiveStates(_ []ErrorCascadeIsBoundedState) {}
 func (p *ErrorCascadeIsBoundedPolicy) HasExternalEventFlag() bool { return true }
-// GetInitialOrHistoryChild returns the initial child considering history (W3C SCXML 3.11).
-func (p *ErrorCascadeIsBoundedPolicy) GetInitialOrHistoryChild(state ErrorCascadeIsBoundedState) ErrorCascadeIsBoundedState {
-	children := p.GetInitialChildren(state)
-	if len(children) > 0 {
-		return children[0]
-	}
-	return state
-}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *ErrorCascadeIsBoundedPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[ErrorCascadeIsBoundedEvent], _ *sce.Engine[ErrorCascadeIsBoundedState, ErrorCascadeIsBoundedEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).
@@ -692,13 +700,11 @@ func (p *ErrorCascadeIsBoundedPolicy) ClearEventMetadata() {
 
 
 
-
-// ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
+// ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
+// configuration, runs its <onentry>, and its <initial> transition's content when
+// its initial state is entered by default.
 //line error_cascade_is_bounded.scxml:45
-func (p *ErrorCascadeIsBoundedPolicy) ExecuteEntryActions(state ErrorCascadeIsBoundedState, engine *sce.Engine[ErrorCascadeIsBoundedState, ErrorCascadeIsBoundedEvent], pathChild *ErrorCascadeIsBoundedState) {
-	// Only a `<parallel>` machine descends into defaults here, so a machine
-	// without one has nothing to tell an ancestor entry from a target entry.
-	_ = pathChild
+func (p *ErrorCascadeIsBoundedPolicy) ExecuteEntryActions(state ErrorCascadeIsBoundedState, engine *sce.Engine[ErrorCascadeIsBoundedState, ErrorCascadeIsBoundedEvent], isDefaultEntry bool) {
 	p.ensureScriptEngine()
 	switch state {
 	case ErrorCascadeIsBoundedStateRunaway:
@@ -728,9 +734,21 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteEntryActions(state ErrorCascadeIsBo
 	}
 }
 
-// ExecuteExitActions executes onexit actions for a state (W3C SCXML 3.9).
+// ExecuteHistoryDefaultContent runs a <history>'s default transition content
+// (W3C SCXML 3.10.2), after its parent's onentry (and after the parent's own
+// <initial> content) when the history was taken with nothing recorded. The
+// engine asks for it by the entry set's defaultHistoryContent answer; a history
+// that restored what it recorded runs nothing.
 //line error_cascade_is_bounded.scxml:45
-func (p *ErrorCascadeIsBoundedPolicy) ExecuteExitActions(state ErrorCascadeIsBoundedState, engine *sce.Engine[ErrorCascadeIsBoundedState, ErrorCascadeIsBoundedEvent], preTransitionActive []ErrorCascadeIsBoundedState) {
+func (p *ErrorCascadeIsBoundedPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[ErrorCascadeIsBoundedState, ErrorCascadeIsBoundedEvent]) {
+	// W3C SCXML 3.10.2: no <history> in this document has default content.
+}
+
+// ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
+// removes it from the configuration, cancels its invocations and runs its
+// <onexit>.
+//line error_cascade_is_bounded.scxml:45
+func (p *ErrorCascadeIsBoundedPolicy) ExecuteExitActions(state ErrorCascadeIsBoundedState, engine *sce.Engine[ErrorCascadeIsBoundedState, ErrorCascadeIsBoundedEvent], configurationBeforeExit []ErrorCascadeIsBoundedState) {
 	p.ensureScriptEngine()
 	switch state {
 	default:
@@ -738,175 +756,179 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteExitActions(state ErrorCascadeIsBou
 	}
 }
 
-// ProcessTransition evaluates guards and takes a matching transition (W3C SCXML 3.13).
-// Returns true if a transition was taken.
+
+
+// BindCurrentEvent binds the event whose transitions are about to be selected as
+// the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
+// and not for an eventless selection, which has no event of its own.
 //line error_cascade_is_bounded.scxml:45
-func (p *ErrorCascadeIsBoundedPolicy) ProcessTransition(currentState *ErrorCascadeIsBoundedState, event ErrorCascadeIsBoundedEvent, engine *sce.Engine[ErrorCascadeIsBoundedState, ErrorCascadeIsBoundedEvent]) bool {
-	// W3C SCXML 5.10: Bind _event system variable for guard evaluation
+func (p *ErrorCascadeIsBoundedPolicy) BindCurrentEvent(event ErrorCascadeIsBoundedEvent, engine *sce.Engine[ErrorCascadeIsBoundedState, ErrorCascadeIsBoundedEvent]) {
 	if event != ErrorCascadeIsBoundedEventNull {
 		// §scxml-B-2-8-1: the rung the payload got, handed to the engine
 		// rather than dropped. This is the only frame that has both the
 		// reading and the event it belongs to.
 		engine.NotePayloadReading(event, p.setCurrentEvent(p.GetEventName(event)))
 	}
-
-	// W3C SCXML 3.12: Try transitions in current state first
-	if p.tryTransitionInState(*currentState, event, currentState, engine) {
-		return true
-	}
-
-
-	return false
 }
 
-
-// tryTransitionInState checks transitions for a single state.
+// FirstEnabledTransition is Appendix D selectTransitions, the half only this
+// document can answer: the first of state's own transitions, in document order,
+// that event enables and whose guard holds. The engine walks the atomic states
+// and their ancestors and keeps the ordered set; the null event asks for
+// eventless transitions.
 //line error_cascade_is_bounded.scxml:45
-func (p *ErrorCascadeIsBoundedPolicy) tryTransitionInState(checkState ErrorCascadeIsBoundedState, event ErrorCascadeIsBoundedEvent, currentState *ErrorCascadeIsBoundedState, engine *sce.Engine[ErrorCascadeIsBoundedState, ErrorCascadeIsBoundedEvent]) bool {
-	switch checkState {
+func (p *ErrorCascadeIsBoundedPolicy) FirstEnabledTransition(state ErrorCascadeIsBoundedState, event ErrorCascadeIsBoundedEvent, engine *sce.Engine[ErrorCascadeIsBoundedState, ErrorCascadeIsBoundedEvent]) (sce.EnabledTransition[ErrorCascadeIsBoundedState, sce.HistoryID], bool) {
+	switch state {
 	case ErrorCascadeIsBoundedStateIdle:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == ErrorCascadeIsBoundedEventPoke {
-			*currentState = ErrorCascadeIsBoundedStateIdle
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = ErrorCascadeIsBoundedStateIdle
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = true
-			return true
-		}
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == ErrorCascadeIsBoundedEventBoom {
-			*currentState = ErrorCascadeIsBoundedStateIdle
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = ErrorCascadeIsBoundedStateIdle
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = true
-			return true
-		}
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == ErrorCascadeIsBoundedEventSettle {
-			*currentState = ErrorCascadeIsBoundedStateSettling
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = ErrorCascadeIsBoundedStateIdle
-			p.lastTransitionIndex = 2
-			p.hasTransitionActions = false
-			return true
-		}
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == ErrorCascadeIsBoundedEventSpin {
-			*currentState = ErrorCascadeIsBoundedStateRunaway
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = ErrorCascadeIsBoundedStateIdle
-			p.lastTransitionIndex = 3
-			p.hasTransitionActions = false
-			return true
-		}
-	case ErrorCascadeIsBoundedStateRunaway:
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == ErrorCascadeIsBoundedEventErrorExecution {
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = true
-			p.lastTransitionSourceState = ErrorCascadeIsBoundedStateRunaway
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = true
-			return true
-		}
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == ErrorCascadeIsBoundedEventTick {
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = true
-			p.lastTransitionSourceState = ErrorCascadeIsBoundedStateRunaway
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = true
-			return true
-		}
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == ErrorCascadeIsBoundedEventPoke {
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = true
-			p.lastTransitionSourceState = ErrorCascadeIsBoundedStateRunaway
-			p.lastTransitionIndex = 2
-			p.hasTransitionActions = true
-			return true
-		}
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == ErrorCascadeIsBoundedEventReset {
-			*currentState = ErrorCascadeIsBoundedStateIdle
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = ErrorCascadeIsBoundedStateRunaway
-			p.lastTransitionIndex = 3
-			p.hasTransitionActions = false
-			return true
-		}
-	case ErrorCascadeIsBoundedStateSettling:
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == ErrorCascadeIsBoundedEventErrorExecution {
-			if p.evaluateGuard(`(repairs < 3)`, engine) {
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = true
-			p.lastTransitionSourceState = ErrorCascadeIsBoundedStateSettling
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[ErrorCascadeIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfErrorCascadeIsBounded[state][0],
+					TransitionIndex: 0,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == ErrorCascadeIsBoundedEventPoke {
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = true
-			p.lastTransitionSourceState = ErrorCascadeIsBoundedStateSettling
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = true
-			return true
+		if event == ErrorCascadeIsBoundedEventBoom {
+			{
+				return sce.EnabledTransition[ErrorCascadeIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfErrorCascadeIsBounded[state][1],
+					TransitionIndex: 1,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
+		if event == ErrorCascadeIsBoundedEventSettle {
+			{
+				return sce.EnabledTransition[ErrorCascadeIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfErrorCascadeIsBounded[state][2],
+					TransitionIndex: 2,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
+		}
+		if event == ErrorCascadeIsBoundedEventSpin {
+			{
+				return sce.EnabledTransition[ErrorCascadeIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfErrorCascadeIsBounded[state][3],
+					TransitionIndex: 3,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
+		}
+	case ErrorCascadeIsBoundedStateRunaway:
+		if event == ErrorCascadeIsBoundedEventErrorExecution {
+			{
+				return sce.EnabledTransition[ErrorCascadeIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 0,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
+		}
+		if event == ErrorCascadeIsBoundedEventTick {
+			{
+				return sce.EnabledTransition[ErrorCascadeIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 1,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
+		}
+		if event == ErrorCascadeIsBoundedEventPoke {
+			{
+				return sce.EnabledTransition[ErrorCascadeIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 2,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
+		}
 		if event == ErrorCascadeIsBoundedEventReset {
-			*currentState = ErrorCascadeIsBoundedStateIdle
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = ErrorCascadeIsBoundedStateSettling
-			p.lastTransitionIndex = 2
-			p.hasTransitionActions = false
-			return true
+			{
+				return sce.EnabledTransition[ErrorCascadeIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfErrorCascadeIsBounded[state][3],
+					TransitionIndex: 3,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
+		}
+	case ErrorCascadeIsBoundedStateSettling:
+		if event == ErrorCascadeIsBoundedEventErrorExecution {
+			if p.evaluateGuard(`(repairs < 3)`, engine) {
+				return sce.EnabledTransition[ErrorCascadeIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 0,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
+		}
+		if event == ErrorCascadeIsBoundedEventPoke {
+			{
+				return sce.EnabledTransition[ErrorCascadeIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 1,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
+		}
+		if event == ErrorCascadeIsBoundedEventReset {
+			{
+				return sce.EnabledTransition[ErrorCascadeIsBoundedState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfErrorCascadeIsBounded[state][2],
+					TransitionIndex: 2,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	}
-	return false
+	return sce.EnabledTransition[ErrorCascadeIsBoundedState, sce.HistoryID]{}, false
 }
 
-// ExecuteTransitionActions executes actions for the last taken transition (W3C SCXML 3.13).
+// ExecuteTransitionContent runs one transition's executable content (W3C SCXML
+// 3.13), between the microstep's exits and its entries.
 //line error_cascade_is_bounded.scxml:45
-func (p *ErrorCascadeIsBoundedPolicy) ExecuteTransitionActions(engine *sce.Engine[ErrorCascadeIsBoundedState, ErrorCascadeIsBoundedEvent]) {
+func (p *ErrorCascadeIsBoundedPolicy) ExecuteTransitionContent(source ErrorCascadeIsBoundedState, transitionIndex int, engine *sce.Engine[ErrorCascadeIsBoundedState, ErrorCascadeIsBoundedEvent]) {
 	p.ensureScriptEngine()
-	if !p.hasTransitionActions {
-		return
-	}
-	source := p.lastTransitionSourceState
-	idx := p.lastTransitionIndex
-	if source == ErrorCascadeIsBoundedStateIdle && idx == 0 {
-		//line error_cascade_is_bounded.scxml:68
+	switch source {
+	case ErrorCascadeIsBoundedStateIdle:
+		switch transitionIndex {
+		case 0:
+			//line error_cascade_is_bounded.scxml:68
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
 	}
 
-		return
-	}
-	if source == ErrorCascadeIsBoundedStateIdle && idx == 1 {
-		//line error_cascade_is_bounded.scxml:74
+		case 1:
+			//line error_cascade_is_bounded.scxml:74
 
 	// W3C SCXML 5.3/B.2: Invalid or read-only location ""
 	engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<assign> has an invalid or read-only location ''"))
 
-		return
-	}
-	if source == ErrorCascadeIsBoundedStateRunaway && idx == 0 {
-		//line error_cascade_is_bounded.scxml:107
+		}
+	case ErrorCascadeIsBoundedStateRunaway:
+		switch transitionIndex {
+		case 0:
+			//line error_cascade_is_bounded.scxml:107
 
 	// W3C SCXML 5.3: <assign location="runs" expr="runs + 1">
 	if err := p.assignVariable(`runs`, `_scxml_add(runs, 1)`); err != nil {
@@ -920,30 +942,27 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteTransitionActions(engine *sce.Engin
 	// W3C SCXML 5.3/B.2: Invalid or read-only location ""
 	engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<assign> has an invalid or read-only location ''"))
 
-		return
-	}
-	if source == ErrorCascadeIsBoundedStateRunaway && idx == 1 {
-		//line error_cascade_is_bounded.scxml:120
+		case 1:
+			//line error_cascade_is_bounded.scxml:120
 
 	// W3C SCXML 5.3: <assign location="ticks" expr="ticks + 1">
 	if err := p.assignVariable(`ticks`, `_scxml_add(ticks, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<assign> to 'ticks' failed"))
 	}
 
-		return
-	}
-	if source == ErrorCascadeIsBoundedStateRunaway && idx == 2 {
-		//line error_cascade_is_bounded.scxml:123
+		case 2:
+			//line error_cascade_is_bounded.scxml:123
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
 	}
 
-		return
-	}
-	if source == ErrorCascadeIsBoundedStateSettling && idx == 0 {
-		//line error_cascade_is_bounded.scxml:89
+		}
+	case ErrorCascadeIsBoundedStateSettling:
+		switch transitionIndex {
+		case 0:
+			//line error_cascade_is_bounded.scxml:89
 
 	// W3C SCXML 5.3: <assign location="repairs" expr="repairs + 1">
 	if err := p.assignVariable(`repairs`, `_scxml_add(repairs, 1)`); err != nil {
@@ -954,16 +973,14 @@ func (p *ErrorCascadeIsBoundedPolicy) ExecuteTransitionActions(engine *sce.Engin
 	// W3C SCXML 5.3/B.2: Invalid or read-only location ""
 	engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<assign> has an invalid or read-only location ''"))
 
-		return
-	}
-	if source == ErrorCascadeIsBoundedStateSettling && idx == 1 {
-		//line error_cascade_is_bounded.scxml:93
+		case 1:
+			//line error_cascade_is_bounded.scxml:93
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(ErrorCascadeIsBoundedEventErrorExecution, "<assign> to 'pokes' failed"))
 	}
 
-		return
+		}
 	}
 }

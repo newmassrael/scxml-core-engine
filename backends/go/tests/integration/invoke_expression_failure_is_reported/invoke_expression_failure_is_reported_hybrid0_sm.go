@@ -92,6 +92,39 @@ var InvokeExpressionFailureIsReportedHybrid0AllStates = []InvokeExpressionFailur
 	InvokeExpressionFailureIsReportedHybrid0StateFinal,
 }
 
+// InvokeExpressionFailureIsReportedHybrid0Target is one token of a target list, as the document wrote
+// it (W3C SCXML 3.13): a state, or a <history> the engine dereferences.
+type InvokeExpressionFailureIsReportedHybrid0Target = sce.EntryTarget[InvokeExpressionFailureIsReportedHybrid0State, sce.HistoryID]
+
+// ======================================================================
+// Document structure (W3C SCXML 3.2-3.4, 3.10)
+//
+// Package-level tables, because the structure is a fact about the document
+// and not about a run: the engine's Appendix D procedures read them through
+// the policy methods below, and a transition's target list is handed out as
+// a slice of them rather than rebuilt on every selection.
+// ======================================================================
+
+// childStatesOfInvokeExpressionFailureIsReportedHybrid0 is §scxml-D-getChildStates per state: its
+// <state>, <parallel> and <final> children, in document order.
+var childStatesOfInvokeExpressionFailureIsReportedHybrid0 = [1][]InvokeExpressionFailureIsReportedHybrid0State{
+}
+
+// initialTargetsOfInvokeExpressionFailureIsReportedHybrid0 is each compound state's initial transition
+// target, as written (§scxml-3.3).
+var initialTargetsOfInvokeExpressionFailureIsReportedHybrid0 = [1][]InvokeExpressionFailureIsReportedHybrid0Target{
+}
+
+// documentInitialTargetsOfInvokeExpressionFailureIsReportedHybrid0 is the target of the document's own
+// initial transition, as written (§scxml-3.2).
+var documentInitialTargetsOfInvokeExpressionFailureIsReportedHybrid0 = []InvokeExpressionFailureIsReportedHybrid0Target{sce.StateTarget[InvokeExpressionFailureIsReportedHybrid0State, sce.HistoryID](InvokeExpressionFailureIsReportedHybrid0StateFinal)}
+
+// transitionTargetsOfInvokeExpressionFailureIsReportedHybrid0 is each transition's target list, as
+// written (§scxml-3.13), by source state and the transition's index among its
+// source's own transitions. A targetless transition's entry is empty.
+var transitionTargetsOfInvokeExpressionFailureIsReportedHybrid0 = [1][][]InvokeExpressionFailureIsReportedHybrid0Target{
+}
+
 // ======================================================================
 // Event type (W3C SCXML 3.12)
 // ======================================================================
@@ -116,10 +149,6 @@ func (e InvokeExpressionFailureIsReportedHybrid0Event) String() string {
 // ======================================================================
 
 type InvokeExpressionFailureIsReportedHybrid0Policy struct {
-	// W3C SCXML 3.13: Last transition metadata
-	lastTransitionIsInternal  bool
-	lastTransitionIsTargetless bool
-	lastTransitionSourceState InvokeExpressionFailureIsReportedHybrid0State
 	// W3C SCXML 5.10: Session ID
 	SessionID string
 	// W3C SCXML 6.4: Parent communication
@@ -134,7 +163,6 @@ type InvokeExpressionFailureIsReportedHybrid0Policy struct {
 // NewInvokeExpressionFailureIsReportedHybrid0Policy creates a new policy with default values.
 func NewInvokeExpressionFailureIsReportedHybrid0Policy() InvokeExpressionFailureIsReportedHybrid0Policy {
 	return InvokeExpressionFailureIsReportedHybrid0Policy{
-		lastTransitionSourceState: InvokeExpressionFailureIsReportedHybrid0StateFinal,
 	}
 }
 
@@ -178,29 +206,45 @@ func (p *InvokeExpressionFailureIsReportedHybrid0Policy) GetParent(state InvokeE
 	return 0, false
 }
 
-// IsCompoundState returns true if state has children (W3C SCXML 3.3).
+// IsCompoundState returns true if state is a <state> with child states — exactly
+// the states that have an initial transition. A <parallel> is not compound
+// (W3C SCXML 3.3).
 func (p *InvokeExpressionFailureIsReportedHybrid0Policy) IsCompoundState(state InvokeExpressionFailureIsReportedHybrid0State) bool {
-	switch state {
-	}
-	return false
+	return len(initialTargetsOfInvokeExpressionFailureIsReportedHybrid0[state]) > 0
 }
 
 func (p *InvokeExpressionFailureIsReportedHybrid0Policy) IsParallelState(_ InvokeExpressionFailureIsReportedHybrid0State) bool { return false }
-func (p *InvokeExpressionFailureIsReportedHybrid0Policy) GetParallelRegions(_ InvokeExpressionFailureIsReportedHybrid0State) []InvokeExpressionFailureIsReportedHybrid0State { return nil }
 
-// IsDescendantOf returns true if desc is a descendant of anc (W3C SCXML 3.12).
-func (p *InvokeExpressionFailureIsReportedHybrid0Policy) IsDescendantOf(desc, anc InvokeExpressionFailureIsReportedHybrid0State) bool {
-	current := desc
-	for {
-		parent, ok := p.GetParent(current)
-		if !ok {
-			return false
-		}
-		if parent == anc {
-			return true
-		}
-		current = parent
-	}
+// GetChildStates returns state's <state>, <parallel> and <final> children, in
+// document order — for a <parallel>, its regions (§scxml-D-getChildStates).
+func (p *InvokeExpressionFailureIsReportedHybrid0Policy) GetChildStates(state InvokeExpressionFailureIsReportedHybrid0State) []InvokeExpressionFailureIsReportedHybrid0State {
+	return childStatesOfInvokeExpressionFailureIsReportedHybrid0[state]
+}
+
+// GetInitialTargets returns a compound state's initial transition target, as
+// written; the engine's entry procedures dereference a <history> among them
+// (W3C SCXML 3.3).
+func (p *InvokeExpressionFailureIsReportedHybrid0Policy) GetInitialTargets(state InvokeExpressionFailureIsReportedHybrid0State) []InvokeExpressionFailureIsReportedHybrid0Target {
+	return initialTargetsOfInvokeExpressionFailureIsReportedHybrid0[state]
+}
+
+// GetDocumentInitialTargets returns the target of the document's own initial
+// transition, as written (W3C SCXML 3.2).
+func (p *InvokeExpressionFailureIsReportedHybrid0Policy) GetDocumentInitialTargets() []InvokeExpressionFailureIsReportedHybrid0Target {
+	return documentInitialTargetsOfInvokeExpressionFailureIsReportedHybrid0
+}
+
+// W3C SCXML 3.10: this document declares no <history>, so no target list names
+// one and the engine never asks the two below; answering would mean inventing
+// one.
+func (p *InvokeExpressionFailureIsReportedHybrid0Policy) GetHistoryParent(history sce.HistoryID) InvokeExpressionFailureIsReportedHybrid0State {
+	panic(fmt.Sprintf("InvokeExpressionFailureIsReportedHybrid0Policy declares no <history>; asked for %d", history))
+}
+func (p *InvokeExpressionFailureIsReportedHybrid0Policy) GetHistoryDefaultTargets(history sce.HistoryID) []InvokeExpressionFailureIsReportedHybrid0Target {
+	panic(fmt.Sprintf("InvokeExpressionFailureIsReportedHybrid0Policy declares no <history>; asked for %d", history))
+}
+func (p *InvokeExpressionFailureIsReportedHybrid0Policy) HistoryValue(_ sce.HistoryID) ([]InvokeExpressionFailureIsReportedHybrid0State, bool) {
+	return nil, false
 }
 
 // GetDocumentOrder returns the document order index (W3C SCXML Appendix D).
@@ -239,43 +283,6 @@ func (p *InvokeExpressionFailureIsReportedHybrid0Policy) GetStateFromName(name s
 // NullEvent returns the sentinel for eventless transition dispatch (W3C SCXML 3.13).
 func (p *InvokeExpressionFailureIsReportedHybrid0Policy) NullEvent() InvokeExpressionFailureIsReportedHybrid0Event {
 	return InvokeExpressionFailureIsReportedHybrid0EventNull
-}
-
-// GetInitialChildren returns initial children of a compound state (W3C SCXML 3.6).
-func (p *InvokeExpressionFailureIsReportedHybrid0Policy) GetInitialChildren(state InvokeExpressionFailureIsReportedHybrid0State) []InvokeExpressionFailureIsReportedHybrid0State {
-	switch state {
-	}
-	return nil
-}
-
-// LastTransitionIsInternal returns the internal transition flag (W3C SCXML 3.13).
-func (p *InvokeExpressionFailureIsReportedHybrid0Policy) LastTransitionIsInternal() bool {
-	return p.lastTransitionIsInternal
-}
-
-// SetLastTransitionIsInternal sets the internal transition flag.
-func (p *InvokeExpressionFailureIsReportedHybrid0Policy) SetLastTransitionIsInternal(value bool) {
-	p.lastTransitionIsInternal = value
-}
-
-// LastTransitionIsTargetless returns the targetless transition flag (W3C SCXML 3.13).
-func (p *InvokeExpressionFailureIsReportedHybrid0Policy) LastTransitionIsTargetless() bool {
-	return p.lastTransitionIsTargetless
-}
-
-// SetLastTransitionIsTargetless sets the targetless transition flag.
-func (p *InvokeExpressionFailureIsReportedHybrid0Policy) SetLastTransitionIsTargetless(value bool) {
-	p.lastTransitionIsTargetless = value
-}
-
-// LastTransitionSourceState returns the source state of the last transition.
-func (p *InvokeExpressionFailureIsReportedHybrid0Policy) LastTransitionSourceState() InvokeExpressionFailureIsReportedHybrid0State {
-	return p.lastTransitionSourceState
-}
-
-// SetLastTransitionSourceState sets the source state of the last transition.
-func (p *InvokeExpressionFailureIsReportedHybrid0Policy) SetLastTransitionSourceState(state InvokeExpressionFailureIsReportedHybrid0State) {
-	p.lastTransitionSourceState = state
 }
 
 
@@ -319,14 +326,6 @@ func (p *InvokeExpressionFailureIsReportedHybrid0Policy) GetActiveStates() []Inv
 func (p *InvokeExpressionFailureIsReportedHybrid0Policy) SetActiveStates(_ []InvokeExpressionFailureIsReportedHybrid0State) {}
 func (p *InvokeExpressionFailureIsReportedHybrid0Policy) HasExternalEventFlag() bool { return false }
 func (p *InvokeExpressionFailureIsReportedHybrid0Policy) SetNextEventIsExternal(_ bool) {}
-// GetInitialOrHistoryChild returns the initial child considering history (W3C SCXML 3.11).
-func (p *InvokeExpressionFailureIsReportedHybrid0Policy) GetInitialOrHistoryChild(state InvokeExpressionFailureIsReportedHybrid0State) InvokeExpressionFailureIsReportedHybrid0State {
-	children := p.GetInitialChildren(state)
-	if len(children) > 0 {
-		return children[0]
-	}
-	return state
-}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *InvokeExpressionFailureIsReportedHybrid0Policy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[InvokeExpressionFailureIsReportedHybrid0Event], _ *sce.Engine[InvokeExpressionFailureIsReportedHybrid0State, InvokeExpressionFailureIsReportedHybrid0Event]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).
@@ -357,52 +356,63 @@ func (p *InvokeExpressionFailureIsReportedHybrid0Policy) ClearEventMetadata() {
 
 
 
-
-// ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
+// ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
+// configuration, runs its <onentry>, and its <initial> transition's content when
+// its initial state is entered by default.
 //line invoke_expression_failure_is_reported_hybrid0.scxml:2
-func (p *InvokeExpressionFailureIsReportedHybrid0Policy) ExecuteEntryActions(state InvokeExpressionFailureIsReportedHybrid0State, engine *sce.Engine[InvokeExpressionFailureIsReportedHybrid0State, InvokeExpressionFailureIsReportedHybrid0Event], pathChild *InvokeExpressionFailureIsReportedHybrid0State) {
-	// Only a `<parallel>` machine descends into defaults here, so a machine
-	// without one has nothing to tell an ancestor entry from a target entry.
-	_ = pathChild
+func (p *InvokeExpressionFailureIsReportedHybrid0Policy) ExecuteEntryActions(state InvokeExpressionFailureIsReportedHybrid0State, engine *sce.Engine[InvokeExpressionFailureIsReportedHybrid0State, InvokeExpressionFailureIsReportedHybrid0Event], isDefaultEntry bool) {
 	switch state {
 	default:
 		// No entry actions
 	}
 }
 
-// ExecuteExitActions executes onexit actions for a state (W3C SCXML 3.9).
+// ExecuteHistoryDefaultContent runs a <history>'s default transition content
+// (W3C SCXML 3.10.2), after its parent's onentry (and after the parent's own
+// <initial> content) when the history was taken with nothing recorded. The
+// engine asks for it by the entry set's defaultHistoryContent answer; a history
+// that restored what it recorded runs nothing.
 //line invoke_expression_failure_is_reported_hybrid0.scxml:2
-func (p *InvokeExpressionFailureIsReportedHybrid0Policy) ExecuteExitActions(state InvokeExpressionFailureIsReportedHybrid0State, engine *sce.Engine[InvokeExpressionFailureIsReportedHybrid0State, InvokeExpressionFailureIsReportedHybrid0Event], preTransitionActive []InvokeExpressionFailureIsReportedHybrid0State) {
+func (p *InvokeExpressionFailureIsReportedHybrid0Policy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[InvokeExpressionFailureIsReportedHybrid0State, InvokeExpressionFailureIsReportedHybrid0Event]) {
+	// W3C SCXML 3.10.2: no <history> in this document has default content.
+}
+
+// ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
+// removes it from the configuration, cancels its invocations and runs its
+// <onexit>.
+//line invoke_expression_failure_is_reported_hybrid0.scxml:2
+func (p *InvokeExpressionFailureIsReportedHybrid0Policy) ExecuteExitActions(state InvokeExpressionFailureIsReportedHybrid0State, engine *sce.Engine[InvokeExpressionFailureIsReportedHybrid0State, InvokeExpressionFailureIsReportedHybrid0Event], configurationBeforeExit []InvokeExpressionFailureIsReportedHybrid0State) {
 	switch state {
 	default:
 		// No exit actions
 	}
 }
 
-// ProcessTransition evaluates guards and takes a matching transition (W3C SCXML 3.13).
-// Returns true if a transition was taken.
+
+
+// BindCurrentEvent binds the event whose transitions are about to be selected as
+// the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
+// and not for an eventless selection, which has no event of its own.
 //line invoke_expression_failure_is_reported_hybrid0.scxml:2
-func (p *InvokeExpressionFailureIsReportedHybrid0Policy) ProcessTransition(currentState *InvokeExpressionFailureIsReportedHybrid0State, event InvokeExpressionFailureIsReportedHybrid0Event, engine *sce.Engine[InvokeExpressionFailureIsReportedHybrid0State, InvokeExpressionFailureIsReportedHybrid0Event]) bool {
-
-	// W3C SCXML 3.12: Try transitions in current state first
-	if p.tryTransitionInState(*currentState, event, currentState, engine) {
-		return true
-	}
-
-
-	return false
+func (p *InvokeExpressionFailureIsReportedHybrid0Policy) BindCurrentEvent(event InvokeExpressionFailureIsReportedHybrid0Event, engine *sce.Engine[InvokeExpressionFailureIsReportedHybrid0State, InvokeExpressionFailureIsReportedHybrid0Event]) {
+	// This document's guards never read _event, so there is nothing to bind.
 }
 
-
-// tryTransitionInState checks transitions for a single state.
+// FirstEnabledTransition is Appendix D selectTransitions, the half only this
+// document can answer: the first of state's own transitions, in document order,
+// that event enables and whose guard holds. The engine walks the atomic states
+// and their ancestors and keeps the ordered set; the null event asks for
+// eventless transitions.
 //line invoke_expression_failure_is_reported_hybrid0.scxml:2
-func (p *InvokeExpressionFailureIsReportedHybrid0Policy) tryTransitionInState(checkState InvokeExpressionFailureIsReportedHybrid0State, event InvokeExpressionFailureIsReportedHybrid0Event, currentState *InvokeExpressionFailureIsReportedHybrid0State, engine *sce.Engine[InvokeExpressionFailureIsReportedHybrid0State, InvokeExpressionFailureIsReportedHybrid0Event]) bool {
-	switch checkState {
+func (p *InvokeExpressionFailureIsReportedHybrid0Policy) FirstEnabledTransition(state InvokeExpressionFailureIsReportedHybrid0State, event InvokeExpressionFailureIsReportedHybrid0Event, engine *sce.Engine[InvokeExpressionFailureIsReportedHybrid0State, InvokeExpressionFailureIsReportedHybrid0Event]) (sce.EnabledTransition[InvokeExpressionFailureIsReportedHybrid0State, sce.HistoryID], bool) {
+	switch state {
 	}
-	return false
+	return sce.EnabledTransition[InvokeExpressionFailureIsReportedHybrid0State, sce.HistoryID]{}, false
 }
 
-// ExecuteTransitionActions executes actions for the last taken transition (W3C SCXML 3.13).
+// ExecuteTransitionContent runs one transition's executable content (W3C SCXML
+// 3.13), between the microstep's exits and its entries.
 //line invoke_expression_failure_is_reported_hybrid0.scxml:2
-func (p *InvokeExpressionFailureIsReportedHybrid0Policy) ExecuteTransitionActions(engine *sce.Engine[InvokeExpressionFailureIsReportedHybrid0State, InvokeExpressionFailureIsReportedHybrid0Event]) {
+func (p *InvokeExpressionFailureIsReportedHybrid0Policy) ExecuteTransitionContent(source InvokeExpressionFailureIsReportedHybrid0State, transitionIndex int, engine *sce.Engine[InvokeExpressionFailureIsReportedHybrid0State, InvokeExpressionFailureIsReportedHybrid0Event]) {
+	// W3C SCXML 3.13: no transition in this document has content.
 }

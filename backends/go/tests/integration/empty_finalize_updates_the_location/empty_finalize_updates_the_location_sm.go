@@ -146,6 +146,54 @@ var EmptyFinalizeUpdatesTheLocationAllStates = []EmptyFinalizeUpdatesTheLocation
 	EmptyFinalizeUpdatesTheLocationStateUnmatchedPhase,
 }
 
+// EmptyFinalizeUpdatesTheLocationTarget is one token of a target list, as the document wrote
+// it (W3C SCXML 3.13): a state, or a <history> the engine dereferences.
+type EmptyFinalizeUpdatesTheLocationTarget = sce.EntryTarget[EmptyFinalizeUpdatesTheLocationState, sce.HistoryID]
+
+// ======================================================================
+// Document structure (W3C SCXML 3.2-3.4, 3.10)
+//
+// Package-level tables, because the structure is a fact about the document
+// and not about a run: the engine's Appendix D procedures read them through
+// the policy methods below, and a transition's target list is handed out as
+// a slice of them rather than rebuilt on every selection.
+// ======================================================================
+
+// childStatesOfEmptyFinalizeUpdatesTheLocation is §scxml-D-getChildStates per state: its
+// <state>, <parallel> and <final> children, in document order.
+var childStatesOfEmptyFinalizeUpdatesTheLocation = [10][]EmptyFinalizeUpdatesTheLocationState{
+}
+
+// initialTargetsOfEmptyFinalizeUpdatesTheLocation is each compound state's initial transition
+// target, as written (§scxml-3.3).
+var initialTargetsOfEmptyFinalizeUpdatesTheLocation = [10][]EmptyFinalizeUpdatesTheLocationTarget{
+}
+
+// documentInitialTargetsOfEmptyFinalizeUpdatesTheLocation is the target of the document's own
+// initial transition, as written (§scxml-3.2).
+var documentInitialTargetsOfEmptyFinalizeUpdatesTheLocation = []EmptyFinalizeUpdatesTheLocationTarget{sce.StateTarget[EmptyFinalizeUpdatesTheLocationState, sce.HistoryID](EmptyFinalizeUpdatesTheLocationStateEmptyPhase)}
+
+// transitionTargetsOfEmptyFinalizeUpdatesTheLocation is each transition's target list, as
+// written (§scxml-3.13), by source state and the transition's index among its
+// source's own transitions. A targetless transition's entry is empty.
+var transitionTargetsOfEmptyFinalizeUpdatesTheLocation = [10][][]EmptyFinalizeUpdatesTheLocationTarget{
+	EmptyFinalizeUpdatesTheLocationStateAbsentPhase: {
+		0: {sce.StateTarget[EmptyFinalizeUpdatesTheLocationState, sce.HistoryID](EmptyFinalizeUpdatesTheLocationStateFailUpdatedWithoutFinalize)},
+		1: {sce.StateTarget[EmptyFinalizeUpdatesTheLocationState, sce.HistoryID](EmptyFinalizeUpdatesTheLocationStateUnmatchedPhase)},
+		2: {sce.StateTarget[EmptyFinalizeUpdatesTheLocationState, sce.HistoryID](EmptyFinalizeUpdatesTheLocationStateFailAbsentChildSilent)},
+	},
+	EmptyFinalizeUpdatesTheLocationStateEmptyPhase: {
+		0: {sce.StateTarget[EmptyFinalizeUpdatesTheLocationState, sce.HistoryID](EmptyFinalizeUpdatesTheLocationStateAbsentPhase)},
+		1: {sce.StateTarget[EmptyFinalizeUpdatesTheLocationState, sce.HistoryID](EmptyFinalizeUpdatesTheLocationStateFailNotUpdated)},
+		2: {sce.StateTarget[EmptyFinalizeUpdatesTheLocationState, sce.HistoryID](EmptyFinalizeUpdatesTheLocationStateFailEmptyChildSilent)},
+	},
+	EmptyFinalizeUpdatesTheLocationStateUnmatchedPhase: {
+		0: {sce.StateTarget[EmptyFinalizeUpdatesTheLocationState, sce.HistoryID](EmptyFinalizeUpdatesTheLocationStateFailUnmatchedNameWrote)},
+		1: {sce.StateTarget[EmptyFinalizeUpdatesTheLocationState, sce.HistoryID](EmptyFinalizeUpdatesTheLocationStatePass)},
+		2: {sce.StateTarget[EmptyFinalizeUpdatesTheLocationState, sce.HistoryID](EmptyFinalizeUpdatesTheLocationStateFailUnmatchedChildSilent)},
+	},
+}
+
 // ======================================================================
 // Event type (W3C SCXML 3.12)
 // ======================================================================
@@ -197,10 +245,6 @@ func (e EmptyFinalizeUpdatesTheLocationEvent) String() string {
 // ======================================================================
 
 type EmptyFinalizeUpdatesTheLocationPolicy struct {
-	// W3C SCXML 3.13: Last transition metadata
-	lastTransitionIsInternal  bool
-	lastTransitionIsTargetless bool
-	lastTransitionSourceState EmptyFinalizeUpdatesTheLocationState
 	// W3C SCXML 5.10.1: External event flag
 	nextEventIsExternal bool
 	pendingEventName string
@@ -241,7 +285,6 @@ type EmptyFinalizeUpdatesTheLocationPolicy struct {
 // NewEmptyFinalizeUpdatesTheLocationPolicy creates a new policy with default values.
 func NewEmptyFinalizeUpdatesTheLocationPolicy() EmptyFinalizeUpdatesTheLocationPolicy {
 	return EmptyFinalizeUpdatesTheLocationPolicy{
-		lastTransitionSourceState: EmptyFinalizeUpdatesTheLocationStateEmptyPhase,
 		pendingInvokes: make([]sce.PendingInvoke[EmptyFinalizeUpdatesTheLocationState], 0),
 		activeInvokes:  make(map[string]*sce.ChildSession),
 	}
@@ -948,29 +991,45 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) GetParent(state EmptyFinalizeUpd
 	return 0, false
 }
 
-// IsCompoundState returns true if state has children (W3C SCXML 3.3).
+// IsCompoundState returns true if state is a <state> with child states — exactly
+// the states that have an initial transition. A <parallel> is not compound
+// (W3C SCXML 3.3).
 func (p *EmptyFinalizeUpdatesTheLocationPolicy) IsCompoundState(state EmptyFinalizeUpdatesTheLocationState) bool {
-	switch state {
-	}
-	return false
+	return len(initialTargetsOfEmptyFinalizeUpdatesTheLocation[state]) > 0
 }
 
 func (p *EmptyFinalizeUpdatesTheLocationPolicy) IsParallelState(_ EmptyFinalizeUpdatesTheLocationState) bool { return false }
-func (p *EmptyFinalizeUpdatesTheLocationPolicy) GetParallelRegions(_ EmptyFinalizeUpdatesTheLocationState) []EmptyFinalizeUpdatesTheLocationState { return nil }
 
-// IsDescendantOf returns true if desc is a descendant of anc (W3C SCXML 3.12).
-func (p *EmptyFinalizeUpdatesTheLocationPolicy) IsDescendantOf(desc, anc EmptyFinalizeUpdatesTheLocationState) bool {
-	current := desc
-	for {
-		parent, ok := p.GetParent(current)
-		if !ok {
-			return false
-		}
-		if parent == anc {
-			return true
-		}
-		current = parent
-	}
+// GetChildStates returns state's <state>, <parallel> and <final> children, in
+// document order — for a <parallel>, its regions (§scxml-D-getChildStates).
+func (p *EmptyFinalizeUpdatesTheLocationPolicy) GetChildStates(state EmptyFinalizeUpdatesTheLocationState) []EmptyFinalizeUpdatesTheLocationState {
+	return childStatesOfEmptyFinalizeUpdatesTheLocation[state]
+}
+
+// GetInitialTargets returns a compound state's initial transition target, as
+// written; the engine's entry procedures dereference a <history> among them
+// (W3C SCXML 3.3).
+func (p *EmptyFinalizeUpdatesTheLocationPolicy) GetInitialTargets(state EmptyFinalizeUpdatesTheLocationState) []EmptyFinalizeUpdatesTheLocationTarget {
+	return initialTargetsOfEmptyFinalizeUpdatesTheLocation[state]
+}
+
+// GetDocumentInitialTargets returns the target of the document's own initial
+// transition, as written (W3C SCXML 3.2).
+func (p *EmptyFinalizeUpdatesTheLocationPolicy) GetDocumentInitialTargets() []EmptyFinalizeUpdatesTheLocationTarget {
+	return documentInitialTargetsOfEmptyFinalizeUpdatesTheLocation
+}
+
+// W3C SCXML 3.10: this document declares no <history>, so no target list names
+// one and the engine never asks the two below; answering would mean inventing
+// one.
+func (p *EmptyFinalizeUpdatesTheLocationPolicy) GetHistoryParent(history sce.HistoryID) EmptyFinalizeUpdatesTheLocationState {
+	panic(fmt.Sprintf("EmptyFinalizeUpdatesTheLocationPolicy declares no <history>; asked for %d", history))
+}
+func (p *EmptyFinalizeUpdatesTheLocationPolicy) GetHistoryDefaultTargets(history sce.HistoryID) []EmptyFinalizeUpdatesTheLocationTarget {
+	panic(fmt.Sprintf("EmptyFinalizeUpdatesTheLocationPolicy declares no <history>; asked for %d", history))
+}
+func (p *EmptyFinalizeUpdatesTheLocationPolicy) HistoryValue(_ sce.HistoryID) ([]EmptyFinalizeUpdatesTheLocationState, bool) {
+	return nil, false
 }
 
 // GetDocumentOrder returns the document order index (W3C SCXML Appendix D).
@@ -1047,43 +1106,6 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) NullEvent() EmptyFinalizeUpdates
 	return EmptyFinalizeUpdatesTheLocationEventNull
 }
 
-// GetInitialChildren returns initial children of a compound state (W3C SCXML 3.6).
-func (p *EmptyFinalizeUpdatesTheLocationPolicy) GetInitialChildren(state EmptyFinalizeUpdatesTheLocationState) []EmptyFinalizeUpdatesTheLocationState {
-	switch state {
-	}
-	return nil
-}
-
-// LastTransitionIsInternal returns the internal transition flag (W3C SCXML 3.13).
-func (p *EmptyFinalizeUpdatesTheLocationPolicy) LastTransitionIsInternal() bool {
-	return p.lastTransitionIsInternal
-}
-
-// SetLastTransitionIsInternal sets the internal transition flag.
-func (p *EmptyFinalizeUpdatesTheLocationPolicy) SetLastTransitionIsInternal(value bool) {
-	p.lastTransitionIsInternal = value
-}
-
-// LastTransitionIsTargetless returns the targetless transition flag (W3C SCXML 3.13).
-func (p *EmptyFinalizeUpdatesTheLocationPolicy) LastTransitionIsTargetless() bool {
-	return p.lastTransitionIsTargetless
-}
-
-// SetLastTransitionIsTargetless sets the targetless transition flag.
-func (p *EmptyFinalizeUpdatesTheLocationPolicy) SetLastTransitionIsTargetless(value bool) {
-	p.lastTransitionIsTargetless = value
-}
-
-// LastTransitionSourceState returns the source state of the last transition.
-func (p *EmptyFinalizeUpdatesTheLocationPolicy) LastTransitionSourceState() EmptyFinalizeUpdatesTheLocationState {
-	return p.lastTransitionSourceState
-}
-
-// SetLastTransitionSourceState sets the source state of the last transition.
-func (p *EmptyFinalizeUpdatesTheLocationPolicy) SetLastTransitionSourceState(state EmptyFinalizeUpdatesTheLocationState) {
-	p.lastTransitionSourceState = state
-}
-
 
 // SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
 func (p *EmptyFinalizeUpdatesTheLocationPolicy) SetNextEventIsExternal(value bool) {
@@ -1130,14 +1152,6 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) GetActiveStates() []EmptyFinaliz
 // which is false above; the method exists because the interface is one contract.
 func (p *EmptyFinalizeUpdatesTheLocationPolicy) SetActiveStates(_ []EmptyFinalizeUpdatesTheLocationState) {}
 func (p *EmptyFinalizeUpdatesTheLocationPolicy) HasExternalEventFlag() bool { return true }
-// GetInitialOrHistoryChild returns the initial child considering history (W3C SCXML 3.11).
-func (p *EmptyFinalizeUpdatesTheLocationPolicy) GetInitialOrHistoryChild(state EmptyFinalizeUpdatesTheLocationState) EmptyFinalizeUpdatesTheLocationState {
-	children := p.GetInitialChildren(state)
-	if len(children) > 0 {
-		return children[0]
-	}
-	return state
-}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).
 func (p *EmptyFinalizeUpdatesTheLocationPolicy) ForwardToAutoforwardChildren(_ string, _ sce.EventMetadata, _ *sce.Engine[EmptyFinalizeUpdatesTheLocationState, EmptyFinalizeUpdatesTheLocationEvent]) {}
 
@@ -1179,13 +1193,11 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ClearEventMetadata() {
 
 
 
-
-// ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
+// ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
+// configuration, runs its <onentry>, and its <initial> transition's content when
+// its initial state is entered by default.
 //line empty_finalize_updates_the_location.scxml:52
-func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteEntryActions(state EmptyFinalizeUpdatesTheLocationState, engine *sce.Engine[EmptyFinalizeUpdatesTheLocationState, EmptyFinalizeUpdatesTheLocationEvent], pathChild *EmptyFinalizeUpdatesTheLocationState) {
-	// Only a `<parallel>` machine descends into defaults here, so a machine
-	// without one has nothing to tell an ancestor entry from a target entry.
-	_ = pathChild
+func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteEntryActions(state EmptyFinalizeUpdatesTheLocationState, engine *sce.Engine[EmptyFinalizeUpdatesTheLocationState, EmptyFinalizeUpdatesTheLocationEvent], isDefaultEntry bool) {
 	p.ensureScriptEngine()
 	switch state {
 	case EmptyFinalizeUpdatesTheLocationStateAbsentPhase:
@@ -1280,9 +1292,21 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteEntryActions(state EmptyF
 	}
 }
 
-// ExecuteExitActions executes onexit actions for a state (W3C SCXML 3.9).
+// ExecuteHistoryDefaultContent runs a <history>'s default transition content
+// (W3C SCXML 3.10.2), after its parent's onentry (and after the parent's own
+// <initial> content) when the history was taken with nothing recorded. The
+// engine asks for it by the entry set's defaultHistoryContent answer; a history
+// that restored what it recorded runs nothing.
 //line empty_finalize_updates_the_location.scxml:52
-func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteExitActions(state EmptyFinalizeUpdatesTheLocationState, engine *sce.Engine[EmptyFinalizeUpdatesTheLocationState, EmptyFinalizeUpdatesTheLocationEvent], preTransitionActive []EmptyFinalizeUpdatesTheLocationState) {
+func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[EmptyFinalizeUpdatesTheLocationState, EmptyFinalizeUpdatesTheLocationEvent]) {
+	// W3C SCXML 3.10.2: no <history> in this document has default content.
+}
+
+// ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
+// removes it from the configuration, cancels its invocations and runs its
+// <onexit>.
+//line empty_finalize_updates_the_location.scxml:52
+func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteExitActions(state EmptyFinalizeUpdatesTheLocationState, engine *sce.Engine[EmptyFinalizeUpdatesTheLocationState, EmptyFinalizeUpdatesTheLocationEvent], configurationBeforeExit []EmptyFinalizeUpdatesTheLocationState) {
 	p.ensureScriptEngine()
 	// W3C SCXML 6.4: Cancel pending invokes and cleanup active children on state exit
 	switch state {
@@ -1315,118 +1339,138 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteExitActions(state EmptyFi
 	}
 }
 
-// ProcessTransition evaluates guards and takes a matching transition (W3C SCXML 3.13).
-// Returns true if a transition was taken.
+
+
+// BindCurrentEvent binds the event whose transitions are about to be selected as
+// the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
+// and not for an eventless selection, which has no event of its own.
 //line empty_finalize_updates_the_location.scxml:52
-func (p *EmptyFinalizeUpdatesTheLocationPolicy) ProcessTransition(currentState *EmptyFinalizeUpdatesTheLocationState, event EmptyFinalizeUpdatesTheLocationEvent, engine *sce.Engine[EmptyFinalizeUpdatesTheLocationState, EmptyFinalizeUpdatesTheLocationEvent]) bool {
-	// W3C SCXML 5.10: Bind _event system variable for guard evaluation
+func (p *EmptyFinalizeUpdatesTheLocationPolicy) BindCurrentEvent(event EmptyFinalizeUpdatesTheLocationEvent, engine *sce.Engine[EmptyFinalizeUpdatesTheLocationState, EmptyFinalizeUpdatesTheLocationEvent]) {
 	if event != EmptyFinalizeUpdatesTheLocationEventNull {
 		// §scxml-B-2-8-1: the rung the payload got, handed to the engine
 		// rather than dropped. This is the only frame that has both the
 		// reading and the event it belongs to.
 		engine.NotePayloadReading(event, p.setCurrentEvent(p.GetEventName(event)))
 	}
-
-	// W3C SCXML 3.12: Try transitions in current state first
-	if p.tryTransitionInState(*currentState, event, currentState, engine) {
-		return true
-	}
-
-
-	return false
 }
 
-
-// tryTransitionInState checks transitions for a single state.
+// FirstEnabledTransition is Appendix D selectTransitions, the half only this
+// document can answer: the first of state's own transitions, in document order,
+// that event enables and whose guard holds. The engine walks the atomic states
+// and their ancestors and keeps the ordered set; the null event asks for
+// eventless transitions.
 //line empty_finalize_updates_the_location.scxml:52
-func (p *EmptyFinalizeUpdatesTheLocationPolicy) tryTransitionInState(checkState EmptyFinalizeUpdatesTheLocationState, event EmptyFinalizeUpdatesTheLocationEvent, currentState *EmptyFinalizeUpdatesTheLocationState, engine *sce.Engine[EmptyFinalizeUpdatesTheLocationState, EmptyFinalizeUpdatesTheLocationEvent]) bool {
-	switch checkState {
+func (p *EmptyFinalizeUpdatesTheLocationPolicy) FirstEnabledTransition(state EmptyFinalizeUpdatesTheLocationState, event EmptyFinalizeUpdatesTheLocationEvent, engine *sce.Engine[EmptyFinalizeUpdatesTheLocationState, EmptyFinalizeUpdatesTheLocationEvent]) (sce.EnabledTransition[EmptyFinalizeUpdatesTheLocationState, sce.HistoryID], bool) {
+	switch state {
 	case EmptyFinalizeUpdatesTheLocationStateAbsentPhase:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == EmptyFinalizeUpdatesTheLocationEventFromAbsentChild {
 			if p.evaluateGuard(`(guard ~= 1)`, engine) {
-			*currentState = EmptyFinalizeUpdatesTheLocationStateFailUpdatedWithoutFinalize
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = EmptyFinalizeUpdatesTheLocationStateAbsentPhase
-			return true
+				return sce.EnabledTransition[EmptyFinalizeUpdatesTheLocationState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfEmptyFinalizeUpdatesTheLocation[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == EmptyFinalizeUpdatesTheLocationEventFromAbsentChild {
-			*currentState = EmptyFinalizeUpdatesTheLocationStateUnmatchedPhase
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = EmptyFinalizeUpdatesTheLocationStateAbsentPhase
-			return true
+			{
+				return sce.EnabledTransition[EmptyFinalizeUpdatesTheLocationState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfEmptyFinalizeUpdatesTheLocation[state][1],
+					TransitionIndex: 1,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == EmptyFinalizeUpdatesTheLocationEventTimeoutAbsent {
-			*currentState = EmptyFinalizeUpdatesTheLocationStateFailAbsentChildSilent
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = EmptyFinalizeUpdatesTheLocationStateAbsentPhase
-			return true
+			{
+				return sce.EnabledTransition[EmptyFinalizeUpdatesTheLocationState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfEmptyFinalizeUpdatesTheLocation[state][2],
+					TransitionIndex: 2,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	case EmptyFinalizeUpdatesTheLocationStateEmptyPhase:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == EmptyFinalizeUpdatesTheLocationEventFromEmptyChild {
 			if p.evaluateGuard(`(tally == 7)`, engine) {
-			*currentState = EmptyFinalizeUpdatesTheLocationStateAbsentPhase
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = EmptyFinalizeUpdatesTheLocationStateEmptyPhase
-			return true
+				return sce.EnabledTransition[EmptyFinalizeUpdatesTheLocationState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfEmptyFinalizeUpdatesTheLocation[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == EmptyFinalizeUpdatesTheLocationEventFromEmptyChild {
-			*currentState = EmptyFinalizeUpdatesTheLocationStateFailNotUpdated
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = EmptyFinalizeUpdatesTheLocationStateEmptyPhase
-			return true
+			{
+				return sce.EnabledTransition[EmptyFinalizeUpdatesTheLocationState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfEmptyFinalizeUpdatesTheLocation[state][1],
+					TransitionIndex: 1,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == EmptyFinalizeUpdatesTheLocationEventTimeoutEmpty {
-			*currentState = EmptyFinalizeUpdatesTheLocationStateFailEmptyChildSilent
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = EmptyFinalizeUpdatesTheLocationStateEmptyPhase
-			return true
+			{
+				return sce.EnabledTransition[EmptyFinalizeUpdatesTheLocationState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfEmptyFinalizeUpdatesTheLocation[state][2],
+					TransitionIndex: 2,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	case EmptyFinalizeUpdatesTheLocationStateUnmatchedPhase:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == EmptyFinalizeUpdatesTheLocationEventFromUnmatchedChild {
 			if p.evaluateGuard(`(keeper ~= 3)`, engine) {
-			*currentState = EmptyFinalizeUpdatesTheLocationStateFailUnmatchedNameWrote
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = EmptyFinalizeUpdatesTheLocationStateUnmatchedPhase
-			return true
+				return sce.EnabledTransition[EmptyFinalizeUpdatesTheLocationState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfEmptyFinalizeUpdatesTheLocation[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == EmptyFinalizeUpdatesTheLocationEventFromUnmatchedChild {
-			*currentState = EmptyFinalizeUpdatesTheLocationStatePass
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = EmptyFinalizeUpdatesTheLocationStateUnmatchedPhase
-			return true
+			{
+				return sce.EnabledTransition[EmptyFinalizeUpdatesTheLocationState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfEmptyFinalizeUpdatesTheLocation[state][1],
+					TransitionIndex: 1,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == EmptyFinalizeUpdatesTheLocationEventTimeoutUnmatched {
-			*currentState = EmptyFinalizeUpdatesTheLocationStateFailUnmatchedChildSilent
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = EmptyFinalizeUpdatesTheLocationStateUnmatchedPhase
-			return true
+			{
+				return sce.EnabledTransition[EmptyFinalizeUpdatesTheLocationState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfEmptyFinalizeUpdatesTheLocation[state][2],
+					TransitionIndex: 2,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	}
-	return false
+	return sce.EnabledTransition[EmptyFinalizeUpdatesTheLocationState, sce.HistoryID]{}, false
 }
 
-// ExecuteTransitionActions executes actions for the last taken transition (W3C SCXML 3.13).
+// ExecuteTransitionContent runs one transition's executable content (W3C SCXML
+// 3.13), between the microstep's exits and its entries.
 //line empty_finalize_updates_the_location.scxml:52
-func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteTransitionActions(engine *sce.Engine[EmptyFinalizeUpdatesTheLocationState, EmptyFinalizeUpdatesTheLocationEvent]) {
+func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteTransitionContent(source EmptyFinalizeUpdatesTheLocationState, transitionIndex int, engine *sce.Engine[EmptyFinalizeUpdatesTheLocationState, EmptyFinalizeUpdatesTheLocationEvent]) {
+	// W3C SCXML 3.13: no transition in this document has content.
 }

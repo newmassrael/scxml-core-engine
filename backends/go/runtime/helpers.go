@@ -372,59 +372,6 @@ func IsValidIdentifier(name string) bool {
 	return true
 }
 
-// ── History helpers ────────────────────────────────────────────────
-
-// FilterShallowHistory returns immediate children of parentState from active
-// states (W3C SCXML 3.11 shallow history).
-func FilterShallowHistory[S comparable](
-	activeStates []S,
-	parentState S,
-	getParent func(S) (S, bool),
-) []S {
-	var result []S
-	for _, s := range activeStates {
-		if parent, ok := getParent(s); ok && parent == parentState {
-			result = append(result, s)
-		}
-	}
-	return result
-}
-
-// FilterDeepHistory returns all leaf descendants of parentState from active
-// states (W3C SCXML 3.11 deep history).
-func FilterDeepHistory[S comparable](
-	activeStates []S,
-	parentState S,
-	getParent func(S) (S, bool),
-	isCompound func(S) bool,
-) []S {
-	var result []S
-	for _, s := range activeStates {
-		if !isCompound(s) && isDescendantOfFunc(s, parentState, getParent) {
-			result = append(result, s)
-		}
-	}
-	return result
-}
-
-func isDescendantOfFunc[S comparable](
-	desc, anc S,
-	getParent func(S) (S, bool),
-) bool {
-	current := desc
-	for i := 0; i < MaxHierarchyDepth; i++ {
-		parent, ok := getParent(current)
-		if !ok {
-			return false
-		}
-		if parent == anc {
-			return true
-		}
-		current = parent
-	}
-	return false
-}
-
 // ── Parent event ───────────────────────────────────────────────────
 
 // ParentEvent represents an event sent from child to parent (W3C SCXML 6.4).

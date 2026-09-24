@@ -25,7 +25,6 @@ package ai_loop
 import (
 	"fmt"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -36,7 +35,6 @@ import (
 var (
 	_ = fmt.Sprintf
 	_ = filepath.Join
-	_ = sort.Slice
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
 )
@@ -238,6 +236,128 @@ var AiLoopAllStates = []AiLoopState{
 	AiLoopStateWorking,
 }
 
+// AiLoopTarget is one token of a target list, as the document wrote
+// it (W3C SCXML 3.13): a state, or a <history> the engine dereferences.
+type AiLoopTarget = sce.EntryTarget[AiLoopState, sce.HistoryID]
+
+// ======================================================================
+// History pseudo-states (W3C SCXML 3.10)
+// ======================================================================
+
+// The document's <history> pseudo-states. A history is not a state — it is
+// never in a configuration — so it is numbered apart from AiLoopState,
+// and a target list names one through sce.HistoryTarget: the engine
+// dereferences it to what it recorded, or to its default.
+const (
+	AiLoopHistoryWhere sce.HistoryID = 0
+)
+
+// ======================================================================
+// Document structure (W3C SCXML 3.2-3.4, 3.10)
+//
+// Package-level tables, because the structure is a fact about the document
+// and not about a run: the engine's Appendix D procedures read them through
+// the policy methods below, and a transition's target list is handed out as
+// a slice of them rather than rebuilt on every selection.
+// ======================================================================
+
+// childStatesOfAiLoop is §scxml-D-getChildStates per state: its
+// <state>, <parallel> and <final> children, in document order.
+var childStatesOfAiLoop = [25][]AiLoopState{
+	AiLoopStateBudget: {AiLoopStateWithin, AiLoopStateSpent},
+	AiLoopStateDrive: {AiLoopStateRunning, AiLoopStatePaused, AiLoopStateAbandoned},
+	AiLoopStateRun: {AiLoopStateDrive, AiLoopStateWatch, AiLoopStateBudget},
+	AiLoopStateRunning: {AiLoopStatePriming, AiLoopStateWorking, AiLoopStateScreening, AiLoopStateJudging, AiLoopStateReflecting, AiLoopStateRestarting, AiLoopStateClosing, AiLoopStateReported, AiLoopStateStuck},
+	AiLoopStateWatch: {AiLoopStateAlive, AiLoopStateRebuilding},
+}
+
+// initialTargetsOfAiLoop is each compound state's initial transition
+// target, as written (§scxml-3.3).
+var initialTargetsOfAiLoop = [25][]AiLoopTarget{
+	AiLoopStateBudget: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStateWithin)},
+	AiLoopStateDrive: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStateRunning)},
+	AiLoopStateRunning: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStatePriming)},
+	AiLoopStateWatch: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStateAlive)},
+}
+
+// documentInitialTargetsOfAiLoop is the target of the document's own
+// initial transition, as written (§scxml-3.2).
+var documentInitialTargetsOfAiLoop = []AiLoopTarget{sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStateRun)}
+
+// transitionTargetsOfAiLoop is each transition's target list, as
+// written (§scxml-3.13), by source state and the transition's index among its
+// source's own transitions. A targetless transition's entry is empty.
+var transitionTargetsOfAiLoop = [25][][]AiLoopTarget{
+	AiLoopStateAlive: {
+		0: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStateRebuilding)},
+	},
+	AiLoopStateClosing: {
+		0: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStateReported)},
+		1: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStateScreening)},
+	},
+	AiLoopStateDrive: {
+		0: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStatePaused)},
+		1: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStatePaused)},
+		2: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStateRestarting)},
+	},
+	AiLoopStateJudging: {
+		0: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStateClosing)},
+		1: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStateReflecting)},
+		2: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStateWorking)},
+	},
+	AiLoopStatePaused: {
+		0: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStateJudging)},
+		1: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStatePaused)},
+		2: {sce.HistoryTarget[AiLoopState](AiLoopHistoryWhere)},
+		3: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStateAbandoned)},
+	},
+	AiLoopStatePriming: {
+		0: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStateWorking)},
+	},
+	AiLoopStateRebuilding: {
+		0: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStateAlive)},
+	},
+	AiLoopStateReflecting: {
+		0: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStateRestarting)},
+		1: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStateWorking)},
+	},
+	AiLoopStateRestarting: {
+		0: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStateStuck)},
+		1: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStatePriming)},
+	},
+	AiLoopStateRun: {
+		0: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStateConverged)},
+		1: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStateExhausted)},
+		2: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStateBlocked)},
+		3: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStateFailed)},
+		4: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStateCancelled)},
+	},
+	AiLoopStateScreening: {
+		0: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStateWorking)},
+		1: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStatePaused)},
+	},
+	AiLoopStateWithin: {
+		0: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStateSpent)},
+		1: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStateWithin)},
+	},
+	AiLoopStateWorking: {
+		0: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStateJudging)},
+		1: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStateScreening)},
+	},
+}
+
+// historyParentOfAiLoop is the state each <history> is declared in
+// (§scxml-3.10).
+var historyParentOfAiLoop = [1]AiLoopState{
+	AiLoopHistoryWhere: AiLoopStateRunning,
+}
+
+// historyDefaultTargetsOfAiLoop is each <history>'s default
+// transition target, as written (§scxml-3.10.2).
+var historyDefaultTargetsOfAiLoop = [1][]AiLoopTarget{
+	AiLoopHistoryWhere: {sce.StateTarget[AiLoopState, sce.HistoryID](AiLoopStateWorking)},
+}
+
 // ======================================================================
 // Event type (W3C SCXML 3.12)
 // ======================================================================
@@ -355,13 +475,6 @@ func (e AiLoopEvent) String() string {
 // ======================================================================
 
 type AiLoopPolicy struct {
-	// W3C SCXML 3.13: Last transition metadata
-	lastTransitionIsInternal  bool
-	lastTransitionIsTargetless bool
-	lastTransitionSourceState AiLoopState
-	// W3C SCXML 3.13: Transition action tracking
-	lastTransitionIndex   int
-	hasTransitionActions   bool
 	// W3C SCXML 3.4: Active state configuration for parallel states / In() predicate
 	activeStates []AiLoopState
 	// W3C SCXML 5.10.1: External event flag
@@ -399,7 +512,6 @@ type AiLoopPolicy struct {
 // NewAiLoopPolicy creates a new policy with default values.
 func NewAiLoopPolicy() AiLoopPolicy {
 	return AiLoopPolicy{
-		lastTransitionSourceState: AiLoopStatePriming,
 		activeStates: make([]AiLoopState, 0),
 		historyWhere: nil,
 	}
@@ -1027,19 +1139,11 @@ func (p *AiLoopPolicy) GetParent(state AiLoopState) (AiLoopState, bool) {
 	return 0, false
 }
 
-// IsCompoundState returns true if state has children (W3C SCXML 3.3).
+// IsCompoundState returns true if state is a <state> with child states — exactly
+// the states that have an initial transition. A <parallel> is not compound
+// (W3C SCXML 3.3).
 func (p *AiLoopPolicy) IsCompoundState(state AiLoopState) bool {
-	switch state {
-	case AiLoopStateBudget:
-		return true
-	case AiLoopStateDrive:
-		return true
-	case AiLoopStateRunning:
-		return true
-	case AiLoopStateWatch:
-		return true
-	}
-	return false
+	return len(initialTargetsOfAiLoop[state]) > 0
 }
 
 // IsParallelState returns true if state is a <parallel> state (W3C SCXML 3.4).
@@ -1051,32 +1155,45 @@ func (p *AiLoopPolicy) IsParallelState(state AiLoopState) bool {
 	return false
 }
 
-// GetParallelRegions returns child regions of a parallel state (W3C SCXML 3.4).
-func (p *AiLoopPolicy) GetParallelRegions(state AiLoopState) []AiLoopState {
-	switch state {
-	case AiLoopStateRun:
-		return []AiLoopState{
-			AiLoopStateDrive,
-			AiLoopStateWatch,
-			AiLoopStateBudget,
-		}
-	}
-	return nil
+
+// GetChildStates returns state's <state>, <parallel> and <final> children, in
+// document order — for a <parallel>, its regions (§scxml-D-getChildStates).
+func (p *AiLoopPolicy) GetChildStates(state AiLoopState) []AiLoopState {
+	return childStatesOfAiLoop[state]
 }
 
-// IsDescendantOf returns true if desc is a descendant of anc (W3C SCXML 3.12).
-func (p *AiLoopPolicy) IsDescendantOf(desc, anc AiLoopState) bool {
-	current := desc
-	for {
-		parent, ok := p.GetParent(current)
-		if !ok {
-			return false
-		}
-		if parent == anc {
-			return true
-		}
-		current = parent
+// GetInitialTargets returns a compound state's initial transition target, as
+// written; the engine's entry procedures dereference a <history> among them
+// (W3C SCXML 3.3).
+func (p *AiLoopPolicy) GetInitialTargets(state AiLoopState) []AiLoopTarget {
+	return initialTargetsOfAiLoop[state]
+}
+
+// GetDocumentInitialTargets returns the target of the document's own initial
+// transition, as written (W3C SCXML 3.2).
+func (p *AiLoopPolicy) GetDocumentInitialTargets() []AiLoopTarget {
+	return documentInitialTargetsOfAiLoop
+}
+
+// GetHistoryParent returns the state a <history> is declared in (W3C SCXML 3.10).
+func (p *AiLoopPolicy) GetHistoryParent(history sce.HistoryID) AiLoopState {
+	return historyParentOfAiLoop[history]
+}
+
+// GetHistoryDefaultTargets returns a <history>'s default transition target, as
+// written (W3C SCXML 3.10.2).
+func (p *AiLoopPolicy) GetHistoryDefaultTargets(history sce.HistoryID) []AiLoopTarget {
+	return historyDefaultTargetsOfAiLoop[history]
+}
+
+// HistoryValue returns what a <history> recorded when its parent was last
+// exited, and false before that ever happened (W3C SCXML 3.10).
+func (p *AiLoopPolicy) HistoryValue(history sce.HistoryID) ([]AiLoopState, bool) {
+	switch history {
+	case AiLoopHistoryWhere:
+		return p.historyWhere, p.historyWhere != nil
 	}
+	return nil, false
 }
 
 // GetDocumentOrder returns the document order index (W3C SCXML Appendix D).
@@ -1227,59 +1344,6 @@ func (p *AiLoopPolicy) NullEvent() AiLoopEvent {
 	return AiLoopEventNull
 }
 
-// GetInitialChildren returns initial children of a compound state (W3C SCXML 3.6).
-func (p *AiLoopPolicy) GetInitialChildren(state AiLoopState) []AiLoopState {
-	switch state {
-	case AiLoopStateBudget:
-		return []AiLoopState{
-			AiLoopStateWithin,
-		}
-	case AiLoopStateDrive:
-		return []AiLoopState{
-			AiLoopStateRunning,
-		}
-	case AiLoopStateRunning:
-		return []AiLoopState{
-			AiLoopStatePriming,
-		}
-	case AiLoopStateWatch:
-		return []AiLoopState{
-			AiLoopStateAlive,
-		}
-	}
-	return nil
-}
-
-// LastTransitionIsInternal returns the internal transition flag (W3C SCXML 3.13).
-func (p *AiLoopPolicy) LastTransitionIsInternal() bool {
-	return p.lastTransitionIsInternal
-}
-
-// SetLastTransitionIsInternal sets the internal transition flag.
-func (p *AiLoopPolicy) SetLastTransitionIsInternal(value bool) {
-	p.lastTransitionIsInternal = value
-}
-
-// LastTransitionIsTargetless returns the targetless transition flag (W3C SCXML 3.13).
-func (p *AiLoopPolicy) LastTransitionIsTargetless() bool {
-	return p.lastTransitionIsTargetless
-}
-
-// SetLastTransitionIsTargetless sets the targetless transition flag.
-func (p *AiLoopPolicy) SetLastTransitionIsTargetless(value bool) {
-	p.lastTransitionIsTargetless = value
-}
-
-// LastTransitionSourceState returns the source state of the last transition.
-func (p *AiLoopPolicy) LastTransitionSourceState() AiLoopState {
-	return p.lastTransitionSourceState
-}
-
-// SetLastTransitionSourceState sets the source state of the last transition.
-func (p *AiLoopPolicy) SetLastTransitionSourceState(state AiLoopState) {
-	p.lastTransitionSourceState = state
-}
-
 // GetActiveStates returns the active state configuration (W3C SCXML 3.4).
 func (p *AiLoopPolicy) GetActiveStates() []AiLoopState {
 	return p.activeStates
@@ -1331,19 +1395,6 @@ func (p *AiLoopPolicy) HasFinalize() bool { return false }
 func (p *AiLoopPolicy) HasAutoforward() bool { return false }
 func (p *AiLoopPolicy) HasActiveStates() bool { return true }
 func (p *AiLoopPolicy) HasExternalEventFlag() bool { return true }
-// GetInitialOrHistoryChild returns the initial child considering history (W3C SCXML 3.11).
-func (p *AiLoopPolicy) GetInitialOrHistoryChild(state AiLoopState) AiLoopState {
-	if state == AiLoopStateRunning {
-		if p.historyWhere != nil && len(p.historyWhere) > 0 {
-			return p.historyWhere[0]
-		}
-	}
-	children := p.GetInitialChildren(state)
-	if len(children) > 0 {
-		return children[0]
-	}
-	return state
-}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *AiLoopPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[AiLoopEvent], _ *sce.Engine[AiLoopState, AiLoopEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).
@@ -1385,20 +1436,13 @@ func (p *AiLoopPolicy) ClearEventMetadata() {
 	p.pendingEventInvokeid = ""
 }
 
-// resolveHistoryTargetWhere resolves history target for where (W3C SCXML 3.11).
-func (p *AiLoopPolicy) resolveHistoryTargetWhere() AiLoopState {
-	if p.historyWhere != nil && len(p.historyWhere) > 0 {
-		return p.historyWhere[0]
-	}
-	// No history recorded — use default transition target
-	return AiLoopStateWorking
-}
 
 
-
-// ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
+// ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
+// configuration, runs its <onentry>, and its <initial> transition's content when
+// its initial state is entered by default.
 //line ai_loop.scxml:155
-func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine[AiLoopState, AiLoopEvent], pathChild *AiLoopState) {
+func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine[AiLoopState, AiLoopEvent], isDefaultEntry bool) {
 	p.ensureScriptEngine()
 	// W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel states and In() predicate
 	for _, s := range p.activeStates {
@@ -1419,26 +1463,13 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 		}
 		// W3C SCXML 3.7: Final state reached — raise done.state.drive
 		engine.Raise(sce.NewEventWithMetadata(AiLoopEventDoneStateDrive))
-		// W3C SCXML 3.4: Check if parallel grandparent run has all regions complete
-		{
-			regions := p.GetParallelRegions(AiLoopStateRun)
-			allComplete := true
-			for _, region := range regions {
-				regionDone := false
-				for _, s := range p.activeStates {
-					if p.IsFinalState(s) && p.IsDescendantOf(s, region) {
-						regionDone = true
-						break
-					}
-				}
-				if !regionDone {
-					allComplete = false
-					break
-				}
-			}
-			if allComplete {
-				engine.Raise(sce.NewEventWithMetadata(AiLoopEventDoneStateRun))
-			}
+		// W3C SCXML 3.4 / §scxml-D-enterStates: a region of run
+		// has reached a final state, and the <parallel> completes when every one
+		// of its child states is in one — Appendix D's isInFinalState, which
+		// counts a region that is itself a <parallel> only once all of ITS
+		// regions are.
+		if (sce.PolicyDocument[AiLoopState, AiLoopEvent]{Policy: p}).IsInFinalState(AiLoopStateRun, p.activeStates) {
+			engine.Raise(sce.NewEventWithMetadata(AiLoopEventDoneStateRun))
 		}
 	case AiLoopStateClosing:
 		//line ai_loop.scxml:405
@@ -1807,91 +1838,31 @@ func (p *AiLoopPolicy) ExecuteEntryActions(state AiLoopState, engine *sce.Engine
 	default:
 		// No entry actions
 	}
-
-	// W3C SCXML 3.4: If entering parallel state, enter all child regions
-	//
-	// §scxml-D-addDescendantStatesToEnter: a <parallel> hands out defaults even
-	// when it is only an ancestor — Appendix D's one exception to the ancestor
-	// rule. The exception has its own exception: not the region the entry set is
-	// already descending into. pathChild names it, and giving that one its
-	// default too is what leaves two children of it active at once.
-	if p.IsParallelState(state) {
-		regions := p.GetParallelRegions(state)
-		for _, region := range regions {
-			if pathChild != nil && *pathChild == region {
-				continue
-			}
-			p.ExecuteEntryActions(region, engine, nil)
-
-			// W3C SCXML 3.3: If region is compound, enter initial child
-			if p.IsCompoundState(region) {
-				initialChild := p.GetInitialOrHistoryChild(region)
-				if initialChild != region {
-					p.ExecuteEntryActions(initialChild, engine, nil)
-				}
-			}
-		}
-	}
-
-	// W3C SCXML 3.3: If entering compound state (non-parallel), enter initial child
-	//
-	// §scxml-D-addAncestorStatesToEnter: not when `state` is merely on the way
-	// to a deeper target. The entry set already holds pathChild, and a compound
-	// state holds one child at a time.
-	if p.IsCompoundState(state) && !p.IsParallelState(state) && pathChild == nil {
-		initialChildren := p.GetInitialChildren(state)
-		if len(initialChildren) > 0 {
-			// W3C SCXML 3.6: Enter through hierarchy to reach initial target(s)
-			for _, target := range initialChildren {
-				var chain []AiLoopState
-				current := target
-				for current != state {
-					chain = append([]AiLoopState{current}, chain...)
-					parent, hasParent := p.GetParent(current)
-					if !hasParent {
-						break
-					}
-					current = parent
-				}
-				// Each link but the last is an ancestor of the initial target,
-				// so it takes no default of its own — the chain already names
-				// the child that is entering.
-				for i := range chain {
-					var next *AiLoopState
-					if i+1 < len(chain) {
-						next = &chain[i+1]
-					}
-					p.ExecuteEntryActions(chain[i], engine, next)
-				}
-			}
-		} else {
-			initialChild := p.GetInitialOrHistoryChild(state)
-			if initialChild != state {
-				p.ExecuteEntryActions(initialChild, engine, nil)
-			}
-		}
-	}
 }
 
-// ExecuteExitActions executes onexit actions for a state (W3C SCXML 3.9).
+// ExecuteHistoryDefaultContent runs a <history>'s default transition content
+// (W3C SCXML 3.10.2), after its parent's onentry (and after the parent's own
+// <initial> content) when the history was taken with nothing recorded. The
+// engine asks for it by the entry set's defaultHistoryContent answer; a history
+// that restored what it recorded runs nothing.
 //line ai_loop.scxml:155
-func (p *AiLoopPolicy) ExecuteExitActions(state AiLoopState, engine *sce.Engine[AiLoopState, AiLoopEvent], preTransitionActive []AiLoopState) {
+func (p *AiLoopPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[AiLoopState, AiLoopEvent]) {
+	// W3C SCXML 3.10.2: no <history> in this document has default content.
+}
+
+// ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
+// removes it from the configuration, cancels its invocations and runs its
+// <onexit>.
+//line ai_loop.scxml:155
+func (p *AiLoopPolicy) ExecuteExitActions(state AiLoopState, engine *sce.Engine[AiLoopState, AiLoopEvent], configurationBeforeExit []AiLoopState) {
 	p.ensureScriptEngine()
-	// W3C SCXML 3.4 + 3.13: Parallel state exit order — exit all active descendants first
-	if p.IsParallelState(state) {
-		var descendantsToExit []AiLoopState
-		for _, s := range p.activeStates {
-			if s != state && p.IsDescendantOf(s, state) {
-				descendantsToExit = append(descendantsToExit, s)
-			}
-		}
-		// W3C SCXML 3.13: Sort descendants by reverse document order (deepest first)
-		sort.Slice(descendantsToExit, func(i, j int) bool {
-			return p.GetDocumentOrder(descendantsToExit[i]) > p.GetDocumentOrder(descendantsToExit[j])
-		})
-		for _, descendant := range descendantsToExit {
-			p.ExecuteExitActions(descendant, engine, preTransitionActive)
-		}
+	// W3C SCXML 3.10 / §scxml-D-exitStates: record the histories of this state
+	// from the configuration the microstep started from — the engine hands
+	// every exit the configuration as it stood before the first one, so every
+	// history in one microstep reads the same configuration.
+	if state == AiLoopStateRunning {
+		// W3C SCXML 3.10: shallow history where
+		p.historyWhere = (sce.PolicyDocument[AiLoopState, AiLoopEvent]{Policy: p}).RecordedHistory(AiLoopStateRunning, false, configurationBeforeExit)
 	}
 	// W3C SCXML 3.4/3.12.1: Remove state from active configuration
 	p.activeStates = func() []AiLoopState {
@@ -1907,812 +1878,388 @@ func (p *AiLoopPolicy) ExecuteExitActions(state AiLoopState, engine *sce.Engine[
 	default:
 		// No exit actions
 	}
-	// W3C SCXML 3.11: Record history before exiting compound states
-	if state == AiLoopStateRunning {
-		// W3C SCXML 3.11: Shallow history — record direct children only
-		p.historyWhere = sce.FilterShallowHistory(preTransitionActive, AiLoopStateRunning, func(s AiLoopState) (AiLoopState, bool) { return p.GetParent(s) })
-	}
 }
 
-// ProcessTransition evaluates guards and takes a matching transition (W3C SCXML 3.13).
-// Returns true if a transition was taken.
+
+
+// BindCurrentEvent binds the event whose transitions are about to be selected as
+// the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
+// and not for an eventless selection, which has no event of its own.
 //line ai_loop.scxml:155
-func (p *AiLoopPolicy) ProcessTransition(currentState *AiLoopState, event AiLoopEvent, engine *sce.Engine[AiLoopState, AiLoopEvent]) bool {
-	// W3C SCXML 5.10: Bind _event system variable for guard evaluation
+func (p *AiLoopPolicy) BindCurrentEvent(event AiLoopEvent, engine *sce.Engine[AiLoopState, AiLoopEvent]) {
 	if event != AiLoopEventNull {
 		// §scxml-B-2-8-1: the rung the payload got, handed to the engine
 		// rather than dropped. This is the only frame that has both the
 		// reading and the event it belongs to.
 		engine.NotePayloadReading(event, p.setCurrentEvent(p.GetEventName(event)))
 	}
-
-	// W3C SCXML 3.4 + 3.12 + Appendix D: Parallel state transition handling
-	if event == AiLoopEventNull {
-		// W3C SCXML Appendix D: Eventless transitions - collect from all active states
-		var enabledTransitions []transitionInfo
-		statesToCheck := make([]AiLoopState, len(p.activeStates))
-		copy(statesToCheck, p.activeStates)
-
-		// Sort by document order for consistent processing
-		sort.Slice(statesToCheck, func(i, j int) bool {
-			return p.GetDocumentOrder(statesToCheck[i]) < p.GetDocumentOrder(statesToCheck[j])
-		})
-
-		for _, activeState := range statesToCheck {
-			// W3C SCXML 3.13: Eventless transitions do NOT bubble to parent states
-			if trans := p.tryCollectTransition(activeState, event, engine); trans != nil {
-				enabledTransitions = append(enabledTransitions, *trans)
-			}
-		}
-
-		// Appendix D removeConflictingTransitions: Remove conflicting transitions
-		if len(enabledTransitions) > 0 {
-			enabledTransitions = p.selectOptimalTransitions(enabledTransitions)
-		}
-
-		// W3C SCXML Appendix D Steps 2-5: Execute as atomic microstep
-		if len(enabledTransitions) > 0 {
-			p.executeMicrostep(enabledTransitions, currentState, engine)
-			return true
-		}
-	} else {
-		// W3C SCXML Appendix D: External events - collect from active leaf states
-		var enabledTransitions []transitionInfo
-
-		for _, activeState := range p.activeStates {
-			isNonAtomic := p.IsCompoundState(activeState) || p.IsParallelState(activeState)
-
-			// W3C SCXML 3.13: Check if this is a done.state event
-			eventName := p.GetEventName(event)
-			isDoneStateEvent := event != AiLoopEventNull && strings.HasPrefix(eventName, "done.state.")
-
-			// Skip non-atomic states UNLESS processing done.state event
-			if isNonAtomic && !isDoneStateEvent {
-				continue
-			}
-
-			// W3C SCXML 3.12: Hierarchical event bubbling
-			checkState := activeState
-			for {
-				if trans := p.tryCollectTransition(checkState, event, engine); trans != nil {
-					enabledTransitions = append(enabledTransitions, *trans)
-					break
-				}
-				parent, hasParent := p.GetParent(checkState)
-				if !hasParent {
-					break
-				}
-				checkState = parent
-			}
-		}
-
-		// W3C SCXML 3.13: Deduplicate transitions from multiple descendants
-		seen := make(map[[2]int]bool)
-		var deduped []transitionInfo
-		for _, t := range enabledTransitions {
-			key := [2]int{int(t.source), t.transitionIndex}
-			if !seen[key] {
-				seen[key] = true
-				deduped = append(deduped, t)
-			}
-		}
-		enabledTransitions = deduped
-
-		// Appendix D removeConflictingTransitions: Remove conflicting transitions
-		if len(enabledTransitions) > 0 {
-			enabledTransitions = p.selectOptimalTransitions(enabledTransitions)
-		}
-
-		// W3C SCXML Appendix D Steps 2-5: Execute as atomic microstep
-		if len(enabledTransitions) > 0 {
-			p.executeMicrostep(enabledTransitions, currentState, engine)
-			return true
-		}
-	}
-
-	return false
 }
 
-// tryCollectTransition checks if a state has a matching transition and returns it as transitionInfo.
+// FirstEnabledTransition is Appendix D selectTransitions, the half only this
+// document can answer: the first of state's own transitions, in document order,
+// that event enables and whose guard holds. The engine walks the atomic states
+// and their ancestors and keeps the ordered set; the null event asks for
+// eventless transitions.
 //line ai_loop.scxml:155
-func (p *AiLoopPolicy) tryCollectTransition(checkState AiLoopState, event AiLoopEvent, engine *sce.Engine[AiLoopState, AiLoopEvent]) *transitionInfo {
-	switch checkState {
+func (p *AiLoopPolicy) FirstEnabledTransition(state AiLoopState, event AiLoopEvent, engine *sce.Engine[AiLoopState, AiLoopEvent]) (sce.EnabledTransition[AiLoopState, sce.HistoryID], bool) {
+	switch state {
 	case AiLoopStateAlive:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AiLoopEventSessionLost {
-			return &transitionInfo{
-				source:          AiLoopStateAlive,
-				target:          AiLoopStateRebuilding,
-				transitionIndex: 0,
-				hasActions:      false,
-				isInternal:      false,
-				isTargetless:    false,
+			{
+				return sce.EnabledTransition[AiLoopState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAiLoop[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
 	case AiLoopStateClosing:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AiLoopEventTurnDone {
-			return &transitionInfo{
-				source:          AiLoopStateClosing,
-				target:          AiLoopStateReported,
-				transitionIndex: 0,
-				hasActions:      false,
-				isInternal:      false,
-				isTargetless:    false,
+			{
+				return sce.EnabledTransition[AiLoopState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAiLoop[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AiLoopEventTurnBlocked {
-			return &transitionInfo{
-				source:          AiLoopStateClosing,
-				target:          AiLoopStateScreening,
-				transitionIndex: 1,
-				hasActions:      false,
-				isInternal:      false,
-				isTargetless:    false,
+			{
+				return sce.EnabledTransition[AiLoopState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAiLoop[state][1],
+					TransitionIndex: 1,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
 	case AiLoopStateDrive:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AiLoopEventHold {
-			return &transitionInfo{
-				source:          AiLoopStateDrive,
-				target:          AiLoopStatePaused,
-				transitionIndex: 0,
-				hasActions:      false,
-				isInternal:      true,
-				isTargetless:    false,
+			{
+				return sce.EnabledTransition[AiLoopState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAiLoop[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      true,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AiLoopEventTurnInterrupted {
-			return &transitionInfo{
-				source:          AiLoopStateDrive,
-				target:          AiLoopStatePaused,
-				transitionIndex: 1,
-				hasActions:      false,
-				isInternal:      true,
-				isTargetless:    false,
+			{
+				return sce.EnabledTransition[AiLoopState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAiLoop[state][1],
+					TransitionIndex: 1,
+					HasActions:      false,
+					IsInternal:      true,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AiLoopEventSessionLost {
-			return &transitionInfo{
-				source:          AiLoopStateDrive,
-				target:          AiLoopStateRestarting,
-				transitionIndex: 2,
-				hasActions:      false,
-				isInternal:      true,
-				isTargetless:    false,
+			{
+				return sce.EnabledTransition[AiLoopState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAiLoop[state][2],
+					TransitionIndex: 2,
+					HasActions:      false,
+					IsInternal:      true,
+				}, true
 			}
 		}
 	case AiLoopStateJudging:
-		// W3C SCXML 5.9.3: Precomputed prefix match for "judge"
 		if event == AiLoopEventJudge || event == AiLoopEventJudgeBegin {
 			if p.evaluateGuard(`_scxml_truthy(_event.data.done)`, engine) {
-			return &transitionInfo{
-				source:          AiLoopStateJudging,
-				target:          AiLoopStateClosing,
-				transitionIndex: 0,
-				hasActions:      false,
-				isInternal:      false,
-				isTargetless:    false,
-			}
+				return sce.EnabledTransition[AiLoopState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAiLoop[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Precomputed prefix match for "judge"
 		if event == AiLoopEventJudge || event == AiLoopEventJudgeBegin {
 			if p.evaluateGuard(`(turns_since_reflect >= reflect_every)`, engine) {
-			return &transitionInfo{
-				source:          AiLoopStateJudging,
-				target:          AiLoopStateReflecting,
-				transitionIndex: 1,
-				hasActions:      false,
-				isInternal:      false,
-				isTargetless:    false,
-			}
+				return sce.EnabledTransition[AiLoopState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAiLoop[state][1],
+					TransitionIndex: 1,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Precomputed prefix match for "judge"
 		if event == AiLoopEventJudge || event == AiLoopEventJudgeBegin {
-			return &transitionInfo{
-				source:          AiLoopStateJudging,
-				target:          AiLoopStateWorking,
-				transitionIndex: 2,
-				hasActions:      true,
-				isInternal:      false,
-				isTargetless:    false,
+			{
+				return sce.EnabledTransition[AiLoopState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAiLoop[state][2],
+					TransitionIndex: 2,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
 			}
 		}
 	case AiLoopStatePaused:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AiLoopEventTurnDone {
-			return &transitionInfo{
-				source:          AiLoopStatePaused,
-				target:          AiLoopStateJudging,
-				transitionIndex: 0,
-				hasActions:      true,
-				isInternal:      false,
-				isTargetless:    false,
+			{
+				return sce.EnabledTransition[AiLoopState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAiLoop[state][0],
+					TransitionIndex: 0,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AiLoopEventTurnInterrupted {
-			return &transitionInfo{
-				source:          AiLoopStatePaused,
-				target:          AiLoopStatePaused,
-				transitionIndex: 1,
-				hasActions:      false,
-				isInternal:      false,
-				isTargetless:    false,
+			{
+				return sce.EnabledTransition[AiLoopState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAiLoop[state][1],
+					TransitionIndex: 1,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AiLoopEventResume {
-			return &transitionInfo{
-				source:          AiLoopStatePaused,
-				target:          p.resolveHistoryTargetWhere(),
-				transitionIndex: 2,
-				hasActions:      false,
-				isInternal:      false,
-				isTargetless:    false,
+			{
+				return sce.EnabledTransition[AiLoopState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAiLoop[state][2],
+					TransitionIndex: 2,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AiLoopEventUnattended {
-			return &transitionInfo{
-				source:          AiLoopStatePaused,
-				target:          AiLoopStateAbandoned,
-				transitionIndex: 3,
-				hasActions:      false,
-				isInternal:      false,
-				isTargetless:    false,
+			{
+				return sce.EnabledTransition[AiLoopState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAiLoop[state][3],
+					TransitionIndex: 3,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
 	case AiLoopStatePriming:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AiLoopEventPromptSent {
-			return &transitionInfo{
-				source:          AiLoopStatePriming,
-				target:          AiLoopStateWorking,
-				transitionIndex: 0,
-				hasActions:      false,
-				isInternal:      false,
-				isTargetless:    false,
+			{
+				return sce.EnabledTransition[AiLoopState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAiLoop[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
 	case AiLoopStateRebuilding:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AiLoopEventSessionReady {
-			return &transitionInfo{
-				source:          AiLoopStateRebuilding,
-				target:          AiLoopStateAlive,
-				transitionIndex: 0,
-				hasActions:      false,
-				isInternal:      false,
-				isTargetless:    false,
+			{
+				return sce.EnabledTransition[AiLoopState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAiLoop[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
 	case AiLoopStateReflecting:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AiLoopEventReflectApplied {
-			return &transitionInfo{
-				source:          AiLoopStateReflecting,
-				target:          AiLoopStateRestarting,
-				transitionIndex: 0,
-				hasActions:      true,
-				isInternal:      false,
-				isTargetless:    false,
+			{
+				return sce.EnabledTransition[AiLoopState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAiLoop[state][0],
+					TransitionIndex: 0,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AiLoopEventReflectNone {
-			return &transitionInfo{
-				source:          AiLoopStateReflecting,
-				target:          AiLoopStateWorking,
-				transitionIndex: 1,
-				hasActions:      true,
-				isInternal:      false,
-				isTargetless:    false,
+			{
+				return sce.EnabledTransition[AiLoopState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAiLoop[state][1],
+					TransitionIndex: 1,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
 			}
 		}
 	case AiLoopStateRestarting:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AiLoopEventSessionReady {
 			if p.evaluateGuard(`(restarts > max_restarts)`, engine) {
-			return &transitionInfo{
-				source:          AiLoopStateRestarting,
-				target:          AiLoopStateStuck,
-				transitionIndex: 0,
-				hasActions:      false,
-				isInternal:      false,
-				isTargetless:    false,
-			}
+				return sce.EnabledTransition[AiLoopState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAiLoop[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AiLoopEventSessionReady {
-			return &transitionInfo{
-				source:          AiLoopStateRestarting,
-				target:          AiLoopStatePriming,
-				transitionIndex: 1,
-				hasActions:      false,
-				isInternal:      false,
-				isTargetless:    false,
+			{
+				return sce.EnabledTransition[AiLoopState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAiLoop[state][1],
+					TransitionIndex: 1,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
 	case AiLoopStateRun:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AiLoopEventRunConverged {
-			return &transitionInfo{
-				source:          AiLoopStateRun,
-				target:          AiLoopStateConverged,
-				transitionIndex: 0,
-				hasActions:      false,
-				isInternal:      false,
-				isTargetless:    false,
+			{
+				return sce.EnabledTransition[AiLoopState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAiLoop[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AiLoopEventRunExhausted {
-			return &transitionInfo{
-				source:          AiLoopStateRun,
-				target:          AiLoopStateExhausted,
-				transitionIndex: 1,
-				hasActions:      false,
-				isInternal:      false,
-				isTargetless:    false,
+			{
+				return sce.EnabledTransition[AiLoopState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAiLoop[state][1],
+					TransitionIndex: 1,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AiLoopEventRunBlocked {
-			return &transitionInfo{
-				source:          AiLoopStateRun,
-				target:          AiLoopStateBlocked,
-				transitionIndex: 2,
-				hasActions:      false,
-				isInternal:      false,
-				isTargetless:    false,
+			{
+				return sce.EnabledTransition[AiLoopState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAiLoop[state][2],
+					TransitionIndex: 2,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AiLoopEventFail {
-			return &transitionInfo{
-				source:          AiLoopStateRun,
-				target:          AiLoopStateFailed,
-				transitionIndex: 3,
-				hasActions:      false,
-				isInternal:      false,
-				isTargetless:    false,
+			{
+				return sce.EnabledTransition[AiLoopState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAiLoop[state][3],
+					TransitionIndex: 3,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AiLoopEventCancel {
-			return &transitionInfo{
-				source:          AiLoopStateRun,
-				target:          AiLoopStateCancelled,
-				transitionIndex: 4,
-				hasActions:      false,
-				isInternal:      false,
-				isTargetless:    false,
+			{
+				return sce.EnabledTransition[AiLoopState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAiLoop[state][4],
+					TransitionIndex: 4,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
 	case AiLoopStateScreening:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AiLoopEventScreenMatched {
-			return &transitionInfo{
-				source:          AiLoopStateScreening,
-				target:          AiLoopStateWorking,
-				transitionIndex: 0,
-				hasActions:      false,
-				isInternal:      false,
-				isTargetless:    false,
+			{
+				return sce.EnabledTransition[AiLoopState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAiLoop[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AiLoopEventScreenNone {
-			return &transitionInfo{
-				source:          AiLoopStateScreening,
-				target:          AiLoopStatePaused,
-				transitionIndex: 1,
-				hasActions:      false,
-				isInternal:      false,
-				isTargetless:    false,
+			{
+				return sce.EnabledTransition[AiLoopState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAiLoop[state][1],
+					TransitionIndex: 1,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
 	case AiLoopStateWithin:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AiLoopEventTurnDone {
 			if p.evaluateGuard(`(_scxml_add(turns, 1) >= max_turns)`, engine) {
-			return &transitionInfo{
-				source:          AiLoopStateWithin,
-				target:          AiLoopStateSpent,
-				transitionIndex: 0,
-				hasActions:      true,
-				isInternal:      false,
-				isTargetless:    false,
-			}
+				return sce.EnabledTransition[AiLoopState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAiLoop[state][0],
+					TransitionIndex: 0,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AiLoopEventTurnDone {
-			return &transitionInfo{
-				source:          AiLoopStateWithin,
-				target:          AiLoopStateWithin,
-				transitionIndex: 1,
-				hasActions:      true,
-				isInternal:      false,
-				isTargetless:    false,
+			{
+				return sce.EnabledTransition[AiLoopState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAiLoop[state][1],
+					TransitionIndex: 1,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
 			}
 		}
 	case AiLoopStateWorking:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AiLoopEventTurnDone {
-			return &transitionInfo{
-				source:          AiLoopStateWorking,
-				target:          AiLoopStateJudging,
-				transitionIndex: 0,
-				hasActions:      true,
-				isInternal:      false,
-				isTargetless:    false,
+			{
+				return sce.EnabledTransition[AiLoopState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAiLoop[state][0],
+					TransitionIndex: 0,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AiLoopEventTurnBlocked {
-			return &transitionInfo{
-				source:          AiLoopStateWorking,
-				target:          AiLoopStateScreening,
-				transitionIndex: 1,
-				hasActions:      false,
-				isInternal:      false,
-				isTargetless:    false,
+			{
+				return sce.EnabledTransition[AiLoopState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAiLoop[state][1],
+					TransitionIndex: 1,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
 	}
-	return nil
+	return sce.EnabledTransition[AiLoopState, sce.HistoryID]{}, false
 }
 
-// tryTransitionInState checks transitions for a single state.
+// ExecuteTransitionContent runs one transition's executable content (W3C SCXML
+// 3.13), between the microstep's exits and its entries.
 //line ai_loop.scxml:155
-func (p *AiLoopPolicy) tryTransitionInState(checkState AiLoopState, event AiLoopEvent, currentState *AiLoopState, engine *sce.Engine[AiLoopState, AiLoopEvent]) bool {
-	switch checkState {
-	case AiLoopStateAlive:
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == AiLoopEventSessionLost {
-			*currentState = AiLoopStateRebuilding
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AiLoopStateAlive
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = false
-			return true
-		}
-	case AiLoopStateClosing:
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == AiLoopEventTurnDone {
-			*currentState = AiLoopStateReported
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AiLoopStateClosing
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = false
-			return true
-		}
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == AiLoopEventTurnBlocked {
-			*currentState = AiLoopStateScreening
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AiLoopStateClosing
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = false
-			return true
-		}
-	case AiLoopStateDrive:
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == AiLoopEventHold {
-			*currentState = AiLoopStatePaused
-			p.lastTransitionIsInternal = true
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AiLoopStateDrive
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = false
-			return true
-		}
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == AiLoopEventTurnInterrupted {
-			*currentState = AiLoopStatePaused
-			p.lastTransitionIsInternal = true
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AiLoopStateDrive
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = false
-			return true
-		}
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == AiLoopEventSessionLost {
-			*currentState = AiLoopStateRestarting
-			p.lastTransitionIsInternal = true
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AiLoopStateDrive
-			p.lastTransitionIndex = 2
-			p.hasTransitionActions = false
-			return true
-		}
-	case AiLoopStateJudging:
-		// W3C SCXML 5.9.3: Precomputed prefix match for "judge"
-		if event == AiLoopEventJudge || event == AiLoopEventJudgeBegin {
-			if p.evaluateGuard(`_scxml_truthy(_event.data.done)`, engine) {
-			*currentState = AiLoopStateClosing
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AiLoopStateJudging
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = false
-			return true
-			}
-		}
-		// W3C SCXML 5.9.3: Precomputed prefix match for "judge"
-		if event == AiLoopEventJudge || event == AiLoopEventJudgeBegin {
-			if p.evaluateGuard(`(turns_since_reflect >= reflect_every)`, engine) {
-			*currentState = AiLoopStateReflecting
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AiLoopStateJudging
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = false
-			return true
-			}
-		}
-		// W3C SCXML 5.9.3: Precomputed prefix match for "judge"
-		if event == AiLoopEventJudge || event == AiLoopEventJudgeBegin {
-			*currentState = AiLoopStateWorking
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AiLoopStateJudging
-			p.lastTransitionIndex = 2
-			p.hasTransitionActions = true
-			return true
-		}
-	case AiLoopStatePaused:
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == AiLoopEventTurnDone {
-			*currentState = AiLoopStateJudging
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AiLoopStatePaused
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = true
-			return true
-		}
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == AiLoopEventTurnInterrupted {
-			*currentState = AiLoopStatePaused
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AiLoopStatePaused
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = false
-			return true
-		}
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == AiLoopEventResume {
-			// W3C SCXML 3.11: History transition — resolve at runtime
-			*currentState = p.resolveHistoryTargetWhere()
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AiLoopStatePaused
-			p.lastTransitionIndex = 2
-			p.hasTransitionActions = false
-			return true
-		}
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == AiLoopEventUnattended {
-			*currentState = AiLoopStateAbandoned
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AiLoopStatePaused
-			p.lastTransitionIndex = 3
-			p.hasTransitionActions = false
-			return true
-		}
-	case AiLoopStatePriming:
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == AiLoopEventPromptSent {
-			*currentState = AiLoopStateWorking
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AiLoopStatePriming
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = false
-			return true
-		}
-	case AiLoopStateRebuilding:
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == AiLoopEventSessionReady {
-			*currentState = AiLoopStateAlive
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AiLoopStateRebuilding
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = false
-			return true
-		}
-	case AiLoopStateReflecting:
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == AiLoopEventReflectApplied {
-			*currentState = AiLoopStateRestarting
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AiLoopStateReflecting
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = true
-			return true
-		}
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == AiLoopEventReflectNone {
-			*currentState = AiLoopStateWorking
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AiLoopStateReflecting
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = true
-			return true
-		}
-	case AiLoopStateRestarting:
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == AiLoopEventSessionReady {
-			if p.evaluateGuard(`(restarts > max_restarts)`, engine) {
-			*currentState = AiLoopStateStuck
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AiLoopStateRestarting
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = false
-			return true
-			}
-		}
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == AiLoopEventSessionReady {
-			*currentState = AiLoopStatePriming
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AiLoopStateRestarting
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = false
-			return true
-		}
-	case AiLoopStateRun:
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == AiLoopEventRunConverged {
-			*currentState = AiLoopStateConverged
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AiLoopStateRun
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = false
-			return true
-		}
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == AiLoopEventRunExhausted {
-			*currentState = AiLoopStateExhausted
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AiLoopStateRun
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = false
-			return true
-		}
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == AiLoopEventRunBlocked {
-			*currentState = AiLoopStateBlocked
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AiLoopStateRun
-			p.lastTransitionIndex = 2
-			p.hasTransitionActions = false
-			return true
-		}
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == AiLoopEventFail {
-			*currentState = AiLoopStateFailed
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AiLoopStateRun
-			p.lastTransitionIndex = 3
-			p.hasTransitionActions = false
-			return true
-		}
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == AiLoopEventCancel {
-			*currentState = AiLoopStateCancelled
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AiLoopStateRun
-			p.lastTransitionIndex = 4
-			p.hasTransitionActions = false
-			return true
-		}
-	case AiLoopStateScreening:
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == AiLoopEventScreenMatched {
-			*currentState = AiLoopStateWorking
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AiLoopStateScreening
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = false
-			return true
-		}
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == AiLoopEventScreenNone {
-			*currentState = AiLoopStatePaused
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AiLoopStateScreening
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = false
-			return true
-		}
-	case AiLoopStateWithin:
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == AiLoopEventTurnDone {
-			if p.evaluateGuard(`(_scxml_add(turns, 1) >= max_turns)`, engine) {
-			*currentState = AiLoopStateSpent
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AiLoopStateWithin
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = true
-			return true
-			}
-		}
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == AiLoopEventTurnDone {
-			*currentState = AiLoopStateWithin
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AiLoopStateWithin
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = true
-			return true
-		}
-	case AiLoopStateWorking:
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == AiLoopEventTurnDone {
-			*currentState = AiLoopStateJudging
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AiLoopStateWorking
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = true
-			return true
-		}
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == AiLoopEventTurnBlocked {
-			*currentState = AiLoopStateScreening
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AiLoopStateWorking
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = false
-			return true
-		}
-	}
-	return false
-}
-
-// ExecuteTransitionActions executes actions for the last taken transition (W3C SCXML 3.13).
-//line ai_loop.scxml:155
-func (p *AiLoopPolicy) ExecuteTransitionActions(engine *sce.Engine[AiLoopState, AiLoopEvent]) {
+func (p *AiLoopPolicy) ExecuteTransitionContent(source AiLoopState, transitionIndex int, engine *sce.Engine[AiLoopState, AiLoopEvent]) {
 	p.ensureScriptEngine()
-	if !p.hasTransitionActions {
-		return
-	}
-	source := p.lastTransitionSourceState
-	idx := p.lastTransitionIndex
-	if source == AiLoopStateJudging && idx == 2 {
-		//line ai_loop.scxml:362
+	switch source {
+	case AiLoopStateJudging:
+		switch transitionIndex {
+		case 2:
+			//line ai_loop.scxml:362
 
 	// W3C SCXML 6.2: send id="__send_2"
 	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
@@ -2759,20 +2306,22 @@ func (p *AiLoopPolicy) ExecuteTransitionActions(engine *sce.Engine[AiLoopState, 
 	}
 	}
 
-		return
-	}
-	if source == AiLoopStatePaused && idx == 0 {
-		//line ai_loop.scxml:468
+		}
+	case AiLoopStatePaused:
+		switch transitionIndex {
+		case 0:
+			//line ai_loop.scxml:468
 
 	// W3C SCXML 5.3: <assign location="turns_since_reflect" expr="turns_since_reflect + 1">
 	if err := p.assignVariable(`turns_since_reflect`, `_scxml_add(turns_since_reflect, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<assign> to 'turns_since_reflect' failed"))
 	}
 
-		return
-	}
-	if source == AiLoopStateReflecting && idx == 0 {
-		//line ai_loop.scxml:379
+		}
+	case AiLoopStateReflecting:
+		switch transitionIndex {
+		case 0:
+			//line ai_loop.scxml:379
 
 	// W3C SCXML 5.3: <assign location="start_prompt" expr="_event.data.start_prompt">
 	if err := p.assignVariable(`start_prompt`, `_event.data.start_prompt`); err != nil {
@@ -2791,10 +2340,8 @@ func (p *AiLoopPolicy) ExecuteTransitionActions(engine *sce.Engine[AiLoopState, 
 		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<assign> to 'milestone' failed"))
 	}
 
-		return
-	}
-	if source == AiLoopStateReflecting && idx == 1 {
-		//line ai_loop.scxml:385
+		case 1:
+			//line ai_loop.scxml:385
 
 	// W3C SCXML 6.2: send id="__send_4"
 	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
@@ -2841,361 +2388,36 @@ func (p *AiLoopPolicy) ExecuteTransitionActions(engine *sce.Engine[AiLoopState, 
 	}
 	}
 
-		return
-	}
-	if source == AiLoopStateWithin && idx == 0 {
-		//line ai_loop.scxml:522
+		}
+	case AiLoopStateWithin:
+		switch transitionIndex {
+		case 0:
+			//line ai_loop.scxml:522
 
 	// W3C SCXML 5.3: <assign location="turns" expr="turns + 1">
 	if err := p.assignVariable(`turns`, `_scxml_add(turns, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<assign> to 'turns' failed"))
 	}
 
-		return
-	}
-	if source == AiLoopStateWithin && idx == 1 {
-		//line ai_loop.scxml:525
+		case 1:
+			//line ai_loop.scxml:525
 
 	// W3C SCXML 5.3: <assign location="turns" expr="turns + 1">
 	if err := p.assignVariable(`turns`, `_scxml_add(turns, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<assign> to 'turns' failed"))
 	}
 
-		return
-	}
-	if source == AiLoopStateWorking && idx == 0 {
-		//line ai_loop.scxml:311
+		}
+	case AiLoopStateWorking:
+		switch transitionIndex {
+		case 0:
+			//line ai_loop.scxml:311
 
 	// W3C SCXML 5.3: <assign location="turns_since_reflect" expr="turns_since_reflect + 1">
 	if err := p.assignVariable(`turns_since_reflect`, `_scxml_add(turns_since_reflect, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(AiLoopEventErrorExecution, "<assign> to 'turns_since_reflect' failed"))
 	}
 
-		return
-	}
-}
-
-// transitionInfo describes a transition for conflict resolution (W3C SCXML Appendix D).
-type transitionInfo struct {
-	source          AiLoopState
-	target          AiLoopState
-	transitionIndex int
-	hasActions      bool
-	isInternal      bool
-	isTargetless    bool
-}
-
-// selectOptimalTransitions resolves conflicts between parallel transitions (Appendix D removeConflictingTransitions).
-// Port of Rust remove_conflicting_transitions().
-func (p *AiLoopPolicy) selectOptimalTransitions(transitions []transitionInfo) []transitionInfo {
-	if len(transitions) <= 1 {
-		return transitions
-	}
-	var filtered []transitionInfo
-
-	for _, t1 := range transitions {
-		// Appendix D selectTransitions: the enabled set is an ORDERED SET, and
-		// the same transition reached from two different region leaves is ONE
-		// element of it, not two. A transition written on a <parallel>, or on an
-		// ancestor above one, is selected once per region by the bubbling walk —
-		// W3C test 403b turns on a <parallel>-level <assign> running exactly
-		// once. Selection stops at the first enabled transition of a state, so
-		// within one microstep a source contributes at most one transition and
-		// (source, target) identifies it.
-		//
-		// This is what the removed target/source criterion stood in for: a
-		// targetless duplicate is spelled source -> source, so that check
-		// happened to fire on it. Stated here it is the set semantics
-		// themselves, independent of how a targetless transition is spelled.
-		alreadySelected := false
-		for _, seen := range filtered {
-			if seen.source == t1.source && seen.target == t1.target {
-				alreadySelected = true
-				break
-			}
-		}
-		if alreadySelected {
-			continue
-		}
-
-		dominated := false
-		var toRemove []int
-
-		for idx, t2 := range filtered {
-			// Appendix D removeConflictingTransitions: Check if exit sets intersect
-			t1Exits := p.computeExitSetForConflict(t1)
-			t2Exits := p.computeExitSetForConflict(t2)
-
-			// Appendix D removeConflictingTransitions: two transitions conflict
-			// when their EXIT SETS intersect. That is the whole test the appendix
-			// states, and it is now the whole test made here.
-			//
-			// Three rules used to sit beside it — a target/source equality check
-			// and a <parallel>-ancestor check in each direction — and none is in
-			// the appendix. They stood in for an exit set this generator could
-			// not compute: assembled from the source's own ancestor chain, a set
-			// could not name the sibling regions a transition leaving the
-			// <parallel> exits, so the intersection came back empty for
-			// transitions that plainly conflict. Appendix D computeExitSet reads
-			// p.activeStates now, so the intersection answers on its own.
-			//
-			// A transition that exits nothing still conflicts with nothing and
-			// can never be preempted — that is a targetless transition, which
-			// the appendix gives an empty exit set, and it is what W3C test 403c
-			// means by "this transition never gets preempted, should fire twice".
-			// The removed rules each read a targetless transition as a
-			// self-transition on its own source, which is why they needed the
-			// empty-exit-set gate and the isTargetless guards that stood here.
-			hasConflict := false
-			for _, s1 := range t1Exits {
-				for _, s2 := range t2Exits {
-					if s1 == s2 {
-						hasConflict = true
-						break
-					}
-				}
-				if hasConflict {
-					break
-				}
-			}
-			if !hasConflict {
-				continue
-			}
-
-			// Appendix D removeConflictingTransitions: the descendant source wins
-			if p.IsDescendantOf(t1.source, t2.source) {
-				toRemove = append(toRemove, idx)
-			} else {
-				dominated = true
-				break
-			}
-		}
-
-		if !dominated {
-			// Remove preempted transitions in reverse order
-			for i := len(toRemove) - 1; i >= 0; i-- {
-				idx := toRemove[i]
-				filtered = append(filtered[:idx], filtered[idx+1:]...)
-			}
-			filtered = append(filtered, t1)
-		}
-	}
-
-	return filtered
-}
-
-// transitionDomain is Appendix D getTransitionDomain — the state every exited
-// and entered state descends from. A nil answer is the <scxml> element, which
-// has no State constant here; callers read it as "every active state is below".
-func (p *AiLoopPolicy) transitionDomain(source, target AiLoopState, isInternal bool) *AiLoopState {
-	// W3C SCXML 3.13: Internal transition to a compound descendant — the SOURCE
-	// is the domain, so it stays active while its active descendants are exited.
-	if isInternal &&
-		p.IsCompoundState(source) && !p.IsParallelState(source) &&
-		p.IsDescendantOf(target, source) && target != source {
-		d := source
-		return &d
-	}
-
-	// Appendix D findLCCA: walk up from source for the lowest CANDIDATE ancestor
-	// that contains target. The candidates are the ones
-	// isCompoundStateOrScxmlElement admits, so a <parallel> is skipped.
-	//
-	// If no candidate contains target (top-level siblings, or a region root's
-	// external transition whose only non-candidate ancestor is the <parallel>),
-	// the domain is the <scxml> element.
-	current := source
-	for {
-		parent, hasParent := p.GetParent(current)
-		if !hasParent {
-			return nil
-		}
-		isDomainCandidate := p.IsCompoundState(parent) && !p.IsParallelState(parent)
-		if isDomainCandidate && (p.IsDescendantOf(target, parent) || target == parent) {
-			return &parent
-		}
-		current = parent
-	}
-}
-
-// computeExitSetForConflict is Appendix D computeExitSet: the ACTIVE states that
-// are proper descendants of the transition's domain.
-//
-// It reads p.activeStates, because that is what the appendix computes over.
-// Walking the source's own ancestor chain instead — what stood here — names the
-// same states only while no <parallel> is active below the domain: a sibling
-// region descends from the domain and is not on that chain. It left this
-// generator with TWO exit sets, one for conflict resolution and one for
-// executeMicrostep, which now share this procedure and cannot disagree.
-func (p *AiLoopPolicy) computeExitSetForConflict(t transitionInfo) []AiLoopState {
-	// Appendix D computeExitSet guards the whole computation with `if t.target`:
-	// a transition without one exits nothing and conflicts with nothing.
-	if t.isTargetless {
-		return nil
-	}
-
-	domain := p.transitionDomain(t.source, t.target, t.isInternal)
-
-	var exitSet []AiLoopState
-	for _, activeState := range p.activeStates {
-		exits := true
-		if domain != nil {
-			// The domain itself is not exited; everything active below it is.
-			exits = activeState != *domain && p.IsDescendantOf(activeState, *domain)
-		}
-		if exits {
-			exitSet = append(exitSet, activeState)
-		}
-	}
-	return exitSet
-}
-
-// executeMicrostep performs a complete microstep for the given transitions
-// (Appendix D microstepProcedure Steps 1-5: compute exit set, exit, actions, enter).
-func (p *AiLoopPolicy) executeMicrostep(transitions []transitionInfo, currentState *AiLoopState, engine *sce.Engine[AiLoopState, AiLoopEvent]) {
-	if len(transitions) == 0 {
-		return
-	}
-
-	// Appendix D computeExitSet Step 1-2: Compute states to exit
-	var statesToExit []AiLoopState
-	for _, trans := range transitions {
-		if trans.isTargetless {
-			continue
-		}
-		// Appendix D computeExitSet: the SAME procedure selectOptimalTransitions
-		// intersects. A microstep that exits a different set from the one the
-		// resolver judged cannot be reasoned about, and this walked the
-		// configuration while computeExitSetForConflict walked source's chain.
-		for _, activeState := range p.computeExitSetForConflict(trans) {
-			found := false
-			for _, s := range statesToExit {
-				if s == activeState {
-					found = true
-					break
-				}
-			}
-			if !found {
-				statesToExit = append(statesToExit, activeState)
-			}
-		}
-	}
-
-	// Sort by reverse document order (deepest first)
-	sort.Slice(statesToExit, func(i, j int) bool {
-		return p.GetDocumentOrder(statesToExit[i]) > p.GetDocumentOrder(statesToExit[j])
-	})
-
-	// Snapshot active states for history recording
-	activeSnapshot := make([]AiLoopState, len(p.activeStates))
-	copy(activeSnapshot, p.activeStates)
-
-	// Appendix D exitStates Step 2: Exit states
-	for _, state := range statesToExit {
-		p.ExecuteExitActions(state, engine, activeSnapshot)
-	}
-
-	// Appendix D executeTransitionContent Step 3: Execute transition content
-	// Sort transitions by source document order
-	sortedTransitions := make([]transitionInfo, len(transitions))
-	copy(sortedTransitions, transitions)
-	sort.Slice(sortedTransitions, func(i, j int) bool {
-		return p.GetDocumentOrder(sortedTransitions[i].source) < p.GetDocumentOrder(sortedTransitions[j].source)
-	})
-
-	for _, trans := range sortedTransitions {
-		if trans.hasActions {
-			p.lastTransitionSourceState = trans.source
-			p.lastTransitionIndex = trans.transitionIndex
-			p.hasTransitionActions = true
-			p.ExecuteTransitionActions(engine)
-			p.hasTransitionActions = false
-		}
-	}
-
-	// Appendix D enterStates Step 4-5: Enter target states
-	sort.Slice(sortedTransitions, func(i, j int) bool {
-		return p.GetDocumentOrder(sortedTransitions[i].target) < p.GetDocumentOrder(sortedTransitions[j].target)
-	})
-
-	for _, trans := range sortedTransitions {
-		if trans.isTargetless {
-			continue
-		}
-
-		target := trans.target
-		*currentState = target
-
-		// W3C SCXML 3.13: Build hierarchical entry chain from root to target
-		var entryChain []AiLoopState
-		{
-			current := target
-			for {
-				entryChain = append([]AiLoopState{current}, entryChain...)
-				parent, hasParent := p.GetParent(current)
-				if !hasParent {
-					break
-				}
-				current = parent
-			}
-		}
-
-		// §scxml-D: every link but the last is an ANCESTOR of the target, and
-		// addAncestorStatesToEnter adds an ancestor WITHOUT its default initial
-		// child — the entry set already holds the next link. Only the target
-		// itself goes through addDescendantStatesToEnter. Passing the next link
-		// as pathChild is what expresses that, and it is also what stops a
-		// <parallel> ancestor from handing a default to the very region the
-		// chain is descending into.
-		for chainIdx := range entryChain {
-			state := entryChain[chainIdx]
-			var pathChild *AiLoopState
-			if chainIdx+1 < len(entryChain) {
-				pathChild = &entryChain[chainIdx+1]
-			}
-			alreadyActive := false
-			for _, as := range p.activeStates {
-				if as == state {
-					alreadyActive = true
-					break
-				}
-			}
-			if alreadyActive {
-				// W3C SCXML 3.13: Already active - handle parallel region re-entry
-				if p.IsParallelState(state) {
-					regions := p.GetParallelRegions(state)
-					for _, region := range regions {
-						if pathChild != nil && *pathChild == region {
-							continue
-						}
-						regionActive := false
-						for _, as := range p.activeStates {
-							if as == region {
-								regionActive = true
-								break
-							}
-						}
-						if !regionActive {
-							p.ExecuteEntryActions(region, engine, nil)
-							if p.IsCompoundState(region) {
-								initialChild := p.GetInitialOrHistoryChild(region)
-								if initialChild != region {
-									p.ExecuteEntryActions(initialChild, engine, nil)
-								}
-							}
-						}
-					}
-				}
-				continue
-			}
-			p.ExecuteEntryActions(state, engine, pathChild)
-		}
-
-		// W3C SCXML 3.4: For parallel states, maintain currentState at parallel level
-		if parent, hasParent := p.GetParent(target); hasParent {
-			if p.IsParallelState(parent) {
-				*currentState = parent
-			}
 		}
 	}
 }
