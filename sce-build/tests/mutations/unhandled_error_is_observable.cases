@@ -45,8 +45,8 @@ mutation_oracles backends/rust/tests/tests/unhandled_error_is_observable.rs
 
 mutation_case "the internal drain drops the outcome again" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """                self.unhandled_error_events = self.unhandled_error_events.saturating_add(1);""",
-     """                self.unhandled_error_events = self.unhandled_error_events.saturating_add(0);""")
+     """            self.unhandled_error_events = self.unhandled_error_events.saturating_add(1);""",
+     """            self.unhandled_error_events = self.unhandled_error_events.saturating_add(0);""")
 PY
 
 # ── Counting an error the document DID answer ──────────────────────
@@ -59,12 +59,8 @@ PY
 
 mutation_case "every error is counted, answered or not" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """            if outcome == EventOutcome::Discarded && is_error {""",
-     """            if matches!(
-                outcome,
-                EventOutcome::Discarded | EventOutcome::Taken { .. }
-            ) && is_error
-            {""")
+     """        if outcome == EventOutcome::Discarded && is_error {""",
+     """        if matches!(outcome, EventOutcome::Discarded | EventOutcome::Taken) && is_error {""")
 PY
 
 # ── Counting the author's own unmatched raise ──────────────────────
@@ -76,8 +72,8 @@ PY
 
 mutation_case "any unmatched internal event counts as an engine error" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """            if outcome == EventOutcome::Discarded && is_error {""",
-     """            if outcome == EventOutcome::Discarded {""")
+     """        if outcome == EventOutcome::Discarded && is_error {""",
+     """        if outcome == EventOutcome::Discarded {""")
 PY
 
 # ── The classifier ─────────────────────────────────────────────────
@@ -121,8 +117,8 @@ PY
 
 mutation_case "the unhandled error is counted but never named" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """                self.last_unhandled_error = Some(event_with_meta.event);""",
-     """                self.last_unhandled_error = None;""")
+     """            self.last_unhandled_error = Some(event_with_meta.event);""",
+     """            self.last_unhandled_error = None;""")
 PY
 
 # ── What the error SAYS ────────────────────────────────────────────
@@ -162,19 +158,17 @@ PY
 #
 # The count is a byproduct of the drain, not its job. Folding the selection
 # into the condition — which is what the first draft of this code did — skips
-# `execute_transition` for every event that is not an error, so nothing in the
+# `take_event` for every event that is not an error, so nothing in the
 # document runs. The fixture's `<assign>` counters are what notice.
 
 mutation_case "the selection becomes the right-hand side of the error test" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """            let outcome = self.execute_transition(event_with_meta.event);
-            self.handling_error_event = false;""",
-     """            let outcome = if is_error {
-                self.execute_transition(event_with_meta.event)
-            } else {
-                EventOutcome::Taken {
-                    configuration_changed: false,
-                }
-            };
-            self.handling_error_event = false;""")
+     """        let outcome = self.take_event(event_with_meta.event);
+        self.handling_error_event = false;""",
+     """        let outcome = if is_error {
+            self.take_event(event_with_meta.event)
+        } else {
+            EventOutcome::Taken
+        };
+        self.handling_error_event = false;""")
 PY

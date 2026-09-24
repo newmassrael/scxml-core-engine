@@ -12,8 +12,8 @@
 // answered by a transition that raises again. Measured 2026-08-20 before the
 // ceiling reached this branch, `step()` on the fixture's `spin` document did
 // not return on this engine — the internal drain had no budget at all, and
-// `check_eventless_transitions`' hundred was spent on the branch that was not
-// running.
+// the eventless drain's hundred (then a function of its own) was spent on the
+// branch that was not running.
 //
 // Fixture: integration_resources/internal_chain_is_bounded/internal_chain_is_bounded.scxml
 // (canonical, shared with the C++ / C11 / Go / Kotlin / Python channels).

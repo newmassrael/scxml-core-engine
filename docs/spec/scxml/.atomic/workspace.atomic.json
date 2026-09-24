@@ -368,11 +368,6 @@
           "kind": "verifies"
         },
         {
-          "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "handle_hierarchical_transition",
-          "kind": "implements"
-        },
-        {
           "file": "sce-build/src/scxml_references.rs",
           "symbol": "validate",
           "kind": "references"
@@ -386,6 +381,31 @@
           "file": "sce/include/core/EntrySetHelper.h",
           "symbol": "addDescendantStatesToEnter",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "add_descendant_states_to_enter",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "History",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "get_history_parent",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "history_value",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "execute_exit_actions",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -461,6 +481,16 @@
           "file": "sce-build/src/model.rs",
           "symbol": "HistoryInfo",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "get_history_default_targets",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "execute_history_default_content",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -511,11 +541,6 @@
         {
           "file": "sce-build/src/parser.rs",
           "kind": "references"
-        },
-        {
-          "file": "backends/rust/runtime/src/policy.rs",
-          "symbol": "StatePolicy",
-          "kind": "implements"
         },
         {
           "file": "backends/rust/runtime/src/engine.rs",
@@ -616,16 +641,6 @@
           "kind": "references"
         },
         {
-          "file": "backends/rust/runtime/src/policy.rs",
-          "symbol": "get_initial_or_history_child",
-          "kind": "references"
-        },
-        {
-          "file": "backends/rust/runtime/src/policy.rs",
-          "symbol": "execute_exit_actions",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/parsing/SemanticError.h",
           "symbol": "SemanticIllegalStateSpecification",
           "kind": "references"
@@ -709,18 +724,9 @@
           "kind": "verifies"
         },
         {
-          "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "execute_transition",
-          "kind": "implements"
-        },
-        {
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "StatePolicy",
           "kind": "implements"
-        },
-        {
-          "file": "backends/rust/runtime/src/helpers/hierarchy.rs",
-          "kind": "references"
         },
         {
           "file": "backends/go/runtime/engine.go",
@@ -788,18 +794,8 @@
           "kind": "references"
         },
         {
-          "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "handle_hierarchical_transition",
-          "kind": "implements"
-        },
-        {
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "Event",
-          "kind": "references"
-        },
-        {
-          "file": "backends/rust/runtime/src/policy.rs",
-          "symbol": "is_descendant_of",
           "kind": "references"
         },
         {
@@ -1061,11 +1057,6 @@
         },
         {
           "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "process_internal_queue",
-          "kind": "references"
-        },
-        {
-          "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "unhandled_error_events",
           "kind": "references"
         },
@@ -1272,6 +1263,11 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "bindTypedPayload",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "take_internal_event",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -1656,18 +1652,9 @@
           "kind": "verifies"
         },
         {
-          "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "handle_hierarchical_transition",
-          "kind": "implements"
-        },
-        {
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "StatePolicy",
           "kind": "implements"
-        },
-        {
-          "file": "backends/rust/runtime/src/lib.rs",
-          "kind": "references"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
@@ -1900,39 +1887,9 @@
           "kind": "references"
         },
         {
-          "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "check_eventless_transitions",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "execute_transition",
-          "kind": "implements"
-        },
-        {
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "null_event",
           "kind": "references"
-        },
-        {
-          "file": "backends/rust/runtime/src/policy.rs",
-          "symbol": "last_transition_is_internal",
-          "kind": "references"
-        },
-        {
-          "file": "backends/rust/runtime/src/policy.rs",
-          "symbol": "last_transition_is_targetless",
-          "kind": "references"
-        },
-        {
-          "file": "backends/rust/runtime/src/policy.rs",
-          "symbol": "process_transition",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/rust/runtime/src/policy.rs",
-          "symbol": "execute_transition_actions",
-          "kind": "implements"
         },
         {
           "file": "backends/c/runtime/include/sce/event_payload.h",
@@ -2002,6 +1959,11 @@
           "file": "sce/src/parsing/TransitionParser.cpp",
           "symbol": "SCE::TransitionParser::parseTransitionNode",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "execute_transition_content",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -2198,6 +2160,11 @@
           "file": "sce-build/src/parser.rs",
           "symbol": "parse_impl",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "get_document_initial_targets",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -2344,26 +2311,6 @@
           "kind": "verifies"
         },
         {
-          "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "execute_transition",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "handle_hierarchical_transition",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "initialize",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/rust/runtime/src/helpers/hierarchy.rs",
-          "symbol": "build_entry_chain",
-          "kind": "implements"
-        },
-        {
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "StatePolicy",
           "kind": "implements"
@@ -2474,11 +2421,6 @@
           "kind": "references"
         },
         {
-          "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "initialize_in_turn",
-          "kind": "implements"
-        },
-        {
           "file": "backends/rust/runtime/src/helpers/mod.rs",
           "kind": "references"
         },
@@ -2501,11 +2443,6 @@
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "enter_at",
           "kind": "references"
-        },
-        {
-          "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "resolve_current_state_to_leaf",
-          "kind": "implements"
         },
         {
           "file": "backends/rust/runtime/src/policy.rs",
@@ -2531,6 +2468,16 @@
           "file": "sce/src/runtime/InterpreterDocument.cpp",
           "symbol": "InterpreterDocument::defaultInitialOf",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "add_descendant_states_to_enter",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "get_initial_targets",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -2666,11 +2613,6 @@
           "kind": "references"
         },
         {
-          "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "execute_transition",
-          "kind": "implements"
-        },
-        {
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "StatePolicy",
           "kind": "implements"
@@ -2785,16 +2727,6 @@
         },
         {
           "file": "backends/rust/runtime/src/policy.rs",
-          "symbol": "get_parallel_regions",
-          "kind": "references"
-        },
-        {
-          "file": "backends/rust/runtime/src/policy.rs",
-          "symbol": "last_transition_source_state",
-          "kind": "references"
-        },
-        {
-          "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "get_active_states",
           "kind": "references"
         },
@@ -2812,6 +2744,11 @@
           "file": "sce/src/common/NodeFactory.cpp",
           "symbol": "SCE::NodeFactory::createStateNode",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "add_region_defaults",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -3002,11 +2939,6 @@
           "kind": "references"
         },
         {
-          "file": "backends/rust/runtime/src/policy.rs",
-          "symbol": "StatePolicy",
-          "kind": "implements"
-        },
-        {
           "file": "sce-build/src/scxml_references.rs",
           "symbol": "validate",
           "kind": "references"
@@ -3017,14 +2949,14 @@
           "kind": "implements"
         },
         {
-          "file": "backends/rust/runtime/src/policy.rs",
-          "symbol": "get_initial_children",
-          "kind": "references"
-        },
-        {
           "file": "sce/include/core/EntrySetHelper.h",
           "symbol": "addDescendantStatesToEnter",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "add_descendant_states_to_enter",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -4995,11 +4927,6 @@
         },
         {
           "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "process_internal_queue",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "process_next_external_event",
           "kind": "implements"
         },
@@ -5208,6 +5135,21 @@
         },
         {
           "file": "backends/rust/runtime/src/event_payload.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "take_internal_event",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "select_transitions",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "bind_current_event",
           "kind": "references"
         }
       ],
@@ -6254,11 +6196,6 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "process_internal_queue",
-          "kind": "implements"
-        },
-        {
           "file": "backends/go/runtime/engine.go",
           "symbol": "processInternalQueue",
           "kind": "implements"
@@ -7292,11 +7229,6 @@
         {
           "file": "sce-build/src/parser.rs",
           "kind": "references"
-        },
-        {
-          "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "handle_hierarchical_transition",
-          "kind": "implements"
         },
         {
           "file": "backends/go/runtime/engine.go",
@@ -12486,11 +12418,6 @@
           "kind": "implements"
         },
         {
-          "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "process_internal_queue",
-          "kind": "implements"
-        },
-        {
           "file": "sce/src/events/EventTargetFactoryImpl.cpp",
           "symbol": "SCE::EventTargetFactoryImpl::createSessionTarget",
           "kind": "implements"
@@ -13670,11 +13597,6 @@
           "kind": "implements"
         },
         {
-          "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "handle_hierarchical_transition",
-          "kind": "implements"
-        },
-        {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "applyTransitionFrom",
           "kind": "implements"
@@ -13690,13 +13612,13 @@
           "kind": "references"
         },
         {
-          "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "execute_on_entry_as_ancestor",
+          "file": "sce/include/core/EntrySetHelper.h",
+          "symbol": "addAncestorStatesToEnter",
           "kind": "implements"
         },
         {
-          "file": "sce/include/core/EntrySetHelper.h",
-          "symbol": "addAncestorStatesToEnter",
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "add_ancestor_states_to_enter",
           "kind": "implements"
         }
       ],
@@ -13741,6 +13663,11 @@
           "file": "sce/include/core/EntrySetHelper.h",
           "symbol": "addDescendantStatesToEnter",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "add_descendant_states_to_enter",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -13773,6 +13700,11 @@
         {
           "file": "sce/include/core/EntrySetHelper.h",
           "symbol": "computeEntrySet",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "compute_entry_set",
           "kind": "implements"
         }
       ],
@@ -13821,6 +13753,21 @@
         {
           "file": "sce/include/core/ParallelTransitionHelper.h",
           "symbol": "computeExitSet",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "is_targetless",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "compute_exit_set",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "compute_states_to_exit",
           "kind": "implements"
         }
       ],
@@ -13880,6 +13827,21 @@
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::enterFinalState",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "enter_states",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "compute_entry_set",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "complete_macrostep",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -13911,6 +13873,11 @@
         {
           "file": "sce/include/core/MicrostepAlgorithms.h",
           "symbol": "executeTransitionContent",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "execute_transition_content",
           "kind": "implements"
         }
       ],
@@ -13993,6 +13960,21 @@
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::exitState",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "compute_states_to_exit",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "exit_states",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "recorded_history",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14036,6 +14018,11 @@
           "file": "sce/include/core/ParallelTransitionHelper.h",
           "symbol": "getTransitionDomain",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "find_lcca",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14074,6 +14061,16 @@
           "file": "sce-build/src/parser.rs",
           "symbol": "compute_children",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "child_states",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "get_child_states",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14106,6 +14103,11 @@
         {
           "file": "sce/include/core/EntrySetHelper.h",
           "symbol": "getEffectiveTargetStates",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "add_effective_target_states",
           "kind": "implements"
         }
       ],
@@ -14144,6 +14146,11 @@
         {
           "file": "sce/include/core/EntrySetHelper.h",
           "symbol": "getProperAncestors",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "proper_ancestors",
           "kind": "implements"
         }
       ],
@@ -14203,6 +14210,11 @@
           "file": "sce-build/src/analyzer.rs",
           "symbol": "resolve_internal_transitions",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "transition_domain",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14241,6 +14253,21 @@
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::enterInitialConfiguration",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "enter_states",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "initialize_in_turn",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "enter_states",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14265,10 +14292,6 @@
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
       "bindings": [
-        {
-          "file": "backends/rust/runtime/src/helpers/hierarchy.rs",
-          "kind": "references"
-        },
         {
           "file": "sce/include/core/HierarchicalStateHelper.h",
           "symbol": "HierarchicalAlgorithms",
@@ -14485,6 +14508,16 @@
           "file": "sce/include/core/MicrostepAlgorithms.h",
           "symbol": "microstep",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "microstep",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/mod.rs",
+          "symbol": "microstep",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14563,6 +14596,11 @@
           "file": "sce/include/runtime/TransitionDescriptorString.h",
           "symbol": "TransitionDescriptorString",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "remove_conflicting_transitions",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14595,6 +14633,11 @@
         {
           "file": "sce/include/core/MicrostepAlgorithms.h",
           "symbol": "selectTransitions",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "select_transitions",
           "kind": "implements"
         }
       ],
@@ -14642,6 +14685,11 @@
         {
           "file": "sce/include/runtime/StateMachine.h",
           "symbol": "selectTransitions",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "select_transitions",
           "kind": "implements"
         }
       ],
@@ -17620,6 +17668,216 @@
       "target_kind": "section",
       "target_id": "scxml-D-Datatypes",
       "reason": "Stage D3, the Interpreter region runtime removed: the include comment that carried this citation named TransitionDescriptorString, which moved to runtime/TransitionDescriptorString.h"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.10",
+      "reason": "Stage E, the Rust backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (helpers/microstep.rs) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12",
+      "reason": "Stage E, the Rust backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (helpers/microstep.rs) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12",
+      "reason": "Stage E, the Rust backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (helpers/microstep.rs) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12.2",
+      "reason": "Stage E, the Rust backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (helpers/microstep.rs) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage E, the Rust backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (helpers/microstep.rs) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage E, the Rust backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (helpers/microstep.rs) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage E, the Rust backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (helpers/microstep.rs) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage E, the Rust backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (helpers/microstep.rs) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage E, the Rust backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (helpers/microstep.rs) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "Stage E, the Rust backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (helpers/microstep.rs) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10",
+      "reason": "Stage E, the Rust backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (helpers/microstep.rs) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.4.1",
+      "reason": "Stage E, the Rust backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (helpers/microstep.rs) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.9.2",
+      "reason": "Stage E, the Rust backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (helpers/microstep.rs) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-1",
+      "reason": "Stage E, the Rust backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (helpers/microstep.rs) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-addAncestorStatesToEnter",
+      "reason": "Stage E, the Rust backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (helpers/microstep.rs) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-addAncestorStatesToEnter",
+      "reason": "Stage E, the Rust backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (helpers/microstep.rs) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.11",
+      "reason": "Stage E, the Rust backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (helpers/microstep.rs) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12",
+      "reason": "Stage E, the Rust backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (helpers/microstep.rs) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage E, the Rust backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (helpers/microstep.rs) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage E, the Rust backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (helpers/microstep.rs) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage E, the Rust backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (helpers/microstep.rs) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage E, the Rust backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (helpers/microstep.rs) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "Stage E, the Rust backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (helpers/microstep.rs) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "Stage E, the Rust backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (helpers/microstep.rs) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.6",
+      "reason": "Stage E, the Rust backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (helpers/microstep.rs) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage E, the Rust backend onto Appendix D: this symbol is gone - the engine's LCA walk and the policy's generated microstep gave way to the runtime's transcription (helpers/microstep.rs) over one-state policy hooks"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12",
+      "reason": "Stage E, the Rust backend onto Appendix D: hierarchy.rs keeps only the StateChain storage; its LCA and chain builders are gone, and the walks are helpers/microstep.rs's"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-isDescendant",
+      "reason": "Stage E, the Rust backend onto Appendix D: hierarchy.rs keeps only the StateChain storage; isDescendant is helpers/microstep.rs's is_descendant"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage E, the Rust backend onto Appendix D: the initial configuration is entered by the document's initial transition through the runtime's enterStates (§scxml-D-interpret), not an entry chain down to a leaf"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage E, the Rust backend onto Appendix D: the initial configuration is entered by the document's initial transition through the runtime's enterStates (§scxml-D-interpret), not an entry chain down to a leaf"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage E, the Rust backend onto Appendix D: resolve_current_state_to_leaf now descends through the configuration the microstep entered; it no longer enters initial children"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage E, the Rust backend onto Appendix D: the microstep dedup set and its helper are gone; selection dedupes the ordered set inside helpers/microstep.rs"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.11",
+      "reason": "Stage E, the Rust backend onto Appendix D: the history contract is §scxml-3.10 (<history>), bound on the new history_value / get_history_* / execute_exit_actions docs"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.11",
+      "reason": "Stage E, the Rust backend onto Appendix D: the history contract is §scxml-3.10 (<history>), bound on the new history_value / get_history_* / execute_exit_actions docs"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.6",
+      "reason": "Stage E, the Rust backend onto Appendix D: deep and multi-target initial entry is the runtime's entry set over get_initial_targets; the policy no longer resolves initial children"
     }
   ],
   "frames": {},

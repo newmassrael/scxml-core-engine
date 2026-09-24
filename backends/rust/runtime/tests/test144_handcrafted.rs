@@ -23,11 +23,13 @@
 //
 // Execution trace:
 //   1. initialize() enters S0, runs onentry, internal queue = [Foo, Bar]
-//   2. process_next_external_event: pop Foo → S0→S1 (hierarchical exit/entry at root)
-//   3. run_main_event_loop continues: pop Bar → S1→Pass
+//   2. the macrostep takes Foo off the internal queue → microstep S0→S1
+//   3. and then Bar → microstep S1→Pass
 //   4. Pass is a top-level final state → is_in_final_state() == true
 
-use sce_rust_runtime::{Engine, EventWithMetadata, StatePolicy};
+use sce_rust_runtime::{
+    EnabledTransition, Engine, EntryTarget, EventWithMetadata, NoHistory, StatePolicy,
+};
 
 // `Fail` mirrors the W3C SCXML enum shape (test144 has both pass and fail
 // terminal states) but the hand-crafted happy-path port never constructs
@@ -49,25 +51,19 @@ enum Test144Event {
     Foo,
 }
 
-struct Test144Policy {
-    last_transition_is_internal: bool,
-    last_transition_is_targetless: bool,
-    last_transition_source_state: Test144State,
-}
+struct Test144Policy;
 
 impl Test144Policy {
     fn new() -> Self {
-        Self {
-            last_transition_is_internal: false,
-            last_transition_is_targetless: false,
-            last_transition_source_state: Test144State::S0,
-        }
+        Self
     }
 }
 
 impl StatePolicy for Test144Policy {
     type State = Test144State;
     type Event = Test144Event;
+    // C++ `using History = NoHistory;` — test144 declares no <history>.
+    type History = NoHistory;
     type Payload = ();
     type Hal = sce_rust_runtime::StdHal;
     type EventQueue = sce_rust_runtime::EventQueueManager<
@@ -100,8 +96,30 @@ impl StatePolicy for Test144Policy {
         false
     }
 
-    fn is_descendant_of(_desc: Self::State, _anc: Self::State) -> bool {
-        false
+    fn get_child_states(_state: Self::State) -> &'static [Self::State] {
+        // C++ `getChildStates`: every state is a child of the <scxml> element
+        &[]
+    }
+
+    fn get_initial_targets(
+        _state: Self::State,
+    ) -> &'static [EntryTarget<Self::State, Self::History>] {
+        &[]
+    }
+
+    fn get_document_initial_targets() -> &'static [EntryTarget<Self::State, Self::History>] {
+        // C++ `getDocumentInitialTargets()`: <scxml initial="s0">
+        &[EntryTarget::State(Test144State::S0)]
+    }
+
+    fn get_history_parent(history: Self::History) -> Self::State {
+        match history {}
+    }
+
+    fn get_history_default_targets(
+        history: Self::History,
+    ) -> &'static [EntryTarget<Self::State, Self::History>] {
+        match history {}
     }
 
     fn get_document_order(state: Self::State) -> u32 {
@@ -155,37 +173,21 @@ impl StatePolicy for Test144Policy {
         Test144Event::None
     }
 
-    // Required field accessors
-    fn last_transition_is_internal(&self) -> bool {
-        self.last_transition_is_internal
-    }
-    fn set_last_transition_is_internal(&mut self, v: bool) {
-        self.last_transition_is_internal = v;
-    }
-    fn last_transition_is_targetless(&self) -> bool {
-        self.last_transition_is_targetless
-    }
-    fn set_last_transition_is_targetless(&mut self, v: bool) {
-        self.last_transition_is_targetless = v;
-    }
-    fn last_transition_source_state(&self) -> Self::State {
-        self.last_transition_source_state
-    }
-    fn set_last_transition_source_state(&mut self, s: Self::State) {
-        self.last_transition_source_state = s;
+    fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
+        match history {}
     }
 
     // ──────────────────────────────────────────────
     // Entry actions (1:1 port of C++ executeEntryActions)
     // ──────────────────────────────────────────────
 
-    // `_path_child` (§scxml-D) is unused: this hand-written mirror of test144
-    // has no compound state whose default child could be at stake.
+    // `_is_default_entry` is unused: this hand-written mirror of test144 has
+    // no compound state whose initial content could run.
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
         engine: &mut Engine<Self>,
-        _path_child: Option<Self::State>,
+        _is_default_entry: bool,
     ) {
         match state {
             Test144State::S0 => {
@@ -201,49 +203,48 @@ impl StatePolicy for Test144Policy {
         &mut self,
         _state: Self::State,
         _engine: &mut Engine<Self>,
-        _pre: &[Self::State],
+        _before: &[Self::State],
     ) {
         // C++ executeExitActions: empty body
     }
 
     // ──────────────────────────────────────────────
-    // Transition logic (1:1 port of C++ processTransition + tryTransitionInState)
+    // Transition logic (1:1 port of C++ firstEnabledTransition)
     // ──────────────────────────────────────────────
 
-    fn process_transition(
+    fn first_enabled_transition(
         &mut self,
-        current_state: &mut Self::State,
+        state: Self::State,
         event: Self::Event,
         _engine: &mut Engine<Self>,
-    ) -> bool {
-        // Record transition source before any state change
-        self.last_transition_source_state = *current_state;
-
-        match (*current_state, event) {
+    ) -> Option<EnabledTransition<Self::State, Self::History>> {
+        let target: &'static [EntryTarget<Self::State, Self::History>] = match (state, event) {
             // S0 on Foo → S1
-            (Test144State::S0, Test144Event::Foo) => {
-                self.last_transition_is_internal = false;
-                self.last_transition_is_targetless = false;
-                *current_state = Test144State::S1;
-                true
-            }
+            (Test144State::S0, Test144Event::Foo) => &[EntryTarget::State(Test144State::S1)],
             // S1 on Bar → Pass
-            (Test144State::S1, Test144Event::Bar) => {
-                self.last_transition_is_internal = false;
-                self.last_transition_is_targetless = false;
-                *current_state = Test144State::Pass;
-                true
-            }
+            (Test144State::S1, Test144Event::Bar) => &[EntryTarget::State(Test144State::Pass)],
             // Wildcard '*' transitions to Fail are omitted: the happy path
             // (Foo → Bar → Pass) never exercises them, and W3C SCXML 5.9.3
             // descriptor matching has its own coverage (`helpers::event_matching`).
-            // The full generated output emits `matchesEventDescriptor(name, "*")`
+            // The full generated output emits `matches_event_descriptor(name, "*")`
             // arms here.
-            _ => false,
-        }
+            _ => return None,
+        };
+        Some(EnabledTransition {
+            source: state,
+            targets: target,
+            transition_index: 0,
+            has_actions: false,
+            is_internal: false,
+        })
     }
 
-    fn execute_transition_actions(&mut self, _engine: &mut Engine<Self>) {
+    fn execute_transition_content(
+        &mut self,
+        _source: Self::State,
+        _index: usize,
+        _engine: &mut Engine<Self>,
+    ) {
         // C++ executeTransitionActions: empty body
     }
 }

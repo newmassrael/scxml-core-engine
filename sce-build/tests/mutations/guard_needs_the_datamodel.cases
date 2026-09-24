@@ -25,7 +25,7 @@ mutation_tests -p sce-build --features cli --test guard_needs_the_datamodel --te
 # emitted tree, so the templates are runtime inputs rather than compiled
 # code; `guard_needs_the_datamodel` calls the frontend directly.
 mutation_targets sce-build/src/parser.rs sce-build/src/ecmascript/mod.rs sce-build/tests/cli_guard_emission.rs
-mutation_runtime_targets tools/codegen/templates/rust/state_machine.rs.jinja2 tools/codegen/templates/kotlin/process_event.kt.jinja2
+mutation_runtime_targets tools/codegen/templates/rust/process_transition.rs.jinja2 tools/codegen/templates/kotlin/process_event.kt.jinja2
 
 mutation_case "the classifier falls through to native again" <<'PY'
 edit("sce-build/src/parser.rs",
@@ -45,11 +45,13 @@ edit("sce-build/src/ecmascript/mod.rs",
         ExprKind::Ident(_) => Some(true),""")
 PY
 
+# Re-aimed 2026-09-24: the Rust guard moved into `process_transition.rs.jinja2`'s
+# one `guard_expr` macro when the per-state selection became
+# `first_enabled_transition`; the decided arm is unchanged.
 mutation_case "the Rust guard arm prints the author's text again" <<'PY'
-edit("tools/codegen/templates/rust/state_machine.rs.jinja2",
-     """                    // W3C SCXML 5.9: cond="{{ trans.cond }}" decided at build time
-                    if {{ 'true' if trans.cond_constant else 'false' }} {""",
-     """                    if {{ trans.cond }} {""")
+edit("tools/codegen/templates/rust/process_transition.rs.jinja2",
+     """{%- else -%}{{ 'true' if trans.cond_constant else 'false' }}""",
+     """{%- else -%}{{ trans.cond }}""")
 PY
 
 mutation_case "the Kotlin guard arm prints the author's text again" <<'PY'

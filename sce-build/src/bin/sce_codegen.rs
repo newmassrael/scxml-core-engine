@@ -1335,8 +1335,8 @@ struct GenerateArgs {
     /// machinery (`session_id` / `invoke_id` / parent queue).
     /// Every owned collection names a profile-resolving runtime
     /// alias — `SceString` / `SceBytes` for payload fields,
-    /// `StateChain` / `SceTransitionBuf` / `SceIndexBuf` /
-    /// `SceDedupSet` for the microstep buffers — so the runtime
+    /// `StateChain` for the active set and history records (the
+    /// microstep and its buffers are the runtime's own) — so the runtime
     /// owns the std-vs-heapless choice and ONE emission compiles
     /// against BOTH runtime profiles: the no_std runtime
     /// (`thumbv7em-none-eabihf`, no global allocator) and the std

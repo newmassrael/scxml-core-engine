@@ -40,9 +40,12 @@
 // by fixtures that actually exercise the corresponding W3C feature.
 #![allow(dead_code)]
 #![allow(unused_variables)]
-// `let mut current_state = ...` in process_transition is mutated only by
-// internal-transition fixtures; pure-external-transition fixtures leave it
-// untouched after the let binding.
+// Bindings emitted `mut` for the documents that write them: `done_data_ok` in
+// `<donedata>` evaluation is cleared only by a param that fails (test294,
+// test343), `json_parts` is pushed only by a param that evaluates (test298),
+// and a send's `err_meta` gets a `send_id` only when the document has a
+// datamodel (test194, test199). Measured 2026-09-24: removing this allow
+// reds those fixtures under `-D warnings`.
 #![allow(unused_mut)]
 // `'action_block:` early-exit label wraps every onentry block but is only
 // `break`-ed to from fixtures that emit error-on-action sequences.
@@ -133,13 +136,6 @@ impl EventOriginIsALocationEvent {
 // ======================================================================
 
 pub struct EventOriginIsALocationPolicy {
-    // W3C SCXML 3.13: Last transition metadata
-    last_transition_is_internal: bool,
-    last_transition_is_targetless: bool,
-    last_transition_source_state: EventOriginIsALocationState,
-    // W3C SCXML 3.13: Transition action tracking
-    last_transition_index: usize,
-    has_transition_actions: bool,
     // W3C SCXML 5.10.1: External event flag for _event.type classification
     next_event_is_external: bool,
     // W3C SCXML 5.10: Event name for _event.name binding
@@ -213,11 +209,6 @@ impl EventOriginIsALocationPolicy {
     pub fn new(script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>) -> Self {
         Self {
             script_engine,
-            last_transition_is_internal: false,
-            last_transition_is_targetless: false,
-            last_transition_source_state: EventOriginIsALocationState::Waiting,
-            last_transition_index: 0,
-            has_transition_actions: false,
             next_event_is_external: false,
             pending_event_name: ::sce_rust_runtime::SceString::new(),
             pending_event_data: ::sce_rust_runtime::SceString::new(),
@@ -600,6 +591,9 @@ impl EventOriginIsALocationPolicy {
 impl StatePolicy for EventOriginIsALocationPolicy {
     type State = EventOriginIsALocationState;
     type Event = EventOriginIsALocationEvent;
+    // W3C SCXML 3.10: this document declares no <history>, so no target list
+    // can name one.
+    type History = sce_rust_runtime::NoHistory;
     // EventSchema native lowering: `()` = schemaless (dynamic
     // `_event.data` baseline); a `<Machine>Payload` sum is emitted when a
     // transition guard reads a typed `_event.data.<field>` (NL→IR C1 Path A).
@@ -672,6 +666,8 @@ impl StatePolicy for EventOriginIsALocationPolicy {
         }
     }
 
+    // W3C SCXML 3.3: a <state> with child states — exactly the states that have
+    // an initial transition. A <parallel> is not compound.
     fn is_compound_state(state: Self::State) -> bool {
         match state {
             EventOriginIsALocationState::Phase => true,
@@ -679,19 +675,49 @@ impl StatePolicy for EventOriginIsALocationPolicy {
         }
     }
 
-    fn is_descendant_of(desc: Self::State, anc: Self::State) -> bool {
-        let mut current = desc;
-        loop {
-            match Self::get_parent(current) {
-                None => return false,
-                Some(parent) => {
-                    if parent == anc {
-                        return true;
-                    }
-                    current = parent;
-                }
-            }
+    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+    // children, in document order — for a <parallel>, its regions.
+    fn get_child_states(state: Self::State) -> &'static [Self::State] {
+        match state {
+            EventOriginIsALocationState::Phase => &[
+                EventOriginIsALocationState::Waiting,
+                EventOriginIsALocationState::AwaitReply,
+            ],
+            _ => &[],
         }
+    }
+
+    // §scxml-3.3: a compound state's initial transition target, as written —
+    // the engine's entry procedures dereference a <history> among them.
+    fn get_initial_targets(
+        state: Self::State,
+    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
+        match state {
+            EventOriginIsALocationState::Phase => &[::sce_rust_runtime::EntryTarget::State(
+                EventOriginIsALocationState::Waiting,
+            )],
+            _ => &[],
+        }
+    }
+
+    // §scxml-3.2: the target of the document's own initial transition, as written.
+    fn get_document_initial_targets(
+    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
+        &[::sce_rust_runtime::EntryTarget::State(
+            EventOriginIsALocationState::Phase,
+        )]
+    }
+
+    // §scxml-3.10: the state a <history> is declared in.
+    fn get_history_parent(history: Self::History) -> Self::State {
+        match history {}
+    }
+
+    // §scxml-3.10.2: a <history>'s default transition target, as written.
+    fn get_history_default_targets(
+        history: Self::History,
+    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
+        match history {}
     }
 
     fn get_document_order(state: Self::State) -> u32 {
@@ -758,59 +784,14 @@ impl StatePolicy for EventOriginIsALocationPolicy {
         EventOriginIsALocationEvent::Null
     }
 
-    // W3C SCXML 3.6: Get initial children of a compound state
-    //
-    // SCE Protocol-Synthesis RFC §synth-5-J-2: return type is the runtime crate's
-    // [`StateChain`] alias and the body uses `state_chain_from_slice` instead of
-    // `vec![...]` so the emitted code compiles under `--no-std` (`vec!` is a
-    // std-only macro; heapless has no equivalent).
-    fn get_initial_children(
-        state: Self::State,
-    ) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
-        match state {
-            EventOriginIsALocationState::Phase => {
-                ::sce_rust_runtime::helpers::hierarchy::state_chain_from_slice([
-                    EventOriginIsALocationState::Waiting,
-                ])
-            }
-            _ => ::sce_rust_runtime::helpers::hierarchy::new_chain(),
-        }
-    }
-
-    // W3C SCXML 3.11: Get initial or history-restored child
-    fn get_initial_or_history_child(&self, state: Self::State) -> Self::State {
-        match state {
-            EventOriginIsALocationState::Phase => EventOriginIsALocationState::Waiting,
-            _ => state,
-        }
-    }
-
     // ======================================================================
-    // Mutable field accessors
+    // Run-time state the entry procedures read
     // ======================================================================
 
-    fn last_transition_is_internal(&self) -> bool {
-        self.last_transition_is_internal
-    }
-
-    fn set_last_transition_is_internal(&mut self, value: bool) {
-        self.last_transition_is_internal = value;
-    }
-
-    fn last_transition_is_targetless(&self) -> bool {
-        self.last_transition_is_targetless
-    }
-
-    fn set_last_transition_is_targetless(&mut self, value: bool) {
-        self.last_transition_is_targetless = value;
-    }
-
-    fn last_transition_source_state(&self) -> Self::State {
-        self.last_transition_source_state
-    }
-
-    fn set_last_transition_source_state(&mut self, state: Self::State) {
-        self.last_transition_source_state = state;
+    // §scxml-3.10: what a <history> recorded when its parent was last exited;
+    // None before that ever happened.
+    fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
+        match history {}
     }
 
     fn set_next_event_is_external(&mut self, value: bool) {
@@ -852,12 +833,8 @@ impl StatePolicy for EventOriginIsALocationPolicy {
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
-        path_child: Option<Self::State>,
+        is_default_entry: bool,
     ) {
-        // Only a `<parallel>` machine descends into defaults here — see the
-        // blocks at the end of this function — so a machine without one has
-        // nothing to tell an ancestor entry from a target entry.
-        let _ = path_child;
         match state {
             EventOriginIsALocationState::Phase => {
                 // SCE-MAP: event_origin_is_a_location.scxml:49 :: phase :: _state_body
@@ -878,6 +855,12 @@ impl StatePolicy for EventOriginIsALocationPolicy {
         }
     }
 
+    // §scxml-3.10.2: a <history>'s default transition content, run after its
+    // parent's onentry (and after the parent's own <initial> content) when the
+    // history was taken with nothing recorded. The engine asks for it by the
+    // entry set's defaultHistoryContent answer; a history that restored what it
+    // recorded runs nothing.
+
     // W3C SCXML 3.8: Execute <onexit> actions for a state
     #[doc = "SCE-MAP: event_origin_is_a_location.scxml:40 :: _machine"]
     // SCE-MAP: event_origin_is_a_location.scxml:40 :: _machine
@@ -885,7 +868,7 @@ impl StatePolicy for EventOriginIsALocationPolicy {
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
-        pre_transition_active: &[Self::State],
+        configuration_before_exit: &[Self::State],
     ) {
         // W3C SCXML 6.4: Cancel pending invokes and cleanup active children on state exit
         match state {
@@ -916,17 +899,16 @@ impl StatePolicy for EventOriginIsALocationPolicy {
         }
     }
 
-    // W3C SCXML 3.13: Evaluate guards and take a matching transition
+    // §scxml-5.10: the event whose transitions are about to be selected is the
+    // `_event` their guards read — bound before the first guard runs, and not
+    // for an eventless selection, which has no event of its own.
     #[doc = "SCE-MAP: event_origin_is_a_location.scxml:40 :: _machine"]
     // SCE-MAP: event_origin_is_a_location.scxml:40 :: _machine
-    fn process_transition(
+    fn bind_current_event(
         &mut self,
-        current_state: &mut Self::State,
         event: Self::Event,
         engine: &mut sce_rust_runtime::Engine<Self>,
-    ) -> bool {
-        let mut transition_taken = false;
-
+    ) {
         // W3C SCXML 5.10: Ensure script engine and set _event for guard evaluation
         self.ensure_script_engine();
         if event != Self::null_event() {
@@ -963,50 +945,86 @@ impl StatePolicy for EventOriginIsALocationPolicy {
             );
             engine.note_payload_reading(event, payload_reading);
         }
-
-        // W3C SCXML 3.12: Hierarchical event processing (innermost to outermost)
-        let mut check_state = *current_state;
-
-        loop {
-            let found = self.try_transition_in_state(
-                check_state,
-                event,
-                current_state,
-                &mut transition_taken,
-                engine,
-            );
-
-            if found {
-                break;
-            }
-
-            // W3C SCXML 3.13: Eventless transitions do NOT bubble to parent states
-            if event == Self::null_event() {
-                break;
-            }
-
-            // W3C SCXML 3.12: Move to parent state for hierarchical event bubbling
-            match Self::get_parent(check_state) {
-                Some(parent) => check_state = parent,
-                None => break,
-            }
-        }
-
-        transition_taken
     }
 
-    // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
+    // Appendix D selectTransitions, the half only this document can answer:
+    // the first of `state`'s own transitions, in document order, that `event`
+    // enables. The engine walks the atomic states and their ancestors and
+    // keeps the ordered set. `Event::Null` asks for eventless transitions.
     #[doc = "SCE-MAP: event_origin_is_a_location.scxml:40 :: _machine"]
     // SCE-MAP: event_origin_is_a_location.scxml:40 :: _machine
-    fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
-        if !self.has_transition_actions {
-            return;
-        }
-
-        // Switch on source state, then transition index
-        match self.last_transition_source_state {
+    fn first_enabled_transition(
+        &mut self,
+        state: Self::State,
+        event: Self::Event,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+    ) -> Option<::sce_rust_runtime::EnabledTransition<Self::State, Self::History>> {
+        match state {
+            EventOriginIsALocationState::AwaitReply => {
+                if event == EventOriginIsALocationEvent::ReplyArrived {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(
+                                EventOriginIsALocationState::Pass,
+                            )],
+                            transition_index: 0,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
+                }
+                None
+            }
             EventOriginIsALocationState::Waiting => {
-                match self.last_transition_index {
+                if event == EventOriginIsALocationEvent::FromChild {
+                    if self.safe_evaluate_guard(
+                        "_scxml_eq(_event.origin, _event.data.myLocation)",
+                        engine,
+                    ) {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(
+                                EventOriginIsALocationState::AwaitReply,
+                            )],
+                            transition_index: 0,
+                            has_actions: true,
+                            is_internal: false,
+                        });
+                    }
+                }
+                if event == EventOriginIsALocationEvent::FromChild {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(
+                                EventOriginIsALocationState::Fail,
+                            )],
+                            transition_index: 1,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
+    // W3C SCXML 3.13: a transition's executable content, run by the engine
+    // between the microstep's exits and its entries.
+    #[doc = "SCE-MAP: event_origin_is_a_location.scxml:40 :: _machine"]
+    // SCE-MAP: event_origin_is_a_location.scxml:40 :: _machine
+    fn execute_transition_content(
+        &mut self,
+        source: Self::State,
+        transition_index: usize,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
+        match source {
+            EventOriginIsALocationState::Waiting => {
+                match transition_index {
                     0 => {
                         // SCE-MAP: event_origin_is_a_location.scxml:75 :: waiting :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
@@ -1114,9 +1132,6 @@ impl StatePolicy for EventOriginIsALocationPolicy {
             }
             _ => {}
         }
-
-        // Reset flags after execution
-        self.has_transition_actions = false;
     }
     // W3C SCXML 5.2/5.3: Datamodel initialization with error.execution support
     // Delegates to inherent impl method (matches C++ initializeDataModel pattern)
@@ -1132,81 +1147,5 @@ impl StatePolicy for EventOriginIsALocationPolicy {
     // W3C SCXML 6.4: Tick child state machines
     fn tick_children(&mut self, engine: &mut Engine<Self>) {
         self.do_tick_children(engine);
-    }
-}
-
-// ======================================================================
-// Helper impl block (try_transition_in_state, conflict resolution, etc.)
-// ======================================================================
-
-impl EventOriginIsALocationPolicy {
-    // W3C SCXML 3.12: Helper method for hierarchical transition checking
-    fn try_transition_in_state(
-        &mut self,
-        check_state: EventOriginIsALocationState,
-        event: EventOriginIsALocationEvent,
-        current_state: &mut EventOriginIsALocationState,
-        transition_taken: &mut bool,
-        engine: &mut sce_rust_runtime::Engine<Self>,
-    ) -> bool {
-        match check_state {
-            EventOriginIsALocationState::AwaitReply => {
-                // W3C SCXML 3.12: Event-triggered transitions (document order)
-                // W3C SCXML 5.9.3: Direct enum comparison
-                if event == EventOriginIsALocationEvent::ReplyArrived {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_index = 0;
-                    self.has_transition_actions = false;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
-
-                    *current_state = EventOriginIsALocationState::Pass;
-                    *transition_taken = true;
-                    return true;
-                }
-                false
-            }
-            EventOriginIsALocationState::Fail => false,
-            EventOriginIsALocationState::Pass => false,
-            EventOriginIsALocationState::Phase => false,
-            EventOriginIsALocationState::Waiting => {
-                // W3C SCXML 3.12: Event-triggered transitions (document order)
-                // W3C SCXML 5.9.3: Direct enum comparison
-                if event == EventOriginIsALocationEvent::FromChild {
-                    // W3C SCXML 5.9: Script engine guard
-                    if self.safe_evaluate_guard(
-                        "_scxml_eq(_event.origin, _event.data.myLocation)",
-                        engine,
-                    ) {
-                        // W3C SCXML 3.4: Track transition metadata
-                        self.last_transition_source_state = check_state;
-                        self.last_transition_index = 0;
-                        self.has_transition_actions = true;
-                        self.last_transition_is_internal = false;
-                        self.last_transition_is_targetless = false;
-
-                        *current_state = EventOriginIsALocationState::AwaitReply;
-                        *transition_taken = true;
-                        return true;
-                    }
-                }
-                // W3C SCXML 5.9.3: Direct enum comparison
-                if event == EventOriginIsALocationEvent::FromChild {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_index = 1;
-                    self.has_transition_actions = false;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
-
-                    *current_state = EventOriginIsALocationState::Fail;
-                    *transition_taken = true;
-                    return true;
-                }
-                false
-            }
-            _ => false,
-        }
     }
 }

@@ -40,9 +40,12 @@
 // by fixtures that actually exercise the corresponding W3C feature.
 #![allow(dead_code)]
 #![allow(unused_variables)]
-// `let mut current_state = ...` in process_transition is mutated only by
-// internal-transition fixtures; pure-external-transition fixtures leave it
-// untouched after the let binding.
+// Bindings emitted `mut` for the documents that write them: `done_data_ok` in
+// `<donedata>` evaluation is cleared only by a param that fails (test294,
+// test343), `json_parts` is pushed only by a param that evaluates (test298),
+// and a send's `err_meta` gets a `send_id` only when the document has a
+// datamodel (test194, test199). Measured 2026-09-24: removing this allow
+// reds those fixtures under `-D warnings`.
 #![allow(unused_mut)]
 // `'action_block:` early-exit label wraps every onentry block but is only
 // `break`-ed to from fixtures that emit error-on-action sequences.
@@ -73,29 +76,6 @@
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
-// SCE Protocol-Synthesis RFC §synth-5-J-2: `.push_bounded()` on the microstep conflict-resolution
-// buffers (std `Vec` / no_std capacity-bounded `heapless::Vec`).
-use sce_rust_runtime::BoundedPush;
-
-// W3C SCXML Appendix D: Transition descriptor for parallel state microstep execution
-#[derive(Debug, Clone)]
-struct TransitionInfo {
-    source: Test403bState,
-    target: Test403bState,
-    transition_index: usize,
-    has_actions: bool,
-    is_internal: bool,
-    is_targetless: bool,
-}
-
-// Appendix D microstepProcedure: microstep conflict-resolution buffers. The runtime
-// owns the std-vs-heapless collection choice through the profile-resolving
-// `SceTransitionBuf` / `SceIndexBuf` aliases (single source of truth, like
-// `SceString` / `StateChain`), so this one emission compiles on both runtime
-// profiles: unbounded `Vec` under std, capacity-bounded `heapless::Vec` under
-// no_std. State-list buffers reuse the depth-bounded `StateChain` alias.
-type TransitionList = ::sce_rust_runtime::SceTransitionBuf<TransitionInfo>;
-type IndexList = ::sce_rust_runtime::SceIndexBuf;
 
 // ======================================================================
 // State enum (W3C SCXML 3.3)
@@ -150,13 +130,6 @@ impl Test403bEvent {
 // ======================================================================
 
 pub struct Test403bPolicy {
-    // W3C SCXML 3.13: Last transition metadata
-    last_transition_is_internal: bool,
-    last_transition_is_targetless: bool,
-    last_transition_source_state: Test403bState,
-    // W3C SCXML 3.13: Transition action tracking
-    last_transition_index: usize,
-    has_transition_actions: bool,
     // W3C SCXML 3.4: Active state configuration for parallel states / In() predicate
     //
     // SCE Protocol-Synthesis RFC §synth-5-J-2: type is the runtime crate's
@@ -201,7 +174,8 @@ pub struct Test403bPolicy {
     // by the deployment before initialize(). Empty means no such endpoint is
     // deployed, and no BasicHTTP entry is published in `_ioprocessors`.
     basic_http_access_uri: String,
-    // W3C SCXML 5.9.2: Shared active state list for In() predicate callback
+    // W3C SCXML 5.9.2: the configuration as the script engine's In() reads it —
+    // a copy of `active_states` by name, republished on every change to it.
     in_predicate_states: Option<std::sync::Arc<std::sync::Mutex<Vec<String>>>>,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated under std — any SM can be invoked as a child. Under
@@ -245,11 +219,6 @@ impl Test403bPolicy {
     pub fn new(script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>) -> Self {
         Self {
             script_engine,
-            last_transition_is_internal: false,
-            last_transition_is_targetless: false,
-            last_transition_source_state: Test403bState::P0s1,
-            last_transition_index: 0,
-            has_transition_actions: false,
             active_states: ::sce_rust_runtime::helpers::hierarchy::new_chain(),
             next_event_is_external: false,
             pending_event_name: ::sce_rust_runtime::SceString::new(),
@@ -274,6 +243,40 @@ impl Test403bPolicy {
         self.active_states
             .iter()
             .any(|&s| Self::get_state_name(s) == state_id)
+    }
+
+    // §scxml-3.4: add `state` to the configuration this machine keeps; false
+    // when it was already there.
+    fn activate(&mut self, state: Test403bState) -> bool {
+        if self.active_states.contains(&state) {
+            return false;
+        }
+        ::sce_rust_runtime::helpers::hierarchy::push_chain(&mut self.active_states, state);
+        self.publish_in_predicate_states();
+        true
+    }
+
+    // §scxml-3.4: remove `state` from the configuration this machine keeps.
+    fn deactivate(&mut self, state: Test403bState) {
+        self.active_states.retain(|&s| s != state);
+        self.publish_in_predicate_states();
+    }
+
+    // W3C SCXML 5.9.2: the script engine's In() reads a copy of the
+    // configuration, so the copy is refreshed on every change to it rather than
+    // once per selection. In() is asked inside executable content as well as in
+    // guards — `<if cond="In('s')">` in an <onentry> runs halfway through a
+    // microstep — and must see the configuration as it stands at that point.
+    fn publish_in_predicate_states(&self) {
+        if let Some(ref shared) = self.in_predicate_states {
+            let mut states = shared.lock().unwrap();
+            states.clear();
+            states.extend(
+                self.active_states
+                    .iter()
+                    .map(|&s| Self::get_state_name(s).to_string()),
+            );
+        }
     }
 
     // W3C SCXML 5.10: Ensure session ID is initialized
@@ -319,6 +322,9 @@ impl Test403bPolicy {
         {
             let shared_states = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
             self.in_predicate_states = Some(shared_states.clone());
+            // Seeded with the configuration as it stands now; every later change
+            // to it republishes (`activate` / `deactivate` / `set_active_states`).
+            self.publish_in_predicate_states();
             se.set_state_query_callback(
                 &sid,
                 Some(Box::new(move |state_id: &str| -> bool {
@@ -371,6 +377,9 @@ impl Test403bPolicy {
         {
             let shared_states = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
             self.in_predicate_states = Some(shared_states.clone());
+            // Seeded with the configuration as it stands now; every later change
+            // to it republishes (`activate` / `deactivate` / `set_active_states`).
+            self.publish_in_predicate_states();
             se.set_state_query_callback(
                 &sid,
                 Some(Box::new(move |state_id: &str| -> bool {
@@ -499,6 +508,9 @@ impl Test403bPolicy {
 impl StatePolicy for Test403bPolicy {
     type State = Test403bState;
     type Event = Test403bEvent;
+    // W3C SCXML 3.10: this document declares no <history>, so no target list
+    // can name one.
+    type History = sce_rust_runtime::NoHistory;
     // EventSchema native lowering: `()` = schemaless (dynamic
     // `_event.data` baseline); a `<Machine>Payload` sum is emitted when a
     // transition guard reads a typed `_event.data.<field>` (NL→IR C1 Path A).
@@ -567,6 +579,8 @@ impl StatePolicy for Test403bPolicy {
         }
     }
 
+    // W3C SCXML 3.3: a <state> with child states — exactly the states that have
+    // an initial transition. A <parallel> is not compound.
     fn is_compound_state(state: Self::State) -> bool {
         match state {
             Test403bState::S0 => true,
@@ -581,26 +595,43 @@ impl StatePolicy for Test403bPolicy {
         }
     }
 
-    fn get_parallel_regions(state: Self::State) -> &'static [Self::State] {
+    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+    // children, in document order — for a <parallel>, its regions.
+    fn get_child_states(state: Self::State) -> &'static [Self::State] {
         match state {
             Test403bState::P0 => &[Test403bState::P0s1, Test403bState::P0s2],
+            Test403bState::S0 => &[Test403bState::P0],
             _ => &[],
         }
     }
 
-    fn is_descendant_of(desc: Self::State, anc: Self::State) -> bool {
-        let mut current = desc;
-        loop {
-            match Self::get_parent(current) {
-                None => return false,
-                Some(parent) => {
-                    if parent == anc {
-                        return true;
-                    }
-                    current = parent;
-                }
-            }
+    // §scxml-3.3: a compound state's initial transition target, as written —
+    // the engine's entry procedures dereference a <history> among them.
+    fn get_initial_targets(
+        state: Self::State,
+    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
+        match state {
+            Test403bState::S0 => &[::sce_rust_runtime::EntryTarget::State(Test403bState::P0)],
+            _ => &[],
         }
+    }
+
+    // §scxml-3.2: the target of the document's own initial transition, as written.
+    fn get_document_initial_targets(
+    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
+        &[::sce_rust_runtime::EntryTarget::State(Test403bState::S0)]
+    }
+
+    // §scxml-3.10: the state a <history> is declared in.
+    fn get_history_parent(history: Self::History) -> Self::State {
+        match history {}
+    }
+
+    // §scxml-3.10.2: a <history>'s default transition target, as written.
+    fn get_history_default_targets(
+        history: Self::History,
+    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
+        match history {}
     }
 
     fn get_document_order(state: Self::State) -> u32 {
@@ -662,57 +693,14 @@ impl StatePolicy for Test403bPolicy {
         Test403bEvent::Null
     }
 
-    // W3C SCXML 3.6: Get initial children of a compound state
-    //
-    // SCE Protocol-Synthesis RFC §synth-5-J-2: return type is the runtime crate's
-    // [`StateChain`] alias and the body uses `state_chain_from_slice` instead of
-    // `vec![...]` so the emitted code compiles under `--no-std` (`vec!` is a
-    // std-only macro; heapless has no equivalent).
-    fn get_initial_children(
-        state: Self::State,
-    ) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
-        match state {
-            Test403bState::S0 => {
-                ::sce_rust_runtime::helpers::hierarchy::state_chain_from_slice([Test403bState::P0])
-            }
-            _ => ::sce_rust_runtime::helpers::hierarchy::new_chain(),
-        }
-    }
-
-    // W3C SCXML 3.11: Get initial or history-restored child
-    fn get_initial_or_history_child(&self, state: Self::State) -> Self::State {
-        match state {
-            Test403bState::S0 => Test403bState::P0,
-            _ => state,
-        }
-    }
-
     // ======================================================================
-    // Mutable field accessors
+    // Run-time state the entry procedures read
     // ======================================================================
 
-    fn last_transition_is_internal(&self) -> bool {
-        self.last_transition_is_internal
-    }
-
-    fn set_last_transition_is_internal(&mut self, value: bool) {
-        self.last_transition_is_internal = value;
-    }
-
-    fn last_transition_is_targetless(&self) -> bool {
-        self.last_transition_is_targetless
-    }
-
-    fn set_last_transition_is_targetless(&mut self, value: bool) {
-        self.last_transition_is_targetless = value;
-    }
-
-    fn last_transition_source_state(&self) -> Self::State {
-        self.last_transition_source_state
-    }
-
-    fn set_last_transition_source_state(&mut self, state: Self::State) {
-        self.last_transition_source_state = state;
+    // §scxml-3.10: what a <history> recorded when its parent was last exited;
+    // None before that ever happened.
+    fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
+        match history {}
     }
 
     // SCE Protocol-Synthesis RFC §synth-5-J-2: trait default in `sce-rust-runtime::policy`
@@ -733,6 +721,7 @@ impl StatePolicy for Test403bPolicy {
         states: ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State>,
     ) {
         self.active_states = states;
+        self.publish_in_predicate_states();
     }
 
     fn set_next_event_is_external(&mut self, value: bool) {
@@ -774,17 +763,10 @@ impl StatePolicy for Test403bPolicy {
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
-        path_child: Option<Self::State>,
+        is_default_entry: bool,
     ) {
         // W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel states and In() predicate
-        //
-        // SCE Protocol-Synthesis RFC §synth-5-J-2: `push_chain` is the runtime crate's
-        // cfg-branched push wrapper — `Vec::push` under std, `heapless::Vec::push`
-        // with the depth-guard `.expect()` under no_std. Lets template-emitted code
-        // share the same call shape with `Engine::get_active_states`.
-        if !self.active_states.contains(&state) {
-            ::sce_rust_runtime::helpers::hierarchy::push_chain(&mut self.active_states, state);
-        } else {
+        if !self.activate(state) {
             return; // W3C SCXML 3.8: Skip onentry actions for duplicate state entry
         }
         match state {
@@ -806,70 +788,13 @@ impl StatePolicy for Test403bPolicy {
             }
             _ => {}
         }
-
-        // W3C SCXML 3.4 + §scxml-D-addDescendantStatesToEnter: entering a
-        // `<parallel>` enters every region — including when it is only an
-        // ancestor, which is the one case where an ancestor still hands out
-        // defaults. The exception is the region the entry set is already
-        // descending into: `path_child` names it, and giving that one its
-        // default too is what leaves two children of it active at once.
-        if Self::is_parallel_state(state) {
-            let regions = Self::get_parallel_regions(state);
-            for &region in regions {
-                if path_child == Some(region) {
-                    continue;
-                }
-                self.execute_entry_actions(region, engine, None);
-
-                // W3C SCXML 3.3: If region is compound, enter initial child
-                if Self::is_compound_state(region) {
-                    let initial_child = self.get_initial_or_history_child(region);
-                    if initial_child != region {
-                        self.execute_entry_actions(initial_child, engine, None);
-                    }
-                }
-            }
-        }
-
-        // W3C SCXML 3.3: If entering compound state (non-parallel), enter initial child
-        //
-        // §scxml-D-addAncestorStatesToEnter: not when `state` is merely on the
-        // way to a deeper target. The entry set already holds `path_child`, and
-        // a compound state holds one child at a time.
-        if Self::is_compound_state(state) && !Self::is_parallel_state(state) && path_child.is_none()
-        {
-            // W3C SCXML 3.6: Deep initial targets support
-            let initial_children = Self::get_initial_children(state);
-            if !initial_children.is_empty() {
-                // W3C SCXML 3.6: Enter through hierarchy to reach initial target(s)
-                for &target in &initial_children {
-                    // Build entry chain from state to target
-                    let mut chain = ::sce_rust_runtime::helpers::hierarchy::new_chain();
-                    let mut current = target;
-                    while current != state {
-                        ::sce_rust_runtime::helpers::hierarchy::push_chain(&mut chain, current);
-                        match Self::get_parent(current) {
-                            Some(parent) => current = parent,
-                            None => break,
-                        }
-                    }
-                    chain.reverse();
-                    // Enter intermediate states (skip state itself, already
-                    // entered). Each is an ancestor of the initial target, so
-                    // it takes no default of its own — the chain already names
-                    // the child that is entering.
-                    for (i, &intermediate) in chain.iter().enumerate() {
-                        self.execute_entry_actions(intermediate, engine, chain.get(i + 1).copied());
-                    }
-                }
-            } else {
-                let initial_child = self.get_initial_or_history_child(state);
-                if initial_child != state {
-                    self.execute_entry_actions(initial_child, engine, None);
-                }
-            }
-        }
     }
+
+    // §scxml-3.10.2: a <history>'s default transition content, run after its
+    // parent's onentry (and after the parent's own <initial> content) when the
+    // history was taken with nothing recorded. The engine asks for it by the
+    // entry set's defaultHistoryContent answer; a history that restored what it
+    // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
     #[doc = "SCE-MAP: test403b.scxml:6 :: _machine"]
@@ -878,45 +803,22 @@ impl StatePolicy for Test403bPolicy {
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
-        pre_transition_active: &[Self::State],
+        configuration_before_exit: &[Self::State],
     ) {
-        // W3C SCXML 3.4 + 3.13: Parallel state exit order
-        if Self::is_parallel_state(state) {
-            // W3C SCXML 3.4: Collect all active descendants of this parallel state
-            let mut descendants_to_exit: ::sce_rust_runtime::helpers::hierarchy::StateChain<
-                Self::State,
-            > = self
-                .active_states
-                .iter()
-                .filter(|&&s| s != state && Self::is_descendant_of(s, state))
-                .copied()
-                .collect();
-
-            // W3C SCXML 3.13: Sort descendants by reverse document order (deepest first)
-            ::sce_rust_runtime::stable_sort_by(&mut descendants_to_exit, |a, b| {
-                Self::get_document_order(*b).cmp(&Self::get_document_order(*a))
-            });
-
-            // Exit each active descendant (deepest first)
-            for descendant in descendants_to_exit {
-                self.execute_exit_actions(descendant, engine, pre_transition_active);
-            }
-        }
         // W3C SCXML 3.4/3.12.1: Remove state from active configuration
-        self.active_states.retain(|&s| s != state);
+        self.deactivate(state);
     }
 
-    // W3C SCXML 3.13: Evaluate guards and take a matching transition
+    // §scxml-5.10: the event whose transitions are about to be selected is the
+    // `_event` their guards read — bound before the first guard runs, and not
+    // for an eventless selection, which has no event of its own.
     #[doc = "SCE-MAP: test403b.scxml:6 :: _machine"]
     // SCE-MAP: test403b.scxml:6 :: _machine
-    fn process_transition(
+    fn bind_current_event(
         &mut self,
-        current_state: &mut Self::State,
         event: Self::Event,
         engine: &mut sce_rust_runtime::Engine<Self>,
-    ) -> bool {
-        let mut transition_taken = false;
-
+    ) {
         // W3C SCXML 5.10: Ensure script engine and set _event for guard evaluation
         self.ensure_script_engine();
         if event != Self::null_event() {
@@ -953,141 +855,91 @@ impl StatePolicy for Test403bPolicy {
             );
             engine.note_payload_reading(event, payload_reading);
         }
-        // W3C SCXML 5.9.2: Update shared In() active state snapshot
-        if let Some(ref shared) = self.in_predicate_states {
-            let mut states = shared.lock().unwrap();
-            states.clear();
-            states.extend(
-                self.active_states
-                    .iter()
-                    .map(|&s| Self::get_state_name(s).to_string()),
-            );
-        }
-
-        // W3C SCXML 3.4 + 3.12 + Appendix D: Parallel state transition handling
-        if event == Self::null_event() {
-            // W3C SCXML Appendix D: Eventless transitions - collect then execute
-            let mut enabled_transitions: TransitionList = TransitionList::new();
-            let mut states_to_check = self.active_states.clone();
-
-            // Sort by document order for consistent processing
-            ::sce_rust_runtime::stable_sort_by_key(&mut states_to_check, |&s| {
-                Self::get_document_order(s)
-            });
-
-            for active_state in &states_to_check {
-                // W3C SCXML 3.13: Eventless transitions do NOT bubble to parent states
-                self.try_transition_in_state(
-                    *active_state,
-                    event,
-                    current_state,
-                    &mut transition_taken,
-                    engine,
-                    Some(&mut enabled_transitions),
-                );
-            }
-
-            // Appendix D removeConflictingTransitions: Remove conflicting transitions
-            if !enabled_transitions.is_empty() {
-                enabled_transitions = self.remove_conflicting_transitions(&enabled_transitions);
-            }
-
-            // W3C SCXML Appendix D Steps 2-5: Execute as atomic microstep
-            if !enabled_transitions.is_empty() {
-                self.execute_microstep(
-                    &enabled_transitions,
-                    current_state,
-                    &mut transition_taken,
-                    engine,
-                );
-            }
-        } else {
-            // W3C SCXML Appendix D: External events - collect then execute
-            let mut enabled_transitions: TransitionList = TransitionList::new();
-
-            for &active_state in &self.active_states.clone() {
-                let is_non_atomic =
-                    Self::is_compound_state(active_state) || Self::is_parallel_state(active_state);
-
-                // W3C SCXML 3.13: Check if this is a done.state event
-                let event_name = Self::get_event_name(event);
-                let is_done_state_event =
-                    event != Self::null_event() && event_name.starts_with("done.state.");
-
-                // Skip non-atomic states UNLESS processing done.state event
-                if is_non_atomic && !is_done_state_event {
-                    continue;
-                }
-
-                // W3C SCXML 3.12: Hierarchical event bubbling
-                let mut check_state = active_state;
-                loop {
-                    let found = self.try_transition_in_state(
-                        check_state,
-                        event,
-                        current_state,
-                        &mut transition_taken,
-                        engine,
-                        Some(&mut enabled_transitions),
-                    );
-                    if found {
-                        break;
-                    }
-                    match Self::get_parent(check_state) {
-                        Some(parent) => check_state = parent,
-                        None => break,
-                    }
-                }
-            }
-
-            // W3C SCXML 3.13: Deduplicate transitions collected from multiple descendants
-            // of the same ancestor (e.g., both parallel regions bubble up to the same parent
-            // transition; test 504). Preserves first-match document order.
-            // The runtime owns the std-vs-heapless set choice through the
-            // profile-resolving `SceDedupSet` alias + `dedup_insert` helper
-            // (single source of truth, like `SceString` / `StateChain`), so this
-            // one emission compiles on both runtime profiles: a `HashSet` under
-            // std, a capacity-bounded `heapless::FnvIndexSet` under no_std
-            // (`MAX_MICROSTEP_DEDUP_SLOTS`). `dedup_insert` fails loud on no_std
-            // overflow rather than silently dropping transitions — that would
-            // violate Appendix D microstepProcedure semantics.
-            let mut seen: ::sce_rust_runtime::SceDedupSet<(Test403bState, usize)> =
-                ::sce_rust_runtime::SceDedupSet::new();
-            enabled_transitions.retain(|t| {
-                ::sce_rust_runtime::dedup_insert(&mut seen, (t.source, t.transition_index))
-            });
-
-            // Appendix D removeConflictingTransitions: Remove conflicting transitions
-            if !enabled_transitions.is_empty() {
-                enabled_transitions = self.remove_conflicting_transitions(&enabled_transitions);
-            }
-
-            // W3C SCXML Appendix D Steps 2-5: Execute as atomic microstep
-            if !enabled_transitions.is_empty() {
-                self.execute_microstep(
-                    &enabled_transitions,
-                    current_state,
-                    &mut transition_taken,
-                    engine,
-                );
-            }
-        }
-
-        transition_taken
     }
 
-    // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
+    // Appendix D selectTransitions, the half only this document can answer:
+    // the first of `state`'s own transitions, in document order, that `event`
+    // enables. The engine walks the atomic states and their ancestors and
+    // keeps the ordered set. `Event::Null` asks for eventless transitions.
     #[doc = "SCE-MAP: test403b.scxml:6 :: _machine"]
     // SCE-MAP: test403b.scxml:6 :: _machine
-    fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
-        if !self.has_transition_actions {
-            return;
-        }
-
-        // Switch on source state, then transition index
-        match self.last_transition_source_state {
+    fn first_enabled_transition(
+        &mut self,
+        state: Self::State,
+        event: Self::Event,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+    ) -> Option<::sce_rust_runtime::EnabledTransition<Self::State, Self::History>> {
+        match state {
             Test403bState::P0 => {
-                match self.last_transition_index {
+                if event == Test403bEvent::Event1 {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 0,
+                            has_actions: true,
+                            is_internal: false,
+                        });
+                    }
+                }
+                None
+            }
+            Test403bState::P0s1 => {
+                if event == Test403bEvent::Event2 {
+                    if self.safe_evaluate_guard("_scxml_eq(Var1, 1)", engine) {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(Test403bState::Pass)],
+                            transition_index: 0,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
+                }
+                if event == Test403bEvent::Event2 {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(Test403bState::Fail)],
+                            transition_index: 1,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
+                }
+                None
+            }
+            Test403bState::S0 => {
+                if event == Test403bEvent::Event1 {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 0,
+                            has_actions: true,
+                            is_internal: false,
+                        });
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
+    // W3C SCXML 3.13: a transition's executable content, run by the engine
+    // between the microstep's exits and its entries.
+    #[doc = "SCE-MAP: test403b.scxml:6 :: _machine"]
+    // SCE-MAP: test403b.scxml:6 :: _machine
+    fn execute_transition_content(
+        &mut self,
+        source: Self::State,
+        transition_index: usize,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
+        match source {
+            Test403bState::P0 => {
+                match transition_index {
                     0 => {
                         // SCE-MAP: test403b.scxml:28 :: p0 :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
@@ -1120,7 +972,7 @@ impl StatePolicy for Test403bPolicy {
                 }
             }
             Test403bState::S0 => {
-                match self.last_transition_index {
+                match transition_index {
                     0 => {
                         // SCE-MAP: test403b.scxml:14 :: s0 :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
@@ -1154,448 +1006,10 @@ impl StatePolicy for Test403bPolicy {
             }
             _ => {}
         }
-
-        // Reset flags after execution
-        self.has_transition_actions = false;
     }
     // W3C SCXML 5.2/5.3: Datamodel initialization with error.execution support
     // Delegates to inherent impl method (matches C++ initializeDataModel pattern)
     fn initialize_data_model(&mut self, engine: &mut Engine<Self>) {
         self.do_initialize_data_model(engine);
-    }
-}
-
-// ======================================================================
-// Helper impl block (try_transition_in_state, conflict resolution, etc.)
-// ======================================================================
-
-impl Test403bPolicy {
-    // W3C SCXML 3.12: Helper method for hierarchical transition checking
-    fn try_transition_in_state(
-        &mut self,
-        check_state: Test403bState,
-        event: Test403bEvent,
-        current_state: &mut Test403bState,
-        transition_taken: &mut bool,
-        engine: &mut sce_rust_runtime::Engine<Self>,
-        mut collect_mode: Option<&mut TransitionList>,
-    ) -> bool {
-        match check_state {
-            Test403bState::Fail => false,
-            Test403bState::P0 => {
-                // W3C SCXML 3.12: Event-triggered transitions (document order)
-                // W3C SCXML 5.9.3: Direct enum comparison
-                if event == Test403bEvent::Event1 {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_index = 0;
-                    self.has_transition_actions = true;
-                    self.last_transition_is_internal = true;
-                    self.last_transition_is_targetless = true;
-
-                    if let Some(ref mut collect) = collect_mode {
-                        collect.push_bounded(TransitionInfo {
-                            source: check_state,
-                            target: check_state,
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: true,
-                            is_targetless: true,
-                        });
-                    } else {
-                        // W3C SCXML 5.9.2: Targetless internal transition
-                        *transition_taken = true;
-                    }
-                    return true;
-                }
-                false
-            }
-            Test403bState::P0s1 => {
-                // W3C SCXML 3.12: Event-triggered transitions (document order)
-                // W3C SCXML 5.9.3: Direct enum comparison
-                if event == Test403bEvent::Event2 {
-                    // W3C SCXML 5.9: Script engine guard
-                    if self.safe_evaluate_guard("_scxml_eq(Var1, 1)", engine) {
-                        // W3C SCXML 3.4: Track transition metadata
-                        self.last_transition_source_state = check_state;
-                        self.last_transition_index = 0;
-                        self.has_transition_actions = false;
-                        self.last_transition_is_internal = false;
-                        self.last_transition_is_targetless = false;
-
-                        if let Some(ref mut collect) = collect_mode {
-                            collect.push_bounded(TransitionInfo {
-                                source: check_state,
-                                target: Test403bState::Pass,
-                                transition_index: 0,
-                                has_actions: false,
-                                is_internal: false,
-                                is_targetless: false,
-                            });
-                        } else {
-                            *current_state = Test403bState::Pass;
-                            *transition_taken = true;
-                        }
-                        return true;
-                    }
-                }
-                // W3C SCXML 5.9.3: Direct enum comparison
-                if event == Test403bEvent::Event2 {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_index = 1;
-                    self.has_transition_actions = false;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
-
-                    if let Some(ref mut collect) = collect_mode {
-                        collect.push_bounded(TransitionInfo {
-                            source: check_state,
-                            target: Test403bState::Fail,
-                            transition_index: 1,
-                            has_actions: false,
-                            is_internal: false,
-                            is_targetless: false,
-                        });
-                    } else {
-                        *current_state = Test403bState::Fail;
-                        *transition_taken = true;
-                    }
-                    return true;
-                }
-                false
-            }
-            Test403bState::P0s2 => false,
-            Test403bState::Pass => false,
-            Test403bState::S0 => {
-                // W3C SCXML 3.12: Event-triggered transitions (document order)
-                // W3C SCXML 5.9.3: Direct enum comparison
-                if event == Test403bEvent::Event1 {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_index = 0;
-                    self.has_transition_actions = true;
-                    self.last_transition_is_internal = true;
-                    self.last_transition_is_targetless = true;
-
-                    if let Some(ref mut collect) = collect_mode {
-                        collect.push_bounded(TransitionInfo {
-                            source: check_state,
-                            target: check_state,
-                            transition_index: 0,
-                            has_actions: true,
-                            is_internal: true,
-                            is_targetless: true,
-                        });
-                    } else {
-                        // W3C SCXML 5.9.2: Targetless internal transition
-                        *transition_taken = true;
-                    }
-                    return true;
-                }
-                false
-            }
-            _ => false,
-        }
-    }
-
-    // Appendix D removeConflictingTransitions: Remove conflicting transitions.
-    // Takes `&self` because Appendix D computeExitSet reads the CONFIGURATION,
-    // and the set this intersects has to be the set `execute_microstep` exits.
-    fn remove_conflicting_transitions(&self, enabled: &[TransitionInfo]) -> TransitionList {
-        let mut filtered: TransitionList = TransitionList::new();
-
-        for t1 in enabled {
-            // Appendix D selectTransitions: the enabled set is an ORDERED SET,
-            // and the same transition reached from two different region leaves
-            // is ONE element of it, not two. A transition written on a
-            // `<parallel>`, or on an ancestor above one, is selected once per
-            // region by the bubbling walk -- W3C test 403b turns on a
-            // `<parallel>`-level `<assign>` running exactly once. Selection
-            // stops at the first enabled transition of a state, so within one
-            // microstep a source contributes at most one transition and
-            // (source, target) identifies it.
-            //
-            // This is what the removed target/source criterion stood in for: a
-            // targetless duplicate is spelled source -> source, so that check
-            // happened to fire on it. Stated here it is the set semantics
-            // themselves, independent of how a targetless transition is spelled.
-            if filtered
-                .iter()
-                .any(|seen| seen.source == t1.source && seen.target == t1.target)
-            {
-                continue;
-            }
-
-            let mut dominated = false;
-            let mut to_remove: IndexList = IndexList::new();
-
-            for (idx, t2) in filtered.iter().enumerate() {
-                // Appendix D removeConflictingTransitions: Check if exit sets intersect
-                let t1_exits =
-                    self.compute_exit_set(t1.source, t1.target, t1.is_internal, t1.is_targetless);
-                let t2_exits =
-                    self.compute_exit_set(t2.source, t2.target, t2.is_internal, t2.is_targetless);
-
-                // Appendix D removeConflictingTransitions: two transitions conflict
-                // when their EXIT SETS intersect. That is the whole test the
-                // appendix states, and it is now the whole test made here.
-                //
-                // Three rules used to sit beside it -- a target/source equality
-                // check and a `<parallel>`-ancestor check in each direction --
-                // and none is in the appendix. They stood in for an exit set
-                // this generator could not compute: assembled from the source's
-                // own ancestor chain, a set could not name the sibling regions a
-                // transition leaving the `<parallel>` exits, so the intersection
-                // came back empty for transitions that plainly conflict.
-                // Appendix D computeExitSet reads the CONFIGURATION now, so the
-                // intersection answers on its own.
-                //
-                // A transition that exits nothing still conflicts with nothing
-                // and can never be preempted -- that is a targetless transition,
-                // which the appendix gives an empty exit set, and it is what W3C
-                // test 403c means by "this transition never gets preempted,
-                // should fire twice". The removed rules each read a targetless
-                // transition as a self-transition on its own source, which is
-                // why they needed an empty-exit-set gate ahead of them.
-                if !t1_exits.iter().any(|s1| t2_exits.contains(s1)) {
-                    continue;
-                }
-
-                // Appendix D removeConflictingTransitions: the descendant source wins
-                if Self::is_descendant_of(t1.source, t2.source) {
-                    to_remove.push_bounded(idx);
-                } else {
-                    dominated = true;
-                    break;
-                }
-            }
-
-            if !dominated {
-                // Remove preempted transitions in reverse order
-                for &idx in to_remove.iter().rev() {
-                    filtered.remove(idx);
-                }
-                filtered.push_bounded(t1.clone());
-            }
-        }
-
-        filtered
-    }
-
-    // Appendix D getTransitionDomain: the state every exited and entered state
-    // descends from. `None` means the `<scxml>` element, which has no variant
-    // here -- callers read it as "every active state lies below it".
-    fn transition_domain(
-        source: Test403bState,
-        target: Test403bState,
-        is_internal: bool,
-    ) -> Option<Test403bState> {
-        // W3C SCXML 3.13: Internal transition to a compound descendant — the
-        // SOURCE is the domain, so it stays active while its active descendants
-        // are exited. If source is atomic or parallel, the internal transition
-        // behaves as external (W3C SCXML 3.13).
-        if is_internal
-            && Self::is_compound_state(source)
-            && !Self::is_parallel_state(source)
-            && Self::is_descendant_of(target, source)
-            && target != source
-        {
-            return Some(source);
-        }
-
-        // Appendix D findLCCA: walk up from source for the lowest CANDIDATE
-        // ancestor that contains target. The candidates are the ones
-        // `isCompoundStateOrScxmlElement` admits, so a `<parallel>` is skipped.
-        //
-        // If no candidate contains target (top-level siblings, or a region root's
-        // external transition whose only non-candidate ancestor is the
-        // `<parallel>`), the domain is the `<scxml>` element.
-        let mut current = source;
-        loop {
-            match Self::get_parent(current) {
-                Some(parent) => {
-                    let is_domain_candidate =
-                        Self::is_compound_state(parent) && !Self::is_parallel_state(parent);
-                    if is_domain_candidate
-                        && (Self::is_descendant_of(target, parent) || target == parent)
-                    {
-                        return Some(parent);
-                    }
-                    current = parent;
-                }
-                None => return None,
-            }
-        }
-    }
-
-    // Appendix D computeExitSet: the ACTIVE states that are proper descendants
-    // of the transition's domain.
-    //
-    // This is read off the CONFIGURATION, which is why it takes `&self`. Walking
-    // the source's own ancestor chain instead -- what stood here -- names the
-    // same states only while no `<parallel>` is active below the domain: a
-    // sibling region is a descendant of the domain and is not on that chain. It
-    // left this generator with TWO exit sets, one for conflict resolution and one
-    // for `execute_microstep`, which now share this procedure and cannot disagree.
-    fn compute_exit_set(
-        &self,
-        source: Test403bState,
-        target: Test403bState,
-        is_internal: bool,
-        is_targetless: bool,
-    ) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Test403bState> {
-        let mut exit_set = ::sce_rust_runtime::helpers::hierarchy::new_chain();
-
-        // Appendix D computeExitSet guards the whole computation with `if t.target`:
-        // a transition without one exits nothing and conflicts with nothing.
-        if is_targetless {
-            return exit_set;
-        }
-
-        let domain = Self::transition_domain(source, target, is_internal);
-
-        for &active_state in &self.active_states {
-            let exits = match domain {
-                // The domain itself is not exited; everything active below it is.
-                Some(d) => active_state != d && Self::is_descendant_of(active_state, d),
-                // The domain is the `<scxml>` element: the whole configuration goes.
-                None => true,
-            };
-            if exits {
-                ::sce_rust_runtime::helpers::hierarchy::push_chain(&mut exit_set, active_state);
-            }
-        }
-
-        exit_set
-    }
-
-    // Appendix D microstepProcedure: Execute microstep with proper ordering
-    fn execute_microstep(
-        &mut self,
-        transitions: &[TransitionInfo],
-        current_state: &mut Test403bState,
-        transition_taken: &mut bool,
-        engine: &mut sce_rust_runtime::Engine<Self>,
-    ) {
-        if transitions.is_empty() {
-            return;
-        }
-
-        // Appendix D computeExitSet Step 1-2: the union of the transitions' exit
-        // sets, each one the SAME procedure `remove_conflicting_transitions`
-        // intersects. A microstep that exits a different set from the one the
-        // resolver judged cannot be reasoned about, and this walked the
-        // configuration while `compute_exit_set` walked the source's chain.
-        let mut states_to_exit: ::sce_rust_runtime::helpers::hierarchy::StateChain<Test403bState> =
-            ::sce_rust_runtime::helpers::hierarchy::new_chain();
-        for trans in transitions {
-            let exited = self.compute_exit_set(
-                trans.source,
-                trans.target,
-                trans.is_internal,
-                trans.is_targetless,
-            );
-            for &active_state in exited.iter() {
-                if !states_to_exit.contains(&active_state) {
-                    ::sce_rust_runtime::helpers::hierarchy::push_chain(
-                        &mut states_to_exit,
-                        active_state,
-                    );
-                }
-            }
-        }
-
-        // Sort by reverse document order (deepest first)
-        ::sce_rust_runtime::stable_sort_by(&mut states_to_exit, |a, b| {
-            Self::get_document_order(*b).cmp(&Self::get_document_order(*a))
-        });
-
-        // Snapshot active states for history recording
-        let active_snapshot = self.active_states.clone();
-
-        // Appendix D exitStates Step 2: Exit states
-        for &state in &states_to_exit {
-            self.execute_exit_actions(state, engine, &active_snapshot);
-        }
-
-        // Appendix D executeTransitionContent Step 3: Execute transition content
-        let mut sorted_transitions: TransitionList =
-            ::sce_rust_runtime::bounded_clone_slice(transitions);
-        ::sce_rust_runtime::stable_sort_by_key(&mut sorted_transitions, |t| {
-            Self::get_document_order(t.source)
-        });
-
-        for trans in &sorted_transitions {
-            if trans.has_actions {
-                self.last_transition_source_state = trans.source;
-                self.last_transition_index = trans.transition_index;
-                self.has_transition_actions = true;
-                self.execute_transition_actions(engine);
-                self.has_transition_actions = false;
-            }
-        }
-
-        // Appendix D enterStates Step 4-5: Enter target states
-        ::sce_rust_runtime::stable_sort_by_key(&mut sorted_transitions, |t| {
-            Self::get_document_order(t.target)
-        });
-
-        for trans in &sorted_transitions {
-            if trans.is_targetless {
-                continue;
-            }
-
-            let target = trans.target;
-
-            // W3C SCXML 3.13: Build hierarchical entry chain from root to target
-            let entry_chain =
-                sce_rust_runtime::helpers::hierarchy::build_entry_chain::<Self>(target);
-
-            // §scxml-D: every link but the last is an ANCESTOR of the target,
-            // and `addAncestorStatesToEnter` adds an ancestor without its
-            // default initial child — the entry set already holds the next
-            // link. Only the target itself goes through
-            // `addDescendantStatesToEnter`. Passing the next link as
-            // `path_child` is what expresses that, and it is also what stops a
-            // `<parallel>` ancestor from handing a default to the very region
-            // the chain is descending into.
-            for (i, state) in entry_chain.iter().enumerate() {
-                let path_child = entry_chain.get(i + 1).copied();
-                if self.active_states.contains(state) {
-                    // W3C SCXML 3.13: Already active - handle parallel region re-entry
-                    if Self::is_parallel_state(*state) {
-                        let regions = Self::get_parallel_regions(*state);
-                        for &region in regions {
-                            if path_child == Some(region) {
-                                continue;
-                            }
-                            if !self.active_states.contains(&region) {
-                                self.execute_entry_actions(region, engine, None);
-                                if Self::is_compound_state(region) {
-                                    let initial_child = self.get_initial_or_history_child(region);
-                                    if initial_child != region {
-                                        self.execute_entry_actions(initial_child, engine, None);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    continue;
-                }
-                self.execute_entry_actions(*state, engine, path_child);
-            }
-
-            // W3C SCXML 3.4: For parallel states, maintain currentState at parallel level
-            let mut final_state = target;
-            if let Some(parent) = Self::get_parent(target) {
-                if Self::is_parallel_state(parent) {
-                    final_state = parent;
-                }
-            }
-            *current_state = final_state;
-        }
-
-        *transition_taken = true;
     }
 }

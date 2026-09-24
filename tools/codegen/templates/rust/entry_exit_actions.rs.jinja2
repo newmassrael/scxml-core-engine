@@ -7,14 +7,17 @@
     W3C SCXML 3.7/3.8/3.9: Entry and exit action execution.
 
     Generates:
-    - execute_entry_actions(&mut self, state, engine, path_child)
-    - execute_exit_actions(&mut self, state, engine, pre_transition_active)
+    - execute_entry_actions(&mut self, state, engine, is_default_entry)
+    - execute_exit_actions(&mut self, state, engine, configuration_before_exit)
+    - execute_history_default_content(&mut self, history, engine)
 
-    `path_child` carries Appendix D's split between addDescendantStatesToEnter
-    (None — `state` is the target, so it takes its defaults) and
-    addAncestorStatesToEnter (Some(child) — `state` is on the way to a deeper
-    target, so it takes none, except that a `<parallel>` still gives its OTHER
-    regions theirs). See `StatePolicy::execute_entry_actions`.
+    Each answers for ONE state. Which states a microstep enters and exits, and
+    in which order, is the engine's Appendix D procedure
+    (`sce_rust_runtime::helpers::microstep`): it enters its entry set front to
+    back and exits its exit set in exit order, so nothing here enters a region,
+    descends to an initial child, or exits a descendant. `is_default_entry` is
+    the entry set's statesForDefaultEntry answer — whether this state's initial
+    transition content runs.
 
     Ports from C++ entry_exit_actions.jinja2.
     Uses datamodel_macros.rs.jinja2 for Zero Duplication in late binding init.
@@ -28,30 +31,17 @@
        above `execute_entry_actions`. `#[doc]` attaches to the function
        item; the `//` comment-form survives stable as a grep target. #}
     {{ sce_map.source_marker(model.source_location, "rust", symbol_artifact=sce_artifact.machine) }}
-    fn execute_entry_actions(&mut self, state: Self::State, engine: &mut sce_rust_runtime::Engine<Self>, path_child: Option<Self::State>) {
-{% if not model.has_parallel_states %}
-        // Only a `<parallel>` machine descends into defaults here — see the
-        // blocks at the end of this function — so a machine without one has
-        // nothing to tell an ancestor entry from a target entry.
-        let _ = path_child;
-{% endif %}
+    fn execute_entry_actions(&mut self, state: Self::State, engine: &mut sce_rust_runtime::Engine<Self>, is_default_entry: bool) {
 {% if model.has_parallel_states or model.uses_in_predicate %}
         // W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel states and In() predicate
-        //
-        // SCE Protocol-Synthesis RFC §synth-5-J-2: `push_chain` is the runtime crate's
-        // cfg-branched push wrapper — `Vec::push` under std, `heapless::Vec::push`
-        // with the depth-guard `.expect()` under no_std. Lets template-emitted code
-        // share the same call shape with `Engine::get_active_states`.
-        if !self.active_states.contains(&state) {
-            ::sce_rust_runtime::helpers::hierarchy::push_chain(&mut self.active_states, state);
-        } else {
+        if !self.activate(state) {
             return;  // W3C SCXML 3.8: Skip onentry actions for duplicate state entry
         }
 {% endif %}
 {% if model.has_entry_actions %}
         match state {
 {% for state_id, state in model.states | dictsort %}
-{% if state.on_entry_blocks or state.initial_transition_actions or state.initial_history_id or (state.is_final and state.parent) or (state.is_final and state.donedata) or (state.datamodel and model.binding == 'late') or state.invokes | scxml or state.invokes | hybrid or state.invokes | unsupported %}
+{% if state.on_entry_blocks or state.initial_transition_actions or (state.is_final and state.parent) or (state.is_final and state.donedata) or (state.datamodel and model.binding == 'late') or state.invokes | scxml or state.invokes | hybrid or state.invokes | unsupported %}
             {{ machine_name }}State::{{ state_id | to_state_variant }} => {  {{- annot.annotation_comment(state, "rust", "                ") }}
 {% if state.source_location %}
                 {{ sce_map.source_marker(state.source_location, "rust", stmt_level=true, symbol_state=state_id, symbol_artifact=sce_artifact.state_body) | trim }}
@@ -80,23 +70,18 @@
                 }
 {% endfor %}
 {% if state.initial_transition_actions %}
-                // W3C SCXML 3.3.2: Execute <initial> transition executable content
-                // Runs AFTER parent onentry and BEFORE child state entry
-                'initial_trans_block: {
+                // W3C SCXML 3.3.2 / §scxml-D-enterStates: the <initial>
+                // transition's executable content runs after this state's
+                // onentry, and only when its initial state is entered by
+                // DEFAULT — not when this state is entered as an ancestor of a
+                // deeper target, nor when a <history> restores its children.
+                if is_default_entry {
+                    'action_block: {
 {% for action in state.initial_transition_actions %}
-                {% with in_entry_exit=true %}{% include 'actions/' ~ action.type ~ '.rs.jinja2' %}{% endwith %}
+                    {% with in_entry_exit=true %}{% include 'actions/' ~ action.type ~ '.rs.jinja2' %}{% endwith %}
 
 {% endfor %}
-                }
-{% endif %}
-{% if state.initial_history_id %}
-                // W3C SCXML 3.11: Initial transition targets history state {{ state.initial_history_id }}
-                if self.history_{{ state.initial_history_id }}.as_ref().map_or(true, |h| h.is_empty()) {
-                    // No stored history, execute default transition actions
-{% for action in state.initial_history_default_actions %}
-                    {% include 'actions/' ~ action.type ~ '.rs.jinja2' %}
-
-{% endfor %}
+                    }
                 }
 {% endif %}
 {% if state.invokes | unsupported_refused %}
@@ -306,17 +291,18 @@
 {% if model.has_parallel_states and state.parent in model.states and model.states[state.parent].parent %}
 {% set grandparent_id = model.states[state.parent].parent %}
 {% if grandparent_id in model.states and model.states[grandparent_id].is_parallel %}
-                // W3C SCXML 3.4: Check if parallel grandparent {{ grandparent_id }} has all regions complete
+                // W3C SCXML 3.4 / §scxml-D-enterStates: a region of
+                // {{ grandparent_id }} has reached a final state, and the
+                // <parallel> completes when every one of its child states is in
+                // one — Appendix D's isInFinalState, which counts a region that
+                // is itself a <parallel> only once all of ITS regions are.
                 {
                     let parallel_state = {{ machine_name }}State::{{ grandparent_id | to_state_variant }};
-                    let regions = Self::get_parallel_regions(parallel_state);
-                    let all_complete = regions.iter().all(|&region| {
-                        // Check if any active descendant of this region is in a final state
-                        self.active_states.iter().any(|&s| {
-                            Self::is_final_state(s) && Self::is_descendant_of(s, region)
-                        })
-                    });
-                    if all_complete {
+                    if ::sce_rust_runtime::helpers::microstep::is_in_final_state(
+                        &::sce_rust_runtime::PolicyDocument(&*self),
+                        parallel_state,
+                        &self.active_states,
+                    ) {
 {% if 'done.state.' ~ grandparent_id in model.events %}
                         engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ ('done.state.' ~ grandparent_id) | to_event_variant }}));
 {% endif %}
@@ -331,73 +317,37 @@
             _ => {}
         }
 {% endif %}
-{% if model.has_parallel_states %}
-
-        // W3C SCXML 3.4 + §scxml-D-addDescendantStatesToEnter: entering a
-        // `<parallel>` enters every region — including when it is only an
-        // ancestor, which is the one case where an ancestor still hands out
-        // defaults. The exception is the region the entry set is already
-        // descending into: `path_child` names it, and giving that one its
-        // default too is what leaves two children of it active at once.
-        if Self::is_parallel_state(state) {
-            let regions = Self::get_parallel_regions(state);
-            for &region in regions {
-                if path_child == Some(region) {
-                    continue;
-                }
-                self.execute_entry_actions(region, engine, None);
-
-                // W3C SCXML 3.3: If region is compound, enter initial child
-                if Self::is_compound_state(region) {
-                    let initial_child = self.get_initial_or_history_child(region);
-                    if initial_child != region {
-                        self.execute_entry_actions(initial_child, engine, None);
-                    }
-                }
-            }
-        }
-{% endif %}
-
-{% if model.has_parallel_states %}
-        // W3C SCXML 3.3: If entering compound state (non-parallel), enter initial child
-        //
-        // §scxml-D-addAncestorStatesToEnter: not when `state` is merely on the
-        // way to a deeper target. The entry set already holds `path_child`, and
-        // a compound state holds one child at a time.
-        if Self::is_compound_state(state) && !Self::is_parallel_state(state) && path_child.is_none() {
-            // W3C SCXML 3.6: Deep initial targets support
-            let initial_children = Self::get_initial_children(state);
-            if !initial_children.is_empty() {
-                // W3C SCXML 3.6: Enter through hierarchy to reach initial target(s)
-                for &target in &initial_children {
-                    // Build entry chain from state to target
-                    let mut chain = ::sce_rust_runtime::helpers::hierarchy::new_chain();
-                    let mut current = target;
-                    while current != state {
-                        ::sce_rust_runtime::helpers::hierarchy::push_chain(&mut chain, current);
-                        match Self::get_parent(current) {
-                            Some(parent) => current = parent,
-                            None => break,
-                        }
-                    }
-                    chain.reverse();
-                    // Enter intermediate states (skip state itself, already
-                    // entered). Each is an ancestor of the initial target, so
-                    // it takes no default of its own — the chain already names
-                    // the child that is entering.
-                    for (i, &intermediate) in chain.iter().enumerate() {
-                        self.execute_entry_actions(intermediate, engine, chain.get(i + 1).copied());
-                    }
-                }
-            } else {
-                let initial_child = self.get_initial_or_history_child(state);
-                if initial_child != state {
-                    self.execute_entry_actions(initial_child, engine, None);
-                }
-            }
-        }
-{% endif %}
     }
+
+    // §scxml-3.10.2: a <history>'s default transition content, run after its
+    // parent's onentry (and after the parent's own <initial> content) when the
+    // history was taken with nothing recorded. The engine asks for it by the
+    // entry set's defaultHistoryContent answer; a history that restored what it
+    // recorded runs nothing.
+{% set _history_content = namespace(any=false) %}
+{% for _history_id, _history_info in model.history_states | dictsort %}
+{% if _history_info.default_actions %}
+{% set _history_content.any = true %}
+{% endif %}
+{% endfor %}
+{% if _history_content.any %}
+    {{ sce_map.source_marker(model.source_location, "rust", symbol_artifact=sce_artifact.machine) }}
+    fn execute_history_default_content(&mut self, history: Self::History, engine: &mut sce_rust_runtime::Engine<Self>) {
+        match history {
+{% for history_id, history_info in model.history_states | dictsort %}
+{% if history_info.default_actions %}
+            {{ machine_name }}History::{{ history_id | to_state_variant }} => {
+{% for action in history_info.default_actions %}
+                {% include 'actions/' ~ action.type ~ '.rs.jinja2' %}
+
+{% endfor %}
+            }
+{% endif %}
+{% endfor %}
+            _ => {}
+        }
+    }
+{% endif %}
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
     {{ sce_map.source_marker(model.source_location, "rust", symbol_artifact=sce_artifact.machine) }}
@@ -405,53 +355,28 @@
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
-        pre_transition_active: &[Self::State],
+        configuration_before_exit: &[Self::State],
     ) {
-{% if model.has_parallel_states %}
-        // W3C SCXML 3.4 + 3.13: Parallel state exit order
-        if Self::is_parallel_state(state) {
-            // W3C SCXML 3.4: Collect all active descendants of this parallel state
-            let mut descendants_to_exit: ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> = self.active_states.iter()
-                .filter(|&&s| s != state && Self::is_descendant_of(s, state))
-                .copied()
-                .collect();
-
-            // W3C SCXML 3.13: Sort descendants by reverse document order (deepest first)
-            ::sce_rust_runtime::stable_sort_by(&mut descendants_to_exit, |a, b| Self::get_document_order(*b).cmp(&Self::get_document_order(*a)));
-
-            // Exit each active descendant (deepest first)
-            for descendant in descendants_to_exit {
-                self.execute_exit_actions(descendant, engine, pre_transition_active);
-            }
-        }
-{% endif %}
 {% if model.has_parallel_states or model.uses_in_predicate %}
         // W3C SCXML 3.4/3.12.1: Remove state from active configuration
-        self.active_states.retain(|&s| s != state);
+        self.deactivate(state);
 {% endif %}
 {% if model.history_states %}
-        // W3C SCXML 3.11: Record history before exiting compound states
+        // W3C SCXML 3.10: Record history as this state exits, from the
+        // configuration the microstep started from — the engine hands every
+        // exit the configuration as it stood before the first one, so every
+        // history in one microstep reads the same configuration.
 {% for history_id, history_info in model.history_states | dictsort %}
         if state == {{ machine_name }}State::{{ history_info.parent | to_state_variant }} {
-{% if history_info.type == 'deep' %}
-            // W3C SCXML 3.11: Deep history - record all active descendants.
-            // SCE Protocol-Synthesis RFC §synth-5-J-2: [`StateChain`] alias (heapless under
-            // no_std); recorded history is a subset of the active configuration
-            // so it stays within MAX_HIERARCHY_DEPTH.
-            let filtered: ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> = pre_transition_active.iter()
-                .filter(|&&s| Self::is_descendant_of(s, {{ machine_name }}State::{{ history_info.parent | to_state_variant }})
-                    && !Self::is_compound_state(s) && !Self::is_parallel_state(s))
-                .copied()
-                .collect();
-{% else %}
-            // W3C SCXML 3.11: Shallow history - record direct children only.
-            // SCE Protocol-Synthesis RFC §synth-5-J-2: [`StateChain`] alias (heapless under no_std).
-            let filtered: ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> = pre_transition_active.iter()
-                .filter(|&&s| Self::get_parent(s) == Some({{ machine_name }}State::{{ history_info.parent | to_state_variant }}))
-                .copied()
-                .collect();
-{% endif %}
-            self.history_{{ history_id }} = Some(filtered);
+            // W3C SCXML 3.11: {{ history_info.type }} history — SCE Protocol-Synthesis
+            // RFC §synth-5-J-2: the record is a [`StateChain`] (heapless under
+            // no_std), and a subset of the configuration, so it fits the depth bound.
+            self.history_{{ history_id }} = Some(::sce_rust_runtime::helpers::microstep::recorded_history(
+                &::sce_rust_runtime::PolicyDocument(&*self),
+                {{ machine_name }}State::{{ history_info.parent | to_state_variant }},
+                {{ 'true' if history_info.type == 'deep' else 'false' }},
+                configuration_before_exit,
+            ));
         }
 {% endfor %}
 {% endif %}

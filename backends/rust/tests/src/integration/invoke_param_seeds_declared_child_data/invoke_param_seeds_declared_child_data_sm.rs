@@ -40,9 +40,12 @@
 // by fixtures that actually exercise the corresponding W3C feature.
 #![allow(dead_code)]
 #![allow(unused_variables)]
-// `let mut current_state = ...` in process_transition is mutated only by
-// internal-transition fixtures; pure-external-transition fixtures leave it
-// untouched after the let binding.
+// Bindings emitted `mut` for the documents that write them: `done_data_ok` in
+// `<donedata>` evaluation is cleared only by a param that fails (test294,
+// test343), `json_parts` is pushed only by a param that evaluates (test298),
+// and a send's `err_meta` gets a `send_id` only when the document has a
+// datamodel (test194, test199). Measured 2026-09-24: removing this allow
+// reds those fixtures under `-D warnings`.
 #![allow(unused_mut)]
 // `'action_block:` early-exit label wraps every onentry block but is only
 // `break`-ed to from fixtures that emit error-on-action sequences.
@@ -146,10 +149,6 @@ impl InvokeParamSeedsDeclaredChildDataEvent {
 // ======================================================================
 
 pub struct InvokeParamSeedsDeclaredChildDataPolicy {
-    // W3C SCXML 3.13: Last transition metadata
-    last_transition_is_internal: bool,
-    last_transition_is_targetless: bool,
-    last_transition_source_state: InvokeParamSeedsDeclaredChildDataState,
     // W3C SCXML 5.10.1: External event flag for _event.type classification
     next_event_is_external: bool,
     // W3C SCXML 5.10: Event name for _event.name binding
@@ -265,9 +264,6 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
     pub fn new(script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>) -> Self {
         Self {
             script_engine,
-            last_transition_is_internal: false,
-            last_transition_is_targetless: false,
-            last_transition_source_state: InvokeParamSeedsDeclaredChildDataState::Shadowed,
             next_event_is_external: false,
             pending_event_name: ::sce_rust_runtime::SceString::new(),
             pending_event_data: ::sce_rust_runtime::SceString::new(),
@@ -1496,6 +1492,9 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
 impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
     type State = InvokeParamSeedsDeclaredChildDataState;
     type Event = InvokeParamSeedsDeclaredChildDataEvent;
+    // W3C SCXML 3.10: this document declares no <history>, so no target list
+    // can name one.
+    type History = sce_rust_runtime::NoHistory;
     // EventSchema native lowering: `()` = schemaless (dynamic
     // `_event.data` baseline); a `<Machine>Payload` sum is emitted when a
     // transition guard reads a typed `_event.data.<field>` (NL→IR C1 Path A).
@@ -1573,25 +1572,50 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
         }
     }
 
+    // W3C SCXML 3.3: a <state> with child states — exactly the states that have
+    // an initial transition. A <parallel> is not compound.
     fn is_compound_state(state: Self::State) -> bool {
         match state {
             _ => false,
         }
     }
 
-    fn is_descendant_of(desc: Self::State, anc: Self::State) -> bool {
-        let mut current = desc;
-        loop {
-            match Self::get_parent(current) {
-                None => return false,
-                Some(parent) => {
-                    if parent == anc {
-                        return true;
-                    }
-                    current = parent;
-                }
-            }
+    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+    // children, in document order — for a <parallel>, its regions.
+    fn get_child_states(state: Self::State) -> &'static [Self::State] {
+        match state {
+            _ => &[],
         }
+    }
+
+    // §scxml-3.3: a compound state's initial transition target, as written —
+    // the engine's entry procedures dereference a <history> among them.
+    fn get_initial_targets(
+        state: Self::State,
+    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
+        match state {
+            _ => &[],
+        }
+    }
+
+    // §scxml-3.2: the target of the document's own initial transition, as written.
+    fn get_document_initial_targets(
+    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
+        &[::sce_rust_runtime::EntryTarget::State(
+            InvokeParamSeedsDeclaredChildDataState::Shadowed,
+        )]
+    }
+
+    // §scxml-3.10: the state a <history> is declared in.
+    fn get_history_parent(history: Self::History) -> Self::State {
+        match history {}
+    }
+
+    // §scxml-3.10.2: a <history>'s default transition target, as written.
+    fn get_history_default_targets(
+        history: Self::History,
+    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
+        match history {}
     }
 
     fn get_document_order(state: Self::State) -> u32 {
@@ -1717,53 +1741,14 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
         InvokeParamSeedsDeclaredChildDataEvent::Null
     }
 
-    // W3C SCXML 3.6: Get initial children of a compound state
-    //
-    // SCE Protocol-Synthesis RFC §synth-5-J-2: return type is the runtime crate's
-    // [`StateChain`] alias and the body uses `state_chain_from_slice` instead of
-    // `vec![...]` so the emitted code compiles under `--no-std` (`vec!` is a
-    // std-only macro; heapless has no equivalent).
-    fn get_initial_children(
-        state: Self::State,
-    ) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
-        match state {
-            _ => ::sce_rust_runtime::helpers::hierarchy::new_chain(),
-        }
-    }
-
-    // W3C SCXML 3.11: Get initial or history-restored child
-    fn get_initial_or_history_child(&self, state: Self::State) -> Self::State {
-        match state {
-            _ => state,
-        }
-    }
-
     // ======================================================================
-    // Mutable field accessors
+    // Run-time state the entry procedures read
     // ======================================================================
 
-    fn last_transition_is_internal(&self) -> bool {
-        self.last_transition_is_internal
-    }
-
-    fn set_last_transition_is_internal(&mut self, value: bool) {
-        self.last_transition_is_internal = value;
-    }
-
-    fn last_transition_is_targetless(&self) -> bool {
-        self.last_transition_is_targetless
-    }
-
-    fn set_last_transition_is_targetless(&mut self, value: bool) {
-        self.last_transition_is_targetless = value;
-    }
-
-    fn last_transition_source_state(&self) -> Self::State {
-        self.last_transition_source_state
-    }
-
-    fn set_last_transition_source_state(&mut self, state: Self::State) {
-        self.last_transition_source_state = state;
+    // §scxml-3.10: what a <history> recorded when its parent was last exited;
+    // None before that ever happened.
+    fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
+        match history {}
     }
 
     fn set_next_event_is_external(&mut self, value: bool) {
@@ -1805,12 +1790,8 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
-        path_child: Option<Self::State>,
+        is_default_entry: bool,
     ) {
-        // Only a `<parallel>` machine descends into defaults here — see the
-        // blocks at the end of this function — so a machine without one has
-        // nothing to tell an ancestor entry from a target entry.
-        let _ = path_child;
         match state {
             InvokeParamSeedsDeclaredChildDataState::Infinite => {
                 // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:235 :: infinite :: _state_body
@@ -1895,6 +1876,12 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
         }
     }
 
+    // §scxml-3.10.2: a <history>'s default transition content, run after its
+    // parent's onentry (and after the parent's own <initial> content) when the
+    // history was taken with nothing recorded. The engine asks for it by the
+    // entry set's defaultHistoryContent answer; a history that restored what it
+    // recorded runs nothing.
+
     // W3C SCXML 3.8: Execute <onexit> actions for a state
     #[doc = "SCE-MAP: invoke_param_seeds_declared_child_data.scxml:84 :: _machine"]
     // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:84 :: _machine
@@ -1902,7 +1889,7 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
-        pre_transition_active: &[Self::State],
+        configuration_before_exit: &[Self::State],
     ) {
         // W3C SCXML 6.4: Cancel pending invokes and cleanup active children on state exit
         match state {
@@ -2013,17 +2000,16 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
         }
     }
 
-    // W3C SCXML 3.13: Evaluate guards and take a matching transition
+    // §scxml-5.10: the event whose transitions are about to be selected is the
+    // `_event` their guards read — bound before the first guard runs, and not
+    // for an eventless selection, which has no event of its own.
     #[doc = "SCE-MAP: invoke_param_seeds_declared_child_data.scxml:84 :: _machine"]
     // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:84 :: _machine
-    fn process_transition(
+    fn bind_current_event(
         &mut self,
-        current_state: &mut Self::State,
         event: Self::Event,
         engine: &mut sce_rust_runtime::Engine<Self>,
-    ) -> bool {
-        let mut transition_taken = false;
-
+    ) {
         // W3C SCXML 5.10: Ensure script engine and set _event for guard evaluation
         self.ensure_script_engine();
         if event != Self::null_event() {
@@ -2060,25 +2046,282 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
             );
             engine.note_payload_reading(event, payload_reading);
         }
-
-        // Flat state machine: no hierarchy, direct transition check
-        self.try_transition_in_state(
-            *current_state,
-            event,
-            current_state,
-            &mut transition_taken,
-            engine,
-        );
-
-        transition_taken
     }
 
-    // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
+    // Appendix D selectTransitions, the half only this document can answer:
+    // the first of `state`'s own transitions, in document order, that `event`
+    // enables. The engine walks the atomic states and their ancestors and
+    // keeps the ordered set. `Event::Null` asks for eventless transitions.
     #[doc = "SCE-MAP: invoke_param_seeds_declared_child_data.scxml:84 :: _machine"]
     // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:84 :: _machine
-    fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
-        // W3C SCXML 3.13: No transition actions in this state machine
-        let _ = engine;
+    fn first_enabled_transition(
+        &mut self,
+        state: Self::State,
+        event: Self::Event,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+    ) -> Option<::sce_rust_runtime::EnabledTransition<Self::State, Self::History>> {
+        match state {
+            InvokeParamSeedsDeclaredChildDataState::Infinite => {
+                if event == InvokeParamSeedsDeclaredChildDataEvent::SeedOk {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(
+                                InvokeParamSeedsDeclaredChildDataState::Pass,
+                            )],
+                            transition_index: 0,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
+                }
+                if event == InvokeParamSeedsDeclaredChildDataEvent::SeedMissing {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(
+                                InvokeParamSeedsDeclaredChildDataState::FailInfiniteParamLost,
+                            )],
+                            transition_index: 1,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
+                }
+                if event == InvokeParamSeedsDeclaredChildDataEvent::SeedCollapsed {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(
+                                InvokeParamSeedsDeclaredChildDataState::FailInfiniteParamCollapsed,
+                            )],
+                            transition_index: 2,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
+                }
+                if event == InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(
+                                InvokeParamSeedsDeclaredChildDataState::FailInfiniteParamLost,
+                            )],
+                            transition_index: 3,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
+                }
+                None
+            }
+            InvokeParamSeedsDeclaredChildDataState::NamelistPhase => {
+                if event == InvokeParamSeedsDeclaredChildDataEvent::SeedOk {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(
+                                InvokeParamSeedsDeclaredChildDataState::Infinite,
+                            )],
+                            transition_index: 0,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
+                }
+                if event == InvokeParamSeedsDeclaredChildDataEvent::SeedMissing {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(
+                                InvokeParamSeedsDeclaredChildDataState::FailNamelistValueLost,
+                            )],
+                            transition_index: 1,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
+                }
+                if event == InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(
+                                InvokeParamSeedsDeclaredChildDataState::FailNamelistValueLost,
+                            )],
+                            transition_index: 2,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
+                }
+                None
+            }
+            InvokeParamSeedsDeclaredChildDataState::Shadowed => {
+                if event == InvokeParamSeedsDeclaredChildDataEvent::SeedOk {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(
+                                InvokeParamSeedsDeclaredChildDataState::SoleName,
+                            )],
+                            transition_index: 0,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
+                }
+                if event == InvokeParamSeedsDeclaredChildDataEvent::SeedShadowed {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(InvokeParamSeedsDeclaredChildDataState::FailChildEvaluatedTheExpression)],
+                            transition_index: 1,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
+                }
+                if event == InvokeParamSeedsDeclaredChildDataEvent::SeedMissing {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(
+                                InvokeParamSeedsDeclaredChildDataState::FailShadowSeedLost,
+                            )],
+                            transition_index: 2,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
+                }
+                if event == InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(
+                                InvokeParamSeedsDeclaredChildDataState::FailShadowSeedLost,
+                            )],
+                            transition_index: 3,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
+                }
+                None
+            }
+            InvokeParamSeedsDeclaredChildDataState::SoleName => {
+                if event == InvokeParamSeedsDeclaredChildDataEvent::SeedOk {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(
+                                InvokeParamSeedsDeclaredChildDataState::Unmatched,
+                            )],
+                            transition_index: 0,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
+                }
+                if event == InvokeParamSeedsDeclaredChildDataEvent::SeedMissing {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(
+                                InvokeParamSeedsDeclaredChildDataState::FailParentOnlyExprLost,
+                            )],
+                            transition_index: 1,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
+                }
+                if event == InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(
+                                InvokeParamSeedsDeclaredChildDataState::FailParentOnlyExprLost,
+                            )],
+                            transition_index: 2,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
+                }
+                None
+            }
+            InvokeParamSeedsDeclaredChildDataState::Unmatched => {
+                if event == InvokeParamSeedsDeclaredChildDataEvent::SeedOk {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(
+                                InvokeParamSeedsDeclaredChildDataState::NamelistPhase,
+                            )],
+                            transition_index: 0,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
+                }
+                if event == InvokeParamSeedsDeclaredChildDataEvent::SeedLeaked {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(InvokeParamSeedsDeclaredChildDataState::FailUnmatchedParamEnteredTheChild)],
+                            transition_index: 1,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
+                }
+                if event == InvokeParamSeedsDeclaredChildDataEvent::SeedMissing {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(
+                                InvokeParamSeedsDeclaredChildDataState::FailDeclaredParamLost,
+                            )],
+                            transition_index: 2,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
+                }
+                if event == InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(
+                                InvokeParamSeedsDeclaredChildDataState::FailDeclaredParamLost,
+                            )],
+                            transition_index: 3,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
+    // W3C SCXML 3.13: a transition's executable content, run by the engine
+    // between the microstep's exits and its entries.
+    #[doc = "SCE-MAP: invoke_param_seeds_declared_child_data.scxml:84 :: _machine"]
+    // SCE-MAP: invoke_param_seeds_declared_child_data.scxml:84 :: _machine
+    fn execute_transition_content(
+        &mut self,
+        source: Self::State,
+        transition_index: usize,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
+        // W3C SCXML 3.13: no transition in this document has content.
+        let _ = (source, transition_index, engine);
     }
     // W3C SCXML 5.2/5.3: Datamodel initialization with error.execution support
     // Delegates to inherent impl method (matches C++ initializeDataModel pattern)
@@ -2094,255 +2337,5 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
     // W3C SCXML 6.4: Tick child state machines
     fn tick_children(&mut self, engine: &mut Engine<Self>) {
         self.do_tick_children(engine);
-    }
-}
-
-// ======================================================================
-// Helper impl block (try_transition_in_state, conflict resolution, etc.)
-// ======================================================================
-
-impl InvokeParamSeedsDeclaredChildDataPolicy {
-    // W3C SCXML 3.12: Helper method for hierarchical transition checking
-    fn try_transition_in_state(
-        &mut self,
-        check_state: InvokeParamSeedsDeclaredChildDataState,
-        event: InvokeParamSeedsDeclaredChildDataEvent,
-        current_state: &mut InvokeParamSeedsDeclaredChildDataState,
-        transition_taken: &mut bool,
-        engine: &mut sce_rust_runtime::Engine<Self>,
-    ) -> bool {
-        match check_state {
-            InvokeParamSeedsDeclaredChildDataState::FailChildEvaluatedTheExpression => false,
-            InvokeParamSeedsDeclaredChildDataState::FailDeclaredParamLost => false,
-            InvokeParamSeedsDeclaredChildDataState::FailInfiniteParamCollapsed => false,
-            InvokeParamSeedsDeclaredChildDataState::FailInfiniteParamLost => false,
-            InvokeParamSeedsDeclaredChildDataState::FailNamelistValueLost => false,
-            InvokeParamSeedsDeclaredChildDataState::FailParentOnlyExprLost => false,
-            InvokeParamSeedsDeclaredChildDataState::FailShadowSeedLost => false,
-            InvokeParamSeedsDeclaredChildDataState::FailUnmatchedParamEnteredTheChild => false,
-            InvokeParamSeedsDeclaredChildDataState::Infinite => {
-                // W3C SCXML 3.12: Event-triggered transitions (document order)
-                // W3C SCXML 5.9.3: Direct enum comparison
-                if event == InvokeParamSeedsDeclaredChildDataEvent::SeedOk {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
-
-                    *current_state = InvokeParamSeedsDeclaredChildDataState::Pass;
-                    *transition_taken = true;
-                    return true;
-                }
-                // W3C SCXML 5.9.3: Direct enum comparison
-                if event == InvokeParamSeedsDeclaredChildDataEvent::SeedMissing {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
-
-                    *current_state = InvokeParamSeedsDeclaredChildDataState::FailInfiniteParamLost;
-                    *transition_taken = true;
-                    return true;
-                }
-                // W3C SCXML 5.9.3: Direct enum comparison
-                if event == InvokeParamSeedsDeclaredChildDataEvent::SeedCollapsed {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
-
-                    *current_state =
-                        InvokeParamSeedsDeclaredChildDataState::FailInfiniteParamCollapsed;
-                    *transition_taken = true;
-                    return true;
-                }
-                // W3C SCXML 5.9.3: Direct enum comparison
-                if event == InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
-
-                    *current_state = InvokeParamSeedsDeclaredChildDataState::FailInfiniteParamLost;
-                    *transition_taken = true;
-                    return true;
-                }
-                false
-            }
-            InvokeParamSeedsDeclaredChildDataState::NamelistPhase => {
-                // W3C SCXML 3.12: Event-triggered transitions (document order)
-                // W3C SCXML 5.9.3: Direct enum comparison
-                if event == InvokeParamSeedsDeclaredChildDataEvent::SeedOk {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
-
-                    *current_state = InvokeParamSeedsDeclaredChildDataState::Infinite;
-                    *transition_taken = true;
-                    return true;
-                }
-                // W3C SCXML 5.9.3: Direct enum comparison
-                if event == InvokeParamSeedsDeclaredChildDataEvent::SeedMissing {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
-
-                    *current_state = InvokeParamSeedsDeclaredChildDataState::FailNamelistValueLost;
-                    *transition_taken = true;
-                    return true;
-                }
-                // W3C SCXML 5.9.3: Direct enum comparison
-                if event == InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
-
-                    *current_state = InvokeParamSeedsDeclaredChildDataState::FailNamelistValueLost;
-                    *transition_taken = true;
-                    return true;
-                }
-                false
-            }
-            InvokeParamSeedsDeclaredChildDataState::Pass => false,
-            InvokeParamSeedsDeclaredChildDataState::Shadowed => {
-                // W3C SCXML 3.12: Event-triggered transitions (document order)
-                // W3C SCXML 5.9.3: Direct enum comparison
-                if event == InvokeParamSeedsDeclaredChildDataEvent::SeedOk {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
-
-                    *current_state = InvokeParamSeedsDeclaredChildDataState::SoleName;
-                    *transition_taken = true;
-                    return true;
-                }
-                // W3C SCXML 5.9.3: Direct enum comparison
-                if event == InvokeParamSeedsDeclaredChildDataEvent::SeedShadowed {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
-
-                    *current_state =
-                        InvokeParamSeedsDeclaredChildDataState::FailChildEvaluatedTheExpression;
-                    *transition_taken = true;
-                    return true;
-                }
-                // W3C SCXML 5.9.3: Direct enum comparison
-                if event == InvokeParamSeedsDeclaredChildDataEvent::SeedMissing {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
-
-                    *current_state = InvokeParamSeedsDeclaredChildDataState::FailShadowSeedLost;
-                    *transition_taken = true;
-                    return true;
-                }
-                // W3C SCXML 5.9.3: Direct enum comparison
-                if event == InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
-
-                    *current_state = InvokeParamSeedsDeclaredChildDataState::FailShadowSeedLost;
-                    *transition_taken = true;
-                    return true;
-                }
-                false
-            }
-            InvokeParamSeedsDeclaredChildDataState::SoleName => {
-                // W3C SCXML 3.12: Event-triggered transitions (document order)
-                // W3C SCXML 5.9.3: Direct enum comparison
-                if event == InvokeParamSeedsDeclaredChildDataEvent::SeedOk {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
-
-                    *current_state = InvokeParamSeedsDeclaredChildDataState::Unmatched;
-                    *transition_taken = true;
-                    return true;
-                }
-                // W3C SCXML 5.9.3: Direct enum comparison
-                if event == InvokeParamSeedsDeclaredChildDataEvent::SeedMissing {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
-
-                    *current_state = InvokeParamSeedsDeclaredChildDataState::FailParentOnlyExprLost;
-                    *transition_taken = true;
-                    return true;
-                }
-                // W3C SCXML 5.9.3: Direct enum comparison
-                if event == InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
-
-                    *current_state = InvokeParamSeedsDeclaredChildDataState::FailParentOnlyExprLost;
-                    *transition_taken = true;
-                    return true;
-                }
-                false
-            }
-            InvokeParamSeedsDeclaredChildDataState::Unmatched => {
-                // W3C SCXML 3.12: Event-triggered transitions (document order)
-                // W3C SCXML 5.9.3: Direct enum comparison
-                if event == InvokeParamSeedsDeclaredChildDataEvent::SeedOk {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
-
-                    *current_state = InvokeParamSeedsDeclaredChildDataState::NamelistPhase;
-                    *transition_taken = true;
-                    return true;
-                }
-                // W3C SCXML 5.9.3: Direct enum comparison
-                if event == InvokeParamSeedsDeclaredChildDataEvent::SeedLeaked {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
-
-                    *current_state =
-                        InvokeParamSeedsDeclaredChildDataState::FailUnmatchedParamEnteredTheChild;
-                    *transition_taken = true;
-                    return true;
-                }
-                // W3C SCXML 5.9.3: Direct enum comparison
-                if event == InvokeParamSeedsDeclaredChildDataEvent::SeedMissing {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
-
-                    *current_state = InvokeParamSeedsDeclaredChildDataState::FailDeclaredParamLost;
-                    *transition_taken = true;
-                    return true;
-                }
-                // W3C SCXML 5.9.3: Direct enum comparison
-                if event == InvokeParamSeedsDeclaredChildDataEvent::ErrorExecution {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
-
-                    *current_state = InvokeParamSeedsDeclaredChildDataState::FailDeclaredParamLost;
-                    *transition_taken = true;
-                    return true;
-                }
-                false
-            }
-            _ => false,
-        }
     }
 }

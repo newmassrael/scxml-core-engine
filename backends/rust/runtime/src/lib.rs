@@ -185,10 +185,9 @@ pub const MAX_SCHEDULED_EVENTS: usize = 32;
 /// Maximum number of simultaneously-enabled transitions selected in a single
 /// microstep under `--features=no_std`.
 ///
-/// The no_std bound baked into the [`SceTransitionBuf`] / [`SceIndexBuf`]
-/// aliases (`heapless::Vec<_, MAX_ENABLED_TRANSITIONS>`), which the
-/// parallel-state transition algorithm uses for its conflict-resolution
-/// buffers (`tools/codegen/templates/rust/{process_transition,conflict_resolution}.rs.jinja2`).
+/// The no_std bound baked into the [`SceTransitionBuf`] alias
+/// (`heapless::Vec<_, MAX_ENABLED_TRANSITIONS>`), which Appendix D's selection
+/// in [`helpers::microstep`] collects the enabled set in.
 /// §scxml-D-selectTransitions selects at most one enabled transition per active
 /// atomic state, and the active configuration is itself bounded by
 /// [`crate::helpers::hierarchy::MAX_HIERARCHY_DEPTH`] (16), so the enabled set
@@ -198,15 +197,6 @@ pub const MAX_SCHEDULED_EVENTS: usize = 32;
 /// `--features=no_std` variant. Per-document tunable deferred until an MCU
 /// consumer surfaces a concrete over/under-fit signal (`feedback_planned_not_yagni`).
 pub const MAX_ENABLED_TRANSITIONS: usize = 32;
-
-/// Capacity of the microstep transition-dedup set under `--features=no_std`.
-///
-/// The dedup set is the [`SceDedupSet`] alias (insert via [`dedup_insert`]):
-/// `std::collections::HashSet` under std, `heapless::FnvIndexSet<_,
-/// MAX_MICROSTEP_DEDUP_SLOTS>` under no_std, whose capacity must be a power of
-/// two. 64 is the next power of two above 2× [`MAX_ENABLED_TRANSITIONS`], so
-/// the set never rehashes-to-full for any microstep the buffers above can hold.
-pub const MAX_MICROSTEP_DEDUP_SLOTS: usize = 64;
 
 /// Maximum byte length of an event metadata string under `--features=no_std`.
 ///
@@ -307,8 +297,8 @@ pub fn payload_wire(args: ::core::fmt::Arguments<'_>) -> SceString {
     }
 }
 
-/// Conflict-resolution transition buffer for the W3C Appendix D.2 microstep,
-/// resolving to the natural collection of each runtime profile.
+/// The enabled-transition buffer of the W3C Appendix D microstep, resolving to
+/// the natural collection of each runtime profile.
 ///
 /// - std build: [`std::vec::Vec<T>`] (unbounded, heap-allocated).
 /// - no_std build: `heapless::Vec<T, MAX_ENABLED_TRANSITIONS>` (stack-allocated).
@@ -317,46 +307,21 @@ pub fn payload_wire(args: ::core::fmt::Arguments<'_>) -> SceString {
 /// limit), so it is baked into the alias rather than carried as a generic const
 /// — mirroring [`StateChain`](crate::helpers::hierarchy::StateChain), which
 /// bakes [`crate::helpers::hierarchy::MAX_HIERARCHY_DEPTH`]. Push through
-/// [`BoundedPush::push_bounded`]; clone a slice through [`bounded_clone_slice`].
+/// [`BoundedPush::push_bounded`].
 #[cfg(not(feature = "no_std"))]
 pub type SceTransitionBuf<T> = ::std::vec::Vec<T>;
 /// no_std variant of [`SceTransitionBuf`]. See the std-variant doc-comment.
 #[cfg(feature = "no_std")]
 pub type SceTransitionBuf<T> = ::heapless::Vec<T, MAX_ENABLED_TRANSITIONS>;
 
-/// Index buffer (transition positions) for the Appendix D.2 conflict pass, the
-/// `usize` twin of [`SceTransitionBuf`]. Same per-profile resolution and cap.
-#[cfg(not(feature = "no_std"))]
-pub type SceIndexBuf = ::std::vec::Vec<usize>;
-/// no_std variant of [`SceIndexBuf`]. See the std-variant doc-comment.
-#[cfg(feature = "no_std")]
-pub type SceIndexBuf = ::heapless::Vec<usize, MAX_ENABLED_TRANSITIONS>;
-
-/// Dedup set for transitions bubbling up to a shared ancestor (§scxml-3.13;
-/// test 504), resolving to the natural set type of each runtime profile.
-///
-/// - std build: [`std::collections::HashSet<K>`] (unbounded).
-/// - no_std build: `heapless::FnvIndexSet<K, MAX_MICROSTEP_DEDUP_SLOTS>`
-///   (stack-allocated; capacity is a power of two per heapless's requirement).
-///
-/// Insert through [`dedup_insert`], which absorbs the `bool` vs `Result` API
-/// divergence between the two set types and fails loud on no_std overflow.
-#[cfg(not(feature = "no_std"))]
-pub type SceDedupSet<K> = ::std::collections::HashSet<K>;
-/// no_std variant of [`SceDedupSet`]. See the std-variant doc-comment.
-#[cfg(feature = "no_std")]
-pub type SceDedupSet<K> = ::heapless::FnvIndexSet<K, MAX_MICROSTEP_DEDUP_SLOTS>;
-
 /// Push into a microstep buffer uniformly under std and no_std.
 ///
-/// Method form (not a free function) so generated call sites work through an
-/// `&mut &mut Buf` collector binding via receiver auto-reborrow. Implemented
-/// for both the std `Vec<T>` and the no_std `heapless::Vec<T, N>`, so it covers
-/// the transition-count-bounded conflict-resolution buffers
-/// (`TransitionList` / `IndexList`). Under no_std the push fails loud on
-/// overflow — the capacity ([`MAX_ENABLED_TRANSITIONS`]) is sized to the W3C
-/// Appendix D.2 enabled-set bound, so overflow indicates a capacity to raise,
-/// not a recoverable condition. Mirrors the depth-bounded
+/// Implemented for both the std `Vec<T>` and the no_std `heapless::Vec<T, N>`,
+/// so it covers the transition-count-bounded buffers of
+/// [`helpers::microstep`]. Under no_std the push fails loud on overflow — the
+/// capacity ([`MAX_ENABLED_TRANSITIONS`]) is sized to the W3C Appendix D
+/// enabled-set bound, so overflow indicates a capacity to raise, not a
+/// recoverable condition. Mirrors the depth-bounded
 /// [`crate::helpers::hierarchy::push_chain`] for `StateChain`.
 pub trait BoundedPush<T> {
     /// Append `item`, panicking on a no_std capacity overflow (see trait docs).
@@ -382,60 +347,6 @@ impl<T, const N: usize> BoundedPush<T> for ::heapless::Vec<T, N> {
             );
         }
     }
-}
-
-/// Insert `key` into a [`SceDedupSet`] uniformly under std and no_std, returning
-/// `true` if the key was newly inserted (the §scxml-3.13 first-match-wins
-/// dedup predicate for `retain`).
-///
-/// Absorbs the API divergence between the two set types: `HashSet::insert`
-/// returns `bool`, while `heapless::FnvIndexSet::insert` returns
-/// `Result<bool, K>` (handing back the key when the set is full). Under no_std
-/// an overflow fails loud — the capacity ([`MAX_MICROSTEP_DEDUP_SLOTS`]) is
-/// sized above the Appendix D.2 enabled-set bound, so a full set indicates a
-/// capacity to raise, not a recoverable condition (silently dropping would
-/// violate microstep semantics). Mirrors [`BoundedPush::push_bounded`].
-#[cfg(not(feature = "no_std"))]
-#[inline]
-pub fn dedup_insert<K: Eq + ::core::hash::Hash>(set: &mut SceDedupSet<K>, key: K) -> bool {
-    set.insert(key)
-}
-
-/// no_std variant of [`dedup_insert`]. See the std-variant doc-comment.
-#[cfg(feature = "no_std")]
-#[inline]
-pub fn dedup_insert<K: Eq + ::core::hash::Hash>(set: &mut SceDedupSet<K>, key: K) -> bool {
-    set.insert(key).unwrap_or_else(|_| {
-        panic!(
-            "SCE no_std microstep dedup-set overflow (capacity {}); raise \
-             MAX_MICROSTEP_DEDUP_SLOTS",
-            MAX_MICROSTEP_DEDUP_SLOTS
-        )
-    })
-}
-
-/// Clone a slice into an owned microstep buffer uniformly under std and no_std.
-///
-/// Under std this is `[T]::to_vec`. Under no_std this is
-/// `heapless::Vec::from_slice` with the same fail-loud overflow contract as
-/// [`BoundedPush::push_bounded`]. Used by the Appendix D.2 microstep executor to take an
-/// owned, re-sortable copy of the enabled-transition slice.
-#[cfg(not(feature = "no_std"))]
-#[inline]
-pub fn bounded_clone_slice<T: Clone>(src: &[T]) -> ::std::vec::Vec<T> {
-    src.to_vec()
-}
-
-/// no_std variant of [`bounded_clone_slice`]. See the std-variant doc-comment.
-#[cfg(feature = "no_std")]
-#[inline]
-pub fn bounded_clone_slice<T: Clone, const N: usize>(src: &[T]) -> ::heapless::Vec<T, N> {
-    ::heapless::Vec::from_slice(src).unwrap_or_else(|_| {
-        panic!(
-            "SCE no_std transition buffer overflow (capacity {N}); raise \
-             MAX_ENABLED_TRANSITIONS"
-        )
-    })
 }
 
 /// Stable in-place sort by a comparator, uniform across std and no_std.
@@ -549,6 +460,10 @@ pub use event::{EventMetadata, EventType, EventWithMetadata};
 pub use hal::{Hal, NoOpHal, StdHal};
 pub use helpers::configuration::ConfigurationRejection;
 pub use helpers::event_queue::{EventQueueLike, EventQueueManager};
+/// What a generated policy's transition and target tables are made of — the
+/// types Appendix D's procedures read, named at the crate root because every
+/// generated machine spells them.
+pub use helpers::microstep::{EnabledTransition, EntryTarget, NoHistory};
 #[cfg(not(feature = "no_std"))]
 pub use host_processor::{
     HostInvokeCancel, HostInvokeEvent, HostInvokeRequest, HostInvokeResponse, HostSendRequest,
@@ -572,7 +487,7 @@ pub use log;
 /// below carries the same name for `std` builds, which is why this one is
 /// spelled from the module that defines it rather than added to that list.
 pub use payload_reading::PayloadReading;
-pub use policy::StatePolicy;
+pub use policy::{PolicyDocument, StatePolicy};
 pub use sched_send_id::{ElidedSendId, ScheduledSendIdLike};
 #[cfg(not(feature = "no_std"))]
 pub use scripting::{IScriptEngine, ScriptError, ScriptResult, ScriptValue, SetCurrentEventArgs};

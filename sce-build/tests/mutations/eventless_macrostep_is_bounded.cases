@@ -37,15 +37,17 @@ mutation_oracles backends/rust/tests/tests/eventless_macrostep_is_bounded.rs
 
 mutation_case "the macrostep past the ceiling is taken anyway" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """                sce_log_error!(
-                    "Engine::check_eventless_transitions: macrostep still going after {} microsteps; stopped",
-                    MAX_MACROSTEP_MICROSTEPS
-                );
-                break;""",
-     """                sce_log_error!(
-                    "Engine::check_eventless_transitions: macrostep still going after {} microsteps; stopped",
-                    MAX_MACROSTEP_MICROSTEPS
-                );""")
+     """                if self.macrostep_microsteps_taken == MAX_MACROSTEP_MICROSTEPS {
+                    // The chain is still going one microstep past the budget,
+                    // so this is the case the specification calls a macrostep
+                    // that does not terminate. Refuse the microstep rather than
+                    // take it, and publish the refusal: the configuration left
+                    // behind is not a stable one and only the count says so.
+                    self.refuse_macrostep(self.current_state);
+                    return;
+                }
+                self.macrostep_microsteps_taken += 1;""",
+     """                self.macrostep_microsteps_taken += 1;""")
 PY
 
 # ── The chain that ends on its own ─────────────────────────────────
@@ -60,47 +62,32 @@ PY
 
 mutation_case "a chain that settles at the ceiling is called a runaway" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """            let took_transition = self.process_transition_dispatch(&mut new_state, null_event);
-            if !took_transition {
-                // Nothing is enabled by NULL — the macrostep has
-                // reached the stable configuration the clause describes, and
-                // nothing was refused however long the chain was.
-                break;
+     """            let enabled = self.select_transitions(P::null_event());
+            if !enabled.is_empty() {""",
+     """            let enabled = self.select_transitions(P::null_event());
+            if self.macrostep_microsteps_taken == MAX_MACROSTEP_MICROSTEPS {
+                self.refuse_macrostep(self.current_state);
+                return;
             }
-
-            if self.macrostep_microsteps_taken == MAX_MACROSTEP_MICROSTEPS {""",
-     """            let took_transition = self.process_transition_dispatch(&mut new_state, null_event);
-            if self.macrostep_microsteps_taken == MAX_MACROSTEP_MICROSTEPS {""")
-edit("backends/rust/runtime/src/engine.rs",
-     """            self.macrostep_microsteps_taken += 1;
-
-            self.current_state = new_state;""",
-     """            self.macrostep_microsteps_taken += 1;
-            if !took_transition {
-                break;
-            }
-
-            self.current_state = new_state;""")
+            if !enabled.is_empty() {""")
 PY
 
 # ── The budget is per macrostep, not per caller ────────────────────
 #
-# The drain is reached twice for one external event — once from
-# `execute_transition` and once from §scxml-D-mainEventLoop's own loop. Without
-# the flag each caller gets a fresh budget, so the machine takes twice the
-# microsteps it was allowed and reports two refusals for one macrostep. This is
-# the defect the first run of the Rust channel found, and `spins == 500` with
-# `truncated_macrosteps() == 1` is the pair that holds it.
+# Every host call runs §scxml-D-mainEventLoop again, and a refused chain is
+# still going when the next one arrives. Without the flag the inner loop walks
+# back into it, refuses it again, and reports a second refusal for the one
+# macrostep — so a host polling the count reads a machine that spins every
+# macrostep when it spun once. (The first run of the Rust channel found this
+# defect as a drain reached twice per external event; the loop now has one
+# inner loop, and the flag is what still keeps a call from re-entering it.)
+# `a_second_truncated_macrostep_counts_again` reads `truncated_macrosteps() ==
+# 2` after three calls, which is the assertion that holds it.
 
 mutation_case "each caller of the drain gets its own budget" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """        if self.macrostep_truncated {
-            // This macrostep was already stopped at the ceiling. Re-entering
-            // the drain would hand the same chain a second budget, which is
-            // the runaway the ceiling exists to refuse.
-            return;
-        }""",
-     """        // MUTANT: every caller starts the budget again.""")
+     """        while self.is_running && !self.is_in_final_state() && !self.macrostep_truncated {""",
+     """        while self.is_running && !self.is_in_final_state() {""")
 PY
 
 # ── The budget is per macrostep, not per machine ───────────────────
@@ -147,8 +134,14 @@ PY
 
 mutation_case "the engine names the state the refused microstep would have entered" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """                self.record_truncated_macrostep(old_state);""",
-     """                self.record_truncated_macrostep(new_state);""")
+     """                    // behind is not a stable one and only the count says so.
+                    self.refuse_macrostep(self.current_state);""",
+     """                    // behind is not a stable one and only the count says so.
+                    let entered = match enabled.first().and_then(|t| t.targets.first()) {
+                        Some(EntryTarget::State(target)) => *target,
+                        _ => self.current_state,
+                    };
+                    self.refuse_macrostep(entered);""")
 PY
 
 # ── The lower bound on the accessor ────────────────────────────────

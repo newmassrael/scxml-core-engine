@@ -21,6 +21,7 @@
 
 mutation_tests -p sce-rust-tests --test targetless_transition_completes_macrostep
 mutation_targets backends/rust/runtime/src/engine.rs
+mutation_targets backends/rust/runtime/src/helpers/microstep.rs
 mutation_oracles backends/rust/tests/tests/targetless_transition_completes_macrostep.rs
 
 # ── The macrostep ends at the external event ───────────────────────
@@ -53,46 +54,40 @@ PY
 
 mutation_case "the inner loop drains the internal queue and skips eventless selection" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """            loop {
-                self.check_eventless_transitions();
-                if !self.internal_queue.has_events() {
-                    break;
-                }""",
-     """            loop {
-                if !self.internal_queue.has_events() {
-                    break;
-                }""")
+     """            let enabled = self.select_transitions(P::null_event());
+            if !enabled.is_empty() {""",
+     """            let enabled: TransitionSet<P::State, P::History> = TransitionSet::new();
+            if !enabled.is_empty() {""")
 PY
 
-# The other half: the eventless side runs and the queue is left alone, so a
-# `<raise>` from a targetless transition is answered on some later host call
-# or never. `ping` is the outcome that sees it.
+# The other half: the eventless side runs and the queue is left alone. The
+# `<raise>` a targetless transition queued is never taken — and the outer loop,
+# which will not take an external event while an internal one is queued, then
+# turns forever, so the round's artefact timeout is what reports it.
 
 mutation_case "the inner loop runs eventless selection and skips the internal queue" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """            loop {
-                self.check_eventless_transitions();
-                if !self.internal_queue.has_events() {
-                    break;
-                }""",
-     """            loop {
-                self.check_eventless_transitions();
-                if self.internal_queue.has_events() {
-                    break;
-                }""")
+     """            if !self.internal_queue.has_events() {
+                // The queue emptied, so the chain — refused or merely finished —""",
+     """            if true {
+                // The queue emptied, so the chain — refused or merely finished —""")
 PY
 
 # ── The transition that moves nothing still runs ───────────────────
 #
 # The control's half. A targetless transition whose content never runs looks
 # from the configuration exactly like one the engine handled and like an event
-# it discarded, which is why the fixture counts `quiet` at all.
+# it discarded, which is why the fixture counts `quiet` at all. The microstep
+# is the runtime's transcription now, and it gives a targetless transition no
+# branch of its own; the one way left to skip its content is to single it out
+# where content is run.
 
 mutation_case "a targetless transition runs none of its content" <<'PY'
-edit("backends/rust/runtime/src/engine.rs",
-     """        if !needs_hierarchical {
-            // §scxml-3.4: targetless transition — execute actions only
-            self.execute_transition_actions_dispatch();""",
-     """        if !needs_hierarchical {
-            // §scxml-3.4: targetless transition — execute actions only""")
+edit("backends/rust/runtime/src/helpers/microstep.rs",
+     """        if transition.has_actions {
+            run.execute_transition_content(transition);
+        }""",
+     """        if transition.has_actions && !transition.is_targetless() {
+            run.execute_transition_content(transition);
+        }""")
 PY
