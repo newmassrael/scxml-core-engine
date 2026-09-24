@@ -100,14 +100,27 @@ function(sce_generate_static_integration_test STEM OUTPUT_DIR)
         VERBATIM
     )
 
-    # Step 2: parent generate. Emits `<stem>_sm.{h,inl}` plus the
-    # synth-invoke `<stem>__sce_synth_invoke__<id>.scxml` siblings and
-    # any `<stem>_hybrid<N>.scxml` stub. `--input-root` pins the §6.2.6
-    # source-hash to the canonical fixture dir so the build-time output
-    # advertises the same hash the committed-tree backends embed.
+    # Step 2: parent generate. Emits `<stem>_sm.{h,inl}`, the synth-invoke
+    # `<stem>__sce_synth_invoke__<id>.scxml` siblings with each one's
+    # `_sm.{h,inl}` — `generate` emits an inline child's machine with its
+    # parent, under the parent's stem, so no `--as-child` pass per child is
+    # needed — and any `<stem>_hybrid<N>.scxml` stub. `--input-root` pins
+    # the §6.2.6 source-hash to the canonical fixture dir so the build-time
+    # output advertises the same hash the committed-tree backends embed.
+    #
+    # ⚠ Every file the parent's depfile names has to be an output of this
+    # command. The depfile names the children's `_sm.{h,inl}`, and while a
+    # separate `--as-child` command declared them instead, ninja 1.11
+    # refused every rebuild of the directory: "depfile mentions ... as an
+    # output, but no such output was declared" (pc3, 2026-09-24). A fresh
+    # build never reads the depfile back, which is why CI never saw it.
     set(_CHILD_SCXMLS "")
+    set(_CHILD_MACHINES "")
     foreach(_CHILD ${_INT_SYNTH_INVOKE_CHILDREN})
         list(APPEND _CHILD_SCXMLS "${OUTPUT_DIR}/${STEM}__sce_synth_invoke__${_CHILD}.scxml")
+        list(APPEND _CHILD_MACHINES
+            "${OUTPUT_DIR}/${STEM}__sce_synth_invoke__${_CHILD}_sm.h"
+            "${OUTPUT_DIR}/${STEM}__sce_synth_invoke__${_CHILD}_sm.inl")
     endforeach()
     foreach(_HYBRID ${_INT_HYBRID_INVOKE_CHILDREN})
         list(APPEND _CHILD_SCXMLS "${OUTPUT_DIR}/${_HYBRID}.scxml")
@@ -138,47 +151,14 @@ function(sce_generate_static_integration_test STEM OUTPUT_DIR)
         ${_PARENT_FMT_CMD}
         DEPENDS "${STAGED_SCXML}" "${SCE_CODEGEN}"
         DEPFILE "${_PARENT_DEPFILE}"
-        BYPRODUCTS "${PARENT_INL}" ${_CHILD_SCXMLS}
+        BYPRODUCTS "${PARENT_INL}" ${_CHILD_SCXMLS} ${_CHILD_MACHINES}
         COMMENT "Generating C++ integration parent: ${STEM}_sm.h"
         VERBATIM
     )
 
-    # Step 3: per-child generate. `--as-child --parent-stem` rewrites
-    # each child's class namespace so the parent's emitted reference
-    # to the child `StateMachine` class resolves in the shared
-    # generated tree (mirrors `KotlinBackend::process_child` /
-    # `GoBackend::process_child`).
     set(_ALL_HEADERS "${PARENT_HEADER}")
     foreach(_CHILD ${_INT_SYNTH_INVOKE_CHILDREN})
-        set(_CHILD_SCXML "${OUTPUT_DIR}/${STEM}__sce_synth_invoke__${_CHILD}.scxml")
-        set(_CHILD_HEADER "${OUTPUT_DIR}/${STEM}__sce_synth_invoke__${_CHILD}_sm.h")
-        set(_CHILD_INL "${OUTPUT_DIR}/${STEM}__sce_synth_invoke__${_CHILD}_sm.inl")
-
-        if(SCE_CLANG_FORMAT_FOUND)
-            set(_CHILD_FMT_CMD
-                COMMAND "${SCE_CLANG_FORMAT}" "-style=file:${SCE_CLANG_FORMAT_STYLE}"
-                        -i "${_CHILD_HEADER}" "${_CHILD_INL}")
-        else()
-            set(_CHILD_FMT_CMD "")
-        endif()
-
-        set(_CHILD_DEPFILE "${_CHILD_HEADER}.d")
-
-        add_custom_command(
-            OUTPUT "${_CHILD_HEADER}"
-            COMMAND "${SCE_CODEGEN}" generate "${_CHILD_SCXML}"
-                    --as-child --parent-stem "${STEM}"
-                    -l cpp -o "${OUTPUT_DIR}"
-                    --input-root "${FIXTURE_ROOT}"
-                    --write-deps "${_CHILD_DEPFILE}"
-            ${_CHILD_FMT_CMD}
-            DEPENDS "${PARENT_HEADER}" "${SCE_CODEGEN}"
-            DEPFILE "${_CHILD_DEPFILE}"
-            BYPRODUCTS "${_CHILD_INL}"
-            COMMENT "Generating C++ integration child: ${STEM}__sce_synth_invoke__${_CHILD}_sm.h"
-            VERBATIM
-        )
-        list(APPEND _ALL_HEADERS "${_CHILD_HEADER}")
+        list(APPEND _ALL_HEADERS "${OUTPUT_DIR}/${STEM}__sce_synth_invoke__${_CHILD}_sm.h")
     endforeach()
 
     # Hybrid stubs are generated without `--parent-stem`: the parent
@@ -323,9 +303,16 @@ function(sce_generate_static_integration_c_test STEM OUTPUT_DIR)
         VERBATIM
     )
 
+    # The parent emits each synth-invoke child's `_sm.{h,c}` with its own —
+    # see the cpp generator above for why they are declared here and not
+    # by a command of their own.
     set(_CHILD_SCXMLS "")
+    set(_CHILD_MACHINES "")
     foreach(_CHILD ${_INT_SYNTH_INVOKE_CHILDREN})
         list(APPEND _CHILD_SCXMLS "${OUTPUT_DIR}/${STEM}__sce_synth_invoke__${_CHILD}.scxml")
+        list(APPEND _CHILD_MACHINES
+            "${OUTPUT_DIR}/${STEM}__sce_synth_invoke__${_CHILD}_sm.h"
+            "${OUTPUT_DIR}/${STEM}__sce_synth_invoke__${_CHILD}_sm.c")
     endforeach()
 
     # See the cpp generator above for why DEPFILE is load-bearing: the C11
@@ -342,7 +329,7 @@ function(sce_generate_static_integration_c_test STEM OUTPUT_DIR)
                 --write-deps "${_PARENT_DEPFILE}"
         DEPENDS "${STAGED_SCXML}" "${SCE_CODEGEN}"
         DEPFILE "${_PARENT_DEPFILE}"
-        BYPRODUCTS "${PARENT_HEADER}" ${_CHILD_SCXMLS}
+        BYPRODUCTS "${PARENT_HEADER}" ${_CHILD_SCXMLS} ${_CHILD_MACHINES}
         COMMENT "Generating C11 integration parent: ${STEM}_sm.c"
         VERBATIM
     )
@@ -350,26 +337,8 @@ function(sce_generate_static_integration_c_test STEM OUTPUT_DIR)
     set(_ALL_SOURCES "${PARENT_SOURCE}")
     set(_ALL_HEADERS "${PARENT_HEADER}")
     foreach(_CHILD ${_INT_SYNTH_INVOKE_CHILDREN})
-        set(_CHILD_SCXML "${OUTPUT_DIR}/${STEM}__sce_synth_invoke__${_CHILD}.scxml")
-        set(_CHILD_HEADER "${OUTPUT_DIR}/${STEM}__sce_synth_invoke__${_CHILD}_sm.h")
-        set(_CHILD_SOURCE "${OUTPUT_DIR}/${STEM}__sce_synth_invoke__${_CHILD}_sm.c")
-
-        set(_CHILD_DEPFILE "${_CHILD_SOURCE}.d")
-
-        add_custom_command(
-            OUTPUT "${_CHILD_SOURCE}" "${_CHILD_HEADER}"
-            COMMAND "${SCE_CODEGEN}" generate "${_CHILD_SCXML}"
-                    --as-child --parent-stem "${STEM}"
-                    -l c11 -o "${OUTPUT_DIR}"
-                    --input-root "${FIXTURE_ROOT}"
-                    --write-deps "${_CHILD_DEPFILE}"
-            DEPENDS "${PARENT_SOURCE}" "${SCE_CODEGEN}"
-            DEPFILE "${_CHILD_DEPFILE}"
-            COMMENT "Generating C11 integration child: ${STEM}__sce_synth_invoke__${_CHILD}_sm.{h,c}"
-            VERBATIM
-        )
-        list(APPEND _ALL_SOURCES "${_CHILD_SOURCE}")
-        list(APPEND _ALL_HEADERS "${_CHILD_HEADER}")
+        list(APPEND _ALL_SOURCES "${OUTPUT_DIR}/${STEM}__sce_synth_invoke__${_CHILD}_sm.c")
+        list(APPEND _ALL_HEADERS "${OUTPUT_DIR}/${STEM}__sce_synth_invoke__${_CHILD}_sm.h")
     endforeach()
 
     # Hybrid stubs, without `--parent-stem` for the reason the cpp
