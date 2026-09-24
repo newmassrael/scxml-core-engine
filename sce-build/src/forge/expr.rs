@@ -4103,8 +4103,13 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 });
             }
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);
-            let l_raw = emit_kotlin(left, operand_ty)?;
-            let r_raw = emit_kotlin(right, operand_ty)?;
+            let equality = matches!(op, BinOp::StrictEq | BinOp::StrictNeq);
+            let mut l_raw = emit_kotlin(left, operand_ty)?;
+            let mut r_raw = emit_kotlin(right, operand_ty)?;
+            if equality {
+                l_raw = kotlin_equality_operand(l_raw, left, operand_ty);
+                r_raw = kotlin_equality_operand(r_raw, right, operand_ty);
+            }
             let l = if child_needs_parens(left, *op, true, kotlin_precedence) {
                 format!("({l_raw})")
             } else {
@@ -4249,6 +4254,41 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             )
         }
     })
+}
+
+/// Spell an untyped integer operand of `==`/`!=` in the operand type when
+/// Kotlin would not.
+///
+/// `kotlin_coerce` leaves an untyped literal bare in a signed context and
+/// lets Kotlin adapt it to the type it flows into — which an assignment, an
+/// argument, a return and `<` (`Long.compareTo(Int)` exists) all supply.
+/// Equality supplies none: `week % interval == 0` with `week: Long` is
+/// `Operator '==' cannot be applied to 'Long' and 'Int'`, and a `Byte` or
+/// `Short` operand fails the same way. `Int` needs nothing, and unsigned
+/// operands already carry their constructor (`kotlin_coerce`'s
+/// `.toUInt()` arm).
+fn kotlin_equality_operand(raw: String, node: &TypedExpr, operand_ty: InferredType) -> String {
+    if node.ty != InferredType::UntypedInt {
+        return raw;
+    }
+    match operand_ty {
+        InferredType::Int {
+            signed: true,
+            bits: 64,
+        } => match &node.kind {
+            ExprKind::NumberLit(text) if is_decimal_integer_literal(text) => format!("{raw}L"),
+            _ => wrap_dotcall(raw, node, "toLong"),
+        },
+        InferredType::Int {
+            signed: true,
+            bits: 16,
+        } => wrap_dotcall(raw, node, "toShort"),
+        InferredType::Int {
+            signed: true,
+            bits: 8,
+        } => wrap_dotcall(raw, node, "toByte"),
+        _ => raw,
+    }
 }
 
 fn kotlin_binop(op: BinOp) -> &'static str {
@@ -6232,6 +6272,36 @@ mod tests {
     #[test]
     fn kotlin_unsigned_shift() {
         assert_eq!(tp("x >>> 4", ExprTarget::Kotlin), "x ushr 4");
+    }
+
+    /// `==` gives a Kotlin literal no type to adapt to, so an untyped operand
+    /// compared with a `Long`/`Short`/`Byte` is spelled in that type —
+    /// `Long == Int` does not compile. `Int` and ordering comparisons, which
+    /// Kotlin already accepts, are left as written.
+    #[test]
+    fn kotlin_equality_spells_the_literal_in_the_operand_type() {
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("week", int(true, 64));
+        ctx.insert_var("s", int(true, 16));
+        ctx.insert_var("b", int(true, 8));
+        ctx.insert_var("n", int(true, 32));
+        let kt = |src: &str| {
+            transpile_typed(
+                src,
+                ExprTarget::Kotlin,
+                &ctx,
+                &HashMap::new(),
+                InferredType::Unknown,
+            )
+            .expect("lowers")
+        };
+        assert_eq!(kt("week % 7 === 0"), "week % 7 == 0L");
+        assert_eq!(kt("0 !== week"), "0L != week");
+        assert_eq!(kt("week === 1 + 2"), "week == (1 + 2).toLong()");
+        assert_eq!(kt("s === 3"), "s == 3.toShort()");
+        assert_eq!(kt("b === 3"), "b == 3.toByte()");
+        assert_eq!(kt("n === 3"), "n == 3");
+        assert_eq!(kt("week < 3"), "week < 3");
     }
 
     #[test]
