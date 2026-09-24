@@ -986,11 +986,13 @@ add_executable(integration_tests
     # Interpreter only, and inline documents rather than fixture stems: each
     # pins a place where this engine's main event loop used to differ from
     # Appendix D — the `_event` a macrostep leaves bound, the external queue a
-    # host call leaves behind, an event handed over mid-macrostep — and the
-    # generated engines never had the sites.
+    # host call leaves behind, an event handed over mid-macrostep, the
+    # done.invoke a cancel threw away once events reached the loop with their
+    # origin — and the generated engines never had the sites.
     integration/EventBindingAcrossAMacrostepTest.cpp
     integration/HostCallTakesTheExternalQueueTest.cpp
     integration/ReentrantDeliveryWaitsItsTurnTest.cpp
+    integration/DoneInvokeOutlivesTheInvokingStateTest.cpp
     integration/UnseenEventIsReportedTest.cpp
     integration/UnseenEventIsReportedAotTest.cpp
     integration/UnhandledErrorIsObservableTest.cpp
