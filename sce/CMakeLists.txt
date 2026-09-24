@@ -540,16 +540,6 @@ add_library(sce_runtime
     src/events/EventTargetFactoryImpl.cpp
     src/events/PlatformEventRaiserHelper.cpp
 
-    # Concurrent states implementation
-    src/states/ConcurrentStateNode.cpp
-    src/states/ConcurrentRegion.cpp
-    src/states/ParallelRegionOrchestrator.cpp
-    src/states/ConcurrentEventTypes.cpp
-    src/states/ConcurrentEventBroadcaster.cpp
-    src/states/ConcurrentCompletionMonitor.cpp
-    src/states/ExternalTransitionHandler.cpp
-    src/states/StateExitExecutor.cpp
-
     # Parsing implementation
     src/parsing/StateNodeParser.cpp
     src/parsing/TransitionParser.cpp
@@ -631,7 +621,6 @@ target_include_directories(sce_runtime
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/parsing>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/actions>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/events>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/states>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/dispatchers>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/model>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/runtime>
@@ -639,7 +628,6 @@ target_include_directories(sce_runtime
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/parsing>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/actions>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/events>
-        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/states>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/dispatchers>
     PRIVATE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/backends>
@@ -695,7 +683,7 @@ if(EMSCRIPTEN)
     target_link_options(sce_runtime PRIVATE
         -pthread
         -sUSE_PTHREADS=1
-        -sPTHREAD_POOL_SIZE=15         # Worker thread pool (for ConcurrentEventBroadcaster + EventDispatcherImpl)
+        -sPTHREAD_POOL_SIZE=15         # Worker thread pool (for EventDispatcherImpl and the scheduler)
         -sPTHREAD_POOL_SIZE_STRICT=0   # Allow on-demand thread creation (Emscripten Issue #21959)
         -sFETCH                         # Enable Fetch API for HTTP requests (EmscriptenFetchClient)
         -sEXIT_RUNTIME=0                # Allow async operations after main() returns

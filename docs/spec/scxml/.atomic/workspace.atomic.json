@@ -300,36 +300,6 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "sce/include/runtime/StateHierarchyManager.h",
-          "symbol": "enterStateCallback_",
-          "kind": "references"
-        },
-        {
-          "file": "sce/include/runtime/StateHierarchyManager.h",
-          "symbol": "historyManager_",
-          "kind": "references"
-        },
-        {
-          "file": "sce/include/runtime/StateHierarchyManager.h",
-          "symbol": "setEnterStateCallback",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/runtime/StateHierarchyManager.h",
-          "symbol": "setHistoryManager",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateHierarchyManager.cpp",
-          "symbol": "StateHierarchyManager::enterState",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::enterInitialState",
-          "kind": "implements"
-        },
-        {
           "file": "sce/src/runtime/HistoryStateAutoRegistrar.cpp",
           "symbol": "HistoryStateAutoRegistrar::extractHistoryStatesFromModel",
           "kind": "implements"
@@ -347,11 +317,6 @@
         {
           "file": "sce/include/core/HistoryHelper.h",
           "symbol": "filterDeepHistory",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/core/HistoryHelper.h",
-          "symbol": "getAncestorsToEnter",
           "kind": "implements"
         },
         {
@@ -405,11 +370,6 @@
         {
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "handle_hierarchical_transition",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/states/ConcurrentStateNode.cpp",
-          "symbol": "ConcurrentStateNode::addChild",
           "kind": "implements"
         },
         {
@@ -882,11 +842,6 @@
         {
           "file": "sce/include/core/EventMatchingHelper.h",
           "symbol": "matchesEventDescriptor",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::processEvent",
           "kind": "implements"
         },
         {
@@ -1439,34 +1394,9 @@
           "kind": "references"
         },
         {
-          "file": "sce/include/runtime/StateHierarchyManager.h",
-          "symbol": "initialTransitionCallback_",
-          "kind": "references"
-        },
-        {
-          "file": "sce/include/runtime/StateHierarchyManager.h",
-          "symbol": "setInitialTransitionCallback",
-          "kind": "references"
-        },
-        {
           "file": "sce/include/runtime/StateMachine.h",
           "symbol": "StateMachine",
           "kind": "implements"
-        },
-        {
-          "file": "sce/include/states/ConcurrentStateTypes.h",
-          "symbol": "hasActions",
-          "kind": "references"
-        },
-        {
-          "file": "sce/include/states/ConcurrentStateTypes.h",
-          "symbol": "isExternal",
-          "kind": "references"
-        },
-        {
-          "file": "sce/include/states/ConcurrentStateTypes.h",
-          "symbol": "isInternal",
-          "kind": "references"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
@@ -1481,16 +1411,6 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "executeTransition",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/ActionExecutorImpl.cpp",
-          "symbol": "ActionExecutorImpl::setImmediateMode",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/ActionExecutorImpl.h",
-          "symbol": "setImmediateMode",
           "kind": "implements"
         },
         {
@@ -1511,51 +1431,6 @@
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
           "symbol": "executeEventCallback",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateHierarchyManager.cpp",
-          "symbol": "StateHierarchyManager::enterState",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateHierarchyManager.cpp",
-          "symbol": "StateHierarchyManager::exitState",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::deactivate",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::exitAllStates",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::processEvent",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::setCurrentState",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/states/ConcurrentStateNode.cpp",
-          "symbol": "ConcurrentStateNode::deactivateAllRegions",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/states/ConcurrentStateNode.cpp",
-          "symbol": "ConcurrentStateNode::exitParallelState",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/states/StateExitExecutor.cpp",
-          "symbol": "StateExitExecutor::executeActionNodes",
           "kind": "implements"
         },
         {
@@ -2122,6 +1997,11 @@
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::refuseUnseen",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/parsing/TransitionParser.cpp",
+          "symbol": "SCE::TransitionParser::parseTransitionNode",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -2418,41 +2298,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/include/runtime/StateHierarchyManager.h",
-          "symbol": "enterStateWithAncestors",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/runtime/StateHierarchyManager.h",
-          "symbol": "updateParallelRegionCurrentStates",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/states/ConcurrentRegion.h",
-          "symbol": "desiredInitialChild_",
-          "kind": "references"
-        },
-        {
-          "file": "sce/include/states/ConcurrentRegion.h",
-          "symbol": "setCurrentState",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/states/ConcurrentRegion.h",
-          "symbol": "setDesiredInitialChild",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/states/IConcurrentRegion.h",
-          "symbol": "setCurrentState",
-          "kind": "references"
-        },
-        {
-          "file": "sce/include/states/IConcurrentRegion.h",
-          "symbol": "setDesiredInitialChild",
-          "kind": "implements"
-        },
-        {
           "file": "sce/src/model/SCXMLModel.cpp",
           "symbol": "SCE::SCXMLModel::setInitialState",
           "kind": "implements"
@@ -2475,31 +2320,6 @@
         {
           "file": "sce/src/parsing/StateNodeParser.cpp",
           "symbol": "SCE::StateNodeParser::parseInitialElement",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateHierarchyManager.cpp",
-          "symbol": "StateHierarchyManager::enterState",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateHierarchyManager.cpp",
-          "symbol": "StateHierarchyManager::enterStateWithAncestors",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateHierarchyManager.cpp",
-          "symbol": "StateHierarchyManager::updateParallelRegionCurrentStates",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::enterInitialState",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::setCurrentState",
           "kind": "implements"
         },
         {
@@ -2819,36 +2639,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/include/states/ConcurrentRegion.h",
-          "symbol": "doneStateCallback_",
-          "kind": "references"
-        },
-        {
-          "file": "sce/include/states/ConcurrentRegion.h",
-          "symbol": "setDoneStateCallback",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/states/ConcurrentStateNode.h",
-          "symbol": "generateDoneStateEventIfComplete",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/states/ConcurrentStateNode.h",
-          "symbol": "hasNotifiedCompletion",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/states/ConcurrentStateTypes.h",
-          "symbol": "externalTransitionTarget",
-          "kind": "references"
-        },
-        {
-          "file": "sce/include/states/IConcurrentRegion.h",
-          "symbol": "setDoneStateCallback",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "checkEventlessTransitions",
           "kind": "implements"
@@ -2859,38 +2649,8 @@
           "kind": "implements"
         },
         {
-          "file": "sce/src/runtime/StateHierarchyManager.cpp",
-          "symbol": "StateHierarchyManager::enterStateWithAncestors",
-          "kind": "implements"
-        },
-        {
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::isInFinalState",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::determineIfInFinalState",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::setCurrentState",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/states/ConcurrentStateNode.cpp",
-          "symbol": "ConcurrentStateNode::generateDoneStateEventIfComplete",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/states/ConcurrentStateNode.cpp",
-          "symbol": "ConcurrentStateNode::processEventInAllRegions",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/states/ExternalTransitionHandler.cpp",
-          "symbol": "ExternalTransitionHandler::registerParallelState",
           "kind": "implements"
         },
         {
@@ -2913,16 +2673,6 @@
         {
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "StatePolicy",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/states/ConcurrentStateNode.cpp",
-          "symbol": "ConcurrentStateNode::addChild",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/states/ConcurrentStateNode.cpp",
-          "symbol": "ConcurrentStateNode::areAllRegionsInFinalState",
           "kind": "implements"
         },
         {
@@ -3057,6 +2807,11 @@
           "file": "sce/include/core/EntrySetHelper.h",
           "symbol": "addRegionDefaults",
           "kind": "implements"
+        },
+        {
+          "file": "sce/src/common/NodeFactory.cpp",
+          "symbol": "SCE::NodeFactory::createStateNode",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -3349,23 +3104,8 @@
           "kind": "implements"
         },
         {
-          "file": "sce/include/states/ConcurrentStateNode.h",
-          "symbol": "generateDoneStateEventIfComplete",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/states/ConcurrentStateNode.h",
-          "symbol": "hasNotifiedCompletion",
-          "kind": "implements"
-        },
-        {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
           "symbol": "SCXMLInvokeHandler::startInvokeInternal",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/states/ConcurrentStateNode.cpp",
-          "symbol": "ConcurrentStateNode::generateDoneStateEventIfComplete",
           "kind": "implements"
         },
         {
@@ -3576,16 +3316,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/include/states/ConcurrentStateNode.h",
-          "symbol": "addEntryActionBlock",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/states/ConcurrentStateNode.h",
-          "symbol": "entryActionBlocks_",
-          "kind": "references"
-        },
-        {
           "file": "sce/src/model/StateNode.cpp",
           "symbol": "SCE::StateNode::addEntryActionBlock",
           "kind": "implements"
@@ -3599,16 +3329,6 @@
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::executeOnEntryActions",
           "kind": "implements"
-        },
-        {
-          "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::enterInitialState",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/states/ConcurrentStateNode.cpp",
-          "symbol": "ConcurrentStateNode::addEntryActionBlock",
-          "kind": "references"
         },
         {
           "file": "sce-build/src/forge/event_schema_check.rs",
@@ -3782,11 +3502,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/src/states/StateExitExecutor.cpp",
-          "symbol": "StateExitExecutor::executeActionNodes",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "executeOnExit",
           "kind": "implements"
@@ -3802,24 +3517,9 @@
           "kind": "implements"
         },
         {
-          "file": "sce/include/states/ConcurrentStateNode.h",
-          "symbol": "addExitActionBlock",
-          "kind": "implements"
-        },
-        {
           "file": "sce/src/model/StateNode.cpp",
           "symbol": "SCE::StateNode::addExitActionBlock",
           "kind": "implements"
-        },
-        {
-          "file": "sce/src/states/ConcurrentStateNode.cpp",
-          "symbol": "ConcurrentStateNode::addExitActionBlock",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/states/ConcurrentStateNode.h",
-          "symbol": "exitActionBlocks_",
-          "kind": "references"
         },
         {
           "file": "sce/include/model/StateNode.h",
@@ -9318,16 +9018,6 @@
           "kind": "references"
         },
         {
-          "file": "sce/include/runtime/StateHierarchyManager.h",
-          "symbol": "invokeDeferCallback_",
-          "kind": "references"
-        },
-        {
-          "file": "sce/include/runtime/StateHierarchyManager.h",
-          "symbol": "setInvokeDeferCallback",
-          "kind": "references"
-        },
-        {
           "file": "sce/include/runtime/StateMachine.h",
           "symbol": "StateMachine",
           "kind": "implements"
@@ -9350,21 +9040,6 @@
         {
           "file": "sce/include/scripting/SessionRegistry.h",
           "symbol": "parentChildMappings_",
-          "kind": "references"
-        },
-        {
-          "file": "sce/include/states/ConcurrentRegion.h",
-          "symbol": "invokeCallback_",
-          "kind": "references"
-        },
-        {
-          "file": "sce/include/states/ConcurrentRegion.h",
-          "symbol": "setInvokeCallback",
-          "kind": "references"
-        },
-        {
-          "file": "sce/include/states/IConcurrentRegion.h",
-          "symbol": "setInvokeCallback",
           "kind": "references"
         },
         {
@@ -9518,16 +9193,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/src/runtime/StateHierarchyManager.cpp",
-          "symbol": "StateHierarchyManager::enterState",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateHierarchyManager.cpp",
-          "symbol": "StateHierarchyManager::enterStateWithAncestors",
-          "kind": "implements"
-        },
-        {
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::deferInvokeExecution",
           "kind": "implements"
@@ -9560,11 +9225,6 @@
         {
           "file": "sce/src/scripting/SessionRegistry.cpp",
           "symbol": "SessionRegistry::getParentSessionId",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::enterInitialState",
           "kind": "implements"
         },
         {
@@ -13834,12 +13494,6 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-D-Algorithm",
       "decision_status": "active",
-      "bindings": [
-        {
-          "file": "sce/include/runtime/StateMachine.h",
-          "kind": "references"
-        }
-      ],
       "coverage_expectation": "informational",
       "normative_excerpt": {
         "excerpt": {
@@ -14006,11 +13660,6 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "sce/include/core/HistoryHelper.h",
-          "symbol": "getAncestorsToEnter",
-          "kind": "implements"
-        },
-        {
           "file": "backends/go/runtime/engine.go",
           "symbol": "executeEntryChain",
           "kind": "implements"
@@ -14018,21 +13667,6 @@
         {
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "handle_hierarchical_transition",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateHierarchyManager.cpp",
-          "symbol": "StateHierarchyManager::enterState",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::enterInitialState",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/states/ConcurrentStateNode.cpp",
-          "symbol": "ConcurrentStateNode::activateAllRegions",
           "kind": "implements"
         },
         {
@@ -14177,11 +13811,6 @@
         {
           "file": "sce/include/core/ConflictResolutionHelper.h",
           "symbol": "removeConflictingTransitions",
-          "kind": "references"
-        },
-        {
-          "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::processEvent",
           "kind": "references"
         },
         {
@@ -14346,11 +13975,6 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "sce/src/runtime/StateHierarchyManager.cpp",
-          "symbol": "StateHierarchyManager::exitHierarchicalState",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/core/MicrostepAlgorithms.h",
           "symbol": "exitStates",
           "kind": "implements"
@@ -14404,16 +14028,6 @@
           "kind": "references"
         },
         {
-          "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::processEvent",
-          "kind": "references"
-        },
-        {
-          "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::computeTransitionDomain",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/core/ParallelTransitionHelper.h",
           "symbol": "getTransitionDomain",
           "kind": "references"
@@ -14445,11 +14059,6 @@
           "file": "sce/src/parsing/StateNodeParser.cpp",
           "symbol": "SCE::StateNodeParser::parseChildStates",
           "kind": "references"
-        },
-        {
-          "file": "sce/src/states/ConcurrentStateNode.cpp",
-          "symbol": "ConcurrentStateNode::addChild",
-          "kind": "implements"
         },
         {
           "file": "sce-build/src/model.rs",
@@ -14566,16 +14175,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/include/states/ConcurrentRegion.h",
-          "symbol": "computeTransitionDomain",
-          "kind": "references"
-        },
-        {
-          "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::computeTransitionDomain",
-          "kind": "implements"
-        },
-        {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "externalTransitionDomain",
           "kind": "implements"
@@ -14669,11 +14268,6 @@
           "file": "sce/include/core/HierarchicalStateHelper.h",
           "symbol": "HierarchicalAlgorithms",
           "kind": "implements"
-        },
-        {
-          "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "containsProperDescendant",
-          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14698,16 +14292,6 @@
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
       "bindings": [
-        {
-          "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::determineIfInFinalState",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/states/ConcurrentStateNode.cpp",
-          "symbol": "ConcurrentStateNode::areAllRegionsInFinalState",
-          "kind": "implements"
-        },
         {
           "file": "sce/include/core/ParallelCompletionHelper.h",
           "symbol": "isInFinalState",
@@ -14951,21 +14535,6 @@
           "kind": "references"
         },
         {
-          "file": "sce/include/states/ConcurrentStateTypes.h",
-          "symbol": "TransitionDescriptorString",
-          "kind": "references"
-        },
-        {
-          "file": "sce/include/states/ConcurrentStateTypes.h",
-          "symbol": "enabledTransitions",
-          "kind": "references"
-        },
-        {
-          "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::processEvent",
-          "kind": "implements"
-        },
-        {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "processOneEvent",
           "kind": "implements"
@@ -14984,6 +14553,11 @@
           "file": "sce/include/core/MicrostepAlgorithms.h",
           "symbol": "removeConflictingTransitions",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/runtime/TransitionDescriptorString.h",
+          "symbol": "TransitionDescriptorString",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -17513,6 +17087,534 @@
       "target_kind": "section",
       "target_id": "scxml-3.13",
       "reason": "Stage D2, the Interpreter onto the shared Appendix D core: its 3.13 citation described the budget the raiser no longer spends"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.10",
+      "reason": "Stage D3, the Interpreter region runtime removed: StateHierarchyManager keeps only the configuration now; its own entry, exit, history and region paths are gone, and the shared microstep does that work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.10",
+      "reason": "Stage D3, the Interpreter region runtime removed: StateHierarchyManager keeps only the configuration now; its own entry, exit, history and region paths are gone, and the shared microstep does that work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.10",
+      "reason": "Stage D3, the Interpreter region runtime removed: StateHierarchyManager keeps only the configuration now; its own entry, exit, history and region paths are gone, and the shared microstep does that work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.10",
+      "reason": "Stage D3, the Interpreter region runtime removed: StateHierarchyManager keeps only the configuration now; its own entry, exit, history and region paths are gone, and the shared microstep does that work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.10",
+      "reason": "Stage D3, the Interpreter region runtime removed: StateHierarchyManager keeps only the configuration now; its own entry, exit, history and region paths are gone, and the shared microstep does that work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.10",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentRegion.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.10",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentStateNode.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12.1",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentRegion.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D3, the Interpreter region runtime removed: StateHierarchyManager keeps only the configuration now; its own entry, exit, history and region paths are gone, and the shared microstep does that work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D3, the Interpreter region runtime removed: StateHierarchyManager keeps only the configuration now; its own entry, exit, history and region paths are gone, and the shared microstep does that work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/include/states/ConcurrentStateTypes.h was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/include/states/ConcurrentStateTypes.h was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/include/states/ConcurrentStateTypes.h was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D3, the Interpreter region runtime removed: StateHierarchyManager keeps only the configuration now; its own entry, exit, history and region paths are gone, and the shared microstep does that work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D3, the Interpreter region runtime removed: StateHierarchyManager keeps only the configuration now; its own entry, exit, history and region paths are gone, and the shared microstep does that work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentRegion.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentRegion.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentRegion.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentRegion.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentStateNode.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentStateNode.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/StateExitExecutor.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage D3, the Interpreter region runtime removed: StateHierarchyManager keeps only the configuration now; its own entry, exit, history and region paths are gone, and the shared microstep does that work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage D3, the Interpreter region runtime removed: StateHierarchyManager keeps only the configuration now; its own entry, exit, history and region paths are gone, and the shared microstep does that work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/include/states/ConcurrentRegion.h was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/include/states/ConcurrentRegion.h was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/include/states/ConcurrentRegion.h was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/include/states/IConcurrentRegion.h was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/include/states/IConcurrentRegion.h was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage D3, the Interpreter region runtime removed: StateHierarchyManager keeps only the configuration now; its own entry, exit, history and region paths are gone, and the shared microstep does that work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage D3, the Interpreter region runtime removed: StateHierarchyManager keeps only the configuration now; its own entry, exit, history and region paths are gone, and the shared microstep does that work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage D3, the Interpreter region runtime removed: StateHierarchyManager keeps only the configuration now; its own entry, exit, history and region paths are gone, and the shared microstep does that work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentRegion.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentRegion.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/include/states/ConcurrentRegion.h was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/include/states/ConcurrentRegion.h was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/include/states/ConcurrentStateNode.h was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/include/states/ConcurrentStateNode.h was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/include/states/ConcurrentStateTypes.h was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/include/states/IConcurrentRegion.h was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "Stage D3, the Interpreter region runtime removed: StateHierarchyManager keeps only the configuration now; its own entry, exit, history and region paths are gone, and the shared microstep does that work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentRegion.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentRegion.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentStateNode.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentStateNode.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ExternalTransitionHandler.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentStateNode.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentStateNode.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.7",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/include/states/ConcurrentStateNode.h was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.7",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/include/states/ConcurrentStateNode.h was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.7",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentStateNode.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.8",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/include/states/ConcurrentStateNode.h was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.8",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/include/states/ConcurrentStateNode.h was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.8",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentRegion.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.8",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentStateNode.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.9",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/StateExitExecutor.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.9",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/include/states/ConcurrentStateNode.h was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.9",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentStateNode.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.9",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/include/states/ConcurrentStateNode.h was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "Stage D3, the Interpreter region runtime removed: StateHierarchyManager keeps only the configuration now; its own entry, exit, history and region paths are gone, and the shared microstep does that work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "Stage D3, the Interpreter region runtime removed: StateHierarchyManager keeps only the configuration now; its own entry, exit, history and region paths are gone, and the shared microstep does that work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/include/states/ConcurrentRegion.h was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/include/states/ConcurrentRegion.h was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/include/states/IConcurrentRegion.h was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "Stage D3, the Interpreter region runtime removed: StateHierarchyManager keeps only the configuration now; its own entry, exit, history and region paths are gone, and the shared microstep does that work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "Stage D3, the Interpreter region runtime removed: StateHierarchyManager keeps only the configuration now; its own entry, exit, history and region paths are gone, and the shared microstep does that work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentRegion.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-addAncestorStatesToEnter",
+      "reason": "Stage D3, the Interpreter region runtime removed: StateHierarchyManager keeps only the configuration now; its own entry, exit, history and region paths are gone, and the shared microstep does that work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-addAncestorStatesToEnter",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentRegion.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-addAncestorStatesToEnter",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentStateNode.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-computeExitSet",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentRegion.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-exitStates",
+      "reason": "Stage D3, the Interpreter region runtime removed: StateHierarchyManager keeps only the configuration now; its own entry, exit, history and region paths are gone, and the shared microstep does that work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-findLCCA",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentRegion.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-findLCCA",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentRegion.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-getChildStates",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentStateNode.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-getTransitionDomain",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/include/states/ConcurrentRegion.h was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-getTransitionDomain",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentRegion.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-isDescendant",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentRegion.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-isInFinalState",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentRegion.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-isInFinalState",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentStateNode.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-removeConflictingTransitions",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/include/states/ConcurrentStateTypes.h was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-removeConflictingTransitions",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/include/states/ConcurrentStateTypes.h was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-removeConflictingTransitions",
+      "reason": "Stage D3, the Interpreter region runtime removed: sce/src/states/ConcurrentRegion.cpp was deleted with the region layer; a <parallel>'s regions are its child states in the one configuration, entered and exited by SCE::Core::MicrostepAlgorithms"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D3, the Interpreter region runtime removed: removed: only the region layer toggled the raiser through the executor; the state machine owns immediate mode for the whole macrostep"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D3, the Interpreter region runtime removed: removed with its definition; the state machine owns immediate mode for the whole macrostep"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.10",
+      "reason": "Stage D3, the Interpreter region runtime removed: removed: no caller since both engines enter through EntrySetAlgorithms, whose addAncestorStatesToEnter does this"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-addAncestorStatesToEnter",
+      "reason": "Stage D3, the Interpreter region runtime removed: removed: no caller since both engines enter through EntrySetAlgorithms, whose addAncestorStatesToEnter does this"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-Datatypes",
+      "reason": "Stage D3, the Interpreter region runtime removed: the include comment that carried this citation named TransitionDescriptorString, which moved to runtime/TransitionDescriptorString.h"
     }
   ],
   "frames": {},

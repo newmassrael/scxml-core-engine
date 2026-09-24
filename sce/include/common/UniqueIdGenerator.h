@@ -26,7 +26,6 @@ namespace SCE {
  * - EventSchedulerImpl, ActionExecutorImpl (send IDs)
  * - InvokeExecutor, SCXMLInvokeHandler (invoke IDs)
  * - HttpEventBridge, HttpEventReceiver (event IDs)
- * - ConcurrentEventBroadcaster (correlation IDs)
  * - BaseAction (action IDs)
  */
 class UniqueIdGenerator {

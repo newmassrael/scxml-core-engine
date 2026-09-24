@@ -3,7 +3,6 @@
 
 #include "InteractiveTestRunner.h"
 
-#include "RestorationModeScope.h"
 #include "common/Logger.h"
 #include "core/LogMacros.h"
 #include "events/EventDispatcherImpl.h"
@@ -737,11 +736,9 @@ void InteractiveTestRunner::captureSnapshot() {
 bool InteractiveTestRunner::restoreSnapshot(const StateSnapshot &snapshot) {
     // W3C SCXML 3.13: Complete reset-restore using Option B (long-term solution)
     // ARCHITECTURE.md: Maintains instance identity, proper reset-restore lifecycle
-    // No instance recreation, no start() side effects, no temporal coupling
-
-    // W3C SCXML 3.13: RAII guard for restoration mode - prevents side effects during snapshot restoration
-    // Automatically disables restoration mode when scope exits (even on exception)
-    RestorationModeScope restorationGuard(stateMachine_.get());
+    // No instance recreation, no start() side effects, no temporal coupling.
+    // Restoration writes the configuration without running any <onentry>, so
+    // there is nothing to suspend while it happens.
 
     // Clear EventRaiser queues BEFORE reset to ensure clean state
     // EventRaiser is reused across restoreSnapshot() calls, so old events may persist

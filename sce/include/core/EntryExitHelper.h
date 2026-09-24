@@ -175,7 +175,6 @@ public:
      * - Helper Pattern: Static template method, no state, policy-based types
      *
      * @see executeEntryBlocks() for onentry handler execution
-     * @see StateExitExecutor::executeExit() for Interpreter implementation (future refactoring target)
      * @see entry_exit_actions.jinja2 for AOT code generation template
      */
     static void executeExitBlocks(const std::vector<std::function<void()>> &blocks, [[maybe_unused]] Engine &engine,

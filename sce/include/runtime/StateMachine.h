@@ -19,8 +19,8 @@
 #include "runtime/InterpreterDocument.h"
 #include "runtime/InvokeExecutor.h"
 #include "runtime/StateHierarchyManager.h"
+#include "runtime/TransitionDescriptorString.h"
 #include "scripting/IScriptEngine.h"
-#include "states/ConcurrentStateTypes.h"  // §scxml-D-Datatypes: TransitionDescriptorString
 #include <atomic>
 #include <functional>
 #include <map>
@@ -643,17 +643,6 @@ public:
      *       already initialized (e.g., after start()).
      */
     bool restoreFromSnapshot(const std::vector<std::string> &states);
-
-    /**
-     * @brief Set restoration mode on all parallel regions
-     *
-     * When enabled, prevents side effects (callbacks, event generation) during
-     * snapshot restoration. This ensures time-travel debugging maintains strict
-     * snapshot semantics without spurious events.
-     *
-     * @param restoring true to enable restoration mode, false to disable
-     */
-    void setRestoringSnapshotOnAllRegions(bool restoring);
 
 private:
     /// A transition a selection enabled — one member of Appendix D's
