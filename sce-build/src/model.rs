@@ -825,6 +825,17 @@ pub struct Variable {
     /// Classified type: int, string, bool, runtime
     #[serde(rename = "type")]
     pub var_type: String,
+    /// The type `sce:type` declares, in the Forge value-type grammar.
+    /// Present exactly when the document declares
+    /// [`Datamodel::SceStatic`], which requires it on every `<data>` and
+    /// admits it nowhere else (docs/SCE_ACCEPTED_SUBSET.md §2.15).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value_type: Option<crate::forge::model::AlgorithmValueType>,
+    /// The `sce:type` attribute as written and where, so a rule that
+    /// judges the declared type can place its refusal on it. Not part
+    /// of the IR.
+    #[serde(skip)]
+    pub value_type_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
 }
 
 /// §scxml-3.11: History state information
@@ -2096,8 +2107,9 @@ pub(crate) fn call_site_on_row(
 /// processor MUST support the null data model and MAY support the others.
 ///
 /// This enum is the set SCE supports, not the set the spec names. `"xpath"`
-/// is a legal value SCE does not implement and SCE defines no values of its
-/// own, so both are rejected where the attribute is read rather than being
+/// is a legal value SCE does not implement, and a platform-defined value
+/// other than [`Datamodel::SceStatic`] is one SCE does not define, so both
+/// are rejected where the attribute is read rather than being
 /// carried into the model — an unsupported data model that reaches code
 /// generation is a document silently evaluated in a language nobody
 /// declared, which is the defect this type exists to make unrepresentable.
@@ -2124,15 +2136,32 @@ pub enum Datamodel {
     /// here, once, so the two engines cannot answer it differently.
     #[default]
     EcmaScript,
+
+    /// A platform-defined value (§scxml-3.2): SCE's statically typed data
+    /// model. Every `<data>` declares its type with `sce:type`, and every
+    /// expression is written in the Forge expression language, so the
+    /// generated machine holds its variables as native fields and needs
+    /// no script engine (docs/SCE_ACCEPTED_SUBSET.md §2.15).
+    #[serde(rename = "sce-static")]
+    SceStatic,
 }
 
 impl Datamodel {
+    /// Every value SCE accepts, in the order a diagnostic lists them.
+    pub const ALL: [Datamodel; 3] = [Datamodel::Null, Datamodel::EcmaScript, Datamodel::SceStatic];
+
     /// The attribute spelling, for diagnostics and the manifest.
     pub fn as_str(self) -> &'static str {
         match self {
             Datamodel::Null => "null",
             Datamodel::EcmaScript => "ecmascript",
+            Datamodel::SceStatic => "sce-static",
         }
+    }
+
+    /// The value an attribute spelling names, if SCE accepts it.
+    pub fn from_attr(spelling: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|d| d.as_str() == spelling)
     }
 }
 

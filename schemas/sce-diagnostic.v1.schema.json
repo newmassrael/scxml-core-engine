@@ -107,6 +107,7 @@
         "scxml/top-level-script-unloaded",
         "scxml/unsupported-datamodel",
         "scxml/null-datamodel-forbids-construct",
+        "scxml/static-datamodel-rule",
         "scxml/unreachable-state",
         "scxml/dead-transition",
         "scxml/non-exhaustive-event-handling",

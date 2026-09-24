@@ -351,11 +351,19 @@ pub fn offending_token(grammar: Grammar, value: &str) -> Option<&str> {
 
 /// The grammar `dialect` holds `node`'s unqualified attribute `attr` to, or
 /// `None` when that attribute carries no name.
+///
+/// A `<data id>` is a code identifier wherever it names a field of generated
+/// code: in a forge document, and in a statechart whose data model is
+/// `sce-static` (docs/SCE_ACCEPTED_SUBSET.md §2.15) — judged by the nearest
+/// `<scxml>`, since an inline `<invoke>` document declares its own.
 fn grammar_of(dialect: Dialect, node: &roxmltree::Node, attr: &str) -> Option<Grammar> {
     let element = node.tag_name().name();
     let table = match node.tag_name().namespace() {
         Some(crate::model::SCXML_NAMESPACE) => {
-            if dialect == Dialect::Forge && element == "data" && attr == "id" {
+            if element == "data"
+                && attr == "id"
+                && (dialect == Dialect::Forge || declares_static_datamodel(node))
+            {
                 return Some(Grammar::CodeIdentifier);
             }
             IDENTIFIER_ATTRIBUTES
@@ -367,6 +375,17 @@ fn grammar_of(dialect: Dialect, node: &roxmltree::Node, attr: &str) -> Option<Gr
         .iter()
         .find(|(tag, name, _)| *tag == element && *name == attr)
         .map(|&(_, _, grammar)| grammar)
+}
+
+/// Whether the `<scxml>` that owns `node` declares `datamodel="sce-static"`.
+fn declares_static_datamodel(node: &roxmltree::Node) -> bool {
+    node.ancestors()
+        .find(|a| {
+            a.tag_name().name() == "scxml"
+                && a.tag_name().namespace() == Some(crate::model::SCXML_NAMESPACE)
+        })
+        .and_then(|scxml| scxml.attribute("datamodel"))
+        == Some(crate::model::Datamodel::SceStatic.as_str())
 }
 
 /// `node`'s tag as the document spells it — `sce:field`, `state` — so a

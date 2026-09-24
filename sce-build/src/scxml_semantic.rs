@@ -388,6 +388,34 @@ pub enum ScxmlSemanticError {
         observed: Option<String>,
     },
 
+    /// A construct that breaks a rule of SCE's statically typed data
+    /// model (`datamodel="sce-static"`, docs/SCE_ACCEPTED_SUBSET.md
+    /// §2.15): a `<data>` with no `sce:type`, a `<data>` initialised from
+    /// `src` or in-line content, a `<script>` carrying script text, or an
+    /// `sce:type` on a `<data>` under a data model that never reads it.
+    ///
+    /// Its own code rather than a share of the Null model's: those rules
+    /// are §scxml-B-1's, and these are SCE's own definition of a
+    /// platform-defined value, so the section an author needs to read is
+    /// a different one. The last case sits here too because its repair
+    /// is the same section — either declare the model that reads a type,
+    /// or drop the type.
+    #[error("{construct} is not accepted under datamodel=\"{datamodel}\": {rule}")]
+    StaticDatamodelRule {
+        /// What appeared, for the message (`<script>`, `<data id="x">`,
+        /// `sce:type="uint32"`).
+        construct: String,
+        /// The data model the document declares.
+        datamodel: String,
+        /// The rule the construct breaks, as a sentence.
+        rule: String,
+        /// Owning state id, empty at document scope.
+        state: String,
+        /// The construct as the document's own text spells it, reported
+        /// as `actual`; `None` for an empty value.
+        observed: Option<String>,
+    },
+
     /// Top-level `<script>` element either (a) has empty content
     /// AND empty `src`, or (b) has `src` but the file failed to
     /// load. §scxml-5.8 mandates document rejection in either
@@ -840,6 +868,13 @@ mod tests {
                 state: "s1".into(),
                 observed: Some("script".into()),
             },
+            ScxmlSemanticError::StaticDatamodelRule {
+                construct: "<data id=\"count\">".into(),
+                datamodel: "sce-static".into(),
+                rule: "every <data> declares its type with sce:type".into(),
+                state: String::new(),
+                observed: Some("data".into()),
+            },
             ScxmlSemanticError::TopLevelScriptUnloaded {
                 index: None,
                 src: None,
@@ -907,7 +942,7 @@ mod tests {
 
     /// Number of arms in [`variant_name`]. Kept next to it so the two
     /// move together.
-    const VARIANT_COUNT: usize = 15;
+    const VARIANT_COUNT: usize = 16;
 
     /// Exhaustive discriminant projection — the compile-time half of
     /// `every_variant_routes_through_forge_error`'s coverage claim.
@@ -924,6 +959,7 @@ mod tests {
             ScxmlSemanticError::NullDatamodelForbidsConstruct { .. } => {
                 "NullDatamodelForbidsConstruct"
             }
+            ScxmlSemanticError::StaticDatamodelRule { .. } => "StaticDatamodelRule",
             ScxmlSemanticError::TopLevelScriptUnloaded { .. } => "TopLevelScriptUnloaded",
             ScxmlSemanticError::UnreachableState { .. } => "UnreachableState",
             ScxmlSemanticError::DeadTransition { .. } => "DeadTransition",

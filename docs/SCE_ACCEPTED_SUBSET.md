@@ -141,14 +141,15 @@ W3C SCXML §3.2 gives `datamodel` the valid values `"null"`,
 its default platform-specific. §B adds the obligation: a conformant
 processor MUST support the null data model and MAY support the others.
 
-SCE accepts two values and rejects the rest at parse:
+SCE accepts three values and rejects the rest at parse:
 
 | Value | Status |
 |---|---|
 | `null` | Accepted — §B.1 enforced (see below) |
 | `ecmascript` | Accepted — evaluated by the injected script engine |
+| `sce-static` | Accepted — SCE's platform-defined, statically typed data model (§2.15) |
 | `xpath` | Rejected, `scxml/unsupported-datamodel` — a spec-defined data model SCE has not implemented |
-| anything else | Rejected, `scxml/unsupported-datamodel` — §3.2 permits platform-defined values and SCE defines none |
+| anything else | Rejected, `scxml/unsupported-datamodel` — §3.2 permits platform-defined values and SCE defines no other |
 | absent | `ecmascript` |
 
 The default is a choice, not an inference. §3.2 leaves it to the
@@ -2312,6 +2313,44 @@ and one whose `<data id>` was `raw-value` passed `check` in all six
 languages and generated the C++ parameter `int32_t raw - value`. Over
 every tracked `.scxml` document the rule refuses none.
 
+### §2.15 Static data model — `datamodel="sce-static"`
+
+§3.2 permits "other platform-defined values" of `datamodel`, and
+`sce-static` is the one SCE defines: a statically typed data model whose
+variables are native fields of the generated machine and whose
+expressions are written in the forge expression language (§3.4.1), so a
+document that declares it needs no script engine. `ecmascript` is
+unchanged by it.
+
+Its rules, each refused at parse as `scxml/static-datamodel-rule`, on the
+line of the element or attribute that breaks it:
+
+| Construct | Rule |
+|---|---|
+| `<data>` without `sce:type` | Every variable declares its type |
+| `<data src>` | The initial value is `expr` — `src` is read at run time and has no type |
+| `<data>` with in-line content | The initial value is `expr` — in-line content has no type |
+| `<script>` with script text | No scripting language; a native `<script><cpp>` / `<kt>` block is admitted, as under `null` |
+| `sce:type` on `<data>` under `null` or `ecmascript` | A declared type is read only under `sce-static` |
+
+`sce:type` is a field's type grammar — a scalar keyword or `enum:<alias>`
+naming an enum the document imports — and is read with the same reader,
+so a misspelled type is refused as `validation/invalid-attribute` with
+the types the document could have written. A variable's `<data id>`
+names a field of generated code, so it is held to the code identifier
+grammar of §2.14, as a forge document's is. A `<data sce:kind>` declares
+a kind, not a variable, and keeps its own rules.
+
+**Code generation.** A backend lowers the model once its templates hold
+the variables as fields and route every expression through the forge
+expression lowerer; until then `sce-codegen` refuses the document for
+that backend as `generate/unsupported-feature`, naming the backends that
+do lower it. The refusal is deliberate: every backend's templates read a
+`<data>` as a script-engine variable, so generating anyway would evaluate
+forge-language expressions in Lua or QuickJS — a language the document
+never declared. Which backends lower it is `STATIC_DATAMODEL_BACKENDS` in
+`sce-build/src/generator.rs`.
+
 ### Cross-kind typed binding (NL→IR Mapping Roadmap Item 2)
 
 When a forge expression reads an imported kind's member via
@@ -2968,7 +3007,7 @@ does not hold a value it never declared.
 
 ---
 
-## Appendix — `DiagnosticCode` index (378 codes)
+## Appendix — `DiagnosticCode` index (379 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -3161,6 +3200,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `scxml/top-level-script-unloaded` | Validation |
 | `scxml/unsupported-datamodel` | Validation |
 | `scxml/null-datamodel-forbids-construct` | Validation |
+| `scxml/static-datamodel-rule` | Validation |
 | `scxml/unreachable-state` | Validation |
 | `scxml/dead-transition` | Validation |
 | `scxml/non-exhaustive-event-handling` | Validation |

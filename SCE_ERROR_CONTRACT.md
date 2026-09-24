@@ -863,6 +863,7 @@ references against a real document and drift silently.
 | `scxml/on-sample-link-wrong-kind` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.E |
 | `scxml/shadowed-transition` | `validation` | no |  |
 | `scxml/stale-unhandled-declaration` | `validation` | no |  |
+| `scxml/static-datamodel-rule` | `validation` | no | SCE Accepted Subset §2.15 |
 | `scxml/top-level-script-unloaded` | `validation` | no | W3C SCXML §5.8 |
 | `scxml/unknown-session-role-kind` | `validation` | `replace_one_of` |  |
 | `scxml/unreachable-state` | `validation` | no |  |

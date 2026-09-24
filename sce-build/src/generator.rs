@@ -1590,6 +1590,48 @@ fn reject_mesh_rpc_in_unsupported_lang(
     ))
 }
 
+/// The backends whose templates lower `datamodel="sce-static"`: a
+/// variable as a native field, every expression through the Forge
+/// expression lowerer (docs/SCE_ACCEPTED_SUBSET.md §2.15).
+///
+/// A backend joins this list in the commit that teaches its templates the
+/// model. Until then the document is refused for it here, because the
+/// alternative is worse than a refusal: every backend's templates read a
+/// `<data>` as a script-engine variable, so an unlisted backend would hand
+/// Forge-language expressions to Lua or QuickJS — a document evaluated in a
+/// language it never declared, which is what the `datamodel` attribute
+/// exists to prevent.
+const STATIC_DATAMODEL_BACKENDS: &[Language] = &[];
+
+fn reject_static_datamodel_in_unsupported_lang(
+    model: &SCXMLModel,
+    language: Language,
+) -> Result<(), GenerateError> {
+    if model.datamodel != crate::model::Datamodel::SceStatic
+        || STATIC_DATAMODEL_BACKENDS.contains(&language)
+    {
+        return Ok(());
+    }
+    let served: Vec<&'static str> = STATIC_DATAMODEL_BACKENDS
+        .iter()
+        .map(|candidate| candidate.canonical_name())
+        .collect();
+    Err(GenerateError::unsupported_at(
+        format!(
+            "datamodel=\"{}\" in '{}' has no {:?} codegen path (lowered for: {})",
+            crate::model::Datamodel::SceStatic.as_str(),
+            model.name,
+            language,
+            if served.is_empty() {
+                "no backend".to_string()
+            } else {
+                served.join(", ")
+            },
+        ),
+        model.source_location.clone(),
+    ))
+}
+
 // §scxml-G-7 `<sce:action>`: every backend (Rust, C++, C11, Kotlin, Go,
 // Python) now lowers a native host action to a direct call on a generated host
 // interface, so the former `reject_native_actions_in_unsupported_lang`
@@ -2199,6 +2241,7 @@ pub fn generate_with_options(
     options: &StatechartCodegenOptions,
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, Language::Rust)?;
+    reject_static_datamodel_in_unsupported_lang(model, Language::Rust)?;
     reject_native_conditions_in_unsupported_lang(model, "Rust")?;
     reject_native_scripts_in_unsupported_lang(model, "Rust")?;
     reject_silently_folded_conds(model)?;
@@ -2290,6 +2333,7 @@ pub fn generate_with_templates(
     no_std: bool,
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, Language::Rust)?;
+    reject_static_datamodel_in_unsupported_lang(model, Language::Rust)?;
     reject_native_conditions_in_unsupported_lang(model, "Rust")?;
     reject_native_scripts_in_unsupported_lang(model, "Rust")?;
     reject_silently_folded_conds(model)?;
@@ -2472,6 +2516,7 @@ fn render_cpp(
     input_stem: &str,
     cpp_namespace_prefix: Option<&str>,
 ) -> Result<GeneratedOutput, GenerateError> {
+    reject_static_datamodel_in_unsupported_lang(model, Language::Cpp)?;
     reject_barrier_timeout_without_handler(model)?;
     reject_liveliness_without_handler(model)?;
     // Neither host refusal here: the C++ AOT engine carries both registries
@@ -2623,6 +2668,7 @@ fn render_c11(
     c_symbol_prefix: Option<&str>,
 ) -> Result<GeneratedOutput, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, Language::C11)?;
+    reject_static_datamodel_in_unsupported_lang(model, Language::C11)?;
     // Neither host refusal here: the C11 backend carries
     // `sce_host_processor_registry_t` for §scxml-6.2.5 and
     // `sce_host_invoker_registry_t` + `sce_host_invocation_set_t` for
@@ -2769,6 +2815,7 @@ pub fn generate_kotlin_for_engine(
     script_engine: ScriptEngineTarget,
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, Language::Kotlin)?;
+    reject_static_datamodel_in_unsupported_lang(model, Language::Kotlin)?;
     // Neither host refusal here: the Kotlin runtime carries
     // `StateMachineEngine.registerEventProcessor` for §scxml-6.2.5 and
     // `registerInvoker` for §scxml-6.4.1, and the templates emit the `<send>`
@@ -2792,6 +2839,7 @@ pub fn generate_kotlin_with_templates(
     package_prefix: Option<&str>,
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, Language::Kotlin)?;
+    reject_static_datamodel_in_unsupported_lang(model, Language::Kotlin)?;
     // See `generate_kotlin` above: the Kotlin backend carries both host
     // registries.
     reject_native_conditions_in_unsupported_lang(model, "Kotlin")?;
@@ -2957,6 +3005,7 @@ fn render_kotlin(
 /// Generate Go code from an analyzed SCXMLModel (filesystem-based).
 pub fn generate_go(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, Language::Go)?;
+    reject_static_datamodel_in_unsupported_lang(model, Language::Go)?;
     // Neither host refusal here any more: the Go runtime carries
     // `Engine.RegisterEventProcessor` for §scxml-6.2.5 and
     // `Engine.RegisterInvoker` for §scxml-6.4.1, and the templates emit the
@@ -2977,6 +3026,7 @@ pub fn generate_go_with_templates(
     templates: &[(&str, &str)],
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, Language::Go)?;
+    reject_static_datamodel_in_unsupported_lang(model, Language::Go)?;
     // See `generate_go` above: the Go backend carries both host registries.
     reject_native_conditions_in_unsupported_lang(model, "Go")?;
     reject_native_scripts_in_unsupported_lang(model, "Go")?;
@@ -3001,6 +3051,7 @@ pub fn generate_go_with_templates(
 /// Generate Python code from an analyzed SCXMLModel (filesystem-based).
 pub fn generate_python(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, Language::Python)?;
+    reject_static_datamodel_in_unsupported_lang(model, Language::Python)?;
     // Neither host refusal here: the Python runtime carries
     // `Engine.register_event_processor` for §scxml-6.2.5 and
     // `Engine.register_invoker` for §scxml-6.4.1, and the templates emit the
@@ -3020,6 +3071,7 @@ pub fn generate_python_with_templates(
     templates: &[(&str, &str)],
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, Language::Python)?;
+    reject_static_datamodel_in_unsupported_lang(model, Language::Python)?;
     // See `generate_python` above: the Python backend carries both host
     // registries.
     reject_native_conditions_in_unsupported_lang(model, "Python")?;

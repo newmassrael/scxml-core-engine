@@ -352,26 +352,22 @@ fn resolve_declared_datamodel(declared: Option<&str>) -> Result<Datamodel, Scxml
     let Some(declared) = declared else {
         return Ok(Datamodel::default());
     };
-    match declared {
-        "null" => Ok(Datamodel::Null),
-        "ecmascript" => Ok(Datamodel::EcmaScript),
-        other => Err(ScxmlSemanticError::UnsupportedDatamodel {
-            declared: other.to_string(),
-            // §scxml-3.2 names `xpath` as a data model; SCE has no XPath
-            // expression pipeline, so it is refused as unimplemented
-            // rather than as nonsense. Any other token is a value the
-            // spec permits a platform to define and SCE has not.
-            kind: if other == "xpath" {
-                UnsupportedDatamodelKind::Unimplemented
-            } else {
-                UnsupportedDatamodelKind::Undefined
-            },
-            supported: vec![
-                Datamodel::Null.as_str().to_string(),
-                Datamodel::EcmaScript.as_str().to_string(),
-            ],
-        }),
-    }
+    Datamodel::from_attr(declared).ok_or_else(|| ScxmlSemanticError::UnsupportedDatamodel {
+        declared: declared.to_string(),
+        // §scxml-3.2 names `xpath` as a data model; SCE has no XPath
+        // expression pipeline, so it is refused as unimplemented
+        // rather than as nonsense. Any other token is a value the
+        // spec permits a platform to define and SCE has not.
+        kind: if declared == "xpath" {
+            UnsupportedDatamodelKind::Unimplemented
+        } else {
+            UnsupportedDatamodelKind::Undefined
+        },
+        supported: Datamodel::ALL
+            .iter()
+            .map(|d| d.as_str().to_string())
+            .collect(),
+    })
 }
 
 /// Elements that need the underlying data model the Null model does not
@@ -610,17 +606,6 @@ fn enforce_datamodel_languages(
     if datamodel != Datamodel::Null {
         return Ok(());
     }
-    // The state a refused construct belongs to is the nearest state
-    // element holding it, and a `<final>` is one as much as a `<state>` or
-    // a `<parallel>`: a construct in a final state's `<onentry>` or
-    // `<donedata>` names that state, not the one around it.
-    fn owning_state(node: &roxmltree::Node) -> String {
-        node.ancestors()
-            .find(|ancestor| is_scxml_state_element(ancestor))
-            .and_then(|state| state.attribute("id"))
-            .unwrap_or("")
-            .to_string()
-    }
     // Each refusal is placed where its `actual` is: the refused element's
     // own row, or the row of the attribute holding the refused value.
     let refused = |pos: roxmltree::TextPos, err: ScxmlSemanticError| {
@@ -723,6 +708,137 @@ fn enforce_datamodel_languages(
     Ok(())
 }
 
+/// The state a refused construct belongs to: the nearest state element
+/// holding it, and a `<final>` is one as much as a `<state>` or a
+/// `<parallel>` — a construct in a final state's `<onentry>` or
+/// `<donedata>` names that state, not the one around it.
+fn owning_state(node: &roxmltree::Node) -> String {
+    node.ancestors()
+        .find(|ancestor| is_scxml_state_element(ancestor))
+        .and_then(|state| state.attribute("id"))
+        .unwrap_or("")
+        .to_string()
+}
+
+/// Refuse what SCE's statically typed data model does not accept, and a
+/// declared type under any data model that does not read one
+/// (docs/SCE_ACCEPTED_SUBSET.md §2.15).
+///
+/// Under `sce-static` a variable is a native field of the generated
+/// machine, so its type must be written (`sce:type`) and its initial value
+/// must be an expression the Forge expression language types — neither
+/// `src`, which is read at run time, nor in-line content, which has no
+/// type, can give it one. `<script>` text needs a scripting language this
+/// model does not have; a native `<script><cpp>` / `<kt>` block is admitted
+/// for the reason [`enforce_datamodel_languages`] admits it.
+///
+/// Under any other data model an `sce:type` on `<data>` is read by
+/// nothing, so it is refused rather than left to look as if it constrained
+/// the variable. A `<data sce:kind>` declares a kind, not a variable, and
+/// is left to its own rules. Walks SCXML-namespace elements only, and
+/// skips a nested `<scxml>`, which declares its own data model.
+fn enforce_static_datamodel(
+    root: &roxmltree::Node,
+    datamodel: Datamodel,
+    diag_label: &str,
+) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
+    use crate::forge::model::SCE_NAMESPACE;
+
+    let refused = |pos: roxmltree::TextPos,
+                   construct: String,
+                   rule: &str,
+                   node: &roxmltree::Node,
+                   observed: Option<String>| {
+        crate::forge::error::Located::new(
+            ScxmlSemanticError::StaticDatamodelRule {
+                construct,
+                datamodel: datamodel.as_str().to_string(),
+                rule: rule.to_string(),
+                state: owning_state(node),
+                observed,
+            }
+            .into(),
+            diag_label,
+            Some(pos.row),
+            Some(pos.col),
+        )
+    };
+    let element_row = |node: &roxmltree::Node| node.document().text_pos_at(node.range().start);
+    let is_static = datamodel == Datamodel::SceStatic;
+
+    let mut stack: Vec<roxmltree::Node> = root.children().filter(|n| n.is_element()).collect();
+    while let Some(node) = stack.pop() {
+        if node.tag_name().namespace() != root.tag_name().namespace() {
+            continue;
+        }
+        let name = node.tag_name().name();
+        if name == "scxml" {
+            continue;
+        }
+
+        if name == "data" && node.attribute((SCE_NAMESPACE, "kind")).is_none() {
+            let id = node.attribute("id").unwrap_or("");
+            let declared = attribute_as_written_ns(&node, Some(SCE_NAMESPACE), "type");
+            if !is_static {
+                if let Some((written, pos)) = declared {
+                    return Err(refused(
+                        pos,
+                        format!("sce:type=\"{written}\""),
+                        "a declared type is read only under datamodel=\"sce-static\" — \
+                         declare that data model, or remove sce:type",
+                        &node,
+                        (!written.is_empty()).then(|| written.to_string()),
+                    ));
+                }
+            } else {
+                if declared.is_none() {
+                    return Err(refused(
+                        element_row(&node),
+                        format!("<data id=\"{id}\">"),
+                        "every <data> declares its type with sce:type",
+                        &node,
+                        Some(name.to_string()),
+                    ));
+                }
+                if let Some((written, pos)) = attribute_as_written(&node, "src") {
+                    return Err(refused(
+                        pos,
+                        format!("src=\"{written}\""),
+                        "a variable's initial value is its expr, written in the Forge \
+                         expression language — src is read at run time and has no type",
+                        &node,
+                        (!written.is_empty()).then(|| written.to_string()),
+                    ));
+                }
+                if !inline_data_value(&node).is_empty() {
+                    return Err(refused(
+                        element_row(&node),
+                        format!("<data id=\"{id}\"> with in-line content"),
+                        "a variable's initial value is its expr, written in the Forge \
+                         expression language — in-line content has no type",
+                        &node,
+                        Some(name.to_string()),
+                    ));
+                }
+            }
+        }
+
+        if is_static && name == "script" && !is_native_script_block(&node) {
+            return Err(refused(
+                element_row(&node),
+                "<script>".to_string(),
+                "script text needs a scripting language, which this data model does not \
+                 have — write the effect as <assign> or as a native <script> block",
+                &node,
+                Some(name.to_string()),
+            ));
+        }
+
+        stack.extend(node.children().filter(|n| n.is_element()));
+    }
+    Ok(())
+}
+
 /// An unqualified attribute's value as the document's text spells it —
 /// entities and all, where `node.attribute` hands back the decoded value —
 /// with the position the attribute starts at.
@@ -730,9 +846,19 @@ fn attribute_as_written<'input>(
     node: &roxmltree::Node<'_, 'input>,
     name: &str,
 ) -> Option<(&'input str, roxmltree::TextPos)> {
+    attribute_as_written_ns(node, None, name)
+}
+
+/// [`attribute_as_written`] for an attribute in `namespace` (`None` for an
+/// unqualified one).
+fn attribute_as_written_ns<'input>(
+    node: &roxmltree::Node<'_, 'input>,
+    namespace: Option<&str>,
+    name: &str,
+) -> Option<(&'input str, roxmltree::TextPos)> {
     let attr = node
         .attributes()
-        .find(|a| a.name() == name && a.namespace().is_none())?;
+        .find(|a| a.name() == name && a.namespace() == namespace)?;
     let document = node.document();
     Some((
         &document.input_text()[attr.range_value()],
@@ -1859,6 +1985,7 @@ impl SCXMLParser {
         // document named — the state the `datamodel` attribute existed to
         // prevent and, until now, did not.
         enforce_datamodel_languages(&root, model.datamodel, diag_label)?;
+        enforce_static_datamodel(&root, model.datamodel, diag_label)?;
 
         // Parse datamodel
         self.parse_datamodel(&root, &mut model, diag_label)?;
@@ -2175,17 +2302,38 @@ impl SCXMLParser {
         } else {
             String::new()
         };
+        let id = data.attribute("id").unwrap_or("").to_string();
+        // `sce:type` is present exactly under `datamodel="sce-static"` —
+        // `enforce_static_datamodel` has refused it everywhere else, and
+        // its absence there. The grammar is a field's (`sceTypeOrEnumRef`):
+        // a datamodel variable is typed the way an event-schema field is.
+        let value_type = data
+            .attribute((SCE_NAMESPACE, "type"))
+            .map(|text| {
+                crate::forge::parser::read_type_attr(
+                    data,
+                    source_name,
+                    crate::forge::parser::TypeGrammar::ScalarOrEnumRef,
+                    format!("<data id=\"{id}\">"),
+                    "sce:type",
+                    text,
+                )
+                .map(crate::forge::model::AlgorithmValueType::Scalar)
+            })
+            .transpose()?;
         // `needs_script_engine` is derived post-parse by
         // [`crate::script_engine_analyzer`] —
         // [`NeedsScriptEngineCause::DatamodelVariableInit`].
         Ok(Some(Variable {
-            id: data.attribute("id").unwrap_or("").to_string(),
+            id,
             expr: data.attribute("expr").unwrap_or("").to_string(),
             expr_spelling: AttributeSpelling::of(data, None, "expr"),
             src,
             content,
             var_type: String::new(),
             source_location: source_location_of(data, source_name),
+            value_type,
+            value_type_spelling: AttributeSpelling::of(data, Some(SCE_NAMESPACE), "type"),
         }))
     }
 

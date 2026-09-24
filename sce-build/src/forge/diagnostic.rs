@@ -806,6 +806,12 @@ pub enum DiagnosticCode {
     ScxmlUnsupportedDatamodel,
     #[serde(rename = "scxml/null-datamodel-forbids-construct")]
     ScxmlNullDatamodelForbidsConstruct,
+    //    `scxml/static-datamodel-rule` refuses a construct that breaks
+    //    SCE's own platform-defined value, `sce-static` — its rules are
+    //    SCE's, not Appendix B's, so they are not a share of the Null
+    //    model's code (SCE Accepted Subset §2.15).
+    #[serde(rename = "scxml/static-datamodel-rule")]
+    ScxmlStaticDatamodelRule,
     // ── NL→IR Mapping Roadmap Item 3 — Statechart graph
     //    reachability. BFS from the document `initial` (plus the
     //    parallel-all-children, compound-initial-cascade, and history
@@ -3154,6 +3160,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // §scxml-3.2 datamodel attribute + §scxml-B-1 Null data model
         ScxmlUnsupportedDatamodel,
         ScxmlNullDatamodelForbidsConstruct,
+        ScxmlStaticDatamodelRule,
         // NL→IR Mapping Roadmap Item 3 — Statechart graph reachability
         ScxmlUnreachableState,
         ScxmlDeadTransition,
@@ -3737,6 +3744,9 @@ impl DiagnosticCode {
             // construct the selected model has no language for.
             ScxmlUnsupportedDatamodel => Some("W3C SCXML §3.2"),
             ScxmlNullDatamodelForbidsConstruct => Some("W3C SCXML §B.1"),
+            // SCE defines `sce-static` itself (a §3.2 platform-defined
+            // value), so its rules anchor on the section that defines it.
+            ScxmlStaticDatamodelRule => Some("SCE Accepted Subset §2.15"),
             // The name the author reached for is one Appendix B.2's
             // datamodel defines and SCE does not implement, so it
             // anchors on the ECMAScript data model.
@@ -4485,6 +4495,7 @@ impl DiagnosticCode {
             ScxmlTopLevelScriptUnloaded => "scxml/top-level-script-unloaded",
             ScxmlUnsupportedDatamodel => "scxml/unsupported-datamodel",
             ScxmlNullDatamodelForbidsConstruct => "scxml/null-datamodel-forbids-construct",
+            ScxmlStaticDatamodelRule => "scxml/static-datamodel-rule",
             ScxmlUnreachableState => "scxml/unreachable-state",
             ScxmlDeadTransition => "scxml/dead-transition",
             ScxmlNonExhaustiveEventHandling => "scxml/non-exhaustive-event-handling",
@@ -9346,6 +9357,36 @@ fn scxml_semantic_fields(e: &crate::scxml_semantic::ScxmlSemanticError) -> Diagn
                 k
             },
         },
+        ScxmlSemanticError::StaticDatamodelRule {
+            construct,
+            datamodel,
+            rule,
+            state,
+            observed,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ScxmlStaticDatamodelRule,
+            stage: Stage::Validation,
+            // The rule is what the construct must satisfy; `expected`
+            // names it rather than a value to substitute, because the
+            // repair (declare a type, move an initialiser into `expr`,
+            // change the data model) is the author's to choose.
+            expected: Some(vec![rule.clone()]),
+            actual: observed.clone(),
+            fix: None,
+            // The declared model rides the id: the same `sce:type` is a
+            // different finding under `ecmascript` than under `null`.
+            key_fragments: {
+                let mut k = vec![
+                    "static-datamodel".to_string(),
+                    datamodel.clone(),
+                    construct.clone(),
+                ];
+                if !state.is_empty() {
+                    k.push(state.clone());
+                }
+                k
+            },
+        },
         ScxmlSemanticError::TopLevelScriptUnloaded { index, src } => DiagnosticPayload {
             // NEW — §scxml-5.8 has no forge analog. The 1 NEW
             // wire code §wire-W5 D2 introduces.
@@ -10414,6 +10455,23 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:18b3e668983fd6d6","code":"scxml/null-datamodel-forbids-construct","stage":"validation","spec":"W3C SCXML §B.1","message":"<param> is not available under datamodel=\"null\": it needs the data model its §5 semantics operate on, which W3C SCXML B.1.7 withholds — declare the data model this document actually uses, or remove the construct","expected":["the data model its §5 semantics operate on (W3C SCXML B.1.7)"],"actual":"param"}"#,
+            ),
+            (
+                // SCE Accepted Subset §2.15 — a `<data>` under
+                // `sce-static` that declares no type. Golden uses this
+                // case because it is the rule every other one of the
+                // model's rules exists to make true: a variable whose
+                // type the generator knows.
+                "forge/scxml-static-datamodel-rule",
+                crate::scxml_semantic::ScxmlSemanticError::StaticDatamodelRule {
+                    construct: "<data id=\"count\">".into(),
+                    datamodel: "sce-static".into(),
+                    rule: "every <data> declares its type with sce:type".into(),
+                    state: String::new(),
+                    observed: Some("data".into()),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:fc9d123751b758d5","code":"scxml/static-datamodel-rule","stage":"validation","spec":"SCE Accepted Subset §2.15","message":"<data id=\"count\"> is not accepted under datamodel=\"sce-static\": every <data> declares its type with sce:type","expected":["every <data> declares its type with sce:type"],"actual":"data"}"#,
             ),
             (
                 // NL→IR Mapping Roadmap Item 3 — Statechart
@@ -14900,6 +14958,7 @@ mod tests {
             | ValidationEnumVariantValueOverflowsUnderlying
             | ValidationBytesComparisonNotEquality
             | ScxmlNullDatamodelForbidsConstruct
+            | ScxmlStaticDatamodelRule
             | TimerPeriodBelowTickRate
             | TimerSlotOverflow
             | MemReassemblySlotSizeBelowDeclaredMtu
@@ -15839,6 +15898,7 @@ mod tests {
                 | ScxmlTopLevelScriptUnloaded
                 | ScxmlUnsupportedDatamodel
                 | ScxmlNullDatamodelForbidsConstruct
+                | ScxmlStaticDatamodelRule
                 | ScxmlUnreachableState
                 | ScxmlDeadTransition
                 | ScxmlNonExhaustiveEventHandling
@@ -16136,7 +16196,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            388,
+            389,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
              expected 388 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
@@ -16787,6 +16847,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | AlgorithmAppendTypeMismatch
             | ScxmlUnsupportedDatamodel
             | ScxmlNullDatamodelForbidsConstruct
+            | ScxmlStaticDatamodelRule
             | ScxmlOnSampleInvalidParent
             | ScxmlOnSampleLinkDuplicateInState
             | ScxmlOnSampleEventNameConflict

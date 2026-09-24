@@ -1704,10 +1704,7 @@ fn render_statechart(
     }
 
     let mut out = Out::with_deployment(deployment);
-    let datamodel = match m.datamodel {
-        crate::model::Datamodel::Null => "null",
-        crate::model::Datamodel::EcmaScript => "ecmascript",
-    };
+    let datamodel = m.datamodel.as_str();
     let mut clauses = vec![
         format!("datamodel: {datamodel}"),
         format!("initial: {}", text(&m.initial)),
@@ -1957,6 +1954,12 @@ fn render_variable(v: &crate::model::Variable, out: &mut Out<'_>) {
     let mut line = format!("data {}", text(&v.id));
     if !v.var_type.is_empty() {
         let _ = write!(line, ": {}", text(&v.var_type));
+    }
+    // The declared type under `datamodel="sce-static"` is a clause of its
+    // own, apart from the classified `: <type>` above: one is what the
+    // author wrote, the other what the analyzer inferred.
+    if let Some(t) = &v.value_type {
+        let _ = write!(line, " sce-type {}", text(&t.as_attr()));
     }
     if !v.src.is_empty() {
         let _ = write!(line, " src {}", text(&v.src));

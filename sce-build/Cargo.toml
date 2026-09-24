@@ -681,6 +681,11 @@ path = "tests/datamodel_attribute_reaches_a_decision.rs"
 required-features = ["cli"]
 
 [[test]]
+name = "a_static_datamodel_holds_every_variable_to_a_type"
+path = "tests/a_static_datamodel_holds_every_variable_to_a_type.rs"
+required-features = ["cli"]
+
+[[test]]
 name = "diagnostic_fix_is_applicable"
 path = "tests/diagnostic_fix_is_applicable.rs"
 required-features = ["cli"]

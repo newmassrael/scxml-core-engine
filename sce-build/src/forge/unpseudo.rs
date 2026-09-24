@@ -2374,16 +2374,11 @@ fn parse_statechart(
         })?;
         match key {
             "datamodel" => {
-                m.datamodel = match value {
-                    "null" => crate::model::Datamodel::Null,
-                    "ecmascript" => crate::model::Datamodel::EcmaScript,
-                    other => {
-                        return Err(ParseError {
-                            line: head.number,
-                            why: format!("`{other}` is not a datamodel"),
-                        })
-                    }
-                }
+                m.datamodel =
+                    crate::model::Datamodel::from_attr(value).ok_or_else(|| ParseError {
+                        line: head.number,
+                        why: format!("`{value}` is not a datamodel"),
+                    })?
             }
             "initial" => m.initial = undo(value, head.number)?,
             "binding" => m.binding = undo(value, head.number)?,
@@ -2455,7 +2450,7 @@ fn parse_statechart(
     Ok(m)
 }
 
-/// `data <id>[: <type>] [src <s>] [= <expr>] [content <c>]`
+/// `data <id>[: <type>] [sce-type <t>] [src <s>] [= <expr>] [content <c>]`
 fn parse_variable(line: &Line<'_>) -> Result<crate::model::Variable, ParseError> {
     let rest = &line.text["data ".len()..];
     let (id, mut tail) = match rest.split_once(' ') {
@@ -2485,9 +2480,25 @@ fn parse_variable(line: &Line<'_>) -> Result<crate::model::Variable, ParseError>
         content: String::new(),
         source_location: None,
         var_type: undo(&var_type, line.number)?,
+        value_type: None,
+        value_type_spelling: None,
     };
-    // Clause order is the renderer's: `src` first, then the free-text
-    // `= <expr>` and `content`, each of which closes the line.
+    // Clause order is the renderer's: `sce-type` and `src` first, then the
+    // free-text `= <expr>` and `content`, each of which closes the line.
+    if let Some(after) = tail.strip_prefix("sce-type ") {
+        let (t, more) = match after.split_once(' ') {
+            Some((t, m)) => (t, m),
+            None => (after, ""),
+        };
+        let t = undo(t, line.number)?;
+        v.value_type = Some(
+            crate::forge::model::AlgorithmValueType::from_attr(&t).ok_or_else(|| ParseError {
+                line: line.number,
+                why: format!("`{t}` is not a value type"),
+            })?,
+        );
+        tail = more;
+    }
     if let Some(after) = tail.strip_prefix("src ") {
         let (s, more) = match after.split_once(' ') {
             Some((s, m)) => (s, m),
