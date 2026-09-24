@@ -183,6 +183,58 @@ pub fn lower_kotlin(
     })
 }
 
+/// A `<sce:action>` argument of a `sce-static` document, lowered for Kotlin.
+#[derive(Debug, Clone)]
+pub(crate) struct KotlinArgument {
+    /// The argument as Kotlin, reading the machine's fields and, when
+    /// [`Self::reads_payload`], the bound payload.
+    pub text: String,
+    /// The type the host method declares for it
+    /// ([`crate::forge::native_action::static_argument_type`]).
+    pub ty: crate::forge::model::SceType,
+    /// Whether it reads the triggering event's typed payload, so the call
+    /// must sit under the payload channel's guard.
+    pub reads_payload: bool,
+}
+
+/// Lower one `<sce:action>` argument of a `sce-static` document for Kotlin:
+/// judged against the scope validation judged it against — the document's
+/// `variables`, and `schema`'s payload when the action sits on a transition
+/// whose event carries one — and spelled with the renames every other
+/// lowered expression takes. `None` for an argument validation refused,
+/// which never reaches here.
+pub(crate) fn lower_kotlin_argument(
+    variables: &[Variable],
+    event: Option<(&str, &crate::forge::model::EventSchemaModel)>,
+    arg: &crate::model::Param,
+) -> Option<KotlinArgument> {
+    let payload = event
+        .map(|(_, schema)| event_payload_paths(schema))
+        .unwrap_or_default();
+    let ctx = static_statechart(variables.iter(), &payload, &[]);
+    let names: Vec<(String, String)> = variables
+        .iter()
+        .map(|v| (v.id.clone(), filters::to_camel_case(v.id.clone())))
+        .collect();
+    let accessor = event.map(|(event, _)| format!("{}!!", payload_field(event)));
+    let renames = renames(&names, accessor.as_deref());
+    let ty = crate::forge::native_action::static_argument_type(&ctx, arg).ok()?;
+    let text = transpile_into(
+        &arg.expr,
+        ExprTarget::Kotlin,
+        &ctx,
+        &renames,
+        InferredType::from_sce_type(&ty),
+    )
+    .ok()?;
+    Some(KotlinArgument {
+        text,
+        ty,
+        reads_payload: event.is_some()
+            && crate::forge::expr::references_event_data_lexically(&arg.expr),
+    })
+}
+
 /// The nullable field the Kotlin payload channel binds `event`'s typed
 /// payload to — the spelling [`crate::forge::generator::build_kotlin_event_payload`]
 /// declares.

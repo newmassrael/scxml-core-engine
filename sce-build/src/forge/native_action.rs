@@ -226,6 +226,17 @@ pub fn validate(
     // call site. Detecting a conflict here is fail-fast at SCE's own validation
     // stage rather than deferring it to a type error in the downstream compiler.
     let mut signatures = SignatureTable::new();
+    // Under `datamodel="sce-static"` an argument is any typed expression over
+    // the document's scope, not only a payload field (SCE Accepted Subset
+    // §2.15), so the arguments are judged against that scope.
+    let static_vars: Option<Vec<&crate::model::Variable>> =
+        (scxml.datamodel == crate::model::Datamodel::SceStatic).then(|| {
+            scxml
+                .variables
+                .iter()
+                .chain(scxml.states.values().flat_map(|s| s.datamodel.iter()))
+                .collect()
+        });
 
     for state in scxml.states.values() {
         // Eventless positions: <onentry>/<onexit> blocks, an <initial>
@@ -243,6 +254,7 @@ pub fn validate(
             check_placement(
                 action,
                 &PayloadScope::Eventless,
+                static_vars.as_deref(),
                 &mut signatures,
                 diag_label,
             )?;
@@ -254,7 +266,13 @@ pub fn validate(
                 schema: imported_schemas.get(&transition.event),
             };
             for action in &transition.actions {
-                check_placement(action, &scope, &mut signatures, diag_label)?;
+                check_placement(
+                    action,
+                    &scope,
+                    static_vars.as_deref(),
+                    &mut signatures,
+                    diag_label,
+                )?;
             }
         }
     }
@@ -269,11 +287,15 @@ pub fn validate(
 fn check_placement(
     action: &Action,
     scope: &PayloadScope,
+    static_vars: Option<&[&crate::model::Variable]>,
     signatures: &mut SignatureTable,
     diag_label: &str,
 ) -> Result<(), Located<ForgeError>> {
     if is_native(action) {
-        let sig = signature_of(action, scope, diag_label)?;
+        let sig = match static_vars {
+            Some(vars) => static_signature(action, scope, vars, diag_label)?,
+            None => signature_of(action, scope, diag_label)?,
+        };
         register_signature(action, sig, signatures, diag_label)
     } else if let Some(na) = first_native(action) {
         Err(placement_err(
@@ -312,6 +334,83 @@ fn signature_of(
             ),
         )),
     }
+}
+
+/// A direct `<sce:action>`'s signature under `datamodel="sce-static"`: each
+/// argument judged against the document's typed scope — its variables, and
+/// the triggering event's typed payload when the action sits on a transition
+/// whose event carries a schema — and typed as the value it is
+/// ([`static_argument_type`]).
+///
+/// An argument may read the datamodel in an eventless position: a variable
+/// has a type with no event in sight. Reading `_event.data` there is refused,
+/// because no payload is in scope to type it.
+fn static_signature(
+    action: &Action,
+    scope: &PayloadScope,
+    vars: &[&crate::model::Variable],
+    diag_label: &str,
+) -> Result<Vec<String>, Located<ForgeError>> {
+    let payload = match scope {
+        PayloadScope::Transition {
+            schema: Some(schema),
+            ..
+        } => crate::forge::event_schema_check::event_payload_paths(schema),
+        _ => Vec::new(),
+    };
+    let ctx = crate::forge::type_ctx::static_statechart(vars.iter().copied(), &payload, &[]);
+    let mut sig = Vec::with_capacity(action.params.len());
+    for arg in &action.params {
+        let ty = static_argument_type(&ctx, arg).map_err(|refusal| match refusal {
+            ArgumentRefusal::Expression(refusal) => crate::forge::error::Located::in_file(
+                crate::forge::expression_site::ExpressionSite::new(
+                    &arg.expr,
+                    arg.expr_spelling.as_ref(),
+                )
+                .place(refusal),
+                diag_label,
+            ),
+            ArgumentRefusal::Untyped => one_argument_err(
+                action,
+                arg,
+                diag_label,
+                format!(
+                    "argument '{}' has no type a host method could declare — \
+                     `_event.data` is typed only on a transition whose event \
+                     imports an EventSchema",
+                    arg.expr
+                ),
+            ),
+        })?;
+        sig.push(canonical_type(&ty).to_string());
+    }
+    Ok(sig)
+}
+
+/// Why a static argument could not be typed.
+pub(crate) enum ArgumentRefusal {
+    /// The expression itself was refused by the expression layer.
+    Expression(crate::forge::expr::Refusal),
+    /// It was accepted, but its type is not one a host method can declare.
+    Untyped,
+}
+
+/// The declared type a `<sce:action>` argument is passed as under the static
+/// data model: the argument judged against `ctx` and carried as the value it
+/// is ([`crate::forge::types::InferredType::to_sce_type`]). The one reading,
+/// shared by validation and by each backend's lowering, so the method a host
+/// implements and the call a machine makes cannot disagree.
+pub(crate) fn static_argument_type(
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    arg: &Param,
+) -> Result<SceType, ArgumentRefusal> {
+    let ty = crate::forge::expr::judge_into(
+        &arg.expr,
+        ctx,
+        crate::forge::expr::Expected::Hint(crate::forge::types::InferredType::Unknown),
+    )
+    .map_err(ArgumentRefusal::Expression)?;
+    ty.to_sce_type().ok_or(ArgumentRefusal::Untyped)
 }
 
 /// The first call of each native action name: the signature every later
@@ -636,6 +735,19 @@ pub fn interface_name(lang: Language, machine_name: &str) -> String {
 /// `build_*_event_payload` twins already use), the raw snake stem for C11.
 pub fn render(model: &mut SCXMLModel, machine_name: &str, lang: Language) -> NativeActions {
     let schemas = model.imported_event_schemas.clone();
+    // Under `datamodel="sce-static"` an argument is a typed expression over the
+    // document's variables, lowered by the static lowering (SCE Accepted
+    // Subset §2.15). Only a backend that lowers the model reaches here with
+    // such a document; the others refused it before rendering.
+    let static_vars: Option<Vec<crate::model::Variable>> =
+        (model.datamodel == crate::model::Datamodel::SceStatic).then(|| {
+            model
+                .variables
+                .iter()
+                .chain(model.states.values().flat_map(|s| s.datamodel.iter()))
+                .cloned()
+                .collect()
+        });
     // Read once, before the walk borrows `model` mutably. Every other raise
     // site in this generator is written under the same condition — a document
     // that declares no `error.execution` has no enum variant to name, and an
@@ -668,6 +780,7 @@ pub fn render(model: &mut SCXMLModel, machine_name: &str, lang: Language) -> Nat
             lower_native_call(
                 action,
                 None,
+                static_vars.as_deref(),
                 machine_name,
                 lang,
                 raises_error,
@@ -690,6 +803,7 @@ pub fn render(model: &mut SCXMLModel, machine_name: &str, lang: Language) -> Nat
                 lower_native_call(
                     action,
                     Some(&binding),
+                    static_vars.as_deref(),
                     machine_name,
                     lang,
                     raises_error,
@@ -733,6 +847,7 @@ pub fn render(model: &mut SCXMLModel, machine_name: &str, lang: Language) -> Nat
 fn lower_native_call(
     action: &mut Action,
     binding: Option<&PayloadBinding>,
+    static_vars: Option<&[crate::model::Variable]>,
     machine_name: &str,
     lang: Language,
     raises_error: bool,
@@ -744,6 +859,45 @@ fn lower_native_call(
     if action.params.is_empty() {
         sigs.entry(name.clone()).or_default();
         action.native_action_rendered = call(lang, &name, &[]);
+        return;
+    }
+
+    // `datamodel="sce-static"`: each argument is a typed expression, lowered
+    // by the static lowering and typed by the value it is. Only Kotlin lowers
+    // the model; every other backend refused the document before rendering.
+    if let Some(vars) = static_vars {
+        let event = binding.and_then(|b| b.schema.map(|schema| (b.event, schema)));
+        let mut call_args = Vec::new();
+        let mut params: Signature = Vec::new();
+        let mut reads_payload = false;
+        for (i, arg) in action.params.iter().enumerate() {
+            let lowered = crate::forge::static_lowering::lower_kotlin_argument(vars, event, arg)
+                .expect("validated: a sce-static argument is typed against this scope");
+            let pname = if arg.name.is_empty() {
+                format!("arg{}", i + 1)
+            } else {
+                arg.name.clone()
+            };
+            reads_payload |= lowered.reads_payload;
+            call_args.push(lowered.text);
+            params.push((pname, lowered.ty));
+        }
+        sigs.entry(name.clone()).or_insert(params);
+        let stmt = call(lang, &name, &call_args);
+        action.native_action_rendered = match (reads_payload, binding) {
+            (true, Some(binding)) => {
+                payload_events.insert(binding.event.to_string());
+                guard_payload(
+                    lang,
+                    machine_name,
+                    binding.event,
+                    &name,
+                    &stmt,
+                    raises_error,
+                )
+            }
+            _ => stmt,
+        };
         return;
     }
 

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): a native host
+  action whose arguments are typed datamodel expressions — a variable and a
+  value computed from it — called from <onentry>, where no triggering event
+  is in scope. Under any other data model an argument must be a bare
+  `_event.data.<field>` and an eventless action must take none.
+
+  Kotlin compile+run gate: scripts/regen_static_datamodel_kotlin.sh commits
+  the generated machine, and StaticDatamodelTest.kt drives it with a
+  recording host.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="static_host_call">
+  <datamodel>
+    <data id="attempts" sce:type="uint32" expr="0"/>
+  </datamodel>
+  <state id="idle">
+    <onentry>
+      <sce:action name="showAttempts">
+        <sce:arg name="count" expr="attempts"/>
+        <sce:arg name="exhausted" expr="attempts &gt;= 3"/>
+      </sce:action>
+    </onentry>
+    <transition event="retry" cond="attempts &lt; 3" target="idle">
+      <assign location="attempts" expr="attempts + 1"/>
+    </transition>
+  </state>
+</scxml>

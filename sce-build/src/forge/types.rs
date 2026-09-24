@@ -263,6 +263,49 @@ impl InferredType {
         })
     }
 
+    /// The declared type a value of this inferred type is carried as — the
+    /// inverse of [`Self::from_sce_type`] for every concrete type, for a
+    /// place that takes its type FROM the value rather than declaring one
+    /// (a `<sce:action>` argument under the static data model).
+    ///
+    /// A literal no context typed takes the widest type of its kind —
+    /// `int64`, `float64` — so the value is never narrowed by a choice the
+    /// document did not make. A quantity is carried as its numeric base.
+    /// `None` for a value of no type anyone could declare (`null`, a name the
+    /// inference could not type).
+    pub fn to_sce_type(self) -> Option<SceType> {
+        let int = |signed: bool, bits: u8| match (signed, bits) {
+            (false, 8) => Some(SceType::Uint8),
+            (false, 16) => Some(SceType::Uint16),
+            (false, 32) => Some(SceType::Uint32),
+            (false, 64) => Some(SceType::Uint64),
+            (true, 8) => Some(SceType::Int8),
+            (true, 16) => Some(SceType::Int16),
+            (true, 32) => Some(SceType::Int32),
+            (true, 64) => Some(SceType::Int64),
+            _ => None,
+        };
+        let float = |bits: u8| match bits {
+            32 => Some(SceType::Float32),
+            64 => Some(SceType::Float64),
+            _ => None,
+        };
+        match self {
+            Self::UntypedInt => Some(SceType::Int64),
+            Self::UntypedFloat => Some(SceType::Float64),
+            Self::Int { signed, bits } => int(signed, bits),
+            Self::Float { bits } => float(bits),
+            Self::Bool => Some(SceType::Bool),
+            Self::Str => Some(SceType::String),
+            Self::Bytes => Some(SceType::Bytes),
+            Self::Quantity { base, .. } => match base {
+                NumericBaseType::Int { signed, bits } => int(signed, bits),
+                NumericBaseType::Float { bits } => float(bits),
+            },
+            Self::Null | Self::Unknown => None,
+        }
+    }
+
     /// Map an `SceType` from the model layer to an inferred concrete type.
     ///
     /// This is the single entry point from the generator-layer type system

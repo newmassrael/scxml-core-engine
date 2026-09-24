@@ -34,16 +34,28 @@ PACKAGE_PREFIX="com.sce.integration"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-"$CODEGEN" generate "$FIXTURE" -l kotlin -o "$TMP/" \
+# The host-call fixture passes typed datamodel expressions to a native host
+# action; its machine name differs, so it lives in its own package dir.
+HOST_CALL_FIXTURE="sce-build/tests/fixtures/static_datamodel/static_host_call.scxml"
+HOST_CALL_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/static_host_call"
+
+"$CODEGEN" generate "$FIXTURE" -l kotlin -o "$TMP/counter/" \
+    --input-root "$INPUT_ROOT" \
+    --kotlin-package-prefix "$PACKAGE_PREFIX"
+"$CODEGEN" generate "$HOST_CALL_FIXTURE" -l kotlin -o "$TMP/host_call/" \
     --input-root "$INPUT_ROOT" \
     --kotlin-package-prefix "$PACKAGE_PREFIX"
 
-mkdir -p "$GENERATED_DIR"
-find "$GENERATED_DIR" -maxdepth 1 -name '*Sm.kt' -delete
-for src in "$TMP"/*Sm.kt; do
-    [[ -f "$src" ]] || continue
-    sed -i "s|// Source: ${TMP}/|// Source: ${INPUT_ROOT}/|g" "$src"
-    cp "$src" "$GENERATED_DIR/"
+for pair in "counter:$GENERATED_DIR" "host_call:$HOST_CALL_DIR"; do
+    sub="${pair%%:*}"
+    dir="${pair#*:}"
+    mkdir -p "$dir"
+    find "$dir" -maxdepth 1 -name '*Sm.kt' -delete
+    for src in "$TMP/$sub"/*Sm.kt; do
+        [[ -f "$src" ]] || continue
+        sed -i "s|// Source: ${TMP}/${sub}/|// Source: ${INPUT_ROOT}/|g" "$src"
+        cp "$src" "$dir/"
+    done
 done
 
-echo "Regenerated: $GENERATED_DIR/ from $FIXTURE"
+echo "Regenerated: $GENERATED_DIR/ and $HOST_CALL_DIR/ from $INPUT_ROOT"

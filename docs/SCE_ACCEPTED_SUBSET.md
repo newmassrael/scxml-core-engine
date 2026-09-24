@@ -2395,6 +2395,17 @@ microsteps. A macrostep stopped at the microstep ceiling still publishes,
 with `truncated` set, because the machine moves on and a host that stopped
 hearing would hold a stale view.
 
+**Host actions.** Under `sce-static` a `<sce:action>` argument (§2.11) is
+any typed expression over the same scope, not only a bare
+`_event.data.<field>`, and its type is the value's
+(`InferredType::to_sce_type`; a literal no context typed is `int64` /
+`float64`). An argument that reads only the datamodel is admitted where no
+event is in scope — `<onentry>`, `<onexit>`, initial content — and one that
+reads `_event.data` there is refused as `validation/native-action-argument`,
+because no payload is in scope to type it. The host method's parameter types
+are the arguments' types, and every call site of one name must agree on them
+as it must under any data model.
+
 ### Cross-kind typed binding (NL→IR Mapping Roadmap Item 2)
 
 When a forge expression reads an imported kind's member via

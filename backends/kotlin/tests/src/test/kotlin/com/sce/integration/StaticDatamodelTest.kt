@@ -17,6 +17,9 @@ package com.sce.integration
 import com.sce.integration.static_counter.StaticCounterEvent
 import com.sce.integration.static_counter.StaticCounterState
 import com.sce.integration.static_counter.StaticCounterStateMachine
+import com.sce.integration.static_host_call.StaticHostCallActions
+import com.sce.integration.static_host_call.StaticHostCallEvent
+import com.sce.integration.static_host_call.StaticHostCallStateMachine
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -140,6 +143,36 @@ class StaticDatamodelTest {
             ticks(sm, 3)
             assertEquals(StaticCounterStateMachine.Data(count = 0u, ready = false), before.data)
             assertEquals(setOf(StaticCounterState.Counting), before.configuration)
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun aHostActionTakesTypedDatamodelArgumentsWithNoEventInScope() {
+        // `<sce:action name="showAttempts">` in `<onentry>`, its arguments a
+        // variable and a comparison over it. Under any other data model an
+        // eventless action takes no arguments; here each is a typed
+        // expression, and the host method's parameter types are theirs.
+        val calls = mutableListOf<Pair<UInt, Boolean>>()
+        val host = object : StaticHostCallActions {
+            override fun showAttempts(count: UInt, exhausted: Boolean) {
+                calls += count to exhausted
+            }
+        }
+        val sm = StaticHostCallStateMachine(host)
+        sm.initialize()
+        try {
+            repeat(4) {
+                sm.send(StaticHostCallEvent.Retry)
+                sm.tick()
+            }
+            assertEquals(
+                listOf(0u to false, 1u to false, 2u to false, 3u to true),
+                calls,
+                "one call per entry of `idle`, each with the datamodel as it stood; " +
+                    "the fourth retry finds `attempts < 3` false and re-enters nothing"
+            )
         } finally {
             sm.cleanup()
         }

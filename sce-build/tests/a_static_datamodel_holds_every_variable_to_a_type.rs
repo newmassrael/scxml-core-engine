@@ -390,3 +390,46 @@ fn an_expression_the_model_has_no_typed_form_for_is_refused() {
     assert!(!ok, "eventexpr has no typed form here:\n{out}");
     assert_refused_at(&out, "scxml/static-datamodel-rule", 8);
 }
+
+// ── A host action's arguments are typed expressions ─────────────────────
+
+#[test]
+fn a_host_action_takes_typed_datamodel_arguments_with_no_event_in_scope() {
+    // Under any other data model an argument is a bare `_event.data.<field>`
+    // and an eventless action takes none. Here an argument is any typed
+    // expression over the scope, so a variable is admitted in `<onentry>`.
+    let (ok, out) = run(
+        &["check", "-l", "kotlin"],
+        &machine(
+            r#"<state id="s">
+    <onentry>
+      <sce:action name="show">
+        <sce:arg name="n" expr="count"/>
+        <sce:arg name="done" expr="count &gt;= 3 || ready"/>
+      </sce:action>
+    </onentry>
+  </state>"#,
+        ),
+    );
+    assert!(ok, "typed arguments are admitted and lowered:\n{out}");
+}
+
+#[test]
+fn a_host_action_argument_reading_a_payload_with_none_in_scope_is_refused() {
+    // With no triggering event there is no payload to type `_event.data`.
+    let (ok, out) = run(
+        &["check"],
+        &machine(
+            r#"<state id="s">
+    <onentry>
+      <sce:action name="show"><sce:arg expr="_event.data.n"/></sce:action>
+    </onentry>
+  </state>"#,
+        ),
+    );
+    assert!(!ok, "no payload is in scope in <onentry>:\n{out}");
+    assert!(
+        out.contains("validation/native-action-argument"),
+        "expected the native-action argument refusal:\n{out}"
+    );
+}
