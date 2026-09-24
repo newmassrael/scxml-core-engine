@@ -315,13 +315,13 @@
       "description": "Type carried by an `<sce:const>` declaration. Scalar form is the only shape produced by hand-authored algorithm bodies (RFC §synth-5-A); the array form is reserved for `sce:compute-at=\"build\"` consts whose body is an `<sce:fold>` block (RFC §synth-5-F build-time const-fold). Keeping array out of [`SceType`] keeps the parameter / var / field surfaces scalar-only, which is the v1 contract everywhere else."
     },
     "AlgorithmParam": {
-      "description": "One parameter of an algorithm signature. Parameters are by-value scalars or by-reference slices for `bytes`. Read-only in v1 (assigning to a parameter raises `algorithm/lvalue-unsupported`).",
+      "description": "One parameter of an algorithm signature. Parameters are by-value scalars or by-reference slices for `bytes`; a `list<T>` parameter is refused in v1 (SCE_FORGE.md §4.12), so the type is always a scalar once parsed. Read-only in v1 (assigning to a parameter raises `algorithm/lvalue-unsupported`).",
       "properties": {
         "name": {
           "type": "string"
         },
         "type": {
-          "$ref": "#/definitions/SceType"
+          "$ref": "#/definitions/AlgorithmValueType"
         }
       },
       "required": [
@@ -342,7 +342,7 @@
         "return_type": {
           "anyOf": [
             {
-              "$ref": "#/definitions/SceType"
+              "$ref": "#/definitions/AlgorithmValueType"
             },
             {
               "type": "null"
@@ -394,7 +394,7 @@
               "type": "string"
             },
             "type": {
-              "$ref": "#/definitions/SceType"
+              "$ref": "#/definitions/AlgorithmValueType"
             }
           },
           "required": [
@@ -597,6 +597,31 @@
           "type": "object"
         }
       ]
+    },
+    "AlgorithmValueType": {
+      "anyOf": [
+        {
+          "allOf": [
+            {
+              "$ref": "#/definitions/SceType"
+            }
+          ],
+          "description": "A scalar — any [`SceType`], including `bytes`."
+        },
+        {
+          "description": "`list<T>` — a runtime-length sequence of scalar `T`, bounded by the `capacity` of the local that builds it or the `returns-max-size` of the signature that returns it (SCE_FORGE.md §4.12, which states the same bound for a `bytes` buffer).",
+          "properties": {
+            "list": {
+              "$ref": "#/definitions/SceType"
+            }
+          },
+          "required": [
+            "list"
+          ],
+          "type": "object"
+        }
+      ],
+      "description": "The type of an algorithm parameter, local or return: a scalar, or a bounded list of scalars.\n\n⚠ A list is deliberately NOT a [`SceType`] variant. `SceType` is the type of a codec field, an event-schema field, a validator input — surfaces that are scalar-only by contract (see [`AlgorithmConstType`], which keeps its build-time `array<T, N>` out of `SceType` for the same reason). Adding the variant there would hand every one of those surfaces a case to refuse. The algorithm kind is the one place a runtime-length sequence is computed and returned, so the widening lives here.\n\nSerialized untagged: a scalar stays the bare string it always was (`\"int64\"`), so the forge-AST wire is byte-identical for every document that declares no list; a list serializes as `{\"list\": \"int64\"}`."
     },
     "BackpressurePolicy": {
       "description": "`<sce:backpressure>` policy — RFC §synth-5-C body. All three policies parse, and the rust template lowers them uniformly (the policy threading into the runtime crate is an implementation concern of `sce-link-runtime`).",

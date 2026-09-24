@@ -3389,8 +3389,10 @@ impl AlgorithmValueType {
 }
 
 /// One parameter of an algorithm signature. Parameters are by-value
-/// scalars, by-reference slices for `bytes`, or read-only lists. Read-only
-/// in v1 (assigning to a parameter raises `algorithm/lvalue-unsupported`).
+/// scalars or by-reference slices for `bytes`; a `list<T>` parameter is
+/// refused in v1 (SCE_FORGE.md §4.12), so the type is always a scalar once
+/// parsed. Read-only in v1 (assigning to a parameter raises
+/// `algorithm/lvalue-unsupported`).
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct AlgorithmParam {
