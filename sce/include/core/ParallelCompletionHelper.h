@@ -23,41 +23,71 @@
 namespace SCE::Core {
 
 /**
- * @brief Helper for parallel state completion detection (§scxml-3.4)
+ * @brief Appendix D's isInFinalState, over a configuration
  *
- * Single Source of Truth for "all regions in final state" logic.
- * Shared between Interpreter and AOT engines following Zero Duplication Principle.
+ * Lambda-injected, the shape `ExitSetAlgorithms` and
+ * `ConflictResolutionAlgorithms` use, so the Interpreter (states are
+ * `std::string`) and the generated code (states are an enum) ask one
+ * definition rather than two that agree only where no `<parallel>` nests.
+ */
+struct CompletionAlgorithms {
+    /**
+     * @brief Appendix D's isInFinalState
+     *
+     * @param parentOf `(const StateType&) -> std::optional<StateType>`
+     * @param isParallel `(const StateType&) -> bool`
+     * @param childStates `(const StateType&) -> std::vector<StateType>`, asked
+     *        of a `<parallel>` only: its child states in document order
+     * @param isFinal `(const StateType&) -> bool`: the state is a `<final>`
+     *        element — not whether it is IN a final state
+     */
+    template <typename StateType, typename ParentOfFn, typename IsParallelFn, typename ChildStatesFn,
+              typename IsFinalFn>
+    [[nodiscard]] static bool isInFinalState(const StateType &state, const std::vector<StateType> &configuration,
+                                             ParentOfFn parentOf, IsParallelFn isParallel, ChildStatesFn childStates,
+                                             IsFinalFn isFinal) {
+        // §scxml-D-isInFinalState: a compound state is in a final state when
+        // one of its `<final>` children is active; a `<parallel>` when every
+        // one of its child states is — asked recursively, so a region that is
+        // itself a `<parallel>` counts only once all of ITS regions do.
+        // Nothing else ever is.
+        if (isParallel(state)) {
+            const auto children = childStates(state);
+            return !children.empty() && std::all_of(children.begin(), children.end(), [&](const StateType &child) {
+                return isInFinalState(child, configuration, parentOf, isParallel, childStates, isFinal);
+            });
+        }
+        return std::any_of(configuration.begin(), configuration.end(), [&](const StateType &active) {
+            const auto parent = parentOf(active);
+            return parent.has_value() && *parent == state && isFinal(active);
+        });
+    }
+};
+
+/**
+ * @brief Parallel state completion (§scxml-3.4), bound to a StatePolicy
  *
- * §scxml-3.4: "When all of the children reach final states,
- * the <parallel> element itself is considered to be in a final state"
- *
- * §scxml-3.4: done.state.id event is generated upon parallel completion
- *
- * ARCHITECTURE.md Compliance:
- * - Zero Duplication: Single implementation shared by both engines
- * - Helper Pattern: Follows SendHelper, ForeachHelper, HistoryHelper patterns
+ * §scxml-3.4: "When all of the children reach final states, the <parallel>
+ * element itself is considered to be in a final state" — and done.state.id is
+ * generated when it does. The rule itself is `CompletionAlgorithms`; this binds
+ * it to the generated policy's static tables.
  */
 class ParallelCompletionHelper {
 public:
     /**
-     * @brief Check if all child regions of a parallel state are in final states
+     * @brief Whether a `<parallel>` is in a final state
      *
-     * §scxml-3.4: Parallel state is complete when ALL child regions
-     * have at least one active final state.
-     *
-     * Algorithm:
-     * 1. Get all child regions of the parallel state
-     * 2. For each region, check if any of its final states are active
-     * 3. Return true only if ALL regions have an active final state
+     * Every region is asked Appendix D's isInFinalState, which is recursive: a
+     * region that is itself a `<parallel>` is complete only when all of its own
+     * regions are. The earlier form asked every region for an active `<final>`
+     * child, which no `<parallel>` region ever has, so a `<parallel>` holding
+     * one never completed.
      *
      * @tparam StateType State enum or identifier type
-     * @tparam PolicyType Policy class providing state information methods:
-     *                    - getParallelRegions(StateType) -> vector of region IDs
-     *                    - getParent(StateType) -> parent state ID
-     *                    - isFinalState(StateType) -> bool
-     * @param parallelState The parallel state to check for completion
-     * @param activeStates Vector of currently active states
-     * @return true if all regions have at least one active final state, false otherwise
+     * @tparam PolicyType Policy providing getParallelRegions, getParent,
+     *         isParallelState and isFinalState
+     * @param parallelState The `<parallel>` to ask about
+     * @param activeStates The current configuration
      */
 #if __cpp_concepts >= 202002L
     template <typename StateType, ParallelStatePolicy PolicyType>
@@ -65,37 +95,14 @@ public:
     template <typename StateType, typename PolicyType>
 #endif
     static bool areAllRegionsInFinal(StateType parallelState, const std::vector<StateType> &activeStates) {
-        // §scxml-3.4: Get all child regions of this parallel state
-        // §scxml-D-isInFinalState: the parallel branch, shared by both engines — the
-        // parallel state is final only when every child region is itself final.
-        auto regions = PolicyType::getParallelRegions(parallelState);
-
-        if (regions.empty()) {
-            // No regions means not a valid parallel state
+        if (!PolicyType::isParallelState(parallelState)) {
             return false;
         }
-
-        // Check each region for completion
-        for (const auto &region : regions) {
-            bool regionHasFinalState = false;
-
-            // Check if any final state child of this region is currently active
-            for (const auto &activeState : activeStates) {
-                // §scxml-3.4: A region is complete if any of its final children are active
-                if (PolicyType::getParent(activeState) == region && PolicyType::isFinalState(activeState)) {
-                    regionHasFinalState = true;
-                    break;
-                }
-            }
-
-            if (!regionHasFinalState) {
-                // At least one region is not complete yet
-                return false;
-            }
-        }
-
-        // §scxml-3.4: All regions have final states active
-        return true;
+        return CompletionAlgorithms::isInFinalState(
+            parallelState, activeStates, [](const StateType &s) { return PolicyType::getParent(s); },
+            [](const StateType &s) { return PolicyType::isParallelState(s); },
+            [](const StateType &s) { return PolicyType::getParallelRegions(s); },
+            [](const StateType &s) { return PolicyType::isFinalState(s); });
     }
 };
 

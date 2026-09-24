@@ -38,7 +38,7 @@ struct AlwaysTakeMicrostep {
 class EventProcessingAlgorithms {
 public:
     /**
-     * @brief §scxml-3.13: Process internal event queue (FIFO)
+     * @brief Process the internal event queue (FIFO)
      *
      * Exhaust all internal events in FIFO order when macrostep completes.
      * Both Interpreter and AOT engines use the same algorithm.
@@ -103,120 +103,15 @@ public:
         }
     }
 
-    /**
-     * @brief §scxml-3.13: Check eventless transitions
-     *
-     * Check transitions that execute automatically without events after state entry.
-     * Includes maximum iteration limit to prevent infinite loops.
-     *
-     * @tparam StateMachine State machine type
-     *   Required methods:
-     *   - StateType getCurrentState() const
-     *   - bool processEventlessTransition()
-     *   - void executeOnExit(StateType)
-     *   - void executeOnEntry(StateType)
-     * @tparam EventQueue Internal event queue type
-     * @tparam InternalEventProcessor Internal event processing function type
-     *
-     * @param sm State machine instance
-     * @param queue Internal event queue
-     * @param processInternalEvent Internal event processing function
-     * @param maxIterations Maximum iteration count (default 100)
-     * @return true if any eventless transition occurred, false otherwise
-     */
-#if __cpp_concepts >= 202002L
-    template <typename StateMachine, EventQueueAdapter EventQueue, typename InternalEventProcessor>
-#else
-    template <typename StateMachine, typename EventQueue, typename InternalEventProcessor>
-#endif
-    static bool checkEventlessTransitions(StateMachine &sm, EventQueue &queue,
-                                          InternalEventProcessor &&processInternalEvent, int maxIterations = 100) {
-        // §scxml-D-selectEventlessTransitions: keep selecting transitions that carry
-        // no 'event' attribute and whose guard holds, taking them until none remain
-        // enabled in the current configuration.
-        bool anyTransition = false;
-        int iterations = 0;
-
-        while (iterations++ < maxIterations) {
-            auto oldState = sm.getCurrentState();
-
-            // §scxml-3.13: Attempt eventless transition
-            if (sm.processEventlessTransition()) {
-                auto newState = sm.getCurrentState();
-
-                if (oldState != newState) {
-                    anyTransition = true;
-                    sm.executeOnExit(oldState);
-                    sm.executeOnEntry(newState);
-
-                    // Process internal events after entering new state
-                    processInternalEventQueue(queue, processInternalEvent);
-
-                    // Continue checking eventless transitions
-                } else {
-                    // No state change - stop
-                    break;
-                }
-            } else {
-                // No eventless transition - stop
-                break;
-            }
-        }
-
-        if (iterations >= maxIterations) {
-            SCE_LOG_ERROR("EventProcessingAlgorithms: Eventless transition loop detected after {} iterations",
-                          maxIterations);
-            return false;
-        }
-
-        return anyTransition;
-    }
-
-    /**
-     * @brief §scxml-3.13 / D.1: Process complete macrostep
-     *
-     * External event processing → Exhaust internal events → Eventless transitions.
-     * Core event processing pattern for Interpreter and AOT engines.
-     *
-     * @tparam StateMachine State machine type
-     * @tparam Event Event type
-     * @tparam EventQueue Internal event queue type
-     * @tparam InternalEventProcessor Internal event processing function type
-     *
-     * @param sm State machine instance
-     * @param event External event
-     * @param queue Internal event queue
-     * @param processInternalEvent Internal event processing function
-     * @param checkEventless Whether to check eventless transitions (default true)
-     */
-#if __cpp_concepts >= 202002L
-    template <typename StateMachine, typename Event, EventQueueAdapter EventQueue, typename InternalEventProcessor>
-#else
-    template <typename StateMachine, typename Event, typename EventQueue, typename InternalEventProcessor>
-#endif
-    static void processMacrostep(StateMachine &sm, const Event &event, EventQueue &queue,
-                                 InternalEventProcessor &&processInternalEvent, bool checkEventless = true) {
-        auto oldState = sm.getCurrentState();
-
-        // 1. §scxml-3.13: Attempt transition with external event
-        if (sm.processTransition(event)) {
-            auto newState = sm.getCurrentState();
-
-            // 2. On state change: execute exit/entry
-            if (oldState != newState) {
-                sm.executeOnExit(oldState);
-                sm.executeOnEntry(newState);
-
-                // 3. §scxml-3.13: Process all internal events
-                processInternalEventQueue(queue, processInternalEvent);
-
-                // 4. §scxml-3.13: Eventless transitions
-                if (checkEventless) {
-                    checkEventlessTransitions(sm, queue, processInternalEvent);
-                }
-            }
-        }
-    }
+    // Two more templates stood here, `checkEventlessTransitions` and
+    // `processMacrostep`, presented as the macrostep both engines share. No
+    // engine called either, and neither was Appendix D's loop: they drained the
+    // internal queue BEFORE eventless transitions, and moved the machine by
+    // running onexit for one "current" state and onentry for another — a
+    // chain's worth of states and a `<parallel>`'s regions never entered the
+    // picture. The microstep both engines share is `MicrostepAlgorithms`; each
+    // engine's main event loop drives it. An unreachable copy of an appendix
+    // procedure drifts unseen, so it is gone rather than kept as a reference.
 };
 
 }  // namespace SCE::Core

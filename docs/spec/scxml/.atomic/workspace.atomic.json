@@ -1440,16 +1440,6 @@
           "kind": "references"
         },
         {
-          "file": "sce/include/core/EventProcessingAlgorithms.h",
-          "symbol": "checkEventlessTransitions",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/core/EventProcessingAlgorithms.h",
-          "symbol": "processMacrostep",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/core/HierarchicalStateHelper.h",
           "symbol": "findLCA",
           "kind": "implements"
@@ -14616,6 +14606,11 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "enterStates",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/MicrostepAlgorithms.h",
+          "symbol": "enterStates",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14655,7 +14650,7 @@
           "kind": "implements"
         },
         {
-          "file": "sce/include/static/StaticExecutionEngine.h",
+          "file": "sce/include/core/MicrostepAlgorithms.h",
           "symbol": "executeTransitionContent",
           "kind": "implements"
         }
@@ -14726,7 +14721,7 @@
           "kind": "implements"
         },
         {
-          "file": "sce/include/static/StaticExecutionEngine.h",
+          "file": "sce/include/core/MicrostepAlgorithms.h",
           "symbol": "exitStates",
           "kind": "implements"
         }
@@ -15074,11 +15069,6 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "sce/include/core/ParallelCompletionHelper.h",
-          "symbol": "areAllRegionsInFinal",
-          "kind": "implements"
-        },
-        {
           "file": "sce/src/states/ConcurrentRegion.cpp",
           "symbol": "ConcurrentRegion::determineIfInFinalState",
           "kind": "implements"
@@ -15086,6 +15076,11 @@
         {
           "file": "sce/src/states/ConcurrentStateNode.cpp",
           "symbol": "ConcurrentStateNode::areAllRegionsInFinalState",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/ParallelCompletionHelper.h",
+          "symbol": "isInFinalState",
           "kind": "implements"
         }
       ],
@@ -15253,7 +15248,7 @@
           "kind": "implements"
         },
         {
-          "file": "sce/include/static/StaticExecutionEngine.h",
+          "file": "sce/include/core/MicrostepAlgorithms.h",
           "symbol": "microstep",
           "kind": "implements"
         }
@@ -15351,9 +15346,9 @@
           "kind": "implements"
         },
         {
-          "file": "sce/include/static/StaticExecutionEngine.h",
+          "file": "sce/include/core/MicrostepAlgorithms.h",
           "symbol": "removeConflictingTransitions",
-          "kind": "references"
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -15379,17 +15374,12 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "sce/include/core/EventProcessingAlgorithms.h",
-          "symbol": "checkEventlessTransitions",
-          "kind": "implements"
-        },
-        {
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "_process_internal_queue",
           "kind": "implements"
         },
         {
-          "file": "sce/include/static/StaticExecutionEngine.h",
+          "file": "sce/include/core/MicrostepAlgorithms.h",
           "symbol": "selectTransitions",
           "kind": "implements"
         }
@@ -15436,7 +15426,7 @@
           "kind": "references"
         },
         {
-          "file": "sce/include/static/StaticExecutionEngine.h",
+          "file": "sce/include/core/MicrostepAlgorithms.h",
           "symbol": "selectTransitions",
           "kind": "implements"
         }
@@ -17240,6 +17230,66 @@
       "target_kind": "section",
       "target_id": "scxml-D-addAncestorStatesToEnter",
       "reason": "initialize no longer explains why its entry chain skips the ancestor rule; the chain is gone and the rule lives in EntrySetAlgorithms::addAncestorStatesToEnter, already bound."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-selectTransitions",
+      "reason": "Appendix D's selectTransitions is SCE::Core::MicrostepAlgorithms::selectTransitions now, shared by the AOT engine and the Interpreter; StaticExecutionEngine::selectTransitions only binds the policy's current event and delegates, and carries the replacement binding in core/MicrostepAlgorithms.h."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-selectEventlessTransitions",
+      "reason": "selectEventlessTransitions is the same walk as selectTransitions and lives in SCE::Core::MicrostepAlgorithms::selectTransitions now; StaticExecutionEngine::selectTransitions delegates to it."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-removeConflictingTransitions",
+      "reason": "StaticExecutionEngine::removeConflictingTransitions is removed; the effective-target exit sets it fed ConflictResolutionAlgorithms are computed in SCE::Core::MicrostepAlgorithms::removeConflictingTransitions, which carries the replacement binding."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-microstepProcedure",
+      "reason": "The microstep procedure is SCE::Core::MicrostepAlgorithms::microstep now, shared with the Interpreter; StaticExecutionEngine::microstep delegates and only settles currentState_."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-exitStates",
+      "reason": "StaticExecutionEngine::exitStates is removed; exitStates is SCE::Core::MicrostepAlgorithms::exitStates, which carries the replacement binding."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-executeTransitionContent",
+      "reason": "StaticExecutionEngine::executeTransitionContent is removed; executeTransitionContent is SCE::Core::MicrostepAlgorithms::executeTransitionContent, which carries the replacement binding."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-selectEventlessTransitions",
+      "reason": "EventProcessingAlgorithms::checkEventlessTransitions is removed: no engine called it, and it drained the internal queue before eventless transitions, which is not Appendix D's loop. selectEventlessTransitions is SCE::Core::MicrostepAlgorithms::selectTransitions."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "EventProcessingAlgorithms::checkEventlessTransitions is removed (unreachable, and not Appendix D's order). Section 3.13 keeps its binding to processInternalEventQueue in the same file."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "EventProcessingAlgorithms::processMacrostep is removed: no engine called it, and it ran exit and entry for a single current state instead of an exit set. Section 3.13 keeps its binding to processInternalEventQueue in the same file."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-isInFinalState",
+      "reason": "isInFinalState is SCE::Core::CompletionAlgorithms::isInFinalState now, recursive over nested <parallel> regions as the appendix states; ParallelCompletionHelper::areAllRegionsInFinal binds it to the generated policy and delegates."
     }
   ],
   "frames": {},

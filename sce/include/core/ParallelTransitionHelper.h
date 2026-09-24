@@ -138,6 +138,41 @@ struct ExitSetAlgorithms {
 
         return exitSet;
     }
+
+    /**
+     * @brief Appendix D's computeExitSet over a LIST of transitions, in exitOrder
+     *
+     * @param transitions Each with `source`, EFFECTIVE `targets`, `isInternal`
+     *        and `isTargetless` — the fields `ParallelTransitionHelper::Transition`
+     *        carries
+     * @param documentOrder `(const StateType&) -> int`, the pre-order position
+     * @return The states to exit, in the order they are exited
+     */
+    template <typename StateType, typename Transitions, typename GetParentFn, typename IsDomainCandidateFn,
+              typename DocumentOrderFn>
+    [[nodiscard]] static std::vector<StateType>
+    computeStatesToExit(const Transitions &transitions, const std::vector<StateType> &configuration,
+                        GetParentFn getParent, IsDomainCandidateFn isDomainCandidate, DocumentOrderFn documentOrder) {
+        // §scxml-D-computeExitSet takes the microstep's whole transition list
+        // and unions the exit sets; the appendix's exitStates exits that union
+        // in exitOrder — descendants before their ancestors and reverse
+        // document order among the rest, which together are exactly reverse
+        // document order.
+        std::vector<StateType> statesToExit;
+        for (const auto &transition : transitions) {
+            for (const auto &state :
+                 computeExitSet(transition.source, transition.targets, transition.isInternal, transition.isTargetless,
+                                configuration, getParent, isDomainCandidate)) {
+                if (std::find(statesToExit.begin(), statesToExit.end(), state) == statesToExit.end()) {
+                    statesToExit.push_back(state);
+                }
+            }
+        }
+        std::sort(statesToExit.begin(), statesToExit.end(), [&documentOrder](const StateType &a, const StateType &b) {
+            return documentOrder(a) > documentOrder(b);
+        });
+        return statesToExit;
+    }
 };
 
 /**
@@ -248,7 +283,7 @@ public:
 #endif
     static std::vector<StateType> computeStatesToExit(const std::vector<Transition<StateType>> &transitions,
                                                       const std::vector<StateType> &activeStates) {
-        std::vector<StateType> statesToExit;
+        using Hierarchy = SCE::Core::HierarchicalStateHelper<PolicyType>;
 
         // §scxml-D-computeExitSet takes a LIST of transitions and unions their
         // exit sets. Each one is the same procedure conflict resolution
@@ -256,20 +291,10 @@ public:
         // disagree about which states a transition exits, and they did while
         // this walked the configuration itself and `computeExitSet` walked the
         // source's ancestor chain.
-        for (const auto &trans : transitions) {
-            for (const auto &state : computeExitSet<StateType, PolicyType>(trans, activeStates)) {
-                if (std::find(statesToExit.begin(), statesToExit.end(), state) == statesToExit.end()) {
-                    statesToExit.push_back(state);
-                }
-            }
-        }
-
-        // §scxml-3.13: Sort by REVERSE document order (exit deepest/rightmost first)
-        std::sort(statesToExit.begin(), statesToExit.end(), [](StateType a, StateType b) {
-            return PolicyType::getDocumentOrder(a) > PolicyType::getDocumentOrder(b);
-        });
-
-        return statesToExit;
+        return ExitSetAlgorithms::computeStatesToExit(
+            transitions, activeStates, [](const StateType &s) { return PolicyType::getParent(s); },
+            [](const StateType &s) { return Hierarchy::isTransitionDomainCandidate(s); },
+            [](const StateType &s) { return PolicyType::getDocumentOrder(s); });
     }
 
     // Two sorts stood here: transitions by source document order, for their

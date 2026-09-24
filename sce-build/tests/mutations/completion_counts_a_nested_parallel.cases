@@ -1,0 +1,63 @@
+# Mutation cases for W3C SCXML Appendix D's isInFinalState — the predicate a
+# `<parallel>`'s done.state decision asks, now `CompletionAlgorithms` for both
+# C++ engines.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/completion_counts_a_nested_parallel.cases`.
+#
+# The first case restores the defect this file was written for. The helper the
+# generated code calls asked every region of a `<parallel>` for an active
+# `<final>` child — the compound rule, applied to regions that need not be
+# compound. A region that is itself a `<parallel>` has no `<final>` child, so
+# a `<parallel>` holding one never completed and its done.state was never
+# raised. Nothing went red: no W3C fixture nests a `<parallel>` as a region of
+# another, and the one integration pair that asks about completion has only
+# compound regions.
+#
+# A case that SURVIVES here means `CompletionAlgorithmsTest` is decorative.
+
+mutation_ctest --test-dir build -R '^StatesTests$'
+mutation_targets sce/include/core/ParallelCompletionHelper.h
+mutation_oracles tests/states/CompletionAlgorithmsTest.cpp
+
+# ── A <parallel> region asked for a <final> child ──────────────────
+#
+# The recursion is the whole difference: a region is asked the same question
+# its parent is, so a `<parallel>` region answers from ITS regions. Replacing
+# the recursive call with the compound check is the helper as it stood.
+
+mutation_case "a region of a <parallel> is asked for a <final> child instead of recursing" <<'PY'
+edit("sce/include/core/ParallelCompletionHelper.h",
+     """                return isInFinalState(child, configuration, parentOf, isParallel, childStates, isFinal);""",
+     """                return std::any_of(configuration.begin(), configuration.end(), [&](const StateType &active) {
+                    const auto parent = parentOf(active);
+                    return parent.has_value() && *parent == child && isFinal(active);
+                });""")
+PY
+
+# ── Any active child taken for a final one ─────────────────────────
+#
+# A compound state is in a final state when a `<final>` child is active, not
+# when any child is. Dropping the element test makes every active compound
+# state final.
+
+mutation_case "a compound state counts as final with any child active" <<'PY'
+edit("sce/include/core/ParallelCompletionHelper.h",
+     """            return parent.has_value() && *parent == state && isFinal(active);""",
+     """            return parent.has_value() && *parent == state;""")
+PY
+
+# ── The policy form asked about a compound state ───────────────────
+#
+# `areAllRegionsInFinal` is a question about a `<parallel>`. Without its guard
+# a compound state is answered by the compound rule, and the generated code's
+# caller would read a region's own completion as the parallel's.
+
+mutation_case "areAllRegionsInFinal answers for a compound state" <<'PY'
+edit("sce/include/core/ParallelCompletionHelper.h",
+     """        if (!PolicyType::isParallelState(parallelState)) {
+            return false;
+        }
+""",
+     "")
+PY

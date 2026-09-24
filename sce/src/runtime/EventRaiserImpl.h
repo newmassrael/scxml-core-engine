@@ -53,9 +53,7 @@ public:
      *
      * §scxml-3.12.2 says what to do with an error event nothing matches. It
      * does not say what to do when something *does* match it and that handler
-     * fails too, so the number is this engine's to choose, and it matches the
-     * ceiling `EventProcessingAlgorithms::checkEventlessTransitions` uses for
-     * the sibling case of a macrostep that cannot finish.
+     * fails too, so the number is this engine's to choose.
      *
      * A hundred links is far past any repair strategy a document plausibly
      * spells (a handler that tries a fallback, then a second one, is three)

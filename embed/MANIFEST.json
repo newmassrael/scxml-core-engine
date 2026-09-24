@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "7126da05f4",
+  "embed_version": "31c6b58d08",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 298,
+  "symbol_count": 300,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -857,10 +857,35 @@
       "signature": "void SCE::detail::log_noop<T>(Args &&...) noexcept"
     },
     {
+      "header": "core/MicrostepAlgorithms.h",
+      "kind": "struct",
+      "members": [
+        "template FunctionTemplateDecl computeStatesToExit",
+        "template FunctionTemplateDecl effectiveTargets",
+        "template FunctionTemplateDecl enterStates",
+        "template FunctionTemplateDecl executeTransitionContent",
+        "template FunctionTemplateDecl exitStates",
+        "template FunctionTemplateDecl isCompound",
+        "template FunctionTemplateDecl microstep",
+        "template FunctionTemplateDecl parentOf",
+        "template FunctionTemplateDecl removeConflictingTransitions",
+        "template FunctionTemplateDecl selectTransitions"
+      ],
+      "name": "SCE::Core::MicrostepAlgorithms"
+    },
+    {
       "header": "core/ParallelCompletionHelper.h",
       "kind": "class",
       "members": [],
       "name": "SCE::Core::ParallelCompletionHelper"
+    },
+    {
+      "header": "core/ParallelCompletionHelper.h",
+      "kind": "struct",
+      "members": [
+        "template FunctionTemplateDecl isInFinalState"
+      ],
+      "name": "SCE::Core::CompletionAlgorithms"
     },
     {
       "header": "core/ParallelConfigurationHelper.h",
@@ -885,6 +910,7 @@
       "kind": "struct",
       "members": [
         "template FunctionTemplateDecl computeExitSet",
+        "template FunctionTemplateDecl computeStatesToExit",
         "template FunctionTemplateDecl getTransitionDomain"
       ],
       "name": "SCE::Core::ExitSetAlgorithms"

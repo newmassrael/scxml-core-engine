@@ -35,6 +35,7 @@
 #include "core/EventQueueManager.h"
 #include "core/HierarchicalStateHelper.h"
 #include "core/HistoryHelper.h"
+#include "core/MicrostepAlgorithms.h"
 #include "core/ParallelTransitionHelper.h"
 // §scxml-6.2.5: the request/reply shape a host-declared Event I/O Processor is
 // dispatched with. A `core/` header for the same reason `PayloadReading.h` is
@@ -228,10 +229,7 @@ public:
      * does not say what to do when something *does* match it and that handler
      * fails too: the failure raises the same error, the same transition
      * answers it, and the machine has no way out. Nothing in the specification
-     * bounds that, so the number is this engine's to choose, and it matches
-     * the ceiling `EventProcessingAlgorithms::checkEventlessTransitions` uses
-     * for the sibling case of a macrostep that cannot finish — decided the
-     * same way for the same reason.
+     * bounds that, so the number is this engine's to choose.
      *
      * A hundred links is far past any repair strategy a document plausibly
      * spells (a handler that tries a fallback, then a second one, is three)
@@ -335,23 +333,24 @@ private:
     //
     // The policy answers what only the document knows: which of a state's
     // transitions an event enables, what a transition's content is, what a
-    // state's onentry and onexit do, what a history recorded. Everything
-    // Appendix D does with those answers is written here, once, for every
-    // machine. A machine with a `<parallel>` used to take a second microstep
-    // written into its generated code while every other machine took an LCA
-    // walk here, and the two disagreed about eventless selection, about the
-    // order transition content runs in, and about how many targets a
+    // state's onentry and onexit do, what a history recorded. What Appendix D
+    // does with those answers is `SCE::Core::MicrostepAlgorithms`, written once
+    // for this engine and the Interpreter; `MicrostepHost` is how this engine
+    // hands it the policy. A machine with a `<parallel>` used to take a second
+    // microstep written into its generated code while every other machine took
+    // an LCA walk here, and the two disagreed about eventless selection, about
+    // the order transition content runs in, and about how many targets a
     // transition has.
 
-    /// The document as Appendix D's entry procedures read it — see
-    /// `SCE::Core::EntrySetAlgorithms` for what each member answers. The
-    /// structure is the policy's static tables; only the history values are
-    /// run-time state, which is why this holds the policy.
-    struct EntryDoc {
+    /// This engine as `SCE::Core::MicrostepAlgorithms` reads it — that struct
+    /// states what each member answers. The document is the policy's static
+    /// tables; the history values and the configuration are run-time state,
+    /// which is why this holds the engine.
+    struct MicrostepHost {
         using State = typename StatePolicy::State;
         using History = typename StatePolicy::History;
 
-        const StatePolicy &policy;
+        StaticExecutionEngine &engine;
 
         std::optional<State> parentOf(const State &s) const {
             return StatePolicy::getParent(s);
@@ -378,7 +377,7 @@ private:
         }
 
         std::optional<std::vector<State>> historyValue(const History &h) const {
-            return policy.historyValue(h);
+            return engine.policy_.historyValue(h);
         }
 
         std::vector<SCE::Core::EntryTarget<State, History>> historyDefaultTargets(const History &h) const {
@@ -388,20 +387,31 @@ private:
         int documentOrder(const State &s) const {
             return StatePolicy::getDocumentOrder(s);
         }
+
+        std::vector<State> configuration() const {
+            return engine.getActiveStates();
+        }
+
+        std::optional<TransitionInfo> firstEnabledTransition(const State &s, Event event) {
+            return engine.policy_.firstEnabledTransition(s, event, engine);
+        }
+
+        void exitState(const State &s, const std::vector<State> &configurationBeforeExit) {
+            engine.policy_.executeExitActions(s, engine, configurationBeforeExit);
+        }
+
+        void executeTransitionContent(const TransitionInfo &t) {
+            engine.policy_.executeTransitionActions(t.source, t.transitionIndex, engine);
+        }
+
+        void enterState(const State &s, bool isDefaultEntry) {
+            engine.policy_.executeEntryActions(s, engine, isDefaultEntry);
+        }
+
+        void executeHistoryDefaultContent(const History &h) {
+            engine.policy_.executeHistoryDefaultContent(h, engine);
+        }
     };
-
-    /// A transition's targets with every `<history>` dereferenced — to what
-    /// it recorded or, before its parent was ever exited, to its default. The
-    /// domain, and so the exit set, is a question about these.
-    std::vector<State> effectiveTargetsOf(const TransitionInfo &t) const {
-        return SCE::Core::EntrySetAlgorithms::getEffectiveTargetStates(t.targets, EntryDoc{policy_});
-    }
-
-    /// The exit-set view of a transition: its source and effective targets.
-    SCE::Core::ParallelTransitionHelper::Transition<State> exitViewOf(const TransitionInfo &t) const {
-        return SCE::Core::ParallelTransitionHelper::Transition<State>(
-            t.source, effectiveTargetsOf(t), t.transitionIndex, t.hasActions, t.isInternal, t.isTargetless());
-    }
 
     /**
      * @brief Appendix D's selectTransitions, or its selectEventlessTransitions
@@ -411,134 +421,22 @@ private:
      */
     std::vector<TransitionInfo> selectTransitions(Event event) {
         policy_.bindCurrentEvent(event, *this);
-
-        const std::vector<State> configuration = getActiveStates();
-        std::vector<State> atomicStates;
-        for (const State &s : configuration) {
-            if (!StatePolicy::isCompoundState(s) && !StatePolicy::isParallelState(s)) {
-                atomicStates.push_back(s);
-            }
-        }
-        std::sort(atomicStates.begin(), atomicStates.end(), [](const State &a, const State &b) {
-            return StatePolicy::getDocumentOrder(a) < StatePolicy::getDocumentOrder(b);
-        });
-
-        std::vector<TransitionInfo> enabled;
-        for (const State &atomic : atomicStates) {
-            // §scxml-D-selectTransitions: the atomic state first, then its
-            // proper ancestors, and the first enabled transition in document
-            // order ends the walk for this atomic state. The set is ORDERED
-            // and a set: two atomic states under one ancestor both reach its
-            // transition, and it is one transition, taken once. With
-            // `Event()` this is §scxml-D-selectEventlessTransitions, the same
-            // walk over transitions that have no event.
-            for (std::optional<State> s = atomic; s.has_value(); s = StatePolicy::getParent(*s)) {
-                std::optional<TransitionInfo> found = policy_.firstEnabledTransition(*s, event, *this);
-                if (!found.has_value()) {
-                    continue;
-                }
-                const bool seen = std::any_of(enabled.begin(), enabled.end(), [&found](const TransitionInfo &t) {
-                    return t.source == found->source && t.transitionIndex == found->transitionIndex;
-                });
-                if (!seen) {
-                    enabled.push_back(std::move(*found));
-                }
-                break;
-            }
-        }
-        return removeConflictingTransitions(enabled, configuration);
-    }
-
-    std::vector<TransitionInfo> removeConflictingTransitions(const std::vector<TransitionInfo> &enabled,
-                                                             const std::vector<State> &configuration) const {
-        if (enabled.size() < 2) {
-            return enabled;
-        }
-        // §scxml-D-removeConflictingTransitions: two transitions conflict when
-        // their exit sets intersect, and exit sets are read off the
-        // configuration over each transition's EFFECTIVE targets — a
-        // `<history>` target is as deep as what it recorded.
-        using Resolver = SCE::Core::ConflictResolutionHelper<StatePolicy>;
-        std::vector<typename Resolver::TransitionDescriptor> descriptors;
-        descriptors.reserve(enabled.size());
-        for (const TransitionInfo &t : enabled) {
-            typename Resolver::TransitionDescriptor d(t.source, effectiveTargetsOf(t), t.transitionIndex, t.hasActions,
-                                                      t.isInternal, t.isTargetless());
-            d.exitSet = Resolver::computeExitSet(t.source, d.targets, t.isInternal, t.isTargetless(), configuration);
-            descriptors.push_back(std::move(d));
-        }
-        const auto kept = Resolver::removeConflictingTransitions(descriptors);
-        std::vector<TransitionInfo> result;
-        for (const TransitionInfo &t : enabled) {
-            const bool survives =
-                std::any_of(kept.begin(), kept.end(), [&t](const typename Resolver::TransitionDescriptor &d) {
-                    return d.source == t.source && d.transitionIndex == t.transitionIndex;
-                });
-            if (survives) {
-                result.push_back(t);
-            }
-        }
-        return result;
+        MicrostepHost host{*this};
+        return SCE::Core::MicrostepAlgorithms::selectTransitions(host, event);
     }
 
     /**
      * @brief Appendix D's microstep: exit, run the transitions' content, enter
      */
     void microstep(const std::vector<TransitionInfo> &transitions) {
-        // §scxml-D-microstepProcedure: every exit, then every transition's content,
-        // then every entry — for the whole set at once, which is what lets
-        // the regions of a `<parallel>` each take their own transition in one
-        // step.
-        exitStates(transitions);
-        executeTransitionContent(transitions);
-        std::vector<SCE::Core::EntryTransition<State, History>> entering;
-        entering.reserve(transitions.size());
-        for (const TransitionInfo &t : transitions) {
-            entering.push_back(t.toEntryTransition());
-        }
-        enterStates(entering);
-    }
-
-    void exitStates(const std::vector<TransitionInfo> &transitions) {
-        // §scxml-D-exitStates: the union of the transitions' exit sets, exited
-        // in exitOrder. Each history is recorded from the configuration as it
-        // stood BEFORE the first exit, which is the snapshot handed to every
-        // onexit below.
-        const std::vector<State> configuration = getActiveStates();
-        std::vector<SCE::Core::ParallelTransitionHelper::Transition<State>> views;
-        views.reserve(transitions.size());
-        for (const TransitionInfo &t : transitions) {
-            views.push_back(exitViewOf(t));
-        }
-        for (const State &s :
-             SCE::Core::ParallelTransitionHelper::computeStatesToExit<State, StatePolicy>(views, configuration)) {
-            policy_.executeExitActions(s, *this, configuration);
-        }
-    }
-
-    void executeTransitionContent(const std::vector<TransitionInfo> &transitions) {
-        // §scxml-D-executeTransitionContent: in the order the transitions were
-        // selected, which is not their sources' document order once an
-        // ancestor's transition is reached from a later region.
-        for (const TransitionInfo &t : transitions) {
-            if (t.hasActions) {
-                policy_.executeTransitionActions(t.source, t.transitionIndex, *this);
-            }
-        }
+        MicrostepHost host{*this};
+        const auto entry = SCE::Core::MicrostepAlgorithms::microstep(host, transitions);
+        settleCurrentState(transitions, entry.statesToEnter);
     }
 
     void enterStates(const std::vector<SCE::Core::EntryTransition<State, History>> &transitions) {
-        const EntryDoc doc{policy_};
-        const auto entry = SCE::Core::EntrySetAlgorithms::computeEntrySet(transitions, doc);
-        for (const State &s : entry.statesToEnter) {
-            // §scxml-D-enterStates: onentry, then the initial transition's
-            // content if and only if this state's initial state is being
-            // entered by default, then a history's default content owed to it.
-            policy_.executeEntryActions(s, *this, entry.isDefaultEntry(s));
-            if (const auto history = entry.defaultHistoryContentOf(s)) {
-                policy_.executeHistoryDefaultContent(*history, *this);
-            }
-        }
+        MicrostepHost host{*this};
+        const auto entry = SCE::Core::MicrostepAlgorithms::enterStates(host, transitions);
         settleCurrentState(transitions, entry.statesToEnter);
     }
 
@@ -550,9 +448,12 @@ private:
      * ends on its atomic state. With one, `currentState_` is the first state
      * the last transition names, dereferenced, then down through the
      * configuration to an atomic state — the answer every backend gives.
+     *
+     * @tparam Transitions Anything whose elements carry `targets` as written:
+     *         the microstep's enabled set, or the initial transition
      */
-    void settleCurrentState(const std::vector<SCE::Core::EntryTransition<State, History>> &transitions,
-                            const std::vector<State> &entered) {
+    template <typename Transitions>
+    void settleCurrentState(const Transitions &transitions, const std::vector<State> &entered) {
         if (entered.empty()) {
             return;
         }
@@ -561,7 +462,7 @@ private:
         } else {
             for (auto it = transitions.rbegin(); it != transitions.rend(); ++it) {
                 const std::vector<State> targets =
-                    SCE::Core::EntrySetAlgorithms::getEffectiveTargetStates(it->targets, EntryDoc{policy_});
+                    SCE::Core::EntrySetAlgorithms::getEffectiveTargetStates(it->targets, MicrostepHost{*this});
                 if (!targets.empty()) {
                     currentState_ = targets.front();
                     resolveCurrentStateToLeaf();

@@ -686,18 +686,22 @@ Helpers distributed across `sce/include/core/` and `sce/include/common/`:
 | `InvokeHelper` | 6.4 | Invoke lifecycle (defer/cancel/execute pattern) |
 | `TransitionHelper` | 3.13 | Transition selection and execution |
 | `ConflictResolutionHelper` | D.2 | Optimal transition set selection |
-| `ParallelTransitionHelper` (`ExitSetAlgorithms`) | D.2 | `getTransitionDomain` + `computeExitSet` over the configuration |
+| `ParallelTransitionHelper` (`ExitSetAlgorithms`) | D.2 | `getTransitionDomain` + `computeExitSet` over the configuration, and the union of a microstep's exit sets in exit order |
 | `EntrySetHelper` (`EntrySetAlgorithms`) | D.2, 3.3, 3.6, 3.10 | `computeEntrySet` and its callees: target sets, default entry, history dereference, entry order |
+| `MicrostepAlgorithms` | D.2 | The microstep: `selectTransitions`, `removeConflictingTransitions`, `exitStates`, `executeTransitionContent`, `enterStates`, over a Host each engine provides |
+| `ParallelCompletionHelper` (`CompletionAlgorithms`) | D.2, 3.4 | `isInFinalState`, recursive over a `<parallel>` nested as a region |
 | `ParallelStateHelper` | 3.4 | Parallel region orchestration |
 | `HistoryHelper` | 3.11 | History state recording/restoration |
 | `EntryExitHelper` | 3.7, 3.8 | State entry/exit action execution |
 | `EventMatchingHelper` | 5.9.3 | Event descriptor prefix matching |
 
-The AOT engine's microstep is written once, in `StaticExecutionEngine`, over
-these helpers: the generated policy answers which transition of a state an
-event enables and what one state's entry, exit or transition content does,
-and the engine does everything Appendix D does with those answers — for a
-machine with a `<parallel>` and one without alike.
+Appendix D's microstep is written once, in `MicrostepAlgorithms`, over these
+helpers. An engine hands it a Host: the document as `EntrySetAlgorithms` reads
+it, plus the run — the configuration, which transition of a state an event
+enables, and what one state's entry, exit or transition content does. The AOT
+engine's Host is `StaticExecutionEngine::MicrostepHost`, over the generated
+policy; everything Appendix D does with the Host's answers is the shared
+procedure, for a machine with a `<parallel>` and one without alike.
 
 **`common/`** — Action/data primitive helpers:
 
@@ -719,10 +723,12 @@ helper.evaluate([this](const std::string& msg) { eventRaiser_->raiseEvent("error
 helper.evaluate([&engine](const std::string& msg) { engine.raise(Event::Error_execution); });
 ```
 
-**Template + String Adapter Pattern**: Core helpers use templates for AOT (enum State) and string adapters for Interpreter:
+**Template + String Adapter Pattern**: an algorithm is written once over injected accessors — lambdas, or a `Doc`/`Host` object — so the AOT engine (enum states) and the Interpreter (string ids) instantiate the same template; a policy-bound wrapper binds it to the generated policy's static tables:
 ```cpp
-HierarchicalStateHelper<StatePolicy>       // AOT: compile-time type checking
-HierarchicalStateHelperString              // Interpreter: string state IDs
+ExitSetAlgorithms::computeExitSet(source, targets, isInternal, isTargetless,
+                                  configuration, parentOf, isDomainCandidate);  // lambdas
+MicrostepAlgorithms::microstep(host, transitions);                            // a Host
+ConflictResolutionHelper<StatePolicy>::removeConflictingTransitions(...);     // AOT wrapper
 ```
 
 **Deferred Error Handling** (W3C SCXML 5.3): `datamodelInitFailed_` flag in AOT for deferred error.execution raising, maintaining correct event priority.
