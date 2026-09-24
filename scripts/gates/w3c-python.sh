@@ -102,9 +102,15 @@ status=0
 # rather than adding a fixture of its own, so it is not a stem and nothing else
 # names it. A directory of witnesses no runner enumerates is a directory of
 # files.
+#
+# `microstep/` is the fifth, for the same reason again: it holds the runtime's
+# Appendix D transcription to hand-worked answers over a document written out
+# by hand — the answers the Rust and C++ transcriptions are held to — and no
+# document drives it.
 PYTHONPATH="$SCE_REPO_ROOT/backends/python/runtime${PYTHONPATH:+:$PYTHONPATH}" \
     python3 -m pytest backends/python/tests/generated/ backends/python/tests/integration/ \
         backends/python/tests/ecmascript/ backends/python/tests/configuration_entry/ \
+        backends/python/tests/microstep/ \
         --no-header -v >"$LOG/pytest.log" 2>&1 || status=$?
 cat "$LOG/pytest.log"
 

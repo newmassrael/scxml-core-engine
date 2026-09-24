@@ -1,0 +1,92 @@
+# Mutation cases for the Python runtime's transcription of W3C SCXML Appendix D,
+# `backends/python/runtime/sce_runtime/microstep.py`.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/python_microstep_transcription.cases`.
+#
+# The transcription is held to the hand-worked answers the Rust and C++
+# transcriptions are held to, over the same document
+# (`backends/python/tests/microstep/`). Each case below breaks one rule the
+# appendix states and names the answer that must then go wrong; a case that
+# survives is a rule those answers do not observe.
+#
+# Python compiles nothing, so the module on disk is the artifact every run
+# reads — the edits are `mutation_runtime_targets`. No regeneration is
+# declared: the oracle imports the runtime and no generated machine.
+
+mutation_pytest backends/python/tests microstep/
+mutation_runtime_targets backends/python/runtime/sce_runtime/microstep.py
+mutation_oracles backends/python/tests/microstep/test_microstep_algorithms.py
+
+# ── findLCCA: a <parallel> is never a domain ──────────────────────
+#
+# §scxml-D-findLCCA filters the candidates with
+# isCompoundStateOrScxmlElement. Admit the `<parallel>` and an external
+# transition written on a region root gets that `<parallel>` as its domain, so
+# the sibling regions are neither exited nor entered again — the region-root
+# answer goes wrong.
+
+mutation_case "findLCCA accepts a <parallel> as the domain" <<'PY'
+edit("backends/python/runtime/sce_runtime/microstep.py",
+     "        if doc.is_compound(ancestor) and all(",
+     "        if (doc.is_compound(ancestor) or doc.is_parallel(ancestor)) and all(")
+PY
+
+# ── removeConflictingTransitions: a preempted transition is dropped ─
+#
+# The transition selected first keeps its place against a later one it
+# conflicts with, unless the later one descends from it. Take the later one
+# anyway and `p -> t` displaces `a1 -> a2` on F.
+
+mutation_case "a preempted transition is kept" <<'PY'
+edit("backends/python/runtime/sce_runtime/microstep.py",
+     "        if not preempted:\n",
+     "        if True:\n")
+PY
+
+# ── addDescendantStatesToEnter: a compound target is a default entry ─
+#
+# statesForDefaultEntry is the one condition under which an `<initial>`
+# transition's content runs. Stop recording it and no initial content runs at
+# all — the initial configuration's default entries go missing.
+
+mutation_case "a compound state entered as a target is not entered by default" <<'PY'
+edit("backends/python/runtime/sce_runtime/microstep.py",
+     "        _add_once(entry.states_for_default_entry, state)\n",
+     "")
+PY
+
+# ── enterStates: entry order is document order ─────────────────────
+#
+# §scxml-D-enterStates sorts the entry set into entryOrder. Leave it in the
+# order it was built and two regions' transitions enter in selection order
+# instead.
+
+mutation_case "the entry set is entered in the order it was built" <<'PY'
+edit("backends/python/runtime/sce_runtime/microstep.py",
+     "    entry.states_to_enter.sort(key=doc.document_order)\n",
+     "")
+PY
+
+# ── exitStates: every history reads the configuration before the first exit
+#
+# The appendix records every history before it exits any state. Hand each exit
+# the configuration as it stands at that exit instead and a history recorded
+# at the second exit misses what the first one removed.
+
+mutation_case "each exit is handed the configuration as it stands at that exit" <<'PY'
+edit("backends/python/runtime/sce_runtime/microstep.py",
+     "        run.exit_state(state, configuration)\n",
+     "        run.exit_state(state, list(run.configuration()))\n")
+PY
+
+# ── isInFinalState: a <parallel> needs every region ────────────────
+#
+# A `<parallel>` is in a final state only when every child state is. Ask for
+# any and a `<parallel>` with a region still pending reports itself done.
+
+mutation_case "a <parallel> is in a final state when any region is" <<'PY'
+edit("backends/python/runtime/sce_runtime/microstep.py",
+     "        return all(\n            is_in_final_state(doc, child, configuration)",
+     "        return any(\n            is_in_final_state(doc, child, configuration)")
+PY

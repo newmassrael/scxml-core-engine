@@ -3,13 +3,22 @@
 """StatePolicy protocol — contract that generated state machine modules implement.
 
 Mirrors `sce.StatePolicy[S, E]` in Go and the `StatePolicy` trait in Rust.
+
+The division of labour is Appendix D's. The runtime owns the algorithm — which
+transitions an event selects, which survive preemption, what a microstep exits
+and enters and in which order — once, in `microstep.py`. A policy answers what
+only the document knows: its structure as written (child states, initial
+targets, `<history>` elements), which of ONE state's transitions an event
+enables, and the executable content of a state or a transition. Nothing here
+resolves a target, walks a hierarchy or decides what to enter.
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Dict, Generic, List, Optional, TypeVar
+from typing import TYPE_CHECKING, Any, Dict, Generic, Optional, Sequence, TypeVar
+
+from .microstep import EnabledTransition, EntryTarget
 
 S = TypeVar("S")
 E = TypeVar("E")
@@ -18,41 +27,14 @@ if TYPE_CHECKING:
     from .engine import Engine
 
 
-@dataclass
-class TransitionResult(Generic[S]):
-    """Outcome of select_transition: either a transition to take or None.
-
-    The runtime invokes `apply_action` (or the policy's own helper) on the
-    transition's action payload; the runtime does not inspect the payload
-    shape directly. For atomic-state SMs without parallel/history, `target`
-    is the destination leaf. `is_internal` distinguishes W3C 3.13 internal
-    transitions from external ones. `targetless` is True for transitions
-    with no `target` attribute (action-only transitions that do not change
-    the configuration). `source` is the state the transition was matched on
-    — required for compound bubbling because the source may be an ancestor
-    of `Engine.current_state`.
-
-    `history_id` is the string id of a `<history>` element when the
-    original `<transition>` targeted history (W3C SCXML 3.11). The parser
-    pre-resolves `target` to the history's default-leaf so the field is
-    populated only as a signal: if the runtime engine has a snapshot for
-    `history_id`, it enters the snapshot in place of `target`; otherwise
-    it enters `target` and runs the default-transition actions.
-    """
-
-    target: Optional[S]
-    transition_index: int
-    is_internal: bool = False
-    targetless: bool = False
-    source: Optional[S] = None
-    history_id: Optional[str] = None
-
-
 class StatePolicy(ABC, Generic[S, E]):
     """W3C SCXML state machine policy.
 
     Generated `*_sm.py` modules subclass this and provide concrete State/Event
     enum types. The Engine drives all algorithm logic against these hooks.
+
+    A `<history>` is identified by its string id: it is not a state, never in
+    a configuration, and needs no State enum member.
     """
 
     # §scxml-5.10 — script-engine session id, populated by `Engine`
@@ -84,7 +66,18 @@ class StatePolicy(ABC, Generic[S, E]):
 
     @abstractmethod
     def initial_state(self) -> S:
-        """W3C SCXML 3.3 — the initial leaf state at engine startup."""
+        """W3C SCXML 3.3 — a leaf the document's initial transition reaches.
+
+        Read only as `Engine.current_state` before `initialize` has entered
+        anything. What `initialize` enters is `get_document_initial_targets`,
+        through the runtime's entry procedures."""
+
+    @abstractmethod
+    def get_document_initial_targets(self) -> Sequence[EntryTarget]:
+        """W3C SCXML 3.2 — the target set of the document's initial
+        transition, as written: one entry per token of `<scxml initial>`, or
+        the first child state in document order when the attribute is absent.
+        What §scxml-D-interpret enters from the `<scxml>` element."""
 
     @abstractmethod
     def is_final_state(self, state: S) -> bool:
@@ -131,15 +124,18 @@ class StatePolicy(ABC, Generic[S, E]):
         """W3C SCXML 3.13 — sentinel for eventless transition dispatch."""
 
     @abstractmethod
-    def select_transition(
+    def first_enabled_transition(
         self, state: S, event: E, engine: "Engine[S, E]"
-    ) -> Optional[TransitionResult[S]]:
-        """W3C SCXML 3.13 — pick the enabled transition for (state, event), if any.
+    ) -> Optional[EnabledTransition[S]]:
+        """W3C SCXML 3.13 — the first transition declared on `state` itself,
+        in document order, that `event` enables and whose guard holds; for
+        `null_event()`, the first eventless one whose guard holds. `None` when
+        there is none.
 
-        Returns None if no transition is enabled. The runtime invokes this
-        once per state in the ancestor chain (leaf first, then upward) so the
-        generated implementation should match only transitions declared on
-        the supplied `state` itself — not on its ancestors.
+        Only `state`'s own transitions: §scxml-D-selectTransitions walks the
+        ancestors, and the runtime does that walk. The targets are the
+        `target` attribute as written — a `<history>` stays a `HistoryTarget`,
+        which the runtime dereferences when it computes the entry set.
 
         `engine` is threaded through so guard evaluation can raise
         `error.execution` on the internal queue when a `<transition cond>`
@@ -149,81 +145,89 @@ class StatePolicy(ABC, Generic[S, E]):
         """
 
     @abstractmethod
-    def execute_entry_actions(self, state: S, engine: "Engine[S, E]") -> None:
-        """W3C SCXML 3.8 — run onentry actions for `state`. Actions that raise
-        internal events do so via `engine.raise_internal(...)`."""
+    def execute_entry_actions(
+        self, state: S, engine: "Engine[S, E]", is_default_entry: bool
+    ) -> None:
+        """W3C SCXML 3.8 — what §scxml-D-enterStates does for `state` once it
+        is in the configuration: its `<onentry>` blocks, then — only when
+        `is_default_entry` — its `<initial>` transition's executable content,
+        then, for a `<final>`, the `done.state` events its entry raises.
+        Actions that raise internal events do so via
+        `engine.raise_internal(...)`."""
 
     @abstractmethod
     def execute_exit_actions(self, state: S, engine: "Engine[S, E]") -> None:
         """W3C SCXML 3.9 — run onexit actions for `state`."""
 
     @abstractmethod
-    def execute_transition_action(
+    def execute_transition_content(
         self, state: S, transition_index: int, engine: "Engine[S, E]"
     ) -> None:
-        """W3C SCXML 3.13 — run the action payload of a transition."""
+        """W3C SCXML 3.13 — run the executable content of `state`'s transition
+        `transition_index` (§scxml-D-executeTransitionContent)."""
 
-    # ── Optional hooks ─────────────────────────────────────────────
+    @abstractmethod
+    def get_document_order(self, state: S) -> int:
+        """W3C SCXML Appendix D — the state's position in document order,
+        which is also entry order and, reversed, exit order."""
+
+    # ── Structure, as written ──────────────────────────────────────
 
     def is_compound_state(self, state: S) -> bool:
-        """W3C SCXML 3.3 — true if `state` has child states."""
+        """W3C SCXML 3.3 — true if `state` is a `<state>` with child states.
+        A `<parallel>` answers False: this is Appendix D's
+        `isCompoundState`."""
         return False
 
     def is_parallel_state(self, state: S) -> bool:
         """W3C SCXML 3.4 — true if `state` is a `<parallel>` element."""
         return False
 
-    def get_parallel_regions(self, state: S) -> List[S]:
-        """W3C SCXML 3.4 — child regions of a `<parallel>` state in document
-        order. Empty list when `state` is not parallel."""
-        return []
+    def get_child_states(self, state: S) -> Sequence[S]:
+        """§scxml-D-getChildStates — `state`'s `<state>`, `<parallel>` and
+        `<final>` children in document order; for a `<parallel>`, its regions.
+        Empty for an atomic state and a `<final>`."""
+        return ()
 
-    def done_state_event(self, parallel_state: S) -> Optional[E]:
-        """W3C SCXML 3.7 — the `done.state.<id>` event raised when every
-        region of `parallel_state` has reached `<final>`. Returns `None`
-        when the document declares no transitions waiting on this event
-        (in which case the codegen omits the corresponding `Event` enum
-        member)."""
-        return None
+    def get_initial_targets(self, state: S) -> Sequence[EntryTarget]:
+        """W3C SCXML 3.6 — a compound state's initial transition target, as
+        written: the tokens of its `initial` attribute or of its `<initial>`
+        element's transition, a `<history>` among them staying a
+        `HistoryTarget`, or the first child state when the document names
+        none. Empty for a state that is not compound."""
+        return ()
 
-    def get_initial_children(self, state: S) -> List[S]:
-        """W3C SCXML 3.6 — for a compound `state`, the targets named by its
-        `<initial>` element (or the first child in document order). Empty
-        list when `state` is atomic. β returns at most one entry; γ keeps
-        single-child semantics for ordinary compounds (parallel branching
-        is handled by `get_parallel_regions`)."""
-        return []
-
-    def get_initial_history_id(self, state: S) -> Optional[str]:
-        """W3C SCXML 3.11 — when `state`'s `<initial>` element targets a
-        `<history>` pseudo-state, returns that history element's string
-        id. Returns `None` for compounds whose `<initial>` targets a
-        regular state (or which have no explicit `<initial>` at all).
-        Used by the engine to decide between snapshot replay and default
-        initial descent at compound entry; complemented by the template's
-        emission of the history element's default `<transition>` actions
-        guarded by the same snapshot-emptiness check."""
-        return None
-
-    def get_history_states_in(self, compound: S) -> List[str]:
-        """W3C SCXML 3.11 — string ids of every `<history>` element whose
-        `parent` is `compound`. Returned in document order so the engine
-        snapshots them deterministically on compound exit. Empty for
-        states with no nested history."""
-        return []
+    def get_history_states_in(self, state: S) -> Sequence[str]:
+        """W3C SCXML 3.10 — string ids of every `<history>` element declared in
+        `state`, in document order. Empty for a state with none."""
+        return ()
 
     def get_history_type(self, history_id: str) -> str:
-        """W3C SCXML 3.11 — `"shallow"` (records the directly-active child)
-        or `"deep"` (records the leaf descendant). Empty/unknown for ids
-        that are not history states."""
+        """W3C SCXML 3.10 — `"deep"` (records the active atomic descendants)
+        or `"shallow"` (records the active children)."""
         return "shallow"
 
-    def execute_history_default_actions(
+    def get_history_parent(self, history_id: str) -> S:
+        """W3C SCXML 3.10 — the state `history_id` is declared in.
+
+        No neutral answer exists, so a policy whose document declares a
+        `<history>` must override it; one that declares none is never asked."""
+        raise NotImplementedError(
+            f"{type(self).__name__} names a <history> {history_id!r} it does not declare"
+        )
+
+    def get_history_default_targets(self, history_id: str) -> Sequence[EntryTarget]:
+        """W3C SCXML 3.10.2 — the history's default transition target, as
+        written: its default stored state configuration."""
+        return ()
+
+    def execute_history_default_content(
         self, history_id: str, engine: "Engine[S, E]"
     ) -> None:
-        """W3C SCXML 3.11 — run the action body of the history's default
-        `<transition>` when no snapshot is available and the engine falls
-        back to the default target. Default no-op."""
+        """W3C SCXML 3.10.2 — run the executable content of the history's
+        default `<transition>`. §scxml-D-enterStates runs it after the
+        history's parent is entered, when the history was taken with nothing
+        recorded. Default no-op."""
 
     def initialize_datamodel(self, engine: "Engine[S, E]") -> None:
         """W3C SCXML 5.3 — root datamodel + (early-binding) all state-local
@@ -243,10 +247,6 @@ class StatePolicy(ABC, Generic[S, E]):
         """W3C SCXML 5.3 — `binding="late"` on the document root. False
         for the default (`binding="early"`)."""
         return False
-
-    def get_document_order(self, state: S) -> int:
-        """W3C SCXML Appendix D — used for deterministic ordering."""
-        return 0
 
     def needs_script_engine(self) -> bool:
         """Whether the policy uses scripts (informational)."""

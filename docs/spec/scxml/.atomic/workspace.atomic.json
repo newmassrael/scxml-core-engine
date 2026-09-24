@@ -406,6 +406,11 @@
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "execute_exit_actions",
           "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/microstep.py",
+          "symbol": "add_descendant_states_to_enter",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -574,21 +579,6 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "preTransitionActiveStates",
-          "kind": "references"
-        },
-        {
-          "file": "backends/python/runtime/sce_runtime/engine.py",
-          "symbol": "__init__",
-          "kind": "references"
-        },
-        {
-          "file": "backends/python/runtime/sce_runtime/engine.py",
-          "symbol": "_enter_target",
-          "kind": "references"
-        },
-        {
-          "file": "backends/python/runtime/sce_runtime/engine.py",
-          "symbol": "_take_transitions",
           "kind": "references"
         },
         {
@@ -2401,26 +2391,6 @@
           "kind": "implements"
         },
         {
-          "file": "backends/python/runtime/sce_runtime/engine.py",
-          "symbol": "__init__",
-          "kind": "references"
-        },
-        {
-          "file": "backends/python/runtime/sce_runtime/engine.py",
-          "symbol": "_descend_initial_path",
-          "kind": "references"
-        },
-        {
-          "file": "backends/python/runtime/sce_runtime/engine.py",
-          "symbol": "_enter_state",
-          "kind": "references"
-        },
-        {
-          "file": "backends/python/runtime/sce_runtime/engine.py",
-          "symbol": "initialize",
-          "kind": "references"
-        },
-        {
           "file": "backends/rust/runtime/src/helpers/mod.rs",
           "kind": "references"
         },
@@ -2437,11 +2407,6 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "stateOfName",
-          "kind": "references"
-        },
-        {
-          "file": "backends/python/runtime/sce_runtime/engine.py",
-          "symbol": "enter_at",
           "kind": "references"
         },
         {
@@ -2477,6 +2442,11 @@
         {
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "get_initial_targets",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/microstep.py",
+          "symbol": "add_descendant_states_to_enter",
           "kind": "references"
         }
       ],
@@ -2673,11 +2643,6 @@
           "kind": "implements"
         },
         {
-          "file": "backends/python/runtime/sce_runtime/engine.py",
-          "symbol": "_enter_state",
-          "kind": "implements"
-        },
-        {
           "file": "backends/rust/runtime/src/helpers/configuration.rs",
           "kind": "implements"
         },
@@ -2748,6 +2713,11 @@
         {
           "file": "backends/rust/runtime/src/helpers/microstep.rs",
           "symbol": "add_region_defaults",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/microstep.py",
+          "symbol": "_add_region_defaults",
           "kind": "implements"
         }
       ],
@@ -2957,6 +2927,11 @@
           "file": "backends/rust/runtime/src/helpers/microstep.rs",
           "symbol": "add_descendant_states_to_enter",
           "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/microstep.py",
+          "symbol": "add_descendant_states_to_enter",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -3109,16 +3084,6 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "start",
           "kind": "implements"
-        },
-        {
-          "file": "backends/python/runtime/sce_runtime/engine.py",
-          "symbol": "__init__",
-          "kind": "references"
-        },
-        {
-          "file": "backends/python/runtime/sce_runtime/engine.py",
-          "symbol": "_take_transitions",
-          "kind": "references"
         },
         {
           "file": "backends/rust/runtime/src/policy.rs",
@@ -3480,11 +3445,6 @@
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "onExit",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/python/runtime/sce_runtime/engine.py",
-          "symbol": "_take_transitions",
           "kind": "implements"
         },
         {
@@ -9907,6 +9867,11 @@
           "file": "sce/src/runtime/InvokeExecutor.cpp",
           "symbol": "SCXMLInvokeHandler::cancelInvoke",
           "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "exit_state",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -13462,6 +13427,16 @@
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "_compute_exit_set",
           "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "__init__",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "enter_at",
+          "kind": "references"
         }
       ],
       "coverage_expectation": "informational",
@@ -13620,6 +13595,11 @@
           "file": "backends/rust/runtime/src/helpers/microstep.rs",
           "symbol": "add_ancestor_states_to_enter",
           "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/microstep.py",
+          "symbol": "add_ancestor_states_to_enter",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -13645,16 +13625,6 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "backends/python/runtime/sce_runtime/engine.py",
-          "symbol": "_enter_target_step",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/python/runtime/sce_runtime/engine.py",
-          "symbol": "_fanout_parallel_siblings",
-          "kind": "implements"
-        },
-        {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "reenterParallelRegions",
           "kind": "implements"
@@ -13666,6 +13636,11 @@
         },
         {
           "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "add_descendant_states_to_enter",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "add_descendant_states_to_enter",
           "kind": "implements"
         }
@@ -13704,6 +13679,11 @@
         },
         {
           "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "compute_entry_set",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "compute_entry_set",
           "kind": "implements"
         }
@@ -13767,6 +13747,16 @@
         },
         {
           "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "compute_states_to_exit",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/microstep.py",
+          "symbol": "compute_exit_set",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "compute_states_to_exit",
           "kind": "implements"
         }
@@ -13842,6 +13832,26 @@
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "complete_macrostep",
           "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "enter_state",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "__init__",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/microstep.py",
+          "symbol": "enter_states",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/microstep.py",
+          "symbol": "compute_entry_set",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -13877,6 +13887,11 @@
         },
         {
           "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "execute_transition_content",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "execute_transition_content",
           "kind": "implements"
         }
@@ -13975,6 +13990,26 @@
           "file": "backends/rust/runtime/src/helpers/microstep.rs",
           "symbol": "recorded_history",
           "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "exit_state",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/microstep.py",
+          "symbol": "compute_states_to_exit",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/microstep.py",
+          "symbol": "exit_states",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/microstep.py",
+          "symbol": "recorded_history",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14022,6 +14057,11 @@
         {
           "file": "backends/rust/runtime/src/helpers/microstep.rs",
           "symbol": "find_lcca",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/microstep.py",
+          "symbol": "_find_lcca",
           "kind": "implements"
         }
       ],
@@ -14109,6 +14149,11 @@
           "file": "backends/rust/runtime/src/helpers/microstep.rs",
           "symbol": "add_effective_target_states",
           "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/microstep.py",
+          "symbol": "_add_effective_target_states",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14139,11 +14184,6 @@
           "kind": "implements"
         },
         {
-          "file": "backends/python/runtime/sce_runtime/engine.py",
-          "symbol": "_select_from_chain",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/core/EntrySetHelper.h",
           "symbol": "getProperAncestors",
           "kind": "implements"
@@ -14151,6 +14191,11 @@
         {
           "file": "backends/rust/runtime/src/helpers/microstep.rs",
           "symbol": "proper_ancestors",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/microstep.py",
+          "symbol": "_proper_ancestors",
           "kind": "implements"
         }
       ],
@@ -14215,6 +14260,11 @@
           "file": "backends/rust/runtime/src/helpers/microstep.rs",
           "symbol": "transition_domain",
           "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/microstep.py",
+          "symbol": "transition_domain",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14267,6 +14317,11 @@
         {
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "enter_states",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "initialize",
           "kind": "implements"
         }
       ],
@@ -14518,6 +14573,11 @@
           "file": "backends/rust/runtime/src/helpers/mod.rs",
           "symbol": "microstep",
           "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/microstep.py",
+          "symbol": "microstep",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14583,11 +14643,6 @@
           "kind": "implements"
         },
         {
-          "file": "backends/python/runtime/sce_runtime/engine.py",
-          "symbol": "_remove_conflicting_transitions",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/core/MicrostepAlgorithms.h",
           "symbol": "removeConflictingTransitions",
           "kind": "implements"
@@ -14599,6 +14654,11 @@
         },
         {
           "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "remove_conflicting_transitions",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "remove_conflicting_transitions",
           "kind": "implements"
         }
@@ -14637,6 +14697,11 @@
         },
         {
           "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "select_transitions",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "select_transitions",
           "kind": "implements"
         }
@@ -14689,6 +14754,11 @@
         },
         {
           "file": "backends/rust/runtime/src/helpers/microstep.rs",
+          "symbol": "select_transitions",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "select_transitions",
           "kind": "implements"
         }
@@ -17878,6 +17948,108 @@
       "target_kind": "section",
       "target_id": "scxml-3.6",
       "reason": "Stage E, the Rust backend onto Appendix D: deep and multi-target initial entry is the runtime's entry set over get_initial_targets; the policy no longer resolves initial children"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.11",
+      "reason": "Stage G, the Python backend onto Appendix D: the history store __init__ declares is now Appendix D's historyValue (§scxml-D-GlobalVariables), bound on the same symbol"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.11",
+      "reason": "Stage G, the Python backend onto Appendix D: this symbol is gone - the engine's hand-written entry, exit and conflict walks gave way to the runtime's transcription (sce_runtime/microstep.py), driven through _MicrostepHost"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.11",
+      "reason": "Stage G, the Python backend onto Appendix D: this symbol is gone - the engine's hand-written entry, exit and conflict walks gave way to the runtime's transcription (sce_runtime/microstep.py), driven through _MicrostepHost"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage G, the Python backend onto Appendix D: the active configuration __init__ declares is now Appendix D's configuration (§scxml-D-GlobalVariables), bound on the same symbol"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage G, the Python backend onto Appendix D: this symbol is gone - the engine's hand-written entry, exit and conflict walks gave way to the runtime's transcription (sce_runtime/microstep.py), driven through _MicrostepHost"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage G, the Python backend onto Appendix D: this symbol is gone - the engine's hand-written entry, exit and conflict walks gave way to the runtime's transcription (sce_runtime/microstep.py), driven through _MicrostepHost"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage G, the Python backend onto Appendix D: enter_at stores the restored set as Appendix D's configuration (§scxml-D-GlobalVariables) and no longer derives its leaves"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage G, the Python backend onto Appendix D: initialize enters the document's initial transition through the runtime's enterStates (§scxml-D-interpret), bound on the same symbol"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "Stage G, the Python backend onto Appendix D: this symbol is gone - the engine's hand-written entry, exit and conflict walks gave way to the runtime's transcription (sce_runtime/microstep.py), driven through _MicrostepHost"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.7",
+      "reason": "Stage G, the Python backend onto Appendix D: the done.state bookkeeping __init__ declared is gone - a <parallel>'s done.state is raised at the entry of the final that completes it (§scxml-D-enterStates), in the generated policy"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.7",
+      "reason": "Stage G, the Python backend onto Appendix D: this symbol is gone - the engine's hand-written entry, exit and conflict walks gave way to the runtime's transcription (sce_runtime/microstep.py), driven through _MicrostepHost"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.9",
+      "reason": "Stage G, the Python backend onto Appendix D: this symbol is gone - the engine's hand-written entry, exit and conflict walks gave way to the runtime's transcription (sce_runtime/microstep.py), driven through _MicrostepHost"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-addDescendantStatesToEnter",
+      "reason": "Stage G, the Python backend onto Appendix D: this symbol is gone - the engine's hand-written entry, exit and conflict walks gave way to the runtime's transcription (sce_runtime/microstep.py), driven through _MicrostepHost"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-addDescendantStatesToEnter",
+      "reason": "Stage G, the Python backend onto Appendix D: this symbol is gone - the engine's hand-written entry, exit and conflict walks gave way to the runtime's transcription (sce_runtime/microstep.py), driven through _MicrostepHost"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-getProperAncestors",
+      "reason": "Stage G, the Python backend onto Appendix D: this symbol is gone - the engine's hand-written entry, exit and conflict walks gave way to the runtime's transcription (sce_runtime/microstep.py), driven through _MicrostepHost"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-removeConflictingTransitions",
+      "reason": "Stage G, the Python backend onto Appendix D: this symbol is gone - the engine's hand-written entry, exit and conflict walks gave way to the runtime's transcription (sce_runtime/microstep.py), driven through _MicrostepHost"
+    },
+    {
+      "primitive": "set_section_binding_kind",
+      "target_kind": "section",
+      "target_id": "scxml-D-GlobalVariables",
+      "reason": "Stage G: §scxml-D-GlobalVariables is an exempt (non-normative) section, so a binding to it references rather than implements - __init__ declares the configuration and historyValue globals the section names"
     }
   ],
   "frames": {},

@@ -2,28 +2,29 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 """SCXML execution engine for AOT-generated Python state machines.
 
-Atomic α: atomic states + onentry/onexit + basic guarded transitions.
-Atomic β: compound entry chain (W3C SCXML 3.3 / 3.6 / 3.13), early-binding
-datamodel init (W3C 5.3), ancestor-chain transition selection
-(W3C Appendix D.2), LCCA-based exit/entry boundary (W3C 5.9.2), and
-`<raise>` (W3C 4.4) wired through `raise_internal`.
-Atomic γ-1: `<parallel>` regions with active-set tracking, atomic multi-
-transition microsteps with W3C SCXML 3.13 conflict resolution, and
-`done.state.<parent>` events raised when all regions of a `<parallel>`
-reach `<final>`.
-Atomic γ-2: `<history>` (shallow + deep) — snapshot pre-exit
-configuration into `_history[history_id]`, replay it on the next entry
-through that history state, falling back to the document's default
-target (and its default `<transition>` actions) when no snapshot exists.
-Atomic γ-3a: `<log>`, `<if>`/`<elseif>`/`<else>`, and `<foreach>` lower
-into Python control flow inside the per-state action handlers.
-Atomic γ-3b: `<send>` (immediate + delayed) and `<cancel>` ride a pull
-scheduler with cancel-by-sendid (W3C SCXML 6.2 + 6.2.2). Virtual time
-advances via `Engine.advance_time(ms)`; callers needing wall-clock
-behaviour drive this from their own dispatch loop.
-Atomic γ-5: `binding="late"` — when the policy reports late binding,
-state-local `<datamodel>` blocks are initialised on the first entry of
-each owning state instead of up-front at engine.initialize.
+The engine is Appendix D's interpreter. Its main event loop
+(`_run_main_event_loop`) completes each macrostep on eventless transitions and
+internal events, starts the invocations the macrostep's entries deferred, and
+only then takes one external event. Each microstep — selection, conflict
+removal, the exit set, the transitions' content, the entry set with its
+`<history>` and `<initial>` defaults — is `microstep.py`, the runtime's one
+transcription of the appendix's procedures, driven through `_MicrostepHost`.
+What a state or a transition DOES is the generated policy's
+(`policy.StatePolicy`).
+
+Around that core:
+
+- W3C SCXML 5.3: early binding initialises every `<datamodel>` before the
+  first entry; `binding="late"` initialises a state's on its first entry.
+- W3C SCXML 6.2: `<send>` (immediate and delayed) and `<cancel>` ride a pull
+  scheduler with cancel-by-sendid. Virtual time advances through
+  `Engine.advance_time(ms)`; a caller that wants wall-clock behaviour drives it
+  from its own dispatch loop.
+- W3C SCXML 6.4: `<invoke>` children are started after the macrostep that
+  entered their state, driven by the same virtual clock, and cancelled when
+  that state is exited.
+- The ceilings on an endless macrostep and on an error chain, and the counts
+  that report every event this engine had to drop — see the constants below.
 """
 
 from __future__ import annotations
@@ -57,8 +58,18 @@ from .host_processor import (
 from .http import HttpSendRequest, HttpSendResponse
 from . import io_processors
 from .invoke import Invoke, PendingInvoke, create_done_invoke_event_name
+from .microstep import (
+    EnabledTransition,
+    EntryTarget,
+    EntryTransition,
+    enter_states,
+    is_in_final_state,
+    microstep,
+    recorded_history,
+    select_transitions,
+)
 from .payload_reading import PayloadReading
-from .policy import StatePolicy, TransitionResult
+from .policy import StatePolicy
 from .scheduler import Scheduler
 
 S = TypeVar("S")
@@ -163,14 +174,16 @@ class Engine(Generic[S, E]):
         # destruction.
         policy._session_id = self._session_id
         policy._engine_ref = self
-        # §scxml-3.3: active configuration tracked as the ordered list
-        # of currently-active leaf states. For non-parallel machines this
-        # list has at most one entry. For machines containing
-        # `<parallel>`, every region contributes its own leaf so the list
-        # carries one entry per active region. The list is kept sorted by
-        # document order so deterministic iteration matches the W3C
-        # algorithm.
-        self._active_leaves: List[S] = []
+        # §scxml-D-GlobalVariables: `configuration`, every active state — the
+        # atomic ones and every ancestor of theirs — in the order the microstep
+        # entered them. A `<state>` or `<parallel>` is in it from the moment
+        # §scxml-D-enterStates adds it, before its `<onentry>` runs, so `In()`
+        # answers for it there (W3C SCXML 5.9.2, test411).
+        self._configuration: List[S] = []
+        # Appendix D's procedures read and drive the engine through this
+        # adapter (`microstep.Document` / `microstep.Run`), so the engine's
+        # public surface does not carry the procedures' vocabulary.
+        self._host: _MicrostepHost[S, E] = _MicrostepHost(self)
         self._internal_queue: "deque[EventWithMetadata[E]]" = deque()
         self._external_queue: "deque[EventWithMetadata[E]]" = deque()
         self._is_running: bool = False
@@ -221,15 +234,11 @@ class Engine(Generic[S, E]):
         # budget and each refusal would be counted separately. Cleared where
         # the algorithm starts a macrostep, which is the external dequeue.
         self._macrostep_truncated: bool = False
-        # §scxml-3.7 — set of `<parallel>` states for which a
-        # `done.state.<id>` event has already been raised this run, so a
-        # second region reaching `<final>` does not re-fire it.
-        self._fired_done_state: Set[S] = set()
-        # §scxml-3.11 — per-history-id snapshot of the active
-        # configuration taken when the owning compound exits. Keyed by
-        # the history element's string id so the engine can replay it on
-        # the next entry through that history state without needing a
-        # State enum member for the history element itself.
+        # §scxml-D-GlobalVariables: `historyValue` — what each `<history>`
+        # recorded when its parent was last exited, keyed by the history's
+        # string id (a history is not a state and has no State member).
+        # Absent until the parent's first exit, which is when the entry
+        # procedures fall back to the history's default transition.
         self._history: Dict[str, List[S]] = {}
         # §scxml-6.2 — delayed-event scheduler + virtual clock.
         # Callers advance time via `advance_time(ms)`; the scheduler is
@@ -326,18 +335,16 @@ class Engine(Generic[S, E]):
         # §scxml-5.3 early binding: datamodel initialisation runs before
         # any onentry action fires.
         self._policy.initialize_datamodel(self)
-        # §scxml-3.3: enter the parser-resolved initial leaf by
-        # walking its ancestor chain root-first. At each compound on
-        # the path the child on the way to the leaf wins over the
-        # compound's default initial child (test388 — root
-        # `<scxml initial="s012">` lands at s012, not s01's default
-        # s011); at each parallel ancestor the path-side region
-        # follows the leaf path while the OTHER regions enter via
-        # their default `get_initial_children` (test413). Mirrors
-        # Rust's `build_entry_chain` + per-state generated parallel
-        # recursion at `backends/rust/runtime/src/engine.rs`.
-        initial_leaf = self._policy.initial_state()
-        self._enter_initial_path(initial_leaf)
+        # §scxml-D-interpret: enter the document's initial transition, whose
+        # source is the `<scxml>` element, through the entry procedure every
+        # microstep uses. A target deep inside a compound enters the compounds
+        # between WITHOUT their defaults (test388), and the other regions of a
+        # `<parallel>` on the way get theirs (test413) — both are what
+        # computeEntrySet does with a target list, not cases of their own.
+        enter_states(
+            self._host,
+            [EntryTransition(None, tuple(self._policy.get_document_initial_targets()))],
+        )
         if self._reached_final or not self._is_running:
             return
         # §scxml-D-mainEventLoop — hand over to the outer loop. The macrostep
@@ -366,14 +373,13 @@ class Engine(Generic[S, E]):
         states the configuration does not determine which leaf a run was at.
 
         This engine, unlike the C++/Rust/Go ones, does not STORE a current
-        state: `current_state` answers the document-order-earliest member of
-        `active_leaves`, and the leaves are rebuilt here in document order the
-        same way `_enter_initial_path` leaves them. So `current` is VALIDATED
-        rather than stored — it pins that the leaf the host recorded is an
-        atomic member of the set it recorded beside it. That is the honest
-        difference, and it is the same one a run of this engine already shows:
-        a parallel machine that entered through `initialize` reports the
-        earliest leaf too.
+        state: `current_state` answers the document-order-earliest atomic
+        member of the configuration, which is read off the set handed in. So
+        `current` is VALIDATED rather than stored — it pins that the leaf the
+        host recorded is an atomic member of the set it recorded beside it.
+        That is the honest difference, and it is the same one a run of this
+        engine already shows: a parallel machine that entered through
+        `initialize` reports the earliest leaf too.
 
         **What it refuses.** Every set that is not a configuration of THIS
         document — see `validate_configuration` for the rules and
@@ -417,17 +423,10 @@ class Engine(Generic[S, E]):
         )
         self._policy.initialize_datamodel(self)
 
-        # §scxml-3.3: the leaves of the restored set are its members that
-        # hold no child in it. Derived rather than taken from the caller,
-        # because the set is what a host records and the leaves are a fact
-        # about it — asking for both would let the two disagree.
-        members = list(configuration)
-        self._active_leaves = [
-            state
-            for state in members
-            if not any(self._policy.get_parent(other) == state for other in members)
-        ]
-        self._active_leaves.sort(key=self._policy.get_document_order)
+        # §scxml-D-GlobalVariables: the restored set IS the configuration. It
+        # is stored in document order, which is the order the entry
+        # procedures would have added its members in.
+        self._configuration = sorted(configuration, key=self._policy.get_document_order)
 
         self._is_running = True
         return ConfigurationRejection.NONE
@@ -465,14 +464,27 @@ class Engine(Generic[S, E]):
         active leaf; callers that need every region should iterate
         `active_leaves` instead.
         """
-        if self._active_leaves:
-            return self._active_leaves[0]
+        leaves = self.active_leaves
+        if leaves:
+            return leaves[0]
         return self._policy.initial_state()
 
     @property
     def active_leaves(self) -> List[S]:
-        """The full ordered list of currently-active leaf states."""
-        return list(self._active_leaves)
+        """The atomic members of the configuration, in document order.
+
+        A `<state>` with children and a `<parallel>` are never leaves: in a
+        legal configuration each holds an active child, so the atomic members
+        are exactly the states nothing active lies below."""
+        return sorted(
+            (
+                state
+                for state in self._configuration
+                if not self._policy.is_compound_state(state)
+                and not self._policy.is_parallel_state(state)
+            ),
+            key=self._policy.get_document_order,
+        )
 
     @property
     def is_running(self) -> bool:
@@ -749,13 +761,15 @@ class Engine(Generic[S, E]):
 
     def active_configuration(self) -> Set[S]:
         """W3C SCXML 3.3 — every active state (atomic + ancestors)."""
-        result: Set[S] = set()
-        for leaf in self._active_leaves:
-            state: Optional[S] = leaf
-            while state is not None and state not in result:
-                result.add(state)
-                state = self._policy.get_parent(state)
-        return result
+        return set(self._configuration)
+
+    def is_in_final_state(self, state: S) -> bool:
+        """§scxml-D-isInFinalState, over this engine's configuration.
+
+        What a generated `<final>`'s entry asks of its grandparent: a
+        `<parallel>` whose every region is now in a final state is itself
+        done, and raises `done.state.<id>` from that same entry."""
+        return is_in_final_state(self._host, state, self._configuration)
 
     # ── Event injection ────────────────────────────────────────────
 
@@ -1471,7 +1485,7 @@ class Engine(Generic[S, E]):
         # the proof that no budget was needed. The count lives on the engine
         # because the macrostep does — see `_macrostep_microsteps_taken`.
         while self._is_running and not self._reached_final:
-            transitions = self._select_transitions(null_evt)
+            transitions = select_transitions(self._host, null_evt)
             if not transitions:
                 # Nothing is enabled by NULL — the macrostep
                 # reached the stable configuration the clause describes, and
@@ -1485,7 +1499,7 @@ class Engine(Generic[S, E]):
                 # stable one and only this counter says so.
                 self._record_truncated_macrostep()
                 return
-            self._take_transitions(transitions)
+            microstep(self._host, transitions)
             self._macrostep_microsteps_taken += 1
 
     def _dispatch(self, evt: EventWithMetadata[E]) -> bool:
@@ -1501,525 +1515,26 @@ class Engine(Generic[S, E]):
         # preliminary steps belong to the external dequeue and run in
         # `_process_next_external_event`, which is the only caller that
         # can know the event came off that queue.
-        transitions = self._select_transitions(evt.event)
+        transitions = select_transitions(self._host, evt.event)
         if not transitions:
             # §scxml-3.1.2 — "If no transition matches in any state, the
             # event is discarded." Reported rather than merely done, so
             # the external dequeue can count it; see
             # `discarded_external_events`.
             return False
-        self._take_transitions(transitions)
+        microstep(self._host, transitions)
         return True
-
-    # ── Transition selection ──────────────────────────────────────
-
-    def _select_transitions(self, event: E) -> List[TransitionResult[S]]:
-        """W3C SCXML 3.13 — pick one transition per active leaf (leaf first,
-        then ancestor chain). Then remove conflicting transitions per
-        Appendix D.2."""
-        candidates: List[TransitionResult[S]] = []
-        # Two regions of the same `<parallel>` can both walk up into a
-        # shared ancestor and pick the same transition; we deduplicate by
-        # (source state, transition_index) so the runtime never executes
-        # the same `<transition>` twice in one microstep.
-        seen: set = set()
-        for leaf in self._active_leaves:
-            picked = self._select_from_chain(leaf, event)
-            if picked is None:
-                continue
-            key = (picked.source, picked.transition_index)
-            if key in seen:
-                continue
-            seen.add(key)
-            candidates.append(picked)
-        if len(candidates) <= 1:
-            return candidates
-        return self._remove_conflicting_transitions(candidates)
-
-    def _select_from_chain(
-        self, leaf: S, event: E
-    ) -> Optional[TransitionResult[S]]:
-        """Walk from `leaf` upward, return the first enabled transition.
-        Stamps the result's `source` if the policy did not."""
-        # §scxml-D-getProperAncestors: the chain walked here is the proper
-        # ancestors of `leaf`, innermost first, which is the order the
-        # algorithm requires for selecting the transition that wins.
-        state: Optional[S] = leaf
-        while state is not None:
-            result = self._policy.select_transition(state, event, self)
-            if result is not None:
-                if result.source is None:
-                    result.source = state
-                return result
-            state = self._policy.get_parent(state)
-        return None
-
-    def _remove_conflicting_transitions(
-        self, candidates: List[TransitionResult[S]]
-    ) -> List[TransitionResult[S]]:
-        """`removeConflictingTransitions`.
-
-        Two transitions conflict when their exit sets intersect. Of a
-        conflicting pair the one whose source is a proper DESCENDANT of the
-        other's wins; when neither descends from the other, the one earlier in
-        document order wins.
-
-        Descendant, not deeper. What stood here sorted the candidates
-        deepest-source-first and kept whichever it reached first, which is the
-        same answer only when the conflicting sources lie on one chain. Two
-        regions of a `<parallel>` do not: their sources are unrelated, so depth
-        is an accident of how deep each region happens to nest, and document
-        order is what the appendix uses. Measured 2026-08-25 on a region-root
-        external transition — its target was never entered, because a sibling
-        region's transition one level deeper was considered first and won.
-
-        A transition that exits nothing intersects nothing, so a targetless
-        transition is never preempted; that falls out rather than being a case.
-        """
-        # §scxml-D-removeConflictingTransitions: iterate in DOCUMENT ORDER,
-        # letting a descendant source displace an already-kept transition.
-        candidates = sorted(
-            candidates,
-            key=lambda t: self._policy.get_document_order(
-                t.source if t.source is not None else t.target
-            ),
-        )
-        kept: List[TransitionResult[S]] = []
-        kept_exits: List[Set[S]] = []
-        for cand in candidates:
-            cand_exit = self._compute_exit_set(cand)
-            cand_source = cand.source if cand.source is not None else cand.target
-            preempted = False
-            displaced: List[int] = []
-            for index, held_exit in enumerate(kept_exits):
-                if not (cand_exit & held_exit):
-                    continue
-                held = kept[index]
-                held_source = held.source if held.source is not None else held.target
-                if cand_source is not None and held_source is not None and (
-                    self._is_proper_descendant(cand_source, held_source)
-                ):
-                    displaced.append(index)
-                else:
-                    preempted = True
-                    break
-            if preempted:
-                continue
-            for index in reversed(displaced):
-                kept.pop(index)
-                kept_exits.pop(index)
-            kept.append(cand)
-            kept_exits.append(cand_exit)
-        return kept
-
-    # ── Transition execution ──────────────────────────────────────
-
-    def _take_transitions(self, transitions: List[TransitionResult[S]]) -> None:
-        """W3C SCXML 3.13 — execute a set of non-conflicting transitions
-        atomically. Exit chains are unioned and run deepest-first; entry
-        chains run after all exits and transition actions."""
-        if not transitions:
-            return
-
-        # Combined exit set across all transitions in this microstep.
-        combined_exit: Set[S] = set()
-        for t in transitions:
-            combined_exit |= self._compute_exit_set(t)
-
-        # §scxml-3.11 — snapshot history for every exiting compound
-        # BEFORE running onexit actions. The active configuration at this
-        # point is still the pre-exit one, which is exactly what shallow /
-        # deep history records.
-        self._snapshot_history(combined_exit)
-
-        # W3C 3.13: exit in reverse document order (deepest descendants
-        # leave first). Inside the same document-order rank, exit order
-        # is unspecified — we use document order descending for determinism.
-        exit_list = sorted(
-            combined_exit,
-            key=lambda s: -self._policy.get_document_order(s),
-        )
-        for s in exit_list:
-            self._policy.execute_exit_actions(s, self)
-            # §scxml-6.4 — cancel any active invokes owned by the
-            # exiting state (and drop any still-pending ones queued by
-            # an earlier macrostep iteration that hadn't started yet).
-            # The policy delegate knows which state owns which invoke.
-            self._policy.cancel_invokes_for_state(s, self)
-            # §scxml-3.9 (test409): the just-exited state must drop
-            # out of the active configuration BEFORE the next state's
-            # onexit runs, so an outer `<onexit>` reading `In(child)`
-            # observes the child as already inactive. Mirrors the per-
-            # state active-set mutation Rust / C++ do as part of their
-            # `execute_exit_actions` loop.
-            self._active_leaves = [
-                leaf
-                for leaf in self._active_leaves
-                if leaf != s and not self._is_proper_descendant(leaf, s)
-            ]
-
-        # Run transition actions in document order of their source.
-        for t in sorted(
-            transitions,
-            key=lambda t: self._policy.get_document_order(
-                t.source if t.source is not None else self._policy.initial_state()
-            ),
-        ):
-            source = t.source if t.source is not None else self._policy.initial_state()
-            self._policy.execute_transition_action(source, t.transition_index, self)
-
-        # Enter targets. Targetless transitions already had their action
-        # run above and contribute no entries.
-        for t in transitions:
-            if t.targetless or t.target is None:
-                continue
-            self._enter_target(t)
-            if self._reached_final or not self._is_running:
-                return
-
-        # Sort active leaves by document order to keep deterministic
-        # iteration in later microsteps.
-        self._active_leaves.sort(key=self._policy.get_document_order)
-
-        # §scxml-3.7 — raise `done.state.<parent>` for every parallel
-        # whose regions have all reached `<final>`.
-        self._check_done_state_events()
-
-    def _enter_target(self, transition: TransitionResult[S]) -> None:
-        """Enter the LCA→target path, then descend through the target's
-        initial chain (with parallel branching at any `<parallel>`).
-
-        When `transition.history_id` is set and a snapshot exists, the
-        snapshot replaces `target` so the engine restores the
-        pre-exit configuration (W3C SCXML 3.11). When no snapshot
-        exists, the engine falls back to the parser-resolved default
-        target and runs the history element's default-transition
-        actions (also W3C 3.11).
-        """
-        target: S = transition.target  # type: ignore[assignment]
-        source: S = (
-            transition.source if transition.source is not None else target
-        )
-
-        # §scxml-3.11 — replay history if available; otherwise the
-        # parser-resolved default target stands. Default-transition
-        # actions only run when falling back to the default.
-        history_entries: Optional[List[S]] = None
-        if transition.history_id is not None:
-            saved = self._history.get(transition.history_id)
-            if saved:
-                history_entries = list(saved)
-            else:
-                self._policy.execute_history_default_actions(
-                    transition.history_id, self
-                )
-
-        # Find the boundary (LCCA). Internal transitions into a descendant
-        # of source use `source` itself; otherwise use the standard LCCA.
-        if transition.is_internal and self._is_proper_descendant(target, source):
-            boundary: Optional[S] = source
-        else:
-            boundary = self._find_lcca(source, target)
-
-        if history_entries:
-            # Enter every saved state, sorted by document order so the
-            # ancestor compound's onentry runs once even when multiple
-            # leaves are restored (each `_enter_target_step` call
-            # individually enters the ancestors that aren't already
-            # active).
-            for saved_state in sorted(
-                history_entries, key=self._policy.get_document_order
-            ):
-                self._enter_target_step(saved_state, boundary)
-                if self._reached_final or not self._is_running:
-                    return
-            return
-
-        self._enter_target_step(target, boundary)
-
-    def _enter_target_step(self, target: S, boundary: Optional[S]) -> None:
-        """Enter ancestors of `target` between `boundary` and `target`,
-        then descend into `target` via `_enter_state`. Shared by the
-        normal-target and history-restore paths so they cannot drift.
-
-        `addDescendantStatesToEnter` — when any
-        ancestor on the entry path is a `<parallel>`, every sibling
-        region (not the one on the target's path) must also be entered
-        via its default initial chain. This covers both:
-          - parallel ancestor freshly entered as part of `upward`
-            (target descends into a not-yet-active parallel ancestor);
-          - parallel ancestor that is the transition boundary itself
-            (sibling-to-sibling transition under a parallel: the
-            parallel stays active, but its other regions were exited
-            and must be re-entered — test403c, test364).
-        Mirrors the re-entry fan-out the Rust template
-        `conflict_resolution.rs.jinja2` carried before the Rust backend
-        moved onto its runtime's transcription of Appendix D, where the
-        same rule is `add_region_defaults` in
-        `backends/rust/runtime/src/helpers/microstep.rs`."""
-        # §scxml-D-addDescendantStatesToEnter: a `<parallel>` anywhere on the
-        # entry path pulls in every sibling region through its default initial
-        # chain, which the fan-out below performs.
-        upward: List[S] = []
-        state: Optional[S] = target
-        while state is not None and state != boundary:
-            upward.append(state)
-            state = self._policy.get_parent(state)
-        already_active = self.active_configuration()
-        # Build the path-child map so parallel ancestors can identify
-        # the on-path region (which the next loop iteration enters) vs
-        # the sibling regions (entered here via default descent).
-        path_child: Dict[S, S] = {}
-        for i in range(len(upward) - 1):
-            path_child[upward[i + 1]] = upward[i]
-        # Boundary itself participates in path_child so the fan-out
-        # below knows which child of the boundary lies on the target's
-        # path when the boundary is a still-active parallel.
-        if boundary is not None and upward:
-            path_child[boundary] = upward[-1]
-        # Enter from boundary-child down to target, then descend.
-        for s in reversed(upward[1:]):
-            if s in already_active:
-                continue
-            self._run_entry(s)
-            if self._policy.is_final_state(s):
-                self._active_leaves.append(s)
-                self._mark_root_final_if_top_level(s)
-                return
-            if self._policy.is_parallel_state(s):
-                self._fanout_parallel_siblings(s, path_child, already_active)
-                if self._reached_final or not self._is_running:
-                    return
-        if (
-            boundary is not None
-            and self._policy.is_parallel_state(boundary)
-        ):
-            self._fanout_parallel_siblings(boundary, path_child, already_active)
-            if self._reached_final or not self._is_running:
-                return
-        self._enter_state(target)
-
-    def _fanout_parallel_siblings(
-        self, parallel_state: S, path_child: Dict[S, S], already_active: Set[S]
-    ) -> None:
-        """For each region of `parallel_state` not already active and not on
-        the target's path, enter via the region's default initial chain."""
-        # §scxml-D-addDescendantStatesToEnter: the sibling regions of an
-        # entered `<parallel>` are added through their default initial chain.
-        on_path = path_child.get(parallel_state)
-        regions = sorted(
-            self._policy.get_parallel_regions(parallel_state),
-            key=self._policy.get_document_order,
-        )
-        for region in regions:
-            if region == on_path:
-                continue
-            if region in already_active:
-                continue
-            self._enter_state(region)
-            if self._reached_final or not self._is_running:
-                return
-
-    def _run_entry(self, state: S) -> None:
-        """W3C SCXML 5.3 + 3.8 — fire late-binding local datamodel init
-        (once per state) then run the state's onentry actions. Shared by
-        ancestor entry in `_enter_target_step` and target entry in
-        `_enter_state` so the two paths cannot drift."""
-        if (
-            self._policy.is_late_binding()
-            and state not in self._initialized_states_data
-        ):
-            self._policy.init_state_datamodel(state, self)
-            self._initialized_states_data.add(state)
-        self._policy.execute_entry_actions(state, self)
-        # §scxml-6.4 — every `<invoke>` on the entered state defers
-        # to the engine's pending list. Actual child instantiation
-        # happens after the macrostep settles via
-        # `_start_pending_invokes` so onentry observes a stable config
-        # before any child runs.
-        self._policy.defer_invokes_on_entry(state, self)
-
-    def _enter_initial_path(self, leaf: S) -> None:
-        """W3C SCXML 3.3 — enter the explicit document-level initial
-        leaf, branching parallel regions but following the path-side
-        child at every compound ancestor. Companion to `_enter_state`
-        (which descends via default `get_initial_children` at every
-        compound); separated because the document's `<scxml initial=>`
-        attribute makes the path explicit only at the leaf, while
-        every compound between root and leaf still needs path-aware
-        descent so the explicit leaf is reached rather than the
-        compound's parser-default first child."""
-        upward: List[S] = []
-        state: Optional[S] = leaf
-        while state is not None:
-            upward.append(state)
-            state = self._policy.get_parent(state)
-        path = list(reversed(upward))
-        path_child: Dict[S, S] = {
-            path[i]: path[i + 1] for i in range(len(path) - 1)
-        }
-        self._descend_initial_path(path[0], path_child)
-
-    def _descend_initial_path(self, state: S, path_child: Dict[S, S]) -> None:
-        is_final = self._policy.is_final_state(state)
-        is_parallel = self._policy.is_parallel_state(state)
-        is_compound = self._policy.is_compound_state(state)
-        if is_final or not (is_parallel or is_compound):
-            self._active_leaves.append(state)
-        self._run_entry(state)
-        if is_final:
-            self._mark_root_final_if_top_level(state)
-            return
-        if is_parallel:
-            regions = sorted(
-                self._policy.get_parallel_regions(state),
-                key=self._policy.get_document_order,
-            )
-            on_path = path_child.get(state)
-            for region in regions:
-                if region == on_path:
-                    self._descend_initial_path(region, path_child)
-                else:
-                    # Sibling regions follow their parser-resolved default
-                    # entry chain (which `_enter_state` walks).
-                    self._enter_state(region)
-                if self._reached_final or not self._is_running:
-                    return
-            return
-        if is_compound:
-            on_path = path_child.get(state)
-            if on_path is not None:
-                self._descend_initial_path(on_path, path_child)
-                return
-            if self._enter_from_history_snapshot(state):
-                return
-            children = self._policy.get_initial_children(state)
-            if not children:
-                self._active_leaves.append(state)
-                return
-            # §scxml-3.3: `initial="s1 s2"` (multi-target initial) pre-
-            # resolves to a leaf list that may descend through several
-            # ancestors. `_enter_target_step` walks the full ancestor
-            # chain from the leaf back up to `state`; the parallel
-            # fan-out it performs uses each region's parser-rewritten
-            # default initial (test364), which the parser has already
-            # set to the sibling target leaf.
-            self._enter_target_step(children[0], state)
-            return
-
-    def _enter_state(self, state: S) -> None:
-        """Recursively enter `state`: run its entry actions, then descend
-        through the appropriate child (single initial child for a compound,
-        every region for a `<parallel>`).
-
-        W3C SCXML 3.8: a state is part of the active configuration BEFORE
-        its `<onentry>` runs — so a guard like `In(s)` evaluated inside
-        `s`'s own onentry returns True (test411). Atomic / final leaves
-        are appended here ahead of `_run_entry`; compound and parallel
-        states acquire their active status automatically once any of
-        their descendants land in `_active_leaves` (active_configuration
-        walks parents)."""
-        is_final = self._policy.is_final_state(state)
-        is_parallel = self._policy.is_parallel_state(state)
-        is_compound = self._policy.is_compound_state(state)
-        if is_final or not (is_parallel or is_compound):
-            self._active_leaves.append(state)
-        self._run_entry(state)
-        if is_final:
-            self._mark_root_final_if_top_level(state)
-            return
-        if is_parallel:
-            # §scxml-3.4 — enter every region in document order. The
-            # policy provides regions in declaration-time order (which may
-            # be alphabetical for some codegen paths); sort here so the
-            # entry trace is deterministic against the source document.
-            regions = sorted(
-                self._policy.get_parallel_regions(state),
-                key=self._policy.get_document_order,
-            )
-            for region in regions:
-                self._enter_state(region)
-                if self._reached_final or not self._is_running:
-                    return
-            return
-        if is_compound:
-            if self._enter_from_history_snapshot(state):
-                return
-            children = self._policy.get_initial_children(state)
-            if not children:
-                # Defensive: well-formed compound has at least one child.
-                self._active_leaves.append(state)
-                return
-            # §scxml-3.3: multi-target initial — walk through ancestors
-            # via `_enter_target_step` so the parallel fan-out hits each
-            # region's parser-rewritten default (test364). Single-target
-            # case naturally degenerates to a one-leg `_enter_state` call.
-            self._enter_target_step(children[0], state)
-            return
-
-    def _enter_from_history_snapshot(self, state: S) -> bool:
-        """W3C SCXML 3.11 — when `state`'s `<initial>` element targets a
-        `<history>` pseudo-state and a snapshot exists in `_history`,
-        descend into the snapshot's saved leaves (sorted by document
-        order) and return `True`. Returns `False` when there is no
-        history-targeting `<initial>` or the snapshot is empty — the
-        caller then falls back to the parser-resolved default initial
-        children. The history element's default `<transition>` actions
-        are emitted by `execute_entry_actions` and guarded by the same
-        snapshot-emptiness check, so the entry-action side stays in
-        sync with the descent decision."""
-        history_id = self._policy.get_initial_history_id(state)
-        if history_id is None:
-            return False
-        snapshot = self._history.get(history_id)
-        if not snapshot:
-            return False
-        for saved in sorted(snapshot, key=self._policy.get_document_order):
-            self._enter_target_step(saved, state)
-            if self._reached_final or not self._is_running:
-                return True
-        return True
-
-    def _snapshot_history(self, exiting: Set[S]) -> None:
-        """W3C SCXML 3.11 — for every compound about to exit, record its
-        history. `shallow` history captures the directly-active child of
-        the compound; `deep` history captures the active leaf descendant."""
-        if not exiting:
-            return
-        active = self.active_configuration()
-        for compound in exiting:
-            history_ids = self._policy.get_history_states_in(compound)
-            if not history_ids:
-                continue
-            for history_id in history_ids:
-                kind = self._policy.get_history_type(history_id)
-                if kind == "deep":
-                    snapshot = [
-                        leaf
-                        for leaf in self._active_leaves
-                        if self._is_proper_descendant(leaf, compound)
-                    ]
-                else:
-                    # shallow: the direct child(ren) of compound that
-                    # have an active descendant.
-                    snapshot = [
-                        state
-                        for state in active
-                        if self._policy.get_parent(state) == compound
-                    ]
-                if snapshot:
-                    self._history[history_id] = snapshot
 
     def _mark_root_final_if_top_level(self, final_state: S) -> None:
         """If a `<final>` at the top of the document is entered, the engine
-        terminates (W3C SCXML 3.7). `<final>` inside a parallel region only
-        marks that region done — termination is governed by
-        `_check_done_state_events`.
+        terminates (§scxml-D-enterStates: `running = false`). A `<final>`
+        anywhere else raises `done.state` events from its entry instead, which
+        the generated policy does.
 
         `exitInterpreter` — the final state's own `<onexit>` actions still
         execute as the engine winds down (test236: a child invoke's
         `<final><onexit><send target="#_parent">` must reach the parent).
-        The final state stays in `_active_leaves` so `current_state`
+        The final state stays in the configuration so `current_state`
         post-termination still reports the reached final."""
         # §scxml-D-exitInterpreter: the exit actions of the state that
         # terminated the interpreter still run before the engine stops.
@@ -2028,43 +1543,6 @@ class Engine(Generic[S, E]):
             self._policy.execute_exit_actions(final_state, self)
             self._reached_final = True
             self._is_running = False
-
-    def _check_done_state_events(self) -> None:
-        """W3C SCXML 3.7 — when every region of a `<parallel>` state has
-        reached its `<final>`, raise `done.state.<parallel_id>`."""
-        active = self.active_configuration()
-        # For each active parallel state, check whether every region is
-        # represented in the active set by a final leaf.
-        for state in list(active):
-            if not self._policy.is_parallel_state(state):
-                continue
-            if state in self._fired_done_state:
-                continue
-            regions = self._policy.get_parallel_regions(state)
-            if not regions:
-                continue
-            all_final = True
-            for region in regions:
-                if not self._region_has_final_descendant(region, active):
-                    all_final = False
-                    break
-            if all_final:
-                self._fired_done_state.add(state)
-                done_event = self._policy.done_state_event(state)
-                if done_event is not None:
-                    self.raise_internal(done_event)
-
-    def _region_has_final_descendant(
-        self, region: S, active: Set[S]
-    ) -> bool:
-        """True iff `region` itself or one of its descendants is a final
-        state currently in `active`."""
-        for s in active:
-            if s != region and not self._is_proper_descendant(s, region):
-                continue
-            if self._policy.is_final_state(s):
-                return True
-        return False
 
     # ── Invoke drivers (W3C SCXML 6.4) ────────────────────────────
 
@@ -2155,109 +1633,106 @@ class Engine(Generic[S, E]):
         # `_event.origin`, `_event.sendid` and `_event.invokeid` the parent saw.
         self._policy.forward_to_autoforward_children(name, evt.metadata, self)
 
-    # ── Hierarchy helpers ─────────────────────────────────────────
 
-    def _compute_exit_set(self, transition: TransitionResult[S]) -> Set[S]:
-        """Set of currently-active states the transition exits.
 
-        For an external transition: the boundary is LCCA(source, target);
-        every active state that is a proper descendant of the boundary
-        (including the source's region) is exited.
+class _MicrostepHost(Generic[S, E]):
+    """An `Engine` as Appendix D's procedures read and drive it — the
+    `microstep.Document` and `microstep.Run` of that module.
 
-        For an internal transition where target is a proper descendant of
-        source: only the active descendants of `source` itself are exited
-        — source survives.
+    Structure comes from the policy's tables; the run-time half — the
+    configuration, what each `<history>` recorded — from the engine. What
+    exiting and entering a state DO is here too, and it is the only place:
+    `microstep` decides WHICH states, in which order, and this does each one.
+    """
 
-        For a targetless transition: empty set (no states change).
-        """
-        # §scxml-D-GlobalVariables: the exit set is computed against the
-        # interpreter's current configuration, the global the algorithm names.
-        if transition.targetless or transition.target is None:
-            return set()
-        source: S = (
-            transition.source
-            if transition.source is not None
-            else self._policy.initial_state()
+    def __init__(self, engine: "Engine[S, E]") -> None:
+        self._engine = engine
+        self._policy = engine._policy
+
+    # ── microstep.Document ────────────────────────────────────────
+
+    def parent_of(self, state: S) -> Optional[S]:
+        return self._policy.get_parent(state)
+
+    def is_compound(self, state: S) -> bool:
+        return self._policy.is_compound_state(state)
+
+    def is_parallel(self, state: S) -> bool:
+        return self._policy.is_parallel_state(state)
+
+    def is_final(self, state: S) -> bool:
+        return self._policy.is_final_state(state)
+
+    def child_states(self, state: S) -> Sequence[S]:
+        return self._policy.get_child_states(state)
+
+    def initial_targets(self, state: S) -> Sequence[EntryTarget]:
+        return self._policy.get_initial_targets(state)
+
+    def history_parent(self, history: str) -> S:
+        return self._policy.get_history_parent(history)
+
+    def history_value(self, history: str) -> Optional[Sequence[S]]:
+        return self._engine._history.get(history)
+
+    def history_default_targets(self, history: str) -> Sequence[EntryTarget]:
+        return self._policy.get_history_default_targets(history)
+
+    def document_order(self, state: S) -> int:
+        return self._policy.get_document_order(state)
+
+    # ── microstep.Run ─────────────────────────────────────────────
+
+    def configuration(self) -> Sequence[S]:
+        return self._engine._configuration
+
+    def first_enabled_transition(
+        self, state: S, event: E
+    ) -> Optional[EnabledTransition[S]]:
+        return self._policy.first_enabled_transition(state, event, self._engine)
+
+    def exit_state(self, state: S, configuration_before_exit: Sequence[S]) -> None:
+        engine = self._engine
+        # §scxml-D-exitStates: every history of an exiting state records the
+        # configuration as it stood before the microstep's first exit — the
+        # snapshot this is handed, so the order the states are exited in cannot
+        # change what any of them records.
+        for history_id in self._policy.get_history_states_in(state):
+            deep = self._policy.get_history_type(history_id) == "deep"
+            engine._history[history_id] = recorded_history(
+                self, state, deep, configuration_before_exit
+            )
+        # §scxml-D-exitStates: onexit, cancel the invocations, then leave the
+        # configuration — so an outer `<onexit>` reading `In(child)` sees the
+        # child already gone (test409).
+        self._policy.execute_exit_actions(state, engine)
+        # §scxml-6.4 — also drops any invoke still pending from this
+        # macrostep, which is §scxml-D-exitStates' `statesToInvoke.delete(s)`.
+        self._policy.cancel_invokes_for_state(state, engine)
+        engine._configuration.remove(state)
+
+    def execute_transition_content(self, transition: EnabledTransition[S]) -> None:
+        self._policy.execute_transition_content(
+            transition.source, transition.transition_index, self._engine
         )
-        target: S = transition.target
-        if transition.is_internal and self._is_proper_descendant(target, source):
-            boundary: Optional[S] = source
-            include_boundary = False
-        else:
-            boundary = self._find_lcca(source, target)
-            include_boundary = False
-        result: Set[S] = set()
-        for active_state in self.active_configuration():
-            if boundary is None:
-                # No common ancestor — exit everything except the document
-                # root scope (mapped as `boundary == None`).
-                result.add(active_state)
-                continue
-            if active_state == boundary and not include_boundary:
-                continue
-            if self._is_proper_descendant(active_state, boundary):
-                result.add(active_state)
-        return result
 
-    def _is_proper_descendant(self, descendant: S, ancestor: S) -> bool:
-        s = self._policy.get_parent(descendant)
-        while s is not None:
-            if s == ancestor:
-                return True
-            s = self._policy.get_parent(s)
-        return False
+    def enter_state(self, state: S, is_default_entry: bool) -> None:
+        engine = self._engine
+        policy = self._policy
+        # §scxml-D-enterStates: into the configuration first, so the state's
+        # own `<onentry>` already finds it there.
+        engine._configuration.append(state)
+        # §scxml-D-enterStates, W3C SCXML 5.3: late binding initialises a
+        # state's `<datamodel>` on its first entry.
+        if policy.is_late_binding() and state not in engine._initialized_states_data:
+            policy.init_state_datamodel(state, engine)
+            engine._initialized_states_data.add(state)
+        policy.execute_entry_actions(state, engine, is_default_entry)
+        # §scxml-D-enterStates: `statesToInvoke.add(s)`. Deferred, not started
+        # — the invocations run once the macrostep has settled.
+        policy.defer_invokes_on_entry(state, engine)
+        if policy.is_final_state(state):
+            engine._mark_root_final_if_top_level(state)
 
-    def _is_transition_domain_candidate(self, state: S) -> bool:
-        """W3C SCXML Appendix D ``isCompoundStateOrScxmlElement``.
-
-        A ``<parallel>`` answers false. It is the whole reason ``findLCCA``
-        differs from a plain lowest-common-ancestor, and the two questions have
-        to be asked together: a region root is a compound ``<state>`` whose
-        parent is a ``<parallel>``, so filtering on "compound" alone would still
-        admit the ``<parallel>`` on backends that report it as compound.
-
-        The ``<scxml>`` element is the appendix's other legal answer and has no
-        state here, which is why ``_find_lcca`` returns ``None`` for it rather
-        than naming it.
-        """
-        return self._policy.is_compound_state(state) and not self._policy.is_parallel_state(
-            state
-        )
-
-    def _find_lcca(self, source: S, target: S) -> Optional[S]:
-        """W3C SCXML Appendix D ``findLCCA`` — the Least Common COMPOUND Ancestor.
-
-        The proper ancestors of `source`, filtered by
-        ``isCompoundStateOrScxmlElement``, lowest one that also contains
-        `target`. Returns ``None`` when the answer is the ``<scxml>`` element
-        itself, which callers read as "exit the whole configuration".
-
-        What stood here answered the first ancestor shared by both, whatever its
-        kind — that is ``findLCA``, which the appendix names separately, and the
-        difference only shows when a ``<parallel>`` sits between the source and
-        the first compound ``<state>`` above it. That is exactly a transition
-        written on a REGION ROOT, and answering the ``<parallel>`` left the other
-        regions unexited: measured 2026-08-25 as the sibling region taking its
-        own transition on the same event while this one's target was never
-        entered at all.
-
-        The walk is over `source`'s ancestors rather than `target`'s because the
-        filter has to be applied to the candidate, and the appendix's candidate
-        list is ``getProperAncestors(source)``.
-
-        The containment test is STRICT — a state is not its own descendant —
-        and that settles the case where `target` is itself an ancestor of
-        `source`. Accepting `ancestor == target` there would make the target its
-        own domain, and a domain is never exited, so the target's ``onexit``
-        would not run on the way back into it. W3C test 579 turns on exactly
-        that: it counts `s0`'s ``onexit`` when `s03` transitions to `s0`, and
-        with the loose test it reached `<final id="fail">`.
-        """
-        ancestor = self._policy.get_parent(source)
-        while ancestor is not None:
-            if self._is_transition_domain_candidate(
-                ancestor
-            ) and self._is_proper_descendant(target, ancestor):
-                return ancestor
-            ancestor = self._policy.get_parent(ancestor)
-        return None
+    def execute_history_default_content(self, history: str) -> None:
+        self._policy.execute_history_default_content(history, self._engine)
