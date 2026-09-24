@@ -117,39 +117,52 @@ mutation_case "the aot drain drops the exit and entry of an eventless self trans
 edit("sce/include/static/StaticExecutionEngine.h",
      """    void microstep(const std::vector<TransitionInfo> &transitions) {""",
      """    void microstep(const std::vector<TransitionInfo> &transitions) {
-        if (std::all_of(transitions.begin(), transitions.end(), [this](const TransitionInfo &t) {
-                const std::vector<State> targets = effectiveTargetsOf(t);
+        MicrostepHost shortcut{*this};
+        if (std::all_of(transitions.begin(), transitions.end(), [&shortcut](const TransitionInfo &t) {
+                const std::vector<State> targets = SCE::Core::MicrostepAlgorithms::effectiveTargets(shortcut, t);
                 return targets.size() == 1 && targets.front() == t.source;
             })) {
-            executeTransitionContent(transitions);
+            SCE::Core::MicrostepAlgorithms::executeTransitionContent(shortcut, transitions);
             return;
         }""")
 PY
 
 # ── C++ Interpreter: the chain the transition opened ───────────────
 #
-# The same defect in the other engine, in the other place: this one's macrostep
-# loop lives in the branch of `executeTransition` that has entered a target
-# state, so the targetless branch returned before reaching it.
+# The same defect in the other engine, in the other place. The main event loop
+# runs after the event's microstep whatever that microstep did; the mutation
+# puts back the shortcut the defect was — a transition that ended where it
+# started, a targetless one above all, reads as having moved nothing, and the
+# chain its content opened is never walked.
 
 mutation_case "the interpreter returns from a targetless transition without walking the chain" <<'PY'
 edit("sce/src/runtime/StateMachine.cpp",
-     """                    if (eventRaiser_) {
-                        while (checkEventlessTransitions()) {
-                        }
-                    }
-
-                    TransitionResult result;""",
-     """                    TransitionResult result;""")
+     """    const TransitionResult result = processTakenEvent(event, fromExternalQueue);
+    runMainEventLoop();""",
+     """    const TransitionResult result = processTakenEvent(event, fromExternalQueue);
+    if (result.toState != result.fromState) {
+        runMainEventLoop();
+    }""")
 PY
 
-# A case that used to be here is deliberately absent: replacing the `while`
-# around `checkEventlessTransitions()` with a single call. It SURVIVED a full
-# round, and the reason is a property of this engine rather than a hole in the
-# fixture — `checkEventlessTransitions` walks the chain ITSELF, re-entering
-# through state entry, which is the recursion the eventless ceiling had to be
-# moved onto a member to bound. So one call and a loop are the same behaviour
-# and no test can separate them: an equivalent mutation. The loop stays because
-# it is the shape of its sibling in the state-changing branch of the same
-# function, and because it is what stays correct if that recursion is ever
-# unwound; it is not a second decision, so it gets no case.
+# ── C++ Interpreter: the chain walked to its end ───────────────────
+#
+# A case once stood absent here, deliberately: replacing the `while` around the
+# old `checkEventlessTransitions()` with a single call SURVIVED a full round,
+# because that function walked the chain itself, re-entering through state
+# entry, so one call and a loop were the same behaviour. The note said the loop
+# stayed because it is "what stays correct if that recursion is ever unwound".
+# It has been: the main event loop now takes eventless microsteps one after
+# another and nothing re-enters it, so taking one and stopping is a decision
+# of its own, and gets its case. The fixture's `recycle` outcome counts the
+# entries of a chain several microsteps long.
+
+mutation_case "the interpreter takes one eventless microstep and stops" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     """                ++macrostepMicrostepsTaken_;
+                takeMicrostep(enabled, std::string{});
+                continue;""",
+     """                ++macrostepMicrostepsTaken_;
+                takeMicrostep(enabled, std::string{});
+                break;""")
+PY

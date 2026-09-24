@@ -99,6 +99,12 @@ PY
 # `autoforward` child — which is what `AutoforwardInternalQueueTest` forbids:
 # `error.*` stays out of the forwarded set because of the queue it was raised
 # onto, not because of how its name is spelled.
+#
+# Only an interactive host still hands this machine an internal event through
+# the callback — in auto mode the main event loop takes it off the queue
+# itself, and the callback never sees it. So the witness is that test's
+# `AnInternalEventTheHostStepsIsNeverAutoforwarded`, the fixture driven by a
+# host that steps; the auto-mode test beside it cannot see this mutation.
 
 mutation_case "the interpreter raiser callback uses the host door" <<'PY'
 edit("sce/src/runtime/StateMachine.cpp",

@@ -986,13 +986,14 @@ add_executable(integration_tests
     # configuration, so a transition leaving the `<parallel>` names the sibling
     # region too — which one region's own leaf-to-domain chain can never do.
     integration/ParallelExitSetNamesSiblingRegionTest.cpp
-    # Interpreter only, deliberately: the seam it exercises is
-    # `EventContextGuard`'s, and that guard is the Interpreter's. Its document is
-    # inline rather than a fixture stem because no other channel has the site.
-    # ⚠ Read its header before counting it as coverage — it pins the nesting
-    # recipe and the outer report, NOT the constructor-timing hazard, and it says
-    # why no witness for that is constructible today.
-    integration/NestedDeliveryKeepsTheOuterPayloadReportTest.cpp
+    # Interpreter only, and inline documents rather than fixture stems: each
+    # pins a place where this engine's main event loop used to differ from
+    # Appendix D — the `_event` a macrostep leaves bound, the external queue a
+    # host call leaves behind, an event handed over mid-macrostep — and the
+    # generated engines never had the sites.
+    integration/EventBindingAcrossAMacrostepTest.cpp
+    integration/HostCallTakesTheExternalQueueTest.cpp
+    integration/ReentrantDeliveryWaitsItsTurnTest.cpp
     integration/UnseenEventIsReportedTest.cpp
     integration/UnseenEventIsReportedAotTest.cpp
     integration/UnhandledErrorIsObservableTest.cpp

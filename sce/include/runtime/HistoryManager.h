@@ -8,8 +8,10 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace SCE {
 
@@ -140,6 +142,19 @@ public:
      * @return Restoration result with target states or error
      */
     virtual HistoryRestorationResult restoreHistory(const std::string &historyStateId);
+
+    /**
+     * @brief What a `<history>` recorded — W3C SCXML Appendix D's `historyValue[h.id]`
+     *
+     * Unlike `restoreHistory`, this never answers with the default: whether
+     * to fall back to the history's default transition, and whose content
+     * then runs, is the entry procedure's decision, so it has to be able to
+     * tell "recorded nothing yet" apart from "recorded this".
+     *
+     * @return The recorded states, or std::nullopt before the history's parent
+     *         was ever exited
+     */
+    virtual std::optional<std::vector<std::string>> recordedValue(const std::string &historyStateId) const;
 
     /**
      * @brief Check if a state ID represents a history state

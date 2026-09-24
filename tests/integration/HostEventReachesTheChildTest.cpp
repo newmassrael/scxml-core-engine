@@ -109,10 +109,12 @@ TEST_F(HostEventReachesTheChildTest, AnEventTheHostHandsOverReachesTheAutoforwar
     // selection.
     sm->processEvent("hostPing");
 
-    // The child's answer lands on the parent's external queue, and a host that
-    // drives with `processEvent` owns the drain that takes it off again.
-    // Bounded rather than timed: every pass here is the machine's own work, so
-    // a queue that has not emptied after this many is not slow.
+    // The child's answer lands on the parent's external queue. In auto mode
+    // the parent's main event loop takes it before `processEvent` returns —
+    // `HostCallTakesTheExternalQueueTest` owns that — so this drain is idle
+    // when the engine is right, and keeps this test about the door alone when
+    // it is not. Bounded rather than timed: every pass here is the machine's
+    // own work, so a queue that has not emptied after this many is not slow.
     for (int i = 0; i < 50 && sm->isRunning() && eventRaiser->hasQueuedEvents(); ++i) {
         eventRaiser->processQueuedEvents();
     }

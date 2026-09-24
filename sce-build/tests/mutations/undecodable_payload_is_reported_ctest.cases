@@ -83,8 +83,8 @@ PY
 
 mutation_case "the interpreter records nothing for a lost payload" <<'PY'
 edit("sce/src/runtime/StateMachine.cpp",
-     """                if (owner_ && actionExecutorImpl_->lastPayloadReading() == PayloadReading::Undecodable) {""",
-     """                if (false) {""")
+     """    if (cachedExecutorImpl_->lastPayloadReading() == PayloadReading::Undecodable) {""",
+     """    if (false) {""")
 PY
 
 # ── C++ Interpreter: the count moves, the name does not ────────────
@@ -94,25 +94,19 @@ PY
 # that separates the two, which is what the fixture's second loss under a
 # DIFFERENT event name exists to make possible.
 #
-# ⚠ This case does NOT witness the hazard the constructor comment in
-# `StateMachine.cpp` names — that the guard's destructor re-binds the SAVED
-# event, so a reading taken after it belongs to a different delivery. Nothing
-# here can: this fixture raises nothing, so every delivery is top-level,
-# `isNested_` is always false, and the destructor's restore branch never runs.
-# A witness needs one delivery that is BOTH nested AND carrying an undecodable
-# payload, and the reachable shape is `<donedata><content>` on a compound
-# state's `<final>`: that payload rides on `done.state.id`, and that event is
-# drained from the INTERNAL queue. It wants a fixture of its own.
+# The reading is taken in `bindCurrentEvent`, right after the binding that
+# chose it: the main event loop binds each event it takes and never re-binds an
+# earlier one, so no later binding can be mistaken for this one.
 
 mutation_case "the interpreter counts the loss but never names it" <<'PY'
 edit("sce/src/runtime/StateMachine.cpp",
-     """                if (owner_ && actionExecutorImpl_->lastPayloadReading() == PayloadReading::Undecodable) {
-                    ++owner_->undecodablePayloads_;
-                    owner_->lastUndecodablePayloadEvent_ = newEvent.name;
-                }""",
-     """                if (owner_ && actionExecutorImpl_->lastPayloadReading() == PayloadReading::Undecodable) {
-                    ++owner_->undecodablePayloads_;
-                }""")
+     """    if (cachedExecutorImpl_->lastPayloadReading() == PayloadReading::Undecodable) {
+        ++undecodablePayloads_;
+        lastUndecodablePayloadEvent_ = event.name;
+    }""",
+     """    if (cachedExecutorImpl_->lastPayloadReading() == PayloadReading::Undecodable) {
+        ++undecodablePayloads_;
+    }""")
 PY
 
 # ── C++ QuickJS: the rung the clause splits in two ─────────────────

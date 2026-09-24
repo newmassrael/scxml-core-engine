@@ -146,11 +146,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::processEvent",
-          "kind": "implements"
-        },
-        {
           "file": "sce-build/src/parser.rs",
           "symbol": "tests",
           "kind": "references"
@@ -188,6 +183,11 @@
         {
           "file": "sce-build/src/parser.rs",
           "symbol": "parse_impl",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::applyFinalize",
           "kind": "implements"
         }
       ]
@@ -379,7 +379,14 @@
   "changelog_entries": {},
   "inventory_entries": {},
   "confirmation_events": {},
-  "mutation_reasons": [],
+  "mutation_reasons": [
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "wire-W4",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the <finalize> parse whose typed ParseXmlFailed this section covers moved out of processEvent into StateMachine::applyFinalize, the preliminary step every external event gets; processEvent no longer carries the citation"
+    }
+  ],
   "frames": {},
   "branches": {},
   "entities": {},

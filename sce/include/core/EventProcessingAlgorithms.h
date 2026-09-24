@@ -41,14 +41,13 @@ public:
      * @brief Process the internal event queue (FIFO)
      *
      * Exhaust all internal events in FIFO order when macrostep completes.
-     * Both Interpreter and AOT engines use the same algorithm.
      *
      * @tparam EventQueue Event queue type
      *   Required methods: bool hasEvents() const, EventType popNext()
      * @tparam EventHandler Event handler callback type
      *   Signature: bool handler(EventType event)
      *
-     * @param queue Internal event queue (AOTEventQueue or InterpreterEventQueue)
+     * @param queue Internal event queue (AOTEventQueue)
      * @param handler Event processing function (stops processing if returns false)
      * @param mayTakeMicrostep Asked before each dequeue: may this macrostep
      *        take another microstep? A drain that stops here leaves the event
@@ -65,14 +64,6 @@ public:
      * AOTEventQueue aotQueue(eventQueue_);
      * processInternalEventQueue(aotQueue, [this](Event e) {
      *     return processInternalEvent(e);
-     * });
-     * @endcode
-     *
-     * @example Interpreter engine:
-     * @code
-     * InterpreterEventQueue interpQueue(eventRaiser_);
-     * processInternalEventQueue(interpQueue, [this](auto) {
-     *     return true;  // EventRaiser handles internally
      * });
      * @endcode
      */

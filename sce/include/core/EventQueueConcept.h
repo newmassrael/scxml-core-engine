@@ -11,9 +11,9 @@ namespace SCE::Core {
 /**
  * @brief §scxml-3.13: Event queue adapter contract
  *
- * Formalizes the duck-typed interface required by EventProcessingAlgorithms.
- * Both AOT (AOTEventQueue) and Interpreter (InterpreterEventQueue) adapters
- * must satisfy this concept.
+ * Formalizes the duck-typed interface required by EventProcessingAlgorithms;
+ * the AOT engine's `AOTEventQueue` satisfies it. The Interpreter's main event
+ * loop takes its events straight off the raiser instead.
  *
  * Required methods:
  * - bool hasEvents() const  : Check if queue has pending events

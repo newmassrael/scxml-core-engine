@@ -8,6 +8,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -137,6 +138,15 @@ public:
         std::chrono::steady_clock::time_point timestamp;
         EventPriority priority;
         std::optional<ScriptValue> typedData;  // Engine-agnostic typed data (avoids JSON round-trip)
+        /// The order this event was queued in, among events whose timestamps
+        /// are equal. A timestamp is not always the moment of queuing — a
+        /// delayed send carries the instant it was due — and two events can
+        /// share one: two sends due at the same logical instant, or two raises
+        /// the clock could not tell apart. A heap leaves equal keys in no
+        /// particular order, and §scxml-3.12.1 processes events in the order
+        /// they were inserted. Copied with the event, so setting events aside
+        /// and putting them back keeps it.
+        std::uint64_t sequence;
 
         QueuedEvent(const std::string &name, const std::string &data, EventPriority prio = EventPriority::INTERNAL,
                     const std::string &originSessionId = "", const std::string &sid = "", const std::string &iid = "",
@@ -145,11 +155,18 @@ public:
                     std::optional<ScriptValue> typed = std::nullopt)
             : eventName(name), eventData(data), origin(originSessionId), sendId(sid), invokeId(iid), originType(otype),
               timestamp(ts.time_since_epoch().count() > 0 ? ts : std::chrono::steady_clock::now()), priority(prio),
-              typedData(std::move(typed)) {}
+              typedData(std::move(typed)), sequence(nextSequence()) {}
+
+    private:
+        static std::uint64_t nextSequence() {
+            static std::atomic<std::uint64_t> next{0};
+            return next.fetch_add(1, std::memory_order_relaxed);
+        }
     };
 
     /**
-     * @brief Comparator for priority queue - orders by priority (INTERNAL first) then timestamp (FIFO)
+     * @brief Comparator for priority queue - orders by priority (INTERNAL first), then timestamp, then the order
+     *        of queuing (FIFO)
      * Note: std::priority_queue is a max-heap, so we invert the comparison
      */
     struct QueuedEventComparator {
@@ -159,7 +176,10 @@ public:
                 return a.priority > b.priority;  // Lower priority value = higher actual priority
             }
             // For same priority, older timestamp should come first (FIFO)
-            return a.timestamp > b.timestamp;  // Older timestamp = lower in heap
+            if (a.timestamp != b.timestamp) {
+                return a.timestamp > b.timestamp;  // Older timestamp = lower in heap
+            }
+            return a.sequence > b.sequence;
         }
     };
 
@@ -244,15 +264,6 @@ public:
      */
     void resetErrorCascadeDepth() override;
 
-    /**
-     * @brief §scxml-3.13: take the macrostep budget this raiser's internal dispatches spend
-     *
-     * See `IEventRaiser::setMicrostepBudget`. This raiser owns the queue, so it
-     * is the only party that can decline a dispatch without consuming the
-     * event — the refusal leaves it queued for the next macrostep.
-     */
-    void setMicrostepBudget(MicrostepBudget budget) override;
-
     // IEventRaiser interface
     bool raiseEvent(const std::string &eventName, const std::string &eventData) override;
     bool raiseEvent(const std::string &eventName, const std::string &eventData,
@@ -319,6 +330,24 @@ public:
      * @return true if an internal event was processed, false if none was queued
      */
     bool processNextInternalEvent() override;
+
+    /**
+     * @brief Take the head of one of the two queues for the caller to process
+     *        — see IEventRaiser::takeQueuedEvent
+     */
+    std::optional<Core::EventMetadata> takeQueuedEvent(EventQueue queue) override;
+
+    /**
+     * @brief Append an event to one of the two queues, never dispatching it —
+     *        see IEventRaiser::enqueue
+     */
+    bool enqueue(const Core::EventMetadata &event, EventQueue queue) override;
+
+    /**
+     * @brief Run @p dispatch inside the error-chain scope this raiser's own
+     *        dispatches use — see IEventRaiser::dispatchTaken
+     */
+    bool dispatchTaken(const std::string &eventName, const std::function<bool()> &dispatch) override;
 
     /**
      * @brief Get snapshot of current event queues for visualization/debugging
@@ -475,26 +504,6 @@ public:
     std::atomic<uint32_t> errorCascadeEvents_{0};
     std::string lastErrorCascadeEvent_;
     mutable std::mutex lastErrorCascadeEventMutex_;
-
-    // §scxml-3.13: the state machine's macrostep budget, lent to this raiser
-    // because the queue is here. Empty until the machine wires its callback,
-    // and a raiser without one dispatches exactly as it always did. See
-    // `MicrostepBudget`.
-    MicrostepBudget microstepBudget_;
-    mutable std::mutex microstepBudgetMutex_;
-
-    /**
-     * @brief §scxml-3.13: may this macrostep dispatch another internal event?
-     *
-     * Yes when no budget was lent — the ceiling belongs to the machine, and a
-     * raiser standing on its own has no macrostep to bound.
-     */
-    bool mayTakeMicrostep();
-
-    /**
-     * @brief §scxml-3.13: report that a dispatch selected a transition, so the budget shrinks
-     */
-    void spendMicrostep();
 
     /**
      * @brief Marks one dispatch as "an error handler is running" for the raise

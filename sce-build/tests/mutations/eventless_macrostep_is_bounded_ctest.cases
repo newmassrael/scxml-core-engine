@@ -118,15 +118,15 @@ PY
 
 # ── Interpreter: the refusal itself ────────────────────────────────
 #
-# This engine recurses, so removing the refusal does not merely spin: the stack
-# runs out. The ctest TIMEOUT is what turns that into a verdict.
+# The main event loop is iterative, so removing the refusal spins rather than
+# running out of stack. The ctest TIMEOUT is what turns that into a verdict.
 
 mutation_case "the interpreter takes the microstep past the ceiling anyway" <<'PY'
 edit("sce/src/runtime/StateMachine.cpp",
-     """    if (macrostepMicrostepsTaken_ >= static_cast<uint32_t>(MAX_MACROSTEP_MICROSTEPS)) {
-        recordTruncatedMacrostep();""",
-     """    if (false) {
-        recordTruncatedMacrostep();""")
+     """                if (macrostepMicrostepsTaken_ >= static_cast<uint32_t>(MAX_MACROSTEP_MICROSTEPS)) {
+                    // The chain is still going one microstep past the budget.""",
+     """                if (false) {
+                    // The chain is still going one microstep past the budget.""")
 PY
 
 # ── Interpreter: the budget is per macrostep, not per machine ──────
@@ -134,14 +134,17 @@ PY
 # A counter that is never reset makes the ceiling a property of the machine's
 # whole life: the second macrostep is refused before it runs, so a host polling
 # the count sees it stop moving and reads the machine as recovered.
-# `ASecondTruncatedMacrostepCountsAgain` reads `spins == 2000` for it.
+# `ASecondTruncatedMacrostepCountsAgain` reads `spins == 2000` for it. The reset
+# the host's call makes is the one mutated: that is the boundary the test
+# crosses.
 
 mutation_case "the interpreter budget outlives the macrostep that spent it" <<'PY'
 edit("sce/src/runtime/StateMachine.cpp",
-     """        macrostepTruncated_ = false;
-        macrostepMicrostepsTaken_ = 0;
-    }""",
-     """    }""")
+     """    macrostepTruncated_ = false;
+    macrostepMicrostepsTaken_ = 0;
+
+    // §scxml-D-microstepProcedure: what the visualizer shows belongs to this event""",
+     """    // §scxml-D-microstepProcedure: what the visualizer shows belongs to this event""")
 PY
 
 # ── Interpreter: the count ─────────────────────────────────────────

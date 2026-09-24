@@ -325,31 +325,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::enterState",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::executeTransitionDirect",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::processStateTransitions",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::setupJSEnvironment",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/TransitionDomainCalculator.cpp",
-          "symbol": "TransitionDomainCalculator::computeExitSet",
-          "kind": "implements"
-        },
-        {
           "file": "sce/src/states/ConcurrentRegion.cpp",
           "symbol": "ConcurrentRegion::enterInitialState",
           "kind": "implements"
@@ -362,16 +337,6 @@
         {
           "file": "sce/src/runtime/HistoryValidator.cpp",
           "symbol": "HistoryValidator::validateRegistrationWithDefault",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::executeTransitionMicrostep",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::exitState",
           "kind": "implements"
         },
         {
@@ -764,11 +729,6 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::processStateTransitions",
-          "kind": "implements"
-        },
-        {
           "file": "tests/w3c/aot_tests/Test396.h",
           "symbol": "Test396",
           "kind": "verifies"
@@ -881,6 +841,11 @@
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "is_descendant_of",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::firstEnabledTransition",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -1039,6 +1004,11 @@
         {
           "file": "sce/src/model/TransitionNode.cpp",
           "symbol": "SCE::TransitionNode::TransitionNode",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/EventRaiserImpl.h",
+          "symbol": "sequence",
           "kind": "implements"
         }
       ],
@@ -1375,11 +1345,6 @@
           "file": "sce/include/common/StringUtils.h",
           "symbol": "isPlatformEvent",
           "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::generateDoneStateEvent",
-          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -1474,11 +1439,6 @@
           "kind": "references"
         },
         {
-          "file": "sce/include/runtime/ImmediateModeGuard.h",
-          "symbol": "ImmediateModeGuard",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/runtime/StateHierarchyManager.h",
           "symbol": "initialTransitionCallback_",
           "kind": "references"
@@ -1491,26 +1451,6 @@
         {
           "file": "sce/include/runtime/StateMachine.h",
           "symbol": "StateMachine",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "executeTransitionMicrostep",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/runtime/TransitionDomainCalculator.h",
-          "symbol": "TransitionDomainCalculator",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/runtime/TransitionDomainCalculator.h",
-          "symbol": "computeExitSet",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/runtime/TransitionDomainCalculator.h",
-          "symbol": "getStateDocumentPosition",
           "kind": "implements"
         },
         {
@@ -1584,76 +1524,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "SCE",
-          "kind": "references"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::checkEventlessTransitions",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::enterState",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::executeExitActions",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::executeTransitionDirect",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::executeTransitionMicrostep",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::exitState",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::initializeFromModel",
-          "kind": "references"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::processEvent",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::processStateTransitions",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::setupJSEnvironment",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::start",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/TransitionDomainCalculator.cpp",
-          "symbol": "TransitionDomainCalculator::computeExitSet",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/TransitionDomainCalculator.cpp",
-          "symbol": "TransitionDomainCalculator::getStateDocumentPosition",
-          "kind": "implements"
-        },
-        {
           "file": "sce/src/states/ConcurrentRegion.cpp",
           "symbol": "ConcurrentRegion::deactivate",
           "kind": "implements"
@@ -1719,21 +1589,6 @@
           "kind": "references"
         },
         {
-          "file": "sce/include/runtime/TransitionDomainCalculator.h",
-          "symbol": "findLCA",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/runtime/TransitionDomainCalculator.h",
-          "symbol": "getProperAncestors",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/runtime/TransitionDomainCalculator.h",
-          "symbol": "isDescendant",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "processEvent",
           "kind": "implements"
@@ -1741,11 +1596,6 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "processEventImpl",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/TransitionDomainCalculator.cpp",
-          "symbol": "TransitionDomainCalculator::findLCA",
           "kind": "implements"
         },
         {
@@ -2055,73 +1905,8 @@
           "kind": "references"
         },
         {
-          "file": "sce/include/runtime/IEventRaiser.h",
-          "symbol": "MicrostepBudget",
-          "kind": "references"
-        },
-        {
-          "file": "sce/include/runtime/IEventRaiser.h",
-          "symbol": "setMicrostepBudget",
-          "kind": "references"
-        },
-        {
-          "file": "sce/src/runtime/EventRaiserImpl.h",
-          "symbol": "setMicrostepBudget",
-          "kind": "references"
-        },
-        {
-          "file": "sce/src/runtime/EventRaiserImpl.h",
-          "symbol": "microstepBudget_",
-          "kind": "references"
-        },
-        {
-          "file": "sce/src/runtime/EventRaiserImpl.h",
-          "symbol": "mayTakeMicrostep",
-          "kind": "references"
-        },
-        {
-          "file": "sce/src/runtime/EventRaiserImpl.h",
-          "symbol": "spendMicrostep",
-          "kind": "references"
-        },
-        {
-          "file": "sce/src/runtime/EventRaiserImpl.cpp",
-          "symbol": "EventRaiserImpl::mayTakeMicrostep",
-          "kind": "references"
-        },
-        {
-          "file": "sce/src/runtime/EventRaiserImpl.cpp",
-          "symbol": "EventRaiserImpl::processQueuedEvents",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/EventRaiserImpl.cpp",
-          "symbol": "EventRaiserImpl::processNextQueuedEvent",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/EventRaiserImpl.cpp",
-          "symbol": "EventRaiserImpl::processNextInternalEvent",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/runtime/StateMachine.h",
           "symbol": "mayTakeMicrostep",
-          "kind": "references"
-        },
-        {
-          "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "makeMicrostepBudget",
-          "kind": "references"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::drainInternalEvents",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::setEventRaiser",
           "kind": "references"
         },
         {
@@ -2332,6 +2117,11 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "microstep",
           "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::refuseUnseen",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -2400,16 +2190,6 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "initialize",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::initializeFromModel",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::start",
           "kind": "implements"
         },
         {
@@ -2648,21 +2428,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "StateMachine",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "isEnteringInitialConfiguration_",
-          "kind": "references"
-        },
-        {
-          "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "setupAndActivateParallelState",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/states/ConcurrentRegion.h",
           "symbol": "desiredInitialChild_",
           "kind": "references"
@@ -2725,16 +2490,6 @@
         {
           "file": "sce/src/runtime/StateHierarchyManager.cpp",
           "symbol": "StateHierarchyManager::updateParallelRegionCurrentStates",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::enterState",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::start",
           "kind": "implements"
         },
         {
@@ -2951,6 +2706,11 @@
           "file": "sce/include/core/EntrySetHelper.h",
           "symbol": "addDescendantStatesToEnter",
           "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/InterpreterDocument.cpp",
+          "symbol": "InterpreterDocument::defaultInitialOf",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -3059,16 +2819,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "generateDoneStateEvent",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "setupAndActivateParallelState",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/states/ConcurrentRegion.h",
           "symbol": "doneStateCallback_",
           "kind": "references"
@@ -3115,32 +2865,7 @@
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::checkEventlessTransitions",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::enterState",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::isInFinalState",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::processEvent",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::setupAndActivateParallelState",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::setupParallelStateCallbacks",
           "kind": "implements"
         },
         {
@@ -3624,11 +3349,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "handleCompoundStateFinalChild",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/states/ConcurrentStateNode.h",
           "symbol": "generateDoneStateEventIfComplete",
           "kind": "implements"
@@ -3641,21 +3361,6 @@
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
           "symbol": "SCXMLInvokeHandler::startInvokeInternal",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::checkEventlessTransitions",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::enterState",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::handleCompoundStateFinalChild",
           "kind": "implements"
         },
         {
@@ -3806,11 +3511,6 @@
           "file": "sce/src/parsing/StateNodeParser.cpp",
           "symbol": "SCE::StateNodeParser::parseStateNode",
           "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::generateDoneStateEvent",
-          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -3897,17 +3597,7 @@
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::executeEntryActions",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::executeOnEntryActions",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::setupAndActivateParallelState",
           "kind": "implements"
         },
         {
@@ -5393,27 +5083,7 @@
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "EventContextGuard",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::enterState",
-          "kind": "references"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::executeTransitionMicrostep",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::processEvent",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::processStateTransitions",
           "kind": "implements"
         },
         {
@@ -6384,11 +6054,6 @@
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::enterState",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::setupJSEnvironment",
           "kind": "implements"
         },
@@ -7086,17 +6751,7 @@
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::enterState",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::evaluateDoneData",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::handleCompoundStateFinalChild",
           "kind": "implements"
         },
         {
@@ -7177,6 +6832,16 @@
         {
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "stash_donedata_at_final",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::raiseInternal",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/runtime/StateMachine.h",
+          "symbol": "evaluateDoneData",
           "kind": "implements"
         }
       ],
@@ -9873,26 +9538,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::initializeFromModel",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::processEvent",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::processStateTransitions",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::setupAndActivateParallelState",
-          "kind": "implements"
-        },
-        {
           "file": "sce/src/scripting/JSEngine.cpp",
           "symbol": "JSEngine::createSessionInternal",
           "kind": "implements"
@@ -10660,6 +10305,11 @@
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "tick_children",
           "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::runMainEventLoop",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -11125,11 +10775,6 @@
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::enterState",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::setCompletionCallback",
           "kind": "implements"
         },
@@ -11156,6 +10801,16 @@
         {
           "file": "backends/c/runtime/include/sce/invoke.h",
           "symbol": "sce_invoke_format_done_event_name",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::enterFinalState",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::finishAtTopLevelFinal",
           "kind": "implements"
         }
       ],
@@ -11392,11 +11047,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::processEvent",
-          "kind": "implements"
-        },
-        {
           "file": "sce-build/src/parser.rs",
           "symbol": "synthesize_automatic_finalize",
           "kind": "implements"
@@ -11409,6 +11059,11 @@
         {
           "file": "sce/src/parsing/InvokeParser.cpp",
           "symbol": "synthesizeAutomaticFinalize",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::applyFinalize",
           "kind": "implements"
         }
       ],
@@ -12454,11 +12109,6 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::setupAndActivateParallelState",
-          "kind": "implements"
-        },
-        {
           "file": "backends/rust/runtime/src/scripting/i_script_engine.rs",
           "symbol": "ScriptValue",
           "kind": "implements"
@@ -12817,17 +12467,7 @@
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "EventContextGuard",
-          "kind": "references"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::getStatistics",
-          "kind": "references"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "owner_",
           "kind": "references"
         },
         {
@@ -12906,6 +12546,11 @@
         {
           "file": "backends/python/runtime/sce_runtime/event_payload.py",
           "symbol": "_decode",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::bindCurrentEvent",
           "kind": "references"
         }
       ],
@@ -14406,21 +14051,6 @@
           "kind": "references"
         },
         {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::processStateTransitions",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::enterState",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::processEvent",
-          "kind": "references"
-        },
-        {
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "execute_on_entry_as_ancestor",
           "kind": "implements"
@@ -14558,11 +14188,6 @@
           "file": "sce/include/core/ParallelTransitionHelper.h",
           "symbol": "computeExitSet",
           "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::processEvent",
-          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14588,11 +14213,6 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::executeTransitionMicrostep",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "isInFinalState",
           "kind": "implements"
@@ -14615,6 +14235,16 @@
         {
           "file": "sce/include/core/MicrostepAlgorithms.h",
           "symbol": "enterStates",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::enterStateInMicrostep",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::enterFinalState",
           "kind": "implements"
         }
       ],
@@ -14643,16 +14273,6 @@
         {
           "file": "sce/include/core/ParallelTransitionHelper.h",
           "kind": "references"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::executeTransitionMicrostep",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::processEvent",
-          "kind": "implements"
         },
         {
           "file": "sce/include/core/MicrostepAlgorithms.h",
@@ -14691,6 +14311,16 @@
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "_mark_root_final_if_top_level",
           "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::finishAtTopLevelFinal",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::recordUnseenQueuedEvents",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14716,11 +14346,6 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::executeTransitionMicrostep",
-          "kind": "implements"
-        },
-        {
           "file": "sce/src/runtime/StateHierarchyManager.cpp",
           "symbol": "StateHierarchyManager::exitHierarchicalState",
           "kind": "implements"
@@ -14728,6 +14353,16 @@
         {
           "file": "sce/include/core/MicrostepAlgorithms.h",
           "symbol": "exitStates",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::exitStateInMicrostep",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::exitState",
           "kind": "implements"
         }
       ],
@@ -14781,11 +14416,6 @@
         {
           "file": "sce/include/core/ParallelTransitionHelper.h",
           "symbol": "getTransitionDomain",
-          "kind": "references"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::processEvent",
           "kind": "references"
         }
       ],
@@ -14888,11 +14518,6 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "sce/src/runtime/TransitionDomainCalculator.cpp",
-          "symbol": "TransitionDomainCalculator::getProperAncestors",
-          "kind": "implements"
-        },
-        {
           "file": "backends/go/runtime/hierarchy.go",
           "symbol": "IsDescendantOfByWalk",
           "kind": "implements"
@@ -14930,11 +14555,6 @@
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
       "bindings": [
-        {
-          "file": "sce/src/runtime/TransitionDomainCalculator.cpp",
-          "symbol": "TransitionDomainCalculator::computeExitSet",
-          "kind": "implements"
-        },
         {
           "file": "sce/include/core/ParallelTransitionHelper.h",
           "symbol": "computeExitSet",
@@ -15011,6 +14631,11 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "initialize",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::enterInitialConfiguration",
           "kind": "implements"
         }
       ],
@@ -15156,11 +14781,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/include/runtime/InterpreterEventQueue.h",
-          "symbol": "InterpreterInternalEventQueue",
-          "kind": "implements"
-        },
-        {
           "file": "sce/src/runtime/EventRaiserImpl.cpp",
           "symbol": "EventRaiserImpl::raiseEventWithPriority",
           "kind": "implements"
@@ -15204,6 +14824,31 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "processEvent",
           "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::holdDelivery",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::processTakenEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::autoforward",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::runMainEventLoop",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::takeNextExternalEvent",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -15228,11 +14873,6 @@
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
       "bindings": [
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::executeTransitionMicrostep",
-          "kind": "implements"
-        },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::processEvent",
@@ -15321,16 +14961,6 @@
           "kind": "references"
         },
         {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::checkEventlessTransitions",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::processEvent",
-          "kind": "implements"
-        },
-        {
           "file": "sce/src/states/ConcurrentRegion.cpp",
           "symbol": "ConcurrentRegion::processEvent",
           "kind": "implements"
@@ -15416,11 +15046,6 @@
           "kind": "references"
         },
         {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::processEvent",
-          "kind": "implements"
-        },
-        {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "processOneEvent",
           "kind": "implements"
@@ -15432,6 +15057,11 @@
         },
         {
           "file": "sce/include/core/MicrostepAlgorithms.h",
+          "symbol": "selectTransitions",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/runtime/StateMachine.h",
           "symbol": "selectTransitions",
           "kind": "implements"
         }
@@ -17295,6 +16925,594 @@
       "target_kind": "section",
       "target_id": "scxml-D-isInFinalState",
       "reason": "isInFinalState is SCE::Core::CompletionAlgorithms::isInFinalState now, recursive over nested <parallel> regions as the appendix states; ParallelCompletionHelper::areAllRegionsInFinal binds it to the generated policy and delegates."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.10",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: state entry is StateMachine::enterStateInMicrostep, driven by MicrostepAlgorithms::enterStates"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.10",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the direct transition path is gone; every transition is MicrostepAlgorithms::microstep"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.10",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the recursive per-state search is gone; selection is MicrostepAlgorithms::selectTransitions"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.10",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: sce/src/runtime/TransitionDomainCalculator.cpp was deleted; the shared core (ExitSetAlgorithms, MicrostepAlgorithms) and the main event loop do its work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.10",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the engine-local microstep is gone; it is MicrostepAlgorithms::microstep over StateMachine::MicrostepHost"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the recursive per-state search is gone; selection is MicrostepAlgorithms::selectTransitions"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12.3",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: done.state is raised by StateMachine::enterFinalState"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: sce/include/runtime/ImmediateModeGuard.h was deleted; the shared core (ExitSetAlgorithms, MicrostepAlgorithms) and the main event loop do its work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: sce/include/runtime/TransitionDomainCalculator.h was deleted; the shared core (ExitSetAlgorithms, MicrostepAlgorithms) and the main event loop do its work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: sce/include/runtime/TransitionDomainCalculator.h was deleted; the shared core (ExitSetAlgorithms, MicrostepAlgorithms) and the main event loop do its work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: sce/include/runtime/TransitionDomainCalculator.h was deleted; the shared core (ExitSetAlgorithms, MicrostepAlgorithms) and the main event loop do its work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the eventless branch is part of StateMachine::runMainEventLoop"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: state entry is StateMachine::enterStateInMicrostep, driven by MicrostepAlgorithms::enterStates"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the direct transition path is gone; every transition is MicrostepAlgorithms::microstep"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the engine-local microstep is gone; it is MicrostepAlgorithms::microstep over StateMachine::MicrostepHost"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the recursive per-state search is gone; selection is MicrostepAlgorithms::selectTransitions"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: sce/src/runtime/TransitionDomainCalculator.cpp was deleted; the shared core (ExitSetAlgorithms, MicrostepAlgorithms) and the main event loop do its work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: sce/src/runtime/TransitionDomainCalculator.cpp was deleted; the shared core (ExitSetAlgorithms, MicrostepAlgorithms) and the main event loop do its work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: sce/include/runtime/TransitionDomainCalculator.h was deleted; the shared core (ExitSetAlgorithms, MicrostepAlgorithms) and the main event loop do its work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: sce/include/runtime/TransitionDomainCalculator.h was deleted; the shared core (ExitSetAlgorithms, MicrostepAlgorithms) and the main event loop do its work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: sce/include/runtime/TransitionDomainCalculator.h was deleted; the shared core (ExitSetAlgorithms, MicrostepAlgorithms) and the main event loop do its work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: sce/src/runtime/TransitionDomainCalculator.cpp was deleted; the shared core (ExitSetAlgorithms, MicrostepAlgorithms) and the main event loop do its work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the internal branch is part of StateMachine::runMainEventLoop"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: state entry is StateMachine::enterStateInMicrostep, driven by MicrostepAlgorithms::enterStates"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the eventless branch is part of StateMachine::runMainEventLoop"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: state entry is StateMachine::enterStateInMicrostep, driven by MicrostepAlgorithms::enterStates"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: regions are entered by the shared entry-set procedure; the region activation path is gone"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: region callbacks went with the region activation path"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.7",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the eventless branch is part of StateMachine::runMainEventLoop"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.7",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: state entry is StateMachine::enterStateInMicrostep, driven by MicrostepAlgorithms::enterStates"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.7",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: done.state for the parent is raised by StateMachine::enterFinalState"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.7.2",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: done.state is raised by StateMachine::enterFinalState"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.8",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: onentry runs in StateMachine::enterStateInMicrostep"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.8",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: regions are entered by the shared entry-set procedure; the region activation path is gone"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the nested-delivery guard that re-bound the outer _event is gone; the main event loop never nests"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: state entry is StateMachine::enterStateInMicrostep, driven by MicrostepAlgorithms::enterStates"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the engine-local microstep is gone; it is MicrostepAlgorithms::microstep over StateMachine::MicrostepHost"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the recursive per-state search is gone; selection is MicrostepAlgorithms::selectTransitions"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.3",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: state entry is StateMachine::enterStateInMicrostep, driven by MicrostepAlgorithms::enterStates"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.5",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: state entry is StateMachine::enterStateInMicrostep, driven by MicrostepAlgorithms::enterStates"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.5",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: done.state for the parent is raised by StateMachine::enterFinalState"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the recursive per-state search is gone; selection is MicrostepAlgorithms::selectTransitions"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: regions are entered by the shared entry-set procedure; the region activation path is gone"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4.3",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: state entry is StateMachine::enterStateInMicrostep, driven by MicrostepAlgorithms::enterStates"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-B-2-3",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: regions are entered by the shared entry-set procedure; the region activation path is gone"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-B-2-8-1",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the nested-delivery guard that re-bound the outer _event is gone; the main event loop never nests"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-B-2-8-1",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the member went with the nested-delivery guard"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-addAncestorStatesToEnter",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the recursive per-state search is gone; selection is MicrostepAlgorithms::selectTransitions"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-addAncestorStatesToEnter",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: state entry is StateMachine::enterStateInMicrostep, driven by MicrostepAlgorithms::enterStates"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-enterStates",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the engine-local microstep is gone; it is MicrostepAlgorithms::microstep over StateMachine::MicrostepHost"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-executeTransitionContent",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the engine-local microstep is gone; it is MicrostepAlgorithms::microstep over StateMachine::MicrostepHost"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-exitStates",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the engine-local microstep is gone; it is MicrostepAlgorithms::microstep over StateMachine::MicrostepHost"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-getProperAncestors",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: sce/src/runtime/TransitionDomainCalculator.cpp was deleted; the shared core (ExitSetAlgorithms, MicrostepAlgorithms) and the main event loop do its work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-getTransitionDomain",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: sce/src/runtime/TransitionDomainCalculator.cpp was deleted; the shared core (ExitSetAlgorithms, MicrostepAlgorithms) and the main event loop do its work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-mainEventLoop",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: sce/include/runtime/InterpreterEventQueue.h was deleted; the shared core (ExitSetAlgorithms, MicrostepAlgorithms) and the main event loop do its work"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-microstepProcedure",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the engine-local microstep is gone; it is MicrostepAlgorithms::microstep over StateMachine::MicrostepHost"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-removeConflictingTransitions",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the eventless branch is part of StateMachine::runMainEventLoop"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.10",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the symbol no longer carries this citation; what it named moved into the shared core or into the loop pieces bound beside it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.10",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the symbol no longer carries this citation; what it named moved into the shared core or into the loop pieces bound beside it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the symbol no longer carries this citation; what it named moved into the shared core or into the loop pieces bound beside it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the symbol no longer carries this citation; what it named moved into the shared core or into the loop pieces bound beside it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the symbol no longer carries this citation; what it named moved into the shared core or into the loop pieces bound beside it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the symbol no longer carries this citation; what it named moved into the shared core or into the loop pieces bound beside it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the symbol no longer carries this citation; what it named moved into the shared core or into the loop pieces bound beside it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the symbol no longer carries this citation; what it named moved into the shared core or into the loop pieces bound beside it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the symbol no longer carries this citation; what it named moved into the shared core or into the loop pieces bound beside it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.2",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the symbol no longer carries this citation; what it named moved into the shared core or into the loop pieces bound beside it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.2",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the symbol no longer carries this citation; what it named moved into the shared core or into the loop pieces bound beside it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the symbol no longer carries this citation; what it named moved into the shared core or into the loop pieces bound beside it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the symbol no longer carries this citation; what it named moved into the shared core or into the loop pieces bound beside it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the symbol no longer carries this citation; what it named moved into the shared core or into the loop pieces bound beside it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the symbol no longer carries this citation; what it named moved into the shared core or into the loop pieces bound beside it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.5.2",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the symbol no longer carries this citation; what it named moved into the shared core or into the loop pieces bound beside it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-addAncestorStatesToEnter",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the symbol no longer carries this citation; what it named moved into the shared core or into the loop pieces bound beside it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-computeExitSet",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the symbol no longer carries this citation; what it named moved into the shared core or into the loop pieces bound beside it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-executeTransitionContent",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the symbol no longer carries this citation; what it named moved into the shared core or into the loop pieces bound beside it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-findLCCA",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the symbol no longer carries this citation; what it named moved into the shared core or into the loop pieces bound beside it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-removeConflictingTransitions",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the symbol no longer carries this citation; what it named moved into the shared core or into the loop pieces bound beside it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-selectTransitions",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the symbol no longer carries this citation; what it named moved into the shared core or into the loop pieces bound beside it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the symbol no longer carries this citation; what it named moved into the shared core or into the loop pieces bound beside it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the budget stays with the machine; the raiser no longer spends it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the budget stays with the machine; the raiser no longer spends it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the declaration went with the engine-local microstep"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the declaration is gone: no budget is lent to the raiser"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the member is gone: the initial configuration is one enterStates call"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the declaration went with the region activation path"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the declaration went with the region activation path"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the declaration is gone; enterFinalState raises done.state"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.7",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the declaration is gone; enterFinalState raises done.state"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: the header no longer carries a class-level 3.3 citation"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: removed: the raiser no longer holds a budget"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: removed: the raiser no longer holds a budget"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: removed: the raiser no longer holds a budget"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: removed: the raiser no longer holds a budget"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: removed: the raiser no longer holds a budget"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: its 3.13 citation described the budget the raiser no longer spends"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: its 3.13 citation described the budget the raiser no longer spends"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Stage D2, the Interpreter onto the shared Appendix D core: its 3.13 citation described the budget the raiser no longer spends"
     }
   ],
   "frames": {},

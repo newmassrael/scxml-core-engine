@@ -9,15 +9,13 @@
 //
 // `EventlessMacrostepIsBoundedTest.cpp` owns the half of that clause built from
 // transitions that need no event. This one owns the other half: a `<raise>`
-// answered by a transition that raises again. On this engine that chain is not
-// even a loop — executable content dispatches back into the raiser, so each
-// link is a stack frame — and before the ceiling reached this branch,
-// `processEvent` did not return.
+// answered by a transition that raises again. Before the ceiling reached this
+// branch, `processEvent` did not return.
 //
-// The budget is the machine's and the queue is the raiser's, so this engine
-// lends one to the other (`MicrostepBudget`). The refusal has to happen where
-// the queue is, or it would consume the event it declined to run — and the
-// second-refusal test below is what proves it did not.
+// The budget is the machine's and the queue is the raiser's. The main event
+// loop asks the budget BEFORE it takes the next internal event off the queue,
+// so a refusal leaves that event where it was instead of consuming the event
+// it declined to run — and the second-refusal test below is what proves it.
 //
 // Fixture: integration_resources/internal_chain_is_bounded/internal_chain_is_bounded.scxml
 // (canonical, shared with the AOT / C11 / Rust / Go / Kotlin / Python channels).
@@ -51,8 +49,8 @@ protected:
         buffer << in.rdbuf();
 
         sm_ = std::make_shared<StateMachine>(*engine_);
-        auto eventRaiser = std::make_shared<EventRaiserImpl>();
-        sm_->setEventRaiser(eventRaiser);
+        raiser_ = std::make_shared<EventRaiserImpl>();
+        sm_->setEventRaiser(raiser_);
         ASSERT_TRUE(sm_->loadSCXMLFromString(buffer.str()));
         ASSERT_TRUE(sm_->start());
         ASSERT_EQ(sm_->getCurrentState(), "idle");
@@ -75,6 +73,7 @@ protected:
     }
 
     IScriptEngine *engine_ = nullptr;
+    std::shared_ptr<EventRaiserImpl> raiser_;
     std::shared_ptr<StateMachine> sm_;
 };
 
@@ -168,9 +167,8 @@ TEST_F(InternalChainIsBoundedTest, AnAlternatingChainSpendsOneSharedBudget) {
 /// first macrostep is refused with five hundred links still to go and the
 /// second one finishes them. An engine that dropped the queue stops at a
 /// thousand and never finishes; one that ran the chain anyway finishes it in
-/// the first macrostep. On this engine the refusal happens inside the raiser,
-/// which is the only party that can decline a dispatch without consuming the
-/// event — this is the assertion that says it did.
+/// the first macrostep. The refusal comes before the take, so it cannot
+/// consume the event it declined — this is the assertion that says it did not.
 TEST_F(InternalChainIsBoundedTest, ARefusedChainIsLeftQueuedForTheNextMacrostep) {
     sm_->processEvent("resume");
     ASSERT_EQ(counter("beats"), "1000") << "the first macrostep spends the whole budget on the chain";
@@ -185,6 +183,34 @@ TEST_F(InternalChainIsBoundedTest, ARefusedChainIsLeftQueuedForTheNextMacrostep)
         << "and nothing was refused this time: the chain ended on its own inside the budget, which is an ordinary "
            "macrostep however long the document took to get there";
     EXPECT_TRUE(sm_->isRunning());
+}
+
+/// What the refusal does NOT do: hold the external queue back.
+///
+/// Appendix D starts a new macrostep at each external event it takes, and the
+/// refused macrostep is over — so the loop goes on to the external queue even
+/// though the refused chain is still queued above it. `poke` waits there
+/// before the host's `resume` starts the chain; once the chain is refused, the
+/// loop takes `poke` from under it, `poke` opens a macrostep with a budget of
+/// its own, and that macrostep finishes the chain. The AOT twin of this test
+/// pins the same answer, because that engine's loop takes the same path.
+///
+/// An engine whose external take could only reach the head of a queue that
+/// keeps internal events first never finds `poke`, and leaves both the chain
+/// and the event waiting for a host call that may not come.
+TEST_F(InternalChainIsBoundedTest, ARefusedChainDoesNotHoldTheExternalQueueBack) {
+    raiser_->setImmediateMode(false);
+    ASSERT_TRUE(raiser_->raiseExternalEvent("poke", "")) << "queued, not delivered: the machine is idle";
+
+    sm_->processEvent("resume");
+
+    EXPECT_EQ(sm_->getStatistics().truncatedMacrosteps, 1u)
+        << "the chain the host's event started was refused at the ceiling, once";
+    EXPECT_EQ(counter("pokes"), "1") << "the loop took `poke` off the external queue after the refused macrostep, "
+                                        "with the refused links still queued ahead of it";
+    EXPECT_EQ(counter("beats"), "1500")
+        << "and the macrostep `poke` opened had a budget of its own, which the rest of the chain fitted into";
+    EXPECT_FALSE(raiser_->hasQueuedEvents()) << "nothing is left for a later host call";
 }
 
 /// The control: an ordinary document is untouched by any of this. Without it,

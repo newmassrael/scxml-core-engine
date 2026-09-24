@@ -5,6 +5,7 @@
 
 #include "runtime/IEventRaiser.h"
 #include "runtime/StateSnapshot.h"
+#include <deque>
 #include <functional>
 #include <string>
 #include <utility>
@@ -51,6 +52,8 @@ public:
     bool hasQueuedEvents() const override;
     bool processNextInternalEvent() override;
     bool hasQueuedInternalEvents() const override;
+    std::optional<Core::EventMetadata> takeQueuedEvent(EventQueue queue) override;
+    bool enqueue(const Core::EventMetadata &event, EventQueue queue) override;
 
     void getEventQueues(std::vector<EventSnapshot> &outInternal,
                         std::vector<EventSnapshot> &outExternal) const override;
@@ -88,6 +91,10 @@ private:
     std::string pendingOrigin_;
     std::function<bool(const std::string &, const std::string &)> callback_;
     bool ready_ = true;
+    /// What a state machine held here with `enqueue`, in arrival order. A
+    /// raise never lands here — it is recorded and handed to the callback —
+    /// so this holds only the events a machine will take back itself.
+    std::deque<std::pair<Core::EventMetadata, EventQueue>> held_;
 };
 
 }  // namespace Test

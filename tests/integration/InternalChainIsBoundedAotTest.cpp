@@ -178,6 +178,29 @@ TEST(InternalChainIsBoundedAotTest, ARefusedChainIsLeftQueuedForTheNextMacrostep
     EXPECT_TRUE(sm->isRunning());
 }
 
+/// What the refusal does NOT do: hold the external queue back.
+///
+/// Appendix D starts a new macrostep at each external event it takes, and the
+/// refused macrostep is over — so `runMainEventLoop` goes on to the external
+/// queue even though the refused chain is still on the internal one. `poke`
+/// waits there before the host's `resume` starts the chain; once the chain is
+/// refused, the loop takes `poke`, `poke` opens a macrostep with a budget of its
+/// own, and that macrostep finishes the chain. The Interpreter twin of this
+/// test pins the same answer.
+TEST(InternalChainIsBoundedAotTest, ARefusedChainDoesNotHoldTheExternalQueueBack) {
+    auto sm = started();
+
+    sm->raiseExternal(SM::Event::Poke);
+    sm->processEvent(SM::Event::Resume);
+
+    EXPECT_EQ(sm->truncatedMacrosteps(), 1u) << "the chain the host's event started was refused at the ceiling, once";
+    EXPECT_EQ(sm->getPolicy().pokes().value_or(-1), 1)
+        << "the loop took `poke` off the external queue after the refused macrostep, with the refused links still "
+           "queued on the internal one";
+    EXPECT_EQ(sm->getPolicy().beats().value_or(-1), MAX_MICROSTEPS + MAX_MICROSTEPS / 2)
+        << "and the macrostep `poke` opened had a budget of its own, which the rest of the chain fitted into";
+}
+
 /// The control: an ordinary document is untouched by any of this. Without it,
 /// an engine that refused every macrostep would pass the assertions above and
 /// fail nothing.

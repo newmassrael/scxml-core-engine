@@ -2,26 +2,24 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "runtime/StateMachine.h"
-#include "core/ConflictResolutionHelper.h"
 #include "scripting/ScriptResultUtils.h"
 #include "scripting/SessionRegistry.h"
 #include "states/ConcurrentStateTypes.h"
 
-using SCE::Core::ConflictResolutionAlgorithms;
 #include "common/DoneDataHelper.h"
 #include "core/EntryExitHelper.h"
 #include "core/LogMacros.h"
+#include "core/MicrostepAlgorithms.h"
+#include "core/ParallelCompletionHelper.h"
 #ifdef SCE_USE_SPDLOG
 #include <spdlog/spdlog.h>
 #endif
 #include "common/StringUtils.h"
-#include "core/EventProcessingAlgorithms.h"
-#include "core/ParallelTransitionHelper.h"
 #include "core/TransitionHelper.h"
 #include "events/EventRaiserService.h"
-#include "runtime/InterpreterEventQueue.h"
 
 #include "factory/NodeFactory.h"
+#include "model/ITransitionNode.h"
 #include "model/SCXMLModel.h"
 #include "parsing/ActionParser.h"
 #include "parsing/IXMLParser.h"
@@ -33,47 +31,109 @@ using SCE::Core::ConflictResolutionAlgorithms;
 #include "runtime/HistoryManager.h"
 #include "runtime/HistoryStateAutoRegistrar.h"
 #include "runtime/HistoryValidator.h"
-#include "runtime/ImmediateModeGuard.h"
 #include "scripting/IScriptEngine.h"
 #include "scripting/ScriptEngineProvider.h"  // For backward-compat static factory methods
 #include "states/ConcurrentRegion.h"
 #include "states/ConcurrentStateNode.h"
 #include <algorithm>
 #include <fstream>
-#include <random>
-#include <regex>
 #include <set>
 #include <sstream>
-#include <unordered_set>
 
 namespace SCE {
 
-// Thread-local depth tracking for nested processEvent calls (W3C SCXML compliance)
-// Prevents deadlock by allowing same-thread recursion without re-acquiring mutex
-thread_local int processEventDepth = 0;
+// ── W3C SCXML Appendix D over the parsed model ───────────────────────────
+//
+// What Appendix D does with a document is `SCE::Core::MicrostepAlgorithms`,
+// the procedure the AOT engine runs too. This is the machine it is handed:
+// the parsed document as the appendix reads it (`InterpreterDocument`), what
+// each `<history>` recorded (`HistoryManager`), the configuration
+// (`StateHierarchyManager`), and what exiting a state, entering one and taking
+// a transition do in this engine.
+struct StateMachine::MicrostepHost {
+    using State = std::string;
+    using History = std::string;
 
-// RAII guard for exception-safe initial configuration flag management
-namespace {
-class InitialConfigurationGuard {
-public:
-    explicit InitialConfigurationGuard(bool &flag) : flag_(flag) {
-        flag_ = true;
+    StateMachine &machine;
+
+    std::optional<State> parentOf(const State &s) const {
+        return machine.document_->parentOf(s);
     }
 
-    ~InitialConfigurationGuard() {
-        flag_ = false;
+    bool isCompound(const State &s) const {
+        return machine.document_->isCompound(s);
     }
 
-    // Non-copyable and non-movable
-    InitialConfigurationGuard(const InitialConfigurationGuard &) = delete;
-    InitialConfigurationGuard &operator=(const InitialConfigurationGuard &) = delete;
-    InitialConfigurationGuard(InitialConfigurationGuard &&) = delete;
-    InitialConfigurationGuard &operator=(InitialConfigurationGuard &&) = delete;
+    bool isParallel(const State &s) const {
+        return machine.document_->isParallel(s);
+    }
 
-private:
-    bool &flag_;
+    std::vector<State> childStates(const State &s) const {
+        return machine.document_->childStates(s);
+    }
+
+    std::vector<Core::EntryTarget<State, History>> initialTargets(const State &s) const {
+        return machine.document_->initialTargets(s);
+    }
+
+    State historyParent(const History &h) const {
+        return machine.document_->historyParent(h);
+    }
+
+    std::optional<std::vector<State>> historyValue(const History &h) const {
+        return machine.historyManager_ ? machine.historyManager_->recordedValue(h) : std::nullopt;
+    }
+
+    std::vector<Core::EntryTarget<State, History>> historyDefaultTargets(const History &h) const {
+        return machine.document_->historyDefaultTargets(h);
+    }
+
+    int documentOrder(const State &s) const {
+        return machine.document_->documentOrder(s);
+    }
+
+    std::vector<State> configuration() const {
+        return machine.hierarchyManager_->getActiveStates();
+    }
+
+    std::optional<Transition> firstEnabledTransition(const State &s, const std::string &eventName) {
+        return machine.firstEnabledTransition(s, eventName);
+    }
+
+    void exitState(const State &s, const std::vector<State> &configurationBeforeExit) {
+        machine.exitStateInMicrostep(s, configurationBeforeExit);
+    }
+
+    void executeTransitionContent(const Transition &t) {
+        machine.executeTransitionContent(t);
+    }
+
+    void enterState(const State &s, bool isDefaultEntry) {
+        machine.enterStateInMicrostep(s, isDefaultEntry);
+    }
+
+    void executeHistoryDefaultContent(const History &h) {
+        machine.executeHistoryDefaultContent(h);
+    }
 };
-}  // anonymous namespace
+
+StateMachine::MacrostepScope::MacrostepScope(StateMachine &machine) : machine_(machine) {
+    machine_.macrostepOwner_.store(std::this_thread::get_id());
+    if (machine_.eventRaiser_) {
+        machine_.eventRaiser_->setImmediateMode(false);
+    }
+}
+
+StateMachine::MacrostepScope::~MacrostepScope() {
+    machine_.macrostepOwner_.store(std::thread::id{});
+    if (machine_.eventRaiser_) {
+        machine_.eventRaiser_->setImmediateMode(machine_.autoProcessQueuedEvents_);
+    }
+}
+
+bool StateMachine::macrostepInProgressOnThisThread() const {
+    return macrostepOwner_.load() == std::this_thread::get_id();
+}
 
 std::shared_ptr<StateMachine> StateMachine::createFromSCXMLString(const std::string &scxmlContent,
                                                                   const std::string &sessionId) {
@@ -126,10 +186,8 @@ StateMachine::~StateMachine() {
         }
     }
 
-    // CRITICAL: Wait for any in-progress processEvent calls to complete (ASAN heap-use-after-free fix)
+    // CRITICAL: Wait for any in-progress macrostep to complete (ASAN heap-use-after-free fix)
     // Lock mutex to ensure no processEvent is running when we proceed with destruction
-    // This prevents ProcessingEventGuard from accessing freed isProcessingEvent_ member
-    // Thread-local depth tracking ensures nested calls don't cause deadlock
     {
         std::lock_guard<std::mutex> processEventLock(processEventMutex_);
         SCE_LOG_DEBUG("StateMachine: All processEvent calls completed, proceeding with destruction");
@@ -204,10 +262,10 @@ bool StateMachine::loadModel(std::shared_ptr<SCXMLModel> model) {
 }
 
 bool StateMachine::start(bool autoProcessQueuedEvents) {
-    // Interactive mode: Store flag for processEvent() to skip auto-batch processing
+    // Interactive mode: the host steps queued events itself
     autoProcessQueuedEvents_ = autoProcessQueuedEvents;
 
-    if (initialState_.empty()) {
+    if (!document_ || document_->documentInitialTargets().empty()) {
         SCE_LOG_ERROR("StateMachine: Cannot start - no initial state defined");
         return false;
     }
@@ -218,8 +276,6 @@ bool StateMachine::start(bool autoProcessQueuedEvents) {
         return false;
     }
 
-    SCE_LOG_DEBUG("Starting with initial state: {}", initialState_);
-
     // Check EventRaiser status at StateMachine start
     if (eventRaiser_) {
         SCE_LOG_DEBUG("StateMachine: EventRaiser status check - EventRaiser: {}, sessionId: {}",
@@ -228,187 +284,20 @@ bool StateMachine::start(bool autoProcessQueuedEvents) {
         SCE_LOG_WARN("StateMachine: EventRaiser is null - sessionId: {}", sessionId_);
     }
 
+    std::lock_guard<std::mutex> processEventLock(processEventMutex_);
+    MacrostepScope macrostep(*this);
+
     // §scxml-D-interpret: initialise the global data structures and the data model,
     // run the global <script>, then enter the initial configuration and set running.
-    // Set running state before entering initial state to handle immediate done.state events
     isRunning_ = true;
-
-    // §scxml-3.3: Support multiple initial states for parallel regions
-    // §scxml-3.2: If no initial attribute specified, use first state in document order
-    const auto &modelInitialStates = model_->getInitialStates();
-    std::vector<std::string> initialStates;
-
-    if (modelInitialStates.empty()) {
-        // §scxml-3.2: No initial attribute - auto-select first state in document order
-        const auto &allStates = model_->getAllStates();
-        if (allStates.empty()) {
-            SCE_LOG_ERROR("StateMachine: No states found in SCXML model");
-            isRunning_ = false;
-            return false;
-        }
-
-        initialStates.push_back(allStates[0]->getId());
-        SCE_LOG_DEBUG("W3C SCXML 3.2: No initial attribute, auto-selected first state: '{}'", initialStates[0]);
-    } else {
-        // §scxml-3.3: Use explicitly specified initial states
-        initialStates = modelInitialStates;
-    }
-
-    // W3C SCXML: For initial state entry, add ancestor states to configuration first
-    // This ensures ancestor onentry actions are executed (e.g., test 388 requires s0 onentry)
-    if (model_ && hierarchyManager_) {
-        // Collect all unique ancestors from all initial states
-        std::vector<std::string> ancestorChain;
-        std::set<std::string> seenAncestors;
-
-        for (const auto &initialStateId : initialStates) {
-            auto stateNode = model_->findStateById(initialStateId);
-            IStateNode *current = stateNode ? stateNode->getParent() : nullptr;
-
-            std::vector<std::string> currentAncestors;
-            while (current) {
-                const std::string &ancestorId = current->getId();
-                if (!ancestorId.empty() && seenAncestors.find(ancestorId) == seenAncestors.end()) {
-                    currentAncestors.push_back(ancestorId);
-                    seenAncestors.insert(ancestorId);
-                }
-                current = current->getParent();
-            }
-
-            // Reverse to get parent->child order
-            std::reverse(currentAncestors.begin(), currentAncestors.end());
-
-            // Merge into main ancestor chain
-            for (const auto &ancestorId : currentAncestors) {
-                if (std::find(ancestorChain.begin(), ancestorChain.end(), ancestorId) == ancestorChain.end()) {
-                    ancestorChain.push_back(ancestorId);
-                }
-            }
-        }
-
-        // Add ancestors to configuration (without onentry yet)
-        for (const auto &ancestorId : ancestorChain) {
-            hierarchyManager_->addStateToConfigurationWithoutOnEntry(ancestorId);
-            SCE_LOG_DEBUG("Added ancestor state to configuration: {}", ancestorId);
-
-            // §scxml-3.3 test 576: Setup and activate parallel state regions for deep initial targets
-            // When entering via deep initial targets (e.g., initial="s11p112 s11p122"),
-            // parallel ancestor states must have their regions properly configured and activated
-            // for event processing, invoke deferral, and action execution
-            auto ancestorState = model_->findStateById(ancestorId);
-            if (ancestorState && ancestorState->getType() == Type::PARALLEL) {
-                auto parallelState = dynamic_cast<ConcurrentStateNode *>(ancestorState);
-                if (parallelState) {
-                    if (!setupAndActivateParallelState(parallelState, ancestorId)) {
-                        isRunning_ = false;
-                        return false;
-                    }
-                }
-            }
-        }
-
-        // Execute onentry for ancestors in order (parent to child)
-        for (const auto &ancestorId : ancestorChain) {
-            executeOnEntryActions(ancestorId);
-            SCE_LOG_DEBUG("Executed onentry for ancestor state: {}", ancestorId);
-        }
-    }
-
-    // §scxml-3.3: Enter all initial states (supports parallel initial configuration)
-    // RAII guard ensures flag is reset even on exception
-    InitialConfigurationGuard guard(isEnteringInitialConfiguration_);
-
-    for (const auto &initialStateId : initialStates) {
-        if (!enterState(initialStateId)) {
-            SCE_LOG_ERROR("Failed to enter initial state: {}", initialStateId);
-            isRunning_ = false;
-            return false;  // Guard destructor will reset isEnteringInitialConfiguration_
-        }
-        SCE_LOG_DEBUG("Entered initial state: {}", initialStateId);
-    }
-
-    // Guard destructor will automatically reset isEnteringInitialConfiguration_ to false
-
-    // §scxml-3.13: Macrostep execution order after initial state entry
-    // Per W3C SCXML specification, invokes must only execute for states "entered and not exited":
-    //
-    // Execution sequence:
-    // 1. Enter initial states (compound states → initial children via recursive entry)
-    //    - Invokes are deferred during state entry (not executed yet)
-    // 2. Check eventless transitions (states may exit before invokes execute - test 422)
-    //    - Example: s11 has eventless transition to s12, s11 exits immediately
-    // 3. Execute pending invokes (only for states still active after step 2)
-    //    - Filter: invoke executes only if isStateActive(stateId) returns true
-    // 4. Process queued events (invokes may raise internal events)
-    // 5. Repeat eventless transition checks until stable configuration reached
-    //
-    // This order ensures §scxml-3.13 compliance: "invokes execute in document order
-    // in all states that have been entered (and not exited) since last macrostep"
-
-    // §scxml-3.13: Repeat eventless transitions until stable configuration reached
-    // This is critical for parallel states where entering a parallel state may enable
-    // new eventless transitions in its regions (e.g., test 448)
-    // §scxml-3.13: the budget lives on the machine (see
-    // `macrostepMicrostepsTaken_`), so this loop ends either at a stable
-    // configuration or at the ceiling — and in the second case
-    // `truncatedMacrosteps` says which.
+    topLevelFinalReached_ = false;
     macrostepTruncated_ = false;
     macrostepMicrostepsTaken_ = 0;
-    int eventlessIterations = 0;
-    while (checkEventlessTransitions()) {
-        ++eventlessIterations;
-        SCE_LOG_DEBUG("StateMachine: Eventless transition executed (iteration {})", eventlessIterations);
-    }
-    SCE_LOG_DEBUG("StateMachine: Reached stable configuration after {} eventless iterations", eventlessIterations);
 
-    // W3C SCXML compliance: Execute deferred invokes after eventless transitions
-    // Only states that remain active after eventless transitions should have invokes executed
-    SCE_LOG_DEBUG("StateMachine: Executing pending invokes after eventless transitions for session: {}", sessionId_);
-    executePendingInvokes();
-
-    // W3C SCXML: Process all remaining queued events after initial state entry
-    // This ensures the state machine reaches a stable state before returning,
-    // eliminating the need for external callers to explicitly call processQueuedEvents()
-    // Interactive mode: Skip auto-processing to allow manual step-by-step execution
-    if (autoProcessQueuedEvents && eventRaiser_) {
-        int iterations = 0;
-        const int MAX_START_ITERATIONS = 1000;
-
-        // §scxml-3.13: Use shared algorithm (Single Source of Truth)
-        SCE::Core::InterpreterEventQueue adapter(eventRaiser_);
-        while (adapter.hasEvents()) {
-            if (++iterations > MAX_START_ITERATIONS) {
-                SCE_LOG_ERROR("StateMachine: start() exceeded max iterations ({}) - possible infinite event loop",
-                              MAX_START_ITERATIONS);
-                break;
-            }
-
-            SCE_LOG_DEBUG("StateMachine: Processing queued events after start (iteration {})", iterations);
-
-            // §scxml-3.13: RAII guard to prevent recursive auto-processing during batch event processing
-            {
-                BatchProcessingGuard batchGuard(isBatchProcessing_);
-                adapter.popNext();
-            }
-
-            // Check for eventless transitions after processing events
-            checkEventlessTransitions();
-
-            if (macrostepTruncated_) {
-                // The macrostep this entry built ran out of budget, and the
-                // events it could not take are still queued — which is exactly
-                // why `hasEvents()` above stays true. Without this the loop
-                // turns a thousand times taking nothing, and reports it as an
-                // iteration limit rather than as the chain it is.
-                break;
-            }
-        }
-
-        if (iterations > 0) {
-            SCE_LOG_DEBUG("StateMachine: All queued events processed after start ({} iterations)", iterations);
-        }
-    } else if (!autoProcessQueuedEvents) {
-        SCE_LOG_DEBUG("StateMachine: Interactive mode - skipping auto-processing of queued events");
+    enterInitialConfiguration();
+    runMainEventLoop();
+    if (topLevelFinalReached_) {
+        finishAtTopLevelFinal();
     }
 
     updateStatistics();
@@ -421,13 +310,16 @@ void StateMachine::stop() {
     SCE_LOG_DEBUG("StateMachine: Stopping state machine (isRunning: {})", isRunning_.load());
 
     // W3C SCXML Test 250: Exit ALL active states with onexit handlers (only if still running)
-    // Must exit in reverse document order (children before parents)
     // §scxml-D-exitInterpreter: exit every active state in exit order, running each
     // state's <onexit> content, and clear the configuration.
     if (isRunning_) {
-        auto activeStates = getActiveStates();
-        for (auto it = activeStates.rbegin(); it != activeStates.rend(); ++it) {
-            exitState(*it);
+        {
+            // The onexit content is executable content like any other: what it
+            // raises is queued, not handed straight back to a stopping machine.
+            MacrostepScope macrostep(*this);
+            for (const auto &state : configurationInExitOrder()) {
+                exitState(state);
+            }
         }
 
         isRunning_ = false;
@@ -509,20 +401,11 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                                                           const std::string &originSessionId, const std::string &sendId,
                                                           const std::string &invokeId, const std::string &originType) {
     // §scxml-5.10: Get event type from EventRaiser thread-local storage (test 331)
-    std::string eventType = EventRaiserImpl::getCurrentEventType();
+    const std::string eventType = EventRaiserImpl::getCurrentEventType();
+    const bool fromExternalQueue = EventRaiserImpl::isCurrentEventFromExternalQueue();
+
     if (!isRunning_) {
-        SCE_LOG_WARN("StateMachine: Cannot process event - state machine not running");
-        // §scxml-3.13: this engine has always told the CALLER — `success` is
-        // false and the message names the reason. The count is added because
-        // the six generated engines have no return value to carry it, so a
-        // host that polls statistics reads the same fact on every backend.
-        // See `Statistics::unseenExternalEvents`.
-        ++unseenExternalEvents_;
-        lastUnseenEventName_ = eventName;
-        TransitionResult result;
-        result.success = false;
-        result.errorMessage = "State machine not running";
-        return result;
+        return refuseUnseen(eventName);
     }
 
     // Check JS environment
@@ -534,123 +417,32 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
         return result;
     }
 
-    SCE_LOG_DEBUG("StateMachine: Processing event: '{}' with data: '{}' in session: '{}', originSessionId: '{}'",
-                  eventName, eventData, sessionId_, originSessionId);
+    EventMetadata event(eventName, eventData, eventType, sendId, invokeId, originType, originSessionId);
+    // §scxml-5.10: Carry typed event data from EventRaiser thread-local (avoids JSON round-trip)
+    event.typedData = EventRaiserImpl::getCurrentTypedData();
 
-    // §scxml-D-microstepProcedure: Clear previous transition data for new event
-    lastEnabledTransitions_.clear();
-    lastOptimalTransitions_.clear();
-
-    // CRITICAL: Thread-local depth tracking for nested processEvent calls (ASAN heap-use-after-free fix)
-    // Top-level call (depth==0): acquire mutex to synchronize with destructor
-    // Nested call (depth>0): same thread, no mutex needed (prevents deadlock)
-    // This pattern matches EventSchedulerImpl's thread-local approach
-    bool isTopLevelCall = (processEventDepth == 0);
-    std::unique_ptr<std::lock_guard<std::mutex>> processEventLock;
-    if (isTopLevelCall) {
-        processEventLock = std::make_unique<std::lock_guard<std::mutex>>(processEventMutex_);
+    if (macrostepInProgressOnThisThread()) {
+        // §scxml-D-mainEventLoop: an event is processed only where the main
+        // event loop takes it. One handed to this machine from inside its own
+        // running macrostep — by a raiser that delivers synchronously, a host
+        // callback bound into the datamodel, an autoforward from a parent this
+        // macrostep called into — goes onto the queue it belongs to.
+        return holdDelivery(event, fromExternalQueue);
     }
 
-    // RAII-style depth tracking with exception safety
-    ++processEventDepth;
+    // Serialize against a macrostep another thread is running, and against
+    // destruction.
+    std::lock_guard<std::mutex> processEventLock(processEventMutex_);
+    if (!isRunning_) {
+        // It stopped while this call waited for the other thread's macrostep.
+        return refuseUnseen(eventName);
+    }
 
-    struct DepthGuard {
-        ~DepthGuard() {
-            --processEventDepth;
-        }
-    } depthGuard;
-
-    // Set event processing flag with RAII for exception safety
-    struct ProcessingEventGuard {
-        bool &flag_;
-        bool wasAlreadySet_;  // Public member to check if this is a nested call
-
-        explicit ProcessingEventGuard(bool &flag) : flag_(flag), wasAlreadySet_(flag) {
-            if (!wasAlreadySet_) {
-                SCE_LOG_DEBUG("ProcessingEventGuard: Setting isProcessingEvent_ = true");
-                flag_ = true;
-            } else {
-                SCE_LOG_DEBUG("ProcessingEventGuard: Already processing event (nested call)");
-            }
-        }
-
-        ~ProcessingEventGuard() {
-            if (!wasAlreadySet_) {
-                SCE_LOG_DEBUG("ProcessingEventGuard: Setting isProcessingEvent_ = false");
-                flag_ = false;
-            } else {
-                SCE_LOG_DEBUG("ProcessingEventGuard: Leaving isProcessingEvent_ = true (nested call)");
-            }
-        }
-
-        // Delete copy constructor and assignment
-        ProcessingEventGuard(const ProcessingEventGuard &) = delete;
-        ProcessingEventGuard &operator=(const ProcessingEventGuard &) = delete;
-    };
-
-    // §scxml-5.10: RAII guard to protect _event during nested event processing (Test 230)
-    struct EventContextGuard {
-        ActionExecutorImpl *actionExecutorImpl_;  // Cached pointer to avoid dynamic_pointer_cast overhead
-        // §scxml-B-2-8-1: where the payload-reading tally lives. The guard is
-        // the only frame that sees a binding and the event it belonged to at
-        // the same moment — its own destructor rebinds the SAVED event, so a
-        // reading taken any later describes a different delivery.
-        StateMachine *owner_;
-        EventMetadata savedEvent_;
-        bool isNested_;
-
-        explicit EventContextGuard(StateMachine *owner, ActionExecutorImpl *actionExecutorImpl,
-                                   const EventMetadata &newEvent)
-            : actionExecutorImpl_(actionExecutorImpl), owner_(owner), isNested_(false) {
-            if (actionExecutorImpl_) {
-                // Save current event (may be from parent processEvent call)
-                savedEvent_ = actionExecutorImpl_->getCurrentEvent();
-                isNested_ = !savedEvent_.name.empty();
-
-                if (isNested_) {
-                    SCE_LOG_DEBUG(
-                        "EventContextGuard: Nested event processing - saving _event='{}', setting new _event='{}'",
-                        savedEvent_.name, newEvent.name);
-                }
-
-                // Set new event for this processing level
-                actionExecutorImpl_->setCurrentEvent(newEvent);
-                // §scxml-B-2-8-1: the binding just chose a rung, and this is
-                // the only frame that knows which event it belonged to. Read
-                // immediately rather than later — the guard's destructor binds
-                // the SAVED event on the way out, which would overwrite it.
-                if (owner_ && actionExecutorImpl_->lastPayloadReading() == PayloadReading::Undecodable) {
-                    ++owner_->undecodablePayloads_;
-                    owner_->lastUndecodablePayloadEvent_ = newEvent.name;
-                }
-            }
-        }
-
-        ~EventContextGuard() {
-            if (actionExecutorImpl_ && isNested_) {
-                // Restore saved event
-                actionExecutorImpl_->setCurrentEvent(savedEvent_);
-                SCE_LOG_DEBUG("EventContextGuard: Restored _event='{}' after nested processing", savedEvent_.name);
-            }
-        }
-
-        // Delete copy constructor and assignment
-        EventContextGuard(const EventContextGuard &) = delete;
-        EventContextGuard &operator=(const EventContextGuard &) = delete;
-    };
+    MacrostepScope macrostep(*this);
 
     // §scxml-3.12.2: a call from the host starts a new piece of work, so any
-    // `error.*` chain the last one built is over. This is where the five
-    // queue-draining engines reset it as the internal queue empties; here the
-    // dispatches that make up a chain are serialized rather than nested — the
-    // handler's raises go on the raiser's queue and come back through this
-    // same entry point — so "the outermost dispatch returned" is every
-    // dispatch, and only the host's own call marks the boundary. Measured:
-    // resetting per dispatch, or on the outermost one, left the chain
-    // unbounded for a handler that raises its own event before failing.
-    const bool topLevelEvent = !isProcessingEvent_;
-    ProcessingEventGuard eventGuard(isProcessingEvent_);
-    if (topLevelEvent && eventRaiser_) {
+    // `error.*` chain the last one built is over.
+    if (eventRaiser_) {
         eventRaiser_->resetErrorCascadeDepth();
     }
     // The same boundary bounds the macrostep's own chain: the algorithm
@@ -660,105 +452,203 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
     // counted separately. It is also the only way a chain refused for leaving
     // events queued ever gets drained: the events are still there, and this is
     // where the budget that drains them comes back.
-    if (topLevelEvent) {
-        macrostepTruncated_ = false;
-        macrostepMicrostepsTaken_ = 0;
+    macrostepTruncated_ = false;
+    macrostepMicrostepsTaken_ = 0;
+
+    // §scxml-D-microstepProcedure: what the visualizer shows belongs to this event
+    lastEnabledTransitions_.clear();
+    lastOptimalTransitions_.clear();
+
+    SCE_LOG_DEBUG("StateMachine: Processing event: '{}' with data: '{}' in session: '{}', originSessionId: '{}'",
+                  eventName, eventData, sessionId_, originSessionId);
+
+    const TransitionResult result = processTakenEvent(event, fromExternalQueue);
+    runMainEventLoop();
+    if (topLevelFinalReached_) {
+        finishAtTopLevelFinal();
     }
 
-    // §scxml-5.10: Protect _event during nested event processing with RAII guard (Test 230)
-    EventMetadata currentEventMetadata(eventName, eventData, eventType, sendId, invokeId, originType, originSessionId);
-    // §scxml-5.10: Carry typed event data from EventRaiser thread-local (avoids JSON round-trip)
-    currentEventMetadata.typedData = EventRaiserImpl::getCurrentTypedData();
-    EventContextGuard eventContextGuard(this, cachedExecutorImpl_, currentEventMetadata);
+    updateStatistics();
+    return result;
+}
 
-    // Count this event
+StateMachine::TransitionResult StateMachine::refuseUnseen(const std::string &eventName) {
+    SCE_LOG_WARN("StateMachine: Cannot process event - state machine not running");
+    // §scxml-3.13: this engine has always told the CALLER — `success` is
+    // false and the message names the reason. The count is added because
+    // the six generated engines have no return value to carry it, so a
+    // host that polls statistics reads the same fact on every backend.
+    // See `Statistics::unseenExternalEvents`.
+    noteUnseenEvent(eventName);
+    TransitionResult result;
+    result.success = false;
+    result.errorMessage = "State machine not running";
+    return result;
+}
+
+void StateMachine::noteUnseenEvent(const std::string &eventName) {
+    ++unseenExternalEvents_;
+    lastUnseenEventName_ = eventName;
+}
+
+StateMachine::TransitionResult StateMachine::holdDelivery(const EventMetadata &event, bool fromExternalQueue) {
+    TransitionResult result;
+    result.success = false;
+    result.fromState = getCurrentState();
+    result.eventName = event.name;
+
+    // §scxml-D-mainEventLoop: onto the tail of the queue it belongs to, in
+    // order with everything already waiting there. Holding it anywhere else
+    // would be a third queue the loop takes from in some order of its own.
+    // The raiser is asked to queue, never to dispatch: dispatching would hand
+    // the event straight back into the macrostep it is waiting for.
+    const EventQueue queue = fromExternalQueue ? EventQueue::External : EventQueue::Internal;
+    if (eventRaiser_ && eventRaiser_->enqueue(event, queue)) {
+        result.errorMessage = "Held: a macrostep of this machine is in progress";
+        return result;
+    }
+
+    // No queue to put it on: the raiser is gone or shut down. The event is
+    // refused, and counted the way any event this machine never looks at is.
+    SCE_LOG_WARN("StateMachine: '{}' arrived during a macrostep and there is no event queue to hold it", event.name);
+    noteUnseenEvent(event.name);
+    result.errorMessage = "Refused: a macrostep of this machine is in progress and no event queue can hold the event";
+    return result;
+}
+
+StateMachine::TransitionResult StateMachine::processTakenEvent(const EventMetadata &event, bool fromExternalQueue) {
     stats_.totalEvents++;
+    currentOriginSessionId_ = event.originSessionId;
 
-    // Store event data for access in guards/actions
-    currentEventData_ = eventData;
-    currentOriginSessionId_ =
-        originSessionId;  // W3C SCXML Test 252: Store for cancelled invoke filtering in processStateTransitions
-    SCE_LOG_DEBUG("StateMachine: [ORIGIN TRACKING] Set currentOriginSessionId_ = '{}' for event '{}'",
-                  currentOriginSessionId_, eventName);
-
-    if (!sendId.empty() || !invokeId.empty() || !originType.empty() || !eventType.empty() || !originSessionId.empty()) {
-        SCE_LOG_DEBUG("StateMachine: Set current event in ActionExecutor - event: '{}', data: '{}', sendid: '{}', "
-                      "invokeid: '{}', origintype: '{}', type: '{}', originSessionId: '{}'",
-                      eventName, eventData, sendId, invokeId, originType, eventType, originSessionId);
-    } else {
-        SCE_LOG_DEBUG("StateMachine: Set current event in ActionExecutor - event: '{}', data: '{}'", eventName,
-                      eventData);
+    // W3C SCXML Test 252: an invoked session that was cancelled generates no
+    // more events for its parent
+    if (invokeExecutor_ && !event.originSessionId.empty() &&
+        invokeExecutor_->shouldFilterCancelledInvokeEvent(event.originSessionId)) {
+        SCE_LOG_DEBUG("StateMachine: Filtering event '{}' from cancelled invoke child session: {}", event.name,
+                      event.originSessionId);
+        return TransitionResult(false, getCurrentState(), getCurrentState(), event.name);
     }
 
-    // W3C SCXML Test 252: Filter events from cancelled invoke child sessions
-    if (invokeExecutor_ && !originSessionId.empty()) {
-        if (invokeExecutor_->shouldFilterCancelledInvokeEvent(originSessionId)) {
-            SCE_LOG_DEBUG("StateMachine: Filtering event '{}' from cancelled invoke child session: {}", eventName,
-                          originSessionId);
-            return TransitionResult(false, getCurrentState(), getCurrentState(), eventName);
-        }
+    // §scxml-D-mainEventLoop: datamodel["_event"] = the event just taken, and
+    // it stays bound until the loop takes the next one.
+    bindCurrentEvent(event);
+
+    // §scxml-D-mainEventLoop: an external event's preliminary step — the
+    // `<finalize>` of the invoke it came from, then the autoforward copy —
+    // runs before transitions are selected for it.
+    if (!event.originSessionId.empty()) {
+        applyFinalize(event.originSessionId, event.name);
+    }
+    if (fromExternalQueue) {
+        autoforward(event);
     }
 
+    const std::vector<Transition> enabled = selectTransitions(event.name);
+    if (enabled.empty()) {
+        SCE_LOG_DEBUG("StateMachine: No transition enabled by event '{}'", event.name);
+        stats_.failedTransitions++;
+        TransitionResult result;
+        result.success = false;
+        result.fromState = getCurrentState();
+        result.eventName = event.name;
+        result.errorMessage = "No valid transitions found";
+        return result;
+    }
+
+    // What a caller is told about the event: the first transition it
+    // selected, from its source to its first target as written.
+    const Transition &first = enabled.front();
+    std::string firstTarget = first.source;
+    if (!first.targets.empty()) {
+        firstTarget =
+            first.targets.front().isHistory() ? first.targets.front().history() : first.targets.front().state();
+    }
+    TransitionResult result(true, first.source, firstTarget, event.name);
+
+    takeMicrostep(enabled, event.name);
+    return result;
+}
+
+void StateMachine::bindCurrentEvent(const EventMetadata &event) {
+    currentEventData_ = event.data;
+    if (!cachedExecutorImpl_) {
+        return;
+    }
+    cachedExecutorImpl_->setCurrentEvent(event);
+    // §scxml-B-2-8-1: the binding just chose a rung, and this is the only
+    // moment that knows which event it belonged to.
+    if (cachedExecutorImpl_->lastPayloadReading() == PayloadReading::Undecodable) {
+        ++undecodablePayloads_;
+        lastUndecodablePayloadEvent_ = event.name;
+    }
+}
+
+void StateMachine::applyFinalize(const std::string &originSessionId, const std::string &eventName) {
     // W3C SCXML 1.0 Section 6.4: Execute finalize handler before processing events from invoked children
     // According to W3C SCXML: "finalize markup runs BEFORE the event is processed"
     // The finalize handler is executed when an event arrives from an invoked child
     // and has access to _event.data to update parent variables before transition evaluation
-    if (invokeExecutor_ && !originSessionId.empty()) {
-        // W3C SCXML compliance: Use originSessionId to find the exact child that sent this event
-        std::string finalizeScript = invokeExecutor_->getFinalizeScriptForChildSession(originSessionId);
-
-        if (!finalizeScript.empty()) {
-            SCE_LOG_DEBUG("StateMachine: Executing finalize handler BEFORE processing event '{}', script: '{}'",
-                          eventName, finalizeScript);
-
-            // §scxml-6.5.2: Parse and execute finalize as SCXML executable content
-            // Finalize contains elements like <assign>, <script>, <log>, <raise>, <if>, <foreach> etc.
-            if (actionExecutor_) {
-                try {
-                    // Parse finalize XML content using IXMLParser
-                    std::string xmlWrapper =
-                        "<finalize xmlns=\"http://www.w3.org/2005/07/scxml\">" + finalizeScript + "</finalize>";
-
-                    // §wire-W4 D1-C: parseContent throws
-                    // `SCE::parsing::ParseXmlFailed` on malformed input;
-                    // the outer `catch (std::exception&)` arm catches
-                    // the typed leaf via base-class slicing.
-                    auto parser = IXMLParser::create();
-                    auto document = parser->parseContent(xmlWrapper);
-
-                    auto root = document->getRootElement();
-                    if (!root) {
-                        SCE_LOG_ERROR("StateMachine: No root element in finalize XML");
-                    } else {
-                        // Use ActionParser to parse and execute each action in finalize
-                        ActionParser actionParser(nullptr);
-                        auto children = root->getChildren();
-
-                        // Create execution context
-                        auto sharedExecutor = std::static_pointer_cast<IActionExecutor>(actionExecutor_);
-                        ExecutionContextImpl context(sharedExecutor, sessionId_);
-
-                        // Execute each action in finalize
-                        for (const auto &child : children) {
-                            auto action = actionParser.parseActionNode(child);
-                            if (action) {
-                                bool success = action->execute(context);
-                                SCE_LOG_DEBUG("StateMachine: Finalize action '{}' executed: {}", child->getName(),
-                                              success);
-                            }
-                        }
-                    }
-
-                    SCE_LOG_DEBUG("StateMachine: Finalize handler executed successfully for event '{}'", eventName);
-                } catch (const std::exception &e) {
-                    SCE_LOG_ERROR("StateMachine: Exception during finalize handler execution: {}", e.what());
-                }
-            } else {
-                SCE_LOG_WARN("StateMachine: No ActionExecutor available for finalize execution");
-            }
-        }
+    if (!invokeExecutor_) {
+        return;
     }
 
+    // W3C SCXML compliance: Use originSessionId to find the exact child that sent this event
+    std::string finalizeScript = invokeExecutor_->getFinalizeScriptForChildSession(originSessionId);
+    if (finalizeScript.empty()) {
+        return;
+    }
+
+    SCE_LOG_DEBUG("StateMachine: Executing finalize handler BEFORE processing event '{}', script: '{}'", eventName,
+                  finalizeScript);
+
+    // §scxml-6.5.2: Parse and execute finalize as SCXML executable content
+    // Finalize contains elements like <assign>, <script>, <log>, <raise>, <if>, <foreach> etc.
+    if (!actionExecutor_) {
+        SCE_LOG_WARN("StateMachine: No ActionExecutor available for finalize execution");
+        return;
+    }
+    try {
+        // Parse finalize XML content using IXMLParser
+        std::string xmlWrapper =
+            "<finalize xmlns=\"http://www.w3.org/2005/07/scxml\">" + finalizeScript + "</finalize>";
+
+        // §wire-W4 D1-C: parseContent throws
+        // `SCE::parsing::ParseXmlFailed` on malformed input;
+        // the outer `catch (std::exception&)` arm catches
+        // the typed leaf via base-class slicing.
+        auto parser = IXMLParser::create();
+        auto document = parser->parseContent(xmlWrapper);
+
+        auto root = document->getRootElement();
+        if (!root) {
+            SCE_LOG_ERROR("StateMachine: No root element in finalize XML");
+            return;
+        }
+
+        // Use ActionParser to parse and execute each action in finalize
+        ActionParser actionParser(nullptr);
+        auto children = root->getChildren();
+
+        // Create execution context
+        auto sharedExecutor = std::static_pointer_cast<IActionExecutor>(actionExecutor_);
+        ExecutionContextImpl context(sharedExecutor, sessionId_);
+
+        // Execute each action in finalize
+        for (const auto &child : children) {
+            auto action = actionParser.parseActionNode(child);
+            if (action) {
+                bool success = action->execute(context);
+                SCE_LOG_DEBUG("StateMachine: Finalize action '{}' executed: {}", child->getName(), success);
+            }
+        }
+
+        SCE_LOG_DEBUG("StateMachine: Finalize handler executed successfully for event '{}'", eventName);
+    } catch (const std::exception &e) {
+        SCE_LOG_ERROR("StateMachine: Exception during finalize handler execution: {}", e.what());
+    }
+}
+
+void StateMachine::autoforward(const EventMetadata &event) {
     // §scxml-D-mainEventLoop: auto-forward to child invoke sessions at the
     // one point the algorithm names — immediately after an event is removed
     // from the *external* queue, before transition selection:
@@ -781,1171 +671,477 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
     // W3C Test 230: events from child sessions ARE autoforwarded back, to
     // verify field preservation.
     // Use shared_ptr to prevent use-after-free if child reaches final state during processEvent
-    const bool fromExternalQueue = EventRaiserImpl::isCurrentEventFromExternalQueue();
-    SCE_LOG_DEBUG("W3C SCXML 6.4: Autoforward check - event='{}', invokeExecutor={}, fromExternalQueue={}", eventName,
-                  (invokeExecutor_ ? "YES" : "NO"), fromExternalQueue);
-    if (invokeExecutor_ && fromExternalQueue) {
-        auto autoForwardSessions = invokeExecutor_->getAutoForwardSessions(sessionId_);
-        SCE_LOG_DEBUG("W3C SCXML 6.4: Found {} autoforward sessions for parent '{}'", autoForwardSessions.size(),
-                      sessionId_);
-        for (const auto &childStateMachine : autoForwardSessions) {
-            if (childStateMachine && childStateMachine->isRunning()) {
-                SCE_LOG_DEBUG("W3C SCXML 6.4: Auto-forwarding event '{}' to child session", eventName);
-                childStateMachine->processEvent(eventName, eventData, originSessionId, sendId, invokeId, originType);
-            }
-        }
+    if (!invokeExecutor_) {
+        return;
+    }
+    auto autoForwardSessions = invokeExecutor_->getAutoForwardSessions(sessionId_);
+    if (autoForwardSessions.empty()) {
+        return;
     }
 
-    // Find applicable transitions from SCXML model
-    if (!model_) {
-        SCE_LOG_ERROR("StateMachine: No SCXML model available");
-        TransitionResult result;
-        result.success = false;
-        result.fromState = getCurrentState();
-        result.eventName = eventName;
-        result.errorMessage = "No SCXML model available";
-        return result;
-    }
+    // The copy a child receives is an external event of its own, with this
+    // event's metadata — the context a raiser would have established had it
+    // delivered the copy.
+    EventRaiserImpl::EventContext forwarded;
+    forwarded.originSessionId = event.originSessionId;
+    forwarded.sendId = event.sendId;
+    forwarded.invokeId = event.invokeId;
+    forwarded.originType = event.originType;
+    forwarded.eventType = event.type;
+    forwarded.typedData = event.typedData;
+    forwarded.isExternalQueue = true;
+    EventRaiserImpl::EventContextGuard forwardedGuard(std::move(forwarded));
 
-    // SCXML W3C specification section 3.4: Handle parallel state event broadcasting
-    std::string currentState = getCurrentState();
-    auto currentStateNode = model_->findStateById(currentState);
-    if (!currentStateNode) {
-        SCE_LOG_DEBUG("Current state not found in model: {}", currentState);
-        TransitionResult result;
-        result.success = false;
-        result.fromState = getCurrentState();
-        result.eventName = eventName;
-        result.errorMessage = "Current state not found in model";
-        return result;
-    }
-
-    // SCXML W3C specification compliance: Process parallel state events according to standard priority
-    if (currentStateNode->getType() == Type::PARALLEL) {
-        auto parallelState = dynamic_cast<ConcurrentStateNode *>(currentStateNode);
-        assert(parallelState && "SCXML violation: PARALLEL type state must be ConcurrentStateNode");
-
-        SCE_LOG_DEBUG("Processing event '{}' for parallel state: {}", eventName, currentState);
-
-        // §scxml-3.4: Check parallel state completion BEFORE processing transitions
-        // This ensures done.state.{id} is generated before any external transition exits the parallel state
-        bool isComplete = parallelState->areAllRegionsComplete();
-        if (isComplete) {
-            SCE_LOG_DEBUG("SCXML W3C: Parallel state '{}' completion detected before transition processing",
-                          currentState);
-        }
-
-        // SCXML W3C specification 3.13: Check transitions on the parallel state itself
-        // Internal transitions (no target) execute actions but DON'T prevent region processing
-        // External transitions (with target) exit the parallel state and return immediately
-        auto stateTransitionResult = processStateTransitions(currentStateNode, eventName, eventData);
-        if (stateTransitionResult.success) {
-            // Check if this is an external transition (toState != fromState)
-            if (stateTransitionResult.toState != stateTransitionResult.fromState) {
-                // External transition: exit parallel state
-                SCE_LOG_DEBUG("SCXML W3C: External transition from parallel state: {} -> {}",
-                              stateTransitionResult.fromState, stateTransitionResult.toState);
-
-                // §scxml-3.13: Process all internal events before returning
-                // Only process if this is the top-level event (not nested/recursive call)
-                // Interactive mode: Skip auto-processing to allow manual step-by-step execution
-                if (!eventGuard.wasAlreadySet_ && !isBatchProcessing_ && autoProcessQueuedEvents_ && eventRaiser_) {
-                    // §scxml-3.13: Use shared algorithm (Single Source of Truth)
-                    drainInternalEvents("Processing queued internal event after parallel external transition");
-                }
-
-                // §scxml-6.4: Execute pending invokes after macrostep completes
-                if (!eventGuard.wasAlreadySet_) {
-                    executePendingInvokes();
-                }
-
-                return stateTransitionResult;
-            }
-            // Internal transition: actions executed, continue to region processing
-            SCE_LOG_DEBUG(
-                "SCXML W3C: Internal transition on parallel state {} (actions executed, continuing to regions)",
-                currentState);
-        }
-
-        // SCXML W3C specification 3.13: Removed region root state check (lines 457-471)
-        // The old approach checked region root states with processStateTransitions() and returned early.
-        // This violated §scxml-3.13 because:
-        // 1. It prevented proper event broadcasting to ALL regions
-        // 2. It didn't handle transition preemption correctly (child > parent)
-        // 3. It didn't respect document order for transition priority
-        // 4. It didn't distinguish cross-region vs external transitions
-        // Instead, use region->processEvent() below (lines 484-537) which properly implements SCXML 3.13
-
-        // §scxml-3.13: Broadcast event to ALL regions using processEventInAllRegions()
-        // This ensures proper transition preemption, blocking, and external transition handling
-        SCE_LOG_DEBUG("StateMachine: No transitions on parallel state or region children, broadcasting to all regions");
-
-        // §scxml-3.13: Disable immediate mode during parallel state event processing
-        // RAII guard ensures restoration even if processEventInAllRegions() throws exception
-        // This prevents re-entrancy: raised events must be queued, not processed immediately
-        // Otherwise, one region's <raise> action can deactivate other regions before they compute their transitions
-        std::vector<ConcurrentOperationResult> results;
-        {
-            ImmediateModeGuard guard(eventRaiser_, false);
-            SCE_LOG_DEBUG("W3C SCXML 3.13: Disabled immediate mode for parallel state event processing");
-
-            // Create EventDescriptor for SCXML-compliant event processing
-            EventDescriptor event;
-            event.eventName = eventName;
-            event.data = eventData;
-
-            // Broadcast event to all active regions (SCXML W3C mandated)
-            // Exception safety: guard automatically restores immediate mode on scope exit
-            results = parallelState->processEventInAllRegions(event);
-
-            SCE_LOG_DEBUG("W3C SCXML 3.13: Immediate mode will be restored on scope exit");
-        }  // RAII guard restores immediate mode here
-
-        bool anyTransitionExecuted = false;
-
-        // §scxml-D-selectTransitions: Collect all enabled transitions from all regions
-        std::vector<TransitionDescriptorString> allEnabledTransitions;
-
-        // Collect enabled transitions from all regions (including external transitions)
-        for (const auto &result : results) {
-            // Collect enabled transitions from this region
-            for (const auto &transition : result.enabledTransitions) {
-                allEnabledTransitions.push_back(transition);
-            }
-        }
-
-        // §scxml-D-computeExitSet: the ACTIVE states below the transition's
-        // domain. It is read off the CONFIGURATION, and a region cannot see one
-        // — it knows only its own states, so the set it could assemble stops at
-        // its own leaf-to-domain chain and never names a sibling region. For a
-        // transition leaving the `<parallel>` the domain is above the
-        // `<parallel>`, so the sibling regions ARE below it, and
-        // `removeConflictingTransitions` intersects exactly this set: computed
-        // per region, the question of whether two regions' transitions conflict
-        // was decided on a set that could not mention the state making them so.
-        //
-        // ARCHITECTURE.md Zero Duplication: the same procedure the AOT engine
-        // reaches through `ParallelTransitionHelper`, bound here to lambdas over
-        // state IDs rather than to a StatePolicy.
-        {
-            const auto configuration =
-                hierarchyManager_ ? hierarchyManager_->getActiveStates() : std::vector<std::string>{};
-
-            auto parentOf = [this](const std::string &stateId) -> std::optional<std::string> {
-                auto stateNode = model_->findStateById(stateId);
-                if (stateNode && stateNode->getParent()) {
-                    return stateNode->getParent()->getId();
-                }
-                return std::nullopt;
-            };
-
-            // §scxml-D-findLCCA `isCompoundStateOrScxmlElement`: a `<parallel>`
-            // answers false, which is the whole difference from a plain LCA.
-            auto isDomainCandidate = [this](const std::string &stateId) {
-                auto stateNode = model_->findStateById(stateId);
-                return stateNode && stateNode->getType() == Type::COMPOUND;
-            };
-
-            const std::string parallelStateId = parallelState ? parallelState->getId() : std::string{};
-
-            for (auto &t : allEnabledTransitions) {
-                t.exitSet = SCE::Core::ExitSetAlgorithms::computeExitSet<std::string>(
-                    t.source, {t.target}, t.isInternal, t.isTargetless, configuration, parentOf, isDomainCandidate);
-
-                // What the microstep below needs from the set: the `<parallel>`
-                // is among the states this transition exits, so it tears down
-                // and the target is re-entered through a fresh entry path.
-                t.isExternal = !parallelStateId.empty() &&
-                               std::find(t.exitSet.begin(), t.exitSet.end(), parallelStateId) != t.exitSet.end();
-
-                SCE_LOG_DEBUG("StateMachine: Enabled transition {} -> {} (event='{}') exits {} state(s), external={}",
-                              t.source, t.target, t.event, t.exitSet.size(), t.isExternal);
-            }
-        }
-
-        // §scxml-D-removeConflictingTransitions: Apply conflict resolution to select optimal transition set
-        if (!allEnabledTransitions.empty()) {
-            SCE_LOG_DEBUG("StateMachine: Applying §scxml-D-removeConflictingTransitions conflict resolution to {} "
-                          "enabled transitions",
-                          allEnabledTransitions.size());
-
-            // Convert to ConflictResolutionAlgorithms::TransitionDescriptor format
-            std::vector<ConflictResolutionAlgorithms::TransitionDescriptor<std::string>> descriptors;
-            for (const auto &t : allEnabledTransitions) {
-                ConflictResolutionAlgorithms::TransitionDescriptor<std::string> desc;
-                desc.source = t.source;
-                // One target: the Interpreter still selects a single one per
-                // transition, and its microstep below enters exactly that.
-                desc.targets = {t.target};
-                desc.exitSet = t.exitSet;
-                desc.transitionIndex = t.transitionIndex;
-                desc.hasActions = t.hasActions;
-                desc.isInternal = t.isInternal;
-                desc.isExternal = t.isExternal;  // W3C SCXML: External transition flag for parallel state exit
-                descriptors.push_back(desc);
-            }
-
-            // Apply W3C SCXML conflict resolution
-            auto getParent = [this](const std::string &stateId) -> std::optional<std::string> {
-                auto stateNode = model_->findStateById(stateId);
-                if (stateNode && stateNode->getParent()) {
-                    return stateNode->getParent()->getId();
-                }
-                return std::nullopt;
-            };
-
-            descriptors = ConflictResolutionAlgorithms::removeConflictingTransitions(descriptors, getParent);
-
-            SCE_LOG_DEBUG("StateMachine: After conflict resolution: {} transitions in optimal set", descriptors.size());
-
-            // §scxml-D-removeConflictingTransitions: Store transition data for interactive visualizer
-            lastEnabledTransitions_ = allEnabledTransitions;  // All transitions before conflict resolution
-            // Convert descriptors back to TransitionDescriptorString for storage
-            lastOptimalTransitions_.clear();
-            for (const auto &desc : descriptors) {
-                TransitionDescriptorString optimalTrans;
-                optimalTrans.source = desc.source;
-                optimalTrans.target = desc.targets.front();
-                optimalTrans.event = "";  // Event already processed, not stored in descriptor
-                optimalTrans.exitSet = desc.exitSet;
-                optimalTrans.transitionIndex = desc.transitionIndex;
-                optimalTrans.hasActions = desc.hasActions;
-                optimalTrans.isInternal = desc.isInternal;
-                optimalTrans.isExternal = desc.isExternal;
-                lastOptimalTransitions_.push_back(optimalTrans);
-            }
-
-            // §scxml-D-microstepProcedure: Execute optimal transition set as microstep
-            if (!descriptors.empty()) {
-                // Check if optimal set contains external transition
-                bool hasExternalTransition = false;
-                std::string externalTransitionTarget;
-                std::string externalTransitionSource;
-
-                for (const auto &desc : descriptors) {
-                    if (desc.isExternal) {
-                        hasExternalTransition = true;
-                        externalTransitionTarget = desc.targets.front();
-                        externalTransitionSource = desc.source;
-                        SCE_LOG_INFO("StateMachine: Optimal set contains external transition: {} -> {} "
-                                     "(§scxml-D-removeConflictingTransitions)",
-                                     desc.source, desc.targets.front());
-                        break;
-                    }
-                }
-
-                // §scxml-D-executeTransitionContent: Execute ALL transitions' actions first (including those with
-                // external transitions)
-                SCE_LOG_INFO(
-                    "StateMachine: Executing {} transitions in optimal set as microstep (§scxml-D-microstepProcedure)",
-                    descriptors.size());
-
-                // Step 1: Exit all states in exit sets (W3C SCXML Appendix D Step 2)
-                std::unordered_set<std::string> statesToExit;
-                for (const auto &desc : descriptors) {
-                    for (const auto &exitState : desc.exitSet) {
-                        statesToExit.insert(exitState);
-                    }
-                }
-
-                // Exit states in document order
-                for (const auto &stateId : statesToExit) {
-                    SCE_LOG_DEBUG("StateMachine: Microstep exit state: {}", stateId);
-
-                    // §scxml-3.4: Check parallel state completion BEFORE exiting
-                    // If all regions are complete, this triggers done.state.{id} event generation
-                    auto stateNode = model_->findStateById(stateId);
-                    if (stateNode && stateNode->getType() == Type::PARALLEL) {
-                        auto parallelNode = dynamic_cast<ConcurrentStateNode *>(stateNode);
-                        if (parallelNode) {
-                            // Calling areAllRegionsComplete() triggers completion callback if all regions are final
-                            // This generates the required done.state.{id} event BEFORE we exit the parallel state
-                            bool isComplete = parallelNode->areAllRegionsComplete();
-                            SCE_LOG_DEBUG("StateMachine: Parallel state '{}' completion check before exit: {}", stateId,
-                                          isComplete);
-                        }
-                    }
-
-                    // §scxml-3.13: Update hierarchy manager for parallel region transitions (Test 570 fix)
-                    // Must keep hierarchy manager in sync with region's internal state
-                    if (hierarchyManager_) {
-                        hierarchyManager_->exitState(stateId);
-                        SCE_LOG_DEBUG("StateMachine: Updated hierarchyManager - exited state: {}", stateId);
-                    }
-
-                    // Find region containing this state and exit it
-                    // Note: stateNode already retrieved above for parallel completion check
-                    if (stateNode && stateNode->getParent()) {
-                        const auto &regions = parallelState->getRegions();
-                        for (const auto &region : regions) {
-                            auto regionStates = region->getActiveStates();
-                            if (std::find(regionStates.begin(), regionStates.end(), stateId) != regionStates.end()) {
-                                SCE_LOG_DEBUG("StateMachine: Region {} exits state {}", region->getId(), stateId);
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                // Step 2: Execute ALL transition actions (W3C SCXML Appendix D Step 3)
-                // §scxml-3.13: Disable immediate mode during action execution to prevent nested event processing
-                // Raised events should be queued until after all actions in the optimal set complete
-                ImmediateModeGuard immediateModeGuard(eventRaiser_, false);
-
-                for (const auto &desc : descriptors) {
-                    SCE_LOG_INFO("StateMachine: Microstep execute transition: {} -> {}", desc.source,
-                                 desc.targets.front());
-
-                    // Find the transition node and execute its actions
-                    auto sourceStateNode = model_->findStateById(desc.source);
-                    if (sourceStateNode) {
-                        const auto &transitions = sourceStateNode->getTransitions();
-                        for (const auto &transition : transitions) {
-                            bool isMatch = false;
-                            const auto &targets = transition->getTargets();
-
-                            // W3C SCXML: Targetless internal transitions (source == target)
-                            if (desc.source == desc.targets.front() && targets.empty()) {
-                                const auto &events = transition->getEvents();
-                                for (const auto &event : events) {
-                                    if (event == eventName || event == "*") {
-                                        isMatch = true;
-                                        break;
-                                    }
-                                }
-                            }
-                            // Normal transition - match by target
-                            else if (!targets.empty() && targets[0] == desc.targets.front()) {
-                                isMatch = true;
-                            }
-
-                            if (isMatch) {
-                                // Execute transition actions
-                                const auto &actionNodes = transition->getActionNodes();
-                                if (!actionNodes.empty() && executionContext_) {
-                                    SCE_LOG_DEBUG("StateMachine: Executing {} transition actions", actionNodes.size());
-                                    for (const auto &actionNode : actionNodes) {
-                                        if (actionNode) {
-                                            try {
-                                                actionNode->execute(*executionContext_);
-                                            } catch (const std::exception &e) {
-                                                SCE_LOG_WARN("StateMachine: Transition action failed: {}", e.what());
-                                            }
-                                        }
-                                    }
-                                }
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                // Step 3: Handle external transition or enter target states
-                if (hasExternalTransition) {
-                    // W3C SCXML: External transition exits parallel state
-                    SCE_LOG_INFO("StateMachine: External transition {} -> {}, exiting parallel state {}",
-                                 externalTransitionSource, externalTransitionTarget, currentState);
-
-                    // Exit parallel state and all its regions
-                    exitState(currentState);
-
-                    // §scxml-D-addAncestorStatesToEnter: a transition whose domain
-                    // lies above the `<parallel>` can still TARGET a state inside
-                    // it -- an external transition written on a region root, or one
-                    // crossing from one region to another. The parallel is then
-                    // re-entered, and the entry set is the target's own path plus
-                    // the DEFAULT entry of every other region.
-                    //
-                    // Entering the target on its own, which is what stood here,
-                    // left the machine holding a single deep state with none of its
-                    // ancestors and none of the sibling regions: measured
-                    // 2026-08-25 as the configuration `[restarting]`, where the
-                    // spec-conforming answer is `[run, drive, restarting, watch,
-                    // alive]`.
-                    std::string regionRootOnTargetPath;
-                    if (auto *targetNode = model_->findStateById(externalTransitionTarget)) {
-                        for (IStateNode *node = targetNode; node != nullptr; node = node->getParent()) {
-                            if (node->getParent() && node->getParent()->getId() == currentState) {
-                                regionRootOnTargetPath = node->getId();
-                                break;
-                            }
-                        }
-                    }
-
-                    if (regionRootOnTargetPath.empty()) {
-                        // Target is outside the parallel state entirely.
-                        enterState(externalTransitionTarget);
-                    } else {
-                        // Re-enter the parallel state, defaulting every region the
-                        // target's path does not descend into...
-                        enterState(currentState, regionRootOnTargetPath);
-                        // ...then descend that one region to the target itself.
-                        if (hierarchyManager_) {
-                            hierarchyManager_->enterStateWithAncestors(externalTransitionTarget,
-                                                                       model_->findStateById(currentState));
-                        }
-                    }
-
-                    anyTransitionExecuted = true;
-                    stats_.totalTransitions++;
-                } else {
-                    // No external transition - enter target states for internal transitions
-                    SCE_LOG_INFO(
-                        "StateMachine: Internal transitions only - entering target states (§scxml-D-enterStates)");
-
-                    // Enter all target states
-                    for (const auto &desc : descriptors) {
-                        SCE_LOG_DEBUG("StateMachine: Microstep enter target state: {}", desc.targets.front());
-
-                        // Find which region this target belongs to and update its state
-                        auto targetStateNode = model_->findStateById(desc.targets.front());
-                        if (targetStateNode && targetStateNode->getParent()) {
-                            const auto &regions = parallelState->getRegions();
-                            for (const auto &region : regions) {
-                                // Check if target is descendant of this region's root
-                                auto regionRoot = region->getRootState();
-                                if (regionRoot) {
-                                    std::function<bool(const std::shared_ptr<IStateNode> &, const std::string &)>
-                                        isDescendant;
-                                    isDescendant = [&isDescendant](const std::shared_ptr<IStateNode> &root,
-                                                                   const std::string &targetId) -> bool {
-                                        if (root->getId() == targetId) {
-                                            return true;
-                                        }
-                                        for (const auto &child : root->getChildren()) {
-                                            if (isDescendant(child, targetId)) {
-                                                return true;
-                                            }
-                                        }
-                                        return false;
-                                    };
-
-                                    if (isDescendant(regionRoot, desc.targets.front())) {
-                                        // This region contains the target - update its current state
-                                        auto concreteRegion = std::dynamic_pointer_cast<ConcurrentRegion>(region);
-                                        if (concreteRegion) {
-                                            concreteRegion->setCurrentState(desc.targets.front());
-                                            SCE_LOG_DEBUG("StateMachine: Region {} entered state {}", region->getId(),
-                                                          desc.targets.front());
-
-                                            // §scxml-3.13: Update hierarchy manager for parallel region transitions
-                                            // (Test 570 fix) Must keep hierarchy manager in sync with region's internal
-                                            // state
-                                            // Exactly one execution of this
-                                            // state's `<onentry>`.
-                                            //
-                                            // `enterState` fires the onentry
-                                            // callback when the state was NOT
-                                            // already in the configuration, and
-                                            // returns early when it was. This
-                                            // site used to run the entry blocks
-                                            // unconditionally on top of that, so
-                                            // a state the manager had just
-                                            // entered ran its `<onentry>` twice
-                                            // — measured 2026-08-15, a counter
-                                            // incremented by 2 for one entry.
-                                            // Dropping the block outright is
-                                            // equally wrong: when the state was
-                                            // already active it is the only
-                                            // executor, and seven parallel
-                                            // drivers say so.
-                                            const bool alreadyInConfiguration =
-                                                hierarchyManager_ &&
-                                                hierarchyManager_->isStateActive(desc.targets.front());
-                                            if (hierarchyManager_) {
-                                                hierarchyManager_->enterState(desc.targets.front());
-                                                SCE_LOG_DEBUG(
-                                                    "StateMachine: Updated hierarchyManager - entered state: {}",
-                                                    desc.targets.front());
-                                            }
-
-                                            // Execute entry actions, only where
-                                            // the callback above could not.
-                                            const auto &entryBlocks = targetStateNode->getEntryActionBlocks();
-                                            if (alreadyInConfiguration && !entryBlocks.empty() && executionContext_) {
-                                                for (const auto &actionBlock : entryBlocks) {
-                                                    for (const auto &actionNode : actionBlock) {
-                                                        if (actionNode) {
-                                                            try {
-                                                                actionNode->execute(*executionContext_);
-                                                            } catch (const std::exception &e) {
-                                                                SCE_LOG_WARN("StateMachine: Entry action failed: {}",
-                                                                             e.what());
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    anyTransitionExecuted = true;
-                    stats_.totalTransitions += descriptors.size();
-                }  // end else (no external transition)
-            }  // end if (!descriptors.empty())
-        }  // end if (!allEnabledTransitions.empty())
-
-        if (anyTransitionExecuted) {
-            SCE_LOG_INFO("SCXML compliant parallel region processing succeeded. Regions processed: {}", results.size());
-
-            // §scxml-3.4: Check if all regions completed (reached final states)
-            // This triggers done.state.{id} event generation
-            bool allRegionsComplete = parallelState->areAllRegionsComplete();
-            if (allRegionsComplete) {
-                SCE_LOG_DEBUG("SCXML W3C: All parallel regions completed for state: {}", currentState);
-
-                // §scxml-3.4: Process done.state events when all regions complete
-                // Only process if this is the top-level event (not nested/recursive call)
-                // Interactive mode: Skip auto-processing to allow manual step-by-step execution
-                if (!eventGuard.wasAlreadySet_ && !isBatchProcessing_ && autoProcessQueuedEvents_ && eventRaiser_) {
-                    // §scxml-3.13: Use shared algorithm (Single Source of Truth)
-                    drainInternalEvents("Processing done.state event after parallel completion");
-                }
-            }
-
-            // Invoke execution consolidated to key lifecycle points            // Return success with parallel state as
-            // context
-            TransitionResult finalResult;
-            finalResult.success = true;
-            finalResult.fromState = currentState;
-            finalResult.toState = currentState;  // Parallel state remains active
-            finalResult.eventName = eventName;
-
-            // §scxml-3.13: Internal events will be processed at hierarchical transition completion
-            // Removed auto-processing here to prevent out-of-order execution during eventless transitions
-            return finalResult;
-        } else {
-            SCE_LOG_DEBUG("No transitions executed in any region for event: {}", eventName);
-            stats_.failedTransitions++;
-            TransitionResult result;
-            result.success = false;
-            result.fromState = getCurrentState();
-            result.eventName = eventName;
-            result.errorMessage = "No valid transitions found";
-            return result;
+    for (const auto &childStateMachine : autoForwardSessions) {
+        if (childStateMachine && childStateMachine->isRunning()) {
+            SCE_LOG_DEBUG("W3C SCXML 6.4: Auto-forwarding event '{}' to child session", event.name);
+            childStateMachine->processEvent(event.name, event.data, event.originSessionId, event.sendId, event.invokeId,
+                                            event.originType);
         }
     }
+}
 
-    // Non-parallel state: SCXML W3C compliant hierarchical event processing
-    // Process transitions in active state hierarchy (innermost to outermost)
-    auto activeStates = hierarchyManager_->getActiveStates();
+void StateMachine::enterInitialConfiguration() {
+    // §scxml-D-interpret: enterStates([doc.initialTransition]) — the
+    // document's own initial transition, whose source is the <scxml> element
+    // and whose domain is therefore the whole document. A target set, a deep
+    // initial, an initial naming a <history>: the entry procedures answer all
+    // of them, so nothing here resolves a leaf first.
+    MicrostepHost host{*this};
+    Core::MicrostepAlgorithms::enterStates(host, {Core::EntryTransition<std::string, std::string>{
+                                                     std::nullopt, document_->documentInitialTargets(), false}});
+}
 
-    SCE_LOG_DEBUG("SCXML hierarchical processing: Checking {} active states for event '{}'", activeStates.size(),
-                  eventName);
+void StateMachine::runMainEventLoop() {
+    // §scxml-D-mainEventLoop: one macrostep after another. Each completes on
+    // eventless transitions and internal events alone — an eventless
+    // selection first, and only when it finds nothing the next internal
+    // event. Then the invokes for the states the macrostep entered run, and
+    // invoking may raise internal events, which the macrostep takes before it
+    // is done. Only then is the next external event taken, and it opens the
+    // next macrostep: a state one event enters has its invokes started before
+    // the next event comes off the queue.
+    while (isRunning_) {
+        // A refusal ends the macrostep outright, whatever is left queued: the
+        // refused chain is what would be taken next.
+        bool refused = false;
+        while (isRunning_ && !macrostepTruncated_) {
+            const std::vector<Transition> enabled = selectTransitions(std::string{});
+            if (!enabled.empty()) {
+                if (macrostepMicrostepsTaken_ >= static_cast<uint32_t>(MAX_MACROSTEP_MICROSTEPS)) {
+                    // The chain is still going one microstep past the budget.
+                    // The microstep is refused rather than taken — selection
+                    // moves nothing, so refusing it is exact.
+                    recordTruncatedMacrostep();
+                    refused = true;
+                    break;
+                }
+                ++macrostepMicrostepsTaken_;
+                takeMicrostep(enabled, std::string{});
+                continue;
+            }
 
-    // W3C SCXML: Process states from most specific (innermost) to least specific (outermost)
-    // Optimization: Track checked states to avoid duplicate ancestor traversal
-    std::unordered_set<std::string> checkedStates;
+            // Interactive mode: the host steps internal events one at a time.
+            if (!autoProcessQueuedEvents_ || !eventRaiser_ || !eventRaiser_->hasQueuedInternalEvents()) {
+                break;
+            }
+            if (!mayTakeMicrostep()) {
+                // Asked before the event leaves the queue, so a refusal leaves
+                // it for the next macrostep rather than swallowing it.
+                refused = true;
+                break;
+            }
+            const std::optional<EventMetadata> internalEvent = eventRaiser_->takeQueuedEvent(EventQueue::Internal);
+            if (!internalEvent) {
+                break;
+            }
+            eventRaiser_->dispatchTaken(internalEvent->name, [this, &internalEvent] {
+                const TransitionResult result = processTakenEvent(*internalEvent, /*fromExternalQueue=*/false);
+                if (result.success) {
+                    // A turn that selects nothing takes no microstep, so it
+                    // spends no budget.
+                    ++macrostepMicrostepsTaken_;
+                }
+                return result.success;
+            });
+        }
 
-    for (auto it = activeStates.rbegin(); it != activeStates.rend(); ++it) {
-        const std::string &stateId = *it;
-        auto stateNode = model_->findStateById(stateId);
-        if (!stateNode) {
-            SCE_LOG_WARN("SCXML hierarchical processing: State node not found: {}", stateId);
+        if (!isRunning_) {
+            break;
+        }
+
+        // §scxml-6.4: the invokes of the states entered during this macrostep.
+        // A macrostep stopped at its ceiling entered states too, and the next
+        // one starts from them.
+        executePendingInvokes();
+
+        // Invoking may have raised internal events, and a child that finished
+        // at once may already have reported: the macrostep takes them before
+        // it is done. Not after a refusal — the queue holds what the refusal
+        // left there, and going back for it is a turn that takes nothing.
+        if (!refused && !macrostepTruncated_ && autoProcessQueuedEvents_ && eventRaiser_ &&
+            eventRaiser_->hasQueuedInternalEvents()) {
             continue;
         }
 
-        // W3C SCXML: Check transitions from innermost state to root
-        // Skip already-checked ancestors to avoid duplicate processing
-        IStateNode *currentNode = stateNode;
-        while (currentNode) {
-            const std::string &nodeId = currentNode->getId();
+        // Interactive mode: the host steps the external queue itself.
+        if (!autoProcessQueuedEvents_) {
+            break;
+        }
 
-            // Skip if already checked (optimization for duplicate ancestor traversal)
-            if (checkedStates.count(nodeId)) {
-                break;
-            }
-            checkedStates.insert(nodeId);
-
-            // W3C SCXML Test 252: Re-check cancelled session DURING hierarchical processing
-            // Race condition: invoke cancel may happen between initial check and state processing
-            // This catch-all ensures events from cancelled children are filtered even if cancel happens mid-processing
-            if (invokeExecutor_ && !originSessionId.empty()) {
-                if (invokeExecutor_->shouldFilterCancelledInvokeEvent(originSessionId)) {
-                    SCE_LOG_DEBUG("StateMachine: [HIERARCHICAL CHECK] Filtering event '{}' from cancelled invoke child "
-                                  "session: {}",
-                                  eventName, originSessionId);
-                    return TransitionResult(false, getCurrentState(), getCurrentState(), eventName);
-                }
-            }
-
-            SCE_LOG_DEBUG("SCXML hierarchical processing: Checking state '{}' for transitions", nodeId);
-            auto transitionResult = processStateTransitions(currentNode, eventName, eventData);
-            if (transitionResult.success) {
-                SCE_LOG_DEBUG("SCXML hierarchical processing: Transition found in state '{}': {} -> {}", nodeId,
-                              transitionResult.fromState, transitionResult.toState);
-
-                // W3C SCXML Test 252: CRITICAL re-check AFTER transition execution
-                // Transition execution may trigger invoke cancellation (exitState → cancelInvoke)
-                // This catches self-referential race: event from child triggers transition that cancels that child
-                if (invokeExecutor_ && !originSessionId.empty()) {
-                    if (invokeExecutor_->shouldFilterCancelledInvokeEvent(originSessionId)) {
-                        SCE_LOG_DEBUG(
-                            "StateMachine: [POST-TRANSITION CHECK] Filtering event '{}' from cancelled invoke "
-                            "child session: {} (transition was: {} -> {})",
-                            eventName, originSessionId, transitionResult.fromState, transitionResult.toState);
-                        // Transition already executed, but we must return false to indicate event should be ignored
-                        return TransitionResult(false, getCurrentState(), getCurrentState(), eventName);
-                    }
-                }
-
-                // §scxml-3.13: Process all internal events before returning
-                // Only process if this is the top-level event (not nested/recursive call)
-                // Interactive mode: Skip auto-processing to allow manual step-by-step execution
-                if (!eventGuard.wasAlreadySet_ && !isBatchProcessing_ && autoProcessQueuedEvents_ && eventRaiser_) {
-                    // §scxml-3.13: Use shared algorithm (Single Source of Truth)
-                    drainInternalEvents("Processing queued internal event after successful transition");
-                }
-
-                // §scxml-6.4: Execute pending invokes after macrostep completes
-                if (!eventGuard.wasAlreadySet_) {
-                    executePendingInvokes();
-                }
-
-                return transitionResult;
-            }
-
-            // Move to parent state
-            currentNode = currentNode->getParent();
+        // The outer loop. A refused chain does not hold the external queue
+        // back: the next external event opens a macrostep with a budget of its
+        // own, and it is often the very event that gets the machine out.
+        if (!takeNextExternalEvent()) {
+            break;
         }
     }
-
-    // No transitions found in any active state
-    SCE_LOG_DEBUG("SCXML hierarchical processing: No transitions found in any active state for event '{}'", eventName);
-    stats_.failedTransitions++;
-
-    TransitionResult result;
-    result.success = false;
-    result.fromState = getCurrentState();
-    result.eventName = eventName;
-    result.errorMessage = "No valid transitions found in active state hierarchy";
-
-    // §scxml-3.13: Process all internal events before returning
-    // After processing an external event, the system MUST process all queued internal events
-    // This ensures done.state events are automatically processed (test: W3C_Parallel_CompletionCriteria)
-    // Only process if this is the top-level event (not nested/recursive call)
-    // Interactive mode: Skip auto-processing to allow manual step-by-step execution
-    if (!eventGuard.wasAlreadySet_ && !isBatchProcessing_ && autoProcessQueuedEvents_ && eventRaiser_) {
-        // §scxml-3.13: Use shared algorithm (Single Source of Truth)
-        drainInternalEvents("Processing queued internal event");
-    }
-
-    // §scxml-6.4: Execute pending invokes after macrostep completes
-    if (!eventGuard.wasAlreadySet_) {
-        executePendingInvokes();
-    }
-
-    return result;
 }
 
-StateMachine::TransitionResult StateMachine::processStateTransitions(IStateNode *stateNode,
-                                                                     const std::string &eventName,
-                                                                     [[maybe_unused]] const std::string &eventData) {
-    SCE_LOG_DEBUG("[PROCESS STATE TRANSITIONS CALLED] stateNode: {}, event: '{}', isRunning: {}",
-                  (stateNode ? stateNode->getId() : "null"), eventName, isRunning_.load());
+bool StateMachine::takeNextExternalEvent() {
+    if (!eventRaiser_) {
+        return false;
+    }
+    const std::optional<EventMetadata> externalEvent = eventRaiser_->takeQueuedEvent(EventQueue::External);
+    if (!externalEvent) {
+        return false;
+    }
+    // §scxml-D-mainEventLoop: taking an event off the external queue is where
+    // a macrostep begins, so it is where the previous one's ceiling stops
+    // applying — a machine inside an endless chain gets a whole budget for
+    // each event it is given, and each refusal is counted on its own.
+    macrostepTruncated_ = false;
+    macrostepMicrostepsTaken_ = 0;
+    eventRaiser_->dispatchTaken(externalEvent->name, [this, &externalEvent] {
+        return processTakenEvent(*externalEvent, /*fromExternalQueue=*/true).success;
+    });
+    return true;
+}
 
-    if (!stateNode) {
-        TransitionResult result;
-        result.success = false;
-        result.fromState = getCurrentState();
-        result.eventName = eventName;
-        result.errorMessage = "Invalid state node";
-        return result;
+std::vector<StateMachine::Transition> StateMachine::selectTransitions(const std::string &eventName) {
+    selectionCandidates_.clear();
+    MicrostepHost host{*this};
+    return Core::MicrostepAlgorithms::selectTransitions(host, eventName);
+}
+
+std::optional<StateMachine::Transition> StateMachine::firstEnabledTransition(const std::string &state,
+                                                                             const std::string &eventName) {
+    IStateNode *node = document_->nodeOf(state);
+    if (!node) {
+        return std::nullopt;
     }
 
-    // SCXML W3C specification: Process transitions in document order
-    const auto &transitions = stateNode->getTransitions();
+    const auto &transitions = node->getTransitions();
+    for (size_t index = 0; index < transitions.size(); ++index) {
+        const auto &transitionNode = transitions[index];
+        const std::vector<std::string> &descriptors = transitionNode->getEvents();
 
-    SCE_LOG_DEBUG("Checking {} transitions for event '{}' on state: {}", transitions.size(), eventName,
-                  stateNode->getId());
-
-    // Execute first valid transition (SCXML W3C specification)
-    for (const auto &transitionNode : transitions) {
-        // §scxml-3.12: A transition can have multiple event descriptors
-        // The transition matches if at least one descriptor matches the event name
-        const std::vector<std::string> &eventDescriptors = transitionNode->getEvents();
-
-        // Check if this transition matches the event
-        bool eventMatches = false;
-
-        if (eventName.empty()) {
-            // For eventless transitions, only consider transitions without event descriptors
-            eventMatches = eventDescriptors.empty();
-        } else {
-            // §scxml-3.12: Check if ANY descriptor matches the event
-            // Use TransitionHelper for Single Source of Truth (Zero Duplication with AOT engine)
-            eventMatches = SCE::Core::TransitionHelper::matchesAnyEventDescriptor(eventDescriptors, eventName);
-        }
-
+        // §scxml-3.12: a transition matches an event when any of its
+        // descriptors does; an eventless selection considers only
+        // transitions that name no event at all.
+        const bool eventMatches = eventName.empty()
+                                      ? descriptors.empty()
+                                      : SCE::Core::TransitionHelper::matchesAnyEventDescriptor(descriptors, eventName);
         if (!eventMatches) {
             continue;
         }
 
-        const auto &targets = transitionNode->getTargets();
-
-        // W3C SCXML: Internal transitions have no targets but should still execute
-        bool isInternal = transitionNode->isInternal();
-        if (targets.empty() && !isInternal) {
-            SCE_LOG_DEBUG("StateMachine: Skipping transition with no targets (not internal)");
+        const std::string &condition = transitionNode->getGuard();
+        if (!condition.empty() && !evaluateCondition(condition)) {
             continue;
         }
 
-        std::string targetState = targets.empty() ? "" : targets[0];
-        std::string condition = transitionNode->getGuard();
+        Transition enabled;
+        enabled.source = state;
+        enabled.targets = document_->targetsOf(transitionNode->getTargets());
+        enabled.transitionIndex = static_cast<int>(index);
+        enabled.hasActions = !transitionNode->getActionNodes().empty();
+        // `type="internal"` as written. The node's own `isInternal()` also
+        // answers true for a targetless transition, which is a different
+        // property: it exits nothing whatever its type.
+        enabled.isInternal = transitionNode->getAttribute("type") == "internal";
 
-        if (SCE::Logger::shouldLog(SCE::LogLevel::Debug)) {
-            std::string eventDescStr;
-            for (size_t i = 0; i < eventDescriptors.size(); ++i) {
-                if (i > 0) {
-                    eventDescStr += " ";
-                }
-                eventDescStr += eventDescriptors[i];
-            }
-            SCE_LOG_DEBUG("Checking transition: {} -> {} with condition: '{}' (events: '{}')", stateNode->getId(),
-                          targetState, condition, eventDescStr);
+        const bool seen =
+            std::any_of(selectionCandidates_.begin(), selectionCandidates_.end(), [&enabled](const Transition &t) {
+                return t.source == enabled.source && t.transitionIndex == enabled.transitionIndex;
+            });
+        if (!seen) {
+            selectionCandidates_.push_back(enabled);
         }
+        return enabled;
+    }
+    return std::nullopt;
+}
 
-        bool conditionResult = condition.empty() || evaluateCondition(condition);
-        SCE_LOG_DEBUG("Condition result: {}", conditionResult ? "true" : "false");
+void StateMachine::takeMicrostep(const std::vector<Transition> &transitions, const std::string &eventName) {
+    // What the interactive visualizer shows about this microstep: everything
+    // the selection found and what survived preemption, read off the
+    // configuration the transitions are about to exit.
+    const std::vector<std::string> configuration = hierarchyManager_->getActiveStates();
+    lastEnabledTransitions_.clear();
+    for (const auto &candidate : selectionCandidates_) {
+        lastEnabledTransitions_.push_back(describe(candidate, eventName, configuration));
+    }
+    lastOptimalTransitions_.clear();
+    for (const auto &transition : transitions) {
+        lastOptimalTransitions_.push_back(describe(transition, eventName, configuration));
+    }
+    const Transition &last = transitions.back();
+    lastTransitionSource_ = last.source;
+    lastTransitionTarget_.clear();
+    if (!last.targets.empty()) {
+        lastTransitionTarget_ =
+            last.targets.front().isHistory() ? last.targets.front().history() : last.targets.front().state();
+    }
+    lastTransitionIndex_ = last.transitionIndex;
+    stats_.totalTransitions += static_cast<int>(transitions.size());
 
-        if (conditionResult) {
-            // W3C SCXML: The source state of the transition is the state that contains it
-            // NOT getCurrentState() which may return a parallel state
-            std::string fromState = stateNode->getId();
+    MicrostepHost host{*this};
+    Core::MicrostepAlgorithms::microstep(host, transitions);
+    updateStatistics();
+}
 
-            // §scxml-3.13: Internal transitions (test 505)
-            if (isInternal) {
-                // Case 1: Internal transition with no target (targetless)
-                if (targets.empty()) {
-                    SCE_LOG_DEBUG("StateMachine: Executing internal transition actions (no state change)");
-                    const auto &actionNodes = transitionNode->getActionNodes();
-                    if (!actionNodes.empty()) {
-                        executeActionNodes(actionNodes, false);
-                    }
+TransitionDescriptorString StateMachine::describe(const Transition &transition, const std::string &eventName,
+                                                  const std::vector<std::string> &configuration) {
+    TransitionDescriptorString descriptor;
+    descriptor.source = transition.source;
+    if (!transition.targets.empty()) {
+        descriptor.target = transition.targets.front().isHistory() ? transition.targets.front().history()
+                                                                   : transition.targets.front().state();
+    }
+    descriptor.event = eventName;
+    MicrostepHost host{*this};
+    descriptor.exitSet = Core::ExitSetAlgorithms::computeExitSet(
+        transition.source, Core::MicrostepAlgorithms::effectiveTargets(host, transition), transition.isInternal,
+        transition.isTargetless(), configuration, [this](const std::string &s) { return document_->parentOf(s); },
+        [this](const std::string &s) { return document_->isCompound(s); });
+    descriptor.transitionIndex = transition.transitionIndex;
+    descriptor.hasActions = transition.hasActions;
+    descriptor.isInternal = transition.isInternal;
+    descriptor.isTargetless = transition.isTargetless();
+    // The transition tears a `<parallel>` down: one is among what it exits.
+    descriptor.isExternal = std::any_of(descriptor.exitSet.begin(), descriptor.exitSet.end(),
+                                        [this](const std::string &s) { return document_->isParallel(s); });
+    return descriptor;
+}
 
-                    // W3C SCXML Appendix D's main event loop returns to
-                    // `selectEventlessTransitions()` after EVERY microstep,
-                    // without asking whether the microstep moved the machine.
-                    // Returning here instead ended the macrostep at a
-                    // transition that had just run content, so a chain that
-                    // content enabled was never walked and the caller was
-                    // handed a configuration the clause calls unstable. The
-                    // budget lives on `checkEventlessTransitions` itself, so
-                    // this loop ends either at a stable configuration or at the
-                    // ceiling — and `truncatedMacrosteps` says which.
-                    if (eventRaiser_) {
-                        while (checkEventlessTransitions()) {
-                        }
-                    }
+void StateMachine::exitStateInMicrostep(const std::string &state,
+                                        const std::vector<std::string> &configurationBeforeExit) {
+    // §scxml-D-exitStates: every `<history>` of an exited state records from
+    // the configuration as it stood before the microstep's first exit, so a
+    // descendant already exited in this microstep is still in what it
+    // records.
+    IStateNode *node = document_->nodeOf(state);
+    if (historyManager_ && node) {
+        const auto &children = node->getChildren();
+        const bool hasHistory = std::any_of(children.begin(), children.end(), [](const auto &child) {
+            return child && child->getType() == Type::HISTORY;
+        });
+        if (hasHistory) {
+            historyManager_->recordHistory(state, configurationBeforeExit);
+        }
+    }
+    exitState(state);
+}
 
-                    TransitionResult result;
-                    result.success = true;
-                    result.fromState = fromState;
-                    result.toState = fromState;  // Same state (internal transition)
-                    result.eventName = eventName;
-                    return result;
-                }
+void StateMachine::exitState(const std::string &state) {
+    // §scxml-D-exitStates: the state's onexit content, then cancel the
+    // invocations it started, then it leaves the configuration.
+    executeExitActions(state);
+    cancelInvokesOf(state);
+    hierarchyManager_->removeStateFromConfiguration(state);
+}
 
-                // Case 2: Internal transition with target (test 505, 533)
-                // §scxml-3.13: "if the transition has 'type' "internal", its source state is a compound state
-                // and all its target states are proper descendents of its source state"
+void StateMachine::cancelInvokesOf(const std::string &state) {
+    IStateNode *node = document_ ? document_->nodeOf(state) : nullptr;
+    if (!node || !invokeExecutor_) {
+        return;
+    }
+    for (const auto &invoke : node->getInvoke()) {
+        const std::string &invokeid = invoke->getId();
+        if (invokeid.empty()) {
+            SCE_LOG_WARN("StateMachine::cancelInvokesOf - Found invoke with empty ID in state '{}'", state);
+            continue;
+        }
+        if (invokeExecutor_->isInvokeActive(invokeid)) {
+            SCE_LOG_DEBUG("StateMachine: Cancelling active invoke '{}' due to state exit: {}", invokeid, state);
+            invokeExecutor_->cancelInvoke(invokeid);
+        } else {
+            SCE_LOG_DEBUG("StateMachine: NOT cancelling inactive invoke '{}' (may be completing naturally)", invokeid);
+        }
+    }
+}
 
-                // §scxml-3.13 (test 533): Check if source state is compound
-                // If source is not compound (e.g., parallel, atomic), treat as external
-                auto sourceNode = model_->findStateById(fromState);
-                if (sourceNode && sourceNode->getType() != Type::COMPOUND) {
-                    SCE_LOG_WARN("StateMachine: Internal transition source '{}' is not a compound state (type: {}) - "
-                                 "treating as external per W3C SCXML 3.13",
-                                 fromState, static_cast<int>(sourceNode->getType()));
-                    isInternal = false;
-                }
+void StateMachine::enterStateInMicrostep(const std::string &state, bool isDefaultEntry) {
+    // §scxml-D-enterStates: the state joins the configuration and the states
+    // whose invokes run once the macrostep is complete; under late binding
+    // its data is initialized on first entry; then its onentry content, and
+    // its initial transition's content if and only if it is entered by
+    // default.
+    hierarchyManager_->addStateToConfigurationWithoutOnEntry(state);
+    IStateNode *node = document_->nodeOf(state);
+    if (!node) {
+        SCE_LOG_ERROR("StateMachine: entered state '{}' is not in the document", state);
+        return;
+    }
 
-                // VALIDATION: Check all targets before making any state changes
-                // This ensures atomic transition semantics - either all succeed or none
-                for (const auto &target : targets) {
-                    // Check 1: Target state node must exist
-                    auto targetNode = model_->findStateById(target);
-                    if (!targetNode) {
-                        SCE_LOG_ERROR("Internal transition target state not found: {}", target);
-                        TransitionResult result;
-                        result.success = false;
-                        result.fromState = fromState;
-                        result.eventName = eventName;
-                        result.errorMessage = "Internal transition target state not found: " + target;
-                        return result;
-                    }
+    deferInvokeExecution(state, node->getInvoke());
 
-                    // Check 2: Target must be a proper descendant of source
-                    if (!isDescendant(target, fromState)) {
-                        SCE_LOG_WARN(
-                            "StateMachine: Internal transition target '{}' is not a descendant of source '{}' - "
-                            "treating as external",
-                            target, fromState);
-                        isInternal = false;
-                        break;
-                    }
-                }
+    if (dataModelInit_) {
+        dataModelInit_->initializeStateDataOnEntry(state);
+    }
 
-                // If validation passed, proceed with internal transition
-                if (isInternal) {
-                    // Valid internal transition with target
-                    // Exit only the descendants, not the source state itself
-                    SCE_LOG_DEBUG("StateMachine: Executing internal transition with target: {} -> {}", fromState,
-                                  targetState);
+    executeOnEntryActions(state);
 
-                    // §scxml-3.13: Exit active descendants of source that need to be exited
-                    // For test 505: s11 is active and must be exited before entering again
-                    // Use helper method to build exit set (reduces code duplication)
-                    std::vector<std::string> exitSet = buildExitSetForDescendants(fromState, false);
-
-                    // Exit descendant states
-                    for (const auto &stateToExit : exitSet) {
-                        if (!exitState(stateToExit)) {
-                            SCE_LOG_ERROR("Failed to exit state: {}", stateToExit);
-                            inTransition_ = false;  // Clear flag on error
-                            TransitionResult result;
-                            result.success = false;
-                            result.fromState = fromState;
-                            result.eventName = eventName;
-                            result.errorMessage = "Failed to exit state: " + stateToExit;
-                            return result;
-                        }
-                    }
-
-                    // Execute transition actions
-                    const auto &actionNodes = transitionNode->getActionNodes();
-                    if (!actionNodes.empty()) {
-                        SCE_LOG_DEBUG("StateMachine: Executing internal transition actions");
-                        executeActionNodes(actionNodes, false);
-                    }
-
-                    // §scxml-3.13: Enter target state(s) without re-entering source state
-                    // For internal transitions, use enterStateWithAncestors to prevent source re-entry
-                    SCE_LOG_DEBUG("StateMachine: Before entering target states, active states: {}", [this]() {
-                        auto states = hierarchyManager_->getActiveStates();
-                        std::string result;
-                        for (const auto &s : states) {
-                            if (!result.empty()) {
-                                result += ", ";
-                            }
-                            result += s;
-                        }
-                        return result;
-                    }());
-
-                    auto sourceNode = model_->findStateById(fromState);
-                    if (!sourceNode) {
-                        SCE_LOG_ERROR("Source state node not found: {}", fromState);
-                        TransitionResult result;
-                        result.success = false;
-                        result.fromState = fromState;
-                        result.eventName = eventName;
-                        result.errorMessage = "Source state node not found: " + fromState;
-                        return result;
-                    }
-
-                    for (const auto &target : targets) {
-                        SCE_LOG_DEBUG("StateMachine: Entering target state '{}' with stopAtParent='{}'", target,
-                                      fromState);
-                        // Use enterStateWithAncestors with stopAtParent=source to prevent source re-entry
-                        if (!hierarchyManager_->enterStateWithAncestors(target, sourceNode, nullptr)) {
-                            SCE_LOG_ERROR("Failed to enter target state: {}", target);
-                            TransitionResult result;
-                            result.success = false;
-                            result.fromState = fromState;
-                            result.eventName = eventName;
-                            result.errorMessage = "Failed to enter target state: " + target;
-                            return result;
-                        }
-                    }
-
-                    // Check for eventless transitions after entering target
-                    checkEventlessTransitions();
-
-                    SCE_LOG_DEBUG("StateMachine: After internal transition, active states: {}", [this]() {
-                        auto states = hierarchyManager_->getActiveStates();
-                        std::string result;
-                        for (const auto &s : states) {
-                            if (!result.empty()) {
-                                result += ", ";
-                            }
-                            result += s;
-                        }
-                        return result;
-                    }());
-
-                    TransitionResult result;
-                    result.success = true;
-                    result.fromState = fromState;
-                    result.toState = targetState;  // Target state entered
-                    result.eventName = eventName;
-                    return result;
-                }
-            }
-
-            // W3C SCXML Test 252: CRITICAL check before transition execution
-            // Self-referential race: This event might trigger transition that cancels its own source invoke
-            // Check cancelled status RIGHT BEFORE executing transition to catch mid-processing cancellations
-            if (invokeExecutor_ && !currentOriginSessionId_.empty()) {
-                if (invokeExecutor_->shouldFilterCancelledInvokeEvent(currentOriginSessionId_)) {
-                    SCE_LOG_DEBUG(
-                        "StateMachine: [PRE-TRANSITION CHECK] Filtering event '{}' from cancelled invoke child "
-                        "session: {} (would have executed: {} -> {})",
-                        eventName, currentOriginSessionId_, fromState, targetState);
-                    TransitionResult result;
-                    result.success = false;
-                    result.fromState = fromState;
-                    result.toState = fromState;  // Stay in current state
-                    result.eventName = eventName;
-                    return result;
-                }
-            }
-
-            SCE_LOG_DEBUG("Executing SCXML compliant transition from {} to {}", fromState, targetState);
-
-            // Set transition context flag (for history recording in exitState)
-            // RAII guard ensures flag is cleared on all exit paths (normal return, error, exception)
-            TransitionGuard transitionGuard(inTransition_);
-
-            // §scxml-3.13: Compute exit set and LCA in one call (optimization: avoid duplicate LCA calculation)
-            ExitSetResult exitSetResult = computeExitSet(fromState, targetState);
-            SCE_LOG_DEBUG("W3C SCXML: Exiting {} states for transition {} -> {}", exitSetResult.states.size(),
-                          fromState, targetState);
-
-            // §scxml-3.10: Record history BEFORE exiting states (test 388)
-            // History must be recorded while all descendants are still active
-            // Optimization: Only record for states that actually have history children
-            if (historyManager_ && hierarchyManager_) {
-                auto currentActiveStates = hierarchyManager_->getActiveStates();
-                for (const std::string &stateToExit : exitSetResult.states) {
-                    auto stateNode = model_->findStateById(stateToExit);
-                    if (stateNode &&
-                        (stateNode->getType() == Type::COMPOUND || stateNode->getType() == Type::PARALLEL)) {
-                        // Check if this state has history children
-                        bool hasHistoryChildren = false;
-                        for (const auto &child : stateNode->getChildren()) {
-                            if (child->getType() == Type::HISTORY) {
-                                hasHistoryChildren = true;
-                                break;
-                            }
-                        }
-
-                        // Only record history if this state has history children
-                        if (hasHistoryChildren) {
-                            bool recorded = historyManager_->recordHistory(stateToExit, currentActiveStates);
-                            if (recorded) {
-                                SCE_LOG_DEBUG("Pre-recorded history for state '{}' before exit", stateToExit);
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Exit states in the exit set (already in correct order: deepest first)
-            for (const std::string &stateToExit : exitSetResult.states) {
-                if (!exitState(stateToExit)) {
-                    SCE_LOG_ERROR("Failed to exit state: {}", stateToExit);
-                    // TransitionGuard will automatically clear inTransition_ flag on return
-                    TransitionResult result;
-                    result.success = false;
-                    result.fromState = fromState;
-                    result.eventName = eventName;
-                    result.errorMessage = "Failed to exit state: " + stateToExit;
-                    return result;
-                }
-            }
-
-            // Execute transition actions (SCXML W3C specification)
-            // W3C compliance: Events raised in transition actions must be queued, not processed immediately
-            const auto &actionNodes = transitionNode->getActionNodes();
-            if (!actionNodes.empty()) {
-                // §scxml-5.10: Protect _event during transition action execution (Test 230)
-                // Save current event context before executing actions to prevent corruption by nested events
-                EventMetadata savedEvent;
-                if (actionExecutor_) {
-                    auto actionExecutorImpl = std::dynamic_pointer_cast<ActionExecutorImpl>(actionExecutor_);
-                    if (actionExecutorImpl) {
-                        savedEvent = actionExecutorImpl->getCurrentEvent();
-                    }
-                }
-
-                SCE_LOG_DEBUG("StateMachine: Executing transition actions (events will be queued)");
-                // processEventsAfter=false: Don't process events yet, they will be handled in macrostep loop
-                executeActionNodes(actionNodes, false);
-
-                // §scxml-5.10: Restore _event after transition action execution
-                if (actionExecutor_) {
-                    auto actionExecutorImpl = std::dynamic_pointer_cast<ActionExecutorImpl>(actionExecutor_);
-                    if (actionExecutorImpl) {
-                        actionExecutorImpl->setCurrentEvent(savedEvent);
-                        SCE_LOG_DEBUG("StateMachine: Restored _event after transition actions (name='{}', data='{}')",
-                                      savedEvent.name, savedEvent.data);
-                    }
-                }
-            } else {
-                SCE_LOG_DEBUG("StateMachine: No transition actions for this transition");
-            }
-
-            // §scxml-3.13: Compute enter set - all states from LCA (exclusive) to target (inclusive)
-            // Special case: history states use enterStateWithAncestors(), so skip enter set
-            std::vector<std::string> enterSet;
-            bool isHistoryTarget = historyManager_ && historyManager_->isHistoryState(targetState);
-
-            if (!targetState.empty() && model_ && !isHistoryTarget) {
-                auto targetNode = model_->findStateById(targetState);
-                if (targetNode) {
-                    // W3C SCXML: Compute enter set from target up to (not including) LCA
-                    // Special case (test 579): if target == LCA (ancestor transition),
-                    // include target in enter set to ensure onentry is executed
-                    std::vector<std::string> statesToEnter;
-                    IStateNode *current = targetNode;
-
-                    while (current != nullptr) {
-                        std::string currentId = current->getId();
-
-                        // W3C SCXML: Don't include LCA unless it's the target (ancestor transition)
-                        if (currentId == exitSetResult.lca && currentId != targetState) {
-                            break;  // Reached LCA for normal transition, stop without adding it
-                        }
-
-                        // Add state to enter set
-                        statesToEnter.push_back(currentId);
-
-                        // If we just added target==LCA (ancestor transition), stop here
-                        if (currentId == exitSetResult.lca) {
-                            break;
-                        }
-
-                        current = current->getParent();
-                    }
-                    // Reverse to get shallowest first (parent before children)
-                    enterSet.assign(statesToEnter.rbegin(), statesToEnter.rend());
-                }
-            }
-
-            SCE_LOG_DEBUG("W3C SCXML: Entering {} states for transition {} -> {}", enterSet.size(), fromState,
-                          targetState);
-
-            updateStatistics();
-            stats_.totalTransitions++;
-
-            // Track last executed transition for interactive visualizer
-            // IMPORTANT: Set BEFORE enterState() because enterState() may trigger eventless transitions
-            // that will overwrite this value with the correct final transition
-            lastTransitionSource_ = fromState;
-            lastTransitionTarget_ = targetState;
-            lastTransitionIndex_ = indexOfTransitionIn(fromState, transitionNode);
-            SCE_LOG_DEBUG("W3C SCXML 3.13: Event transition executed: {} -> {} (index {})", fromState, targetState,
-                          lastTransitionIndex_);
-
-            // Enter all states in enter set (shallowest first)
-            //
-            // §scxml-D-addAncestorStatesToEnter: every link but the last is an
-            // ANCESTOR of the target, and an ancestor is added WITHOUT its
-            // default initial child — the entry set already holds the next
-            // link. Only the target itself goes through
-            // `addDescendantStatesToEnter`. Passing the next link as
-            // `pathChild` is what expresses that, and it is also what stops a
-            // `<parallel>` ancestor from handing a default to the very region
-            // the chain is descending into.
-            for (size_t entryIdx = 0; entryIdx < enterSet.size(); ++entryIdx) {
-                const std::string &stateToEnter = enterSet[entryIdx];
-                const std::string pathChild = (entryIdx + 1 < enterSet.size()) ? enterSet[entryIdx + 1] : std::string();
-                if (!enterState(stateToEnter, pathChild)) {
-                    SCE_LOG_ERROR("Failed to enter state: {}", stateToEnter);
-                    // TransitionGuard will automatically clear inTransition_ flag on return
-                    TransitionResult result;
-                    result.success = false;
-                    result.fromState = fromState;
-                    result.toState = targetState;
-                    result.eventName = eventName;
-                    result.errorMessage = "Failed to enter state: " + stateToEnter;
-                    return result;
-                }
-            }
-
-            // A `<parallel>` keeps a second copy of its regions'
-            // configurations. The entry set above may have descended into a
-            // region past the point that region entered itself, so sync it —
-            // otherwise the region answers events from a leaf the machine has
-            // already moved off.
-            if (hierarchyManager_ && !enterSet.empty()) {
-                hierarchyManager_->syncParallelRegionStates();
-            }
-
-            // §scxml-3.10: History states handle ancestors automatically via enterStateWithAncestors()
-            if (isHistoryTarget) {
-                if (!enterState(targetState)) {
-                    SCE_LOG_ERROR("Failed to enter history state: {}", targetState);
-                    // TransitionGuard will automatically clear inTransition_ flag on return
-                    TransitionResult result;
-                    result.success = false;
-                    result.fromState = fromState;
-                    result.toState = targetState;
-                    result.eventName = eventName;
-                    result.errorMessage = "Failed to enter history state: " + targetState;
-                    return result;
-                }
-            }
-
-            SCE_LOG_INFO("Successfully transitioned from {} to {}", fromState, targetState);
-
-            // W3C SCXML compliance: Macrostep loop - check for eventless transitions
-            // After a transition completes, we must check for eventless transitions
-            // that may have been enabled by the state change. Repeat until no
-            // eventless transitions are found. Queued events are processed by
-            // processQueuedEvents() in FIFO order to maintain event ordering guarantees.
-            if (eventRaiser_) {
-                SCE_LOG_DEBUG("W3C SCXML: Starting macrostep loop after transition");
-
-                // The chain the clause describes may have no end. The budget
-                // lives on `checkEventlessTransitions` itself, and is a member
-                // rather than a loop counter because the chain is recursive, so
-                // this loop ends either at a stable configuration or at the
-                // ceiling — and `truncatedMacrosteps` says which.
-
-                while (true) {
-                    // W3C SCXML: Check for eventless transitions on all active states
-                    bool eventlessTransitionExecuted = checkEventlessTransitions();
-
-                    if (eventlessTransitionExecuted) {
-                        SCE_LOG_DEBUG("W3C SCXML: Eventless transition executed, continuing macrostep");
-                        continue;  // Loop back to check for more eventless transitions
-                    }
-
-                    // W3C SCXML: No eventless transitions found, exit macrostep
-                    // Queued events will be processed by processQueuedEvents() in FIFO order
-                    SCE_LOG_DEBUG("W3C SCXML: No eventless transitions, macrostep complete");
-                    break;
-                }
-
-                SCE_LOG_DEBUG("W3C SCXML: Macrostep loop complete");
-            }
-
-            // TransitionGuard will automatically clear inTransition_ flag on return
-            // Note: executePendingInvokes() is NOT called here to prevent recursive deadlock
-            // when child invokes send events to parent during initialization (§scxml-6.4)
-            // Invokes are executed only at top-level macrostep boundaries in start()
-            return TransitionResult(true, fromState, targetState, eventName);
+    if (isDefaultEntry) {
+        if (const auto initialTransition = node->getInitialTransition()) {
+            executeActionNodes(initialTransition->getActionNodes());
         }
     }
 
-    // No valid transitions found
-    SCE_LOG_DEBUG("No valid transitions found for event: {} from state: {}", eventName, stateNode->getId());
+    if (node->getType() == Type::FINAL) {
+        enterFinalState(state);
+    }
+}
 
-    // Note: Failed transition counter is managed at processEvent() level to avoid double counting
+void StateMachine::enterFinalState(const std::string &finalState) {
+    const auto parent = document_->parentOf(finalState);
+    if (!parent) {
+        // §scxml-D-enterStates: a `<final>` child of `<scxml>` ends the
+        // interpretation. Its donedata is what a parent session's
+        // done.invoke carries (§scxml-6.4.3), stashed here for the
+        // completion callback that runs once the microstep is over.
+        pendingDonedataAtFinal_.clear();
+        pendingTypedDonedataAtFinal_.reset();
+        (void)evaluateDoneData(finalState, pendingDonedataAtFinal_, pendingTypedDonedataAtFinal_);
+        topLevelFinalReached_ = true;
+        isRunning_ = false;
+        SCE_LOG_INFO("StateMachine: Reached top-level final state: {}, halting processing", finalState);
+        return;
+    }
 
-    TransitionResult result;
-    result.success = false;
-    result.fromState = getCurrentState();
-    result.eventName = eventName;
-    result.errorMessage = "No valid transitions found";
-    return result;
+    // §scxml-D-enterStates: done.state.<parent>, carrying the `<final>`'s
+    // donedata; and when the grandparent is a `<parallel>` every region of
+    // which is now in a final state, done.state.<grandparent>. A structural
+    // error in the donedata raises error.execution and neither event, the
+    // same answer the generated engines give.
+    std::string eventData;
+    std::optional<ScriptValue> typedData;
+    if (!evaluateDoneData(finalState, eventData, typedData)) {
+        SCE_LOG_DEBUG("W3C SCXML 5.7: Donedata evaluation failed, skipping done.state event generation");
+        return;
+    }
+    raiseInternal("done.state." + *parent, eventData, std::move(typedData));
+
+    const auto grandparent = document_->parentOf(*parent);
+    if (grandparent && document_->isParallel(*grandparent) && stateIsInFinalState(*grandparent)) {
+        raiseInternal("done.state." + *grandparent, "", std::nullopt);
+    }
+}
+
+void StateMachine::raiseInternal(const std::string &eventName, const std::string &eventData,
+                                 std::optional<ScriptValue> typedData) {
+    if (!eventRaiser_) {
+        SCE_LOG_WARN("StateMachine: Cannot queue {} - no event raiser", eventName);
+        return;
+    }
+    // §scxml-5.5: typed data rides the engine-agnostic ScriptValue pipeline
+    auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
+    if (eventRaiserImpl && typedData.has_value()) {
+        eventRaiserImpl->raiseEventWithPriority(eventName, eventData, EventRaiserImpl::EventPriority::INTERNAL, "", "",
+                                                "", "", 0, std::move(typedData));
+    } else {
+        eventRaiser_->raiseEvent(eventName, eventData);
+    }
+    SCE_LOG_DEBUG("W3C SCXML: Queued {}", eventName);
+}
+
+void StateMachine::executeTransitionContent(const Transition &transition) {
+    IStateNode *node = document_->nodeOf(transition.source);
+    if (!node) {
+        return;
+    }
+    const auto &transitions = node->getTransitions();
+    if (transition.transitionIndex < 0 || static_cast<size_t>(transition.transitionIndex) >= transitions.size()) {
+        return;
+    }
+    executeActionNodes(transitions[static_cast<size_t>(transition.transitionIndex)]->getActionNodes());
+}
+
+void StateMachine::executeHistoryDefaultContent(const std::string &history) {
+    IStateNode *node = document_->nodeOf(history);
+    if (!node || node->getTransitions().empty()) {
+        return;
+    }
+    executeActionNodes(node->getTransitions().front()->getActionNodes());
+}
+
+bool StateMachine::stateIsInFinalState(const std::string &state) const {
+    const std::vector<std::string> configuration =
+        hierarchyManager_ ? hierarchyManager_->getActiveStates() : std::vector<std::string>{};
+    return Core::CompletionAlgorithms::isInFinalState(
+        state, configuration, [this](const std::string &s) { return document_->parentOf(s); },
+        [this](const std::string &s) { return document_->isParallel(s); },
+        [this](const std::string &s) { return document_->childStates(s); },
+        [this](const std::string &s) { return document_->isFinal(s); });
+}
+
+std::vector<std::string> StateMachine::configurationInExitOrder() const {
+    std::vector<std::string> states =
+        hierarchyManager_ ? hierarchyManager_->getActiveStates() : std::vector<std::string>{};
+    if (!document_) {
+        return states;
+    }
+    // Exit order: descendants before their ancestors, reverse document order
+    // among the rest — together, exactly reverse document order.
+    std::sort(states.begin(), states.end(), [this](const std::string &a, const std::string &b) {
+        return document_->documentOrder(a) > document_->documentOrder(b);
+    });
+    return states;
+}
+
+void StateMachine::finishAtTopLevelFinal() {
+    topLevelFinalReached_ = false;
+    // §scxml-D-exitInterpreter: the machine has entered a top-level `<final>`,
+    // so the interpretation is over — every active state's onexit runs and
+    // its invocations are cancelled, then the parent session is told
+    // (§scxml-6.4.3: done.invoke only after the onexit handlers). The
+    // configuration itself is kept: it is what a host reads to learn where
+    // the machine stopped.
+    for (const auto &state : configurationInExitOrder()) {
+        if (!executeExitActions(state)) {
+            SCE_LOG_WARN("StateMachine: Failed to execute onexit for final state: {}", state);
+        }
+        cancelInvokesOf(state);
+    }
+    recordUnseenQueuedEvents();
+
+    if (completionCallback_) {
+        try {
+            completionCallback_();
+        } catch (const std::exception &e) {
+            SCE_LOG_ERROR("StateMachine: Exception in completion callback: {}", e.what());
+        }
+    }
+}
+
+void StateMachine::recordUnseenQueuedEvents() {
+    // §scxml-D-exitInterpreter: the loop that would have taken these has
+    // ended. An external event still queued was never looked at, which is
+    // what `Statistics::unseenExternalEvents` counts; an internal one has both
+    // ends inside this document, and ends with it. Emptied rather than left:
+    // a host that went on pumping this raiser would hand each one to a machine
+    // that refuses it, and it would be counted again — as an external event,
+    // whichever queue it was on.
+    if (!eventRaiser_) {
+        return;
+    }
+    while (const std::optional<EventMetadata> unseen = eventRaiser_->takeQueuedEvent(EventQueue::External)) {
+        noteUnseenEvent(unseen->name);
+    }
+    while (eventRaiser_->takeQueuedEvent(EventQueue::Internal)) {
+        // Nothing to report: the document raised it, and the document is done.
+    }
 }
 
 std::string StateMachine::getCurrentState() const {
@@ -1968,16 +1164,7 @@ std::vector<std::string> StateMachine::getActiveStates() const {
         return {};
     }
 
-    auto states = hierarchyManager_->getActiveStates();
-    std::string statesStr;
-    for (const auto &s : states) {
-        if (!statesStr.empty()) {
-            statesStr += ", ";
-        }
-        statesStr += s;
-    }
-    SCE_LOG_DEBUG("[GET ACTIVE STATES] Returning {} states from hierarchyManager: [{}]", states.size(), statesStr);
-    return states;
+    return hierarchyManager_->getActiveStates();
 }
 
 bool StateMachine::isRunning() const {
@@ -2043,32 +1230,6 @@ bool StateMachine::isInFinalState() const {
 
 int StateMachine::getLastTransitionIndex() const {
     return lastTransitionIndex_;
-}
-
-/**
- * Where this transition sits in its source state's list.
- *
- * ⭐ By POINTER identity, not by comparing events, targets and guards. Those
- * are exactly the fields that fail to tell two transitions apart — the whole
- * reason this index exists — so matching on them would reproduce the defect
- * one layer down.
- */
-int StateMachine::indexOfTransitionIn(const std::string &stateId,
-                                      const std::shared_ptr<ITransitionNode> &transition) const {
-    if (!model_ || !transition) {
-        return -1;
-    }
-    auto state = model_->findStateById(stateId);
-    if (!state) {
-        return -1;
-    }
-    const auto &transitions = state->getTransitions();
-    for (size_t i = 0; i < transitions.size(); ++i) {
-        if (transitions[i] == transition) {
-            return static_cast<int>(i);
-        }
-    }
-    return -1;
 }
 
 std::string StateMachine::getLastTransitionSource() const {
@@ -2329,7 +1490,7 @@ StateMachine::Statistics StateMachine::getStatistics() const {
     // §scxml-B-2-8-1: counted here rather than in the executor because the
     // executor binds one event at a time and has nowhere to keep a tally,
     // while this is the object a host holds. The executor answers which rung
-    // the LAST binding took; `setCurrentEvent` below turns that into a count.
+    // the LAST binding took; `bindCurrentEvent` turns that into a count.
     stats.undecodablePayloads = undecodablePayloads_;
     stats.lastUndecodablePayloadEvent = lastUndecodablePayloadEvent_;
     // §scxml-3.13: events handed to a machine that had already stopped. This
@@ -2344,26 +1505,6 @@ StateMachine::Statistics StateMachine::getStatistics() const {
 bool StateMachine::initializeFromModel() {
     SCE_LOG_DEBUG("StateMachine: Initializing from SCXML model");
 
-    // Clear existing state
-    initialState_.clear();
-
-    // Get initial state
-    initialState_ = model_->getInitialState();
-
-    // §scxml-3.2: If no initial attribute, use first state in document order
-    if (initialState_.empty()) {
-        const auto &allStates = model_->getAllStates();
-        if (allStates.empty()) {
-            SCE_LOG_ERROR("StateMachine: No states found in SCXML model");
-            return false;
-        }
-
-        // Auto-select first state in document order (§scxml-3.2 compliance)
-        initialState_ = allStates[0]->getId();
-        SCE_LOG_DEBUG("StateMachine: No initial attribute found, auto-selected first state in document order: '{}'",
-                      initialState_);
-    }
-
     // Extract all states from the model
     const auto &allStates = model_->getAllStates();
     if (allStates.empty()) {
@@ -2372,38 +1513,16 @@ bool StateMachine::initializeFromModel() {
     }
 
     try {
-        // Initialize hierarchy manager for hierarchical state support
+        // The document as Appendix D reads it: document order, child states,
+        // initial targets and history defaults, answered once.
+        document_ = std::make_unique<InterpreterDocument>(*model_);
+        if (document_->documentInitialTargets().empty()) {
+            SCE_LOG_ERROR("StateMachine: The document names no initial state and holds no state to default to");
+            return false;
+        }
+
+        // The configuration
         hierarchyManager_ = std::make_unique<StateHierarchyManager>(model_);
-
-        // §scxml-3.13: Initialize transition domain calculator
-        transitionDomain_ = std::make_unique<TransitionDomainCalculator>(model_, hierarchyManager_.get());
-
-        // Set up onentry callback for W3C SCXML compliance
-        SCE_LOG_DEBUG("StateMachine: Setting up onentry callback for StateHierarchyManager");
-        hierarchyManager_->setOnEntryCallback([this](const std::string &stateId) {
-            SCE_LOG_DEBUG("StateMachine: Onentry callback triggered for state: {}", stateId);
-            executeOnEntryActions(stateId);
-        });
-        SCE_LOG_DEBUG("StateMachine: Onentry callback successfully configured");
-
-        // §scxml-6.4: Set up invoke defer callback for proper timing in parallel states
-        SCE_LOG_DEBUG("StateMachine: Setting up invoke defer callback for StateHierarchyManager");
-        hierarchyManager_->setInvokeDeferCallback(
-            [this](const std::string &stateId, const std::vector<std::shared_ptr<IInvokeNode>> &invokes) {
-                SCE_LOG_DEBUG("StateMachine: Invoke defer callback triggered for state: {} with {} invokes", stateId,
-                              invokes.size());
-                deferInvokeExecution(stateId, invokes);
-            });
-        SCE_LOG_DEBUG("StateMachine: Invoke defer callback successfully configured");
-
-        // W3C SCXML: Set up condition evaluator callback for transition guard evaluation in parallel states
-        SCE_LOG_DEBUG("StateMachine: Setting up condition evaluator callback for StateHierarchyManager");
-        hierarchyManager_->setConditionEvaluator(
-            [this](const std::string &condition) -> bool { return evaluateCondition(condition); });
-        SCE_LOG_DEBUG("StateMachine: Condition evaluator callback successfully configured");
-
-        // Set up completion callbacks for parallel states (SCXML W3C compliance)
-        setupParallelStateCallbacks();
 
         // SCXML W3C Section 3.6: Auto-register history states from parsed model (SOLID architecture)
         initializeHistoryAutoRegistrar();
@@ -2411,7 +1530,6 @@ bool StateMachine::initializeFromModel() {
             historyAutoRegistrar_->autoRegisterHistoryStates(model_, historyManager_.get());
         }
 
-        SCE_LOG_DEBUG("Model initialized with initial state: {}", initialState_);
         SCE_LOG_INFO("Model initialized with {} states", allStates.size());
         return true;
     } catch (const std::exception &e) {
@@ -2459,380 +1577,6 @@ bool StateMachine::evaluateCondition(const std::string &condition) {
     }
 }
 
-bool StateMachine::enterState(const std::string &stateId, const std::string &pathChild) {
-    SCE_LOG_DEBUG("[ENTER STATE CALLED] State: {}, isRunning: {}", stateId, isRunning_.load());
-    SCE_LOG_DEBUG("Entering state: {}", stateId);
-
-    // RAII guard against invalid reentrant calls
-    // Automatically handles legitimate reentrant calls during event processing
-    EnterStateGuard guard(isEnteringState_, isProcessingEvent_);
-
-    // Early return for invalid reentrant calls (matches original behavior)
-    if (guard.isInvalidCall()) {
-        SCE_LOG_DEBUG("Invalid reentrant enterState call detected, ignoring: {}", stateId);
-        return true;  // Return success to avoid breaking transition chain
-    }
-
-    // Check if this is a history state and handle restoration (SCXML W3C specification section 3.6)
-    if (historyManager_ && historyManager_->isHistoryState(stateId)) {
-        SCE_LOG_INFO("Entering history state: {}", stateId);
-
-        // §scxml-3.10: Restore history configuration and enter target states with ancestors
-        auto restorationResult = historyManager_->restoreHistory(stateId);
-        if (restorationResult.success && !restorationResult.targetStateIds.empty()) {
-            SCE_LOG_INFO("History restoration successful, entering {} target states",
-                         restorationResult.targetStateIds.size());
-
-            // §scxml-3.10 (test 579): Execute default transition actions BEFORE entering target state
-            // "The processor MUST execute any executable content in the transition...
-            //  However the Processor MUST execute this content only if there is no stored history"
-            bool hasRecordedHistory = restorationResult.isRestoredFromRecording;
-            if (!hasRecordedHistory && model_) {
-                auto historyStateNode = model_->findStateById(stateId);
-                if (historyStateNode) {
-                    const auto &transitions = historyStateNode->getTransitions();
-                    if (!transitions.empty()) {
-                        // History state should have exactly one default transition
-                        const auto &defaultTransition = transitions[0];
-                        const auto &actions = defaultTransition->getActionNodes();
-                        if (!actions.empty()) {
-                            SCE_LOG_DEBUG(
-                                "W3C SCXML 3.10: Executing {} default transition actions for history state {}",
-                                actions.size(), stateId);
-                            executeActionNodes(actions, "history default transition");
-                        }
-                    }
-                }
-            }
-
-            // Release guard before entering target states (allows recursive enterState calls)
-            guard.release();
-
-            // Enter all target states from history restoration
-            // Use enterStateWithAncestors to ensure parent states are entered (test 387)
-            bool allSucceeded = true;
-            for (const auto &targetStateId : restorationResult.targetStateIds) {
-                if (hierarchyManager_) {
-                    // Enter target state along with all its ancestors
-                    if (!hierarchyManager_->enterStateWithAncestors(targetStateId, nullptr)) {
-                        SCE_LOG_ERROR("Failed to enter restored target state with ancestors: {}", targetStateId);
-                        allSucceeded = false;
-                    }
-                } else {
-                    // Fallback: use regular enterState if hierarchyManager not available
-                    if (!enterState(targetStateId)) {
-                        SCE_LOG_ERROR("Failed to enter restored target state: {}", targetStateId);
-                        allSucceeded = false;
-                    }
-                }
-            }
-
-            return allSucceeded;
-        } else {
-            SCE_LOG_ERROR("History restoration failed: {}", restorationResult.errorMessage);
-            // Guard will auto-clear on scope exit
-            return false;
-        }
-    }
-
-    // SCXML W3C specification: hierarchy manager is required for compliant state entry
-    assert(hierarchyManager_ && "SCXML violation: hierarchy manager required for state management");
-
-    // §scxml-5.3: Late binding - delegate to DataModelInitializer
-    if (dataModelInit_) {
-        dataModelInit_->initializeStateDataOnEntry(stateId);
-    }
-
-    // Hot path: per-state-entry (~600 hits per W3C harness run). Trace-only
-    // so Debug keeps enterState summaries, not the hierarchyManager round-trip.
-    SCE_LOG_TRACE("[ENTER STATE DEBUG] About to call hierarchyManager_->enterState('{}') (Test 570 debug)", stateId);
-    bool hierarchyResult = hierarchyManager_->enterState(stateId, pathChild);
-    SCE_LOG_TRACE("[ENTER STATE DEBUG] hierarchyManager_->enterState('{}') returned {} (Test 570 debug)", stateId,
-                  hierarchyResult);
-    assert(hierarchyResult && "SCXML violation: state entry must succeed");
-    (void)hierarchyResult;  // Suppress unused variable warning in release builds
-
-    // SCXML W3C 3.4: For parallel states, activate regions AFTER parent onentry executed
-    // This ensures correct entry sequence: parallel onentry -> child onentry
-    if (model_) {
-        auto stateNode = model_->findStateById(stateId);
-        if (stateNode && stateNode->getType() == Type::PARALLEL) {
-            auto parallelState = dynamic_cast<ConcurrentStateNode *>(stateNode);
-            if (parallelState) {
-                // Set ExecutionContext for region action execution
-                if (executionContext_) {
-                    parallelState->setExecutionContextForRegions(executionContext_);
-                    SCE_LOG_DEBUG("SCXML compliant: Injected ExecutionContext into parallel state regions: {}",
-                                  stateId);
-                }
-
-                // §scxml-3.4: Activate all regions AFTER parallel state entered
-                // §scxml-D-addAncestorStatesToEnter: not the region the entry
-                // set is already descending into — the caller enters that one
-                // with the target's own path.
-                auto activationResults = parallelState->activateAllRegions(pathChild);
-                for (const auto &result : activationResults) {
-                    if (!result.isSuccess) {
-                        SCE_LOG_ERROR("Failed to activate region '{}': {}", result.regionId, result.errorMessage);
-                    } else {
-                        SCE_LOG_DEBUG("SCXML W3C: Activated region '{}' in parallel state '{}'", result.regionId,
-                                      stateId);
-                    }
-                }
-
-                // Check if all regions immediately reached final state (for done.state event)
-                const auto &regions = parallelState->getRegions();
-                bool allInFinalState =
-                    !regions.empty() && std::all_of(regions.begin(), regions.end(), [](const auto &region) {
-                        return region && region->isInFinalState();
-                    });
-
-                if (allInFinalState) {
-                    SCE_LOG_DEBUG(
-                        "SCXML W3C 3.4: All parallel regions in final state, triggering done.state event for {}",
-                        stateId);
-                    handleParallelStateCompletion(stateId);
-                }
-            }
-        }
-    }
-
-    // SCXML W3C macrostep compliance: Check if reentrant transition occurred during state entry
-    // This handles cases where onentry actions cause immediate transitions
-    std::string actualCurrentState = getCurrentState();
-    SCE_LOG_DEBUG("StateMachine: After entering '{}', getCurrentState() returns '{}'", stateId, actualCurrentState);
-    if (actualCurrentState != stateId) {
-        SCE_LOG_DEBUG("SCXML macrostep: State transition occurred during entry (expected: {}, actual: {})", stateId,
-                      actualCurrentState);
-        SCE_LOG_DEBUG("This indicates a valid internal transition (e.g., compound state entering initial child) - must "
-                      "check eventless");
-
-        // §scxml-3.7: Check if actualCurrentState is a final state and generate done.state event
-        // This handles compound states with initial attribute pointing to final child (test 372)
-        if (model_) {
-            auto currentStateNode = model_->findStateById(actualCurrentState);
-            if (currentStateNode && currentStateNode->isFinalState()) {
-                SCE_LOG_DEBUG(
-                    "W3C SCXML 3.7: Current state '{}' is final, generating done.state event before early return",
-                    actualCurrentState);
-                handleCompoundStateFinalChild(actualCurrentState);
-            }
-        }
-
-        // IMPORTANT: Release guard before checking eventless transitions
-        guard.release();
-
-        // §scxml-3.3: Skip eventless transition check during initial configuration entry
-        // This prevents premature transitions before all initial states are entered
-        if (!isEnteringInitialConfiguration_) {
-            // W3C SCXML: Check eventless transitions even on early return (initial child may have eventless
-            // transitions)
-            checkEventlessTransitions();
-        }
-        return true;
-    }
-
-    // W3C SCXML: onentry actions (including invokes) are executed via callback from StateHierarchyManager
-    // This ensures proper execution order per W3C specification
-
-    // NOTE: _state is not a W3C SCXML standard system variable (only _event, _sessionid, _name, _ioprocessors, _x
-    // exist) Setting _state here causes issues with invoke lifecycle when child sessions terminate Removed to comply
-    // with §scxml-5.10 specification
-
-    SCE_LOG_DEBUG("Successfully entered state using hierarchy manager: {} (current: {})", stateId, getCurrentState());
-
-    // §scxml-3.13: "If it has entered a final state that is a child of scxml, it MUST halt processing"
-    // §scxml-6.4.3: Invoke completion callback for invoked child StateMachines
-    // IMPORTANT: ALL StateMachines must halt, but only invoked ones call completionCallback
-    // IMPORTANT: Parallel states are NOT final states, even when all regions complete
-    if (model_) {
-        auto stateNode = model_->findStateById(actualCurrentState);
-        if (stateNode && stateNode->isFinalState() && stateNode->getType() != SCE::Type::PARALLEL) {
-            // Check if this is a top-level final state by checking parent chain
-            // Top-level states have no parent or parent is the <scxml> root element
-            // We need to traverse up to ensure we're not in a parallel region
-            auto parent = stateNode->getParent();
-            bool isTopLevel = false;
-
-            // §scxml-3.13: "a final state that is a child of scxml"
-            // Top-level means parent is directly the <scxml> root element
-            if (!parent) {
-                // No parent means root-level final state
-                isTopLevel = true;
-            } else if (parent->getId() == "scxml") {
-                // Parent is <scxml> root - this is top-level
-                isTopLevel = true;
-            }
-            // All other cases (nested in compound states, parallel regions, etc.) are NOT top-level
-
-            if (isTopLevel) {
-                SCE_LOG_INFO("StateMachine: Reached top-level final state: {}, halting processing (W3C SCXML 3.13)",
-                             actualCurrentState);
-
-                // §scxml-5.5 + 6.4.3: Stash donedata evaluated at top-level `<final>`
-                // so `SCXMLInvokeHandler`'s completion callback can read it back via
-                // `donedataAtFinal()` / `typedDonedataAtFinal()` and populate
-                // `done.invoke.<id>._event.data`. Mirror of
-                // `StaticExecutionEngine::stashDonedataAtFinal` on the AOT side
-                // (generated by `entry_exit_actions.jinja2` at top-level final entry).
-                // `evaluateDoneData` raises `error.execution` itself on structural
-                // errors, so we ignore its boolean return — an empty stash falls
-                // through to an empty `done.invoke` payload, matching AOT behaviour.
-                pendingDonedataAtFinal_.clear();
-                pendingTypedDonedataAtFinal_.reset();
-                (void)evaluateDoneData(actualCurrentState, pendingDonedataAtFinal_, pendingTypedDonedataAtFinal_);
-
-                // §scxml-3.13: MUST halt processing when entering top-level final state
-                isRunning_ = false;
-
-                // W3C SCXML: Execute onexit actions BEFORE generating done.invoke
-                // For top-level final states, onexit runs when state machine completes
-                bool exitResult = executeExitActions(actualCurrentState);
-                if (!exitResult) {
-                    SCE_LOG_WARN("StateMachine: Failed to execute onexit for final state: {}", actualCurrentState);
-                }
-
-                // §scxml-6.4.3: Callback is invoked AFTER onexit handlers execute (for invoked StateMachines)
-                // This ensures correct event order: child events → done.invoke
-                if (completionCallback_) {
-                    try {
-                        completionCallback_();
-                    } catch (const std::exception &e) {
-                        SCE_LOG_ERROR("StateMachine: Exception in completion callback: {}", e.what());
-                    }
-                }
-            }
-        }
-    }
-
-    // §scxml-3.7 & 5.5: Generate done.state event for compound state completion
-    if (model_) {
-        auto stateNode = model_->findStateById(actualCurrentState);
-        if (stateNode && stateNode->isFinalState()) {
-            handleCompoundStateFinalChild(actualCurrentState);
-        }
-    }
-
-    // Release guard - state entry complete
-    guard.release();
-
-    // W3C SCXML: Check for eventless transitions after state entry
-    checkEventlessTransitions();
-
-    return true;
-}
-
-bool StateMachine::executeTransitionDirect(IStateNode *sourceState, std::shared_ptr<ITransitionNode> transition) {
-    if (!sourceState || !transition) {
-        SCE_LOG_ERROR("StateMachine: Invalid parameters for executeTransitionDirect");
-        return false;
-    }
-
-    // Execute the transition directly without re-evaluating its condition
-    // This avoids side effects from conditions with mutations (e.g., ++var1 in W3C test 444)
-    const auto &targets = transition->getTargets();
-    bool isInternal = transition->isInternal();
-
-    if (targets.empty() && !isInternal) {
-        SCE_LOG_DEBUG("SCXML: Skipping transition with no targets (not internal)");
-        return false;
-    }
-
-    std::string targetState = targets.empty() ? "" : targets[0];
-    std::string fromState = sourceState->getId();
-
-    // W3C SCXML: Internal transitions execute actions without exiting/entering states
-    if (isInternal) {
-        SCE_LOG_DEBUG("SCXML: Executing internal eventless transition actions (no state change)");
-        const auto &actionNodes = transition->getActionNodes();
-        if (!actionNodes.empty()) {
-            if (!executeActionNodes(actionNodes, false)) {
-                SCE_LOG_ERROR("StateMachine: Failed to execute internal transition actions");
-                return false;
-            }
-        }
-        return true;
-    }
-
-    // W3C SCXML: Compute and exit ALL states in the exit set
-    ExitSetResult exitSetResult = computeExitSet(fromState, targetState);
-    SCE_LOG_DEBUG("W3C SCXML: Exiting {} states for eventless transition {} -> {}", exitSetResult.states.size(),
-                  fromState, targetState);
-
-    for (const std::string &stateToExit : exitSetResult.states) {
-        if (!exitState(stateToExit)) {
-            SCE_LOG_ERROR("Failed to exit state: {}", stateToExit);
-            return false;
-        }
-    }
-
-    // Execute transition actions
-    const auto &actionNodes = transition->getActionNodes();
-    if (!actionNodes.empty()) {
-        SCE_LOG_DEBUG("SCXML: Executing eventless transition actions");
-        if (!executeActionNodes(actionNodes, false)) {
-            SCE_LOG_ERROR("StateMachine: Failed to execute transition actions");
-            return false;
-        }
-    }
-
-    // §scxml-3.13: Enter states from LCA to target
-    // Special case: history states use enterStateWithAncestors(), so skip enter set
-    std::vector<std::string> enterSet;
-    bool isHistoryTarget = historyManager_ && historyManager_->isHistoryState(targetState);
-
-    if (!targetState.empty() && model_ && !isHistoryTarget) {
-        auto targetNode = model_->findStateById(targetState);
-        if (targetNode) {
-            std::vector<std::string> statesToEnter;
-            IStateNode *current = targetNode;
-            while (current != nullptr) {
-                std::string currentId = current->getId();
-                if (currentId == exitSetResult.lca) {
-                    break;
-                }
-                statesToEnter.push_back(currentId);
-                current = current->getParent();
-            }
-            enterSet.assign(statesToEnter.rbegin(), statesToEnter.rend());
-        }
-    }
-
-    // Enter all states in enter set
-    for (const std::string &stateToEnter : enterSet) {
-        if (!enterState(stateToEnter)) {
-            SCE_LOG_ERROR("Failed to enter state: {}", stateToEnter);
-            return false;
-        }
-    }
-
-    // §scxml-3.10: History states handle ancestors automatically
-    if (isHistoryTarget) {
-        if (!enterState(targetState)) {
-            SCE_LOG_ERROR("Failed to enter history state: {}", targetState);
-            return false;
-        }
-    }
-
-    updateStatistics();
-    stats_.totalTransitions++;
-
-    // Track last executed transition for interactive visualizer
-    // Only update if at deeper recursion level (preserves actual last transition in eventless chains)
-    if (eventlessRecursionDepth_ == 0 || eventlessRecursionDepth_ > lastTransitionDepth_) {
-        lastTransitionSource_ = fromState;
-        lastTransitionTarget_ = targetState;
-        lastTransitionIndex_ = indexOfTransitionIn(fromState, transition);
-        lastTransitionDepth_ = eventlessRecursionDepth_;
-        SCE_LOG_DEBUG("W3C SCXML 3.13: Eventless transition executed (depth {}): {} -> {}", eventlessRecursionDepth_,
-                      fromState, targetState);
-    } else {
-        SCE_LOG_DEBUG("W3C SCXML 3.13: Eventless transition at depth {} skipped (preserving depth {}): {} -> {}",
-                      eventlessRecursionDepth_, lastTransitionDepth_, fromState, targetState);
-    }
-    return true;
-}
-
 void StateMachine::recordTruncatedMacrostep() {
     // The chain was still going one microstep past the budget,
     // which is the case the specification's Principles and Constraints call a
@@ -2858,589 +1602,10 @@ bool StateMachine::mayTakeMicrostep() {
         return true;
     }
     // Work is still queued one microstep past the budget, which is the case
-    // the specification calls a macrostep that does not terminate. The raiser
-    // leaves the event where it is; this publishes the refusal.
+    // the specification calls a macrostep that does not terminate. The event
+    // stays where it is; this publishes the refusal.
     recordTruncatedMacrostep();
     return false;
-}
-
-MicrostepBudget StateMachine::makeMicrostepBudget() {
-    MicrostepBudget budget;
-    budget.mayTake = [this]() { return mayTakeMicrostep(); };
-    budget.spend = [this]() { ++macrostepMicrostepsTaken_; };
-    return budget;
-}
-
-void StateMachine::drainInternalEvents(const char *reason) {
-    if (!eventRaiser_) {
-        return;
-    }
-    // §scxml-3.13: Use shared algorithm (Single Source of Truth)
-    SCE::Core::InterpreterInternalEventQueue adapter(eventRaiser_);
-    SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(
-        adapter,
-        [reason](bool) {
-            SCE_LOG_DEBUG("W3C SCXML 3.13: {}", reason);
-            return true;
-        },
-        // The gate is asked here as well as inside the raiser, and it has to
-        // be: the raiser answers a refusal by leaving the event queued, so
-        // `hasEvents()` stays true and a loop that only watched the dispatch
-        // result would turn forever on a queue nobody is draining.
-        [this]() { return mayTakeMicrostep(); });
-}
-
-bool StateMachine::checkEventlessTransitions() {
-    if (macrostepTruncated_) {
-        // This macrostep was already stopped at the ceiling. Re-entering the
-        // drain would hand the same chain a second budget, which is the
-        // runaway the ceiling exists to refuse. Reported as "nothing was
-        // enabled", which is what every caller here does with a stable
-        // configuration.
-        return false;
-    }
-    // Track recursion depth for visualizer transition tracking
-    ++eventlessRecursionDepth_;
-
-    // Hot path: per-microstep (~1.2k hits per W3C harness run). Trace-only so
-    // Debug keeps the selection result, not the entry marker + recursion depth.
-    SCE_LOG_TRACE("[CHECK EVENTLESS] checkEventlessTransitions() called, recursionDepth={}, isRunning_={}",
-                  eventlessRecursionDepth_, isRunning_.load());
-
-    // §scxml-3.13: Eventless Transition Selection Algorithm
-    //
-    // 1. For each active state (reverse document order):
-    //    a. Find first enabled eventless transition (document order)
-    //    b. Check if state is within a parallel state
-    //    c. If parallel: collect transitions from ALL parallel regions (microstep)
-    //    d. If not: execute single transition immediately
-    // 2. Execute collected transitions atomically (exit all → execute all → enter all)
-    //
-    // Key Rule: Only the FIRST enabled transition per state is selected
-    // Internal transitions count as "first" and prevent further checking
-
-    if (!model_) {
-        --eventlessRecursionDepth_;
-        if (eventlessRecursionDepth_ == 0) {
-            lastTransitionDepth_ = 0;
-        }
-        return false;
-    }
-
-    auto activeStates = hierarchyManager_->getActiveStates();
-    SCE_LOG_DEBUG("SCXML: Checking eventless transitions on {} active state(s)", activeStates.size());
-
-    // Performance: Cache state lookups to avoid repeated O(n) searches
-    std::unordered_map<std::string, IStateNode *> stateCache;
-    for (const auto &stateId : activeStates) {
-        stateCache[stateId] = model_->findStateById(stateId);
-    }
-
-    IStateNode *firstEnabledState = nullptr;
-    std::shared_ptr<ITransitionNode> firstTransition = nullptr;
-    IStateNode *parallelAncestor = nullptr;
-
-    // Find first enabled eventless transition
-    for (auto it = activeStates.rbegin(); it != activeStates.rend(); ++it) {
-        const std::string &activeStateId = *it;
-        auto stateNode = stateCache[activeStateId];
-
-        if (!stateNode) {
-            continue;
-        }
-
-        const auto &transitions = stateNode->getTransitions();
-        for (const auto &transitionNode : transitions) {
-            const std::vector<std::string> &eventDescriptors = transitionNode->getEvents();
-            if (!eventDescriptors.empty()) {
-                continue;  // Not eventless
-            }
-
-            std::string condition = transitionNode->getGuard();
-            bool conditionResult = condition.empty() || evaluateCondition(condition);
-
-            if (conditionResult) {
-                firstEnabledState = stateNode;
-                firstTransition = transitionNode;
-
-                // Check if this state is within a parallel state
-                IStateNode *current = stateNode->getParent();
-                while (current) {
-                    if (current->getType() == Type::PARALLEL) {
-                        parallelAncestor = current;
-                        break;
-                    }
-                    current = current->getParent();
-                }
-
-                break;
-            }
-        }
-
-        if (firstEnabledState) {
-            break;
-        }
-    }
-
-    if (!firstEnabledState) {
-        SCE_LOG_DEBUG("SCXML: No eventless transitions found");
-        --eventlessRecursionDepth_;
-        if (eventlessRecursionDepth_ == 0) {
-            lastTransitionDepth_ = 0;
-        }
-        return false;
-    }
-
-    // §scxml-3.13: a transition is enabled and is about to be taken, which is
-    // the only place this engine can refuse one without also skipping the
-    // selection that decides whether the macrostep is over at all.
-    //
-    // The budget is a member rather than a loop counter because this engine's
-    // chain is RECURSIVE: executing a microstep re-enters `executeTransition`,
-    // whose macrostep loop calls back into here, so every nesting level used
-    // to start a fresh budget and none of them ever reached a ceiling. Measured
-    // 2026-08-20 on the fixture's cyclic document: seventy-four thousand
-    // microsteps deep, then a segfault — the stack ran out before any local
-    // counter did.
-    if (macrostepMicrostepsTaken_ >= static_cast<uint32_t>(MAX_MACROSTEP_MICROSTEPS)) {
-        recordTruncatedMacrostep();
-        --eventlessRecursionDepth_;
-        if (eventlessRecursionDepth_ == 0) {
-            lastTransitionDepth_ = 0;
-        }
-        return false;
-    }
-    ++macrostepMicrostepsTaken_;
-
-    // §scxml-3.13: If not in parallel state, execute the already-selected transition
-    // IMPORTANT: We already evaluated the condition, so we must not re-evaluate it
-    // to avoid side effects (e.g., ++var1 would increment twice - W3C test 444)
-    if (!parallelAncestor) {
-        SCE_LOG_DEBUG("SCXML: Single eventless transition (non-parallel)");
-        bool result = executeTransitionDirect(firstEnabledState, firstTransition);
-        --eventlessRecursionDepth_;
-        if (eventlessRecursionDepth_ == 0) {
-            lastTransitionDepth_ = 0;
-        }
-        return result;
-    }
-
-    // §scxml-3.13: Parallel state - collect ALL eventless transitions from all regions
-    // Algorithm: For each active state in parallel, select first enabled transition (document order)
-    SCE_LOG_DEBUG("W3C SCXML 3.13: Parallel state detected - collecting all region transitions");
-    std::vector<TransitionInfo> enabledTransitions;
-    enabledTransitions.reserve(activeStates.size());  // Optimize: pre-allocate for typical case
-
-    for (auto it = activeStates.rbegin(); it != activeStates.rend(); ++it) {
-        const std::string &activeStateId = *it;
-        auto stateNode = stateCache[activeStateId];
-
-        if (!stateNode) {
-            continue;
-        }
-
-        // Check if this state is descendant of the same parallel ancestor
-        bool isInParallel = false;
-        IStateNode *current = stateNode;
-        while (current) {
-            if (current == parallelAncestor) {
-                isInParallel = true;
-                break;
-            }
-            current = current->getParent();
-        }
-
-        if (!isInParallel) {
-            continue;
-        }
-
-        // §scxml-D-removeConflictingTransitions: Collect all enabled transitions first
-        // Conflict resolution will be applied after collection
-        const auto &transitions = stateNode->getTransitions();
-        for (const auto &transitionNode : transitions) {
-            const std::vector<std::string> &eventDescriptors = transitionNode->getEvents();
-            if (!eventDescriptors.empty()) {
-                continue;
-            }
-
-            std::string condition = transitionNode->getGuard();
-            bool conditionResult = condition.empty() || evaluateCondition(condition);
-
-            if (!conditionResult) {
-                continue;
-            }
-
-            const auto &targets = transitionNode->getTargets();
-            if (targets.empty()) {
-                // W3C SCXML: Internal transition - execute inline and stop checking this state
-                // This is still the "first enabled transition" for this state
-                const auto &actionNodes = transitionNode->getActionNodes();
-                if (!actionNodes.empty()) {
-                    executeActionNodes(actionNodes, false);
-                }
-                break;  // First enabled transition rule applies to internal transitions too
-            }
-
-            std::string targetState = targets[0];
-            ExitSetResult exitSetResult = computeExitSet(activeStateId, targetState);
-
-            enabledTransitions.emplace_back(stateNode, transitionNode, targetState, exitSetResult.states);
-            SCE_LOG_DEBUG("W3C SCXML 3.13: Collected parallel transition: {} -> {}", activeStateId, targetState);
-
-            // W3C SCXML: Only select first enabled transition per state (document order)
-            break;
-        }
-    }
-
-    if (enabledTransitions.empty()) {
-        SCE_LOG_DEBUG("W3C SCXML 3.13: No transitions collected from parallel regions");
-        return false;
-    }
-
-    // §scxml-D-removeConflictingTransitions: Apply conflict resolution using shared Helper
-    // ARCHITECTURE.MD: Zero Duplication - use ConflictResolutionHelper (Single Source of Truth)
-    {
-        using Helper = SCE::Core::ConflictResolutionAlgorithms;
-        std::vector<Helper::TransitionDescriptor<std::string>> descriptors;
-        descriptors.reserve(enabledTransitions.size());
-
-        // Convert to Helper format with exit sets
-        for (const auto &trans : enabledTransitions) {
-            Helper::TransitionDescriptor<std::string> desc;
-            desc.source = trans.sourceState->getId();
-            desc.targets = {trans.targetState};
-            desc.transitionIndex = static_cast<int>(descriptors.size());
-
-            // Exit set already computed in computeExitSet()
-            desc.exitSet = trans.exitSet;
-
-            descriptors.push_back(desc);
-        }
-
-        // Apply §scxml-D-removeConflictingTransitions conflict resolution
-        auto getParentFunc = [&stateCache](const std::string &stateId) -> std::optional<std::string> {
-            auto stateNode = stateCache[stateId];
-            if (!stateNode || !stateNode->getParent()) {
-                return std::nullopt;
-            }
-            return stateNode->getParent()->getId();
-        };
-
-        auto filtered = Helper::removeConflictingTransitions(descriptors, getParentFunc);
-
-        // Rebuild enabledTransitions with filtered set
-        std::vector<TransitionInfo> filteredTransitions;
-        filteredTransitions.reserve(filtered.size());
-
-        for (const auto &desc : filtered) {
-            // Find original transition by matching source and target
-            for (const auto &trans : enabledTransitions) {
-                if (trans.sourceState->getId() == desc.source && trans.targetState == desc.targets.front()) {
-                    filteredTransitions.push_back(trans);
-                    break;
-                }
-            }
-        }
-
-        enabledTransitions = std::move(filteredTransitions);
-        SCE_LOG_DEBUG("§scxml-D-removeConflictingTransitions: After conflict resolution: {} transitions",
-                      enabledTransitions.size());
-    }
-
-    if (enabledTransitions.empty()) {
-        SCE_LOG_DEBUG("§scxml-D-removeConflictingTransitions: All transitions preempted by conflict resolution");
-        --eventlessRecursionDepth_;
-        if (eventlessRecursionDepth_ == 0) {
-            lastTransitionDepth_ = 0;
-        }
-        return false;
-    }
-
-    // §scxml-3.13: Sort by document order
-    // Performance: Cache document positions to avoid O(n) tree traversal per comparison
-    std::unordered_map<std::string, int> positionCache;
-    for (const auto &trans : enabledTransitions) {
-        const std::string &stateId = trans.sourceState->getId();
-        if (positionCache.find(stateId) == positionCache.end()) {
-            positionCache[stateId] = getStateDocumentPosition(stateId);
-        }
-    }
-
-    std::sort(enabledTransitions.begin(), enabledTransitions.end(),
-              [&positionCache](const TransitionInfo &a, const TransitionInfo &b) {
-                  int posA = positionCache.at(a.sourceState->getId());
-                  int posB = positionCache.at(b.sourceState->getId());
-                  return posA < posB;
-              });
-
-    SCE_LOG_DEBUG("W3C SCXML 3.13: Executing {} parallel transitions as microstep", enabledTransitions.size());
-
-    bool success = executeTransitionMicrostep(enabledTransitions);
-
-    SCE_LOG_DEBUG("W3C SCXML 3.13: Microstep success = {}, parallelAncestor = {}", success,
-                  parallelAncestor ? parallelAncestor->getId() : "nullptr");
-
-    if (success) {
-        updateStatistics();
-        stats_.totalTransitions += static_cast<int>(enabledTransitions.size());
-
-        // §scxml-3.4: Check if parallel state completed after eventless transitions
-        // If all regions reached final states, generate done.state.{parallelId} event
-        if (parallelAncestor) {
-            SCE_LOG_DEBUG("W3C SCXML 3.4: Checking parallel ancestor '{}', type = {}", parallelAncestor->getId(),
-                          static_cast<int>(parallelAncestor->getType()));
-
-            if (parallelAncestor->getType() == Type::PARALLEL) {
-                auto concurrentState = dynamic_cast<ConcurrentStateNode *>(parallelAncestor);
-                SCE_LOG_DEBUG("W3C SCXML 3.4: dynamic_cast result = {}", concurrentState ? "success" : "failed");
-
-                if (concurrentState) {
-                    // §scxml-3.4 / §scxml-3.7: Generate done.state event if parallel state completed
-                    // ARCHITECTURE.md Zero Duplication: ConcurrentStateNode owns done.state generation logic
-                    bool eventGenerated = concurrentState->generateDoneStateEventIfComplete();
-
-                    if (eventGenerated) {
-                        SCE_LOG_DEBUG(
-                            "W3C SCXML 3.4: done.state event generated for parallel state '{}' after eventless "
-                            "transitions",
-                            parallelAncestor->getId());
-                    }
-                }
-            }
-        }
-    }
-
-    --eventlessRecursionDepth_;
-    if (eventlessRecursionDepth_ == 0) {
-        lastTransitionDepth_ = 0;
-    }
-    return success;
-}
-
-bool StateMachine::executeTransitionMicrostep(const std::vector<TransitionInfo> &transitions) {
-    // ARCHITECTURE.MD: §scxml-D-microstepProcedure Microstep Execution
-    // Note: Interpreter engine uses dynamic node-based approach (runtime state IDs)
-    // AOT engine uses ParallelTransitionHelper with static enum-based approach
-    // Zero Duplication applies to algorithm structure, not implementation (different representations)
-
-    if (transitions.empty()) {
-        return false;
-    }
-
-    SCE_LOG_DEBUG("W3C SCXML 3.13: Executing microstep with {} transition(s)", transitions.size());
-
-    // Set transition context flag (for history recording in exitState)
-    // RAII guard ensures flag is cleared on all exit paths (normal return, error, exception)
-    TransitionGuard transitionGuard(inTransition_);
-
-    // §scxml-D-exitStates Step 1 & 2: Exit all source states (executing onexit actions)
-    // ARCHITECTURE.MD: Algorithm structure shared with AOT engine (via ParallelTransitionHelper)
-    // Compute unique exit set from all transitions, exit in §scxml-3.13 order
-    std::set<std::string> exitSetUnique;
-    for (const auto &transInfo : transitions) {
-        for (const auto &stateId : transInfo.exitSet) {
-            exitSetUnique.insert(stateId);
-        }
-    }
-
-    // Convert to vector for ordered exit (deepest first)
-    std::vector<std::string> allStatesToExit(exitSetUnique.begin(), exitSetUnique.end());
-
-    // Performance: Cache state lookups and depths to avoid repeated parent chain traversal
-    std::unordered_map<std::string, IStateNode *> exitStateCache;
-    std::unordered_map<std::string, int> depthCache;
-
-    for (const auto &stateId : allStatesToExit) {
-        auto node = model_->findStateById(stateId);
-        exitStateCache[stateId] = node;
-
-        // Pre-calculate depth once for O(1) lookup during sort
-        int depth = 0;
-        if (node) {
-            auto parent = node->getParent();
-            while (parent) {
-                depth++;
-                parent = parent->getParent();
-            }
-        }
-        depthCache[stateId] = depth;
-    }
-
-    // §scxml-3.13: Sort by depth (deepest first), then by reverse document order
-    // ARCHITECTURE.MD: Zero Duplication - Use ParallelTransitionHelper (shared with AOT engine)
-    // Performance: Cache document positions for O(1) lookup during sort
-    std::unordered_map<std::string, int> positionCache;
-    for (const auto &stateId : allStatesToExit) {
-        positionCache[stateId] = getStateDocumentPosition(stateId);
-    }
-
-    allStatesToExit = SCE::Core::ParallelTransitionHelper::sortStatesForExit<std::string>(
-        allStatesToExit, [&depthCache](const std::string &stateId) { return depthCache.at(stateId); },
-        [&positionCache](const std::string &stateId) { return positionCache.at(stateId); });
-
-    // §scxml-3.10 (test 580): Record history BEFORE exiting states
-    // History must be recorded while all descendants are still active
-    // Only record for states that actually have history children
-    if (historyManager_ && hierarchyManager_) {
-        auto currentActiveStates = hierarchyManager_->getActiveStates();
-        for (const auto &stateToExit : allStatesToExit) {
-            auto stateNode = exitStateCache[stateToExit];
-            if (stateNode && (stateNode->getType() == Type::COMPOUND || stateNode->getType() == Type::PARALLEL)) {
-                // Check if this state has history children
-                bool hasHistoryChildren = false;
-                for (const auto &child : stateNode->getChildren()) {
-                    if (child->getType() == Type::HISTORY) {
-                        hasHistoryChildren = true;
-                        break;
-                    }
-                }
-
-                // Only record history if this state has history children
-                if (hasHistoryChildren) {
-                    bool recorded = historyManager_->recordHistory(stateToExit, currentActiveStates);
-                    if (recorded) {
-                        SCE_LOG_DEBUG(
-                            "Pre-recorded history for state '{}' before microstep exit (W3C SCXML 3.6, test 580)",
-                            stateToExit);
-                    }
-                }
-            }
-        }
-    }
-
-    SCE_LOG_DEBUG("W3C SCXML 3.13: Exiting {} state(s)", allStatesToExit.size());
-    for (const auto &stateId : allStatesToExit) {
-        if (!exitState(stateId)) {
-            SCE_LOG_ERROR("W3C SCXML 3.13: Failed to exit state '{}' during microstep", stateId);
-            return false;
-        }
-    }
-
-    // §scxml-D-executeTransitionContent Step 3: Execute all transition actions in document order
-    // ARCHITECTURE.MD: Algorithm structure same as AOT engine (different execution method)
-    SCE_LOG_DEBUG("W3C SCXML 3.13: Executing transition actions for {} transition(s)", transitions.size());
-    for (const auto &transInfo : transitions) {
-        const auto &actionNodes = transInfo.transition->getActionNodes();
-        if (!actionNodes.empty()) {
-            // §scxml-5.10: Protect _event during transition action execution (Test 230)
-            // Save current event context before executing actions to prevent corruption by nested events
-            EventMetadata savedEvent;
-            if (actionExecutor_) {
-                auto actionExecutorImpl = std::dynamic_pointer_cast<ActionExecutorImpl>(actionExecutor_);
-                if (actionExecutorImpl) {
-                    savedEvent = actionExecutorImpl->getCurrentEvent();
-                }
-            }
-
-            SCE_LOG_DEBUG("W3C SCXML 3.13: Executing {} action(s) from transition", actionNodes.size());
-            // processEventsAfter=false: Events raised here will be queued, not processed immediately
-            executeActionNodes(actionNodes, false);
-
-            // §scxml-5.10: Restore _event after transition action execution
-            if (actionExecutor_) {
-                auto actionExecutorImpl = std::dynamic_pointer_cast<ActionExecutorImpl>(actionExecutor_);
-                if (actionExecutorImpl) {
-                    actionExecutorImpl->setCurrentEvent(savedEvent);
-                }
-            }
-        }
-    }
-
-    // §scxml-D-enterStates Step 4-5: Enter all target states (executing onentry actions)
-    // ARCHITECTURE.MD: Algorithm structure same as AOT engine (different execution method)
-    SCE_LOG_DEBUG("W3C SCXML 3.13: Entering {} target state(s)", transitions.size());
-    for (const auto &transInfo : transitions) {
-        if (!transInfo.targetState.empty()) {
-            if (!enterState(transInfo.targetState)) {
-                SCE_LOG_ERROR("W3C SCXML 3.13: Failed to enter target state '{}' during microstep",
-                              transInfo.targetState);
-                return false;
-            }
-        }
-    }
-
-    SCE_LOG_DEBUG("W3C SCXML 3.13: Microstep execution complete");
-    return true;
-}
-
-bool StateMachine::exitState(const std::string &stateId) {
-    SCE_LOG_DEBUG("Exiting state: {}", stateId);
-
-    // §scxml-3.13: Parallel states exit actions are handled by StateHierarchyManager (test 404)
-    // Regions exit first, then parallel state's onexit is executed
-    // Non-parallel states execute exit actions here
-    auto stateNode = model_->findStateById(stateId);
-    if (stateNode && stateNode->getType() != Type::PARALLEL) {
-        // Execute IActionNode-based exit actions for non-parallel states only
-        bool exitResult = executeExitActions(stateId);
-        if (!exitResult && isRunning_) {
-            // Only log error if machine is still running - during shutdown, raise failures are expected
-            SCE_LOG_ERROR("StateMachine: Failed to execute exit actions for state: {}", stateId);
-        }
-        (void)exitResult;  // Suppress unused variable warning in release builds
-    }
-
-    // Get state node for invoke cancellation and history recording
-    auto stateNodeForCleanup = model_->findStateById(stateId);
-
-    // W3C SCXML specification section 3.13: Cancel invokes BEFORE removing from active states
-    // "Then it MUST cancel any ongoing invocations that were triggered by that state"
-    // This must happen AFTER onexit handlers but BEFORE state removal
-    if (stateNodeForCleanup && invokeExecutor_) {
-        const auto &invokes = stateNodeForCleanup->getInvoke();
-        SCE_LOG_DEBUG("StateMachine::exitState - State '{}' has {} invoke(s) to check", stateId, invokes.size());
-
-        for (const auto &invoke : invokes) {
-            const std::string &invokeid = invoke->getId();
-            if (!invokeid.empty()) {
-                bool isActive = invokeExecutor_->isInvokeActive(invokeid);
-                SCE_LOG_DEBUG("StateMachine::exitState - Invoke '{}' isActive: {}", invokeid, isActive);
-
-                if (isActive) {
-                    SCE_LOG_DEBUG("StateMachine: Cancelling active invoke '{}' due to state exit: {}", invokeid,
-                                  stateId);
-                    bool cancelled = invokeExecutor_->cancelInvoke(invokeid);
-                    SCE_LOG_DEBUG("StateMachine: Cancel result for invoke '{}': {}", invokeid, cancelled);
-                } else {
-                    SCE_LOG_DEBUG("StateMachine: NOT cancelling inactive invoke '{}' (may be completing naturally)",
-                                  invokeid);
-                }
-            } else {
-                SCE_LOG_WARN("StateMachine::exitState - Found invoke with empty ID in state '{}'", stateId);
-            }
-        }
-    } else {
-        if (!stateNodeForCleanup) {
-            SCE_LOG_DEBUG("StateMachine::exitState - stateNodeForCleanup is null for state '{}'", stateId);
-        }
-        if (!invokeExecutor_) {
-            SCE_LOG_DEBUG("StateMachine::exitState - invokeExecutor_ is null");
-        }
-    }
-
-    // §scxml-3.10: History recording (test 388)
-    // In transition context: History is pre-recorded before exit set execution
-    // Outside transition context (direct exitState call): Record history now as fallback
-    if (!inTransition_ && historyManager_ && hierarchyManager_) {
-        auto currentActiveStates = hierarchyManager_->getActiveStates();
-        if (stateNode && (stateNode->getType() == Type::COMPOUND || stateNode->getType() == Type::PARALLEL)) {
-            bool recorded = historyManager_->recordHistory(stateId, currentActiveStates);
-            if (recorded) {
-                SCE_LOG_DEBUG("Fallback: Recorded history for state '{}' (direct exitState call)", stateId);
-            }
-        }
-    }
-
-    // §scxml-3.13: Finally remove the state from active states list
-    // Use hierarchy manager for SCXML-compliant state exit
-    assert(hierarchyManager_ && "SCXML violation: hierarchy manager required for state management");
-    SCE_LOG_DEBUG("StateMachine::exitState - executionContext_ is {}", executionContext_ ? "valid" : "NULL");
-    hierarchyManager_->exitState(stateId, executionContext_);
-
-    // State management fully delegated to StateHierarchyManager
-
-    SCE_LOG_DEBUG("Successfully exited state: {}", stateId);
-    return true;
 }
 
 bool StateMachine::ensureJSEnvironment() {
@@ -3503,28 +1668,6 @@ bool StateMachine::setupJSEnvironment() {
     if (!initializeActionExecutor()) {
         SCE_LOG_ERROR("StateMachine: Failed to initialize action executor");
         return false;
-    }
-
-    // W3C SCXML 403c: Set execution context for concurrent region action execution
-    // This must happen AFTER executionContext_ is created in initializeActionExecutor()
-    if (hierarchyManager_ && executionContext_) {
-        hierarchyManager_->setExecutionContext(executionContext_);
-        SCE_LOG_DEBUG(
-            "StateMachine: ExecutionContext successfully configured for StateHierarchyManager (403c compliance)");
-
-        // §scxml-3.13: Set initial transition callback for proper event queuing
-        hierarchyManager_->setInitialTransitionCallback(
-            [this](const std::vector<std::shared_ptr<IActionNode>> &actions) {
-                // Execute actions with immediate mode control to ensure proper event queuing
-                executeActionNodes(actions, false);
-            });
-        SCE_LOG_DEBUG(
-            "StateMachine: Initial transition callback configured for StateHierarchyManager (test 412 compliance)");
-
-        // §scxml-3.10: Set history manager for direct restoration (test 579)
-        // This avoids EnterStateGuard issues from reentrant enterState calls
-        hierarchyManager_->setHistoryManager(historyManager_.get());
-        SCE_LOG_DEBUG("StateMachine: History manager configured for StateHierarchyManager (test 579 compliance)");
     }
 
     // §scxml-5.8: Execute top-level scripts AFTER datamodel init, BEFORE start()
@@ -3637,21 +1780,13 @@ bool StateMachine::initializeActionExecutor() {
     }
 }
 
-bool StateMachine::executeActionNodes(const std::vector<std::shared_ptr<SCE::IActionNode>> &actions,
-                                      bool processEventsAfter) {
+bool StateMachine::executeActionNodes(const std::vector<std::shared_ptr<SCE::IActionNode>> &actions) {
     if (!executionContext_) {
         SCE_LOG_WARN("StateMachine: ExecutionContext not initialized, skipping action node execution");
         return true;  // Not a failure, just no actions to execute
     }
 
     bool allSucceeded = true;
-
-    // W3C SCXML compliance: Set immediate mode to false during executable content execution
-    // This ensures events raised during execution are queued and processed after completion
-    if (eventRaiser_) {
-        eventRaiser_->setImmediateMode(false);
-        SCE_LOG_DEBUG("SCXML compliance: Set immediate mode to false for executable content execution");
-    }
 
     // §scxml-4.9: the elements of a block run in document order, and once one of them
     // raises an error the remaining elements of that block are not processed.
@@ -3683,169 +1818,9 @@ bool StateMachine::executeActionNodes(const std::vector<std::shared_ptr<SCE::IAc
         }
     }
 
-    // W3C SCXML compliance: Restore immediate mode and optionally process queued events
-    if (eventRaiser_) {
-        eventRaiser_->setImmediateMode(true);
-        // Process events only if requested (e.g., for entry actions, not exit/transition actions)
-        if (processEventsAfter) {
-            eventRaiser_->processQueuedEvents();
-            SCE_LOG_DEBUG("SCXML compliance: Restored immediate mode and processed queued events");
-        } else {
-            SCE_LOG_DEBUG("SCXML compliance: Restored immediate mode (events will be processed later)");
-        }
-    }
-
     // W3C SCXML compliance: Return true only if all actions succeeded or no actions to execute
     // If any action failed, we stopped execution per W3C spec, so return false to indicate failure
     return actions.empty() || allSucceeded;
-}
-
-bool StateMachine::executeEntryActions(const std::string &stateId) {
-    if (!model_) {
-        assert(false && "SCXML violation: StateMachine must have a model for entry action execution");
-        return false;
-    }
-
-    // Find the StateNode in the SCXML model
-    auto stateNode = model_->findStateById(stateId);
-    if (!stateNode) {
-        // SCXML W3C compliance: All states in active configuration must exist in model
-        assert(false && "SCXML violation: Active state not found in model");
-        return false;
-    }
-
-    SCE_LOG_DEBUG("Executing entry actions for state: {}", stateId);
-
-    // SCXML W3C specification section 3.4: Parallel states require special handling
-    if (stateNode->getType() == Type::PARALLEL) {
-        auto parallelState = dynamic_cast<ConcurrentStateNode *>(stateNode);
-        assert(parallelState && "SCXML violation: PARALLEL type state must be ConcurrentStateNode");
-
-        // §scxml-3.8: Execute parallel state's own onentry action blocks FIRST
-        const auto &parallelEntryBlocks = parallelState->getEntryActionBlocks();
-        if (!parallelEntryBlocks.empty()) {
-            SCE_LOG_DEBUG("W3C SCXML 3.8: executing {} entry action blocks for parallel state itself: {}",
-                          parallelEntryBlocks.size(), stateId);
-            for (size_t i = 0; i < parallelEntryBlocks.size(); ++i) {
-                if (!executeActionNodes(parallelEntryBlocks[i])) {
-                    SCE_LOG_WARN("W3C SCXML 3.8: Parallel entry block {}/{} failed, continuing", i + 1,
-                                 parallelEntryBlocks.size());
-                }
-            }
-        }
-
-        // provide ExecutionContext to all regions for action execution
-        if (executionContext_) {
-            parallelState->setExecutionContextForRegions(executionContext_);
-            SCE_LOG_DEBUG("Injected ExecutionContext into all regions of parallel state: {}", stateId);
-        }
-
-        // SCXML W3C specification: ALL child regions MUST have their entry actions executed AFTER parallel state
-        const auto &regions = parallelState->getRegions();
-        assert(!regions.empty() && "SCXML violation: parallel state must have at least one region");
-
-        SCE_LOG_DEBUG("SCXML W3C compliant - executing entry actions for {} child regions in parallel state: {}",
-                      regions.size(), stateId);
-
-        // Execute entry actions for each region's root state
-        for (const auto &region : regions) {
-            assert(region && "SCXML violation: parallel state cannot have null regions");
-
-            auto rootState = region->getRootState();
-            assert(rootState && "SCXML violation: region must have root state");
-
-            // §scxml-3.8: Execute entry action blocks for the region's root state
-            const auto &regionEntryBlocks = rootState->getEntryActionBlocks();
-            if (!regionEntryBlocks.empty()) {
-                SCE_LOG_DEBUG("W3C SCXML 3.8: executing {} entry action blocks for region: {}",
-                              regionEntryBlocks.size(), region->getId());
-                for (size_t i = 0; i < regionEntryBlocks.size(); ++i) {
-                    if (!executeActionNodes(regionEntryBlocks[i])) {
-                        SCE_LOG_WARN("W3C SCXML 3.8: Region entry block {}/{} failed, continuing", i + 1,
-                                     regionEntryBlocks.size());
-                    }
-                }
-            }
-
-            // SCXML W3C specification: Enter initial child states of each region ONLY if not already active
-            const auto &children = rootState->getChildren();
-            if (!children.empty()) {
-                // SCXML W3C compliance: Do not re-enter initial state if parallel region already active
-                if (!region->isActive()) {
-                    std::string initialChild = rootState->getInitialState();
-                    if (initialChild.empty()) {
-                        // SCXML W3C: Use first child as default initial state
-                        initialChild = children[0]->getId();
-                    }
-
-                    SCE_LOG_DEBUG("Entering initial child state for INACTIVE region {}: {}", region->getId(),
-                                  initialChild);
-
-                    // §scxml-3.8: Execute entry action blocks for the initial child state
-                    auto childState = model_->findStateById(initialChild);
-                    if (childState) {
-                        const auto &childEntryBlocks = childState->getEntryActionBlocks();
-                        if (!childEntryBlocks.empty()) {
-                            SCE_LOG_DEBUG("W3C SCXML 3.8: executing {} entry action blocks for initial child state: {}",
-                                          childEntryBlocks.size(), initialChild);
-                            for (size_t i = 0; i < childEntryBlocks.size(); ++i) {
-                                if (!executeActionNodes(childEntryBlocks[i])) {
-                                    SCE_LOG_WARN("W3C SCXML 3.8: Child entry block {}/{} failed, continuing", i + 1,
-                                                 childEntryBlocks.size());
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    // SCXML W3C compliance: Already active region does not re-enter initial state
-                    auto concreteRegion = std::dynamic_pointer_cast<ConcurrentRegion>(region);
-                    std::string currentState = concreteRegion ? concreteRegion->getCurrentState() : "unknown";
-
-                    SCE_LOG_DEBUG("SCXML W3C compliance - skipping initial state entry for already ACTIVE region: {} "
-                                  "(current state: {})",
-                                  region->getId(), currentState);
-
-                    // Prevent SCXML W3C violation: Maintain current state of already active region
-                    assert(concreteRegion && !concreteRegion->getCurrentState().empty() &&
-                           "SCXML violation: active region must have current state");
-
-                    // Verify SCXML W3C compliance: Ensure active region not reset to initial state
-                    assert(region->isActive() &&
-                           "SCXML violation: region marked as active but isActive() returns false");
-
-                    // Detect SCXML W3C violation: Verify state consistency on parallel state re-entry
-                    const auto &currentActiveStates = region->getActiveStates();
-                    assert(!currentActiveStates.empty() && "SCXML violation: active region must have active states");
-                }
-            }
-        }
-
-        return true;
-    }
-
-    // §scxml-3.8: Execute block-based entry actions for non-parallel states
-    const auto &entryBlocks = stateNode->getEntryActionBlocks();
-    if (!entryBlocks.empty()) {
-        SCE_LOG_DEBUG("W3C SCXML 3.8: Executing {} entry action blocks for state: {}", entryBlocks.size(), stateId);
-
-        for (size_t i = 0; i < entryBlocks.size(); ++i) {
-            SCE_LOG_DEBUG("W3C SCXML 3.8: Executing entry action block {}/{} for state: {}", i + 1, entryBlocks.size(),
-                          stateId);
-
-            // §scxml-3.8: Each onentry handler is a separate block
-            // If one block fails, continue with remaining blocks
-            if (!executeActionNodes(entryBlocks[i])) {
-                SCE_LOG_WARN("W3C SCXML 3.8: Entry action block {}/{} failed, continuing with remaining blocks", i + 1,
-                             entryBlocks.size());
-                // Don't break - continue with next block per W3C spec
-            }
-        }
-
-        // W3C SCXML: State entry succeeds even if some action blocks fail
-        return true;
-    }
-
-    return true;
 }
 
 bool StateMachine::executeExitActions(const std::string &stateId) {
@@ -3860,44 +1835,8 @@ bool StateMachine::executeExitActions(const std::string &stateId) {
         return true;  // Not an error if state not found in model
     }
 
-    // SCXML W3C specification section 3.4: Parallel states require special exit sequence
-    if (stateNode->getType() == Type::PARALLEL) {
-        auto parallelState = dynamic_cast<ConcurrentStateNode *>(stateNode);
-        assert(parallelState && "SCXML violation: PARALLEL type state must be ConcurrentStateNode");
-
-        SCE_LOG_DEBUG("SCXML W3C compliant - executing exit sequence for parallel state: {}", stateId);
-
-        // §scxml-3.13: Skip region exit actions if regions are already in exit set (test 504)
-        // Child regions will execute their own exit actions when their exitState() is called
-        // Only execute parallel state's own exit actions here
-
-        // §scxml-3.9: Execute parallel state's own onexit action blocks
-        const auto &parallelExitBlocks = parallelState->getExitActionBlocks();
-        if (!parallelExitBlocks.empty()) {
-            SCE_LOG_DEBUG("W3C SCXML 3.9: executing {} exit action blocks for parallel state itself: {}",
-                          parallelExitBlocks.size(), stateId);
-
-            // §scxml-3.9: Build lambda blocks for EntryExitHelper
-            // ARCHITECTURE.md Zero Duplication: Delegate to shared Helper (lines 311-373)
-            std::vector<std::function<void()>> exitLambdas;
-            for (const auto &exitBlock : parallelExitBlocks) {
-                exitLambdas.push_back([&, exitBlock]() {
-                    if (!executeActionNodes(exitBlock, false)) {
-                        SCE_LOG_WARN("W3C SCXML 3.9: Parallel exit block failed");
-                        // Lambda return stops THIS block only, next block continues
-                    }
-                });
-            }
-
-            // §scxml-3.9: Delegate to EntryExitHelper (Single Source of Truth)
-            SCE::Core::EntryExitHelper<InterpreterPolicy, IEventRaiser>::executeExitBlocks(exitLambdas, *eventRaiser_,
-                                                                                           stateId);
-        }
-
-        return true;
-    }
-
-    // §scxml-3.9: Execute block-based exit actions for non-parallel states
+    // §scxml-3.9: Execute block-based exit actions — a `<parallel>`'s like any
+    // other state's: its regions are states of their own, exited before it
     const auto &exitBlocks = stateNode->getExitActionBlocks();
     if (!exitBlocks.empty()) {
         SCE_LOG_DEBUG("W3C SCXML 3.9: Executing {} exit action blocks for state: {}", exitBlocks.size(), stateId);
@@ -3908,7 +1847,7 @@ bool StateMachine::executeExitActions(const std::string &stateId) {
         for (const auto &exitBlock : exitBlocks) {
             exitLambdas.push_back([&, exitBlock]() {
                 // §scxml-3.9: Each onexit handler is a separate block
-                if (!executeActionNodes(exitBlock, false)) {
+                if (!executeActionNodes(exitBlock)) {
                     SCE_LOG_WARN("W3C SCXML 3.9: Exit action block failed, continuing with remaining blocks");
                     // Lambda return stops THIS block only, next block continues per W3C spec
                 }
@@ -3924,144 +1863,6 @@ bool StateMachine::executeExitActions(const std::string &stateId) {
     }
 
     return true;
-}
-
-void StateMachine::generateDoneStateEvent(const std::string &stateId) {
-    // §scxml-3.7.2: entering the <final> child of a <state> makes the processor emit
-    // done.state.id for the parent once its <onentry> content has run.
-    // §scxml-3.12.3: done.state.id is one of the events the implementation generates
-    // automatically, alongside done.invoke.id and the error.* family.
-    std::string doneEventName = "done.state." + stateId;
-    SCE_LOG_INFO("Generating done.state event: {}", doneEventName);
-
-    if (isRunning_ && eventRaiser_) {
-        bool queued = eventRaiser_->raiseEvent(doneEventName, "", "", false);
-        if (queued) {
-            SCE_LOG_DEBUG("Queued done.state event: {}", doneEventName);
-        } else {
-            SCE_LOG_WARN("Failed to queue done.state event: {}", doneEventName);
-        }
-    } else {
-        SCE_LOG_WARN("Cannot queue done.state event {} - state machine not running or no event raiser", doneEventName);
-    }
-}
-
-void StateMachine::handleParallelStateCompletion(const std::string &stateId) {
-    SCE_LOG_DEBUG("Handling parallel state completion for: {}", stateId);
-    generateDoneStateEvent(stateId);
-}
-
-bool StateMachine::setupAndActivateParallelState(ConcurrentStateNode *parallelState, const std::string &stateId) {
-    assert(parallelState && "Parallel state pointer must not be null");
-
-    const auto &regions = parallelState->getRegions();
-    if (regions.empty()) {
-        SCE_LOG_ERROR("W3C SCXML violation: Parallel state '{}' has no regions", stateId);
-        return false;
-    }
-
-    // §scxml-6.4: Set invoke callback for proper invoke defer timing
-    // Regions must be able to delegate invoke execution to StateMachine
-    // Uses same defer pattern as AOT engine (ARCHITECTURE.md Zero Duplication)
-    auto invokeCallback = [this](const std::string &stateId, const std::vector<std::shared_ptr<IInvokeNode>> &invokes) {
-        if (invokes.empty()) {
-            return;
-        }
-        SCE_LOG_DEBUG("StateMachine: Deferring {} invokes for state: {}", invokes.size(), stateId);
-
-        // Thread-safe access to pendingInvokes_ - defer each invoke individually (matches AOT)
-        std::lock_guard<std::recursive_mutex> lock(pendingInvokesMutex_);
-        for (const auto &invoke : invokes) {
-            std::string invokeId = invoke ? (invoke->getId().empty() ? "(auto-generated)" : invoke->getId()) : "null";
-            PendingInvoke pending{invokeId, stateId, invoke};
-            pendingInvokes_.push_back(pending);
-        }
-    };
-
-    for (const auto &region : regions) {
-        if (region) {
-            region->setInvokeCallback(invokeCallback);
-            SCE_LOG_DEBUG("Set invoke callback for region: {}", region->getId());
-        }
-    }
-
-    // §scxml-B-2-3: Set condition evaluator for transition guard evaluation
-    // Regions must be able to evaluate guard conditions via JavaScript engine
-    auto conditionEvaluator = [this](const std::string &condition) -> bool { return evaluateCondition(condition); };
-
-    for (const auto &region : regions) {
-        if (region) {
-            region->setConditionEvaluator(conditionEvaluator);
-        }
-    }
-
-    // §scxml-3.8: Set execution context for action execution
-    // Regions need access to JavaScript engine for script evaluation
-    if (executionContext_) {
-        for (const auto &region : regions) {
-            if (region) {
-                region->setExecutionContext(executionContext_);
-            }
-        }
-        SCE_LOG_DEBUG("Set execution context for parallel state regions: {}", stateId);
-    } else {
-        SCE_LOG_WARN("Execution context not available for parallel state: {}", stateId);
-    }
-
-    // §scxml-3.4: Activate all regions simultaneously
-    auto result = parallelState->enterParallelState();
-    if (!result.isSuccess) {
-        SCE_LOG_ERROR("Failed to activate parallel state regions for '{}': {}", stateId, result.errorMessage);
-        return false;
-    }
-
-    SCE_LOG_DEBUG("Successfully setup and activated parallel state: {}", stateId);
-    return true;
-}
-
-void StateMachine::setupParallelStateCallbacks() {
-    if (!model_) {
-        SCE_LOG_WARN("StateMachine: Cannot setup parallel state callbacks - no model available");
-        return;
-    }
-
-    SCE_LOG_DEBUG("StateMachine: Setting up completion callbacks for parallel states");
-
-    const auto &allStates = model_->getAllStates();
-    int parallelStateCount = 0;
-    int regionCallbackCount = 0;
-
-    for (const auto &state : allStates) {
-        if (state && state->getType() == Type::PARALLEL) {
-            // Cast to ConcurrentStateNode to access the callback method
-            auto parallelState = std::dynamic_pointer_cast<ConcurrentStateNode>(state);
-            if (parallelState) {
-                // Set up the completion callback using a lambda that captures this StateMachine
-                parallelState->setCompletionCallback([this](const std::string &completedStateId) {
-                    this->handleParallelStateCompletion(completedStateId);
-                });
-
-                // §scxml-3.4 test 570: Set up done.state callback for each region
-                // When a region reaches its final state, generate done.state.{regionId} event
-                const auto &regions = parallelState->getRegions();
-                for (const auto &region : regions) {
-                    if (region) {
-                        region->setDoneStateCallback(
-                            [this](const std::string &regionId) { generateDoneStateEvent(regionId); });
-                        regionCallbackCount++;
-                    }
-                }
-
-                parallelStateCount++;
-                SCE_LOG_DEBUG("Set up completion callback for parallel state: {}", state->getId());
-            } else {
-                SCE_LOG_WARN("Found parallel state that is not a ConcurrentStateNode: {}", state->getId());
-            }
-        }
-    }
-
-    SCE_LOG_INFO("Set up completion callbacks for {} parallel states ({} regions)", parallelStateCount,
-                 regionCallbackCount);
 }
 
 void StateMachine::initializeHistoryManager() {
@@ -4169,13 +1970,6 @@ void StateMachine::executeOnEntryActions(const std::string &stateId) {
 
     SCE_LOG_DEBUG("W3C SCXML 3.8: Executing {} onentry action blocks for state: {}", entryBlocks.size(), stateId);
 
-    // W3C SCXML compliance: Set immediate mode to false during executable content execution
-    // This ensures events raised during execution are queued and processed after completion
-    if (eventRaiser_) {
-        eventRaiser_->setImmediateMode(false);
-        SCE_LOG_DEBUG("SCXML compliance: Set immediate mode to false for onentry actions execution");
-    }
-
     // §scxml-3.8: Build lambda blocks for EntryExitHelper
     // ARCHITECTURE.md Zero Duplication: Delegate to shared Helper (lines 311-373)
     std::vector<std::function<void()>> lambdaBlocks;
@@ -4220,32 +2014,6 @@ void StateMachine::executeOnEntryActions(const std::string &stateId) {
     // ARCHITECTURE.md Zero Duplication: Shared block orchestration between Interpreter and AOT
     SCE::Core::EntryExitHelper<InterpreterPolicy, IEventRaiser>::executeEntryBlocks(lambdaBlocks, *eventRaiser_,
                                                                                     stateId);
-
-    // W3C SCXML compliance: Restore immediate mode (but DON'T process queued events yet)
-    // Interactive mode: Keep immediate mode false to prevent auto-processing of queued events
-    // Events must be processed AFTER the entire state tree entry completes, not during onentry
-    // This ensures parent and child states are both active before processing raised events
-    if (eventRaiser_) {
-        if (autoProcessQueuedEvents_) {
-            // Normal mode: Restore immediate mode for auto-processing
-            eventRaiser_->setImmediateMode(true);
-            SCE_LOG_DEBUG(
-                "SCXML compliance: Restored immediate mode (events will be processed after state entry completes)");
-        } else {
-            // Interactive mode: Keep immediate mode false to prevent auto-processing
-            SCE_LOG_DEBUG("Interactive mode: Keeping immediate mode false (manual step-by-step execution)");
-        }
-    }
-
-    // W3C SCXML: Defer invoke execution until after state entry completes
-    // This ensures proper timing with transition actions and pre-registration pattern
-    const auto &invokes = stateNode->getInvoke();
-    if (!invokes.empty()) {
-        SCE_LOG_DEBUG("StateMachine: Deferring {} invokes for state: {}", invokes.size(), stateId);
-        deferInvokeExecution(stateId, invokes);
-    } else {
-        SCE_LOG_DEBUG("StateMachine: No invokes to defer for state: {}", stateId);
-    }
 }
 
 // EventDispatcher management
@@ -4312,12 +2080,6 @@ void StateMachine::setEventRaiser(std::shared_ptr<IEventRaiser> eventRaiser) {
                     return false;
                 }
             });
-            // §scxml-3.13: the same wiring, for the other half of the
-            // macrostep. The raiser owns the internal queue, so it is where a
-            // dispatch can be declined without consuming the event; the
-            // ceiling is this machine's because the eventless branch spends
-            // the same budget. See `MicrostepBudget`.
-            eventRaiserImpl->setMicrostepBudget(makeMicrostepBudget());
             SCE_LOG_DEBUG(
                 "StateMachine: EventRaiser callback set to processEvent - session: {}, EventRaiser instance: {}",
                 sessionId_, (void *)eventRaiserImpl.get());
@@ -4456,59 +2218,6 @@ void StateMachine::executePendingInvokes() {
     });
 }
 
-// §scxml-3.7 & 5.5: Handle compound state completion when final child is entered
-void StateMachine::handleCompoundStateFinalChild(const std::string &finalStateId) {
-    if (!model_) {
-        return;
-    }
-
-    auto finalState = model_->findStateById(finalStateId);
-    if (!finalState || !finalState->isFinalState()) {
-        return;
-    }
-
-    // Get parent state
-    auto parent = finalState->getParent();
-    if (!parent) {
-        return;  // Top-level final state, no done.state event for compound
-    }
-
-    // Only generate done.state for compound (non-parallel) parent states
-    if (parent->getType() == Type::PARALLEL) {
-        return;  // Parallel states handled separately
-    }
-
-    // §scxml-3.7: Generate done.state.{parentId} event
-    std::string parentId = parent->getId();
-    std::string doneEventName = "done.state." + parentId;
-
-    SCE_LOG_INFO("W3C SCXML 3.7: Compound state '{}' completed, generating done.state event: {}", parentId,
-                 doneEventName);
-
-    // §scxml-5.5 & 5.7: Evaluate donedata and construct event data
-    // If evaluation fails (error.execution raised), do not generate done.state event
-    std::string eventData;
-    std::optional<ScriptValue> typedData;
-    if (!evaluateDoneData(finalStateId, eventData, typedData)) {
-        SCE_LOG_DEBUG("W3C SCXML 5.7: Donedata evaluation failed, skipping done.state event generation");
-        return;
-    }
-
-    // W3C SCXML: Queue the done.state event (not immediate processing)
-    // This allows error.execution events from donedata evaluation to be processed first
-    if (isRunning_ && eventRaiser_) {
-        // §scxml-5.5: Pass typed data through engine-agnostic ScriptValue pipeline
-        auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
-        if (eventRaiserImpl && typedData.has_value()) {
-            eventRaiserImpl->raiseEventWithPriority(doneEventName, eventData, EventRaiserImpl::EventPriority::INTERNAL,
-                                                    "", "", "", "", 0, std::move(typedData));
-        } else {
-            eventRaiser_->raiseEvent(doneEventName, eventData);
-        }
-        SCE_LOG_DEBUG("W3C SCXML: Queued done.state event: {}", doneEventName);
-    }
-}
-
 // §scxml-5.5: Helper functions moved to DoneDataHelper (Zero Duplication)
 // - escapeJsonString() -> DoneDataHelper::escapeJsonString()
 // ScriptValue -> JSON conversion goes through EventDataHelper::scriptValueToJsonString
@@ -4605,42 +2314,6 @@ bool StateMachine::evaluateDoneData(const std::string &finalStateId, std::string
 
     // No donedata
     return true;
-}
-
-// W3C SCXML: Get proper ancestors of a state (all ancestors excluding the state itself)
-// §scxml-3.13: Delegation to TransitionDomainCalculator
-// transitionDomain_ is guaranteed non-null after initializeFromModel()
-
-std::vector<std::string> StateMachine::getProperAncestors(const std::string &stateId) const {
-    assert(transitionDomain_ && "TransitionDomainCalculator must be initialized before use");
-    return transitionDomain_->getProperAncestors(stateId);
-}
-
-bool StateMachine::isDescendant(const std::string &stateId, const std::string &ancestorId) const {
-    assert(transitionDomain_ && "TransitionDomainCalculator must be initialized before use");
-    return transitionDomain_->isDescendant(stateId, ancestorId);
-}
-
-int StateMachine::getStateDocumentPosition(const std::string &stateId) const {
-    assert(transitionDomain_ && "TransitionDomainCalculator must be initialized before use");
-    return transitionDomain_->getStateDocumentPosition(stateId);
-}
-
-std::string StateMachine::findLCA(const std::string &sourceStateId, const std::string &targetStateId) const {
-    assert(transitionDomain_ && "TransitionDomainCalculator must be initialized before use");
-    return transitionDomain_->findLCA(sourceStateId, targetStateId);
-}
-
-std::vector<std::string> StateMachine::buildExitSetForDescendants(const std::string &ancestorState,
-                                                                  bool excludeParallelChildren) const {
-    assert(transitionDomain_ && "TransitionDomainCalculator must be initialized before use");
-    return transitionDomain_->buildExitSetForDescendants(ancestorState, excludeParallelChildren);
-}
-
-StateMachine::ExitSetResult StateMachine::computeExitSet(const std::string &sourceStateId,
-                                                         const std::string &targetStateId) const {
-    assert(transitionDomain_ && "TransitionDomainCalculator must be initialized before use");
-    return transitionDomain_->computeExitSet(sourceStateId, targetStateId);
 }
 
 }  // namespace SCE

@@ -503,6 +503,7 @@ add_library(sce_runtime
     # Runtime implementation
     src/runtime/SCXMLEngineImpl.cpp
     src/runtime/StateMachine.cpp
+    src/runtime/InterpreterDocument.cpp
     src/runtime/StateMachineContext.cpp
     src/runtime/StateMachineBuilder.cpp
     src/runtime/StateMachineFactory.cpp
@@ -511,7 +512,6 @@ add_library(sce_runtime
     src/runtime/StateHierarchyManager.cpp
     src/runtime/EventRaiserImpl.cpp
     src/runtime/InvokeExecutor.cpp
-    src/runtime/TransitionDomainCalculator.cpp
     src/runtime/DataModelInitializer.cpp
 
     # History state management (W3C SCXML 3.11)
