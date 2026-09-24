@@ -59,6 +59,45 @@ interface StatechartNativeActionActions {
     fun resetSlot()
 }
 
+/**
+ * [StatechartNativeActionActions] that performs nothing and records every call in order —
+ * the host a test drives the machine with. Read [calls] after the machine
+ * has run; each call is compared by value.
+ */
+class RecordingStatechartNativeActionActions : StatechartNativeActionActions {
+    /** One recorded host call. */
+    sealed interface Call {
+        data class AppendFragmentPayload(val payload: List<Byte>, val offset: UInt) : Call
+        data object OnAssemblingExit : Call
+        data object OnIdleEntry : Call
+        data object ResetSlot : Call
+    }
+
+    private val recorded = mutableListOf<Call>()
+
+    /** Every call so far, oldest first. */
+    val calls: List<Call>
+        get() = recorded.toList()
+
+    /** Forget the calls recorded so far. */
+    fun clear() {
+        recorded.clear()
+    }
+
+    override fun appendFragmentPayload(payload: ByteArray, offset: UInt) {
+        recorded += Call.AppendFragmentPayload(payload.toList(), offset)
+    }
+    override fun onAssemblingExit() {
+        recorded += Call.OnAssemblingExit
+    }
+    override fun onIdleEntry() {
+        recorded += Call.OnIdleEntry
+    }
+    override fun resetSlot() {
+        recorded += Call.ResetSlot
+    }
+}
+
 class StatechartNativeActionStateMachine(
     /**
      * W3C SCXML G.7: the host implementation every `<sce:action>` in this

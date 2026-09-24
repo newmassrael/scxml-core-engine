@@ -17,7 +17,7 @@ package com.sce.integration
 import com.sce.integration.static_counter.StaticCounterEvent
 import com.sce.integration.static_counter.StaticCounterState
 import com.sce.integration.static_counter.StaticCounterStateMachine
-import com.sce.integration.static_host_call.StaticHostCallActions
+import com.sce.integration.static_host_call.RecordingStaticHostCallActions
 import com.sce.integration.static_host_call.StaticHostCallEvent
 import com.sce.integration.static_host_call.StaticHostCallState
 import com.sce.integration.static_host_call.StaticHostCallStateMachine
@@ -160,12 +160,9 @@ class StaticDatamodelTest {
         // variable and a comparison over it. Under any other data model an
         // eventless action takes no arguments; here each is a typed
         // expression, and the host method's parameter types are theirs.
-        val calls = mutableListOf<Pair<UInt, Boolean>>()
-        val host = object : StaticHostCallActions {
-            override fun showAttempts(count: UInt, exhausted: Boolean) {
-                calls += count to exhausted
-            }
-        }
+        // The generated recording host: no hand-written stand-in, and its
+        // calls cannot drift from the interface they record.
+        val host = RecordingStaticHostCallActions()
         val sm = StaticHostCallStateMachine(host)
         sm.initialize()
         try {
@@ -174,8 +171,13 @@ class StaticDatamodelTest {
                 sm.tick()
             }
             assertEquals(
-                listOf(0u to false, 1u to false, 2u to false, 3u to true),
-                calls,
+                listOf(
+                    RecordingStaticHostCallActions.Call.ShowAttempts(0u, false),
+                    RecordingStaticHostCallActions.Call.ShowAttempts(1u, false),
+                    RecordingStaticHostCallActions.Call.ShowAttempts(2u, false),
+                    RecordingStaticHostCallActions.Call.ShowAttempts(3u, true),
+                ),
+                host.calls,
                 "one call per entry of `idle`, each with the datamodel as it stood; " +
                     "the fourth retry finds `attempts < 3` false and re-enters nothing"
             )
@@ -189,10 +191,7 @@ class StaticDatamodelTest {
         // `attempts` is not declared sce:direction="out", so it is the
         // machine's own: the snapshot carries no `Data`, only where the
         // machine is.
-        val host = object : StaticHostCallActions {
-            override fun showAttempts(count: UInt, exhausted: Boolean) {}
-        }
-        val sm = StaticHostCallStateMachine(host)
+        val sm = StaticHostCallStateMachine(RecordingStaticHostCallActions())
         sm.initialize()
         try {
             assertEquals(setOf(StaticHostCallState.Idle), sm.snapshot.value.configuration)

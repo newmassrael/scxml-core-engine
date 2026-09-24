@@ -1174,8 +1174,9 @@ fn build_interface(
                 ));
             }
             format!(
-                "/**\n{} */\ninterface {interface_name} {{\n{methods}}}\n",
-                doc(" * ")
+                "/**\n{} */\ninterface {interface_name} {{\n{methods}}}\n\n{}",
+                doc(" * "),
+                kotlin_recording_host(interface_name, sigs)
             )
         }
         Language::Python => {
@@ -1233,6 +1234,74 @@ fn build_interface(
             )
         }
     }
+}
+
+/// `Recording<Interface>`: the Kotlin host interface's implementation that
+/// performs nothing and records every call, in order, as a value — so a test
+/// drives the machine with no host at all: send an event, read what the
+/// machine asked the host to do, answer with an event, check the snapshot.
+///
+/// Generated from the same signatures as the interface, so it cannot fall out
+/// of step with it: a new `<sce:action>` is a new recorded call, and a changed
+/// argument a changed field. Each call is a `data class` (a `data object` for
+/// a call with no argument), so a test compares whole calls by value.
+fn kotlin_recording_host(interface_name: &str, sigs: &BTreeMap<String, Signature>) -> String {
+    let lang = Language::Kotlin;
+    let mut variants = String::new();
+    let mut overrides = String::new();
+    for (name, sig) in sigs {
+        let method = method_name(lang, name);
+        let variant = filters::to_pascal_case(method.clone());
+        let params: Vec<String> = sig
+            .iter()
+            .flat_map(|(n, t)| params_for(lang, n, t))
+            .collect();
+        // A `bytes` argument arrives as a `ByteArray`, which a data class
+        // compares by reference; it is recorded as a copy in a `List<Byte>`,
+        // which compares by value, so the promise above holds for it too.
+        let fields: Vec<String> = sig
+            .iter()
+            .map(|(n, t)| match t {
+                SceType::Bytes => format!("val {}: List<Byte>", param_ident(lang, n)),
+                _ => format!("val {}: {}", param_ident(lang, n), host_param_type(lang, t)),
+            })
+            .collect();
+        let args: Vec<String> = sig
+            .iter()
+            .map(|(n, t)| match t {
+                SceType::Bytes => format!("{}.toList()", param_ident(lang, n)),
+                _ => param_ident(lang, n),
+            })
+            .collect();
+        if params.is_empty() {
+            variants.push_str(&format!("        data object {variant} : Call\n"));
+            overrides.push_str(&format!(
+                "    override fun {method}() {{\n        recorded += Call.{variant}\n    }}\n"
+            ));
+        } else {
+            variants.push_str(&format!(
+                "        data class {variant}({}) : Call\n",
+                fields.join(", ")
+            ));
+            overrides.push_str(&format!(
+                "    override fun {method}({}) {{\n        recorded += Call.{variant}({})\n    }}\n",
+                params.join(", "),
+                args.join(", ")
+            ));
+        }
+    }
+    format!(
+        "/**\n * [{interface_name}] that performs nothing and records every call in order —\n \
+         * the host a test drives the machine with. Read [calls] after the machine\n \
+         * has run; each call is compared by value.\n */\n\
+         class Recording{interface_name} : {interface_name} {{\n    \
+         /** One recorded host call. */\n    sealed interface Call {{\n{variants}    }}\n\n    \
+         private val recorded = mutableListOf<Call>()\n\n    \
+         /** Every call so far, oldest first. */\n    \
+         val calls: List<Call>\n        get() = recorded.toList()\n\n    \
+         /** Forget the calls recorded so far. */\n    \
+         fun clear() {{\n        recorded.clear()\n    }}\n\n{overrides}}}\n"
+    )
 }
 
 #[cfg(test)]
@@ -1536,5 +1605,37 @@ mod tests {
             "t",
         );
         assert!(res.is_err(), "<sce:action> without name must fail at parse");
+    }
+
+    #[test]
+    fn the_kotlin_recording_host_records_every_call_by_value() {
+        let mut sigs: BTreeMap<String, Signature> = BTreeMap::new();
+        sigs.insert(
+            "append_fragment".to_string(),
+            vec![
+                ("payload".to_string(), SceType::Bytes),
+                ("offset".to_string(), SceType::Uint32),
+            ],
+        );
+        sigs.insert("reset_slot".to_string(), Vec::new());
+        let out = build_interface(Language::Kotlin, "MActions", &sigs);
+        assert!(
+            out.contains("class RecordingMActions : MActions {"),
+            "the recorder implements the interface it is generated from:\n{out}"
+        );
+        // A byte array compares by reference inside a data class, so a bytes
+        // argument is recorded as a list that compares by value.
+        assert!(
+            out.contains(
+                "data class AppendFragment(val payload: List<Byte>, val offset: UInt) : Call"
+            ),
+            "{out}"
+        );
+        assert!(
+            out.contains("recorded += Call.AppendFragment(payload.toList(), offset)"),
+            "{out}"
+        );
+        assert!(out.contains("data object ResetSlot : Call"), "{out}");
+        assert!(out.contains("override fun resetSlot() {"), "{out}");
     }
 }

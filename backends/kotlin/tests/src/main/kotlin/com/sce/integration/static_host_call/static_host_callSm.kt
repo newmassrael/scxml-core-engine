@@ -34,6 +34,33 @@ interface StaticHostCallActions {
     fun showAttempts(count: UInt, exhausted: Boolean)
 }
 
+/**
+ * [StaticHostCallActions] that performs nothing and records every call in order —
+ * the host a test drives the machine with. Read [calls] after the machine
+ * has run; each call is compared by value.
+ */
+class RecordingStaticHostCallActions : StaticHostCallActions {
+    /** One recorded host call. */
+    sealed interface Call {
+        data class ShowAttempts(val count: UInt, val exhausted: Boolean) : Call
+    }
+
+    private val recorded = mutableListOf<Call>()
+
+    /** Every call so far, oldest first. */
+    val calls: List<Call>
+        get() = recorded.toList()
+
+    /** Forget the calls recorded so far. */
+    fun clear() {
+        recorded.clear()
+    }
+
+    override fun showAttempts(count: UInt, exhausted: Boolean) {
+        recorded += Call.ShowAttempts(count, exhausted)
+    }
+}
+
 class StaticHostCallStateMachine(
     /**
      * W3C SCXML G.7: the host implementation every `<sce:action>` in this

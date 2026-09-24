@@ -2072,6 +2072,15 @@ and `uint32 → u32`, Go `[]byte` / `uint32`, Kotlin `ByteArray` / `UInt`,
 C++ `const std::vector<uint8_t>&`, Python `bytes` / `int`, C11 a
 `const uint8_t *` plus its `size_t` length sibling.
 
+Kotlin also generates `Recording<Machine>Actions`, from the same signatures:
+an implementation that performs nothing and records every call, in order,
+as a value of its sealed `Call` type (a `data class` per operation, a
+`data object` for one with no argument), read through `calls`. A test drives
+the machine with it and no hand-written host: send an event, read what the
+machine asked the host to do, answer with an event, check the snapshot. A
+`bytes` argument is recorded as a `List<Byte>` copy, so a recorded call
+compares by value. The other five backends do not generate one yet.
+
 The host arrives where the machine is CONSTRUCTED on every backend, not
 through a setter, and that is a requirement rather than a style: an
 `<onentry>` in the initial state performs its act during
