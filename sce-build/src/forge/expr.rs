@@ -2517,8 +2517,12 @@ fn rename_identifiers(ast: &mut TypedExpr, renames: &HashMap<&str, &str>) {
             if let ExprKind::Ident(obj_name) = &object.kind {
                 let full_path = format!("{}.{}", obj_name, property);
                 if let Some(renamed) = renames.get(full_path.as_str()) {
+                    // The type stays: inference ran before rename
+                    // (`resolve_then_rename`), and the emitter still needs it
+                    // to spell what the member meets. It was reset to
+                    // `Unknown` when rename ran first and nothing could be
+                    // looked up under the new spelling.
                     ast.kind = ExprKind::Raw(renamed.to_string());
-                    ast.ty = InferredType::Unknown;
                     return;
                 }
             }
@@ -7109,6 +7113,31 @@ mod tests {
         )
         .unwrap();
         assert_eq!(out, "retryCount_ + 1");
+    }
+
+    /// A renamed member keeps the type inference gave it. Rename runs after
+    /// inference (`resolve_then_rename`), so the member's type is known when
+    /// its spelling changes, and the emitter still needs it: a Kotlin
+    /// `UInt` member plus a literal must spell the literal `UInt`, since
+    /// `UInt + Int` does not compile. The member arm used to reset the type
+    /// to `Unknown` — a leftover from when rename ran before inference — and
+    /// the literal went out bare.
+    #[test]
+    fn a_renamed_member_keeps_its_inferred_type() {
+        let mut ctx = TypeCtx::new();
+        ctx.insert_record("frame", RecordShape::Closed);
+        ctx.insert_var("frame.counter", int(false, 32));
+        let mut renames = HashMap::new();
+        renames.insert("frame.counter", "self.frame.counter");
+        let out = transpile_typed(
+            "frame.counter + 1",
+            ExprTarget::Kotlin,
+            &ctx,
+            &renames,
+            InferredType::Unknown,
+        )
+        .unwrap();
+        assert_eq!(out, "self.frame.counter + 1.toUInt()");
     }
 
     // EventSchema MCU native lowering:
