@@ -2428,6 +2428,23 @@ the snapshot.
 A `target` that names no list is `scxml/static-datamodel-rule`, naming the
 lists there are, and so is either statement under any other data model.
 
+**Algorithm calls.** A `sce-static` document calls an algorithm it imports
+(`<sce:import kind="algorithm" src="…" as="DaysInMonth"/>`) the way a forge
+kind does, `DaysInMonth(shown.year, shown.month)`, in a guard, an assignment
+or a host action's argument, judged against the signature the forge import
+pass discovers — its parameters' and return's types. An algorithm whose
+signature takes or returns a `list<T>` or a `record:` is callable only by a
+host (SCE_FORGE.md §4.12) and is refused where it is called. The import is
+read where the document is parsed and refused there if its file is missing
+or is not an algorithm (`import/file-not-found`, `import/kind-mismatch`,
+`import/not-forge`); under any other data model an algorithm import is
+`scxml/static-datamodel-rule`, as is one the document never calls — unlike a
+forge kind, which drops an unnamed import, a statechart keeps no import for
+later. Kotlin calls the function the algorithm's own generation emits and
+imports it by the line a forge kind importing it writes
+(`import com.sce.generated.<name>.*`); `sce-codegen generate` does not
+generate the algorithm itself, so it is generated beside the machine.
+
 **Code generation.** A backend lowers the model once its templates hold
 the variables as fields and route every expression through the forge
 expression lowerer; until then `sce-codegen` refuses the document for

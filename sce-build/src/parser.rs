@@ -2267,6 +2267,8 @@ impl SCXMLParser {
                 &model,
                 &schemas_by_stem,
             );
+            model.imported_algorithms =
+                crate::forge::static_imports::resolve(&model, dir, diag_label)?;
             let imported_enums =
                 crate::forge::event_schema_check::resolve_imported_enums(&model, &enums_by_stem);
             crate::forge::event_schema_check::check(

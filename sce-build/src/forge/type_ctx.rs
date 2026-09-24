@@ -79,31 +79,56 @@ fn insert_stateless_imports<'a>(ctx: &mut TypeCtx<'a>, imports: &'a [ImportConte
         if imp.is_stateful {
             continue;
         }
-        // An algorithm with a `list<T>` slot has no signature to register,
-        // and skipping it would leave its calls unjudged: it is registered
-        // as callable only by a host, which is what refuses the call.
-        if let Some(slot) = &imp.list_slot {
-            ctx.insert_func(imp.alias.as_str(), FuncSig::host_only(slot.as_str()));
-            continue;
+        if let Some(sig) = imported_callee_sig(
+            &imp.param_types,
+            imp.ret_type.as_ref(),
+            imp.list_slot.as_deref(),
+        ) {
+            ctx.insert_func(imp.alias.as_str(), sig);
         }
-        let Some(ret_ty) = imp.ret_type.as_ref() else {
-            continue;
-        };
-        let params: Vec<InferredType> = imp
-            .param_types
-            .iter()
-            .map(InferredType::from_sce_type)
-            .collect();
-        let ret = InferredType::from_sce_type(ret_ty);
-        ctx.insert_func(
-            imp.alias.as_str(),
-            FuncSig {
-                params,
-                ret,
-                host_only: None,
-            },
-        );
     }
+}
+
+/// The signature an imported stateless callee registers under its alias —
+/// the one rule a forge kind and a `sce-static` statechart
+/// ([`StaticScope`]) both call an import by.
+///
+/// An algorithm with a `list<T>` or `record:` slot has no signature to
+/// register, and leaving it out would leave its calls unjudged: it is
+/// registered as callable only by a host, which is what refuses the call.
+/// A callee with no return is not registered — it is no value an expression
+/// can take, and the closed scope refuses a call to it by name.
+pub(crate) fn imported_callee_sig(
+    params: &[SceType],
+    ret: Option<&SceType>,
+    host_only: Option<&str>,
+) -> Option<FuncSig> {
+    if let Some(slot) = host_only {
+        return Some(FuncSig::host_only(slot));
+    }
+    Some(FuncSig {
+        params: params.iter().map(InferredType::from_sce_type).collect(),
+        ret: InferredType::from_sce_type(ret?),
+        host_only: None,
+    })
+}
+
+/// An algorithm a `sce-static` statechart imports (`<sce:import
+/// kind="algorithm">`), read where the document is parsed: its alias, the
+/// document it names, and its signature as the forge import pass discovers
+/// it. Language-free — the name a backend calls it by is the renderer's.
+#[derive(Debug, Clone, Default)]
+pub struct StaticCallee {
+    pub alias: String,
+    /// The imported document's own name, from which a backend derives the
+    /// symbol it emits.
+    pub document_name: String,
+    pub params: Vec<SceType>,
+    pub ret: Option<SceType>,
+    /// Why only a host may call it (a list or record slot), if so.
+    pub host_only: Option<String>,
+    /// The `<sce:import>` element's row, for a refusal of the import itself.
+    pub line: Option<u32>,
 }
 
 /// Populate `ctx.vars` with every **stateful** import's alias as an opaque
@@ -459,6 +484,8 @@ pub struct StaticScope {
     pub variables: Vec<crate::model::Variable>,
     /// Each record variable's `<id>.<field>` ([`static_record_paths`]).
     record_paths: Vec<(String, InferredType)>,
+    /// Every imported algorithm, callable as `Alias(args)`.
+    pub callees: Vec<StaticCallee>,
 }
 
 impl StaticScope {
@@ -477,6 +504,7 @@ impl StaticScope {
         Some(Self {
             variables,
             record_paths,
+            callees: model.imported_algorithms.clone(),
         })
     }
 
@@ -518,7 +546,17 @@ impl StaticScope {
         paths: &'a [(String, InferredType)],
         enums: &'a [StaticEnum],
     ) -> TypeCtx<'a> {
-        static_statechart(self.variables.iter(), paths, enums)
+        let mut ctx = static_statechart(self.variables.iter(), paths, enums);
+        for callee in &self.callees {
+            if let Some(sig) = imported_callee_sig(
+                &callee.params,
+                callee.ret.as_ref(),
+                callee.host_only.as_deref(),
+            ) {
+                ctx.insert_func(callee.alias.as_str(), sig);
+            }
+        }
+        ctx
     }
 }
 

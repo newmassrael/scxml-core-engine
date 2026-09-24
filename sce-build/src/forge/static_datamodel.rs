@@ -55,6 +55,7 @@ pub fn check(
         scope: &scope,
         enums,
         diag_label,
+        read: Default::default(),
     };
     // Every record variable's fields, readable everywhere; a transition adds
     // its payload to these.
@@ -133,6 +134,28 @@ pub fn check(
             }
         }
     }
+    // An imported algorithm is imported to be called. One nothing calls is
+    // refused rather than dropped in silence — a statechart keeps no import
+    // for later, and a stale one would outlive the call it was for.
+    let read = judge.read.borrow();
+    if let Some(unused) = scope.callees.iter().find(|c| !read.contains(&c.alias)) {
+        return Err(Located::new(
+            ScxmlSemanticError::StaticDatamodelRule {
+                construct: format!("<sce:import kind=\"algorithm\" as=\"{}\">", unused.alias),
+                datamodel: Datamodel::SceStatic.as_str().to_string(),
+                rule: format!(
+                    "an imported algorithm is called by the document, and nothing calls `{}`",
+                    unused.alias
+                ),
+                state: String::new(),
+                observed: Some(unused.alias.clone()),
+            }
+            .into(),
+            diag_label,
+            unused.line,
+            None,
+        ));
+    }
     Ok(())
 }
 
@@ -163,6 +186,9 @@ struct Judge<'a> {
     scope: &'a StaticScope,
     enums: &'a [StaticEnum],
     diag_label: &'a str,
+    /// Every name an expression of the document reads or calls, so an
+    /// imported algorithm nothing calls is found.
+    read: std::cell::RefCell<std::collections::BTreeSet<String>>,
 }
 
 impl<'a> Judge<'a> {
@@ -193,10 +219,18 @@ impl<'a> Judge<'a> {
                 self.diag_label,
             )
         };
+        self.record_reads(expr);
         if let Some(list) = self.scope.list_read_as_value(expr) {
             return Err(place(list_read_refusal(&list)));
         }
         judge_into(expr, ctx, expected).map_err(place)
+    }
+
+    /// Note every name `expr` reads or calls ([`Judge::read`]).
+    fn record_reads(&self, expr: &str) {
+        if let Ok(names) = crate::forge::expr::read_identifiers(expr) {
+            self.read.borrow_mut().extend(names);
+        }
     }
 
     /// The `list<T>` variable `name` names, if it names one.
@@ -481,6 +515,14 @@ impl<'a> Judge<'a> {
             "sce_clear" => {
                 if self.list_var(&action.location).is_none() {
                     return Err(self.not_a_list(action, state));
+                }
+            }
+            // A host action's arguments are judged by
+            // `native_action::validate`; what they call still counts as a
+            // call of an imported algorithm.
+            "native_action" => {
+                for arg in &action.params {
+                    self.record_reads(&arg.expr);
                 }
             }
             "foreach" => {

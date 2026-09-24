@@ -22,6 +22,11 @@
 package {{ kotlin_package_prefix | default("com.sce.generated") }}.{{ model.name | lower }}
 
 import com.sce.runtime.*
+{# SCE Accepted Subset §2.15: each algorithm a `sce-static` machine calls,
+   imported by the line a forge kind importing it writes. #}
+{% for line in static_imports %}
+{{ line }}
+{% endfor %}
 
 {% include 'states.kt.jinja2' %}
 

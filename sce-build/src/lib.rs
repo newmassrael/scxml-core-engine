@@ -5576,12 +5576,12 @@ fn validate_worker_inbox_ordering_placement(
 /// The call signature a stateless import exposes to its caller's type
 /// inference (see [`discover_stateless_signature`]).
 #[derive(Debug, Default)]
-struct StatelessSignature {
-    params: Vec<forge::model::SceType>,
-    ret: Option<forge::model::SceType>,
+pub(crate) struct StatelessSignature {
+    pub(crate) params: Vec<forge::model::SceType>,
+    pub(crate) ret: Option<forge::model::SceType>,
     /// Why the import cannot be called from another algorithm (a `list<T>`
     /// slot); when set, `params`/`ret` are empty and say nothing.
-    list_slot: Option<String>,
+    pub(crate) list_slot: Option<String>,
 }
 
 /// Extract parameter and return types for a stateless imported kind.
@@ -5601,7 +5601,9 @@ struct StatelessSignature {
 ///
 /// * Algorithm → parameters and return are the `<sce:signature>`; one with a
 ///   `list<T>` slot carries no signature and names that slot in `list_slot`.
-fn discover_stateless_signature(doc: &forge::model::ForgeDocument) -> StatelessSignature {
+pub(crate) fn discover_stateless_signature(
+    doc: &forge::model::ForgeDocument,
+) -> StatelessSignature {
     use forge::model::{ForgeDocument, SceType};
     let known = |params: Vec<SceType>, ret: Option<SceType>| StatelessSignature {
         params,
@@ -5882,7 +5884,7 @@ fn discover_primary_function(
 ///   wildcard from `resolve_single_import` pulls every top-level function in
 ///   the imported package into scope, so a qualifier is unnecessary and
 ///   would in fact fail because Kotlin has no file-level namespace selector.
-fn build_qualified_call(
+pub(crate) fn build_qualified_call(
     func_name: &str,
     namespace: &str,
     language: &generator::Language,

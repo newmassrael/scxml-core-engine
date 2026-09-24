@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The number of days in a month of the proleptic Gregorian calendar — the
+  algorithm static_record.scxml imports and calls from a guard
+  (docs/SCE_ACCEPTED_SUBSET.md §2.15), so a calendar screen steps its shown
+  day no further than the month allows.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm"
+       name="days_in_month"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="year" type="uint16"/>
+    <sce:param name="month" type="uint8"/>
+    <sce:return type="uint8"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="days" type="uint8" init="31"/>
+    <sce:if cond="month === 4 || month === 6 || month === 9 || month === 11">
+      <sce:assign target="days" expr="30"/>
+    </sce:if>
+    <sce:if cond="month === 2">
+      <sce:assign target="days" expr="28"/>
+      <sce:if cond="(year % 4 === 0 &amp;&amp; year % 100 !== 0) || year % 400 === 0">
+        <sce:assign target="days" expr="29"/>
+      </sce:if>
+    </sce:if>
+    <sce:return expr="days"/>
+  </sce:body>
+</scxml>

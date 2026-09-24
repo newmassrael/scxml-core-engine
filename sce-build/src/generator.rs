@@ -3023,6 +3023,7 @@ fn render_kotlin(
                 .collect::<Vec<_>>()
         ),
         static_record_defs => static_lowering.record_defs.join("\n"),
+        static_imports => &static_lowering.imports,
         has_native_actions => native.any,
         native_actions_defs => &native.interface_def,
         native_actions_interface => &native.interface_name,

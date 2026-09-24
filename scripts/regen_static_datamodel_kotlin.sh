@@ -56,4 +56,19 @@ for machine in "${MACHINES[@]}"; do
     done
 done
 
-echo "Regenerated: ${MACHINES[*]} under $GENERATED_ROOT/ from $INPUT_ROOT"
+# The algorithms a machine above imports. `sce-codegen generate` does not
+# generate a document's imports (a forge kind's are generated on their own
+# too), and an algorithm's package is `com.sce.generated.<snake>` whatever
+# the machine's prefix — the package the machine's import line names.
+ALGORITHM_ROOT="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/generated"
+# algorithm_days_in_month: called from static_record's guard.
+ALGORITHMS=(days_in_month)
+for algorithm in "${ALGORITHMS[@]}"; do
+    "$CODEGEN" generate "$INPUT_ROOT/algorithm_$algorithm.scxml" -l kotlin -o "$TMP/algorithm_$algorithm/"
+    dir="$ALGORITHM_ROOT/$algorithm"
+    mkdir -p "$dir"
+    find "$dir" -maxdepth 1 -name '*.kt' -delete
+    cp "$TMP/algorithm_$algorithm"/*.kt "$dir/"
+done
+
+echo "Regenerated: ${MACHINES[*]} under $GENERATED_ROOT/ and ${ALGORITHMS[*]} under $ALGORITHM_ROOT/ from $INPUT_ROOT"

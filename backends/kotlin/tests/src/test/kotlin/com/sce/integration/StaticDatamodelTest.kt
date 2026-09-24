@@ -224,17 +224,47 @@ class StaticDatamodelTest {
 
     @Test
     fun aFieldIsUpdatedAloneAndAGuardReadsIt() {
-        // `shown.dayOfMonth < 28` guards `shown.dayOfMonth + 1`: four steps
-        // reach 28, and the fifth finds the guard false. The other fields
-        // are carried over untouched by each update.
+        // `shown.dayOfMonth < DaysInMonth(shown.year, shown.month)` guards
+        // `shown.dayOfMonth + 1`, the bound computed by the imported
+        // algorithm: September has 30 days, so six steps from the 24th reach
+        // 30 and the seventh finds the guard false. The other fields are
+        // carried over untouched by each update.
         val sm = StaticRecordStateMachine()
         sm.initialize()
         try {
-            repeat(5) {
+            repeat(7) {
                 sm.send(StaticRecordEvent.Next)
                 sm.tick()
             }
-            assertEquals(day(2026, 9, 28), sm.shown)
+            assertEquals(day(2026, 9, 30), sm.shown)
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun theImportedAlgorithmBoundsTheStepByTheMonthItIsIn() {
+        // The same guard in February: 28 days in 2027, 29 in the leap year
+        // 2028 — the algorithm is called with the record's fields each time,
+        // not folded to a constant.
+        val sm = StaticRecordStateMachine()
+        sm.initialize()
+        try {
+            sm.raiseDayPicked(2027.toUShort(), 2.toUByte(), 27.toUByte())
+            sm.tick()
+            repeat(3) {
+                sm.send(StaticRecordEvent.Next)
+                sm.tick()
+            }
+            assertEquals(day(2027, 2, 28), sm.shown)
+
+            sm.raiseDayPicked(2028.toUShort(), 2.toUByte(), 27.toUByte())
+            sm.tick()
+            repeat(3) {
+                sm.send(StaticRecordEvent.Next)
+                sm.tick()
+            }
+            assertEquals(day(2028, 2, 29), sm.shown)
         } finally {
             sm.cleanup()
         }

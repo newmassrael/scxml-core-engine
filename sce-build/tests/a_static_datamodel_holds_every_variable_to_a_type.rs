@@ -83,8 +83,10 @@ fn assert_refused_at(out: &str, code: &str, line: u32) {
         .lines()
         .find(|l| l.contains(&format!("\"code\":\"{code}\"")))
         .unwrap_or_else(|| panic!("expected {code}, got:\n{out}"));
+    // A refusal placed on a row alone (an import) carries no column.
     assert!(
-        record.contains(&format!("\"line\":{line},")),
+        record.contains(&format!("\"line\":{line},"))
+            || record.contains(&format!("\"line\":{line}}}")),
         "{code} must be placed on line {line}:\n{record}"
     );
 }
@@ -872,4 +874,158 @@ fn a_list_statement_under_another_data_model_is_refused() {
     );
     assert!(!ok, "a list exists only under sce-static:\n{out}");
     assert_refused_at(&out, "scxml/static-datamodel-rule", 8);
+}
+
+// ── An imported algorithm is called as `Alias(args)` ────────────────────
+
+/// A scalar algorithm: `clamp(n, top)`.
+const ALGORITHM_CLAMP: &str = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="clamp" version="1.0">
+  <sce:signature>
+    <sce:param name="n" type="uint32"/>
+    <sce:param name="top" type="uint32"/>
+    <sce:return type="uint32"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="r" type="uint32" init="n"/>
+    <sce:if cond="r &gt; top"><sce:assign target="r" expr="top"/></sce:if>
+    <sce:return expr="r"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// An algorithm returning a list — callable only by a host.
+const ALGORITHM_LIST: &str = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="upto" version="1.0">
+  <sce:signature>
+    <sce:param name="n" type="uint32"/>
+    <sce:return type="list&lt;uint32&gt;" returns-max-size="4"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="list&lt;uint32&gt;" capacity="4"/>
+    <sce:append target="out" expr="n"/>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// A machine under `datamodel` importing `algorithm_clamp.scxml` as `Clamp`
+/// on line 4 (and `algorithm_upto.scxml` as `Upto` on line 5), with
+/// `count: uint32` and `states` from line 10.
+fn calling_doc(datamodel: &str, states: &str) -> String {
+    format!(
+        r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="{datamodel}">
+  <sce:import kind="algorithm" src="algorithm_clamp.scxml" as="Clamp"/>
+  <sce:import kind="algorithm" src="algorithm_upto.scxml" as="Upto"/>
+  <datamodel>
+    <data id="count" sce:type="uint32" expr="0"/>
+  </datamodel>
+
+  {states}
+</scxml>
+"##
+    )
+}
+
+fn run_calling(args: &[&str], doc: &str) -> (bool, String) {
+    run_beside(
+        args,
+        doc,
+        &[
+            ("algorithm_clamp.scxml", ALGORITHM_CLAMP),
+            ("algorithm_upto.scxml", ALGORITHM_LIST),
+        ],
+    )
+}
+
+#[test]
+fn an_imported_algorithm_is_called_in_a_guard_and_an_assignment() {
+    let (ok, out) = run_calling(
+        &["check", "-l", "kotlin"],
+        &calling_doc(
+            "sce-static",
+            r#"<state id="s">
+    <transition event="tick" cond="Clamp(count + 1, 5) &gt; count" type="internal">
+      <assign location="count" expr="Clamp(count + 1, 5)"/>
+    </transition>
+    <transition event="list" type="internal"><sce:action name="show"><sce:arg name="n" expr="Clamp(count, 3)"/></sce:action></transition>
+  </state>"#,
+        )
+        // Upto is imported to be refused below; here it is not in the file.
+        .replace(
+            r#"  <sce:import kind="algorithm" src="algorithm_upto.scxml" as="Upto"/>
+"#,
+            "",
+        ),
+    );
+    assert!(ok, "a scalar algorithm is called like a function:\n{out}");
+}
+
+#[test]
+fn an_imported_algorithm_nothing_calls_is_refused_at_its_import() {
+    let (ok, out) = run_calling(
+        &["check"],
+        &calling_doc(
+            "sce-static",
+            r#"<state id="s"><transition event="tick" type="internal"><assign location="count" expr="Clamp(count, 5)"/></transition></state>"#,
+        ),
+    );
+    assert!(!ok, "`Upto` is imported and never called:\n{out}");
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 5);
+    assert!(out.contains("Upto"), "the refusal names the import:\n{out}");
+}
+
+#[test]
+fn a_list_returning_algorithm_is_refused_where_it_is_called() {
+    let (ok, out) = run_calling(
+        &["check"],
+        &calling_doc(
+            "sce-static",
+            r#"<state id="s"><transition event="tick" type="internal">
+      <assign location="count" expr="Clamp(count, 5)"/>
+      <log label="l" expr="Upto(count)"/>
+    </transition></state>"#,
+        ),
+    );
+    assert!(
+        !ok,
+        "only a host calls an algorithm returning a list:\n{out}"
+    );
+    assert!(
+        out.contains("list<uint32>"),
+        "the refusal names the slot:\n{out}"
+    );
+}
+
+#[test]
+fn an_algorithm_import_whose_file_is_missing_is_refused_at_its_import() {
+    let (ok, out) = run_beside(
+        &["check"],
+        &calling_doc(
+            "sce-static",
+            r#"<state id="s"><transition event="tick" type="internal"><assign location="count" expr="Clamp(count, 5)"/></transition></state>"#,
+        ),
+        &[("algorithm_upto.scxml", ALGORITHM_LIST)],
+    );
+    assert!(
+        !ok,
+        "algorithm_clamp.scxml is not beside the document:\n{out}"
+    );
+    assert_refused_at(&out, "import/file-not-found", 4);
+    assert!(out.contains("algorithm_clamp.scxml"), "{out}");
+}
+
+#[test]
+fn an_algorithm_import_under_another_data_model_is_refused() {
+    let (ok, out) = run_calling(
+        &["check"],
+        &calling_doc("ecmascript", r#"<state id="s"/>"#)
+            .replace(r#"sce:type="uint32" expr="0""#, r#"expr="0""#),
+    );
+    assert!(!ok, "only sce-static lowers an algorithm call:\n{out}");
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 4);
 }

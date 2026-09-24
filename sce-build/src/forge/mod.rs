@@ -51,6 +51,7 @@ pub mod retention;
 pub mod review_table;
 pub mod sourcemap;
 pub mod static_datamodel;
+pub mod static_imports;
 pub mod static_lowering;
 pub mod symbol_mangling;
 pub mod target_plugin;

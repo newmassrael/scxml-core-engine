@@ -4,7 +4,8 @@
   variable — the day a calendar screen shows — built whole from its
   <sce:set>s, updated a field at a time, and replaced field by field from a
   typed event payload of the same schema — content that runs only for a
-  delivery that carries the payload.
+  delivery that carries the payload. The step is bounded by an imported
+  algorithm called from the guard: the day never passes the month's length.
 
   Kotlin compile+run gate: scripts/regen_static_datamodel_kotlin.sh commits
   the generated machine, and StaticDatamodelTest.kt drives it.
@@ -12,6 +13,7 @@
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="showing" datamodel="sce-static" name="static_record">
   <sce:import kind="event-schema" src="schema_day.scxml" as="Day"/>
+  <sce:import kind="algorithm" src="algorithm_days_in_month.scxml" as="DaysInMonth"/>
   <datamodel>
     <data id="shown" sce:type="record:Day" sce:direction="out">
       <sce:set name="year" expr="2026"/>
@@ -21,7 +23,7 @@
     <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>
   <state id="showing">
-    <transition event="next" cond="shown.dayOfMonth &lt; 28" type="internal">
+    <transition event="next" cond="shown.dayOfMonth &lt; DaysInMonth(shown.year, shown.month)" type="internal">
       <assign location="shown.dayOfMonth" expr="shown.dayOfMonth + 1"/>
     </transition>
     <transition event="day.picked" type="internal">

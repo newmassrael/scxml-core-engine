@@ -49,8 +49,39 @@ pub struct KotlinStaticLowering {
     pub payload_events: BTreeSet<String>,
     /// One top-level data class per event-schema a `record:<alias>`
     /// variable names, declared in the machine's own file the way its event
-    /// payload classes are — so the machine imports no other unit.
+    /// payload classes are.
     pub record_defs: Vec<String>,
+    /// The import line of each algorithm the document calls — the line a
+    /// forge kind importing the same algorithm writes, so the machine reaches
+    /// the function where the algorithm's own generation put it.
+    pub imports: Vec<String>,
+}
+
+/// Every name a lowered `sce-static` expression spells differently in
+/// Kotlin: each variable to its field, each imported algorithm to the
+/// function its generation emits — the name a forge kind calling the same
+/// algorithm uses. One list for every lowering, so a guard, an assignment
+/// and a host action's argument cannot disagree about a name.
+fn kotlin_names(scope: &StaticScope) -> Vec<(String, String)> {
+    let lang = crate::generator::Language::Kotlin;
+    scope
+        .variables
+        .iter()
+        .map(|v| (v.id.clone(), filters::to_camel_case(v.id.clone())))
+        .chain(scope.callees.iter().map(|c| {
+            let identity = crate::forge::generator::forge_import_identity(
+                &c.document_name,
+                &lang,
+                false,
+                &crate::ForgeCompileOptions::default(),
+            );
+            let symbol = crate::forge::generator::forge_algorithm_symbol(&c.document_name, lang);
+            (
+                c.alias.clone(),
+                crate::build_qualified_call(&symbol, &identity.namespace, &lang),
+            )
+        }))
+        .collect()
 }
 
 /// The Kotlin class a `record:<alias>` variable of `machine` is held in:
@@ -112,9 +143,21 @@ pub fn lower_kotlin(
     let variables = &scope.variables;
     let schemas = model.imported_event_schemas.clone();
     let records = model.imported_records.clone();
-    let names: Vec<(String, String)> = variables
+    let names = kotlin_names(&scope);
+    let imports: Vec<String> = scope
+        .callees
         .iter()
-        .map(|v| (v.id.clone(), filters::to_camel_case(v.id.clone())))
+        .map(|c| {
+            crate::forge::generator::forge_import_identity(
+                &c.document_name,
+                &crate::generator::Language::Kotlin,
+                false,
+                &crate::ForgeCompileOptions::default(),
+            )
+            .include_stmt
+        })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
         .collect();
     // The record variables, each with the schema its alias names — what a
     // field assignment is rewritten against.
@@ -327,6 +370,7 @@ pub fn lower_kotlin(
         fields,
         payload_events,
         record_defs,
+        imports,
     })
 }
 
@@ -377,11 +421,7 @@ pub(crate) fn lower_kotlin_argument(
 ) -> Option<KotlinArgument> {
     let paths = scope.paths(event.map(|(_, schema)| schema));
     let ctx = scope.ctx(&paths, &[]);
-    let names: Vec<(String, String)> = scope
-        .variables
-        .iter()
-        .map(|v| (v.id.clone(), filters::to_camel_case(v.id.clone())))
-        .collect();
+    let names = kotlin_names(scope);
     let accessor = event.map(|(event, _)| format!("{}!!", payload_field(event)));
     let renames = renames(&names, accessor.as_deref());
     let ty = crate::forge::native_action::static_argument_type(&ctx, arg).ok()?;

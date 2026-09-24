@@ -1,14 +1,15 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 19ecd19be2f9404a14b82c2f9ab7ddb05905712d4c77e74c22ff87f6e0e6ce33
+// source-hash: 9682ba42436be01ddeb48458c1e76a0d9251bd3f706e09da9977af19a7844382
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_record.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_record.scxml:12 :: _machine
+// SCE-MAP: static_record.scxml:13 :: _machine
 
 package com.sce.integration.static_record
 
 import com.sce.runtime.*
+import com.sce.generated.days_in_month.*
 
 
 // --- States (W3C SCXML 3.2) ---
@@ -208,7 +209,7 @@ class StaticRecordStateMachine(
     private fun processShowing(
         event: StaticRecordEvent
     ): TransitionResult<StaticRecordState> = when {
-        event is StaticRecordEvent.Next && shown.dayOfMonth < 28.toUByte() -> TransitionResult.Internal(0)
+        event is StaticRecordEvent.Next && shown.dayOfMonth < daysInMonth(shown.year, shown.month) -> TransitionResult.Internal(0)
         // W3C SCXML 3.13: Targetless transition (actions only)
         event is StaticRecordEvent.Day.Picked -> TransitionResult.Internal(1)
         // W3C SCXML 3.13: Targetless transition (actions only)
@@ -219,11 +220,11 @@ class StaticRecordStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_record.scxml:12 :: _machine
+    // SCE-MAP: static_record.scxml:13 :: _machine
     override fun onEntry(state: StaticRecordState, pathChild: StaticRecordState?) {
         when (state) {
             is StaticRecordState.Showing -> {
-                // SCE-MAP: static_record.scxml:23 :: showing :: _state_body
+                // SCE-MAP: static_record.scxml:25 :: showing :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("showing")) return
             }
@@ -231,11 +232,11 @@ class StaticRecordStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_record.scxml:12 :: _machine
+    // SCE-MAP: static_record.scxml:13 :: _machine
     override fun onExit(state: StaticRecordState) {
         when (state) {
             is StaticRecordState.Showing -> {
-                // SCE-MAP: static_record.scxml:23 :: showing :: _state_body
+                // SCE-MAP: static_record.scxml:25 :: showing :: _state_body
                 activeStateIds.remove("showing")
             }
         }
@@ -243,7 +244,7 @@ class StaticRecordStateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: static_record.scxml:12 :: _machine
+    // SCE-MAP: static_record.scxml:13 :: _machine
     override fun executeTransitionActions(
         source: StaticRecordState,
         event: StaticRecordEvent?,
@@ -252,13 +253,13 @@ class StaticRecordStateMachine(
         when (source) {
         is StaticRecordState.Showing -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: static_record.scxml:24 :: showing :: _transition_0
+                // SCE-MAP: static_record.scxml:26 :: showing :: _transition_0
 
 
             shown = shown.copy(dayOfMonth = (shown.dayOfMonth.toUInt() + 1.toUInt()).toUByte())
             }
             1 -> {
-                // SCE-MAP: static_record.scxml:27 :: showing :: _transition_1
+                // SCE-MAP: static_record.scxml:29 :: showing :: _transition_1
                 if (pendingDayPickedPayload == null) {
                     return
                 }
@@ -273,7 +274,7 @@ class StaticRecordStateMachine(
             shown = shown.copy(dayOfMonth = pendingDayPickedPayload!!.dayOfMonth)
             }
             2 -> {
-                // SCE-MAP: static_record.scxml:34 :: showing :: _transition_2
+                // SCE-MAP: static_record.scxml:36 :: showing :: _transition_2
 
 
             refusals = refusals + 1.toUInt()

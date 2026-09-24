@@ -2373,6 +2373,13 @@ pub struct SCXMLModel {
     /// and, like it, empty without sibling files and not serialized.
     #[serde(skip)]
     pub imported_records: std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>,
+    /// The algorithms a `sce-static` document imports, each with the
+    /// signature its import resolved to — what an expression calls as
+    /// `Alias(args)` (SCE Accepted Subset §2.15). Resolved from sibling files
+    /// where the document is parsed ([`crate::forge::static_imports`]);
+    /// empty without them, and not serialized.
+    #[serde(skip)]
+    pub imported_algorithms: Vec<crate::forge::type_ctx::StaticCallee>,
     /// The document's initial state, as the parser leaves it: resolved to
     /// a leaf, and for a multi-token value collapsed to its first token.
     ///
