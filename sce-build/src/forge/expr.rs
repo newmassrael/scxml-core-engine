@@ -1177,14 +1177,6 @@ pub(crate) struct TypedExpr {
     pub span: Option<std::ops::Range<usize>>,
 }
 
-/// Structural equality: two trees are the same expression whatever text
-/// they were read from, so `span` — where, not what — takes no part.
-impl PartialEq for TypedExpr {
-    fn eq(&self, other: &Self) -> bool {
-        self.kind == other.kind && self.ty == other.ty
-    }
-}
-
 impl TypedExpr {
     /// A node no source text spells.
     fn new(kind: ExprKind) -> Self {
@@ -1193,6 +1185,44 @@ impl TypedExpr {
             ty: InferredType::Unknown,
             span: None,
         }
+    }
+
+    /// Every expression directly inside this one, in the order it is
+    /// written — the one walk every pass over the tree takes, so a node kind
+    /// added later is either walked everywhere or fails to compile here.
+    pub(crate) fn children(&self) -> Vec<&TypedExpr> {
+        match &self.kind {
+            ExprKind::NumberLit(_)
+            | ExprKind::StringLit { .. }
+            | ExprKind::BytesLit { .. }
+            | ExprKind::BoolLit(_)
+            | ExprKind::NullLit
+            | ExprKind::Ident(_)
+            | ExprKind::Raw(_) => Vec::new(),
+            ExprKind::Binary { left, right, .. } => vec![left, right],
+            ExprKind::Unary { operand, .. } => vec![operand],
+            ExprKind::Conditional {
+                condition,
+                consequent,
+                alternate,
+            } => vec![condition, consequent, alternate],
+            ExprKind::Member { object, .. } => vec![object],
+            ExprKind::Index { object, index } => vec![object, index],
+            ExprKind::Call { callee, args, .. } => {
+                std::iter::once(&**callee).chain(args.iter()).collect()
+            }
+            ExprKind::BytesView { source, len } => {
+                std::iter::once(&**source).chain(len.as_deref()).collect()
+            }
+        }
+    }
+}
+
+/// Structural equality: two trees are the same expression whatever text
+/// they were read from, so `span` — where, not what — takes no part.
+impl PartialEq for TypedExpr {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind && self.ty == other.ty
     }
 }
 
@@ -1386,49 +1416,13 @@ pub fn extract_free_idents(raw_expr: &str) -> Result<Vec<String>, Refusal> {
 /// parsed tree: in `frame.len` it answers `frame`, never `len`.
 pub fn read_identifiers(raw_expr: &str) -> Result<Vec<String>, Refusal> {
     fn walk(node: &TypedExpr, names: &mut Vec<String>) {
-        match &node.kind {
-            ExprKind::Ident(name) => {
-                if !names.contains(name) {
-                    names.push(name.clone());
-                }
+        if let ExprKind::Ident(name) = &node.kind {
+            if !names.contains(name) {
+                names.push(name.clone());
             }
-            ExprKind::Binary { left, right, .. } => {
-                walk(left, names);
-                walk(right, names);
-            }
-            ExprKind::Unary { operand, .. } => walk(operand, names),
-            ExprKind::Conditional {
-                condition,
-                consequent,
-                alternate,
-            } => {
-                walk(condition, names);
-                walk(consequent, names);
-                walk(alternate, names);
-            }
-            ExprKind::Member { object, .. } => walk(object, names),
-            ExprKind::Index { object, index } => {
-                walk(object, names);
-                walk(index, names);
-            }
-            ExprKind::Call { callee, args, .. } => {
-                walk(callee, names);
-                for arg in args {
-                    walk(arg, names);
-                }
-            }
-            ExprKind::BytesView { source, len } => {
-                walk(source, names);
-                if let Some(len) = len {
-                    walk(len, names);
-                }
-            }
-            ExprKind::NumberLit(_)
-            | ExprKind::StringLit { .. }
-            | ExprKind::BytesLit { .. }
-            | ExprKind::BoolLit(_)
-            | ExprKind::NullLit
-            | ExprKind::Raw(_) => {}
+        }
+        for child in node.children() {
+            walk(child, names);
         }
     }
     let mut names = Vec::new();

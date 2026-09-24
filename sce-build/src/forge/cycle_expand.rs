@@ -24,6 +24,15 @@
 //! parenthesised for the same reason: precedence is the one thing a
 //! textual splice can quietly get wrong.
 //!
+//! ⚠⚠ WHAT IS REWRITTEN IS FOUND IN THE PARSED TREE, not in the text: a
+//! call is a call node whose callee is the bare name, and its bounds and
+//! its cursor argument are the spans the parser gave them. Until
+//! 2026-09-24 they were found by searching the text for the name and
+//! counting parentheses and commas, so a string literal spelling a call
+//! (`'cycle_next(modes, cursor)'`) was expanded inside the string — a
+//! valid document's string output came out as the expansion's text — and
+//! a longer name ending in one (`mycycle_next(…)`) was cut in two.
+//!
 //! ⚠⚠⚠ THE BOUNDARY RULES ARE DECIDED HERE, not per backend:
 //!
 //! * **Nothing present.** `cycle_first(c, cur)` answers `cur`. The
@@ -47,6 +56,9 @@
 //!   49 terms) that is fine, and the escape hatch if it ever is not is a
 //!   generated helper function per cycle, which is O(n) with a local.
 
+use std::ops::Range;
+
+use crate::forge::expr::{parse_to_ast, ExprKind, TypedExpr};
 use crate::forge::model::{Cycle, ForgeDocument, ForgeField, ParsedForge};
 
 /// The call names this pass rewrites.
@@ -94,11 +106,11 @@ pub fn expand(parsed: &ParsedForge) -> Option<ForgeDocument> {
 /// Rewrite until no cycle call is left, so a call nested inside
 /// another's argument is expanded too.
 ///
-/// ⚠ The pass count is BOUNDED. Each pass replaces the outermost call it
-/// finds with text containing no cycle calls of its own except those
-/// that came from the arguments, so the nesting depth strictly
-/// decreases; the cap is a guard against a rewrite that fails to shrink,
-/// which would otherwise be an infinite loop inside a compiler.
+/// ⚠ The pass count is BOUNDED. Each pass replaces a call whose arguments
+/// hold no cycle call with text holding none, so the number of calls left
+/// strictly decreases and a pass is taken per call the author wrote; the
+/// cap is a guard against a rewrite that fails to shrink, which would
+/// otherwise be an infinite loop inside a compiler.
 fn expand_text(text: &str, cycles: &[Cycle]) -> String {
     let mut out = text.to_string();
     for _ in 0..32 {
@@ -110,68 +122,71 @@ fn expand_text(text: &str, cycles: &[Cycle]) -> String {
     out
 }
 
-/// Find the first cycle call and replace it. `None` when there is none
-/// left, or when its shape is not one this pass can read — in which case
-/// the text is left alone and the ordinary parser reports it.
+/// Replace the innermost cycle call. `None` when there is none left, or
+/// when the text does not parse — in which case it is left alone and the
+/// ordinary parser reports it.
+///
+/// Innermost first, so a cursor argument holding a cycle call of its own
+/// is expanded once, before the call around it copies that argument into
+/// every term of its expansion.
 fn expand_once(text: &str, cycles: &[Cycle]) -> Option<String> {
-    for name in CYCLE_CALLS {
-        let mut from = 0usize;
-        while let Some(rel) = text[from..].find(name) {
-            let at = from + rel;
-            from = at + name.len();
-            // A call, not an identifier that merely starts the same way.
-            let rest = text[at + name.len()..].trim_start();
-            if !rest.starts_with('(') {
-                continue;
-            }
-            let open = text[at + name.len()..].find('(')? + at + name.len();
-            let close = matching_paren(text, open)?;
-            let inside = &text[open + 1..close];
-            let (id, arg) = split_top_comma(inside)?;
-            let cycle = cycles.iter().find(|c| c.id == id.trim())?;
-            let replacement = render(name, cycle, arg.trim());
-            return Some(format!(
-                "{}{}{}",
-                &text[..at],
-                replacement,
-                &text[close + 1..]
-            ));
-        }
-    }
-    None
+    let tree = parse_to_ast(text).ok()?;
+    let call = innermost_cycle_call(&tree, cycles)?;
+    let replacement = render(call.name, call.cycle, text[call.cursor].trim());
+    Some(format!(
+        "{}{}{}",
+        &text[..call.at.start],
+        replacement,
+        &text[call.at.end..]
+    ))
 }
 
-/// Index of the `)` matching the `(` at `open`.
-fn matching_paren(text: &str, open: usize) -> Option<usize> {
-    let bytes = text.as_bytes();
-    let mut depth = 0usize;
-    for (i, b) in bytes.iter().enumerate().skip(open) {
-        match b {
-            b'(' => depth += 1,
-            b')' => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(i);
-                }
-            }
-            _ => {}
-        }
-    }
-    None
+/// A cycle call as the parser read it.
+struct CycleCall<'c> {
+    /// The call's own text, callee to closing parenthesis.
+    at: Range<usize>,
+    name: &'static str,
+    cycle: &'c Cycle,
+    /// The cursor argument's text.
+    cursor: Range<usize>,
 }
 
-/// Split `"<id>, <expr>"` at the comma that is not inside parentheses.
-fn split_top_comma(inside: &str) -> Option<(&str, &str)> {
-    let mut depth = 0usize;
-    for (i, ch) in inside.char_indices() {
-        match ch {
-            '(' => depth += 1,
-            ')' => depth = depth.checked_sub(1)?,
-            ',' if depth == 0 => return Some((&inside[..i], &inside[i + 1..])),
-            _ => {}
-        }
-    }
-    None
+/// The first cycle call under `node` whose arguments hold none of their
+/// own — what is under a node before the node itself.
+fn innermost_cycle_call<'c>(node: &TypedExpr, cycles: &'c [Cycle]) -> Option<CycleCall<'c>> {
+    let under = node
+        .children()
+        .into_iter()
+        .find_map(|child| innermost_cycle_call(child, cycles));
+    under.or_else(|| cycle_call(node, cycles))
+}
+
+/// `node` as a cycle call: a call node whose callee is the bare name of
+/// one of [`CYCLE_CALLS`], with a declared cycle's id and a cursor as its
+/// two arguments. A call of any other shape is not rewritten — the type
+/// checker refuses it as a call to a name nothing provides.
+fn cycle_call<'c>(node: &TypedExpr, cycles: &'c [Cycle]) -> Option<CycleCall<'c>> {
+    let ExprKind::Call { callee, args, .. } = &node.kind else {
+        return None;
+    };
+    let ExprKind::Ident(callee) = &callee.kind else {
+        return None;
+    };
+    let name = CYCLE_CALLS
+        .into_iter()
+        .find(|name| *name == callee.as_str())?;
+    let [id, cursor] = args.as_slice() else {
+        return None;
+    };
+    let ExprKind::Ident(id) = &id.kind else {
+        return None;
+    };
+    Some(CycleCall {
+        at: node.span.clone()?,
+        name,
+        cycle: cycles.iter().find(|cycle| cycle.id == *id)?,
+        cursor: cursor.span.clone()?,
+    })
 }
 
 /// `A.STEP` — how a document names a variant, which the existing
@@ -234,5 +249,94 @@ fn render(name: &str, cycle: &Cycle, arg: &str) -> String {
             out
         }
         _ => unreachable!("render is only called with a name from CYCLE_CALLS"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::forge::model::CycleStep;
+
+    /// A cycle `modes` over `Mode`, one stop per name, each present when
+    /// `<name>On` holds.
+    fn cycle(stops: &[&str]) -> Cycle {
+        Cycle {
+            id: "modes".to_string(),
+            of: "Mode".to_string(),
+            steps: stops
+                .iter()
+                .map(|name| CycleStep {
+                    name: (*name).to_string(),
+                    when: Some(format!("{}On", name.to_lowercase())),
+                })
+                .collect(),
+            line: None,
+        }
+    }
+
+    fn expanded(text: &str, stops: &[&str]) -> String {
+        expand_text(text, &[cycle(stops)])
+    }
+
+    #[test]
+    fn a_string_that_spells_a_call_is_left_as_written() {
+        let text = "'cycle_next(modes, cursor)'";
+        assert_eq!(expanded(text, &["ECO", "NORMAL"]), text);
+    }
+
+    #[test]
+    fn a_longer_name_ending_in_a_call_is_not_one() {
+        let text = "mycycle_next(modes, cursor)";
+        assert_eq!(expanded(text, &["ECO", "NORMAL"]), text);
+    }
+
+    #[test]
+    fn a_member_named_like_a_call_is_not_one() {
+        let text = "gear.cycle_next(modes, cursor)";
+        assert_eq!(expanded(text, &["ECO", "NORMAL"]), text);
+    }
+
+    #[test]
+    fn a_string_in_the_cursor_ends_neither_the_argument_nor_the_call() {
+        let stops = ["ECO", "NORMAL"];
+        let cursor = "pick(')', 'a,b')";
+        assert_eq!(
+            expanded(&format!("cycle_has(modes, {cursor})"), &stops),
+            render("cycle_has", &cycle(&stops), cursor)
+        );
+    }
+
+    #[test]
+    fn a_call_keeps_the_text_around_it() {
+        let stops = ["ECO", "NORMAL"];
+        assert_eq!(
+            expanded("  x + cycle_first(modes, cursor) * 2", &stops),
+            format!(
+                "  x + {} * 2",
+                render("cycle_first", &cycle(&stops), "cursor")
+            )
+        );
+    }
+
+    /// Expanded innermost first, the cursor's own call is expanded once;
+    /// expanded from the outside, `cycle_next` copies its cursor into
+    /// n² places — 49 for seven stops — and the pass cap ran out with
+    /// calls still in the text, which the type checker then refused as
+    /// calls to a name nothing provides.
+    #[test]
+    fn a_call_in_the_cursor_is_expanded_before_the_call_around_it() {
+        let stops = ["A", "B", "C", "D", "E", "F", "G"];
+        let text = "cycle_next(modes, cycle_prev(modes, cursor))";
+        let inner = render("cycle_prev", &cycle(&stops), "cursor");
+        assert_eq!(
+            expanded(text, &stops),
+            render("cycle_next", &cycle(&stops), &inner)
+        );
+    }
+
+    #[test]
+    fn a_call_to_a_cycle_nobody_declared_is_left_for_the_type_checker() {
+        let text = "cycle_next(nothing, cursor)";
+        assert_eq!(expanded(text, &["ECO", "NORMAL"]), text);
     }
 }

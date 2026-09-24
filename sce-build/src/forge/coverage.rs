@@ -104,7 +104,7 @@ fn compared_values(ast: &TypedExpr, out: &mut BTreeMap<String, BTreeSet<String>>
             }
         }
     }
-    for child in children(ast) {
+    for child in ast.children() {
         compared_values(child, out);
     }
 }
@@ -120,26 +120,6 @@ fn literal_of(e: &TypedExpr) -> Option<String> {
         // and the property IS the variant's name.
         ExprKind::Member { property, .. } => Some(property.clone()),
         _ => None,
-    }
-}
-
-fn children(e: &TypedExpr) -> Vec<&TypedExpr> {
-    match &e.kind {
-        ExprKind::Binary { left, right, .. } => vec![left, right],
-        ExprKind::Unary { operand, .. } => vec![operand],
-        ExprKind::Conditional {
-            condition,
-            consequent,
-            alternate,
-        } => vec![condition, consequent, alternate],
-        ExprKind::Member { object, .. } => vec![object],
-        ExprKind::Index { object, index } => vec![object, index],
-        ExprKind::Call { callee, args, .. } => {
-            let mut v = vec![&**callee];
-            v.extend(args.iter());
-            v
-        }
-        _ => Vec::new(),
     }
 }
 

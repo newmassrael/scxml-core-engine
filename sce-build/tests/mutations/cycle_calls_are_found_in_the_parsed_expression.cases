@@ -1,0 +1,115 @@
+# Mutation cases for "a cycle call is found in the parsed expression".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/cycle_calls_are_found_in_the_parsed_expression.cases`.
+#
+# The first case puts the defect back whole: the calls searched for in the
+# expression's text by name, their bounds found by counting parentheses
+# and commas. The unit tests in `cycle_expand.rs` refuse it at a string
+# literal that spells a call, at a longer name ending in one, at a member
+# named like one, and at a nested call it copies past the pass cap.
+#
+# The rest each take one rule of the tree search away: the order that
+# expands a call's cursor before the call, the bare name a callee must be,
+# and the declared cycle its first argument must name.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --lib --test cycle_navigation
+mutation_targets sce-build/src/forge/cycle_expand.rs
+mutation_oracles sce-build/src/forge/cycle_expand.rs
+
+# The tree search stays compiled and called, and its result is thrown away:
+# a function nothing calls does not build under `warnings = deny`, and a
+# case that cannot build reports INCONCLUSIVE.
+mutation_case "the calls are found by searching the text again" <<'PY'
+edit("sce-build/src/forge/cycle_expand.rs",
+     r'''fn expand_once(text: &str, cycles: &[Cycle]) -> Option<String> {
+    let tree = parse_to_ast(text).ok()?;
+    let call = innermost_cycle_call(&tree, cycles)?;
+    let replacement = render(call.name, call.cycle, text[call.cursor].trim());
+    Some(format!(
+        "{}{}{}",
+        &text[..call.at.start],
+        replacement,
+        &text[call.at.end..]
+    ))
+}''',
+     r'''fn expand_once(text: &str, cycles: &[Cycle]) -> Option<String> {
+    if let Ok(tree) = parse_to_ast(text) {
+        let _ = innermost_cycle_call(&tree, cycles)
+            .map(|c| (c.at, c.name, c.cycle.id.len(), c.cursor));
+    }
+    for name in CYCLE_CALLS {
+        let mut from = 0usize;
+        while let Some(rel) = text[from..].find(name) {
+            let at = from + rel;
+            from = at + name.len();
+            if !text[at + name.len()..].trim_start().starts_with('(') {
+                continue;
+            }
+            let open = text[at + name.len()..].find('(')? + at + name.len();
+            let mut depth = 0usize;
+            let mut close = None;
+            for (i, b) in text.bytes().enumerate().skip(open) {
+                if b == b'(' {
+                    depth += 1;
+                } else if b == b')' {
+                    depth -= 1;
+                    if depth == 0 {
+                        close = Some(i);
+                        break;
+                    }
+                }
+            }
+            let close = close?;
+            let inside = &text[open + 1..close];
+            let mut depth = 0usize;
+            let mut comma = None;
+            for (i, ch) in inside.char_indices() {
+                match ch {
+                    '(' => depth += 1,
+                    ')' => depth = depth.checked_sub(1)?,
+                    ',' if depth == 0 => {
+                        comma = Some(i);
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            let comma = comma?;
+            let cycle = cycles.iter().find(|c| c.id == inside[..comma].trim())?;
+            let replacement = render(name, cycle, inside[comma + 1..].trim());
+            return Some(format!("{}{}{}", &text[..at], replacement, &text[close + 1..]));
+        }
+    }
+    None
+}''')
+PY
+
+mutation_case "a call is expanded from the outside in" <<'PY'
+edit("sce-build/src/forge/cycle_expand.rs",
+     r'''    under.or_else(|| cycle_call(node, cycles))''',
+     r'''    cycle_call(node, cycles).or(under)''')
+PY
+
+mutation_case "a member named like a cycle call is taken for one" <<'PY'
+edit("sce-build/src/forge/cycle_expand.rs",
+     r'''    let ExprKind::Ident(callee) = &callee.kind else {
+        return None;
+    };''',
+     r'''    let callee = match &callee.kind {
+        ExprKind::Ident(callee) => callee,
+        ExprKind::Member { property, .. } => property,
+        _ => return None,
+    };''')
+PY
+
+mutation_case "any id reaches the first declared cycle" <<'PY'
+edit("sce-build/src/forge/cycle_expand.rs",
+     r'''        cycle: cycles.iter().find(|cycle| cycle.id == *id)?,''',
+     r'''        cycle: {
+            let _ = id;
+            cycles.first()?
+        },''')
+PY
