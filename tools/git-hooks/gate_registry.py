@@ -450,6 +450,11 @@ GATES: dict[str, dict] = {
     "nl-ir-closure": {
         "workflows": ["nl-ir-closure.yml"],
         "runner_workflow": True,
+        # Rows G2-G4 run `sce-codegen` through `sce_gate_codegen`. Without
+        # this edge the gate sorted ahead of the build on its 1.3s and paid
+        # for it: 288s on 2026-09-24, the push after `sce-build`'s dev
+        # profile changed. The self-test now derives the edge from the script.
+        "deps": ["codegen-build"],
         "cost_s": 1.3,
         "summary": "the NL→IR closure ledger vs the tree it describes",
     },
@@ -3473,6 +3478,28 @@ def self_test(repo_root: Path) -> int:
             failures.append(
                 "PACE_NORMALISED is empty, so every gate should take the "
                 "ordinary re-measure branch, and one does not")
+
+    cases += 1
+    # A gate that obtains the generator runs its output, so it must declare
+    # `codegen-build` and let `run_order` build it first. Without the edge the
+    # gate is free to sort ahead of the build and `sce_codegen_require` pays
+    # the rebuild inside it: `nl-ir-closure`, declared 1.3s, ran 288s on the
+    # 2026-09-24 push that changed `sce-build`'s dev profile, and the budget
+    # refused a push whose gates had all passed. Derived from the scripts, so
+    # a new gate that calls the helper cannot join without the edge.
+    gates_dir = repo_root / "scripts" / "gates"
+    for script in sorted(gates_dir.glob("*.sh")):
+        slug = script.stem
+        if slug not in GATES or slug == "codegen-build":
+            continue
+        text = script.read_text(encoding="utf-8", errors="replace")
+        if "sce_gate_codegen" not in text and "sce_codegen_require" not in text:
+            continue
+        if "codegen-build" not in GATES[slug].get("deps", []):
+            failures.append(
+                f"{slug}: its script obtains sce-codegen but the gate does "
+                f"not declare deps=['codegen-build'], so it can run before "
+                f"the build and pay for it")
 
     if failures:
         for f in failures:
