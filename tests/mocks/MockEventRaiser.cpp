@@ -125,11 +125,6 @@ bool MockEventRaiser::hasQueuedEvents() const {
     return !held_.empty();
 }
 
-bool MockEventRaiser::processNextInternalEvent() {
-    // Mock implementation - it never dispatches; a machine takes what it held
-    return false;
-}
-
 bool MockEventRaiser::hasQueuedInternalEvents() const {
     return std::any_of(held_.begin(), held_.end(),
                        [](const auto &entry) { return entry.second == EventQueue::Internal; });

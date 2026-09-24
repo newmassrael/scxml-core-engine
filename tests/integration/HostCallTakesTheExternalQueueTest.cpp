@@ -26,7 +26,8 @@
 // machine only while nothing is queued ahead of it.
 //
 // Interactive mode is the other half of the contract: there the host steps the
-// queue itself, so the call must leave the event where it is.
+// queue itself, so the call must leave the event where it is — and each step
+// must say whether it took an event, including one no state answers.
 
 #include "events/EventDispatcherImpl.h"
 #include "events/EventSchedulerImpl.h"
@@ -133,6 +134,25 @@ TEST_F(HostCallTakesTheExternalQueueTest, InteractiveModeLeavesItForTheHostToSte
 
     EXPECT_TRUE(raiser_->processNextQueuedEvent()) << "the host steps the one event that is queued";
     EXPECT_EQ(sm_->getCurrentState(), "echoed") << "and that step takes `echo`";
+}
+
+/// A step whose event no active state answers is still a step (§scxml-3.1.2
+/// discards the event). A host stepping the queue reads the step's answer as
+/// "was there one", so reporting the discard as an empty queue loses the step
+/// and the event with it — the interactive runner's forward run on W3C test 240
+/// stopped short of `pass` exactly that way.
+TEST_F(HostCallTakesTheExternalQueueTest, AStepWhoseEventNothingAnswersStillReportsTakingIt) {
+    ASSERT_TRUE(sm_->start(/*autoProcessQueuedEvents=*/false));
+    ASSERT_EQ(sm_->getCurrentState(), "idle");
+
+    ASSERT_TRUE(raiser_->raiseExternalEvent("echo", "")) << "`idle` answers only `go`";
+    ASSERT_TRUE(raiser_->hasQueuedEvents()) << "an interactive host steps `echo` itself";
+
+    EXPECT_TRUE(raiser_->processNextQueuedEvent())
+        << "the step took `echo` off the queue; that no state answered it is the discard, not an empty queue";
+    EXPECT_EQ(sm_->getCurrentState(), "idle") << "and the discard moved nothing";
+    EXPECT_FALSE(raiser_->hasQueuedEvents()) << "the event is gone, so the next step has nothing to take";
+    EXPECT_FALSE(raiser_->processNextQueuedEvent()) << "an empty queue is the one step that answers false";
 }
 
 }  // namespace Tests

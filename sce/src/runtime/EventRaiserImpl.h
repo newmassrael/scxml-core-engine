@@ -291,7 +291,8 @@ public:
 
     /**
      * @brief W3C SCXML compliance: Process only ONE event from the queue
-     * @return true if an event was processed, false if queue is empty
+     * @return true if an event was taken and processed — whether or not a
+     *         transition answered it — false if the queue is empty
      */
     bool processNextQueuedEvent() override;
 
@@ -323,13 +324,6 @@ public:
      * @return true if queue has INTERNAL priority events, false otherwise
      */
     bool hasQueuedInternalEvents() const override;
-
-    /**
-     * @brief §scxml-D-mainEventLoop: Process one INTERNAL event, leaving
-     *        external events queued for after the macrostep's invokes
-     * @return true if an internal event was processed, false if none was queued
-     */
-    bool processNextInternalEvent() override;
 
     /**
      * @brief Take the head of one of the two queues for the caller to process

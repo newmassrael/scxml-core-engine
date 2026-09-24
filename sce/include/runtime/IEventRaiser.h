@@ -152,7 +152,13 @@ public:
 
     /**
      * @brief W3C SCXML compliance: Process only ONE event from the queue
-     * @return true if an event was processed, false if queue is empty
+     *
+     * A host stepping the queue one event at a time reads the answer as "was
+     * there a step". An event no active state answers is still taken off the
+     * queue and discarded (§scxml-3.1.2), so it is a step and answers true;
+     * whether a transition was selected is the state machine's to report.
+     *
+     * @return true if an event was taken and processed, false if queue is empty
      */
     virtual bool processNextQueuedEvent() = 0;
 
@@ -161,20 +167,6 @@ public:
      * @return true if queue has events, false if empty
      */
     virtual bool hasQueuedEvents() const = 0;
-
-    /**
-     * @brief §scxml-D-mainEventLoop: Process only ONE *internal* event, leaving
-     *        external events queued
-     *
-     * The macrostep completes on eventless transitions and internal events
-     * alone; `invoke(inv)` then runs for the states it entered, and only after
-     * that does the algorithm reach `externalQueue.dequeue()`. A drain that
-     * cannot tell the two classes apart consumes an external event while the
-     * invokes are still pending, and an `autoforward` child never sees it.
-     *
-     * @return true if an internal event was processed, false if none was queued
-     */
-    virtual bool processNextInternalEvent() = 0;
 
     /**
      * @brief §scxml-3.13: Check whether an INTERNAL-priority event is queued
@@ -186,9 +178,9 @@ public:
      * @brief Take the event at the head of one of the two queues, for the
      *        caller to process itself
      *
-     * `processNextInternalEvent` dispatches what it takes through the event
+     * `processNextQueuedEvent` dispatches what it takes through the event
      * callback, back into the state machine — from inside that machine's own
-     * macrostep when the machine is the one draining. W3C SCXML Appendix D's
+     * macrostep if the machine were the one draining. W3C SCXML Appendix D's
      * main event loop never re-enters itself: it dequeues an event, binds
      * `_event` to it and selects transitions, one level deep. A machine that
      * runs that loop takes the event here and processes it where it stands.
