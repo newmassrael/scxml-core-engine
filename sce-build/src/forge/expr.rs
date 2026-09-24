@@ -4377,9 +4377,13 @@ fn kotlin_coerce(raw: String, from: InferredType, to: InferredType, node: &Typed
                 bits,
             },
         ) => {
-            // Literal adopting unsigned concrete type.
+            // Literal adopting unsigned concrete type. An untyped integer
+            // is not always a lone literal: `c ? 1 : 0` is one too, and a
+            // bare suffix bound to its last branch alone
+            // (`if (c) 1 else 0.toUByte()`), which Kotlin types as
+            // `Comparable<*>`. Wrapped like every other conversion here.
             let suffix = kotlin_unsigned_ctor(bits);
-            format!("{raw}.{suffix}()")
+            wrap_dotcall(raw, node, suffix)
         }
         (UntypedInt, Int { signed: true, .. }) => raw,
         // Unsigned → signed: required for mixed-sign arithmetic in Kotlin.
@@ -7139,6 +7143,27 @@ mod tests {
         )
         .unwrap();
         assert_eq!(out, "self.frame.counter + 1.toUInt()");
+    }
+
+    /// A conditional of two integer literals is itself an untyped integer,
+    /// and its conversion to an unsigned output has to wrap the whole
+    /// `if` — a bare suffix binds to the last branch alone
+    /// (`if (c) 1 else 0.toUByte()`), which Kotlin types as
+    /// `Comparable<*>` and refuses as a `UByte` return.
+    #[test]
+    fn a_literal_conditional_narrows_whole_to_an_unsigned_output() {
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("a", int(true, 64));
+        ctx.insert_var("b", int(true, 64));
+        let out = transpile_typed(
+            "a > b ? 1 : 0",
+            ExprTarget::Kotlin,
+            &ctx,
+            &HashMap::new(),
+            int(false, 8),
+        )
+        .unwrap();
+        assert_eq!(out, "(if (a > b) 1 else 0).toUByte()");
     }
 
     // EventSchema MCU native lowering:

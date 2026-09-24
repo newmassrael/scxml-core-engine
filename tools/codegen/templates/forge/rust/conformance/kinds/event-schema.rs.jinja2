@@ -22,10 +22,14 @@
            keeps the document's spelling and this arm applies the filter, the
            same contract codec uses. The oracle's NAME assertions below still
            compare the source spelling, which is the point of keeping one
-           canonical key for six arms. #}
+           canonical key for six arms.
+           ⚠ The value is written as the `i64` the read-back below compares it
+           as, then cast to the field: an unsuffixed literal is an `i32`
+           before `as _` applies, so a value past `i32` (a millisecond wall
+           time) was a compile error rather than a value. #}
         let payload = fixtures::{{ f.name }}::{{ f.name | to_pascal_case }}Payload {
 {% for field in f.fields %}
-            {{ field.name | to_snake_case }}: {{ field.value }} as _,
+            {{ field.name | to_snake_case }}: {{ field.value }}i64 as _,
 {% endfor %}
         };
 
