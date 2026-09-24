@@ -35,8 +35,17 @@ rm -rf "$BUILD_DIR"
 cmake -S "$PROJECT_ROOT" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Debug -DENABLE_TSAN=ON
 cmake --build "$BUILD_DIR" -j"$(nproc)"
 
+# A TSAN binary must start with address randomisation off. Its runtime keeps
+# shadow memory at fixed addresses and refuses to start once the kernel places
+# a mapping where it did not expect one: measured 2026-09-25 on the build
+# machine (kernel 7.0.0, GCC 13.3), every TSAN binary died with
+# "FATAL: ThreadSanitizer: unexpected memory mapping" before its first test,
+# and the same binary ran to completion under `setarch -R`. That needs no
+# root, and ctest's children inherit it.
+RUN_TSAN="env TSAN_OPTIONS=${TSAN_OPTIONS} setarch $(uname -m) -R"
+
 echo -e "${GREEN}=== TSAN build complete ===${NC}"
 echo "Build directory: $BUILD_DIR"
-echo "Run a single test:  (cd $BUILD_DIR/tests && env SPDLOG_LEVEL=off ./w3c_test_cli 144)"
-echo "Run the suite:      (cd $BUILD_DIR && ctest --output-on-failure)"
+echo "Run a single test:  (cd $BUILD_DIR/tests && $RUN_TSAN env SPDLOG_LEVEL=off ./w3c_test_cli 144)"
+echo "Run the suite:      (cd $BUILD_DIR && $RUN_TSAN ctest --output-on-failure)"
 echo "Note: HTTP (BasicHTTP) W3C tests are skipped under TSAN by design."
