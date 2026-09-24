@@ -588,6 +588,7 @@ fn no_committed_document_declares_a_typed_variable_without_an_engine() {
     let mut typed_seen = 0usize;
     let mut docs_parsed = 0usize;
     let mut violations: BTreeSet<String> = BTreeSet::new();
+    let mut static_documents: BTreeSet<String> = BTreeSet::new();
 
     for entry in committed_scxml() {
         let Ok(content) = std::fs::read_to_string(&entry) else {
@@ -605,10 +606,35 @@ fn no_committed_document_declares_a_typed_variable_without_an_engine() {
         docs_parsed += 1;
         let typed = typed_var_ids(&model);
         typed_seen += typed.len();
-        if !typed.is_empty() && !model.needs_script_engine {
-            violations.insert(format!("{label}: {typed:?}"));
+        if typed.is_empty() || model.needs_script_engine {
+            continue;
         }
+        // `datamodel="sce-static"` (SCE Accepted Subset §2.15) declares typed
+        // variables with no engine on purpose: each is a native field of the
+        // generated machine, so the accessor this implication protects is not
+        // emitted for it at all. What would still break is an accessor asked
+        // for anyway — one reading through an engine the machine does not
+        // have — so that is what is held for these documents.
+        if model.datamodel == sce_build::model::Datamodel::SceStatic {
+            let readable = readable_ids(&model);
+            if readable.is_empty() {
+                static_documents.insert(entry.to_string_lossy().into_owned());
+                continue;
+            }
+            violations.insert(format!("{label}: engine accessors {readable:?}"));
+            continue;
+        }
+        violations.insert(format!("{label}: {typed:?}"));
     }
+    // Named rather than counted, so the branch above cannot go unexercised: a
+    // sweep that never reached a `sce-static` document would pass it having
+    // judged none.
+    assert!(
+        static_documents
+            .iter()
+            .any(|d| d.ends_with("sce-build/tests/fixtures/static_datamodel/static_counter.scxml")),
+        "the sweep did not reach static_counter.scxml; it reached {static_documents:?}"
+    );
 
     // What the sweep actually reached, printed rather than only asserted: a
     // reader setting the floors below needs the current numbers, and a run
