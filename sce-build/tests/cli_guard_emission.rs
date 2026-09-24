@@ -518,6 +518,7 @@ fn every_guard_the_backends_emit_natively_has_a_value() {
     );
 
     let mut guards: Vec<(String, String)> = Vec::new();
+    let mut lowered: Vec<String> = Vec::new();
     for document in &documents {
         let source = match std::fs::read_to_string(root.join(document)) {
             Ok(text) => text,
@@ -533,6 +534,26 @@ fn every_guard_the_backends_emit_natively_has_a_value() {
         if model.needs_script_engine {
             continue;
         }
+        // A `datamodel="sce-static"` document reaches an emitter only
+        // through the static lowering (SCE Accepted Subset §2.15): Kotlin
+        // rewrites every guard into a native one, and every other backend
+        // refuses the document before it renders. So what the emitters see
+        // is the lowered model, read as the generator reads it — from its
+        // file, so that its imports resolve.
+        let model = if model.datamodel == sce_build::model::Datamodel::SceStatic {
+            let path = root.join(document);
+            let mut model = SCXMLParser::new()
+                .parse_file(&path.to_string_lossy())
+                .unwrap_or_else(|e| {
+                    panic!("{document} parsed as a string but not as a file: {e:?}")
+                });
+            sce_build::forge::static_lowering::lower_kotlin(&mut model, &[])
+                .unwrap_or_else(|e| panic!("{document}: Kotlin does not lower it: {e:?}"));
+            lowered.push(document.clone());
+            model
+        } else {
+            model
+        };
         for state in model.states.values() {
             for transition in &state.transitions {
                 if transition.cond.is_empty()
@@ -580,6 +601,13 @@ fn every_guard_the_backends_emit_natively_has_a_value() {
             "the sweep did not reach {document}'s cond=\"{cond}\"; it saw {guards:?}"
         );
     }
+    // Named for the same reason: a sweep that never took the lowered branch
+    // would pass it without having judged a single `sce-static` guard.
+    let counter = "sce-build/tests/fixtures/static_datamodel/static_counter.scxml";
+    assert!(
+        lowered.iter().any(|d| d == counter),
+        "the sweep did not lower {counter}; it lowered {lowered:?}"
+    );
 }
 
 /// The `<if>` / `<elseif>` half of

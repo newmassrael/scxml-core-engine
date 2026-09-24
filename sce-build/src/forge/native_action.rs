@@ -727,7 +727,7 @@ pub fn interface_name(lang: Language, machine_name: &str) -> String {
 /// (`<onentry>`/`<onexit>`/initial). Assumes [`validate`] already passed, so an
 /// arg-bearing action is always a transition child with a resolved,
 /// payload-eligible `_event.data.<field>` schema (the `expect`s in
-/// [`lower_native_call`] are therefore total). `model` is the per-backend
+/// [`CallRendering::lower`] are therefore total). `model` is the per-backend
 /// codegen clone, never the parsed model.
 ///
 /// `machine_name` is the caller's per-language machine token: the PascalCase
@@ -754,13 +754,14 @@ pub fn render(model: &mut SCXMLModel, machine_name: &str, lang: Language) -> Nat
     // event nothing can match would be discarded on arrival anyway.
     let raises_error = model.events.contains("error.execution");
 
-    let mut payload_events: BTreeSet<String> = BTreeSet::new();
-    // Signatures keyed by action name; the first occurrence defines the
-    // signature and `validate` has already proven every later occurrence
-    // agrees, so a single interface method serves every call site. A
-    // no-argument action (the only kind admissible in an eventless position)
-    // registers an empty signature, which still emits its method.
-    let mut sigs: BTreeMap<String, Signature> = BTreeMap::new();
+    let mut calls = CallRendering {
+        lang,
+        machine_name,
+        raises_error,
+        static_vars: static_vars.as_deref(),
+        sigs: BTreeMap::new(),
+        payload_events: BTreeSet::new(),
+    };
     let mut any = false;
 
     for state in model.states.values_mut() {
@@ -777,16 +778,7 @@ pub fn render(model: &mut SCXMLModel, machine_name: &str, lang: Language) -> Nat
             if !is_native(action) {
                 continue;
             }
-            lower_native_call(
-                action,
-                None,
-                static_vars.as_deref(),
-                machine_name,
-                lang,
-                raises_error,
-                &mut sigs,
-                &mut payload_events,
-            );
+            calls.lower(action, None);
             any = true;
         }
 
@@ -800,21 +792,17 @@ pub fn render(model: &mut SCXMLModel, machine_name: &str, lang: Language) -> Nat
                 if !is_native(action) {
                     continue;
                 }
-                lower_native_call(
-                    action,
-                    Some(&binding),
-                    static_vars.as_deref(),
-                    machine_name,
-                    lang,
-                    raises_error,
-                    &mut sigs,
-                    &mut payload_events,
-                );
+                calls.lower(action, Some(&binding));
                 any = true;
             }
         }
     }
 
+    let CallRendering {
+        sigs,
+        payload_events,
+        ..
+    } = calls;
     let name = interface_name(lang, machine_name);
     let operation_names: Vec<String> = sigs.keys().map(|n| method_name(lang, n)).collect();
     let (interface_def, interface_name) = if any {
@@ -832,113 +820,133 @@ pub fn render(model: &mut SCXMLModel, machine_name: &str, lang: Language) -> Nat
     }
 }
 
-/// Lower one `<sce:action>` to its `lang` call site (stored on
-/// `action.native_action_rendered`) and fold its signature into `sigs`.
-///
-/// `binding` is `Some` only for a `<transition>` child, where the triggering
-/// event's typed payload is in scope; `None` for an eventless position
-/// (`<onentry>`/`<onexit>`/initial), where the action is necessarily
-/// no-argument. A no-argument action lowers to a bare host call in either
-/// case; an arg-bearing one reads its values from the event's typed payload
-/// and is wrapped in that backend's tag check.
-///
-/// `raises_error` reaches [`guard_payload`] unchanged — it decides whether the
-/// arm an untyped delivery takes says so with `error.execution` or stays empty.
-fn lower_native_call(
-    action: &mut Action,
-    binding: Option<&PayloadBinding>,
-    static_vars: Option<&[crate::model::Variable]>,
-    machine_name: &str,
+/// One [`render`] pass over a document's native actions: what every call site
+/// reads — the backend, its machine token, whether the document can raise
+/// `error.execution`, and the `sce-static` scope when there is one — and the
+/// two tables every call site adds to.
+struct CallRendering<'r> {
     lang: Language,
+    machine_name: &'r str,
+    /// Reaches [`guard_payload`] unchanged — it decides whether the arm an
+    /// untyped delivery takes says so with `error.execution` or stays empty.
     raises_error: bool,
-    sigs: &mut BTreeMap<String, Signature>,
-    payload_events: &mut BTreeSet<String>,
-) {
-    let name = action.native_action_name.clone();
+    /// The document's variables under `datamodel="sce-static"`; `None`
+    /// under any other data model.
+    static_vars: Option<&'r [crate::model::Variable]>,
+    /// Signatures keyed by action name; the first occurrence defines the
+    /// signature and `validate` has already proven every later occurrence
+    /// agrees, so a single interface method serves every call site. A
+    /// no-argument action (the only kind admissible in an eventless position
+    /// outside `sce-static`) registers an empty signature, which still emits
+    /// its method.
+    sigs: BTreeMap<String, Signature>,
+    /// The events whose typed payload some call site reads.
+    payload_events: BTreeSet<String>,
+}
 
-    if action.params.is_empty() {
-        sigs.entry(name.clone()).or_default();
-        action.native_action_rendered = call(lang, &name, &[]);
-        return;
-    }
+impl CallRendering<'_> {
+    /// Lower one `<sce:action>` to its call site (stored on
+    /// `action.native_action_rendered`) and fold its signature into
+    /// [`Self::sigs`].
+    ///
+    /// `binding` is `Some` only for a `<transition>` child, where the
+    /// triggering event's typed payload is in scope; `None` for an eventless
+    /// position (`<onentry>`/`<onexit>`/initial), where the action is
+    /// necessarily no-argument outside `sce-static`. A no-argument action
+    /// lowers to a bare host call in either case; an arg-bearing one reads its
+    /// values from the event's typed payload and is wrapped in that backend's
+    /// tag check.
+    fn lower(&mut self, action: &mut Action, binding: Option<&PayloadBinding>) {
+        let lang = self.lang;
+        let name = action.native_action_name.clone();
 
-    // `datamodel="sce-static"`: each argument is a typed expression, lowered
-    // by the static lowering and typed by the value it is. Only Kotlin lowers
-    // the model; every other backend refused the document before rendering.
-    if let Some(vars) = static_vars {
-        let event = binding.and_then(|b| b.schema.map(|schema| (b.event, schema)));
-        let mut call_args = Vec::new();
+        if action.params.is_empty() {
+            self.sigs.entry(name.clone()).or_default();
+            action.native_action_rendered = call(lang, &name, &[]);
+            return;
+        }
+
+        // `datamodel="sce-static"`: each argument is a typed expression,
+        // lowered by the static lowering and typed by the value it is. Only
+        // Kotlin lowers the model; every other backend refused the document
+        // before rendering.
+        if let Some(vars) = self.static_vars {
+            let event = binding.and_then(|b| b.schema.map(|schema| (b.event, schema)));
+            let mut call_args = Vec::new();
+            let mut params: Signature = Vec::new();
+            let mut reads_payload = false;
+            for (i, arg) in action.params.iter().enumerate() {
+                let lowered =
+                    crate::forge::static_lowering::lower_kotlin_argument(vars, event, arg)
+                        .expect("validated: a sce-static argument is typed against this scope");
+                let pname = if arg.name.is_empty() {
+                    format!("arg{}", i + 1)
+                } else {
+                    arg.name.clone()
+                };
+                reads_payload |= lowered.reads_payload;
+                call_args.push(lowered.text);
+                params.push((pname, lowered.ty));
+            }
+            self.sigs.entry(name.clone()).or_insert(params);
+            let stmt = call(lang, &name, &call_args);
+            action.native_action_rendered = match (reads_payload, binding) {
+                (true, Some(binding)) => {
+                    self.payload_events.insert(binding.event.to_string());
+                    guard_payload(
+                        lang,
+                        self.machine_name,
+                        binding.event,
+                        &name,
+                        &stmt,
+                        self.raises_error,
+                    )
+                }
+                _ => stmt,
+            };
+            return;
+        }
+
+        // Arg-bearing: `validate` guarantees a transition binding with a
+        // resolved, payload-eligible schema, so the lookups below are total.
+        let binding =
+            binding.expect("validated: arg-bearing native action is a <transition> child");
+        let schema = binding
+            .schema
+            .expect("validated: arg-bearing native action has a schema");
+
+        let accessor = payload_accessor(lang, binding.event);
+        let mut call_args: Vec<String> = Vec::new();
         let mut params: Signature = Vec::new();
-        let mut reads_payload = false;
-        for (i, arg) in action.params.iter().enumerate() {
-            let lowered = crate::forge::static_lowering::lower_kotlin_argument(vars, event, arg)
-                .expect("validated: a sce-static argument is typed against this scope");
+        for arg in &action.params {
+            let field = arg_field(&arg.expr).expect("validated: bare _event.data field");
+            let f = schema
+                .fields
+                .iter()
+                .find(|f| f.id == field)
+                .expect("validated: field exists on schema");
             let pname = if arg.name.is_empty() {
-                format!("arg{}", i + 1)
+                field.to_string()
             } else {
                 arg.name.clone()
             };
-            reads_payload |= lowered.reads_payload;
-            call_args.push(lowered.text);
-            params.push((pname, lowered.ty));
+            call_args.extend(args_for(lang, &accessor, field, &f.sce_type));
+            params.push((pname, f.sce_type.clone()));
         }
-        sigs.entry(name.clone()).or_insert(params);
+
+        self.payload_events.insert(binding.event.to_string());
+        self.sigs.entry(name.clone()).or_insert(params);
+
         let stmt = call(lang, &name, &call_args);
-        action.native_action_rendered = match (reads_payload, binding) {
-            (true, Some(binding)) => {
-                payload_events.insert(binding.event.to_string());
-                guard_payload(
-                    lang,
-                    machine_name,
-                    binding.event,
-                    &name,
-                    &stmt,
-                    raises_error,
-                )
-            }
-            _ => stmt,
-        };
-        return;
+        action.native_action_rendered = guard_payload(
+            lang,
+            self.machine_name,
+            binding.event,
+            &name,
+            &stmt,
+            self.raises_error,
+        );
     }
-
-    // Arg-bearing: `validate` guarantees a transition binding with a resolved,
-    // payload-eligible schema, so the lookups below are total.
-    let binding = binding.expect("validated: arg-bearing native action is a <transition> child");
-    let schema = binding
-        .schema
-        .expect("validated: arg-bearing native action has a schema");
-
-    let accessor = payload_accessor(lang, binding.event);
-    let mut call_args: Vec<String> = Vec::new();
-    let mut params: Signature = Vec::new();
-    for arg in &action.params {
-        let field = arg_field(&arg.expr).expect("validated: bare _event.data field");
-        let f = schema
-            .fields
-            .iter()
-            .find(|f| f.id == field)
-            .expect("validated: field exists on schema");
-        let pname = if arg.name.is_empty() {
-            field.to_string()
-        } else {
-            arg.name.clone()
-        };
-        call_args.extend(args_for(lang, &accessor, field, &f.sce_type));
-        params.push((pname, f.sce_type.clone()));
-    }
-
-    payload_events.insert(binding.event.to_string());
-    sigs.entry(name.clone()).or_insert(params);
-
-    let stmt = call(lang, &name, &call_args);
-    action.native_action_rendered = guard_payload(
-        lang,
-        machine_name,
-        binding.event,
-        &name,
-        &stmt,
-        raises_error,
-    );
 }
 
 /// The backend's spelling of the bound typed payload a native action reads its
