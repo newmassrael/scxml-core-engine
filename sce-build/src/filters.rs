@@ -1789,6 +1789,9 @@ fn register_kotlin_filters_inner(env: &mut minijinja::Environment, scope: &Arc<D
     env.add_filter("escape_kotlin", escape_kotlin);
     env.add_filter("to_kotlin_string_expr", to_kotlin_string_expr);
     env.add_filter("to_event_class_name", to_event_class_name);
+    // The stem of an event's typed-payload field, `pending<Variant>Payload` —
+    // the one spelling the payload channel declares it by.
+    env.add_filter("to_event_variant", to_event_variant);
     env.add_filter("to_state_class_name", to_state_class_name);
     env.add_filter("split", filter_split);
     env.add_filter("slice_from", filter_slice_from);

@@ -1347,9 +1347,9 @@ A value that is several numbers at once — a clock stamp of wall time, counter 
 </sce:signature>
 <sce:body>
   <sce:var name="next" type="record:Hlc">
-    <sce:field name="wallTime" expr="now &gt; prev.wallTime ? now : prev.wallTime"/>
-    <sce:field name="counter" expr="0"/>
-    <sce:field name="nodeId" expr="prev.nodeId"/>
+    <sce:set name="wallTime" expr="now &gt; prev.wallTime ? now : prev.wallTime"/>
+    <sce:set name="counter" expr="0"/>
+    <sce:set name="nodeId" expr="prev.nodeId"/>
   </sce:var>
   <sce:if cond="next.wallTime === prev.wallTime">
     <sce:assign target="next.counter" expr="prev.counter + 1"/>
@@ -1361,7 +1361,7 @@ A value that is several numbers at once — a clock stamp of wall time, counter 
 - **The schema's fields are fixed-width numbers, `bool` or `enum:`** (v1). A schema with a `string` or `bytes` field is refused as a record type: such a field has a length of its own, which the C11 payload struct does not carry and the Rust one holds in an allocation.
 - **Read** a field with `r.<field id>`. It is typed as the schema types it, and each backend spells it the way the payload struct was emitted — Rust `snake_case`, Go `PascalCase`, the id as written elsewhere — from the one rule both use.
 - **Pass** a record by value on every backend: its fields are plain data. A record parameter is read-only, like every parameter.
-- **Build** a record local whole: one `<sce:field name expr>` per schema field, each exactly once and no other. There is no record literal, so the local takes no `init`.
+- **Build** a record local whole: one `<sce:set name expr>` per schema field, each exactly once and no other. There is no record literal, so the local takes no `init`. (`<sce:set>`, not `<sce:field>`: that is the codec's byte-layout field. A `sce-static` statechart's record variable is built the same way — SCE Accepted Subset §2.15.)
 - **Update** it one field at a time, `<sce:assign target="r.<field>">`. Assigning a whole record (`target="r"`) is refused. Kotlin's data-class fields are `val`, so there the update lowers to `r = r.copy(<field> = …)`.
 - **Return** a record parameter or local of the return's schema, by name.
 

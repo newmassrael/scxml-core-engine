@@ -31,6 +31,10 @@ import com.sce.runtime.*
 // ── NL→IR Item C1 Path A: typed `_event.data` payload classes ─────────
 {{ event_payload_defs }}
 {% endif %}
+{% if static_record_defs %}
+// ── SCE Accepted Subset §2.15: sce-static record variable classes ─────
+{{ static_record_defs }}
+{% endif %}
 // --- State Machine (W3C SCXML) ---
 
 {% if model.context_objects %}

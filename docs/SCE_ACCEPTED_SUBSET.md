@@ -2330,16 +2330,18 @@ line of the element or attribute that breaks it:
 | `<data>` without `sce:type` | Every variable declares its type |
 | `<data src>` | The initial value is `expr` — `src` is read at run time and has no type |
 | `<data>` with in-line content | The initial value is `expr` — in-line content has no type |
-| `<data>` without `expr` | Every variable declares its initial value; no zero, empty string or first variant stands in |
+| `<data>` without `expr` | Every variable declares its initial value; no zero, empty string or first variant stands in. A record variable's is its `<sce:set>`s, and it takes no `expr` |
 | `<script>` with script text | No scripting language; a native `<script><cpp>` / `<kt>` block is admitted, as under `null` |
 | `<send eventexpr/targetexpr/delayexpr/typeexpr/idlocation/namelist>`, `<send><content expr>`, `<cancel sendidexpr>`, `<foreach>`, `<invoke idlocation>`, a hybrid `<invoke>` (`srcexpr` / `<content expr>`), `<donedata><content expr>` | No typed form: each is evaluated as script-engine text by every backend's templates |
 
 **Expressions.** Every other expression is a forge expression judged
-against one closed scope — the declared variables at their `sce:type`, the
-triggering event's `_event.data.<field>` when the event carries an
-imported schema, the imported enums, and `In(<state id>)` — built by
-`crate::forge::type_ctx::static_statechart`, the builder the typed guard
-path shares its payload registration with. Each is judged against the
+against one closed scope — the declared variables at their `sce:type`, each
+record variable's `<id>.<field>`, the triggering event's
+`_event.data.<field>` when the event carries an imported schema, the
+imported enums, and `In(<state id>)` — gathered once by
+`crate::forge::type_ctx::StaticScope`, which validation, the host-action
+check and the lowering all read, and which shares its payload registration
+with the typed guard path. Each is judged against the
 place it lands in: a `<data expr>` and an `<assign expr>` against the
 variable's type (the `location` must name a declared variable), a
 transition's or `<if>`/`<elseif>`'s `cond` as `bool`, a `<log expr>` or
@@ -2363,6 +2365,32 @@ names a field of generated code, so it is held to the code identifier
 grammar of §2.14, as a forge document's is. A `<data sce:kind>` declares
 a kind, not a variable, and keeps its own rules.
 
+**Record variables.** `sce:type="record:<alias>"` holds a variable in the
+event-schema the document imports as `<alias>` — the record an algorithm's
+local is held in (SCE_FORGE.md §4.12), by the same rules. It is built whole
+from one `<sce:set name expr>` child per field of the schema, each given
+exactly once and none the schema does not declare, and it takes no `expr`:
+
+```xml
+<sce:import kind="event-schema" src="schema_day.scxml" as="Day"/>
+<datamodel>
+  <data id="shown" sce:type="record:Day">
+    <sce:set name="year" expr="2026"/>
+    <sce:set name="month" expr="9"/>
+    <sce:set name="dayOfMonth" expr="24"/>
+  </data>
+</datamodel>
+```
+
+A field is read as `shown.<field>`, typed as the schema types it; the
+variable is closed over its fields, so any other member is
+`expression/unknown-member`. It is updated a field at a time,
+`<assign location="shown.<field>">`; assigning the whole record is refused
+as `expression/unsupported-construct`. A missing field is refused on the
+`sce:type` that names the record, an unknown or repeated one on its `name`,
+both as `validation/attribute-rule-violated`. `<sce:set>` is its own element
+because `<sce:field>` is the codec's byte-layout field.
+
 **Code generation.** A backend lowers the model once its templates hold
 the variables as fields and route every expression through the forge
 expression lowerer; until then `sce-codegen` refuses the document for
@@ -2380,9 +2408,16 @@ the forge expression lowerer into the slot the Kotlin templates already
 render as native code — a condition as a native guard (`In(id)` as the
 machine's active-state test), an `<assign>` or `<log>` value as the text the
 engine-free arm pastes. A condition that reads the triggering event's typed
-payload takes the payload channel's own null guard. The generated machine
-carries no script engine. An enum-typed variable is refused for Kotlin until
-a statechart imports its enum into the generated unit.
+payload takes the payload channel's own null guard. A transition whose
+content reads it runs that content only for a delivery that carried the
+payload: otherwise none of it runs and `error.execution` goes on the internal
+queue (W3C SCXML 3.12.2, 4.9) — what a host action whose argument reads the
+payload does, checked once for the whole block because an error stops the
+block. A record variable is a field of an immutable data class,
+`<Machine><Alias>Record`, and a field update lowers to
+`shown = shown.copy(<field> = …)`. The generated machine carries no script
+engine. An enum-typed variable is refused for Kotlin until a statechart
+imports its enum into the generated unit.
 
 **Snapshot.** A Kotlin `sce-static` machine publishes what a host observes
 as one immutable value, `snapshot: StateFlow<Snapshot>`: the full active

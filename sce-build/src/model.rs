@@ -94,6 +94,17 @@ pub struct Transition {
     /// defect the field exists to end — `cond="1"` reached Rust as
     /// `if 1 {`.
     pub cond_constant: Option<bool>,
+    /// Whether this transition's content reads its event's typed payload.
+    ///
+    /// Set by the `sce-static` Kotlin lowering
+    /// ([`crate::forge::static_lowering::lower_kotlin`]) on the clone it
+    /// renders, never by the parser. A delivery that did not carry the
+    /// payload cannot run that content, so the backend opens it with a check
+    /// that signals `error.execution` and runs none of it — what a native
+    /// action whose argument reads the payload already does, as one block
+    /// rather than per statement, because an error stops the block.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub content_reads_payload: bool,
     #[serde(rename = "type")]
     pub transition_type: String,
     pub actions: Vec<Action>,
@@ -851,6 +862,11 @@ pub struct Variable {
     /// of the IR.
     #[serde(skip)]
     pub value_type_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+    /// A `record:<alias>` variable's initial value: one `<sce:set name
+    /// expr>` per field of the schema, built whole the way an algorithm's
+    /// record local is (SCE_FORGE.md §4.12). Empty for any other variable.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub record_fields: Vec<crate::forge::model::RecordFieldInit>,
 }
 
 /// §scxml-3.11: History state information
@@ -2331,6 +2347,12 @@ pub struct SCXMLModel {
     #[serde(skip)]
     pub imported_event_schemas:
         std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>,
+    /// The same imported event-schemas keyed by import alias — what a
+    /// `record:<alias>` variable of a `sce-static` document names (SCE
+    /// Accepted Subset §2.15). Resolved with [`Self::imported_event_schemas`]
+    /// and, like it, empty without sibling files and not serialized.
+    #[serde(skip)]
+    pub imported_records: std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>,
     /// The document's initial state, as the parser leaves it: resolved to
     /// a leaf, and for a multi-token value collapsed to its first token.
     ///

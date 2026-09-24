@@ -2924,7 +2924,8 @@ fn render_kotlin(
     // already render natively; its variables come back as field
     // declarations. The statechart carries no enum imports into its unit, so
     // the scope names none.
-    let static_lowering = crate::forge::static_lowering::lower_kotlin(&mut model_lowered, &[])?;
+    let static_lowering =
+        crate::forge::static_lowering::lower_kotlin(&mut model_lowered, &native_machine_name, &[])?;
     let payload_events: std::collections::BTreeSet<String> = native
         .payload_events
         .union(&static_lowering.payload_events)
@@ -3012,6 +3013,7 @@ fn render_kotlin(
         event_payload_populate => &payload.populate,
         event_payload_inject => &payload.inject_methods,
         static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
+        static_record_defs => static_lowering.record_defs.join("\n"),
         has_native_actions => native.any,
         native_actions_defs => &native.interface_def,
         native_actions_interface => &native.interface_name,

@@ -3679,7 +3679,7 @@ pub enum AlgorithmStmt {
         capacity_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     },
     /// `<sce:var name=... type="record:<alias>">` with one
-    /// `<sce:field name=... expr=.../>` per field of the schema — a record
+    /// `<sce:set name=... expr=.../>` per field of the schema — a record
     /// local, built whole (SCE_FORGE.md §4.12). Every field is given, none
     /// twice, and none the schema does not declare; those rules need the
     /// schema and are judged where the import is resolved. Afterwards a field
@@ -3806,7 +3806,7 @@ pub struct CallArg {
     pub spelling: Option<crate::attribute_spelling::AttributeSpelling>,
 }
 
-/// One `<sce:field name=... expr=.../>` of a record local
+/// One `<sce:set name=... expr=.../>` of a record local
 /// ([`AlgorithmStmt::RecordVar`]): the schema field it gives and the
 /// expression that gives it.
 #[derive(Debug, Clone, Serialize)]

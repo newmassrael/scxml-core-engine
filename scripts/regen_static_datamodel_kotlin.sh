@@ -2,14 +2,15 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
-# Regenerate backends/kotlin/tests/src/main/kotlin/com/sce/integration/static_counter/
-# from sce-build/tests/fixtures/static_datamodel/static_counter.scxml.
+# Regenerate backends/kotlin/tests/src/main/kotlin/com/sce/integration/<machine>/
+# from sce-build/tests/fixtures/static_datamodel/<machine>.scxml, for every
+# machine in MACHINES.
 #
 # The Kotlin compile+run gate for datamodel="sce-static"
-# (docs/SCE_ACCEPTED_SUBSET.md §2.15). The committed machine compiles as part
-# of `:sce-kotlin-tests`, so its variables really are Kotlin fields and every
-# lowered expression really type-checks; StaticDatamodelTest.kt drives it with
-# no script engine. Driven by its own script rather than the
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15). The committed machines compile as part
+# of `:sce-kotlin-tests`, so their variables really are Kotlin fields and every
+# lowered expression really type-checks; StaticDatamodelTest.kt drives them
+# with no script engine. Driven by its own script rather than the
 # `generate-integration` fan-out because only Kotlin lowers the model today —
 # the other backends refuse the document (`STATIC_DATAMODEL_BACKENDS`).
 #
@@ -26,36 +27,31 @@ cd "$REPO_ROOT"
 
 source "$REPO_ROOT/scripts/lib/sce_codegen.sh"
 CODEGEN="$(sce_codegen_require "$REPO_ROOT")"
-FIXTURE="sce-build/tests/fixtures/static_datamodel/static_counter.scxml"
 INPUT_ROOT="sce-build/tests/fixtures/static_datamodel"
-GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/static_counter"
+GENERATED_ROOT="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration"
 PACKAGE_PREFIX="com.sce.integration"
+
+# static_counter:   variables, a typed guard and assignments.
+# static_host_call: a native host action taking typed datamodel arguments.
+# static_record:    a record variable built whole and updated field by field,
+#                   whose schema is imported from a sibling document.
+MACHINES=(static_counter static_host_call static_record)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-# The host-call fixture passes typed datamodel expressions to a native host
-# action; its machine name differs, so it lives in its own package dir.
-HOST_CALL_FIXTURE="sce-build/tests/fixtures/static_datamodel/static_host_call.scxml"
-HOST_CALL_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/static_host_call"
-
-"$CODEGEN" generate "$FIXTURE" -l kotlin -o "$TMP/counter/" \
-    --input-root "$INPUT_ROOT" \
-    --kotlin-package-prefix "$PACKAGE_PREFIX"
-"$CODEGEN" generate "$HOST_CALL_FIXTURE" -l kotlin -o "$TMP/host_call/" \
-    --input-root "$INPUT_ROOT" \
-    --kotlin-package-prefix "$PACKAGE_PREFIX"
-
-for pair in "counter:$GENERATED_DIR" "host_call:$HOST_CALL_DIR"; do
-    sub="${pair%%:*}"
-    dir="${pair#*:}"
+for machine in "${MACHINES[@]}"; do
+    "$CODEGEN" generate "$INPUT_ROOT/$machine.scxml" -l kotlin -o "$TMP/$machine/" \
+        --input-root "$INPUT_ROOT" \
+        --kotlin-package-prefix "$PACKAGE_PREFIX"
+    dir="$GENERATED_ROOT/$machine"
     mkdir -p "$dir"
     find "$dir" -maxdepth 1 -name '*Sm.kt' -delete
-    for src in "$TMP/$sub"/*Sm.kt; do
+    for src in "$TMP/$machine"/*Sm.kt; do
         [[ -f "$src" ]] || continue
-        sed -i "s|// Source: ${TMP}/${sub}/|// Source: ${INPUT_ROOT}/|g" "$src"
+        sed -i "s|// Source: ${TMP}/${machine}/|// Source: ${INPUT_ROOT}/|g" "$src"
         cp "$src" "$dir/"
     done
 done
 
-echo "Regenerated: $GENERATED_DIR/ and $HOST_CALL_DIR/ from $INPUT_ROOT"
+echo "Regenerated: ${MACHINES[*]} under $GENERATED_ROOT/ from $INPUT_ROOT"

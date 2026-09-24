@@ -547,7 +547,9 @@ fn every_guard_the_backends_emit_natively_has_a_value() {
                 .unwrap_or_else(|e| {
                     panic!("{document} parsed as a string but not as a file: {e:?}")
                 });
-            sce_build::forge::static_lowering::lower_kotlin(&mut model, &[])
+            // The machine name only names the record classes it declares,
+            // which no guard reads.
+            sce_build::forge::static_lowering::lower_kotlin(&mut model, "Sweep", &[])
                 .unwrap_or_else(|e| panic!("{document}: Kotlin does not lower it: {e:?}"));
             lowered.push(document.clone());
             model

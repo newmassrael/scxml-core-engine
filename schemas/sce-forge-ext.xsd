@@ -139,6 +139,16 @@
     </xs:union>
   </xs:simpleType>
 
+  <!-- The global `sce:type` — every type grammar a `<data>` may be written in:
+       a field's (`sceTypeOrEnumRef`), and under `datamodel="sce-static"` a
+       statechart variable's, which adds `list<T>` and `record:<alias>`
+       (SCE Accepted Subset §2.15). One global attribute cannot be narrowed by
+       where it sits in XSD 1.0, so each position's parser holds it to that
+       position's grammar (`read_type_attr`, `read_algorithm_value_type`). -->
+  <xs:simpleType name="dataValueType">
+    <xs:union memberTypes="sce:sceTypeOrEnumRef sce:algorithmValueType"/>
+  </xs:simpleType>
+
   <!-- SCE Forge Section 3.3: Data flow direction -->
   <xs:simpleType name="directionType">
     <xs:restriction base="xs:string">
@@ -231,8 +241,10 @@
        the `enum:<alias>` pattern. Codec / lookup / etc. parsers
        reject the enum form at parse time when the surrounding kind
        does not support it; the wider XSD union keeps the global
-       attribute declaration valid for the kinds that do. -->
-  <xs:attribute name="type" type="sce:sceTypeOrEnumRef"/>
+       attribute declaration valid for the kinds that do. The same holds
+       for `list<T>` / `record:<alias>` (`dataValueType`), which only a
+       `sce-static` statechart variable admits. -->
+  <xs:attribute name="type" type="sce:dataValueType"/>
   <xs:attribute name="direction" type="sce:directionType"/>
 
   <!-- NL→IR Item C1 Path A — `sce:underlying-type` on a
@@ -1268,22 +1280,32 @@
     diagnostic.
   -->
   <!--
+    One field of a record value being built whole: the schema field `name`
+    names, given the value of `expr`. A record is built from one `<sce:set>`
+    per field of its imported event-schema — an algorithm's record local
+    (`<sce:var type="record:<alias>">`, SCE_FORGE.md §4.12) and a
+    `sce-static` statechart's record variable
+    (`<data sce:type="record:<alias>">`, SCE Accepted Subset §2.15) alike.
+    Its own element rather than `sce:field`, which is the codec's
+    byte-layout field. Which fields must be given is the schema's, judged by
+    the parser once the import is resolved.
+  -->
+  <xs:element name="set">
+    <xs:complexType>
+      <xs:attribute name="name" type="xs:NCName" use="required"/>
+      <xs:attribute name="expr" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!--
     A `type="record:<alias>"` local (SCE_FORGE.md §4.12) is built whole from
-    one `<sce:field name expr>` per field of the imported event-schema, and
-    takes no `init`. `field` is declared LOCALLY here: the global
-    `sce:field` is the codec's byte-layout field, a different element that
-    happens to share the name. Which fields a record must give is the
-    schema's, judged by the parser once the import is resolved.
+    one `<sce:set>` per field of the imported event-schema, and takes no
+    `init`.
   -->
   <xs:element name="var">
     <xs:complexType>
       <xs:sequence>
-        <xs:element name="field" minOccurs="0" maxOccurs="unbounded">
-          <xs:complexType>
-            <xs:attribute name="name" type="xs:NCName" use="required"/>
-            <xs:attribute name="expr" type="xs:string" use="required"/>
-          </xs:complexType>
-        </xs:element>
+        <xs:element ref="sce:set" minOccurs="0" maxOccurs="unbounded"/>
       </xs:sequence>
       <xs:attribute name="name" type="xs:NCName" use="required"/>
       <xs:attribute name="type" type="sce:algorithmValueType" use="required"/>

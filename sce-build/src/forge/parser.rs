@@ -7505,6 +7505,31 @@ fn parse_algorithm_body(
     Ok(stmts)
 }
 
+/// The `<sce:set name expr>` children that build a record whole — an
+/// algorithm's record local and a `sce-static` statechart's record variable
+/// alike (SCE_FORGE.md §4.12, SCE Accepted Subset §2.15). Any other child is
+/// refused on its own row; which fields must be given is the schema's, judged
+/// where the import resolves.
+pub(crate) fn read_record_fields(
+    node: &roxmltree::Node,
+    doc_name: &str,
+    element: String,
+) -> Result<Vec<RecordFieldInit>, Located<ForgeError>> {
+    let mut fields = Vec::new();
+    for child in node.children().filter(|n| n.is_element()) {
+        if child.tag_name().namespace() != Some(SCE_NAMESPACE) || child.tag_name().name() != "set" {
+            return Err(unexpected_child(&child, doc_name, element, &["set"]));
+        }
+        fields.push(RecordFieldInit {
+            name: require_attr(&child, "name", "<sce:set>", doc_name)?,
+            name_spelling: AttributeSpelling::of(&child, None, "name"),
+            expr: require_attr(&child, "expr", "<sce:set>", doc_name)?,
+            expr_spelling: AttributeSpelling::of(&child, None, "expr"),
+        });
+    }
+    Ok(fields)
+}
+
 fn parse_algorithm_stmt(
     node: &roxmltree::Node,
     doc_name: &str,
@@ -7521,7 +7546,7 @@ fn parse_algorithm_stmt(
                 "type",
                 &type_str,
             )?;
-            // A record local is built whole from one `<sce:field>` per schema
+            // A record local is built whole from one `<sce:set>` per schema
             // field (SCE_FORGE.md §4.12). It takes neither `init` (there is no
             // record literal) nor `capacity` (it is not a buffer). Which fields
             // it must give is the schema's, judged where the import resolves.
@@ -7536,32 +7561,15 @@ fn parse_algorithm_stmt(
                                 attr: stray.into(),
                                 value: value.into(),
                                 rule: format!(
-                                    "omitted — a record local is built from one <sce:field> \
+                                    "omitted — a record local is built from one <sce:set> \
                                      per field of {alias}"
                                 ),
                             },
                         ));
                     }
                 }
-                let mut fields = Vec::new();
-                for child in node.children().filter(|n| n.is_element()) {
-                    if child.tag_name().namespace() != Some(SCE_NAMESPACE)
-                        || child.tag_name().name() != "field"
-                    {
-                        return Err(unexpected_child(
-                            &child,
-                            doc_name,
-                            format!("<sce:var name=\"{name}\">"),
-                            &["field"],
-                        ));
-                    }
-                    fields.push(RecordFieldInit {
-                        name: require_attr(&child, "name", "<sce:field>", doc_name)?,
-                        name_spelling: AttributeSpelling::of(&child, None, "name"),
-                        expr: require_attr(&child, "expr", "<sce:field>", doc_name)?,
-                        expr_spelling: AttributeSpelling::of(&child, None, "expr"),
-                    });
-                }
+                let fields =
+                    read_record_fields(node, doc_name, format!("<sce:var name=\"{name}\">"))?;
                 return Ok(AlgorithmStmt::RecordVar {
                     name,
                     name_spelling: AttributeSpelling::of(node, None, "name"),

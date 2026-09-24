@@ -21050,6 +21050,72 @@ fn algorithm_format_param(l: &LangCtx, name: &str, ty: &SceType) -> String {
     l.place_param(name, &algorithm_param_type(l, ty))
 }
 
+/// A record built whole from `fields`, one `<sce:set>` per field of
+/// `alias`: the given fields in the schema's order (`declared`). A field the
+/// schema does not declare, or one given twice, is refused on its `name`; a
+/// declared field no `<sce:set>` gives is refused on the attribute that
+/// names the record (`name_attr` of `element`, whose value is `record_name`).
+///
+/// The one reading of "built whole", for an algorithm's record local and a
+/// `sce-static` statechart's record variable alike (SCE_FORGE.md §4.12, SCE
+/// Accepted Subset §2.15).
+pub(crate) fn order_record_fields<'f>(
+    fields: &'f [crate::forge::model::RecordFieldInit],
+    declared: &[&str],
+    alias: &str,
+    element: String,
+    name_attr: &str,
+    record_name: &str,
+    name_spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
+) -> Result<Vec<&'f crate::forge::model::RecordFieldInit>, ForgeError> {
+    use crate::forge::error::ValidationError;
+    use crate::forge::expression_site::WrittenAt;
+    let field_refusal = |at: WrittenAt<'_>, value: &str, rule: String| -> ForgeError {
+        at.place_reporting(
+            ValidationError::AttributeRuleViolated {
+                element: "<sce:set>".into(),
+                attr: "name".into(),
+                value: value.to_string(),
+                rule,
+            }
+            .into(),
+        )
+    };
+    let mut given: std::collections::HashMap<&str, &crate::forge::model::RecordFieldInit> =
+        std::collections::HashMap::new();
+    for f in fields {
+        if !declared.contains(&f.name.as_str()) {
+            return Err(field_refusal(
+                WrittenAt::value(f.name_spelling.as_ref()),
+                &f.name,
+                format!("a field of {alias}: one of {}", declared.join(", ")),
+            ));
+        }
+        if given.insert(f.name.as_str(), f).is_some() {
+            return Err(field_refusal(
+                WrittenAt::value(f.name_spelling.as_ref()),
+                &f.name,
+                format!("given once — `{}` is already given above", f.name),
+            ));
+        }
+    }
+    if let Some(missing) = declared.iter().find(|id| !given.contains_key(*id)) {
+        return Err(WrittenAt::value(name_spelling).place_reporting(
+            ValidationError::AttributeRuleViolated {
+                element,
+                attr: name_attr.into(),
+                value: record_name.to_string(),
+                rule: format!(
+                    "a record built whole — every field of {alias} given by a \
+                     <sce:set>, and `{missing}` is not"
+                ),
+            }
+            .into(),
+        ));
+    }
+    Ok(declared.iter().map(|id| given[id]).collect())
+}
+
 /// The record type `record:<alias>` names, judged for what v1 can carry
 /// (SCE_FORGE.md §4.12): an imported event-schema whose every field is a
 /// fixed-width number, a `bool` or an enum. A `string` or `bytes` field has a
@@ -21780,57 +21846,20 @@ fn lower_algorithm_stmt(
             type_spelling,
             fields,
         } => {
-            use crate::forge::error::ValidationError;
-            use crate::forge::expression_site::WrittenAt;
             let element = format!("<sce:var name=\"{name}\">");
             let record = resolve_record(imports, alias, type_spelling.as_ref(), &element)?;
-            let field_refusal = |at: WrittenAt<'_>, value: &str, rule: String| -> ForgeError {
-                at.place_reporting(
-                    ValidationError::AttributeRuleViolated {
-                        element: "<sce:field>".into(),
-                        attr: "name".into(),
-                        value: value.to_string(),
-                        rule,
-                    }
-                    .into(),
-                )
-            };
             let declared: Vec<&str> = record.fields.iter().map(|(id, _)| id.as_str()).collect();
-            let mut given: std::collections::HashMap<&str, &crate::forge::model::RecordFieldInit> =
-                std::collections::HashMap::new();
-            for f in fields {
-                if !declared.contains(&f.name.as_str()) {
-                    return Err(field_refusal(
-                        WrittenAt::value(f.name_spelling.as_ref()),
-                        &f.name,
-                        format!("a field of {alias}: one of {}", declared.join(", ")),
-                    ));
-                }
-                if given.insert(f.name.as_str(), f).is_some() {
-                    return Err(field_refusal(
-                        WrittenAt::value(f.name_spelling.as_ref()),
-                        &f.name,
-                        format!("given once — `{}` is already given above", f.name),
-                    ));
-                }
-            }
-            if let Some(missing) = declared.iter().find(|id| !given.contains_key(*id)) {
-                return Err(WrittenAt::value(name_spelling.as_ref()).place_reporting(
-                    ValidationError::AttributeRuleViolated {
-                        element,
-                        attr: "name".into(),
-                        value: name.clone(),
-                        rule: format!(
-                            "a record built whole — every field of {alias} given by a \
-                             <sce:field>, and `{missing}` is not"
-                        ),
-                    }
-                    .into(),
-                ));
-            }
+            let ordered = order_record_fields(
+                fields,
+                &declared,
+                alias,
+                element,
+                "name",
+                name,
+                name_spelling.as_ref(),
+            )?;
             let mut inits: Vec<(String, String)> = Vec::new();
-            for (id, ty) in &record.fields {
-                let f = given[id.as_str()];
+            for ((id, ty), f) in record.fields.iter().zip(ordered) {
                 let site = ExpressionSite::new(&f.expr, f.expr_spelling.as_ref());
                 let value = expr::transpile_into(
                     &f.expr,

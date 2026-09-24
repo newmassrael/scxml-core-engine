@@ -34,7 +34,16 @@ fn repo_root() -> PathBuf {
 /// `(exit_ok, stdout + stderr)`. `check` with no `--language` fails only
 /// on the document axis; `check -l X` fails on X's backend axis too.
 fn run(args: &[&str], doc: &str) -> (bool, String) {
+    run_beside(args, doc, &[])
+}
+
+/// [`run`], with `siblings` — `(file name, text)` — written beside the
+/// document, where its `<sce:import src>`s resolve.
+fn run_beside(args: &[&str], doc: &str, siblings: &[(&str, &str)]) -> (bool, String) {
     let dir = tempdir().expect("tempdir");
+    for (name, text) in siblings {
+        std::fs::write(dir.path().join(name), text).expect("write sibling");
+    }
     let path = dir.path().join("probe.scxml");
     std::fs::write(&path, doc).expect("write probe");
     let out = Command::new(sce_codegen_bin())
@@ -432,4 +441,168 @@ fn a_host_action_argument_reading_a_payload_with_none_in_scope_is_refused() {
         out.contains("validation/native-action-argument"),
         "expected the native-action argument refusal:\n{out}"
     );
+}
+
+// ── A record variable is built whole and updated a field at a time ──────
+
+/// The event-schema a `record:Day` variable is held in.
+const SCHEMA_DAY: &str = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="schema_day" sce:event-name="day.picked">
+  <datamodel>
+    <data id="year" sce:type="uint16" sce:direction="in"/>
+    <data id="month" sce:type="uint8" sce:direction="in"/>
+    <data id="dayOfMonth" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// Every field of `Day`, each given once — lines 7 to 9 of [`record`].
+const EVERY_FIELD: &str = r#"<sce:set name="year" expr="2026"/>
+      <sce:set name="month" expr="9"/>
+      <sce:set name="dayOfMonth" expr="24"/>"#;
+
+/// A `sce-static` machine holding one `record:Day` variable, `shown`, whose
+/// `<data>` opens on line 6 and whose `sets` start on line 7, and `states`.
+fn record(sets: &str, states: &str) -> String {
+    format!(
+        r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static">
+  <sce:import kind="event-schema" src="schema_day.scxml" as="Day"/>
+  <datamodel>
+    <data id="shown" sce:type="record:Day">
+      {sets}
+    </data>
+  </datamodel>
+  {states}
+</scxml>
+"##
+    )
+}
+
+fn run_record(args: &[&str], doc: &str) -> (bool, String) {
+    run_beside(args, doc, &[("schema_day.scxml", SCHEMA_DAY)])
+}
+
+#[test]
+fn a_record_variable_is_read_and_updated_a_field_at_a_time() {
+    // A field is read in a condition and in a host action's argument, and
+    // assigned from its own old value and from the payload of the schema's
+    // event — every read going through the one scope.
+    let (ok, out) = run_record(
+        &["check", "-l", "kotlin"],
+        &record(
+            EVERY_FIELD,
+            r#"<state id="s">
+    <onentry><sce:action name="show"><sce:arg name="day" expr="shown.dayOfMonth"/></sce:action></onentry>
+    <transition event="next" cond="shown.dayOfMonth &lt; 28" type="internal">
+      <assign location="shown.dayOfMonth" expr="shown.dayOfMonth + 1"/>
+    </transition>
+    <transition event="day.picked" type="internal">
+      <assign location="shown.year" expr="_event.data.year"/>
+    </transition>
+  </state>"#,
+        ),
+    );
+    assert!(ok, "a record read and updated field by field:\n{out}");
+}
+
+#[test]
+fn a_record_missing_a_field_is_refused_at_its_type() {
+    let (ok, out) = run_record(
+        &["check"],
+        &record(
+            r#"<sce:set name="year" expr="2026"/>
+      <sce:set name="month" expr="9"/>"#,
+            r#"<state id="s"/>"#,
+        ),
+    );
+    assert!(!ok, "`dayOfMonth` is given by nothing:\n{out}");
+    assert_refused_at(&out, "validation/attribute-rule-violated", 6);
+    assert!(
+        out.contains("dayOfMonth"),
+        "the refusal names the field:\n{out}"
+    );
+}
+
+#[test]
+fn a_field_the_schema_does_not_declare_is_refused_at_its_name() {
+    let (ok, out) = run_record(
+        &["check"],
+        &record(
+            &format!("{EVERY_FIELD}\n      <sce:set name=\"weekday\" expr=\"1\"/>"),
+            r#"<state id="s"/>"#,
+        ),
+    );
+    assert!(!ok, "Day has no `weekday`:\n{out}");
+    assert_refused_at(&out, "validation/attribute-rule-violated", 10);
+}
+
+#[test]
+fn a_field_given_twice_is_refused_at_the_second() {
+    let (ok, out) = run_record(
+        &["check"],
+        &record(
+            &format!("{EVERY_FIELD}\n      <sce:set name=\"year\" expr=\"2027\"/>"),
+            r#"<state id="s"/>"#,
+        ),
+    );
+    assert!(!ok, "`year` is given twice:\n{out}");
+    assert_refused_at(&out, "validation/attribute-rule-violated", 10);
+}
+
+#[test]
+fn a_field_value_of_another_kind_is_refused_on_its_line() {
+    let (ok, out) = run_record(
+        &["check"],
+        &record(
+            r#"<sce:set name="year" expr="2026"/>
+      <sce:set name="month" expr="true"/>
+      <sce:set name="dayOfMonth" expr="24"/>"#,
+            r#"<state id="s"/>"#,
+        ),
+    );
+    assert!(!ok, "a bool does not stand in a uint8 field:\n{out}");
+    assert_refused_at(&out, "expression/type-mismatch", 8);
+}
+
+#[test]
+fn a_record_variable_with_an_expr_is_refused() {
+    // There is no record literal: the `<sce:set>`s are the initial value.
+    let (ok, out) = run_record(
+        &["check"],
+        &record(EVERY_FIELD, r#"<state id="s"/>"#).replace(
+            r#"sce:type="record:Day">"#,
+            r#"sce:type="record:Day" expr="0">"#,
+        ),
+    );
+    assert!(!ok, "a record variable takes no expr:\n{out}");
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 6);
+}
+
+#[test]
+fn a_field_nothing_declares_is_refused_where_it_is_read() {
+    let (ok, out) = run_record(
+        &["check"],
+        &record(
+            EVERY_FIELD,
+            r#"<state id="s"><transition event="next" cond="shown.weekday &gt; 1" type="internal"/></state>"#,
+        ),
+    );
+    assert!(!ok, "`shown` is closed over Day's fields:\n{out}");
+    assert_refused_at(&out, "expression/unknown-member", 12);
+}
+
+#[test]
+fn an_assignment_to_a_whole_record_is_refused() {
+    let (ok, out) = run_record(
+        &["check"],
+        &record(
+            EVERY_FIELD,
+            r#"<state id="s"><transition event="day.picked" type="internal"><assign location="shown" expr="_event.data"/></transition></state>"#,
+        ),
+    );
+    assert!(!ok, "a record is updated a field at a time:\n{out}");
+    assert_refused_at(&out, "expression/unsupported-construct", 12);
 }

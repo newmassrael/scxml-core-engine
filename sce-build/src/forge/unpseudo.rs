@@ -2437,7 +2437,7 @@ fn parse_statechart(
                 m.context_object_ids.insert(c.id.clone());
                 m.context_objects.push(c);
             }
-            Some("data") => m.variables.push(parse_variable(line)?),
+            Some("data") => m.variables.push(parse_variable(line, &kids)?),
             Some("state") | Some("parallel") | Some("final") => {
                 let mut s = parse_scxml_state(line, &kids)?;
                 s.document_order = order;
@@ -2451,8 +2451,13 @@ fn parse_statechart(
     Ok(m)
 }
 
-/// `data <id>[: <type>] [sce-type <t>] [src <s>] [= <expr>] [content <c>]`
-fn parse_variable(line: &Line<'_>) -> Result<crate::model::Variable, ParseError> {
+/// `data <id>[: <type>] [sce-type <t>] [src <s>] [= <expr>] [content <c>]`,
+/// and for a record variable one nested `<field> = <expr>` line per field —
+/// the lines an algorithm's record local nests.
+fn parse_variable(
+    line: &Line<'_>,
+    kids: &[&Line<'_>],
+) -> Result<crate::model::Variable, ParseError> {
     let rest = &line.text["data ".len()..];
     let (id, mut tail) = match rest.split_once(' ') {
         Some((a, b)) => (a, b),
@@ -2483,7 +2488,20 @@ fn parse_variable(line: &Line<'_>) -> Result<crate::model::Variable, ParseError>
         var_type: undo(&var_type, line.number)?,
         value_type: None,
         value_type_spelling: None,
+        record_fields: Vec::new(),
     };
+    for kid in kids {
+        let (name, expr) = kid.text.split_once(" = ").ok_or_else(|| ParseError {
+            line: kid.number,
+            why: "a record field is `<field> = <expr>`".to_string(),
+        })?;
+        v.record_fields.push(crate::forge::model::RecordFieldInit {
+            name: undo(name, kid.number)?,
+            name_spelling: None,
+            expr: undo(expr, kid.number)?,
+            expr_spelling: None,
+        });
+    }
     // Clause order is the renderer's: `sce-type` and `src` first, then the
     // free-text `= <expr>` and `content`, each of which closes the line.
     if let Some(after) = tail.strip_prefix("sce-type ") {
@@ -2582,7 +2600,7 @@ fn parse_scxml_state(
         } else if let Some(id) = l.text.strip_prefix("req ") {
             s.req.push(RequirementId(undo(id, l.number)?));
         } else if l.text.starts_with("data ") {
-            s.datamodel.push(parse_variable(l)?);
+            s.datamodel.push(parse_variable(l, &sub)?);
         } else if l.text.starts_with("invoke") {
             s.invokes.push(parse_scxml_invoke(l, &sub)?);
         } else if let Some(rest) = l.text.strip_prefix("on sample ") {

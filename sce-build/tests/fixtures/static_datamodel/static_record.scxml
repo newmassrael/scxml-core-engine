@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): a record
+  variable — the day a calendar screen shows — built whole from its
+  <sce:set>s, updated a field at a time, and replaced field by field from a
+  typed event payload of the same schema — content that runs only for a
+  delivery that carries the payload.
+
+  Kotlin compile+run gate: scripts/regen_static_datamodel_kotlin.sh commits
+  the generated machine, and StaticDatamodelTest.kt drives it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="showing" datamodel="sce-static" name="static_record">
+  <sce:import kind="event-schema" src="schema_day.scxml" as="Day"/>
+  <datamodel>
+    <data id="shown" sce:type="record:Day">
+      <sce:set name="year" expr="2026"/>
+      <sce:set name="month" expr="9"/>
+      <sce:set name="dayOfMonth" expr="24"/>
+    </data>
+    <data id="refusals" sce:type="uint32" expr="0"/>
+  </datamodel>
+  <state id="showing">
+    <transition event="next" cond="shown.dayOfMonth &lt; 28" type="internal">
+      <assign location="shown.dayOfMonth" expr="shown.dayOfMonth + 1"/>
+    </transition>
+    <transition event="day.picked" type="internal">
+      <assign location="shown.year" expr="_event.data.year"/>
+      <assign location="shown.month" expr="_event.data.month"/>
+      <assign location="shown.dayOfMonth" expr="_event.data.dayOfMonth"/>
+    </transition>
+    <!-- A `day.picked` delivered without its payload cannot run the content
+         above: none of it runs, and error.execution says so. -->
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>

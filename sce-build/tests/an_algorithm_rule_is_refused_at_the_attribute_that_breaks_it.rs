@@ -417,14 +417,14 @@ const RECORD_MISSING_FIELD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
   <sce:body>
     <sce:var type="record:Hlc"
              name="r">
-      <sce:field name="wallTime" expr="w"/>
+      <sce:set name="wallTime" expr="w"/>
     </sce:var>
     <sce:return expr="r"/>
   </sce:body>
 </scxml>
 "#;
 
-/// A `<sce:field>` the schema does not declare — refused at its name.
+/// A `<sce:set>` the schema does not declare — refused at its name.
 const RECORD_UNKNOWN_FIELD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_record_unknown_field" version="1.0">
   <sce:import kind="event-schema" src="probe_schema_hlc.scxml" as="Hlc"/>
@@ -434,8 +434,8 @@ const RECORD_UNKNOWN_FIELD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
   </sce:signature>
   <sce:body>
     <sce:var name="r" type="record:Hlc">
-      <sce:field name="wallTime" expr="w"/>
-      <sce:field expr="0"
+      <sce:set name="wallTime" expr="w"/>
+      <sce:set expr="0"
                  name="counterr"/>
     </sce:var>
     <sce:return expr="r"/>
@@ -454,8 +454,8 @@ const RECORD_WHOLE_ASSIGN: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
   </sce:signature>
   <sce:body>
     <sce:var name="r" type="record:Hlc">
-      <sce:field name="wallTime" expr="p.wallTime"/>
-      <sce:field name="counter" expr="p.counter"/>
+      <sce:set name="wallTime" expr="p.wallTime"/>
+      <sce:set name="counter" expr="p.counter"/>
     </sce:var>
     <sce:assign expr="p"
                 target="r"/>

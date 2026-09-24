@@ -800,6 +800,38 @@ fn enforce_static_datamodel(
                     (!written.is_empty()).then(|| written.to_string()),
                 ));
             }
+            // A record variable is built whole from its `<sce:set>`
+            // children, as an algorithm's record local is (SCE_FORGE.md
+            // §4.12): those children are its initial value, so it takes no
+            // `expr`, and they are not the untyped content refused below.
+            let is_record = node.attribute((SCE_NAMESPACE, "type")).is_some_and(|t| {
+                t.trim()
+                    .starts_with(crate::forge::model::AlgorithmValueType::RECORD_PREFIX)
+            });
+            if is_record {
+                if let Some((written, pos)) = attribute_as_written(&node, "expr") {
+                    return Err(refused(
+                        pos,
+                        format!("expr=\"{written}\""),
+                        "a record variable is built from one <sce:set> per field of its \
+                         schema, not from an expr",
+                        &node,
+                        (!written.is_empty()).then(|| written.to_string()),
+                    ));
+                }
+                if !character_data(&node).trim().is_empty() {
+                    return Err(refused(
+                        element_row(&node),
+                        format!("<data id=\"{id}\"> with in-line text"),
+                        "a record variable is built from one <sce:set> per field of its \
+                         schema — in-line text has no type",
+                        &node,
+                        Some(name.to_string()),
+                    ));
+                }
+                stack.extend(node.children().filter(|n| n.is_element()));
+                continue;
+            }
             if !inline_data_value(&node).is_empty() {
                 return Err(refused(
                     element_row(&node),
@@ -2140,6 +2172,10 @@ impl SCXMLParser {
                     &model,
                     &schemas_by_stem,
                 );
+            model.imported_records = crate::forge::event_schema_check::resolve_imported_records(
+                &model,
+                &schemas_by_stem,
+            );
             let imported_enums =
                 crate::forge::event_schema_check::resolve_imported_enums(&model, &enums_by_stem);
             crate::forge::event_schema_check::check(
@@ -2326,21 +2362,49 @@ impl SCXMLParser {
         // authoring tool reads beside `sce:direction`, and the model does not
         // carry it. The grammar is a field's (`sceTypeOrEnumRef`): a
         // datamodel variable is typed the way an event-schema field is.
+        //
+        // A `record:<alias>` variable (E9's record, SCE_FORGE.md §4.12) is
+        // read by the value-type reader that judges the alias against this
+        // document's event-schema imports, and is built whole from its
+        // `<sce:set>` children.
+        let element = format!("<data id=\"{id}\">");
         let value_type = data
             .attribute((SCE_NAMESPACE, "type"))
             .filter(|_| model.datamodel == Datamodel::SceStatic)
             .map(|text| {
-                crate::forge::parser::read_type_attr(
-                    data,
-                    source_name,
-                    crate::forge::parser::TypeGrammar::ScalarOrEnumRef,
-                    format!("<data id=\"{id}\">"),
-                    "sce:type",
-                    text,
-                )
-                .map(crate::forge::model::AlgorithmValueType::Scalar)
+                if text
+                    .trim()
+                    .starts_with(crate::forge::model::AlgorithmValueType::RECORD_PREFIX)
+                {
+                    crate::forge::parser::read_algorithm_value_type(
+                        data,
+                        source_name,
+                        element.clone(),
+                        "sce:type",
+                        text,
+                    )
+                } else {
+                    crate::forge::parser::read_type_attr(
+                        data,
+                        source_name,
+                        crate::forge::parser::TypeGrammar::ScalarOrEnumRef,
+                        element.clone(),
+                        "sce:type",
+                        text,
+                    )
+                    .map(crate::forge::model::AlgorithmValueType::Scalar)
+                }
             })
             .transpose()?;
+        let record_fields = if value_type
+            .as_ref()
+            .and_then(crate::forge::model::AlgorithmValueType::record_alias)
+            .is_some()
+        {
+            crate::forge::parser::read_record_fields(data, source_name, element)?
+        } else {
+            Vec::new()
+        };
         // `needs_script_engine` is derived post-parse by
         // [`crate::script_engine_analyzer`] —
         // [`NeedsScriptEngineCause::DatamodelVariableInit`].
@@ -2354,6 +2418,7 @@ impl SCXMLParser {
             source_location: source_location_of(data, source_name),
             value_type,
             value_type_spelling: AttributeSpelling::of(data, Some(SCE_NAMESPACE), "type"),
+            record_fields,
         }))
     }
 

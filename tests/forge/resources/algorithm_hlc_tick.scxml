@@ -4,7 +4,7 @@
   when the local clock reads `now` on node `node`. The wall time never goes
   backwards; when it does not advance, the counter does.
 
-  Exercises a record local built whole with <sce:field>, a field updated by
+  Exercises a record local built whole with <sce:set>, a field updated by
   <sce:assign>, and a record return (SCE_FORGE.md §4.12).
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
@@ -22,9 +22,9 @@
   </sce:signature>
   <sce:body>
     <sce:var name="next" type="record:Hlc">
-      <sce:field name="nodeId" expr="node"/>
-      <sce:field name="wallTime" expr="now &gt; prev.wallTime ? now : prev.wallTime"/>
-      <sce:field name="counter" expr="0"/>
+      <sce:set name="nodeId" expr="node"/>
+      <sce:set name="wallTime" expr="now &gt; prev.wallTime ? now : prev.wallTime"/>
+      <sce:set name="counter" expr="0"/>
     </sce:var>
     <sce:if cond="next.wallTime === prev.wallTime">
       <sce:assign target="next.counter" expr="prev.counter + 1"/>

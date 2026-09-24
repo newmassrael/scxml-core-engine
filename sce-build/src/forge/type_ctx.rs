@@ -417,33 +417,131 @@ impl StaticEnum {
     }
 }
 
+/// Each `record:<alias>` variable's fields as the dotted path an expression
+/// reads them by, `<id>.<field>`, typed by the schema `alias` names in
+/// `records` (the statechart's imports keyed by alias). A variable whose
+/// alias names no resolved schema contributes nothing — the parser has
+/// already judged the alias against the imports.
+fn static_record_paths<'v>(
+    variables: impl IntoIterator<Item = &'v crate::model::Variable>,
+    records: &std::collections::BTreeMap<String, EventSchemaModel>,
+) -> Vec<(String, InferredType)> {
+    let mut paths = Vec::new();
+    for var in variables {
+        let Some(schema) = var
+            .value_type
+            .as_ref()
+            .and_then(AlgorithmValueType::record_alias)
+            .and_then(|alias| records.get(alias))
+        else {
+            continue;
+        };
+        for field in &schema.fields {
+            paths.push((
+                format!("{}.{}", var.id, field.id),
+                InferredType::from_sce_type(&field.sce_type),
+            ));
+        }
+    }
+    paths
+}
+
+/// A `sce-static` statechart's typed scope (docs/SCE_ACCEPTED_SUBSET.md
+/// §2.15), gathered once for every pass that judges or lowers one of its
+/// expressions — validation, the host-action signature check, the Kotlin
+/// lowering and the host-action call it renders — so that none of them can
+/// see a scope the others do not.
+///
+/// Owned rather than borrowed from the model: the lowering passes rewrite
+/// the model while they read this.
+pub struct StaticScope {
+    /// Every variable, the document's and each state's.
+    pub variables: Vec<crate::model::Variable>,
+    /// Each record variable's `<id>.<field>` ([`static_record_paths`]).
+    record_paths: Vec<(String, InferredType)>,
+}
+
+impl StaticScope {
+    /// The scope of `model`; `None` for a document under any other data model.
+    pub fn of(model: &crate::model::SCXMLModel) -> Option<Self> {
+        if model.datamodel != crate::model::Datamodel::SceStatic {
+            return None;
+        }
+        let variables: Vec<crate::model::Variable> = model
+            .variables
+            .iter()
+            .chain(model.states.values().flat_map(|s| s.datamodel.iter()))
+            .cloned()
+            .collect();
+        let record_paths = static_record_paths(variables.iter(), &model.imported_records);
+        Some(Self {
+            variables,
+            record_paths,
+        })
+    }
+
+    /// The dotted paths an expression may read: every record variable's
+    /// fields, and `payload`'s `_event.data.<field>` when the expression sits
+    /// on a transition whose event carries one.
+    pub fn paths(&self, payload: Option<&EventSchemaModel>) -> Vec<(String, InferredType)> {
+        let mut paths = self.record_paths.clone();
+        if let Some(schema) = payload {
+            paths.extend(crate::forge::event_schema_check::event_payload_paths(
+                schema,
+            ));
+        }
+        paths
+    }
+
+    /// The [`TypeCtx`] over this scope with `paths` ([`Self::paths`]) in it.
+    pub fn ctx<'a>(
+        &'a self,
+        paths: &'a [(String, InferredType)],
+        enums: &'a [StaticEnum],
+    ) -> TypeCtx<'a> {
+        static_statechart(self.variables.iter(), paths, enums)
+    }
+}
+
 /// TypeCtx for a statechart's expression under `datamodel="sce-static"`
 /// (docs/SCE_ACCEPTED_SUBSET.md §2.15): every declared variable at its
-/// `sce:type`, the triggering event's `_event.data.<field>` paths when its
-/// event carries a schema (`payload`, from
-/// [`crate::forge::event_schema_check::event_payload_paths`]), the imported
-/// enums, and `In(<state id>)`.
+/// `sce:type` — a `record:<alias>` one as a closed record — the typed dotted
+/// `paths` in scope, the imported enums, and `In(<state id>)`.
+///
+/// `paths` are every member an expression may read through a dot, owned by
+/// the caller because a [`TypeCtx`] borrows its keys: the triggering
+/// event's `_event.data.<field>` when its event carries a schema
+/// ([`crate::forge::event_schema_check::event_payload_paths`]) and each
+/// record variable's `<id>.<field>` ([`static_record_paths`]).
 ///
 /// The scope is closed, as every forge kind's is: the model is defined so
 /// that a document needs no script engine, so there is no host behind a
 /// name nothing declares. `_event` is an open record for the reason the
 /// procedure kind gives — its members beyond the typed payload are the
 /// triggering event's, not this document's to judge.
-pub fn static_statechart<'a>(
+fn static_statechart<'a>(
     variables: impl IntoIterator<Item = &'a crate::model::Variable>,
-    payload: &'a [(String, InferredType)],
+    paths: &'a [(String, InferredType)],
     enums: &'a [StaticEnum],
 ) -> TypeCtx<'a> {
     let mut ctx = TypeCtx::new();
     for var in variables {
-        let ty = var
-            .value_type
-            .as_ref()
-            .and_then(AlgorithmValueType::scalar)
+        let Some(value_type) = var.value_type.as_ref() else {
+            ctx.insert_var(var.id.as_str(), InferredType::Unknown);
+            continue;
+        };
+        if value_type.record_alias().is_some() {
+            // Its fields are `paths`, and they are the whole of what it may
+            // be asked for — the rule an algorithm's record local keeps.
+            ctx.insert_record(var.id.as_str(), RecordShape::Closed);
+            continue;
+        }
+        let ty = value_type
+            .scalar()
             .map_or(InferredType::Unknown, InferredType::from_sce_type);
         ctx.insert_var(var.id.as_str(), ty);
     }
-    for (path, ty) in payload {
+    for (path, ty) in paths {
         ctx.insert_var(path.as_str(), *ty);
     }
     for e in enums {

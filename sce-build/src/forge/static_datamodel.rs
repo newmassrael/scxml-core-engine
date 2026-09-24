@@ -6,8 +6,8 @@
 //
 // Under `datamodel="sce-static"` every expression is written in the forge
 // expression language against a closed scope — the declared variables, the
-// triggering event's typed payload, the imported enums, `In()` — built by
-// [`crate::forge::type_ctx::static_statechart`]. This pass judges each one
+// triggering event's typed payload, each record variable's fields, the
+// imported enums, `In()` — gathered by [`crate::forge::type_ctx::StaticScope`]. This pass judges each one
 // where it lands: a `<data>` initialiser and an `<assign>` against the
 // variable's type, a condition as `bool`, a logged or sent value as whatever
 // it is. A refusal is placed at the expression's own range.
@@ -18,10 +18,9 @@
 // declared — the failure the `datamodel` attribute exists to prevent.
 
 use crate::forge::error::{ForgeError, Located};
-use crate::forge::event_schema_check::event_payload_paths;
 use crate::forge::expr::{judge_into, Expected};
 use crate::forge::expression_site::ExpressionSite;
-use crate::forge::type_ctx::{static_statechart, StaticEnum};
+use crate::forge::type_ctx::{StaticEnum, StaticScope};
 use crate::forge::types::{InferredType, TypeCtx};
 use crate::model::{Action, Datamodel, Invoke, SCXMLModel, Variable};
 use crate::scxml_semantic::ScxmlSemanticError;
@@ -49,23 +48,28 @@ pub fn check(
     enums: &[StaticEnum],
     diag_label: &str,
 ) -> Result<(), Located<ForgeError>> {
-    if model.datamodel != Datamodel::SceStatic {
+    let Some(scope) = StaticScope::of(model) else {
         return Ok(());
-    }
-    let variables: Vec<&Variable> = model
-        .variables
-        .iter()
-        .chain(model.states.values().flat_map(|s| s.datamodel.iter()))
-        .collect();
+    };
     let judge = Judge {
-        variables: &variables,
+        scope: &scope,
         enums,
         diag_label,
     };
-    let no_payload: Vec<(String, InferredType)> = Vec::new();
-    let plain = judge.ctx(&no_payload);
+    // Every record variable's fields, readable everywhere; a transition adds
+    // its payload to these.
+    let record_paths = scope.paths(None);
+    let plain = judge.ctx(&record_paths);
 
-    for var in &variables {
+    for var in &scope.variables {
+        if let Some(alias) = var
+            .value_type
+            .as_ref()
+            .and_then(crate::forge::model::AlgorithmValueType::record_alias)
+        {
+            judge.record(&plain, var, alias, &model.imported_records)?;
+            continue;
+        }
         if var.expr.trim().is_empty() {
             continue;
         }
@@ -90,12 +94,8 @@ pub fn check(
         for transition in &state.transitions {
             // The payload is the triggering event's, so each transition
             // judges against its own.
-            let payload = model
-                .imported_event_schemas
-                .get(&transition.event)
-                .map(event_payload_paths)
-                .unwrap_or_default();
-            let ctx = judge.ctx(&payload);
+            let paths = scope.paths(model.imported_event_schemas.get(&transition.event));
+            let ctx = judge.ctx(&paths);
             if !transition.cond.trim().is_empty()
                 && !transition.is_cpp_condition
                 && !transition.is_kt_condition
@@ -146,7 +146,7 @@ fn variable_type(var: &Variable) -> InferredType {
 }
 
 struct Judge<'a> {
-    variables: &'a [&'a Variable],
+    scope: &'a StaticScope,
     enums: &'a [StaticEnum],
     diag_label: &'a str,
 }
@@ -156,7 +156,7 @@ impl<'a> Judge<'a> {
     where
         'a: 'c,
     {
-        static_statechart(self.variables.iter().copied(), payload, self.enums)
+        self.scope.ctx(payload, self.enums)
     }
 
     /// `expr` judged against `expected`, refused at its own range.
@@ -173,6 +173,47 @@ impl<'a> Judge<'a> {
                 self.diag_label,
             )
         })
+    }
+
+    /// A `record:<alias>` variable built whole: one `<sce:set>` per field
+    /// of the schema `alias` names ([`crate::forge::generator::order_record_fields`],
+    /// the rule an algorithm's record local keeps), each value judged against
+    /// its field's type.
+    fn record(
+        &self,
+        ctx: &TypeCtx<'_>,
+        var: &Variable,
+        alias: &str,
+        records: &std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>,
+    ) -> Result<(), Located<ForgeError>> {
+        // An alias the parser admitted names an import; without sibling
+        // files to read it has no schema here, and nothing to judge against.
+        let Some(schema) = records.get(alias) else {
+            return Ok(());
+        };
+        let declared: Vec<&str> = schema.fields.iter().map(|f| f.id.as_str()).collect();
+        let ordered = crate::forge::generator::order_record_fields(
+            &var.record_fields,
+            &declared,
+            alias,
+            format!("<data id=\"{}\">", var.id),
+            "sce:type",
+            &var.value_type
+                .as_ref()
+                .map(|t| t.as_attr())
+                .unwrap_or_default(),
+            var.value_type_spelling.as_ref(),
+        )
+        .map_err(|error| Located::in_file(error, self.diag_label))?;
+        for (field, init) in schema.fields.iter().zip(ordered) {
+            self.expr(
+                ctx,
+                &init.expr,
+                init.expr_spelling.as_ref(),
+                Expected::Slot(InferredType::from_sce_type(&field.sce_type)),
+            )?;
+        }
+        Ok(())
     }
 
     /// The refusal of an expression attribute this model has no typed form
@@ -255,6 +296,32 @@ impl<'a> Judge<'a> {
         }
         match kind {
             "assign" => {
+                // A record is built whole and updated a field at a time
+                // (SCE_FORGE.md §4.12): assigning one whole is refused, as it
+                // is to an algorithm's record local.
+                let location = action.location.trim();
+                if self.scope.variables.iter().any(|v| {
+                    v.id == location
+                        && v.value_type
+                            .as_ref()
+                            .and_then(crate::forge::model::AlgorithmValueType::record_alias)
+                            .is_some()
+                }) {
+                    return Err(Located::in_file(
+                        ExpressionSite::new(&action.location, action.spellings.get("location"))
+                            .place(
+                                crate::forge::error::ExprError::UnsupportedConstruct {
+                                    construct: format!(
+                                        "an assignment to the whole record `{location}` \
+                                         (a record is updated a field at a time)"
+                                    ),
+                                    observed: Some(location.to_string()),
+                                }
+                                .at(None),
+                            ),
+                        self.diag_label,
+                    ));
+                }
                 // The location is a declared variable; its type is the slot.
                 let slot = self.expr(
                     ctx,

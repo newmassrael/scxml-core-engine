@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A calendar day: the record type `static_record.scxml`'s `record:Day`
+  variable is held in (SCE Accepted Subset §2.15, SCE_FORGE.md §4.12).
+  camelCase field ids on purpose, as event_schema_hlc's are: a member access
+  that is not spelled through the rule that emitted the class does not
+  compile.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="schema_day"
+       sce:event-name="day.picked">
+  <datamodel>
+    <data id="year" sce:type="uint16" sce:direction="in"/>
+    <data id="month" sce:type="uint8" sce:direction="in"/>
+    <data id="dayOfMonth" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+</scxml>

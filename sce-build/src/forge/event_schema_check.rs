@@ -111,21 +111,48 @@ const EVENT_DATA_PATH: &str = "_event.data";
 /// Returns the per-statechart `event_name → EventSchemaModel` view.
 /// Empty when the statechart declares no event-schema imports (the
 /// schemaless-fallback path keeps cost at zero).
+/// Each `<sce:import kind="event-schema">` of `scxml` whose document was
+/// read, with the alias it is imported as — the one walk both resolvers
+/// below take, so the event-keyed and the alias-keyed maps cannot disagree
+/// about which schemas a statechart imports.
+fn imported_schemas<'a>(
+    scxml: &'a SCXMLModel,
+    event_schemas_by_doc_name: &'a BTreeMap<String, EventSchemaModel>,
+) -> impl Iterator<Item = (&'a str, &'a EventSchemaModel)> {
+    scxml
+        .forge_imports
+        .iter()
+        .filter(|import| matches!(import.kind, ForgeKind::EventSchema))
+        .filter_map(move |import| {
+            let stem = Path::new(&import.src).file_stem()?.to_str()?;
+            event_schemas_by_doc_name
+                .get(stem)
+                .map(|schema| (import.alias.as_str(), schema))
+        })
+}
+
+/// The imported event-schemas keyed by the alias a `record:<alias>` names
+/// them by (SCE_FORGE.md §4.12) — a `sce-static` statechart's record
+/// variables are typed by these (SCE Accepted Subset §2.15).
+pub fn resolve_imported_records(
+    scxml: &SCXMLModel,
+    event_schemas_by_doc_name: &BTreeMap<String, EventSchemaModel>,
+) -> BTreeMap<String, EventSchemaModel> {
+    let mut resolved = BTreeMap::new();
+    for (alias, schema) in imported_schemas(scxml, event_schemas_by_doc_name) {
+        resolved
+            .entry(alias.to_string())
+            .or_insert_with(|| schema.clone());
+    }
+    resolved
+}
+
 pub fn resolve_imported_event_schemas(
     scxml: &SCXMLModel,
     event_schemas_by_doc_name: &BTreeMap<String, EventSchemaModel>,
 ) -> BTreeMap<String, EventSchemaModel> {
     let mut resolved: BTreeMap<String, EventSchemaModel> = BTreeMap::new();
-    for import in &scxml.forge_imports {
-        if !matches!(import.kind, ForgeKind::EventSchema) {
-            continue;
-        }
-        let Some(stem) = Path::new(&import.src).file_stem().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        let Some(schema) = event_schemas_by_doc_name.get(stem) else {
-            continue;
-        };
+    for (_, schema) in imported_schemas(scxml, event_schemas_by_doc_name) {
         // First occurrence wins; the per-statechart duplicate-event-
         // name case is rejected upstream as `validation/incompatible-
         // attributes` so the resolver's silent skip here is the
@@ -249,7 +276,7 @@ pub fn lower_typed_guard(
 /// `_event.data.<field>`, with its declared type — owned, because a
 /// [`TypeCtx`] borrows its keys. The one registration of a typed payload,
 /// shared by [`lower_typed_guard`] and the static data model's scope
-/// ([`crate::forge::type_ctx::static_statechart`]).
+/// ([`crate::forge::type_ctx::StaticScope`]).
 pub(crate) fn event_payload_paths(schema: &EventSchemaModel) -> Vec<(String, InferredType)> {
     schema
         .fields

@@ -1951,7 +1951,7 @@ fn render_invoke(inv: &crate::model::Invoke, out: &mut Out<'_>) -> Result<(), Un
 }
 
 fn render_variable(v: &crate::model::Variable, out: &mut Out<'_>) {
-    let mut line = format!("data {}", text(&v.id));
+    let mut line = text(&v.id).into_owned();
     if !v.var_type.is_empty() {
         let _ = write!(line, ": {}", text(&v.var_type));
     }
@@ -1975,7 +1975,16 @@ fn render_variable(v: &crate::model::Variable, out: &mut Out<'_>) {
     if !v.content.is_empty() {
         let _ = write!(line, " content {}", text(&v.content));
     }
-    out.line(&line);
+    out.line_of(vec![Part::Word(Word::Data), Part::Text(line)]);
+    // A record variable is built whole, one nested `<field> = <expr>` line
+    // per field — the lines an algorithm's record local nests.
+    if !v.record_fields.is_empty() {
+        out.nested(|out| {
+            for f in &v.record_fields {
+                out.line(&format!("{} = {}", text(&f.name), text(&f.expr)));
+            }
+        });
+    }
 }
 
 /// Whether a clause value may sit on a head line.

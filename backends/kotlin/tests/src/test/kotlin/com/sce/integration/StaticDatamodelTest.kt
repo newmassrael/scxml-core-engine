@@ -4,13 +4,13 @@
 // datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15) — Kotlin
 // compile+run gate.
 //
-// The committed SM (com/sce/integration/static_counter/static_counterSm.kt) is
-// generated from sce-build/tests/fixtures/static_datamodel/static_counter.scxml
-// (regen: scripts/regen_static_datamodel_kotlin.sh). Its variables are Kotlin
-// fields and every expression — the guard reading `count` and `In()`, the
-// `<assign>`s, the `<if>` / `<elseif>` pair — was lowered to native Kotlin, so
-// the machine is constructed with NO script engine and its datamodel is read
-// straight off the fields.
+// The committed SMs (com/sce/integration/<machine>/<machine>Sm.kt) are
+// generated from sce-build/tests/fixtures/static_datamodel/<machine>.scxml
+// (regen: scripts/regen_static_datamodel_kotlin.sh). Their variables are
+// Kotlin fields and every expression — the guard reading `count` and `In()`,
+// the `<assign>`s, the `<if>` / `<elseif>` pair, a record's field updates —
+// was lowered to native Kotlin, so each machine is constructed with NO script
+// engine and its datamodel is read straight off the fields.
 
 package com.sce.integration
 
@@ -20,6 +20,9 @@ import com.sce.integration.static_counter.StaticCounterStateMachine
 import com.sce.integration.static_host_call.StaticHostCallActions
 import com.sce.integration.static_host_call.StaticHostCallEvent
 import com.sce.integration.static_host_call.StaticHostCallStateMachine
+import com.sce.integration.static_record.StaticRecordDayRecord
+import com.sce.integration.static_record.StaticRecordEvent
+import com.sce.integration.static_record.StaticRecordStateMachine
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -173,6 +176,77 @@ class StaticDatamodelTest {
                 "one call per entry of `idle`, each with the datamodel as it stood; " +
                     "the fourth retry finds `attempts < 3` false and re-enters nothing"
             )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // ── static_record: a record variable, built whole, updated field by field ──
+
+    private fun day(year: Int, month: Int, dayOfMonth: Int) =
+        StaticRecordDayRecord(year.toUShort(), month.toUByte(), dayOfMonth.toUByte())
+
+    @Test
+    fun aRecordVariableStartsAsItsSetsBuiltIt() {
+        val sm = StaticRecordStateMachine()
+        sm.initialize()
+        try {
+            assertEquals(day(2026, 9, 24), sm.shown, "one <sce:set> per field of Day")
+            assertEquals(
+                StaticRecordStateMachine.Data(shown = day(2026, 9, 24), refusals = 0u),
+                sm.snapshot.value.data,
+                "the snapshot carries the record as one value"
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun aFieldIsUpdatedAloneAndAGuardReadsIt() {
+        // `shown.dayOfMonth < 28` guards `shown.dayOfMonth + 1`: four steps
+        // reach 28, and the fifth finds the guard false. The other fields
+        // are carried over untouched by each update.
+        val sm = StaticRecordStateMachine()
+        sm.initialize()
+        try {
+            repeat(5) {
+                sm.send(StaticRecordEvent.Next)
+                sm.tick()
+            }
+            assertEquals(day(2026, 9, 28), sm.shown)
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun aTypedPayloadReplacesTheRecordFieldByField() {
+        val sm = StaticRecordStateMachine()
+        sm.initialize()
+        try {
+            sm.raiseDayPicked(2027.toUShort(), 1.toUByte(), 3.toUByte())
+            sm.tick()
+            assertEquals(day(2027, 1, 3), sm.shown)
+            assertEquals(day(2027, 1, 3), sm.snapshot.value.data.shown)
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun aDeliveryWithoutThePayloadRunsNoneOfTheContent() {
+        // W3C SCXML 3.12.2 / 4.9: the content reads a payload this delivery
+        // did not carry — an execution error, which stops the block before
+        // any of it runs and goes on the internal queue for the document to
+        // answer.
+        val sm = StaticRecordStateMachine()
+        sm.initialize()
+        try {
+            sm.send(StaticRecordEvent.Day.Picked)
+            sm.tick()
+            assertEquals(day(2026, 9, 24), sm.shown, "no field was assigned")
+            assertEquals(1u, sm.refusals, "error.execution reached the document once")
         } finally {
             sm.cleanup()
         }

@@ -405,7 +405,7 @@
           "type": "object"
         },
         {
-          "description": "`<sce:var name=... type=\"record:<alias>\">` with one `<sce:field name=... expr=.../>` per field of the schema — a record local, built whole (SCE_FORGE.md §4.12). Every field is given, none twice, and none the schema does not declare; those rules need the schema and are judged where the import is resolved. Afterwards a field is updated with `<sce:assign target=\"r.field\">`.\n\nA variant of its own rather than a `Var` with a field list: a record local takes no `init` and no `capacity`, and every reader of `Var` would otherwise have to know to look for a third shape.",
+          "description": "`<sce:var name=... type=\"record:<alias>\">` with one `<sce:set name=... expr=.../>` per field of the schema — a record local, built whole (SCE_FORGE.md §4.12). Every field is given, none twice, and none the schema does not declare; those rules need the schema and are judged where the import is resolved. Afterwards a field is updated with `<sce:assign target=\"r.field\">`.\n\nA variant of its own rather than a `Var` with a field list: a record local takes no `init` and no `capacity`, and every reader of `Var` would otherwise have to know to look for a third shape.",
           "properties": {
             "fields": {
               "items": {
@@ -5103,7 +5103,7 @@
       "type": "string"
     },
     "RecordFieldInit": {
-      "description": "One `<sce:field name=... expr=.../>` of a record local ([`AlgorithmStmt::RecordVar`]): the schema field it gives and the expression that gives it.",
+      "description": "One `<sce:set name=... expr=.../>` of a record local ([`AlgorithmStmt::RecordVar`]): the schema field it gives and the expression that gives it.",
       "properties": {
         "expr": {
           "type": "string"
@@ -5656,6 +5656,10 @@
         "cond_kt": {
           "type": "string"
         },
+        "content_reads_payload": {
+          "description": "Whether this transition's content reads its event's typed payload.\n\nSet by the `sce-static` Kotlin lowering ([`crate::forge::static_lowering::lower_kotlin`]) on the clone it renders, never by the parser. A delivery that did not carry the payload cannot run that content, so the backend opens it with a check that signals `error.execution` and runs none of it — what a native action whose argument reads the payload already does, as one block rather than per statement, because an error stops the block.",
+          "type": "boolean"
+        },
         "event": {
           "type": "string"
         },
@@ -5875,6 +5879,13 @@
         },
         "id": {
           "type": "string"
+        },
+        "record_fields": {
+          "description": "A `record:<alias>` variable's initial value: one `<sce:set name expr>` per field of the schema, built whole the way an algorithm's record local is (SCE_FORGE.md §4.12). Empty for any other variable.",
+          "items": {
+            "$ref": "#/definitions/RecordFieldInit"
+          },
+          "type": "array"
         },
         "source_location": {
           "anyOf": [

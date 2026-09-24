@@ -75,6 +75,10 @@ pub enum Word {
     /// one nested `field = expr` line per field — so its line must name
     /// the word a shape closes it with.
     Var,
+    /// A statechart datamodel variable's declaration. A `record:<alias>`
+    /// variable opens a block — one nested `field = expr` line per field —
+    /// so its line must name the word a shape closes it with.
+    Data,
     Call,
     Send,
     Log,
@@ -209,6 +213,7 @@ impl Word {
         Word::While,
         Word::Max,
         Word::Var,
+        Word::Data,
         Word::Call,
         Word::Send,
         Word::Log,
@@ -339,6 +344,7 @@ fn en_word(w: Word) -> &'static str {
         Word::While => "while",
         Word::Max => "max",
         Word::Var => "var",
+        Word::Data => "data",
         Word::Call => "call",
         Word::Send => "send",
         Word::Log => "log",
@@ -815,6 +821,7 @@ fn ko_word(w: Word) -> &'static str {
         Word::While => "조건반복",
         Word::Max => "최대",
         Word::Var => "변수",
+        Word::Data => "데이터",
         Word::Call => "호출",
         Word::Send => "전송",
         Word::Log => "출력",
