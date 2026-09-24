@@ -289,13 +289,20 @@ abstract class StateMachineEngine<S : State, E : Event>(
      *
      * ## The contract
      *
-     * Called exactly once per completed macrostep, at the Appendix D point: the
-     * inner loop is drained (no eventless transition is enabled and the internal
+     * Called at every macrostep boundary, at the Appendix D point: the inner
+     * loop is drained (no eventless transition is enabled and the internal
      * queue is empty), the invokes of the states it entered have started, and
      * invoking raised nothing that re-opens the loop — right before the loop
      * would take the next external event. The first macrostep, the one
-     * [initialize] / [start] settle, ends at the same point, and so does a
-     * macrostep that reaches a top-level `<final>`.
+     * [initialize] / [start] settle, ends at the same point. An entry into the
+     * loop that takes no microstep (a [tick] with nothing due) reaches the same
+     * point again and calls this with the configuration unchanged; a publisher
+     * that conflates equal values, as a `StateFlow` does, sees nothing new.
+     *
+     * A macrostep that reaches a top-level `<final>` ends the machine, and the
+     * interpreter's exit then empties the configuration. It is called at the
+     * moment the final state is reached, before that exit, so the host sees the
+     * state the machine ended in — and not again afterwards.
      *
      * Never between microsteps. The configuration and the datamodel are only
      * consistent at a macrostep boundary; a host shown the state between two
@@ -313,8 +320,13 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     protected open fun onMacrostepComplete(truncated: Boolean) {}
 
-    /** [onMacrostepComplete] at the point the loop has just reached. */
+    /**
+     * [onMacrostepComplete] at the point the loop has just reached — unless
+     * the machine has ended, whose last boundary [flushPendingFinalState]
+     * already published before the exit emptied the configuration.
+     */
     private fun macrostepSettled() {
+        if (isInFinalState) return
         onMacrostepComplete(macrostepTruncated)
     }
 
@@ -2093,7 +2105,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 // state has exited the interpreter. Saying nothing about it is
                 // not the clause — see [unseenExternalEvents].
                 recordUnseenExternalEvents()
-                macrostepSettled()
+                // The last boundary was published when the final state was
+                // reached (flushPendingFinalState), before the exit emptied
+                // the configuration.
                 break
             }
             // §scxml-6.4: invokes for states entered during this macrostep.
@@ -2882,6 +2896,15 @@ abstract class StateMachineEngine<S : State, E : Event>(
     private fun flushPendingFinalState() {
         if (pendingFinalState) {
             pendingFinalState = false
+
+            // W3C SCXML Appendix D: reaching a top-level <final> ends the
+            // machine, so this is its last macrostep boundary — and the last
+            // moment the configuration still holds the state it ended in.
+            // The exit below empties it, as the interpreter's exit does, so
+            // the host is shown the machine here or never sees where it
+            // stopped. Published before [isInFinalState] is set, which is
+            // what then stops [macrostepSettled] publishing the emptied one.
+            onMacrostepComplete(macrostepTruncated)
             isInFinalState = true
 
             // §scxml-3.8: Execute onexit actions for the final state before
