@@ -9683,7 +9683,7 @@ pub(crate) fn read_algorithm_value_type(
     }
     let Some(inner) = text
         .trim()
-        .strip_prefix("list<")
+        .strip_prefix(AlgorithmValueType::LIST_PREFIX)
         .and_then(|t| t.strip_suffix('>'))
     else {
         return read_type_attr(node, doc_name, TypeGrammar::Scalar, element, attr, text)

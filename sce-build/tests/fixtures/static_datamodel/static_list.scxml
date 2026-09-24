@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): a list
+  variable — the days a calendar screen has picked — that starts empty, is
+  filled by <sce:append> from a typed event payload, is emptied by
+  <sce:clear>, and holds at most its sce:capacity on every backend: an append
+  past the bound appends nothing and raises error.execution.
+
+  Kotlin compile+run gate: scripts/regen_static_datamodel_kotlin.sh commits
+  the generated machine, and StaticDatamodelTest.kt drives it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="collecting" datamodel="sce-static" name="static_list">
+  <sce:import kind="event-schema" src="schema_day.scxml" as="Day"/>
+  <datamodel>
+    <data id="picked" sce:type="list&lt;uint8&gt;" sce:capacity="3"/>
+    <data id="refusals" sce:type="uint32" expr="0"/>
+  </datamodel>
+  <state id="collecting">
+    <transition event="day.picked" type="internal">
+      <sce:append target="picked" expr="_event.data.dayOfMonth"/>
+    </transition>
+    <transition event="reset" type="internal">
+      <sce:clear target="picked"/>
+    </transition>
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>

@@ -20,6 +20,8 @@ import com.sce.integration.static_counter.StaticCounterStateMachine
 import com.sce.integration.static_host_call.StaticHostCallActions
 import com.sce.integration.static_host_call.StaticHostCallEvent
 import com.sce.integration.static_host_call.StaticHostCallStateMachine
+import com.sce.integration.static_list.StaticListEvent
+import com.sce.integration.static_list.StaticListStateMachine
 import com.sce.integration.static_record.StaticRecordDayRecord
 import com.sce.integration.static_record.StaticRecordEvent
 import com.sce.integration.static_record.StaticRecordStateMachine
@@ -247,6 +249,64 @@ class StaticDatamodelTest {
             sm.tick()
             assertEquals(day(2026, 9, 24), sm.shown, "no field was assigned")
             assertEquals(1u, sm.refusals, "error.execution reached the document once")
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // ── static_list: a list variable, appended to, cleared, held to its bound ──
+
+    private fun pick(sm: StaticListStateMachine, dayOfMonth: Int) {
+        sm.raiseDayPicked(2026.toUShort(), 9.toUByte(), dayOfMonth.toUByte())
+        sm.tick()
+    }
+
+    @Test
+    fun aListStartsEmptyAndTakesEachAppendInOrder() {
+        val sm = StaticListStateMachine()
+        sm.initialize()
+        try {
+            assertEquals(emptyList<UByte>(), sm.picked)
+            pick(sm, 3)
+            pick(sm, 1)
+            assertEquals(listOf(3.toUByte(), 1.toUByte()), sm.picked)
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun anAppendPastTheCapacityAppendsNothingAndIsAnExecutionError() {
+        // sce:capacity="3" is kept on every backend: the fourth pick finds
+        // the list full, leaves it as it was, and says so with
+        // error.execution (W3C SCXML 3.12.2) rather than growing.
+        val sm = StaticListStateMachine()
+        sm.initialize()
+        try {
+            listOf(5, 6, 7, 8).forEach { pick(sm, it) }
+            assertEquals(listOf(5.toUByte(), 6.toUByte(), 7.toUByte()), sm.picked)
+            assertEquals(1u, sm.refusals)
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun aClearEmptiesTheListAndAPublishedSnapshotKeepsWhatItSaw() {
+        val sm = StaticListStateMachine()
+        sm.initialize()
+        try {
+            pick(sm, 9)
+            val before = sm.snapshot.value
+            sm.send(StaticListEvent.Reset)
+            sm.tick()
+            assertEquals(emptyList<UByte>(), sm.picked)
+            assertEquals(emptyList<UByte>(), sm.snapshot.value.data.picked)
+            assertEquals(
+                listOf(9.toUByte()),
+                before.data.picked,
+                "the list is immutable, so the earlier snapshot is unchanged"
+            )
         } finally {
             sm.cleanup()
         }

@@ -160,6 +160,12 @@ impl<'a> Judge<'a> {
     }
 
     /// `expr` judged against `expected`, refused at its own range.
+    ///
+    /// A `list<T>` variable is not a value an expression reads: it is filled
+    /// by `<sce:append>`, emptied by `<sce:clear>`, and read by the host
+    /// through the snapshot. Refused here, the one place every expression of
+    /// the document passes, rather than left to the scope, which would call
+    /// it undeclared.
     fn expr(
         &self,
         ctx: &TypeCtx<'_>,
@@ -167,12 +173,75 @@ impl<'a> Judge<'a> {
         spelling: Option<&crate::attribute_spelling::AttributeSpelling>,
         expected: Expected,
     ) -> Result<InferredType, Located<ForgeError>> {
-        judge_into(expr, ctx, expected).map_err(|refusal| {
+        let place = |refusal: crate::forge::expr::Refusal| {
             Located::in_file(
                 ExpressionSite::new(expr, spelling).place(refusal),
                 self.diag_label,
             )
+        };
+        if let Ok(names) = crate::forge::expr::read_identifiers(expr) {
+            if let Some(list) = names.iter().find(|n| self.list_var(n).is_some()) {
+                return Err(place(
+                    crate::forge::error::ExprError::UnsupportedConstruct {
+                        construct: format!(
+                            "reading the list `{list}` as a value (a list is filled by \
+                             <sce:append>, emptied by <sce:clear>, and read by the host \
+                             through the snapshot)"
+                        ),
+                        observed: Some(list.clone()),
+                    }
+                    .at(None),
+                ));
+            }
+        }
+        judge_into(expr, ctx, expected).map_err(place)
+    }
+
+    /// The `list<T>` variable `name` names, if it names one.
+    fn list_var(&self, name: &str) -> Option<&Variable> {
+        self.scope.variables.iter().find(|v| {
+            v.id == name.trim()
+                && v.value_type
+                    .as_ref()
+                    .and_then(crate::forge::model::AlgorithmValueType::list_elem)
+                    .is_some()
         })
+    }
+
+    /// The refusal of an `<sce:append>` / `<sce:clear>` whose `target` names
+    /// no list variable, placed on `target` and naming the lists there are.
+    fn not_a_list(&self, action: &Action, state: &str) -> Located<ForgeError> {
+        let lists: Vec<&str> = self
+            .scope
+            .variables
+            .iter()
+            .filter(|v| {
+                v.value_type
+                    .as_ref()
+                    .and_then(crate::forge::model::AlgorithmValueType::list_elem)
+                    .is_some()
+            })
+            .map(|v| v.id.as_str())
+            .collect();
+        let spelling = action.spellings.get("target");
+        let element = action.action_type.trim_start_matches("sce_");
+        Located::new(
+            ScxmlSemanticError::StaticDatamodelRule {
+                construct: format!("<sce:{element} target=\"{}\">", action.location),
+                datamodel: Datamodel::SceStatic.as_str().to_string(),
+                rule: if lists.is_empty() {
+                    "target names a list variable, and this document declares none".to_string()
+                } else {
+                    format!("target names a list variable: one of {}", lists.join(", "))
+                },
+                state: state.to_string(),
+                observed: (!action.location.is_empty()).then(|| action.location.clone()),
+            }
+            .into(),
+            self.diag_label,
+            spelling.map(|s| s.row()),
+            spelling.map(|s| s.col()),
+        )
     }
 
     /// A `record:<alias>` variable built whole: one `<sce:set>` per field
@@ -322,6 +391,22 @@ impl<'a> Judge<'a> {
                         self.diag_label,
                     ));
                 }
+                if self.list_var(location).is_some() {
+                    return Err(Located::in_file(
+                        ExpressionSite::new(&action.location, action.spellings.get("location"))
+                            .place(
+                                crate::forge::error::ExprError::UnsupportedConstruct {
+                                    construct: format!(
+                                        "an assignment to the whole list `{location}` (a list \
+                                         is filled by <sce:append> and emptied by <sce:clear>)"
+                                    ),
+                                    observed: Some(location.to_string()),
+                                }
+                                .at(None),
+                            ),
+                        self.diag_label,
+                    ));
+                }
                 // The location is a declared variable; its type is the slot.
                 let slot = self.expr(
                     ctx,
@@ -370,6 +455,30 @@ impl<'a> Judge<'a> {
                         state,
                         &action.contentexpr,
                     ));
+                }
+            }
+            // SCE Accepted Subset §2.15: the value appended is judged
+            // against the list's element, as a typed assignment is judged
+            // against its variable — the rule E8 holds an algorithm's list to.
+            "sce_append" => {
+                let Some(list) = self.list_var(&action.location) else {
+                    return Err(self.not_a_list(action, state));
+                };
+                let elem = list
+                    .value_type
+                    .as_ref()
+                    .and_then(crate::forge::model::AlgorithmValueType::list_elem)
+                    .map_or(InferredType::Unknown, InferredType::from_sce_type);
+                self.expr(
+                    ctx,
+                    &action.expr,
+                    action.spellings.get("expr"),
+                    Expected::Slot(elem),
+                )?;
+            }
+            "sce_clear" => {
+                if self.list_var(&action.location).is_none() {
+                    return Err(self.not_a_list(action, state));
                 }
             }
             "foreach" => {

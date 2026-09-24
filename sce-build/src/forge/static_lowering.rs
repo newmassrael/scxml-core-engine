@@ -121,6 +121,21 @@ pub fn lower_kotlin(
             Some((v.id.clone(), records.get(alias)?.clone()))
         })
         .collect();
+    // The list variables, each with its element and bound — what an
+    // `<sce:append>` is rewritten against.
+    let list_vars: ListVars = variables
+        .iter()
+        .filter_map(|v| {
+            let elem = v.value_type.as_ref()?.list_elem()?.clone();
+            Some((v.id.clone(), (elem, v.capacity?)))
+        })
+        .collect();
+    let rewrites = Rewrites {
+        records: record_vars,
+        lists: list_vars,
+        machine,
+        raises_error: model.events.contains("error.execution"),
+    };
 
     let refused = |what: &str, text: &str, refusal: Refusal| {
         GenerateError::unsupported(format!(
@@ -188,6 +203,17 @@ pub fn lower_kotlin(
                 });
                 continue;
             }
+            // A list starts empty. It is immutable, so a snapshot holding it
+            // keeps what it saw however the machine appends afterwards.
+            if let Some(elem) = var.value_type.as_ref().and_then(|t| t.list_elem()) {
+                fields.push(StaticField {
+                    id: var.id.clone(),
+                    name: filters::to_camel_case(var.id.clone()),
+                    ty: format!("List<{}>", crate::forge::generator::kotlin_type(elem)),
+                    init: "emptyList()".to_string(),
+                });
+                continue;
+            }
             let Some(ty) = var
                 .value_type
                 .as_ref()
@@ -227,19 +253,19 @@ pub fn lower_kotlin(
             .iter_mut()
             .chain(state.on_exit_blocks.iter_mut())
         {
-            lower_actions(block, &plain_ctx, &plain_renames, &record_vars)?;
+            lower_actions(block, &plain_ctx, &plain_renames, &rewrites)?;
         }
         lower_actions(
             &mut state.initial_transition_actions,
             &plain_ctx,
             &plain_renames,
-            &record_vars,
+            &rewrites,
         )?;
         lower_actions(
             &mut state.initial_history_default_actions,
             &plain_ctx,
             &plain_renames,
-            &record_vars,
+            &rewrites,
         )?;
         for transition in &mut state.transitions {
             let schema = schemas.get(&transition.event);
@@ -277,7 +303,7 @@ pub fn lower_kotlin(
             // Content that reads the payload cannot run for a delivery that
             // did not carry one; the template opens it with the check that
             // says so ([`crate::model::Transition::content_reads_payload`]).
-            if lower_actions(&mut transition.actions, &ctx, &renames, &record_vars)?
+            if lower_actions(&mut transition.actions, &ctx, &renames, &rewrites)?
                 && schema.is_some()
             {
                 payload_events.insert(transition.event.clone());
@@ -287,7 +313,7 @@ pub fn lower_kotlin(
     }
     for script in &mut model.global_scripts {
         let ctx = scope.ctx(&no_payload, enums);
-        lower_action(script, &ctx, &renames(&names, None), &record_vars)?;
+        lower_action(script, &ctx, &renames(&names, None), &rewrites)?;
     }
     Ok(KotlinStaticLowering {
         fields,
@@ -299,6 +325,22 @@ pub fn lower_kotlin(
 /// A `sce-static` document's record variables, each with the schema its
 /// alias names.
 type RecordVars = std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>;
+
+/// A `sce-static` document's list variables, each with its element type and
+/// its declared capacity.
+type ListVars = std::collections::BTreeMap<String, (crate::forge::model::SceType, u32)>;
+
+/// What rewriting an action needs beyond its expressions: the record and
+/// list variables a write to one is rewritten against, the machine name the
+/// generated event type is spelled from, and whether the document declares
+/// `error.execution` — without it there is no variant to raise, and nothing
+/// could match one.
+struct Rewrites<'m> {
+    records: RecordVars,
+    lists: ListVars,
+    machine: &'m str,
+    raises_error: bool,
+}
 
 /// A `<sce:action>` argument of a `sce-static` document, lowered for Kotlin.
 #[derive(Debug, Clone)]
@@ -385,11 +427,11 @@ fn lower_actions(
     actions: &mut [Action],
     ctx: &crate::forge::types::TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
-    records: &RecordVars,
+    rewrites: &Rewrites<'_>,
 ) -> Result<bool, GenerateError> {
     let mut reads_payload = false;
     for action in actions {
-        reads_payload |= lower_action(action, ctx, renames, records)?;
+        reads_payload |= lower_action(action, ctx, renames, rewrites)?;
     }
     Ok(reads_payload)
 }
@@ -400,7 +442,7 @@ fn lower_action(
     action: &mut Action,
     ctx: &crate::forge::types::TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
-    records: &RecordVars,
+    rewrites: &Rewrites<'_>,
 ) -> Result<bool, GenerateError> {
     let lower = |text: &str, slot: InferredType| {
         transpile_into(text, ExprTarget::Kotlin, ctx, renames, slot).map_err(|r| {
@@ -421,7 +463,7 @@ fn lower_action(
             let location = action.location.trim().to_string();
             match location
                 .split_once('.')
-                .filter(|(var, _)| records.contains_key(*var))
+                .filter(|(var, _)| rewrites.records.contains_key(*var))
             {
                 Some((var, field)) => {
                     let name = renames.get(var).copied().unwrap_or(var);
@@ -459,9 +501,45 @@ fn lower_action(
                 ))
             })?;
         }
+        // A list is an immutable `List<T>` field, so an append builds the
+        // next list, and does so only while the list is under its bound — on
+        // every backend, so a machine holds the same list wherever it runs.
+        // Past the bound nothing is appended and `error.execution` says so
+        // (W3C SCXML 3.12.2), as every other execution error of this backend
+        // is reported.
+        "sce_append" => {
+            reads_payload = reads(&action.expr);
+            let target = action.location.trim();
+            let (elem, capacity) = rewrites.lists.get(target).ok_or_else(|| {
+                GenerateError::unsupported(format!(
+                    "<sce:append target=\"{target}\"> names no list variable"
+                ))
+            })?;
+            let value = lower(&action.expr, InferredType::from_sce_type(elem))?;
+            let name = renames.get(target).copied().unwrap_or(target);
+            let otherwise = if rewrites.raises_error {
+                format!(
+                    " else {{ raisePlatformError({}Event.Error.Execution, \
+                     \"<sce:append target='{}'>: the list already holds its capacity of \
+                     {capacity}\") }}",
+                    rewrites.machine,
+                    filters::escape_kotlin(target.to_string()),
+                )
+            } else {
+                String::new()
+            };
+            action.content_kt = format!(
+                "if ({name}.size < {capacity}) {{ {name} = {name} + ({value}) }}{otherwise}"
+            );
+        }
+        "sce_clear" => {
+            let target = action.location.trim();
+            let name = renames.get(target).copied().unwrap_or(target);
+            action.content_kt = format!("{name} = emptyList()");
+        }
         _ => {}
     }
-    Ok(lower_nested(action, ctx, renames, records)? || reads_payload)
+    Ok(lower_nested(action, ctx, renames, rewrites)? || reads_payload)
 }
 
 /// Every `<elseif>` condition and every block nested inside `action`,
@@ -471,7 +549,7 @@ fn lower_nested(
     action: &mut Action,
     ctx: &crate::forge::types::TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
-    records: &RecordVars,
+    rewrites: &Rewrites<'_>,
 ) -> Result<bool, GenerateError> {
     let mut reads_payload = false;
     for branch in action.branch_conditions_mut() {
@@ -496,7 +574,7 @@ fn lower_nested(
         branch.cond_constant = None;
     }
     for block in action.nested_blocks_mut() {
-        reads_payload |= lower_actions(block, ctx, renames, records)?;
+        reads_payload |= lower_actions(block, ctx, renames, rewrites)?;
     }
     Ok(reads_payload)
 }

@@ -1961,6 +1961,9 @@ fn render_variable(v: &crate::model::Variable, out: &mut Out<'_>) {
     if let Some(t) = &v.value_type {
         let _ = write!(line, " sce-type {}", text(&t.as_attr()));
     }
+    if let Some(n) = v.capacity {
+        let _ = write!(line, " capacity {n}");
+    }
     if !v.src.is_empty() {
         let _ = write!(line, " src {}", text(&v.src));
     }
@@ -2369,6 +2372,14 @@ fn render_scxml_action(a: &crate::model::Action, out: &mut Out<'_>) {
             }
         }
         "send" => render_send(a, out),
+        // A `sce-static` list's statements, in the form an algorithm's
+        // `<sce:append>` already renders — one statement, one spelling.
+        "sce_append" => out.line(&format!(
+            "append {} <- {}",
+            text(&a.location),
+            text(&a.expr)
+        )),
+        "sce_clear" => out.line(&format!("clear {}", text(&a.location))),
         other => out.line(&format!("<unrendered action {}>", text(other))),
     }
 }

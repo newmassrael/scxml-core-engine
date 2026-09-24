@@ -37,4 +37,10 @@
    engine is involved. #}
             // W3C SCXML G.7: <sce:action name="{{ action.native_action_name }}">
             {{ action.native_action_rendered }}
+{% elif action.type == 'sce_append' or action.type == 'sce_clear' %}
+{# SCE Accepted Subset §2.15: fill or empty a `sce-static` list. The statement
+   — the bound check and the error arm included — is lowered ahead of the
+   template by `forge::static_lowering`, which holds the list's element and
+   capacity, and stored on `action.content_kt`. #}
+            {{ action.content_kt }}
 {% endif %}

@@ -2451,7 +2451,7 @@ fn parse_statechart(
     Ok(m)
 }
 
-/// `data <id>[: <type>] [sce-type <t>] [src <s>] [= <expr>] [content <c>]`,
+/// `data <id>[: <type>] [sce-type <t>] [capacity <n>] [src <s>] [= <expr>] [content <c>]`,
 /// and for a record variable one nested `<field> = <expr>` line per field —
 /// the lines an algorithm's record local nests.
 fn parse_variable(
@@ -2489,6 +2489,7 @@ fn parse_variable(
         value_type: None,
         value_type_spelling: None,
         record_fields: Vec::new(),
+        capacity: None,
     };
     for kid in kids {
         let (name, expr) = kid.text.split_once(" = ").ok_or_else(|| ParseError {
@@ -2516,6 +2517,17 @@ fn parse_variable(
                 why: format!("`{t}` is not a value type"),
             })?,
         );
+        tail = more;
+    }
+    if let Some(after) = tail.strip_prefix("capacity ") {
+        let (n, more) = match after.split_once(' ') {
+            Some((n, m)) => (n, m),
+            None => (after, ""),
+        };
+        v.capacity = Some(n.parse().map_err(|_| ParseError {
+            line: line.number,
+            why: format!("`{n}` is not a list capacity"),
+        })?);
         tail = more;
     }
     if let Some(after) = tail.strip_prefix("src ") {
@@ -3096,6 +3108,22 @@ fn parse_scxml_action(
                 }
             }
         }
+    } else if let Some((target, expr)) = t
+        .strip_prefix("append ")
+        .and_then(|rest| rest.split_once(" <- "))
+        .filter(|(target, _)| !target.is_empty() && !target.contains(' '))
+    {
+        // A list's target is one identifier, so `append = x` — an
+        // assignment to a variable named `append` — is never read as this.
+        a.action_type = "sce_append".to_string();
+        a.location = undo(target, line.number)?;
+        a.expr = undo(expr, line.number)?;
+    } else if let Some(target) = t
+        .strip_prefix("clear ")
+        .filter(|target| !target.is_empty() && !target.contains(' '))
+    {
+        a.action_type = "sce_clear".to_string();
+        a.location = undo(target, line.number)?;
     } else if let Some(rest) = t.strip_prefix("call ") {
         a.action_type = "native_action".to_string();
         a.native_action_name = undo(rest.trim_end_matches(':'), line.number)?;

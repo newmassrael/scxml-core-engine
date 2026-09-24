@@ -536,6 +536,11 @@ fn static_statechart<'a>(
             ctx.insert_record(var.id.as_str(), RecordShape::Closed);
             continue;
         }
+        if value_type.list_elem().is_some() {
+            // Not a value an expression reads — the static data model's
+            // judge refuses a read of one by name before the scope is asked.
+            continue;
+        }
         let ty = value_type
             .scalar()
             .map_or(InferredType::Unknown, InferredType::from_sce_type);

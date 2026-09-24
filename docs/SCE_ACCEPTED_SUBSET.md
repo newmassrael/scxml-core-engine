@@ -2330,7 +2330,7 @@ line of the element or attribute that breaks it:
 | `<data>` without `sce:type` | Every variable declares its type |
 | `<data src>` | The initial value is `expr` — `src` is read at run time and has no type |
 | `<data>` with in-line content | The initial value is `expr` — in-line content has no type |
-| `<data>` without `expr` | Every variable declares its initial value; no zero, empty string or first variant stands in. A record variable's is its `<sce:set>`s, and it takes no `expr` |
+| `<data>` without `expr` | Every variable declares its initial value; no zero, empty string or first variant stands in. A record variable's is its `<sce:set>`s, and it takes no `expr`; a list starts empty and takes `sce:capacity` instead |
 | `<script>` with script text | No scripting language; a native `<script><cpp>` / `<kt>` block is admitted, as under `null` |
 | `<send eventexpr/targetexpr/delayexpr/typeexpr/idlocation/namelist>`, `<send><content expr>`, `<cancel sendidexpr>`, `<foreach>`, `<invoke idlocation>`, a hybrid `<invoke>` (`srcexpr` / `<content expr>`), `<donedata><content expr>` | No typed form: each is evaluated as script-engine text by every backend's templates |
 
@@ -2391,6 +2391,30 @@ as `expression/unsupported-construct`. A missing field is refused on the
 both as `validation/attribute-rule-violated`. `<sce:set>` is its own element
 because `<sce:field>` is the codec's byte-layout field.
 
+**List variables.** `sce:type="list<T>"` (in XML `list&lt;T&gt;`) holds a
+sequence of `T`, a fixed-width number or `bool` — the element an algorithm's
+list admits (SCE_FORGE.md §4.12). It starts empty and takes no `expr`; it
+declares the most elements it ever holds with `sce:capacity`, which is
+required on a list and refused on any other variable. Two statements write
+it, both naming it by `target` as E8's does:
+
+```xml
+<data id="picked" sce:type="list&lt;uint8&gt;" sce:capacity="3"/>
+...
+<sce:append target="picked" expr="_event.data.dayOfMonth"/>
+<sce:clear target="picked"/>
+```
+
+The appended value is judged against the element as an assignment is judged
+against its variable. The bound holds on every backend: an append to a full
+list appends nothing and raises `error.execution` (W3C SCXML 3.12.2) — unlike
+an algorithm's list, which grows past its capacity on the heap backends,
+because a machine must hold the same list wherever it runs. A list is not a
+value an expression reads, and assigning one whole is refused; both are
+`expression/unsupported-construct`. The host reads it through the snapshot.
+A `target` that names no list is `scxml/static-datamodel-rule`, naming the
+lists there are, and so is either statement under any other data model.
+
 **Code generation.** A backend lowers the model once its templates hold
 the variables as fields and route every expression through the forge
 expression lowerer; until then `sce-codegen` refuses the document for
@@ -2415,7 +2439,11 @@ queue (W3C SCXML 3.12.2, 4.9) — what a host action whose argument reads the
 payload does, checked once for the whole block because an error stops the
 block. A record variable is a field of an immutable data class,
 `<Machine><Alias>Record`, and a field update lowers to
-`shown = shown.copy(<field> = …)`. The generated machine carries no script
+`shown = shown.copy(<field> = …)`. A list variable is an immutable
+`List<T>` field that starts `emptyList()`; an append lowers to
+`if (picked.size < N) { picked = picked + (…) } else { <error.execution> }`
+and a clear to `picked = emptyList()`, so a snapshot shares the list it
+publishes without copying it. The generated machine carries no script
 engine. An enum-typed variable is refused for Kotlin until a statechart
 imports its enum into the generated unit.
 

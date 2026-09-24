@@ -245,6 +245,10 @@
        for `list<T>` / `record:<alias>` (`dataValueType`), which only a
        `sce-static` statechart variable admits. -->
   <xs:attribute name="type" type="sce:dataValueType"/>
+  <!-- A `sce-static` `list<T>` variable's bound (SCE Accepted Subset §2.15):
+       the most elements it ever holds, on every backend. Required on a list
+       and refused on any other variable by the parser, which knows the type. -->
+  <xs:attribute name="capacity" type="xs:positiveInteger"/>
   <xs:attribute name="direction" type="sce:directionType"/>
 
   <!-- NL→IR Item C1 Path A — `sce:underlying-type` on a
@@ -1332,6 +1336,18 @@
     <xs:complexType>
       <xs:attribute name="target" type="xs:string" use="required"/>
       <xs:attribute name="expr" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!--
+    Empty a `sce-static` statechart's `list<T>` variable (SCE Accepted Subset
+    §2.15). An algorithm's list local needs no such statement — it starts
+    empty on every call — but a datamodel list outlives the macrostep that
+    filled it.
+  -->
+  <xs:element name="clear">
+    <xs:complexType>
+      <xs:attribute name="target" type="xs:string" use="required"/>
     </xs:complexType>
   </xs:element>
 

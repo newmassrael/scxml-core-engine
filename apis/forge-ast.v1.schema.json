@@ -5871,6 +5871,15 @@
     "Variable": {
       "description": "§scxml-5.2: Datamodel variable",
       "properties": {
+        "capacity": {
+          "description": "A `list<T>` variable's declared bound, `sce:capacity`: the most elements it ever holds, on every backend. An append past it is an execution error, not growth. `None` for any other variable.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "content": {
           "type": "string"
         },

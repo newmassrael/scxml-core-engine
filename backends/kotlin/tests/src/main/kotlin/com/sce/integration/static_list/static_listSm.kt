@@ -2,56 +2,53 @@
 // source-hash: 7f29dbe36a8bb425715abd0f30ccf100bbc7ca289014af631a759a3497b34e98
 
 // GENERATED CODE — DO NOT EDIT
-// Source: sce-build/tests/fixtures/static_datamodel/static_record.scxml
+// Source: sce-build/tests/fixtures/static_datamodel/static_list.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_record.scxml:12 :: _machine
+// SCE-MAP: static_list.scxml:12 :: _machine
 
-package com.sce.integration.static_record
+package com.sce.integration.static_list
 
 import com.sce.runtime.*
 
 
 // --- States (W3C SCXML 3.2) ---
 
-sealed interface StaticRecordState : State {
-    data object Showing : StaticRecordState
+sealed interface StaticListState : State {
+    data object Collecting : StaticListState
 }
 
 // --- Events (W3C SCXML 3.12.1) ---
 
-sealed interface StaticRecordEvent : Event {
-    sealed interface Day : StaticRecordEvent {
+sealed interface StaticListEvent : Event {
+    sealed interface Day : StaticListEvent {
         data object Picked : Day
     }
-    sealed interface Error : StaticRecordEvent {
+    sealed interface Error : StaticListEvent {
         data object Execution : Error
     }
-    data object Next : StaticRecordEvent
+    data object Reset : StaticListEvent
 }
 // ── NL→IR Item C1 Path A: typed `_event.data` payload classes ─────────
 // NL→IR Item C1 Path A (EventSchema MCU native lowering): typed
 // `_event.data` payload classes for the EventSchema-imported events whose
 // transition guards lowered to a native Kotlin comparison (no script engine).
-// The Kotlin twin of the Rust `StaticRecordPayload` enum / Go per-event payload
+// The Kotlin twin of the Rust `StaticListPayload` enum / Go per-event payload
 // structs: one data class per guarded event, carried through the queue in the
 // type-erased `EventMetadata.typedPayload` and lifted into a nullable field.
-// StaticRecordDayPickedPayload is the NL→IR Item C1 Path A typed `_event.data`
+// StaticListDayPickedPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `day.picked`. Consumers inject it via the `raiseDayPicked` seam
 // on the machine — they never name this class directly.
-data class StaticRecordDayPickedPayload(val year: UShort, val month: UByte, val dayOfMonth: UByte)
+data class StaticListDayPickedPayload(val year: UShort, val month: UByte, val dayOfMonth: UByte)
 
 
-// ── SCE Accepted Subset §2.15: sce-static record variable classes ─────
-/** SCE Accepted Subset §2.15: a `record:Day` datamodel value. */
-data class StaticRecordDayRecord(val year: UShort, val month: UByte, val dayOfMonth: UByte)
 // --- State Machine (W3C SCXML) ---
 
-class StaticRecordStateMachine(
-) : StateMachineEngine<StaticRecordState, StaticRecordEvent>() {
+class StaticListStateMachine(
+) : StateMachineEngine<StaticListState, StaticListEvent>() {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
-    /** W3C SCXML 5.2: the `shown` datamodel variable. */
-    var shown: StaticRecordDayRecord = StaticRecordDayRecord(year = 2026.toUShort(), month = 9.toUByte(), dayOfMonth = 24.toUByte())
+    /** W3C SCXML 5.2: the `picked` datamodel variable. */
+    var picked: List<UByte> = emptyList()
         private set
     /** W3C SCXML 5.2: the `refusals` datamodel variable. */
     var refusals: UInt = 0.toUInt()
@@ -59,7 +56,7 @@ class StaticRecordStateMachine(
 
     /** The datamodel as one immutable value, in declaration order. */
     data class Data(
-        val shown: StaticRecordDayRecord,
+        val picked: List<UByte>,
         val refusals: UInt,
     )
 
@@ -71,13 +68,13 @@ class StaticRecordStateMachine(
      * not a stable one.
      */
     data class Snapshot(
-        val configuration: Set<StaticRecordState>,
+        val configuration: Set<StaticListState>,
         val data: Data,
         val truncated: Boolean,
     )
 
     private fun currentData(): Data = Data(
-        shown = shown,
+        picked = picked,
         refusals = refusals,
     )
 
@@ -101,7 +98,7 @@ class StaticRecordStateMachine(
     // NL→IR Item C1 Path A: the current event's typed `_event.data` payload(s),
     // lifted from the dequeued event by populateTypedPayload and read by the
     // native transition guards. `null` between events / for untyped events.
-    private var pendingDayPickedPayload: StaticRecordDayPickedPayload? = null
+    private var pendingDayPickedPayload: StaticListDayPickedPayload? = null
 
     // NL→IR Item C1 Path A: bind the dequeued event's typed `_event.data` view
     // — from the type-erased carrier the inject seam fills, and otherwise by
@@ -111,16 +108,16 @@ class StaticRecordStateMachine(
     // EventPayload.Refusal, which the engine reports as error.execution. Twin
     // of the Go policy's PopulateEventMetadata + LiftTypedPayload / the C11 pop
     // loop's `sm->pending_payload = evt.payload`.
-    override fun populateTypedPayload(event: StaticRecordEvent, metadata: EventMetadata) {
+    override fun populateTypedPayload(event: StaticListEvent, metadata: EventMetadata) {
         pendingDayPickedPayload = null
         when (val tp = metadata.typedPayload) {
-            is StaticRecordDayPickedPayload -> pendingDayPickedPayload = tp
+            is StaticListDayPickedPayload -> pendingDayPickedPayload = tp
             else -> {
                 // No typed carrier, so the producer was not the inject seam: read the
                 // fields out of `data`, which every other producer fills.
-                if (event == StaticRecordEvent.Day.Picked) {
+                if (event == StaticListEvent.Day.Picked) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingDayPickedPayload = StaticRecordDayPickedPayload(fields.uint16("year"), fields.uint8("month"), fields.uint8("dayOfMonth"))
+                    pendingDayPickedPayload = StaticListDayPickedPayload(fields.uint16("year"), fields.uint8("month"), fields.uint8("dayOfMonth"))
                 }
             }
         }
@@ -131,10 +128,10 @@ class StaticRecordStateMachine(
     // `day.picked` — binds the event name and the payload field values in one call.
     fun raiseDayPicked(year: UShort, month: UByte, dayOfMonth: UByte) {
         send(
-            StaticRecordEvent.Day.Picked,
+            StaticListEvent.Day.Picked,
             EventMetadata(
                 type = "external",
-                typedPayload = StaticRecordDayPickedPayload(year, month, dayOfMonth),
+                typedPayload = StaticListDayPickedPayload(year, month, dayOfMonth),
                 // Both carriers are filled: the typed one a native guard reads, and
                 // `data`, which is what the script engine binds `_event.data` from.
                 // Filling only the first left an `<assign expr="_event.data.x">` on
@@ -145,7 +142,7 @@ class StaticRecordStateMachine(
     }
 
 
-    override val initialState: StaticRecordState = StaticRecordState.Showing
+    override val initialState: StaticListState = StaticListState.Collecting
 
     // W3C SCXML 6.2: which entry point a host must drive this machine with in
     // the synchronous mode. The same verdict the generate manifest publishes
@@ -155,40 +152,40 @@ class StaticRecordStateMachine(
 
 
     // W3C SCXML: Resolve state ID string to State object
-    override fun resolveState(stateId: String): StaticRecordState? = when (stateId) {
-        "showing" -> StaticRecordState.Showing
+    override fun resolveState(stateId: String): StaticListState? = when (stateId) {
+        "collecting" -> StaticListState.Collecting
         else -> null
     }
 
     // W3C SCXML: Get state ID string from State object
-    override fun stateIdOf(state: StaticRecordState): String = when (state) {
-        is StaticRecordState.Showing -> "showing"
+    override fun stateIdOf(state: StaticListState): String = when (state) {
+        is StaticListState.Collecting -> "collecting"
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: StaticRecordState): Boolean = when (state) {
+    override fun isAtomicState(state: StaticListState): Boolean = when (state) {
         else -> true
     }
 
 
     // W3C SCXML 3.13: Document order for exit ordering
-    override fun documentOrderOf(state: StaticRecordState): Int = when (state) {
-        is StaticRecordState.Showing -> 0
+    override fun documentOrderOf(state: StaticListState): Int = when (state) {
+        is StaticListState.Collecting -> 0
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
-    override fun resolveEventByName(name: String): StaticRecordEvent? = when (name) {
-        "day.picked" -> StaticRecordEvent.Day.Picked
-        "error.execution" -> StaticRecordEvent.Error.Execution
-        "next" -> StaticRecordEvent.Next
+    override fun resolveEventByName(name: String): StaticListEvent? = when (name) {
+        "day.picked" -> StaticListEvent.Day.Picked
+        "error.execution" -> StaticListEvent.Error.Execution
+        "reset" -> StaticListEvent.Reset
         else -> null
     }
 
     // W3C SCXML 6.4: Resolve Event object to event name string
-    override fun eventNameOf(event: StaticRecordEvent): String? = when (event) {
-        is StaticRecordEvent.Day.Picked -> "day.picked"
-        is StaticRecordEvent.Error.Execution -> "error.execution"
-        is StaticRecordEvent.Next -> "next"
+    override fun eventNameOf(event: StaticListEvent): String? = when (event) {
+        is StaticListEvent.Day.Picked -> "day.picked"
+        is StaticListEvent.Error.Execution -> "error.execution"
+        is StaticListEvent.Reset -> "reset"
     }
 
 
@@ -196,85 +193,78 @@ class StaticRecordStateMachine(
 
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
-        state: StaticRecordState,
-        event: StaticRecordEvent
-    ): TransitionResult<StaticRecordState> = when (state) {
-        is StaticRecordState.Showing -> processShowing(event)
+        state: StaticListState,
+        event: StaticListEvent
+    ): TransitionResult<StaticListState> = when (state) {
+        is StaticListState.Collecting -> processCollecting(event)
     }
 
 
     // --- Per-State Event Handlers ---
 
-    private fun processShowing(
-        event: StaticRecordEvent
-    ): TransitionResult<StaticRecordState> = when {
-        event is StaticRecordEvent.Next && shown.dayOfMonth < 28.toUByte() -> TransitionResult.Internal(0)
+    private fun processCollecting(
+        event: StaticListEvent
+    ): TransitionResult<StaticListState> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is StaticRecordEvent.Day.Picked -> TransitionResult.Internal(1)
+        event is StaticListEvent.Day.Picked -> TransitionResult.Internal(0)
         // W3C SCXML 3.13: Targetless transition (actions only)
-        event is StaticRecordEvent.Error.Execution -> TransitionResult.Internal(2)
+        event is StaticListEvent.Reset -> TransitionResult.Internal(1)
+        // W3C SCXML 3.13: Targetless transition (actions only)
+        event is StaticListEvent.Error.Execution -> TransitionResult.Internal(2)
         else -> TransitionResult.Ignored
     }
 
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_record.scxml:12 :: _machine
-    override fun onEntry(state: StaticRecordState, pathChild: StaticRecordState?) {
+    // SCE-MAP: static_list.scxml:12 :: _machine
+    override fun onEntry(state: StaticListState, pathChild: StaticListState?) {
         when (state) {
-            is StaticRecordState.Showing -> {
-                // SCE-MAP: static_record.scxml:23 :: showing :: _state_body
+            is StaticListState.Collecting -> {
+                // SCE-MAP: static_list.scxml:19 :: collecting :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("showing")) return
+                if (!activeStateIds.add("collecting")) return
             }
         }
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_record.scxml:12 :: _machine
-    override fun onExit(state: StaticRecordState) {
+    // SCE-MAP: static_list.scxml:12 :: _machine
+    override fun onExit(state: StaticListState) {
         when (state) {
-            is StaticRecordState.Showing -> {
-                // SCE-MAP: static_record.scxml:23 :: showing :: _state_body
-                activeStateIds.remove("showing")
+            is StaticListState.Collecting -> {
+                // SCE-MAP: static_list.scxml:19 :: collecting :: _state_body
+                activeStateIds.remove("collecting")
             }
         }
     }
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: static_record.scxml:12 :: _machine
+    // SCE-MAP: static_list.scxml:12 :: _machine
     override fun executeTransitionActions(
-        source: StaticRecordState,
-        event: StaticRecordEvent?,
+        source: StaticListState,
+        event: StaticListEvent?,
         transitionIndex: Int
     ) {
         when (source) {
-        is StaticRecordState.Showing -> when (transitionIndex) {
+        is StaticListState.Collecting -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: static_record.scxml:24 :: showing :: _transition_0
-
-
-            shown = shown.copy(dayOfMonth = (shown.dayOfMonth.toUInt() + 1.toUInt()).toUByte())
-            }
-            1 -> {
-                // SCE-MAP: static_record.scxml:27 :: showing :: _transition_1
+                // SCE-MAP: static_list.scxml:20 :: collecting :: _transition_0
                 if (pendingDayPickedPayload == null) {
-                    raisePlatformError(StaticRecordEvent.Error.Execution, "the content of a transition on 'day.picked' needs its typed payload, which this delivery did not carry")
+                    raisePlatformError(StaticListEvent.Error.Execution, "the content of a transition on 'day.picked' needs its typed payload, which this delivery did not carry")
                     return
                 }
 
+            if (picked.size < 3) { picked = picked + (pendingDayPickedPayload!!.dayOfMonth) } else { raisePlatformError(StaticListEvent.Error.Execution, "<sce:append target='picked'>: the list already holds its capacity of 3") }
+            }
+            1 -> {
+                // SCE-MAP: static_list.scxml:23 :: collecting :: _transition_1
 
-            shown = shown.copy(year = pendingDayPickedPayload!!.year)
-
-
-            shown = shown.copy(month = pendingDayPickedPayload!!.month)
-
-
-            shown = shown.copy(dayOfMonth = pendingDayPickedPayload!!.dayOfMonth)
+            picked = emptyList()
             }
             2 -> {
-                // SCE-MAP: static_record.scxml:34 :: showing :: _transition_2
+                // SCE-MAP: static_list.scxml:26 :: collecting :: _transition_2
 
 
             refusals = refusals + 1.toUInt()

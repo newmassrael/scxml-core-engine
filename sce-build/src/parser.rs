@@ -832,6 +832,79 @@ fn enforce_static_datamodel(
                 stack.extend(node.children().filter(|n| n.is_element()));
                 continue;
             }
+            // A list variable starts empty and is filled by `<sce:append>`,
+            // as an algorithm's list local is (SCE_FORGE.md §4.12): it takes
+            // a bound instead of an initial value. The bound is the one the
+            // machine keeps on every backend, so it is required, and it
+            // means nothing on any other variable.
+            let is_list = node.attribute((SCE_NAMESPACE, "type")).is_some_and(|t| {
+                t.trim()
+                    .starts_with(crate::forge::model::AlgorithmValueType::LIST_PREFIX)
+            });
+            let capacity = attribute_as_written_ns(&node, Some(SCE_NAMESPACE), "capacity");
+            if is_list {
+                if let Some((written, pos)) = attribute_as_written(&node, "expr") {
+                    return Err(refused(
+                        pos,
+                        format!("expr=\"{written}\""),
+                        "a list variable starts empty and is filled by <sce:append> — it \
+                         takes no expr",
+                        &node,
+                        (!written.is_empty()).then(|| written.to_string()),
+                    ));
+                }
+                if !inline_data_value(&node).is_empty() {
+                    return Err(refused(
+                        element_row(&node),
+                        format!("<data id=\"{id}\"> with in-line content"),
+                        "a list variable starts empty and is filled by <sce:append> — \
+                         in-line content has no type",
+                        &node,
+                        Some(name.to_string()),
+                    ));
+                }
+                match capacity {
+                    None => {
+                        return Err(refused(
+                            element_row(&node),
+                            format!("<data id=\"{id}\">"),
+                            "a list variable declares the most elements it holds with \
+                             sce:capacity",
+                            &node,
+                            Some(name.to_string()),
+                        ))
+                    }
+                    Some((written, pos))
+                        if written
+                            .trim()
+                            .parse::<u32>()
+                            .ok()
+                            .filter(|n| *n > 0)
+                            .is_none() =>
+                    {
+                        return Err(refused(
+                            pos,
+                            format!("sce:capacity=\"{written}\""),
+                            "sce:capacity is a whole number of elements, at least one, that \
+                             fits 32 bits",
+                            &node,
+                            Some(written.to_string()),
+                        ))
+                    }
+                    Some(_) => {}
+                }
+                stack.extend(node.children().filter(|n| n.is_element()));
+                continue;
+            }
+            if let Some((written, pos)) = capacity {
+                return Err(refused(
+                    pos,
+                    format!("sce:capacity=\"{written}\""),
+                    "only a list variable has a capacity",
+                    &node,
+                    Some(written.to_string()),
+                ));
+            }
             if !inline_data_value(&node).is_empty() {
                 return Err(refused(
                     element_row(&node),
@@ -2366,15 +2439,17 @@ impl SCXMLParser {
         // A `record:<alias>` variable (E9's record, SCE_FORGE.md §4.12) is
         // read by the value-type reader that judges the alias against this
         // document's event-schema imports, and is built whole from its
-        // `<sce:set>` children.
+        // `<sce:set>` children. A `list<T>` variable (E8's list) is read by the
+        // same reader, which holds its element to the types a list admits.
         let element = format!("<data id=\"{id}\">");
         let value_type = data
             .attribute((SCE_NAMESPACE, "type"))
             .filter(|_| model.datamodel == Datamodel::SceStatic)
             .map(|text| {
-                if text
-                    .trim()
-                    .starts_with(crate::forge::model::AlgorithmValueType::RECORD_PREFIX)
+                let text_trimmed = text.trim();
+                if text_trimmed.starts_with(crate::forge::model::AlgorithmValueType::RECORD_PREFIX)
+                    || text_trimmed
+                        .starts_with(crate::forge::model::AlgorithmValueType::LIST_PREFIX)
                 {
                     crate::forge::parser::read_algorithm_value_type(
                         data,
@@ -2405,6 +2480,12 @@ impl SCXMLParser {
         } else {
             Vec::new()
         };
+        // A list's declared bound; `enforce_static_datamodel` has already
+        // required it on a list and refused it anywhere else.
+        let capacity = data
+            .attribute((SCE_NAMESPACE, "capacity"))
+            .filter(|_| model.datamodel == Datamodel::SceStatic)
+            .and_then(|text| text.trim().parse::<u32>().ok().filter(|n| *n > 0));
         // `needs_script_engine` is derived post-parse by
         // [`crate::script_engine_analyzer`] —
         // [`NeedsScriptEngineCause::DatamodelVariableInit`].
@@ -2419,6 +2500,7 @@ impl SCXMLParser {
             value_type,
             value_type_spelling: AttributeSpelling::of(data, Some(SCE_NAMESPACE), "type"),
             record_fields,
+            capacity,
         }))
     }
 
@@ -3562,6 +3644,34 @@ impl SCXMLParser {
             // claims `<action>`; an `<action>` from any other vocabulary is
             // skipped like every element this dispatcher does not read.
             (false, "action") => self.parse_native_action(child, &mut action, source_name)?,
+            // SCE Accepted Subset §2.15: fill and empty a `sce-static`
+            // `list<T>` variable. `target` names it, as E8's `<sce:append>`
+            // does inside an algorithm — one element, one spelling. Which
+            // variable it names, and whether the value fits its element, is
+            // judged with the rest of the typed scope.
+            (false, name @ ("append" | "clear")) => {
+                if model.datamodel != Datamodel::SceStatic {
+                    let pos = child.document().text_pos_at(child.range().start);
+                    return Err(crate::forge::error::Located::new(
+                        ScxmlSemanticError::StaticDatamodelRule {
+                            construct: format!("<sce:{name}>"),
+                            datamodel: model.datamodel.as_str().to_string(),
+                            rule: "a list variable, and so the statements that fill and empty \
+                                   one, exist only under datamodel=\"sce-static\""
+                                .to_string(),
+                            state: owning_state(child),
+                            observed: Some(name.to_string()),
+                        }
+                        .into(),
+                        source_name,
+                        Some(pos.row),
+                        Some(pos.col),
+                    ));
+                }
+                action.action_type = format!("sce_{name}");
+                action.location = child.attribute("target").unwrap_or("").to_string();
+                action.expr = child.attribute("expr").unwrap_or("").to_string();
+            }
             _ => return Ok(None),
         }
         Ok(Some(action))

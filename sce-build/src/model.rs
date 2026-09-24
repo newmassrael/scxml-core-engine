@@ -607,6 +607,8 @@ impl Action {
             "log" => &["label", "expr"],
             "native_action" => &["native_action_name", "params"],
             "raise" => &["event"],
+            "sce_append" => &["location", "expr"],
+            "sce_clear" => &["location"],
             "script" => &["content"],
             "send" => &[
                 "event",
@@ -647,6 +649,8 @@ impl Action {
                 "is_cpp_function",
                 "is_kt_function",
             ],
+            // The statement the `sce-static` Kotlin lowering writes.
+            "sce_append" | "sce_clear" => &["content_kt"],
             "send" => &[
                 "auto_send_id",
                 "delay_ms",
@@ -659,8 +663,10 @@ impl Action {
         }
     }
 
-    /// The nine tags an `action_type` can hold, in the order the parser
-    /// and the template branches list them.
+    /// The eleven tags an `action_type` can hold, in the order the parser
+    /// and the template branches list them. `sce_append` / `sce_clear` are a
+    /// `sce-static` list's statements (`<sce:append>` / `<sce:clear>`),
+    /// prefixed so no reader mistakes them for an SCXML element's name.
     pub const TAGS: &'static [&'static str] = &[
         "assign",
         "cancel",
@@ -669,6 +675,8 @@ impl Action {
         "log",
         "native_action",
         "raise",
+        "sce_append",
+        "sce_clear",
         "script",
         "send",
     ];
@@ -867,6 +875,11 @@ pub struct Variable {
     /// record local is (SCE_FORGE.md §4.12). Empty for any other variable.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub record_fields: Vec<crate::forge::model::RecordFieldInit>,
+    /// A `list<T>` variable's declared bound, `sce:capacity`: the most
+    /// elements it ever holds, on every backend. An append past it is an
+    /// execution error, not growth. `None` for any other variable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capacity: Option<u32>,
 }
 
 /// §scxml-3.11: History state information

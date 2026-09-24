@@ -3414,7 +3414,10 @@ impl AlgorithmValueType {
                 alias: alias.to_string(),
             });
         }
-        match s.strip_prefix("list<").and_then(|t| t.strip_suffix('>')) {
+        match s
+            .strip_prefix(Self::LIST_PREFIX)
+            .and_then(|t| t.strip_suffix('>'))
+        {
             Some(inner) => SceType::from_attr(inner.trim())
                 .filter(Self::list_elem_admitted)
                 .map(|elem| Self::List { elem }),
@@ -3424,6 +3427,9 @@ impl AlgorithmValueType {
 
     /// The prefix of a record type's spelling, `record:<alias>`.
     pub const RECORD_PREFIX: &'static str = "record:";
+
+    /// The prefix of a list type's spelling, `list<T>`.
+    pub const LIST_PREFIX: &'static str = "list<";
 
     /// Whether a local of this type is a buffer filled by `<sce:append>` —
     /// `bytes` or `list<T>` — and so starts empty, takes `capacity` instead
@@ -3437,7 +3443,7 @@ impl AlgorithmValueType {
     pub fn as_attr(&self) -> String {
         match self {
             Self::Scalar(t) => t.as_attr().to_string(),
-            Self::List { elem } => format!("list<{}>", elem.as_attr()),
+            Self::List { elem } => format!("{}{}>", Self::LIST_PREFIX, elem.as_attr()),
             Self::Record { alias } => format!("{}{alias}", Self::RECORD_PREFIX),
         }
     }

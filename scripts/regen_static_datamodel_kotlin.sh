@@ -35,7 +35,9 @@ PACKAGE_PREFIX="com.sce.integration"
 # static_host_call: a native host action taking typed datamodel arguments.
 # static_record:    a record variable built whole and updated field by field,
 #                   whose schema is imported from a sibling document.
-MACHINES=(static_counter static_host_call static_record)
+# static_list:      a list variable filled by <sce:append>, emptied by
+#                   <sce:clear>, and held to its capacity.
+MACHINES=(static_counter static_host_call static_record static_list)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT

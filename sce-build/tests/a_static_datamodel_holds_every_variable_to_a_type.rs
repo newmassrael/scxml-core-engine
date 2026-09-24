@@ -606,3 +606,179 @@ fn an_assignment_to_a_whole_record_is_refused() {
     assert!(!ok, "a record is updated a field at a time:\n{out}");
     assert_refused_at(&out, "expression/unsupported-construct", 12);
 }
+
+// ── A list variable starts empty, is appended to and cleared ────────────
+
+/// A list variable, `days: list<uint8>` of capacity 4, on line 5.
+const DAYS: &str = r#"<data id="days" sce:type="list&lt;uint8&gt;" sce:capacity="4"/>"#;
+
+/// A machine under `datamodel` whose first variable is `data` (line 5),
+/// followed by `ready: bool` (line 6), and whose `states` open on line 8.
+fn list_doc(datamodel: &str, data: &str, states: &str) -> String {
+    format!(
+        r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="{datamodel}">
+  <datamodel>
+    {data}
+    <data id="ready" sce:type="bool" expr="false"/>
+  </datamodel>
+  {states}
+</scxml>
+"##
+    )
+}
+
+#[test]
+fn a_list_is_appended_to_and_cleared() {
+    let (ok, out) = run(
+        &["check", "-l", "kotlin"],
+        &list_doc(
+            "sce-static",
+            DAYS,
+            r#"<state id="s"><onentry><sce:append target="days" expr="7"/><sce:clear target="days"/></onentry></state>"#,
+        ),
+    );
+    assert!(
+        ok,
+        "a list filled and emptied by its two statements:\n{out}"
+    );
+}
+
+#[test]
+fn a_list_without_a_capacity_is_refused() {
+    let (ok, out) = run(
+        &["check"],
+        &list_doc(
+            "sce-static",
+            r#"<data id="days" sce:type="list&lt;uint8&gt;"/>"#,
+            r#"<state id="s"/>"#,
+        ),
+    );
+    assert!(!ok, "a list declares its bound:\n{out}");
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 5);
+}
+
+#[test]
+fn a_list_with_an_initial_value_is_refused() {
+    let (ok, out) = run(
+        &["check"],
+        &list_doc(
+            "sce-static",
+            r#"<data id="days" sce:type="list&lt;uint8&gt;" sce:capacity="4" expr="0"/>"#,
+            r#"<state id="s"/>"#,
+        ),
+    );
+    assert!(!ok, "a list starts empty:\n{out}");
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 5);
+}
+
+#[test]
+fn a_capacity_on_a_variable_that_is_not_a_list_is_refused() {
+    let (ok, out) = run(
+        &["check"],
+        &list_doc(
+            "sce-static",
+            r#"<data id="days" sce:type="uint8" sce:capacity="4" expr="0"/>"#,
+            r#"<state id="s"/>"#,
+        ),
+    );
+    assert!(!ok, "only a list has a capacity:\n{out}");
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 5);
+}
+
+#[test]
+fn a_list_of_an_element_with_a_length_is_refused() {
+    let (ok, out) = run(
+        &["check"],
+        &list_doc(
+            "sce-static",
+            r#"<data id="days" sce:type="list&lt;string&gt;" sce:capacity="4"/>"#,
+            r#"<state id="s"/>"#,
+        ),
+    );
+    assert!(!ok, "a list element has a fixed width:\n{out}");
+    assert_refused_at(&out, "validation/attribute-rule-violated", 5);
+}
+
+#[test]
+fn an_append_to_a_variable_that_is_not_a_list_is_refused_at_its_target() {
+    let (ok, out) = run(
+        &["check"],
+        &list_doc(
+            "sce-static",
+            DAYS,
+            r#"<state id="s"><onentry><sce:append target="ready" expr="1"/></onentry></state>"#,
+        ),
+    );
+    assert!(!ok, "`ready` is a bool:\n{out}");
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 8);
+    assert!(
+        out.contains("one of days"),
+        "the refusal names the lists:\n{out}"
+    );
+}
+
+#[test]
+fn an_element_of_another_kind_is_refused() {
+    let (ok, out) = run(
+        &["check"],
+        &list_doc(
+            "sce-static",
+            DAYS,
+            r#"<state id="s"><onentry><sce:append target="days" expr="true"/></onentry></state>"#,
+        ),
+    );
+    assert!(!ok, "a bool is not a uint8 element:\n{out}");
+    assert_refused_at(&out, "expression/type-mismatch", 8);
+}
+
+#[test]
+fn a_list_read_as_a_value_is_refused() {
+    let (ok, out) = run(
+        &["check"],
+        &list_doc(
+            "sce-static",
+            DAYS,
+            r#"<state id="s"><transition event="go" cond="days" target="s"/></state>"#,
+        ),
+    );
+    assert!(
+        !ok,
+        "a list is read by the host, not by an expression:\n{out}"
+    );
+    assert_refused_at(&out, "expression/unsupported-construct", 8);
+}
+
+#[test]
+fn an_assignment_to_a_whole_list_is_refused() {
+    let (ok, out) = run(
+        &["check"],
+        &list_doc(
+            "sce-static",
+            DAYS,
+            r#"<state id="s"><onentry><assign location="days" expr="0"/></onentry></state>"#,
+        ),
+    );
+    assert!(
+        !ok,
+        "a list is filled by append and emptied by clear:\n{out}"
+    );
+    assert_refused_at(&out, "expression/unsupported-construct", 8);
+}
+
+#[test]
+fn a_list_statement_under_another_data_model_is_refused() {
+    // Before, the parser skipped an `sce:` element it did not know, so this
+    // statement was dropped without a word.
+    let (ok, out) = run(
+        &["check"],
+        &list_doc(
+            "ecmascript",
+            r#"<data id="n" expr="0"/>"#,
+            r#"<state id="s"><onentry><sce:append target="n" expr="1"/></onentry></state>"#,
+        ),
+    );
+    assert!(!ok, "a list exists only under sce-static:\n{out}");
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 8);
+}

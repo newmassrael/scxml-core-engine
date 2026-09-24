@@ -1820,7 +1820,7 @@ pub fn to_camel_case(name: String) -> String {
 }
 
 /// Escape Kotlin string literals.
-fn escape_kotlin(text: String) -> String {
+pub(crate) fn escape_kotlin(text: String) -> String {
     text.replace('\\', "\\\\")
         .replace('"', "\\\"")
         .replace('\n', "\\n")
