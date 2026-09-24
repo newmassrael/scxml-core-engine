@@ -50,7 +50,6 @@ public:
     void processQueuedEvents() override;
     bool processNextQueuedEvent() override;
     bool hasQueuedEvents() const override;
-    bool processNextInternalEvent() override;
     bool hasQueuedInternalEvents() const override;
     std::optional<Core::EventMetadata> takeQueuedEvent(EventQueue queue) override;
     bool enqueue(const Core::EventMetadata &event, EventQueue queue) override;

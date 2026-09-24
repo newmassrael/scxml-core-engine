@@ -645,7 +645,19 @@ bool EventRaiserImpl::processNextQueuedEvent() {
     // `DonedataLocalInvokeTest.ParentObservesDonedataOnDoneInvoke`, whose
     // `done.invoke.inv_param` arrives as an EXTERNAL event and whose
     // transition exits the state that owns the invoke.
-    return executeEventCallback(eventToProcess);
+    executeEventCallback(eventToProcess);
+
+    // The answer is that an event was taken, which is what IEventRaiser
+    // promises. The callback answers a different question — whether a
+    // transition was selected — and a step whose event no active state
+    // answered is still a step: the event is off the queue and discarded
+    // (§scxml-3.1.2). Returning the callback's answer made that step read as
+    // an empty queue, so a host stepping one event at a time lost both the
+    // step and the event. Measured 2026-09-25 on W3C test 240 in the
+    // interactive runner: an ended child's done.invoke, which outlives the
+    // parent leaving the invoking state (W3C test 236), reached a state that
+    // does not answer it, and the forward run stopped short of `pass`.
+    return true;
 }
 
 bool EventRaiserImpl::executeEventCallback(const QueuedEvent &event) {
@@ -720,33 +732,6 @@ bool EventRaiserImpl::hasQueuedInternalEvents() const {
     }
 
     return synchronousQueue_.top().priority == EventPriority::INTERNAL;
-}
-
-bool EventRaiserImpl::processNextInternalEvent() {
-    // §scxml-D-mainEventLoop: the macrostep completes on internal events
-    // alone. Popping an external event here would run it before the invokes
-    // that the macrostep just armed, and an `autoforward` child would never
-    // see it — so the pop is conditional on the head's class, not merely on
-    // the queue being non-empty.
-    QueuedEvent eventToProcess{"", "", EventPriority::EXTERNAL};
-
-    {
-        std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
-
-        // QueuedEventComparator keeps INTERNAL (priority 0) ahead of EXTERNAL,
-        // so the head alone decides whether an internal event is available.
-        if (synchronousQueue_.empty() || synchronousQueue_.top().priority != EventPriority::INTERNAL) {
-            return false;
-        }
-
-        eventToProcess = synchronousQueue_.top();
-        synchronousQueue_.pop();
-
-        SCE_LOG_DEBUG("EventRaiserImpl: Dequeued INTERNAL event '{}' - {} events left in queue",
-                      eventToProcess.eventName, synchronousQueue_.size());
-    }
-
-    return executeEventCallback(eventToProcess);
 }
 
 std::optional<Core::EventMetadata> EventRaiserImpl::takeQueuedEvent(EventQueue queue) {

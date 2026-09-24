@@ -212,6 +212,16 @@
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "discarded_external_events",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/EventRaiserImpl.cpp",
+          "symbol": "EventRaiserImpl::processNextQueuedEvent",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/runtime/IEventRaiser.h",
+          "symbol": "processNextQueuedEvent",
+          "kind": "references"
         }
       ],
       "coverage_expectation": "informational",
@@ -14502,23 +14512,8 @@
           "kind": "implements"
         },
         {
-          "file": "sce/include/runtime/IEventRaiser.h",
-          "symbol": "processNextInternalEvent",
-          "kind": "implements"
-        },
-        {
           "file": "sce/src/runtime/EventRaiserImpl.cpp",
           "symbol": "EventRaiserImpl::raiseEventWithPriority",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/EventRaiserImpl.cpp",
-          "symbol": "EventRaiserImpl::processNextInternalEvent",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/EventRaiserImpl.h",
-          "symbol": "processNextInternalEvent",
           "kind": "implements"
         },
         {
@@ -18361,6 +18356,24 @@
       "target_kind": "section",
       "target_id": "scxml-D-getChildStates",
       "reason": "Stage F: a Go interface method is not a symbol of its own - a citation in the Document body resolves to Document, so the binding sits there"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-mainEventLoop",
+      "reason": "The method is gone: the Interpreter takes internal events through takeQueuedEvent since its move onto Appendix D's main event loop, nothing called it, and it shared processNextQueuedEvent's answer of a transition result where a step result was promised"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-mainEventLoop",
+      "reason": "The method is gone: the Interpreter takes internal events through takeQueuedEvent since its move onto Appendix D's main event loop, nothing called it, and it shared processNextQueuedEvent's answer of a transition result where a step result was promised"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-mainEventLoop",
+      "reason": "The method is gone: the Interpreter takes internal events through takeQueuedEvent since its move onto Appendix D's main event loop, nothing called it, and it shared processNextQueuedEvent's answer of a transition result where a step result was promised"
     }
   ],
   "frames": {},
