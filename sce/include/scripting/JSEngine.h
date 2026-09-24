@@ -32,7 +32,6 @@ struct JSContext;
 // JSValueConst is defined by QuickJS, no need to redefine
 
 namespace SCE {
-class StateMachine;
 
 /**
  * @brief Thread-safe session-based JavaScript engine
@@ -242,14 +241,12 @@ public:
                           const std::vector<std::pair<std::string, NativeMethod>> &methods) override;
 
     /**
-     * @brief Set the StateMachine instance for In() function integration
-     * @param stateMachine Pointer to the StateMachine instance
-     * @param sessionId Session ID to associate with this state machine
-     */
-    void setStateMachine(std::shared_ptr<StateMachine> stateMachine, const std::string &sessionId);
-
-    /**
-     * @brief Set state query callback for In() function integration (for static engines)
+     * @brief Set the state query callback that answers In() for a session
+     *
+     * The one way a session answers In(): the interpreter and the generated
+     * machines both register here, so the script engine asks a callback and
+     * never reaches into the runtime tier.
+     *
      * @param callback Function that checks if a state is active
      * @param sessionId Session ID to associate with this callback
      */
@@ -461,13 +458,9 @@ private:
     // === Global Functions ===
     std::unordered_map<std::string, std::function<ScriptValue(const std::vector<ScriptValue> &)>> globalFunctions_;
     std::mutex globalFunctionsMutex_;
-    // === StateMachine Integration ===
-    // RACE CONDITION FIX: Use weak_ptr to prevent heap-use-after-free (W3C Test 530)
-    // Worker threads can safely check validity with lock() before accessing StateMachine
-    std::unordered_map<std::string, std::weak_ptr<StateMachine>> stateMachines_;  // sessionId -> weak_ptr<StateMachine>
-    // === StateMachine Integration (Callback-based for static engines) ===
+    // === In() integration: each session's state query ===
     std::unordered_map<std::string, StateQueryCallback> stateQueryCallbacks_;  // sessionId -> callback
-    mutable std::mutex stateMachinesMutex_;
+    mutable std::mutex stateQueryCallbacksMutex_;
 
     // === Internal Event System ===
     struct InternalEventQueue {
@@ -553,18 +546,6 @@ private:
 
     // Error handling
     ScriptResult createErrorFromException(JSContext *ctx);
-
-    // === Internal EventRaiser Management (Private) ===
-    /**
-     * @brief Register EventRaiser for a session (Internal use only)
-     *
-     * Enables ParentEventTarget to send events to parent sessions by
-     * providing access to their EventRaiser instances.
-     * Only accessible by friend classes (StateMachine).
-     *
-     * @param sessionId Target session
-     * @param eventRaiser EventRaiser instance for this session
-     */
 };
 
 }  // namespace SCE

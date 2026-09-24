@@ -558,19 +558,40 @@ install(DIRECTORY sce/include/
         PATTERN "wrappers"    EXCLUDE
 )
 
-# Scripting: JSEngine / LuaEngine / ScriptEngineProvider.
+# Scripting: JSEngine / LuaEngine / ScriptEngineProvider, and the
+# EventRaiser registry both engines route a script's raise through. The
+# registry's code is compiled into sce_scripting and scripting/JSEngine.h
+# includes its interface, so its headers ship with this component even
+# though they live under events/.
 install(DIRECTORY sce/include/scripting
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     COMPONENT Scripting
     FILES_MATCHING PATTERN "*.h"
 )
+set(SCE_SCRIPTING_EVENT_HEADERS
+    IEventRaiserRegistry.h
+    EventRaiserRegistry.h
+    EventRaiserService.h
+)
+foreach(_sce_header IN LISTS SCE_SCRIPTING_EVENT_HEADERS)
+    install(FILES sce/include/events/${_sce_header}
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/events
+        COMPONENT Scripting
+    )
+endforeach()
 
-# Runtime: Interpreter/state-machine/parser/events headers.
+# Runtime: Interpreter/state-machine/parser/events headers, less the
+# events/ headers the Scripting component ships.
+set(_sce_runtime_header_excludes)
+foreach(_sce_header IN LISTS SCE_SCRIPTING_EVENT_HEADERS)
+    list(APPEND _sce_runtime_header_excludes PATTERN "${_sce_header}" EXCLUDE)
+endforeach()
 foreach(_sce_runtime_dir model runtime actions events states parsing factory)
     install(DIRECTORY sce/include/${_sce_runtime_dir}
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
         COMPONENT Runtime
         FILES_MATCHING PATTERN "*.h"
+        ${_sce_runtime_header_excludes}
     )
 endforeach()
 

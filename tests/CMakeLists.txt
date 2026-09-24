@@ -3961,20 +3961,19 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
             ${MESH_SRCEXPR_OUTPUT_DIR}
     )
 
-    # The generated srcexpr entry block calls `ensureScriptEngine()`
-    # which resolves through `ScriptEngineProvider::getScriptEngine()`
-    # in sce_scripting. Ideally we would link just sce_scripting +
-    # sce_base, but sce_scripting::LuaEngine references runtime-only
-    # symbols (`EventRaiserService::getRegistry` etc.), so consumers
-    # of sce_scripting currently must also link sce_runtime to resolve
-    # the back-edge. Same pattern as mesh_shm_payload_runtime_test and
-    # the W3C AOT harness. Refactoring LuaEngine to drop its
-    # runtime-layer back-edge would let this collapse to just
-    # sce_scripting, but that is an independent layering cleanup.
+    # The generated srcexpr entry block calls `ensureScriptEngine()`,
+    # which resolves through `ScriptEngineProvider::getScriptEngine()` in
+    # sce_scripting — the tier this links, and nothing above it. It used
+    # to link sce_runtime as well, because the scripting tier called back
+    # into it (EventRaiserService, Event, StateMachine) and naming the
+    # interpreter resolved that only under an order-insensitive linker:
+    # GNU ld refused mesh_synth_invoke_override_e2e_test for exactly this
+    # on 2026-09-24. With no sce_runtime here, a back-edge that returns
+    # fails this link under every linker.
     target_link_libraries(mesh_srcexpr_compile_test
         PRIVATE
             sce_base
-            sce_runtime
+            sce_scripting
             sce_mesh_common
     )
 
@@ -3995,10 +3994,9 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     # also traps a 35340cc7 double-raise regression via a transition
     # to `double_raise_detected`.
     #
-    # Same linkage posture as mesh_srcexpr_compile_test (sce_base +
-    # sce_runtime + sce_mesh_common): sce_runtime resolves
-    # LuaEngine's runtime-layer back-edge that ensureScriptEngine()
-    # pulls in. Refactoring that back-edge is an independent cleanup.
+    # Same linkage as mesh_srcexpr_compile_test (sce_base +
+    # sce_scripting + sce_mesh_common): the script engine that
+    # ensureScriptEngine() pulls in, and no interpreter.
     set(MESH_SRCEXPR_MISS_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_srcexpr_miss_generated")
 
     add_custom_command(
@@ -4054,7 +4052,7 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     target_link_libraries(mesh_srcexpr_miss_test
         PRIVATE
             sce_base
-            sce_runtime
+            sce_scripting
             sce_mesh_common
     )
 
@@ -4986,10 +4984,13 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
             ${MESH_SHM_PAYLOAD_OUTPUT_DIR}
     )
 
+    # The script engine tier and no interpreter, as mesh_srcexpr_compile_test
+    # links: the generated machines resolve their engine through
+    # ScriptEngineProvider in sce_scripting.
     target_link_libraries(mesh_shm_payload_runtime_test
         PRIVATE
             sce_base
-            sce_runtime
+            sce_scripting
             sce_mesh_common
             rt
             pthread

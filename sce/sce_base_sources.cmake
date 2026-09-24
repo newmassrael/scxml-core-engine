@@ -12,6 +12,13 @@ set(SCE_BASE_SOURCES
     src/common/Logger.cpp
     src/common/UniqueIdGenerator.cpp
     src/common/Uuid.cpp
+    # RFC 3986 percent-encoding. common/IOProcessorHelper.h and
+    # common/SendHelper.h call it inline, and every generated state machine
+    # includes them (an _ioprocessors location is built for each session),
+    # so it lives in the lowest tier that compiles code: in sce_runtime, an
+    # AOT consumer resolved it only by linking the interpreter as well.
+    # Depends on nothing but <string>.
+    src/common/UrlEncodingHelper.cpp
 
     # Logger backends
     src/backends/DefaultBackend.cpp

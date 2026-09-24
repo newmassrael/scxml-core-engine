@@ -283,9 +283,17 @@ target_compile_features(sce_base PUBLIC cxx_std_17)
 # ============================================================================
 # sce_scripting: Script engines and engine-dependent helpers (optional)
 # ============================================================================
-# Contains: JSEngine, LuaEngine, ScriptEngineProvider, DataModelInitHelper
+# Contains: JSEngine, LuaEngine, ScriptEngineProvider, DataModelInitHelper,
+#           EventRaiserService / EventRaiserRegistry
 # Requires at least one script engine (QuickJS or Lua).
 # Static hybrid AOT and Interpreter consumers link sce_scripting.
+#
+# ⚠ Depends on sce_base and never on sce_runtime: sce_runtime links this
+# tier, so a symbol defined there and called from here is a cycle between
+# two static archives. lld resolves archive members in any order and hid
+# it; GNU ld reads them in link-line order and refused a consumer that
+# pulled no runtime member first (mesh_synth_invoke_override_e2e_test,
+# 2026-09-24).
 if(SCE_HAS_SCRIPTING)
     add_library(sce_scripting
         # Script engine provider (compile-time engine selection)
@@ -293,6 +301,14 @@ if(SCE_HAS_SCRIPTING)
 
         # Engine-dependent helpers
         src/common/DataModelInitHelper.cpp
+
+        # The session -> EventRaiser registry both engines route a script's
+        # raise through. It belongs to this tier: the service validates
+        # sessions through ScriptEngineProvider, and the engines call it —
+        # defined in sce_runtime, it was a back-edge that only an
+        # order-insensitive linker (lld) resolved.
+        src/events/EventRaiserRegistry.cpp
+        src/events/EventRaiserService.cpp
 
         # QuickJS engine (conditional)
         $<$<BOOL:${SCE_ENABLE_QUICKJS}>:src/scripting/JSEngine.cpp>
@@ -522,8 +538,6 @@ add_library(sce_runtime
     src/events/EventSchedulerImpl.cpp
     src/events/EventDispatcherImpl.cpp
     src/events/EventTargetFactoryImpl.cpp
-    src/events/EventRaiserRegistry.cpp
-    src/events/EventRaiserService.cpp
     src/events/PlatformEventRaiserHelper.cpp
 
     # Concurrent states implementation
@@ -567,14 +581,6 @@ add_library(sce_runtime
 # XInclude processing
 target_sources(sce_runtime PRIVATE
     src/parsing/XIncludeProcessor.cpp
-)
-
-# RFC 3986 percent-encoding. Built unconditionally: the BasicHTTP form encoder
-# is one caller, but _ioprocessors location URIs are assembled on every session
-# whether or not HTTP support is compiled in, and the encoder itself depends on
-# nothing but <string>.
-target_sources(sce_runtime PRIVATE
-    src/common/UrlEncodingHelper.cpp
 )
 
 # HTTP infrastructure (native builds only, not WASM, HTTP enabled)

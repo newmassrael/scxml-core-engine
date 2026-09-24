@@ -118,7 +118,11 @@ struct SCXML_API ExecutionResult {
  */
 class SCXML_API Event {
 public:
-    Event(const std::string &name, const std::string &type = "internal");
+    // Defined here like every other member: this header sits below every
+    // library tier, and a constructor defined in the interpreter's library
+    // made each tier that builds an Event depend on the interpreter.
+    Event(const std::string &name, const std::string &type = "internal") : name_(name), type_(type) {}
+
     virtual ~Event() = default;
 
     const std::string &getName() const {

@@ -103,6 +103,7 @@ sce_runtime       (STATIC, full interpreter — umbrella target)
 - `ScriptResultUtils`, `EventDataHelper`, `GuardUtils` — Value manipulation
 - `XMLDOMWrapper`, `SessionRegistry` — DOM and session utilities
 - `TypeRegistry`, `JsonUtils` — Runtime type and JSON support
+- `UrlEncodingHelper` — RFC 3986 percent-encoding, which the Tier 1 headers `IOProcessorHelper.h` and `SendHelper.h` call inline for every generated machine
 
 **Link target**: AOT consumers needing logging, ID generation, or value utilities.
 
@@ -125,10 +126,11 @@ sce_runtime       (STATIC, full interpreter — umbrella target)
   the same three coercions, so every backend's accessor answers alike.
 - `DOMBinding` / `LuaDOMBinding` — DOM access for script engines
 - `PlatformExecutionHelper` — Platform abstraction (Native pthread vs WASM synchronous)
+- `EventRaiserService` / `EventRaiserRegistry` — the session → `IEventRaiser` registry both engines route a script's raise through (headers under `events/`)
 
 **Link target**: Static Hybrid AOT (JSEngine-embedded expressions) and Interpreter consumers.
 
-**Dependency**: `sce_base` + `qjs` (QuickJS) and/or `lua54` (Lua 5.4).
+**Dependency**: `sce_base` + `qjs` (QuickJS) and/or `lua54` (Lua 5.4) — and never `sce_runtime`. A symbol this tier calls but `sce_runtime` defines is a cycle between two static archives: lld resolves archive members in any order and hid three such edges (`EventRaiserService`, `Event`'s constructor, `StateMachine::isStateActive`), while GNU ld refused the first consumer that pulled no interpreter object before them. An engine reaches the interpreter only through what the interpreter registers with it, as `In()` reaches a state configuration through `setStateQueryCallback`.
 
 **CMake options**:
 - `SCE_ENABLE_QUICKJS` (default: ON)

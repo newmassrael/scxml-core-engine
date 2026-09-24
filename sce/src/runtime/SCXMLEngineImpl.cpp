@@ -44,10 +44,6 @@ namespace SCE {
         value);
 }
 
-// === Event Implementation ===
-
-Event::Event(const ::std::string &name, const ::std::string &type) : name_(name), type_(type) {}
-
 // === SCXMLEngineImpl Implementation ===
 
 SCXMLEngineImpl::SCXMLEngineImpl()

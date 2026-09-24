@@ -8,7 +8,6 @@
 #include "events/EventRaiserService.h"
 #include "events/IEventDispatcher.h"
 #include "quickjs.h"
-#include "runtime/StateMachine.h"
 #include "scripting/DOMBinding.h"
 #include "scripting/PlatformExecutionHelper.h"
 #include "scripting/ScriptResultUtils.h"
@@ -518,7 +517,7 @@ bool JSEngine::destroySessionInternal(const std::string &sessionId) {
     // CRITICAL: AOT state machines register lambda callbacks with [this] capture
     // When state machine is destroyed, callback must be removed to prevent ASAN errors
     {
-        std::lock_guard<std::mutex> lock(stateMachinesMutex_);
+        std::lock_guard<std::mutex> lock(stateQueryCallbacksMutex_);
         auto callbackIt = stateQueryCallbacks_.find(sessionId);
         if (callbackIt != stateQueryCallbacks_.end()) {
             stateQueryCallbacks_.erase(callbackIt);
@@ -871,25 +870,16 @@ void JSEngine::setupSystemVariables(JSContext *ctx) {
 }
 
 bool JSEngine::checkStateActive(const std::string &stateName) const {
-    std::lock_guard<std::mutex> lock(stateMachinesMutex_);
+    std::lock_guard<std::mutex> lock(stateQueryCallbacksMutex_);
 
-    // §scxml-5.9.1: In() predicate function
-    // First check callback-based state queries (for static AOT engines)
+    // §scxml-5.9.1: In() predicate function. Every engine that runs a
+    // session registers its state query here — the interpreter as well as
+    // the generated machines — so this tier asks a callback and never
+    // reaches into the runtime tier for a state machine of its own.
     for (const auto &pair : stateQueryCallbacks_) {
         const auto &callback = pair.second;
         if (callback && callback(stateName)) {
             return true;
-        }
-    }
-
-    // Fall back to StateMachine pointers (for Interpreter engine)
-    // RACE CONDITION FIX: Use weak_ptr::lock() to safely access StateMachine
-    // W3C Test 530: Prevents heap-use-after-free during invoke exit
-    for (const auto &pair : stateMachines_) {
-        if (auto sm = pair.second.lock()) {
-            if (sm->isStateActive(stateName)) {
-                return true;
-            }
         }
     }
     return false;
@@ -923,22 +913,8 @@ void JSEngine::queueInternalEvent(const std::string &sessionId, const std::strin
     SCE_LOG_DEBUG("JSEngine: Queued internal event '{}' for session '{}'", eventName, sessionId);
 }
 
-void JSEngine::setStateMachine(std::shared_ptr<StateMachine> stateMachine, const std::string &sessionId) {
-    std::lock_guard<std::mutex> lock(stateMachinesMutex_);
-    if (stateMachine) {
-        stateMachines_[sessionId] = stateMachine;  // weak_ptr assignment from shared_ptr
-        SCE_LOG_DEBUG("JSEngine: StateMachine set for session: {}", sessionId);
-    } else {
-        auto it = stateMachines_.find(sessionId);
-        if (it != stateMachines_.end()) {
-            stateMachines_.erase(it);
-            SCE_LOG_DEBUG("JSEngine: StateMachine removed for session: {}", sessionId);
-        }
-    }
-}
-
 void JSEngine::setStateQueryCallback(StateQueryCallback callback, const std::string &sessionId) {
-    std::lock_guard<std::mutex> lock(stateMachinesMutex_);
+    std::lock_guard<std::mutex> lock(stateQueryCallbacksMutex_);
     if (callback) {
         stateQueryCallbacks_[sessionId] = callback;
         SCE_LOG_DEBUG("JSEngine: State query callback set for session: {}", sessionId);
