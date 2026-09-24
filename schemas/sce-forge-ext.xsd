@@ -245,10 +245,15 @@
        for `list<T>` / `record:<alias>` (`dataValueType`), which only a
        `sce-static` statechart variable admits. -->
   <xs:attribute name="type" type="sce:dataValueType"/>
-  <!-- A `sce-static` `list<T>` variable's bound (SCE Accepted Subset §2.15):
-       the most elements it ever holds, on every backend. Required on a list
-       and refused on any other variable by the parser, which knows the type. -->
-  <xs:attribute name="capacity" type="xs:positiveInteger"/>
+  <!-- `sce:capacity` is a bound in two places: the event-queue depth on
+       `<scxml>` and a `sce-static` `list<T>` variable's element count on
+       `<data>` (SCE Accepted Subset §2.15). A global declaration types the
+       attribute wherever it appears, so it is `xs:string` here: each parser
+       rule judges its own value and refuses it with its own diagnostic (a
+       positive u32 for both, the list rule also refusing it off a list).
+       Typing it here would refuse a malformed or zero value with a schema
+       error first, and the rules' refusals would never be reached. -->
+  <xs:attribute name="capacity" type="xs:string"/>
   <xs:attribute name="direction" type="sce:directionType"/>
 
   <!-- NL→IR Item C1 Path A — `sce:underlying-type` on a

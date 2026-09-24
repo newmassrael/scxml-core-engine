@@ -693,6 +693,26 @@ fn a_list_without_a_capacity_is_refused() {
 }
 
 #[test]
+fn a_list_capacity_that_is_not_a_positive_count_is_refused_by_its_rule() {
+    // `sce:capacity` is untyped in the schema — the event queue's bound on
+    // `<scxml>` shares the name — so this rule is the list's only guard.
+    for written in ["0", "many"] {
+        let (ok, out) = run(
+            &["check"],
+            &list_doc(
+                "sce-static",
+                &format!(
+                    r#"<data id="days" sce:type="list&lt;uint8&gt;" sce:capacity="{written}"/>"#
+                ),
+                r#"<state id="s"/>"#,
+            ),
+        );
+        assert!(!ok, "sce:capacity=\"{written}\" is no count:\n{out}");
+        assert_refused_at(&out, "scxml/static-datamodel-rule", 5);
+    }
+}
+
+#[test]
 fn a_list_with_an_initial_value_is_refused() {
     let (ok, out) = run(
         &["check"],
