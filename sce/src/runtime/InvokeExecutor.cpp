@@ -1343,6 +1343,12 @@ std::shared_ptr<StateSnapshot> SCXMLInvokeHandler::captureChildState() const {
         // Capture active states (preserve document order for time-travel debugging)
         childSnapshot->activeStates = childSM->getActiveStates();
 
+        // Whether the session was still running: a session that has ended
+        // stays listed here until its parent leaves the invoking state, and
+        // the cancel that follows (§scxml-6.4) treats it apart from a running
+        // one (see StateMachine::restoreActiveStatesDirectly).
+        childSnapshot->running = childSM->isRunning();
+
         // Capture event queues from child's EventRaiser
         auto childEventRaiser = childSM->getEventRaiser();
         if (childEventRaiser) {
@@ -1426,7 +1432,7 @@ void SCXMLInvokeHandler::restoreChildState(const StateSnapshot &childSnapshot, c
         // Complete restoration using Template Method pattern
         // ARCHITECTURE.md: Single Source of Truth - StateMachine handles restoration lifecycle
         // This automatically handles: JS environment init, state restoration, running flag
-        if (!childSM->restoreFromSnapshot(childSnapshot.activeStates)) {
+        if (!childSM->restoreFromSnapshot(childSnapshot.activeStates, childSnapshot.running)) {
             SCE_LOG_ERROR("SCXMLInvokeHandler: Failed to restore child state for session {}", childSessionId);
             return;
         }

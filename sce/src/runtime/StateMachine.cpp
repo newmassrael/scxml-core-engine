@@ -1242,7 +1242,7 @@ std::vector<TransitionDescriptorString> StateMachine::getLastOptimalTransitions(
     return lastOptimalTransitions_;
 }
 
-bool StateMachine::restoreFromSnapshot(const std::vector<std::string> &states) {
+bool StateMachine::restoreFromSnapshot(const std::vector<std::string> &states, bool running) {
     // Complete state machine restoration for time-travel debugging
     // ARCHITECTURE.md: Template Method pattern - encapsulates restoration lifecycle
     // to prevent temporal coupling and maintain Single Source of Truth
@@ -1265,8 +1265,8 @@ bool StateMachine::restoreFromSnapshot(const std::vector<std::string> &states) {
     }
 
     // Step 2: Restore state configuration (delegates to internal method)
-    // This sets isRunning_ = true internally
-    restoreActiveStatesDirectly(states);
+    // This sets isRunning_ to the recorded flag internally
+    restoreActiveStatesDirectly(states, running);
 
     // Verify restoration
     auto restoredStates = getActiveStates();
@@ -1283,7 +1283,7 @@ bool StateMachine::restoreFromSnapshot(const std::vector<std::string> &states) {
     return true;
 }
 
-void StateMachine::restoreActiveStatesDirectly(const std::vector<std::string> &states) {
+void StateMachine::restoreActiveStatesDirectly(const std::vector<std::string> &states, bool running) {
     // Time-travel debugging - restore configuration without side effects: the
     // states are written into the configuration and no <onentry> runs.
     // INTERNAL USE ONLY: Called by restoreFromSnapshot() after JS environment initialization
@@ -1311,14 +1311,17 @@ void StateMachine::restoreActiveStatesDirectly(const std::vector<std::string> &s
             SCE_LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: Added state '{}' to configuration", stateId);
         }
 
-        // Set running state after restoration to enable event processing
-        // CRITICAL FIX: Child state machines must be running to receive events from parent
-        // Without this, stepBackward() restoration leaves child in stopped state (Test 192)
-        SCE_LOG_DEBUG(
-            "StateMachine::restoreActiveStatesDirectly: [BEFORE isRunning_=true] About to set isRunning_ = true");
-        isRunning_ = true;
-        SCE_LOG_DEBUG(
-            "StateMachine::restoreActiveStatesDirectly: [AFTER isRunning_=true] Set to true, mutex will release");
+        // The running flag is the one the step recorded. A child that was
+        // running then must come back running to receive its parent's events
+        // (Test 192). One whose session had ended must come back ended: when
+        // its parent leaves the invoking state, the cancel that follows
+        // (§scxml-6.4) purges from the parent's queue what a running session
+        // sent (W3C test 252) and keeps what an ended one sent, its
+        // done.invoke among them (W3C test 236). Revived as running, an ended
+        // child lost its done.invoke to that cancel in a branch taken from
+        // the restored step.
+        isRunning_ = running;
+        SCE_LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: running restored as {}, mutex will release", running);
 
         // The configuration is the whole of the run state: a `<parallel>`'s
         // regions are its child states in that configuration, read by the
@@ -1338,7 +1341,8 @@ void StateMachine::restoreActiveStatesDirectly(const std::vector<std::string> &s
         }
         finalStr += s;
     }
-    SCE_LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: Complete - final states: [{}], running: true", finalStr);
+    SCE_LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: Complete - final states: [{}], running: {}", finalStr,
+                  running);
 }
 
 bool StateMachine::isInitialStateFinal() const {
