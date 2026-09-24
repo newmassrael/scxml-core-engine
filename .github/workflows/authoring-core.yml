@@ -104,5 +104,12 @@ jobs:
           python-version: '3.x'
       - name: Install the two libraries a pack is parsed and validated with
         run: python3 -m pip install --upgrade pyyaml jsonschema
+      - name: Install the Python runtime's Lua binding
+        # The run-driven cases import the Python the generator writes, and a
+        # statechart with a datamodel runs through `lupa`, which
+        # backends/python/runtime/pyproject.toml declares a hard dependency.
+        # Without it every such case failed on its import (the first run of
+        # this job, 2026-09-24) — the way w3c-tests.yml installs it too.
+        run: python3 -m pip install lupa
       - name: Authoring core gate, run-driven cases included
         run: scripts/gate authoring-core
