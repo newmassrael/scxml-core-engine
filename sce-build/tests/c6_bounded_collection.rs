@@ -182,7 +182,9 @@ fn capacity_zero_rejects() {
 }
 
 /// Negative: `<sce:capacity/>` with neither `source/key` nor `const` —
-/// exactly one attribute form is required.
+/// exactly one attribute form is required. The refusal names the two forms
+/// and reports no value: the element writes none, and the invented `""` it
+/// used to report is text no row holds.
 #[test]
 fn capacity_no_source_rejects() {
     let xml = r##"<?xml version="1.0" encoding="UTF-8"?>
@@ -195,10 +197,14 @@ fn capacity_no_source_rejects() {
     let err = parse(xml, "local_sub_table").expect_err("empty capacity rejects");
     match err.error {
         ForgeError::Validation(boxed) => match *boxed {
-            ValidationError::AttributeRuleViolated { .. } => {}
-            other => panic!("expected AttributeRuleViolated for empty capacity, got {other:?}"),
+            ValidationError::ExactlyOneAttribute {
+                alternatives,
+                extra: None,
+                ..
+            } => assert_eq!(alternatives, ["source", "const"]),
+            other => panic!("expected ExactlyOneAttribute for empty capacity, got {other:?}"),
         },
-        other => panic!("expected AttributeRuleViolated for empty capacity, got {other:?}"),
+        other => panic!("expected ExactlyOneAttribute for empty capacity, got {other:?}"),
     }
 }
 
