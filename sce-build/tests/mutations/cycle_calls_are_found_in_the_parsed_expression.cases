@@ -21,21 +21,20 @@ mutation_oracles sce-build/src/forge/cycle_expand.rs
 
 # The tree search stays compiled and called, and its result is thrown away:
 # a function nothing calls does not build under `warnings = deny`, and a
-# case that cannot build reports INCONCLUSIVE.
+# case that cannot build reports INCONCLUSIVE. The anchor is the head of
+# `expand_once`; the rest of its original body closes a second, allowed-dead
+# function, so the edit replaces only the search.
+#
+# Re-aimed 2026-09-25: `expand_once` moved from `&str`/`String` to the
+# `Spliced` text a378be92a4 introduced, so the search now builds a `Spliced`.
 mutation_case "the calls are found by searching the text again" <<'PY'
 edit("sce-build/src/forge/cycle_expand.rs",
-     r'''fn expand_once(text: &str, cycles: &[Cycle]) -> Option<String> {
+     r'''fn expand_once(current: &Spliced, cycles: &[Cycle]) -> Option<Spliced> {
+    let text = current.text.as_str();
     let tree = parse_to_ast(text).ok()?;
-    let call = innermost_cycle_call(&tree, cycles)?;
-    let replacement = render(call.name, call.cycle, text[call.cursor].trim());
-    Some(format!(
-        "{}{}{}",
-        &text[..call.at.start],
-        replacement,
-        &text[call.at.end..]
-    ))
-}''',
-     r'''fn expand_once(text: &str, cycles: &[Cycle]) -> Option<String> {
+    let call = innermost_cycle_call(&tree, cycles)?;''',
+     r'''fn expand_once(current: &Spliced, cycles: &[Cycle]) -> Option<Spliced> {
+    let text = current.text.as_str();
     if let Ok(tree) = parse_to_ast(text) {
         let _ = innermost_cycle_call(&tree, cycles)
             .map(|c| (c.at, c.name, c.cycle.id.len(), c.cursor));
@@ -79,12 +78,29 @@ edit("sce-build/src/forge/cycle_expand.rs",
             }
             let comma = comma?;
             let cycle = cycles.iter().find(|c| c.id == inside[..comma].trim())?;
-            let replacement = render(name, cycle, inside[comma + 1..].trim());
-            return Some(format!("{}{}{}", &text[..at], replacement, &text[close + 1..]));
+            let arg = &inside[comma + 1..];
+            let lead = arg.len() - arg.trim_start().len();
+            let trail = arg.len() - arg.trim_end().len();
+            let start = open + 1 + comma + 1 + lead;
+            let cursor = current.slice(start..close - trail);
+            let replacement = render(name, cycle, &cursor, &when_sources(cycles));
+            return Some(Spliced::concat(&[
+                current.slice(0..at),
+                replacement,
+                current.slice(close + 1..text.len()),
+            ]));
         }
     }
     None
-}''')
+}
+
+// The tree search's own expansion, kept whole so it still builds; nothing
+// calls it.
+#[allow(dead_code)]
+fn expand_once_by_tree(current: &Spliced, cycles: &[Cycle]) -> Option<Spliced> {
+    let text = current.text.as_str();
+    let tree = parse_to_ast(text).ok()?;
+    let call = innermost_cycle_call(&tree, cycles)?;''')
 PY
 
 mutation_case "a call is expanded from the outside in" <<'PY'
