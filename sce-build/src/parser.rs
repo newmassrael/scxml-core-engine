@@ -5896,8 +5896,13 @@ impl InlineDocument {
         let parent = root.document().input_text();
         let range = root.range();
         let name_end = range.start + 1 + written_element_name(root).len();
+        // The root's start tag is kept as written, so a binding it declares
+        // itself is declared already; inserting it again would write the
+        // same attribute twice, which is not XML.
+        let written = written_declarations(root);
         let declarations: String = inherited_bindings(root)
             .into_iter()
+            .filter(|(prefix, _)| !written.contains(prefix))
             .map(namespace_declaration)
             .collect();
         let text = format!(
@@ -6066,6 +6071,55 @@ fn written_element_name<'i>(node: &roxmltree::Node<'_, 'i>) -> &'i str {
         "an element's range opens at its start tag"
     );
     qname
+}
+
+/// The prefix of each namespace declaration written in `node`'s start tag —
+/// `None` for `xmlns=` — in the order they are written.
+///
+/// Read from the text because nothing the reader keeps can answer it: it
+/// holds no declaration as an attribute, and [`declared_on`] cannot see one
+/// that repeats its parent's binding. A caller that copies the start tag's
+/// text needs to know what that text declares, not what it binds.
+///
+/// ⚠ Until 2026-09-24 an in-line child whose root re-declared the SCXML
+/// namespace its parent bound — the usual way to write one — came out with
+/// `xmlns` written twice on its root, which no conforming XML reader accepts
+/// (`Attribute xmlns redefined`); only this crate's own reader let it pass.
+fn written_declarations<'i>(node: &roxmltree::Node<'_, 'i>) -> Vec<Option<&'i str>> {
+    let text = node.document().input_text();
+    let is_space = |c: char| matches!(c, ' ' | '\t' | '\r' | '\n');
+    let mut rest = &text[node.range().start + 1 + written_element_name(node).len()..];
+    let mut declared = Vec::new();
+    // The document has been read, so the start tag is well-formed: names,
+    // `=` and quoted values up to its `>` or `/>`.
+    loop {
+        rest = rest.trim_start_matches(is_space);
+        if rest.is_empty() || rest.starts_with('>') || rest.starts_with("/>") {
+            return declared;
+        }
+        let name_end = rest
+            .find(|c: char| is_space(c) || c == '=')
+            .unwrap_or(rest.len());
+        let name = &rest[..name_end];
+        let value = rest[name_end..]
+            .trim_start_matches(is_space)
+            .trim_start_matches('=')
+            .trim_start_matches(is_space);
+        let Some(quote) = value.chars().next().filter(|c| matches!(c, '"' | '\'')) else {
+            debug_assert!(false, "an attribute value opens with a quote");
+            return declared;
+        };
+        let Some(close) = value[1..].find(quote) else {
+            debug_assert!(false, "an attribute value closes with its quote");
+            return declared;
+        };
+        rest = &value[1 + close + 1..];
+        if name == "xmlns" {
+            declared.push(None);
+        } else if let Some(prefix) = name.strip_prefix("xmlns:") {
+            declared.push(Some(prefix));
+        }
+    }
 }
 
 /// The name `attribute` was written with, prefix included — for the reason

@@ -61,6 +61,27 @@ const PARENT_PREFIX: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "#;
 
+/// A child whose root re-declares the bindings its parent already made —
+/// the usual way to write one, since it lets the child stand alone.
+const REDECLARED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:ext="urn:example:ext" version="1.0" datamodel="ecmascript" initial="s0">
+  <state id="s0">
+    <invoke id="kid" type="http://www.w3.org/TR/scxml/">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:ext="urn:example:ext" version="1.0" datamodel="ecmascript" initial="c">
+          <datamodel>
+            <data id="d"><item ext:note="x"/></data>
+          </datamodel>
+          <final id="c"/>
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="done.invoke.kid" target="pass"/>
+  </state>
+  <final id="pass"/>
+</scxml>
+"#;
+
 fn parse(document: &str, label: &str) -> SCXMLModel {
     SCXMLParser::new()
         .parse_string(document, label)
@@ -122,6 +143,41 @@ fn a_child_using_a_prefix_its_parent_declares_is_parsed() {
         child.states.contains_key("c"),
         "the child is the machine its author wrote"
     );
+    assert_eq!(
+        data_value(child),
+        r#"<item xmlns="http://www.w3.org/2005/07/scxml" xmlns:ext="urn:example:ext" ext:note="x"></item>"#
+    );
+}
+
+/// A binding the child's root declares itself is not declared on it again.
+///
+/// This crate's own reader accepts a start tag that writes `xmlns` twice, so
+/// parsing the child cannot be the oracle: the document is written beside
+/// the parent for later build steps, and a conforming XML reader refuses it
+/// (`Attribute xmlns redefined`). The oracle counts what the root's start tag
+/// writes.
+#[test]
+fn a_binding_the_childs_root_declares_is_not_declared_twice() {
+    let model = parse(REDECLARED, "redeclared");
+    let (child, text) = inline_child(&model);
+    assert!(
+        child.states.contains_key("c"),
+        "the child is the machine its author wrote"
+    );
+    let body = text
+        .strip_prefix("<?xml version=\"1.0\"?>\n\n")
+        .expect("the child document's prologue");
+    let start_tag = &body[..body.find('>').expect("the root's start tag closes")];
+    for declaration in ["xmlns=", "xmlns:ext="] {
+        let written = start_tag
+            .split_whitespace()
+            .filter(|token| token.starts_with(declaration))
+            .count();
+        assert_eq!(
+            written, 1,
+            "the root declares `{declaration}` once, not {written} times: {start_tag}"
+        );
+    }
     assert_eq!(
         data_value(child),
         r#"<item xmlns="http://www.w3.org/2005/07/scxml" xmlns:ext="urn:example:ext" ext:note="x"></item>"#
