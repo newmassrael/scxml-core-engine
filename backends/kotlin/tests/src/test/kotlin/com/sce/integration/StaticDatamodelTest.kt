@@ -98,4 +98,50 @@ class StaticDatamodelTest {
             sm.cleanup()
         }
     }
+
+    @Test
+    fun theSnapshotIsPublishedAtEachMacrostepBoundary() {
+        val sm = StaticCounterStateMachine()
+        sm.initialize()
+        try {
+            // The first macrostep settles inside initialize().
+            val first = sm.snapshot.value
+            assertEquals(setOf(StaticCounterState.Counting), first.configuration)
+            assertEquals(StaticCounterStateMachine.Data(count = 0u, ready = false), first.data)
+            assertEquals(false, first.truncated)
+
+            ticks(sm, 5)
+            assertEquals(
+                StaticCounterStateMachine.Data(count = 5u, ready = true),
+                sm.snapshot.value.data,
+                "the snapshot carries the datamodel as the macrostep left it"
+            )
+
+            sm.send(StaticCounterEvent.Go)
+            sm.tick()
+            assertEquals(
+                setOf(StaticCounterState.Done),
+                sm.snapshot.value.configuration,
+                "reaching a top-level final state is a macrostep boundary too"
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun aPublishedSnapshotDoesNotChangeAfterwards() {
+        // Immutable by construction: a host holding an earlier snapshot keeps
+        // what it saw, whatever the machine does next.
+        val sm = StaticCounterStateMachine()
+        sm.initialize()
+        try {
+            val before = sm.snapshot.value
+            ticks(sm, 3)
+            assertEquals(StaticCounterStateMachine.Data(count = 0u, ready = false), before.data)
+            assertEquals(setOf(StaticCounterState.Counting), before.configuration)
+        } finally {
+            sm.cleanup()
+        }
+    }
 }

@@ -2384,6 +2384,17 @@ payload takes the payload channel's own null guard. The generated machine
 carries no script engine. An enum-typed variable is refused for Kotlin until
 a statechart imports its enum into the generated unit.
 
+**Snapshot.** A Kotlin `sce-static` machine publishes what a host observes
+as one immutable value, `snapshot: StateFlow<Snapshot>`: the full active
+configuration (every active state, each `<parallel>` region included), the
+variables as a `Data` value in declaration order, and `truncated`. It is
+published once per completed macrostep, at the W3C SCXML Appendix D point
+— inner loop drained, invokes started, just before the next external event —
+through the runtime hook `onMacrostepComplete`, and never between two
+microsteps. A macrostep stopped at the microstep ceiling still publishes,
+with `truncated` set, because the machine moves on and a host that stopped
+hearing would hold a stale view.
+
 ### Cross-kind typed binding (NL→IR Mapping Roadmap Item 2)
 
 When a forge expression reads an imported kind's member via

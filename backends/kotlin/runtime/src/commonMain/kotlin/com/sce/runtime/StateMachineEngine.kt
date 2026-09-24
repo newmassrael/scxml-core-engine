@@ -283,6 +283,41 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     protected open fun declareDatamodel() {}
 
+    /**
+     * W3C SCXML Appendix D: a macrostep has completed and the configuration is
+     * stable — the one moment a host may observe this machine.
+     *
+     * ## The contract
+     *
+     * Called exactly once per completed macrostep, at the Appendix D point: the
+     * inner loop is drained (no eventless transition is enabled and the internal
+     * queue is empty), the invokes of the states it entered have started, and
+     * invoking raised nothing that re-opens the loop — right before the loop
+     * would take the next external event. The first macrostep, the one
+     * [initialize] / [start] settle, ends at the same point, and so does a
+     * macrostep that reaches a top-level `<final>`.
+     *
+     * Never between microsteps. The configuration and the datamodel are only
+     * consistent at a macrostep boundary; a host shown the state between two
+     * microsteps would render a configuration the machine never rests in.
+     *
+     * `truncated` is `true` when the macrostep was stopped at the microstep
+     * ceiling ([macrostepTruncated]): the configuration is then not a stable
+     * one, but the loop still moves on to the external queue, so the call is
+     * made rather than skipped — a host that stopped hearing would hold a stale
+     * view of a machine that is still running — and the flag says what it is.
+     *
+     * Overridden by a generated `datamodel="sce-static"` machine to publish its
+     * snapshot (SCE Accepted Subset §2.15). ⚠ Any rewrite of the event loop must
+     * keep calling this at the same point.
+     */
+    protected open fun onMacrostepComplete(truncated: Boolean) {}
+
+    /** [onMacrostepComplete] at the point the loop has just reached. */
+    private fun macrostepSettled() {
+        onMacrostepComplete(macrostepTruncated)
+    }
+
     // --- Observable State ---
 
     private val _currentState: MutableStateFlow<S> by lazy {
@@ -1395,6 +1430,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
             // §scxml-6.4: Execute deferred invokes after initial configuration
             executePendingInvokes()
+            macrostepSettled()
 
             // §scxml-3.7: Only enter event loop if not already in final state
             // (child SMs may reach final state during drainEventlessAndInternal)
@@ -2057,6 +2093,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 // state has exited the interpreter. Saying nothing about it is
                 // not the clause — see [unseenExternalEvents].
                 recordUnseenExternalEvents()
+                macrostepSettled()
                 break
             }
             // §scxml-6.4: invokes for states entered during this macrostep.
@@ -2074,6 +2111,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // rescues it is on that queue, and the clause's priority would
             // otherwise hold it behind a chain that never ends.
             if (internalEventQueue.isNotEmpty() && !macrostepTruncated) continue
+            // W3C SCXML Appendix D: the macrostep is complete — the point just
+            // before the external dequeue.
+            macrostepSettled()
             if (externalEventQueue.isEmpty()) break
             processNextExternalEvent()
         }
@@ -2816,6 +2856,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         drainEventlessAndInternal()
         // §scxml-6.4: Execute deferred invokes at macrostep end
         executePendingInvokes()
+        macrostepSettled()
         // §scxml-6.5: Clean up completed invokes (deferred from monitor coroutine)
         cleanupCompletedInvokes()
     }

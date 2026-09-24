@@ -37,6 +37,47 @@ class StaticCounterStateMachine(
     var ready: Boolean = false
         private set
 
+    /** The datamodel as one immutable value, in declaration order. */
+    data class Data(
+        val count: UInt,
+        val ready: Boolean,
+    )
+
+    /**
+     * What a host observes: the full active configuration — every active
+     * state, each region of a `<parallel>` included — and the datamodel,
+     * taken together at a macrostep boundary. `truncated` is `true` when that
+     * macrostep was stopped at the microstep ceiling, so the configuration is
+     * not a stable one.
+     */
+    data class Snapshot(
+        val configuration: Set<StaticCounterState>,
+        val data: Data,
+        val truncated: Boolean,
+    )
+
+    private fun currentData(): Data = Data(
+        count = count,
+        ready = ready,
+    )
+
+    private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
+        Snapshot(emptySet(), currentData(), false)
+    )
+
+    /**
+     * The machine as the host sees it: one [Snapshot] per completed macrostep
+     * (W3C SCXML Appendix D), never a state between two microsteps.
+     *
+     * Compose integration: `val s by sm.snapshot.collectAsState()`
+     */
+    val snapshot: kotlinx.coroutines.flow.StateFlow<Snapshot>
+        get() = _snapshot
+
+    override fun onMacrostepComplete(truncated: Boolean) {
+        _snapshot.value = Snapshot(activeConfiguration, currentData(), truncated)
+    }
+
     override val initialState: StaticCounterState = StaticCounterState.Counting
 
     // W3C SCXML 6.2: which entry point a host must drive this machine with in
