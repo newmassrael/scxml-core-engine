@@ -2118,64 +2118,73 @@ impl SCXMLParser {
         model: &mut SCXMLModel,
         source_name: &str,
     ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
-        use crate::forge::model::SCE_NAMESPACE;
-
-        for child in root.children() {
-            if !child.is_element() || local_name(&child) != "datamodel" {
-                continue;
-            }
-            for data in child.children() {
-                if !data.is_element() || local_name(&data) != "data" {
-                    continue;
+        for datamodel in scxml_children(root, "datamodel") {
+            for data in scxml_children(&datamodel, "data") {
+                if let Some(variable) = Self::read_data(&data, model, source_name)? {
+                    model.variables.push(variable);
                 }
-
-                // SCE Forge: a `<data sce:kind="...">` is a kind declared
-                // in place, parsed by the same path a standalone document
-                // takes.
-                //
-                // ⚠ A kind this site cannot admit is REFUSED, not demoted.
-                // Until 2026-09-22 an unknown value and a stateful kind
-                // both fell through to "ordinary variable", so a document
-                // that opted into `sce:kind` got a datamodel variable
-                // carrying the same id — and every guard naming it read
-                // the variable, which is the silent half of the failure
-                // `sce:kind` exists to make loud.
-                if let Some(kind_attr) = data.attribute((SCE_NAMESPACE, "kind")) {
-                    let inline = Self::parse_inline_kind(
-                        &data,
-                        kind_attr,
-                        source_name,
-                        &model.name,
-                        model.forge_imports.clone(),
-                    )?;
-                    model.inline_kinds.push(inline);
-                    continue;
-                }
-
-                let var_id = data.attribute("id").unwrap_or("").to_string();
-                let expr = data.attribute("expr").unwrap_or("").to_string();
-                let src = data.attribute("src").unwrap_or("").to_string();
-
-                let content = if src.is_empty() {
-                    inline_data_value(&data)
-                } else {
-                    String::new()
-                };
-
-                model.variables.push(Variable {
-                    id: var_id,
-                    expr,
-                    src,
-                    content,
-                    var_type: String::new(),
-                    source_location: source_location_of(&data, source_name),
-                });
-                // `needs_script_engine` is derived post-parse by
-                // [`crate::script_engine_analyzer`] —
-                // [`NeedsScriptEngineCause::DatamodelVariableInit`].
             }
         }
         Ok(())
+    }
+
+    /// §scxml-5.3: one `<data>` element, read the same way in the document's
+    /// `<datamodel>` and in a state's.
+    ///
+    /// A `<data sce:kind="...">` is a kind declared in place, parsed by the
+    /// same path a standalone document takes; it goes to
+    /// [`SCXMLModel::inline_kinds`] and gives no variable, so this answers
+    /// `None`. Any other `<data>` is a variable, whose in-line value
+    /// [`inline_data_value`] reads unless `src` names one.
+    ///
+    /// ⚠ A kind this site cannot admit is REFUSED, not demoted. Until
+    /// 2026-09-22 an unknown value and a stateful kind both fell through to
+    /// "ordinary variable", so a document that opted into `sce:kind` got a
+    /// datamodel variable carrying the same id — and every guard naming it
+    /// read the variable, which is the silent half of the failure `sce:kind`
+    /// exists to make loud.
+    ///
+    /// ⚠ The two scopes had two readings until 2026-09-24. A state's `<data>`
+    /// took its text alone, so an in-line XML value was initialised as null,
+    /// and it never looked at `sce:kind`: a kind declared in a state's
+    /// datamodel generated nothing and said nothing (measured 2026-09-24).
+    fn read_data(
+        data: &roxmltree::Node,
+        model: &mut SCXMLModel,
+        source_name: &str,
+    ) -> Result<Option<Variable>, crate::forge::error::Located<crate::forge::error::ForgeError>>
+    {
+        use crate::forge::model::SCE_NAMESPACE;
+
+        if let Some(kind_attr) = data.attribute((SCE_NAMESPACE, "kind")) {
+            let inline = Self::parse_inline_kind(
+                data,
+                kind_attr,
+                source_name,
+                &model.name,
+                model.forge_imports.clone(),
+            )?;
+            model.inline_kinds.push(inline);
+            return Ok(None);
+        }
+
+        let src = data.attribute("src").unwrap_or("").to_string();
+        let content = if src.is_empty() {
+            inline_data_value(data)
+        } else {
+            String::new()
+        };
+        // `needs_script_engine` is derived post-parse by
+        // [`crate::script_engine_analyzer`] —
+        // [`NeedsScriptEngineCause::DatamodelVariableInit`].
+        Ok(Some(Variable {
+            id: data.attribute("id").unwrap_or("").to_string(),
+            expr: data.attribute("expr").unwrap_or("").to_string(),
+            src,
+            content,
+            var_type: String::new(),
+            source_location: source_location_of(data, source_name),
+        }))
     }
 
     /// SCE Forge: read a `<data sce:kind="...">` as a kind declared in
@@ -2264,10 +2273,7 @@ impl SCXMLParser {
         base_dir: Option<&Path>,
         source_name: &str,
     ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
-        for child in root.children() {
-            if !child.is_element() || local_name(&child) != "script" {
-                continue;
-            }
+        for child in scxml_children(root, "script") {
             let src = child.attribute("src").unwrap_or("").to_string();
             let mut content = character_data(&child);
 
@@ -2446,18 +2452,12 @@ impl SCXMLParser {
                 }
             }
 
-            // Parse state-level datamodel
+            // Parse state-level datamodel, read as the document's is.
             for dm_elem in scxml_children(&child, "datamodel") {
                 for data in scxml_children(&dm_elem, "data") {
-                    let content = character_data(&data).trim().to_string();
-                    state.datamodel.push(Variable {
-                        id: data.attribute("id").unwrap_or("").to_string(),
-                        expr: data.attribute("expr").unwrap_or("").to_string(),
-                        src: data.attribute("src").unwrap_or("").to_string(),
-                        content,
-                        var_type: String::new(),
-                        source_location: source_location_of(&data, source_name),
-                    });
+                    if let Some(variable) = Self::read_data(&data, model, source_name)? {
+                        state.datamodel.push(variable);
+                    }
                 }
             }
 
@@ -3102,9 +3102,14 @@ impl SCXMLParser {
             if !child.is_element() {
                 continue;
             }
+            // Only SCXML's own `<elseif>` and `<else>` partition the
+            // branches (§scxml-4.3); an element of another namespace that
+            // shares the name is content like any other, and
+            // [`Self::parse_executable_content_single`] decides what that
+            // content is (§scxml-4.10).
             let tag = local_name(&child);
-            match tag.as_str() {
-                "elseif" => {
+            match (is_scxml_ns(&child), tag.as_str()) {
+                (true, "elseif") => {
                     let ei_cond = child.attribute("cond").unwrap_or("").to_string();
                     if !ei_cond.is_empty() {
                         // [`NeedsScriptEngineCause::ElseIfCondition`] —
@@ -3134,7 +3139,7 @@ impl SCXMLParser {
                     });
                     current_branch = action.elseif_branches.len(); // 1-indexed
                 }
-                "else" => {
+                (true, "else") => {
                     current_branch = usize::MAX;
                 }
                 _ => {
@@ -3167,10 +3172,21 @@ impl SCXMLParser {
         if !child.is_element() {
             return Ok(None);
         }
+        // §scxml-4.10: executable content may carry elements from other
+        // namespaces, and a name alone does not make an element SCXML's — a
+        // `<raise>` another vocabulary defines is not `<raise>`. What is read
+        // here is the SCXML namespace's executable content and SCE's own
+        // `<sce:action>` (§scxml-G-7); any other element is skipped, the
+        // behaviour §scxml-4.10 leaves to the platform. Until 2026-09-24
+        // every arm but `<sce:action>`'s matched the local name alone.
+        let scxml = is_scxml_ns(child);
+        if !scxml && child.tag_name().namespace() != Some(crate::forge::model::SCE_NAMESPACE) {
+            return Ok(None);
+        }
         let tag = local_name(child);
         let mut action = stamped_action(&tag, child, source_name)?;
-        match tag.as_str() {
-            "raise" => {
+        match (scxml, tag.as_str()) {
+            (true, "raise") => {
                 action.event = child.attribute("event").unwrap_or("").to_string();
                 if !action.event.is_empty() {
                     model.events.insert(action.event.clone());
@@ -3183,8 +3199,8 @@ impl SCXMLParser {
                     model.raised_events.insert(action.event.clone());
                 }
             }
-            "send" => self.parse_send_action(child, &mut action, model, source_name)?,
-            "assign" => {
+            (true, "send") => self.parse_send_action(child, &mut action, model, source_name)?,
+            (true, "assign") => {
                 action.location = child.attribute("location").unwrap_or("").to_string();
                 action.expr = child.attribute("expr").unwrap_or("").to_string();
                 // §scxml-5.4: "The children of the <assign> element provide
@@ -3213,13 +3229,13 @@ impl SCXMLParser {
                 // [`NeedsScriptEngineCause::AssignAction`] — every
                 // `<assign>` routes through the engine-bound helper.
             }
-            "log" => {
+            (true, "log") => {
                 action.label = child.attribute("label").unwrap_or("").to_string();
                 action.expr = child.attribute("expr").unwrap_or("").to_string();
                 // [`NeedsScriptEngineCause::LogExpr`] is derived post-parse
                 // by [`crate::script_engine_analyzer`] when `expr` is non-empty.
             }
-            "script" => {
+            (true, "script") => {
                 // Check for <cpp> or <kt> native code child elements (same as parse_executable_content)
                 let mut found_native = false;
                 for sc in child.children().filter(|n| n.is_element()) {
@@ -3261,7 +3277,7 @@ impl SCXMLParser {
                     // inline `<script>` body requires runtime evaluation.
                 }
             }
-            "cancel" => {
+            (true, "cancel") => {
                 action.sendid = child.attribute("sendid").unwrap_or("").to_string();
                 action.sendidexpr = child.attribute("sendidexpr").unwrap_or("").to_string();
                 // §scxml-6.3: <cancel> MUST have either sendid or
@@ -3288,7 +3304,7 @@ impl SCXMLParser {
                 // [`NeedsScriptEngineCause::CancelExpr`] — derived post-parse
                 // by [`crate::script_engine_analyzer`] from `sendidexpr`.
             }
-            "foreach" => {
+            (true, "foreach") => {
                 // [`NeedsScriptEngineCause::ForeachAction`] — every
                 // `<foreach>` iterates a runtime expression.
                 action.array = child.attribute("array").unwrap_or("").to_string();
@@ -3296,18 +3312,11 @@ impl SCXMLParser {
                 action.index = child.attribute("index").unwrap_or("").to_string();
                 action.actions = self.parse_executable_content(child, model, source_name)?;
             }
-            "if" => self.parse_if_action(child, &mut action, model, source_name)?,
-            "action" => {
-                // §scxml-G-7: Custom Action Element. Only the SCE
-                // namespace claims `<action>`; a foreign `<action>` from
-                // another vocabulary is ignored exactly like any other
-                // unrecognised element (falls through to `Ok(None)`).
-                use crate::forge::model::SCE_NAMESPACE;
-                if child.tag_name().namespace() != Some(SCE_NAMESPACE) {
-                    return Ok(None);
-                }
-                self.parse_native_action(child, &mut action, source_name)?;
-            }
+            (true, "if") => self.parse_if_action(child, &mut action, model, source_name)?,
+            // §scxml-G-7: Custom Action Element. Only the SCE namespace
+            // claims `<action>`; an `<action>` from any other vocabulary is
+            // skipped like every element this dispatcher does not read.
+            (false, "action") => self.parse_native_action(child, &mut action, source_name)?,
             _ => return Ok(None),
         }
         Ok(Some(action))
@@ -4996,9 +5005,13 @@ fn local_name(node: &roxmltree::Node) -> String {
     node.tag_name().name().to_string()
 }
 
+/// Whether `node` is one of SCXML's state elements — named so, and in the
+/// SCXML namespace. An element of another vocabulary that shares the name is
+/// not a state: taken for one, a foreign first child became the default
+/// initial state (§scxml-3.6) of a document that has no state by that id,
+/// and the document was refused (measured 2026-09-24).
 fn is_scxml_state_element(node: &roxmltree::Node) -> bool {
-    let name = node.tag_name().name();
-    matches!(name, "state" | "parallel" | "final")
+    is_scxml_ns(node) && STATE_ELEMENT_TAGS.contains(&node.tag_name().name())
 }
 
 /// True when `node`'s namespace is the W3C SCXML namespace.

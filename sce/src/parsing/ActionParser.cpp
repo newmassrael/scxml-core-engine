@@ -75,10 +75,15 @@ bool SCE::ActionParser::isActionNode(const std::shared_ptr<IXMLElement> &element
         return true;
     }
 
-    // Standard SCXML executable content tags
-    bool isStandardAction = matchNodeName(nodeName, "raise") || matchNodeName(nodeName, "assign") ||
-                            matchNodeName(nodeName, "script") || matchNodeName(nodeName, "log") ||
-                            matchNodeName(nodeName, "send") || matchNodeName(nodeName, "cancel");
+    // Standard SCXML executable content tags — SCXML's own. §scxml-4.10: a
+    // document may carry executable content from other namespaces, and an
+    // element of another vocabulary named like one of these is not it: it is
+    // skipped, as the Rust parser skips it. Until 2026-09-24 the name alone
+    // decided, so `<x:raise event="e"/>` raised `e`.
+    bool isStandardAction =
+        ParsingCommon::isScxmlNamespace(element) &&
+        (matchNodeName(nodeName, "raise") || matchNodeName(nodeName, "assign") || matchNodeName(nodeName, "script") ||
+         matchNodeName(nodeName, "log") || matchNodeName(nodeName, "send") || matchNodeName(nodeName, "cancel"));
 
     SCE_LOG_DEBUG("ActionParser: isActionNode result for '{}': {}", nodeName, isStandardAction);
     return isStandardAction;
@@ -100,10 +105,12 @@ bool SCE::ActionParser::isSpecialExecutableContent(const std::shared_ptr<IXMLEle
 
     std::string nodeName = element->getName();
 
-    // SCXML executable content requiring special processing
+    // SCXML executable content requiring special processing — SCXML's own,
+    // for the reason `isActionNode` gives (§scxml-4.10).
     // Note: else/elseif are only processed within if blocks, excluded here
-    return matchNodeName(nodeName, "if") || matchNodeName(nodeName, "foreach") || matchNodeName(nodeName, "invoke") ||
-           matchNodeName(nodeName, "finalize");
+    return ParsingCommon::isScxmlNamespace(element) &&
+           (matchNodeName(nodeName, "if") || matchNodeName(nodeName, "foreach") || matchNodeName(nodeName, "invoke") ||
+            matchNodeName(nodeName, "finalize"));
 }
 
 void SCE::ActionParser::parseExternalImplementation(const std::shared_ptr<IXMLElement> &element,
@@ -368,11 +375,15 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
             SCE_LOG_DEBUG("  Child {}: name='{}', currentBranch={}", childIndex, childName,
                           currentBranch ? "else/elseif" : "if");
 
-            if (childName == "elseif") {
+            // §scxml-4.3: SCXML's own <elseif> and <else> partition the
+            // branches; an element of another namespace sharing the name is
+            // content like any other, which `isActionNode` then decides.
+            const bool scxmlOwn = ParsingCommon::isScxmlNamespace(element);
+            if (scxmlOwn && childName == "elseif") {
                 std::string elseifCondition = element->hasAttribute("cond") ? element->getAttribute("cond") : "";
                 currentBranch = &ifAction->addElseIfBranch(elseifCondition);
                 SCE_LOG_DEBUG("    Added elseif branch with condition='{}'", elseifCondition);
-            } else if (childName == "else") {
+            } else if (scxmlOwn && childName == "else") {
                 currentBranch = &ifAction->addElseBranch();
                 SCE_LOG_DEBUG("    Added else branch");
             } else if (isActionNode(element)) {

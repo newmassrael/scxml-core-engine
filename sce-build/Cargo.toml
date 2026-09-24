@@ -847,5 +847,10 @@ name = "cli_inline_kind_siblings"
 path = "tests/cli_inline_kind_siblings.rs"
 required-features = ["cli"]
 
+[[test]]
+name = "a_states_data_is_read_as_the_documents"
+path = "tests/a_states_data_is_read_as_the_documents.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true

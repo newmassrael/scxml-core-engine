@@ -1,0 +1,43 @@
+# Mutation cases for "a state's `<data>` is read as the document's is".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_states_data_is_read_as_the_documents.cases`.
+#
+# The first case restores the state's own reader whole — the element's text
+# alone, and no look at `sce:kind` — which is the defect as it existed. The
+# second keeps the shared reader for values and drops only the kinds a state
+# declares, so the kind half of the oracle is shown to stand on its own.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test a_states_data_is_read_as_the_documents
+mutation_targets sce-build/src/parser.rs
+
+mutation_case "a state's data is read by the text-only reader again" <<'PY'
+edit("sce-build/src/parser.rs",
+     r'''                    if let Some(variable) = Self::read_data(&data, model, source_name)? {
+                        state.datamodel.push(variable);
+                    }''',
+     r'''                    let content = character_data(&data).trim().to_string();
+                    state.datamodel.push(Variable {
+                        id: data.attribute("id").unwrap_or("").to_string(),
+                        expr: data.attribute("expr").unwrap_or("").to_string(),
+                        src: data.attribute("src").unwrap_or("").to_string(),
+                        content,
+                        var_type: String::new(),
+                        source_location: source_location_of(&data, source_name),
+                    });''')
+PY
+
+mutation_case "a kind a state declares is passed over" <<'PY'
+edit("sce-build/src/parser.rs",
+     r'''                    if let Some(variable) = Self::read_data(&data, model, source_name)? {
+                        state.datamodel.push(variable);
+                    }''',
+     r'''                    if data.attribute(("http://sce.dev/ext", "kind")).is_some() {
+                        continue;
+                    }
+                    if let Some(variable) = Self::read_data(&data, model, source_name)? {
+                        state.datamodel.push(variable);
+                    }''')
+PY

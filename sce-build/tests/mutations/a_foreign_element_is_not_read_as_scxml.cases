@@ -1,0 +1,67 @@
+# Mutation cases for "an element of another vocabulary is not read as
+# SCXML's".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_foreign_element_is_not_read_as_scxml.cases`.
+#
+# Every case here puts a place back to matching a local name alone, the
+# shape all of them had, and the fixture holds the foreign element that
+# place would then take for SCXML's: a `<datamodel>`, a `<data>`, a
+# top-level `<script>`, an `<else>`, a first-child `<state>`, and an
+# `<action>` that is not SCE's.
+#
+# The dispatcher's SCXML arms carry a second guard of their own, `(true,
+# …)`, which no case here removes: behind the early return, the only
+# element it can turn away is an SCE-namespace one named like an SCXML
+# element, and the schema refuses every such `sce:` element before the
+# parser runs. A case would survive for that reason and prove nothing.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test a_foreign_element_is_not_read_as_scxml
+mutation_targets sce-build/src/parser.rs
+
+mutation_case "the document's datamodel is found by its local name again" <<'PY'
+edit("sce-build/src/parser.rs",
+     r'''        for datamodel in scxml_children(root, "datamodel") {''',
+     r'''        for datamodel in root
+            .children()
+            .filter(|c| c.is_element() && c.tag_name().name() == "datamodel")
+        {''')
+PY
+
+mutation_case "a datamodel's data is found by its local name again" <<'PY'
+edit("sce-build/src/parser.rs",
+     r'''            for data in scxml_children(&datamodel, "data") {''',
+     r'''            for data in datamodel
+                .children()
+                .filter(|c| c.is_element() && c.tag_name().name() == "data")
+            {''')
+PY
+
+mutation_case "the document's script is found by its local name again" <<'PY'
+edit("sce-build/src/parser.rs",
+     r'''        for child in scxml_children(root, "script") {''',
+     r'''        for child in root
+            .children()
+            .filter(|c| c.is_element() && c.tag_name().name() == "script")
+        {''')
+PY
+
+mutation_case "a foreign element reaches the dispatcher's arms" <<'PY'
+edit("sce-build/src/parser.rs",
+     r'''        if !scxml && child.tag_name().namespace() != Some(crate::forge::model::SCE_NAMESPACE) {''',
+     r'''        if false && !scxml && child.tag_name().namespace() != Some(crate::forge::model::SCE_NAMESPACE) {''')
+PY
+
+mutation_case "a foreign else splits an if again" <<'PY'
+edit("sce-build/src/parser.rs",
+     r'''                (true, "else") => {''',
+     r'''                (_, "else") => {''')
+PY
+
+mutation_case "a foreign state counts as a state again" <<'PY'
+edit("sce-build/src/parser.rs",
+     r'''    is_scxml_ns(node) && STATE_ELEMENT_TAGS.contains(&node.tag_name().name())''',
+     r'''    STATE_ELEMENT_TAGS.contains(&node.tag_name().name())''')
+PY

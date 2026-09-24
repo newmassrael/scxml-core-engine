@@ -230,3 +230,25 @@ target_compile_features(script_body_character_data_test PRIVATE cxx_std_17)
 apply_sce_test_policies(script_body_character_data_test)
 
 add_test(NAME ScriptBodyCharacterDataTests COMMAND script_body_character_data_test)
+
+# An element of another vocabulary is not read as SCXML's executable content:
+# `<x:raise>` raises nothing and `<x:else/>` does not split an `<if>` — the
+# interpreter's half of sce-build's a_foreign_element_is_not_read_as_scxml.
+add_executable(foreign_executable_content_test
+    ForeignExecutableContent_test.cpp
+)
+
+target_link_libraries(foreign_executable_content_test
+    PRIVATE
+        sce_runtime
+        sce_core
+        GTest::GTest
+        GTest::Main
+        pthread
+)
+
+target_compile_features(foreign_executable_content_test PRIVATE cxx_std_17)
+
+apply_sce_test_policies(foreign_executable_content_test)
+
+add_test(NAME ForeignExecutableContentTests COMMAND foreign_executable_content_test)

@@ -4278,6 +4278,28 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-4",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "parse_executable_content_single",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "parse_if_action",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/parsing/ActionParser.cpp",
+          "symbol": "SCE::ActionParser::isActionNode",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/parsing/ActionParser.cpp",
+          "symbol": "SCE::ActionParser::isSpecialExecutableContent",
+          "kind": "references"
+        }
+      ],
       "coverage_expectation": "out_of_scope_here",
       "normative_excerpt": {
         "excerpt": {
@@ -4426,6 +4448,16 @@
           "file": "sce-build/src/model.rs",
           "symbol": "set_else",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "parse_if_action",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/parsing/ActionParser.cpp",
+          "symbol": "SCE::ActionParser::parseActionNode",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -6639,6 +6671,11 @@
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "initialize_data_model",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "read_data",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
