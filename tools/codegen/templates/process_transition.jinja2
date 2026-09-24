@@ -53,6 +53,10 @@
 {%- endif -%}
 {%- endmacro %}
 
+{# SCE Protocol-Synthesis RFC §synth-5-O — function-scope SCE-MAP markers:
+   each function this template emits opens with its own `source_marker`, and
+   its `#line` directive remaps the line positions of that function's body,
+   so per-function attribution stays coherent across the translation unit. -#}
 public:
     {{ sce_map.source_marker(model.source_location, "cpp", symbol_artifact=sce_artifact.machine) }}
     // §scxml-5.10: the event whose transitions are about to be selected is the
