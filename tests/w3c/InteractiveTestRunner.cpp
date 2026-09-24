@@ -728,9 +728,9 @@ void InteractiveTestRunner::captureSnapshot() {
                   currentStep_, statesStr, lastEventName_);
 
     snapshotManager_.captureSnapshot(activeStates, dataModel, internalQueue, externalQueue, pendingUIEvents,
-                                     scheduledEventsSnapshots, activeInvokes, executedEvents_, currentStep_,
-                                     lastEventName_, lastTransitionSource_, lastTransitionTarget_,
-                                     schedulerLogicalTimeMs);
+                                     scheduledEventsSnapshots, activeInvokes, executedEvents_,
+                                     stateMachine_->isRunning(), currentStep_, lastEventName_, lastTransitionSource_,
+                                     lastTransitionTarget_, schedulerLogicalTimeMs);
 }
 
 bool InteractiveTestRunner::restoreSnapshot(const StateSnapshot &snapshot) {
@@ -764,18 +764,11 @@ bool InteractiveTestRunner::restoreSnapshot(const StateSnapshot &snapshot) {
 
     // W3C SCXML 3.13: Restore state configuration using existing method
     // No instance recreation, no start() call - direct restoration only
-    if (!stateMachine_->restoreFromSnapshot(snapshot.activeStates)) {
+    if (!stateMachine_->restoreFromSnapshot(snapshot.activeStates, snapshot.running)) {
         SCE_LOG_ERROR("InteractiveTestRunner: Failed to restore snapshot states");
         return false;  // RAII guard automatically disables restoration mode
     }
     SCE_LOG_DEBUG("InteractiveTestRunner: Restored {} active states from snapshot", snapshot.activeStates.size());
-
-    // W3C SCXML 3.13: Restore event queues to EventRaiser (Single Source of Truth)
-    // Zero Duplication: UI events are included in externalQueue
-    restoreEventQueues(snapshot.internalQueue, snapshot.externalQueue);
-
-    // Note: snapshot.pendingUIEvents is now redundant (same as externalQueue)
-    // EventRaiser's external queue already contains all UI events
 
     // W3C SCXML 6.2: Restore scheduled events state for time-travel debugging
     // Time-travel principle: Restored state must be IDENTICAL to original state
@@ -871,11 +864,31 @@ bool InteractiveTestRunner::restoreSnapshot(const StateSnapshot &snapshot) {
     // W3C SCXML 3.11: Restore active invocations (part of configuration)
     // Child state machines will restore their scheduled events to scheduler automatically
     // This maintains time-travel consistency - child events poll and fire just like initial load
+    //
+    // Called whether or not the step recorded any: the restore cancels every
+    // live invocation before re-creating the recorded ones, and a step that
+    // recorded none restores to none. Skipped for an empty list, a child
+    // started after the step being restored went on running beside it, and a
+    // branch taken from that step could still reach it as `#_<invokeid>` and
+    // be answered (W3C SCXML 6.4) by a session the step never had.
     auto invokeExecutor = stateMachine_->getInvokeExecutor();
-    if (invokeExecutor && !snapshot.activeInvokes.empty()) {
+    if (invokeExecutor) {
         invokeExecutor->restoreInvokeState(snapshot.activeInvokes, stateMachine_);
         SCE_LOG_DEBUG("InteractiveTestRunner: Restored {} active invocations", snapshot.activeInvokes.size());
     }
+
+    // W3C SCXML 3.13: Restore event queues to EventRaiser (Single Source of Truth)
+    // Zero Duplication: UI events are included in externalQueue
+    //
+    // After the invocations, not before. Their restore cancels every live
+    // session, and cancelling one that is still running purges what it sent
+    // from this machine's queue (W3C SCXML 6.4, W3C test 252) — so a queue put
+    // back first lost the events the recorded step still held from a running
+    // child.
+    restoreEventQueues(snapshot.internalQueue, snapshot.externalQueue);
+
+    // Note: snapshot.pendingUIEvents is now redundant (same as externalQueue)
+    // EventRaiser's external queue already contains all UI events
 
     // Restore metadata
     lastEventName_ = snapshot.lastEventName;

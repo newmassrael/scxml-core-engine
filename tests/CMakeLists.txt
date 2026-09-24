@@ -2160,6 +2160,7 @@ add_dependencies(w3c_test_cli w3c_aot_brief_check)
 # state consistency across all W3C SCXML 3.13 microstep semantics
 add_executable(comprehensive_interactive_test
     w3c/ComprehensiveInteractiveTest.cpp
+    w3c/InteractiveRestoreFidelityTest.cpp
     w3c/InteractiveTestRunner.cpp
     w3c/impl/SnapshotComparator.cpp
     w3c/impl/TXMLConverter.cpp

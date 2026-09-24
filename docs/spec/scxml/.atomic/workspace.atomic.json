@@ -9838,6 +9838,16 @@
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "exit_state",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::restoreActiveStatesDirectly",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/InvokeExecutor.cpp",
+          "symbol": "SCXMLInvokeHandler::captureChildState",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {

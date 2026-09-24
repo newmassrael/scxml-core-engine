@@ -144,6 +144,12 @@ struct StateSnapshot {
     // Zero Duplication: Enables complete state restoration without side effects
     std::vector<InvokeSnapshot> activeInvokes;
 
+    // Whether the machine was still running when the step was recorded. A
+    // restore gives it back as recorded rather than as running: an invoked
+    // child whose session had ended must come back ended, because its parent's
+    // cancel treats the two apart (see StateMachine::restoreActiveStatesDirectly).
+    bool running;
+
     // Execution metadata
     int stepNumber;
     std::string lastEventName;
@@ -165,7 +171,7 @@ struct StateSnapshot {
     std::string outgoingTransitionTarget;
     std::string outgoingTransitionEvent;
 
-    StateSnapshot() : stepNumber(0), schedulerLogicalTimeMs(0) {}
+    StateSnapshot() : running(true), stepNumber(0), schedulerLogicalTimeMs(0) {}
 };
 
 /**
@@ -189,19 +195,19 @@ public:
      * @param scheduledEvents Scheduled events for step backward restoration
      * @param activeInvokes Active invocations
      * @param executedEvents Event execution history
+     * @param running Whether the machine was still running (see StateSnapshot::running)
      * @param stepNumber Current execution step number
      * @param lastEvent Last processed event name
      * @param transitionSource Source state of last transition
      * @param transitionTarget Target state of last transition
      */
-    void
-    captureSnapshot(const std::vector<std::string> &activeStates, const std::map<std::string, std::string> &dataModel,
-                    const std::vector<EventSnapshot> &internalQueue, const std::vector<EventSnapshot> &externalQueue,
-                    const std::vector<EventSnapshot> &pendingUIEvents,
-                    const std::vector<ScheduledEventSnapshot> &scheduledEvents,
-                    const std::vector<InvokeSnapshot> &activeInvokes, const std::vector<EventSnapshot> &executedEvents,
-                    int stepNumber, const std::string &lastEvent = "", const std::string &transitionSource = "",
-                    const std::string &transitionTarget = "", int64_t schedulerLogicalTimeMs = 0);
+    void captureSnapshot(
+        const std::vector<std::string> &activeStates, const std::map<std::string, std::string> &dataModel,
+        const std::vector<EventSnapshot> &internalQueue, const std::vector<EventSnapshot> &externalQueue,
+        const std::vector<EventSnapshot> &pendingUIEvents, const std::vector<ScheduledEventSnapshot> &scheduledEvents,
+        const std::vector<InvokeSnapshot> &activeInvokes, const std::vector<EventSnapshot> &executedEvents,
+        bool running, int stepNumber, const std::string &lastEvent = "", const std::string &transitionSource = "",
+        const std::string &transitionTarget = "", int64_t schedulerLogicalTimeMs = 0);
 
     /**
      * @brief Get snapshot at specific step number

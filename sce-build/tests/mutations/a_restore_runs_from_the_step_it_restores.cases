@@ -1,0 +1,69 @@
+# Mutation cases for §scxml-6.4 across a time-travel restore — a branch taken
+# from a restored step runs from that step's queue and invoked sessions.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_restore_runs_from_the_step_it_restores.cases`.
+#
+# Restoring a step cancels every live invocation and re-creates the recorded
+# ones. The cancel purges from the parent's queue what a running session sent
+# (W3C test 252) and keeps what an ended one sent, its done.invoke among it
+# (W3C test 236). So a restore has to put the queue back after the cancel,
+# bring each child back as running or as ended as the step recorded it, and
+# cancel even when the step recorded no invocation at all. Each case below
+# takes one of the three away, and each has its own witness in
+# InteractiveRestoreFidelityTest.
+#
+# A replay from the recorded snapshots cannot see any of them — it restores
+# every step whole — which is why every witness branches: an injected event
+# discards the recorded future and runs from the restored state.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^ComprehensiveInteractiveTests$'
+mutation_targets tests/w3c/InteractiveTestRunner.cpp sce/src/runtime/StateMachine.cpp
+mutation_oracles tests/w3c/InteractiveRestoreFidelityTest.cpp
+
+# ── The order: the queue goes back before the teardown that purges it ──
+#
+# The defect as it shipped: tearing down a running child purged, from a queue
+# already restored, the events the recorded step held from that child.
+
+mutation_case "the recorded queue goes back before the invocation teardown" <<'PY'
+edit("tests/w3c/InteractiveTestRunner.cpp",
+     """    SCE_LOG_DEBUG("InteractiveTestRunner: Restored {} active states from snapshot", snapshot.activeStates.size());
+""",
+     """    SCE_LOG_DEBUG("InteractiveTestRunner: Restored {} active states from snapshot", snapshot.activeStates.size());
+    restoreEventQueues(snapshot.internalQueue, snapshot.externalQueue);
+""")
+edit("tests/w3c/InteractiveTestRunner.cpp",
+     """    // child.
+    restoreEventQueues(snapshot.internalQueue, snapshot.externalQueue);
+""",
+     """    // child.
+""")
+PY
+
+# ── The running flag: every child comes back running ──
+#
+# The defect as it shipped: the restore set the flag rather than restoring it,
+# so a child that had ended was cancelled like a running one and its
+# done.invoke purged.
+
+mutation_case "a restored machine is running whatever the step recorded" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     """        isRunning_ = running;""",
+     """        isRunning_ = true;""")
+PY
+
+# ── The teardown: a step with no invocations skips it ──
+#
+# The defect as it shipped: the restore ran only for a non-empty list, so a
+# child started after the restored step outlived the restore.
+
+mutation_case "a step that recorded no invocation leaves the live ones running" <<'PY'
+edit("tests/w3c/InteractiveTestRunner.cpp",
+     """    if (invokeExecutor) {
+        invokeExecutor->restoreInvokeState(""",
+     """    if (invokeExecutor && !snapshot.activeInvokes.empty()) {
+        invokeExecutor->restoreInvokeState(""")
+PY
