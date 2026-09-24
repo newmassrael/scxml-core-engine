@@ -1385,10 +1385,7 @@ fn render_transform(
             let renames = rename_map(&pairs);
             // The body is what the output's function RETURNS, in the type
             // its signature declares.
-            let site = ExpressionSite::new(
-                out.expr.as_deref().unwrap_or("0"),
-                out.expr_spelling.as_ref(),
-            );
+            let site = out.expr_site(out.expr.as_deref().unwrap_or("0"));
             let expr_val = expr::transpile_returned(
                 site.source,
                 l.expr_target(),
@@ -17469,7 +17466,7 @@ fn render_procedure_cpp(
                 .as_ref()
                 .map(|e| {
                     transpile_procedure_expr(
-                        ExpressionSite::new(e, f.expr_spelling.as_ref()),
+                        f.expr_site(e),
                         ExprTarget::Cpp,
                         &procedure_type_ctx,
                         &empty_procedure_renames,
@@ -17880,7 +17877,7 @@ fn render_procedure_c_l2(
                 .map(|e| {
                     let inferred = crate::forge::types::InferredType::from_sce_type(&f.sce_type);
                     transpile_procedure_expr(
-                        ExpressionSite::new(e, f.expr_spelling.as_ref()),
+                        f.expr_site(e),
                         ExprTarget::C,
                         &procedure_type_ctx,
                         &empty_renames,
@@ -19147,7 +19144,7 @@ fn render_procedure_kotlin(
             let default_val = match &f.expr {
                 None => l.default_expr(&f.sce_type),
                 Some(e) => transpile_procedure_expr(
-                    ExpressionSite::new(e, f.expr_spelling.as_ref()),
+                    f.expr_site(e),
                     ExprTarget::Kotlin,
                     &procedure_type_ctx,
                     &empty_procedure_renames,
@@ -19410,7 +19407,7 @@ fn render_procedure_rust(
             let default_val = match &f.expr {
                 None => l.default_expr(&f.sce_type),
                 Some(e) => transpile_procedure_expr(
-                    ExpressionSite::new(e, f.expr_spelling.as_ref()),
+                    f.expr_site(e),
                     ExprTarget::Rust,
                     &procedure_type_ctx,
                     &empty_procedure_renames,
@@ -19678,7 +19675,7 @@ fn render_procedure_go(
                 .as_ref()
                 .map(|e| {
                     transpile_procedure_expr(
-                        ExpressionSite::new(e, f.expr_spelling.as_ref()),
+                        f.expr_site(e),
                         ExprTarget::Go,
                         &procedure_type_ctx,
                         &empty_procedure_renames,
@@ -19883,7 +19880,7 @@ fn render_procedure_python(
             let default_val = match &f.expr {
                 None => l.default_expr(&f.sce_type),
                 Some(e) => transpile_procedure_expr(
-                    ExpressionSite::new(e, f.expr_spelling.as_ref()),
+                    f.expr_site(e),
                     ExprTarget::Python,
                     &procedure_type_ctx,
                     &empty_procedure_renames,
@@ -24662,6 +24659,7 @@ mod tests {
             direction: Direction::In,
             expr: None,
             expr_spelling: None,
+            expr_splices: None,
             quantity: None,
             max_size,
             default_covers: Vec::new(),

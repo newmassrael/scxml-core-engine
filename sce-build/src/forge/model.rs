@@ -864,6 +864,11 @@ pub struct CycleStep {
     /// the common case for a cycle whose membership is fixed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub when: Option<String>,
+    /// The `when` attribute as written and where, so a refusal of the
+    /// condition — which reaches the checks spliced into a `cycle_*` call's
+    /// expansion — is placed on the step that wrote it. Not part of the IR.
+    #[serde(skip)]
+    pub when_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
 }
 
 // ── Retention ──────────────────────────────────────────────────
@@ -945,6 +950,13 @@ pub struct ForgeField {
     /// every position on this model is. See [`crate::attribute_spelling`].
     #[serde(skip)]
     pub expr_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+    /// Where each piece of [`Self::expr`] was written, when a pass assembled
+    /// it from pieces written in several places — `cycle_expand` splices a
+    /// `cycle_*` call into conditionals over its steps' `when`s, and
+    /// [`Self::expr_spelling`] then no longer spells the text. `None` for an
+    /// expression nothing assembled. Not part of the IR.
+    #[serde(skip)]
+    pub expr_splices: Option<crate::forge::expression_site::SpliceMap>,
     /// Physical-quantity annotation (`sce:quantity`).
     /// `Some({ scale, offset, unit })` when the field carries a
     /// `sce:quantity="…"` attribute. Drives type checking (units that
@@ -1000,6 +1012,21 @@ pub struct ForgeField {
     /// [`crate::attribute_spelling`].
     #[serde(skip)]
     pub initial_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+}
+
+impl ForgeField {
+    /// `source` — this field's expression as a pass hands it on — placed
+    /// against where it was written: [`Self::expr_spelling`], and
+    /// [`Self::expr_splices`] when a pass assembled the text. The one place
+    /// a field's site is built, so a field assembled by some pass is placed
+    /// the same way at every stage that refuses it.
+    pub fn expr_site<'a>(
+        &'a self,
+        source: &'a str,
+    ) -> crate::forge::expression_site::ExpressionSite<'a> {
+        crate::forge::expression_site::ExpressionSite::new(source, self.expr_spelling.as_ref())
+            .with_splices(self.expr_splices.as_ref())
+    }
 }
 
 // ── Transform kind ─────────────────────────────────────────────

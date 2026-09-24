@@ -508,6 +508,7 @@ fn parse_field(line: &Line<'_>) -> Result<ForgeField, ParseError> {
         expr: None,
         // A pseudocode line is not a row of the SCXML document.
         expr_spelling: None,
+        expr_splices: None,
         quantity: None,
         max_size: None,
         default_covers: Vec::new(),

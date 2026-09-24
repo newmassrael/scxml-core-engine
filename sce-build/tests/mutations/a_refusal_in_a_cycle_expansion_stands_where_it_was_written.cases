@@ -1,0 +1,45 @@
+# Mutation cases for "a refusal in a cycle expansion stands where it was
+# written".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_refusal_in_a_cycle_expansion_stands_where_it_was_written.cases`.
+#
+# `cycle_expand` splices each `cycle_*` call into conditionals built from the
+# host expression and the steps' `when` conditions, and the expression checks
+# run on the result. Without a record of where each piece was written, a
+# refusal of the result was placed nowhere. Each case puts part of that back:
+# no map recorded, a step's condition copied as text nobody wrote, the pass's
+# grouping parentheses left on a refused range, or a field's site built
+# without its map. The integration tests in
+# `a_refusal_in_a_cycle_expansion_stands_where_it_was_written.rs` refuse them.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test a_refusal_in_a_cycle_expansion_stands_where_it_was_written
+mutation_targets sce-build/src/forge/cycle_expand.rs sce-build/src/forge/expression_site.rs sce-build/src/forge/model.rs
+mutation_oracles sce-build/tests/a_refusal_in_a_cycle_expansion_stands_where_it_was_written.rs
+
+mutation_case "an expansion records no map" <<'PY'
+edit("sce-build/src/forge/cycle_expand.rs",
+     r'''            field.expr_splices = splices;''',
+     r'''            let _ = splices;''')
+PY
+
+mutation_case "a step's condition is copied as text nobody wrote" <<'PY'
+edit("sce-build/src/forge/cycle_expand.rs",
+     r'''            Spliced::written(*source, w),''',
+     r'''            Spliced::glue(w),''')
+PY
+
+mutation_case "the pass's grouping is left on a refused range" <<'PY'
+edit("sce-build/src/forge/expression_site.rs",
+     r'''        let range = self.without_grouping(range);''',
+     r'''        let _ = Self::without_grouping;''')
+PY
+
+mutation_case "a field's site is built without its map" <<'PY'
+edit("sce-build/src/forge/model.rs",
+     r'''            .with_splices(self.expr_splices.as_ref())''',
+     r'''            .with_splices(None)''')
+PY

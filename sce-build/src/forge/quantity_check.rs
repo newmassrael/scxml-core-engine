@@ -86,10 +86,8 @@ fn check_transform(
         let Some(expr_src) = out.expr.as_ref() else {
             continue;
         };
-        let site = ExpressionSite {
-            source: expr_src,
-            spelling: out.expr_spelling.as_ref(),
-        };
+        let site = ExpressionSite::new(expr_src, out.expr_spelling.as_ref())
+            .with_splices(out.expr_splices.as_ref());
         check_expression(site, &ctx, ForgeKind::Transform, &m.name, label)?;
     }
     Ok(())
@@ -103,10 +101,7 @@ fn check_condition(
     let ctx = type_ctx::condition(m, imports);
     // ConditionModel exposes the body expression on `m.expr`.
     if !m.expr.trim().is_empty() {
-        let site = ExpressionSite {
-            source: &m.expr,
-            spelling: m.expr_spelling.as_ref(),
-        };
+        let site = ExpressionSite::new(&m.expr, m.expr_spelling.as_ref());
         check_expression(site, &ctx, ForgeKind::Condition, &m.name, label)?;
     }
     Ok(())
@@ -120,10 +115,7 @@ fn check_validator(
     let ctx = type_ctx::validator(m, imports);
     if let Some(expr) = m.rules.plausibility.as_ref() {
         if !expr.trim().is_empty() {
-            let site = ExpressionSite {
-                source: expr,
-                spelling: m.rules.plausibility_spelling.as_ref(),
-            };
+            let site = ExpressionSite::new(expr, m.rules.plausibility_spelling.as_ref());
             check_expression(site, &ctx, ForgeKind::Validator, &m.name, label)?;
         }
     }
@@ -347,10 +339,7 @@ mod tests {
         let document = roxmltree::Document::parse(document).expect("the fixture parses");
         let node = document.root_element();
         let spelling = AttributeSpelling::of(&node, None, "expr");
-        let site = ExpressionSite {
-            source: node.attribute("expr").expect("an expr"),
-            spelling: spelling.as_ref(),
-        };
+        let site = ExpressionSite::new(node.attribute("expr").expect("an expr"), spelling.as_ref());
         let err = check_expression(
             site,
             &celsius_ctx(),
@@ -395,10 +384,7 @@ mod tests {
     #[test]
     fn a_model_no_document_produced_is_refused_without_a_position() {
         let err = check_expression(
-            ExpressionSite {
-                source: "celsius + kelvin",
-                spelling: None,
-            },
+            ExpressionSite::new("celsius + kelvin", None),
             &celsius_ctx(),
             ForgeKind::Transform,
             "test_fn",
@@ -431,10 +417,7 @@ mod tests {
         // Silent on syntax errors: the expression layer reports them,
         // and a second voice here would double-emit.
         let result = check_expression(
-            ExpressionSite {
-                source: "((",
-                spelling: None,
-            },
+            ExpressionSite::new("((", None),
             &celsius_ctx(),
             ForgeKind::Transform,
             "test_fn",

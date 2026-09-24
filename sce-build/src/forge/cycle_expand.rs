@@ -59,7 +59,8 @@
 use std::ops::Range;
 
 use crate::forge::expr::{parse_to_ast, ExprKind, TypedExpr};
-use crate::forge::model::{Cycle, ForgeDocument, ForgeField, ParsedForge};
+use crate::forge::expression_site::{SpliceMap, SplicedPiece, SplicedSource};
+use crate::forge::model::{Cycle, CycleStep, ForgeDocument, ForgeField, ParsedForge};
 
 /// The call names this pass rewrites.
 const CYCLE_CALLS: [&str; 4] = ["cycle_has", "cycle_first", "cycle_next", "cycle_prev"];
@@ -97,29 +98,151 @@ pub fn expand(parsed: &ParsedForge) -> Option<ForgeDocument> {
     let mut m = m.clone();
     for field in m.inputs.iter_mut().chain(m.outputs.iter_mut()) {
         if let Some(text) = field.expr.take() {
-            field.expr = Some(expand_text(&text, &parsed.cycles));
+            let host = SplicedSource {
+                text: text.clone(),
+                spelling: field.expr_spelling.clone(),
+            };
+            let (expanded, splices) = expand_spliced(host, &parsed.cycles);
+            field.expr = Some(expanded);
+            field.expr_splices = splices;
         }
     }
     Some(ForgeDocument::Transform(m))
 }
 
-/// Rewrite until no cycle call is left, so a call nested inside
-/// another's argument is expanded too.
+/// A text under construction, and where each piece of it was written —
+/// what a splice copies from, so a copy keeps its origin through every pass.
+#[derive(Debug, Clone, Default)]
+struct Spliced {
+    text: String,
+    pieces: Vec<SplicedPiece>,
+}
+
+impl Spliced {
+    /// `text`, copied whole from source `source`.
+    fn written(source: usize, text: &str) -> Self {
+        Self {
+            text: text.to_string(),
+            pieces: vec![SplicedPiece {
+                out: 0..text.len(),
+                from: Some((source, 0)),
+            }],
+        }
+    }
+
+    /// `text`, written by this pass.
+    fn glue(text: &str) -> Self {
+        Self {
+            text: text.to_string(),
+            pieces: vec![SplicedPiece {
+                out: 0..text.len(),
+                from: None,
+            }],
+        }
+    }
+
+    /// `range` of this text, each piece clipped to it and kept its origin.
+    fn slice(&self, range: Range<usize>) -> Self {
+        let pieces = self
+            .pieces
+            .iter()
+            .filter(|piece| piece.out.start < range.end && range.start < piece.out.end)
+            .map(|piece| {
+                let start = piece.out.start.max(range.start);
+                let end = piece.out.end.min(range.end);
+                SplicedPiece {
+                    out: start - range.start..end - range.start,
+                    from: piece
+                        .from
+                        .map(|(source, at)| (source, at + start - piece.out.start)),
+                }
+            })
+            .collect();
+        Self {
+            text: self.text[range].to_string(),
+            pieces,
+        }
+    }
+
+    /// `parts`, one after another.
+    fn concat(parts: &[Spliced]) -> Self {
+        let mut out = Self::default();
+        for part in parts {
+            let shift = out.text.len();
+            out.text.push_str(&part.text);
+            out.pieces
+                .extend(part.pieces.iter().map(|piece| SplicedPiece {
+                    out: piece.out.start + shift..piece.out.end + shift,
+                    from: piece.from,
+                }));
+        }
+        out
+    }
+}
+
+/// [`expand_spliced`]'s text, for a host with no spelling.
+#[cfg(test)]
+fn expand_text(text: &str, cycles: &[Cycle]) -> String {
+    let host = SplicedSource {
+        text: text.to_string(),
+        spelling: None,
+    };
+    expand_spliced(host, cycles).0
+}
+
+/// Rewrite `host` until no cycle call is left, so a call nested inside
+/// another's argument is expanded too — and, when anything was expanded,
+/// where each piece of the result was written: the host, a step's `when`,
+/// or this pass. The map's sources are the host and then every step's
+/// `when`, in [`when_sources`] order.
 ///
 /// ⚠ The pass count is BOUNDED. Each pass replaces a call whose arguments
 /// hold no cycle call with text holding none, so the number of calls left
 /// strictly decreases and a pass is taken per call the author wrote; the
 /// cap is a guard against a rewrite that fails to shrink, which would
 /// otherwise be an infinite loop inside a compiler.
-fn expand_text(text: &str, cycles: &[Cycle]) -> String {
-    let mut out = text.to_string();
+fn expand_spliced(host: SplicedSource, cycles: &[Cycle]) -> (String, Option<SpliceMap>) {
+    let mut out = Spliced::written(0, &host.text);
+    let mut expanded = false;
     for _ in 0..32 {
         match expand_once(&out, cycles) {
-            Some(next) => out = next,
+            Some(next) => {
+                out = next;
+                expanded = true;
+            }
             None => break,
         }
     }
-    out
+    if !expanded {
+        return (out.text, None);
+    }
+    let mut sources = vec![host];
+    sources.extend(
+        when_sources(cycles)
+            .into_iter()
+            .map(|(step, _)| SplicedSource {
+                text: step.when.clone().unwrap_or_default(),
+                spelling: step.when_spelling.clone(),
+            }),
+    );
+    let map = SpliceMap {
+        text: out.text.clone(),
+        sources,
+        pieces: out.pieces,
+    };
+    (out.text, Some(map))
+}
+
+/// Every step that carries a `when`, in cycle then step order, with the
+/// source index its condition has in a [`SpliceMap`] (the host is 0).
+fn when_sources(cycles: &[Cycle]) -> Vec<(&CycleStep, usize)> {
+    cycles
+        .iter()
+        .flat_map(|cycle| cycle.steps.iter())
+        .filter(|step| step.when.is_some())
+        .enumerate()
+        .map(|(i, step)| (step, i + 1))
+        .collect()
 }
 
 /// Replace the innermost cycle call. `None` when there is none left, or
@@ -129,16 +252,21 @@ fn expand_text(text: &str, cycles: &[Cycle]) -> String {
 /// Innermost first, so a cursor argument holding a cycle call of its own
 /// is expanded once, before the call around it copies that argument into
 /// every term of its expansion.
-fn expand_once(text: &str, cycles: &[Cycle]) -> Option<String> {
+fn expand_once(current: &Spliced, cycles: &[Cycle]) -> Option<Spliced> {
+    let text = current.text.as_str();
     let tree = parse_to_ast(text).ok()?;
     let call = innermost_cycle_call(&tree, cycles)?;
-    let replacement = render(call.name, call.cycle, text[call.cursor].trim());
-    Some(format!(
-        "{}{}{}",
-        &text[..call.at.start],
+    // The cursor as written inside the call, without the space around it.
+    let cursor = &text[call.cursor.clone()];
+    let lead = cursor.len() - cursor.trim_start().len();
+    let trail = cursor.len() - cursor.trim_end().len();
+    let cursor = current.slice(call.cursor.start + lead..call.cursor.end - trail);
+    let replacement = render(call.name, call.cycle, &cursor, &when_sources(cycles));
+    Some(Spliced::concat(&[
+        current.slice(0..call.at.start),
         replacement,
-        &text[call.at.end..]
-    ))
+        current.slice(call.at.end..text.len()),
+    ]))
 }
 
 /// A cycle call as the parser read it.
@@ -190,42 +318,89 @@ fn cycle_call<'c>(node: &TypedExpr, cycles: &'c [Cycle]) -> Option<CycleCall<'c>
 }
 
 /// `A.STEP` — how a document names a variant, which the existing
-/// variant-reference lowering already resolves per backend.
-fn stop(cycle: &Cycle, i: usize) -> String {
-    format!("{}.{}", cycle.of, cycle.steps[i].name)
+/// variant-reference lowering already resolves per backend. Written by this
+/// pass: the step's name is on its `<sce:step>`, not in an expression.
+fn stop(cycle: &Cycle, i: usize) -> Spliced {
+    Spliced::glue(&format!("{}.{}", cycle.of, cycle.steps[i].name))
 }
 
 /// The condition under which stop `i` is present. A step with no `when`
 /// is always present, which is the common case for a fixed-membership
 /// cycle.
-fn present(cycle: &Cycle, i: usize) -> String {
-    match &cycle.steps[i].when {
-        Some(w) => format!("({w})"),
-        None => "true".to_string(),
+///
+/// The condition is copied from the step's `when` as written, so a refusal
+/// of it is placed there; `whens` gives each step's source index.
+fn present(cycle: &Cycle, i: usize, whens: &[(&CycleStep, usize)]) -> Spliced {
+    let step = &cycle.steps[i];
+    match (
+        &step.when,
+        whens.iter().find(|(s, _)| std::ptr::eq(*s, step)),
+    ) {
+        (Some(w), Some((_, source))) => Spliced::concat(&[
+            Spliced::glue("("),
+            Spliced::written(*source, w),
+            Spliced::glue(")"),
+        ]),
+        (Some(w), None) => Spliced::glue(&format!("({w})")),
+        (None, _) => Spliced::glue("true"),
     }
 }
 
-fn render(name: &str, cycle: &Cycle, arg: &str) -> String {
+/// `(arg)`, the cursor copied with its origin.
+fn cursor(arg: &Spliced) -> Spliced {
+    Spliced::concat(&[Spliced::glue("("), arg.clone(), Spliced::glue(")")])
+}
+
+/// `(c ? t : e)`.
+fn choose(c: Spliced, t: Spliced, e: Spliced) -> Spliced {
+    Spliced::concat(&[
+        Spliced::glue("("),
+        c,
+        Spliced::glue(" ? "),
+        t,
+        Spliced::glue(" : "),
+        e,
+        Spliced::glue(")"),
+    ])
+}
+
+/// `((arg) === S)`.
+fn is_stop(arg: &Spliced, cycle: &Cycle, i: usize) -> Spliced {
+    Spliced::concat(&[
+        Spliced::glue("("),
+        cursor(arg),
+        Spliced::glue(" === "),
+        stop(cycle, i),
+        Spliced::glue(")"),
+    ])
+}
+
+fn render(name: &str, cycle: &Cycle, arg: &Spliced, whens: &[(&CycleStep, usize)]) -> Spliced {
     let n = cycle.steps.len();
     match name {
         // `(v === S0 && W0) || (v === S1 && W1) || …`
         "cycle_has" => {
-            let terms: Vec<String> = (0..n)
-                .map(|i| {
-                    format!(
-                        "((({arg}) === {}) && {})",
-                        stop(cycle, i),
-                        present(cycle, i)
-                    )
-                })
-                .collect();
-            format!("({})", terms.join(" || "))
+            let mut parts = vec![Spliced::glue("(")];
+            for i in 0..n {
+                if i > 0 {
+                    parts.push(Spliced::glue(" || "));
+                }
+                parts.push(Spliced::concat(&[
+                    Spliced::glue("("),
+                    is_stop(arg, cycle, i),
+                    Spliced::glue(" && "),
+                    present(cycle, i, whens),
+                    Spliced::glue(")"),
+                ]));
+            }
+            parts.push(Spliced::glue(")"));
+            Spliced::concat(&parts)
         }
         // `W0 ? S0 : W1 ? S1 : … : cur`
         "cycle_first" => {
-            let mut out = format!("({arg})");
+            let mut out = cursor(arg);
             for i in (0..n).rev() {
-                out = format!("({} ? {} : {})", present(cycle, i), stop(cycle, i), out);
+                out = choose(present(cycle, i, whens), stop(cycle, i), out);
             }
             out
         }
@@ -233,18 +408,18 @@ fn render(name: &str, cycle: &Cycle, arg: &str) -> String {
         // wrap order; the cursor unchanged when it is on no stop, or when
         // no other stop is present.
         "cycle_next" | "cycle_prev" => {
-            let mut out = format!("({arg})");
+            let mut out = cursor(arg);
             for i in (0..n).rev() {
-                let mut inner = format!("({arg})");
+                let mut inner = cursor(arg);
                 for k in (1..n).rev() {
                     let j = if name == "cycle_next" {
                         (i + k) % n
                     } else {
                         (i + n - k) % n
                     };
-                    inner = format!("({} ? {} : {})", present(cycle, j), stop(cycle, j), inner);
+                    inner = choose(present(cycle, j, whens), stop(cycle, j), inner);
                 }
-                out = format!("((({arg}) === {}) ? {} : {})", stop(cycle, i), inner, out);
+                out = choose(is_stop(arg, cycle, i), inner, out);
             }
             out
         }
@@ -268,6 +443,7 @@ mod tests {
                 .map(|name| CycleStep {
                     name: (*name).to_string(),
                     when: Some(format!("{}On", name.to_lowercase())),
+                    when_spelling: None,
                 })
                 .collect(),
             line: None,
@@ -276,6 +452,12 @@ mod tests {
 
     fn expanded(text: &str, stops: &[&str]) -> String {
         expand_text(text, &[cycle(stops)])
+    }
+
+    /// `name`'s expansion over `cycle` with the cursor `arg`, as text.
+    fn rendered(name: &str, cycle: &Cycle, arg: &str) -> String {
+        let cycles = [cycle.clone()];
+        render(name, cycle, &Spliced::glue(arg), &when_sources(&cycles)).text
     }
 
     #[test]
@@ -302,7 +484,7 @@ mod tests {
         let cursor = "pick(')', 'a,b')";
         assert_eq!(
             expanded(&format!("cycle_has(modes, {cursor})"), &stops),
-            render("cycle_has", &cycle(&stops), cursor)
+            rendered("cycle_has", &cycle(&stops), cursor)
         );
     }
 
@@ -313,7 +495,7 @@ mod tests {
             expanded("  x + cycle_first(modes, cursor) * 2", &stops),
             format!(
                 "  x + {} * 2",
-                render("cycle_first", &cycle(&stops), "cursor")
+                rendered("cycle_first", &cycle(&stops), "cursor")
             )
         );
     }
@@ -327,10 +509,10 @@ mod tests {
     fn a_call_in_the_cursor_is_expanded_before_the_call_around_it() {
         let stops = ["A", "B", "C", "D", "E", "F", "G"];
         let text = "cycle_next(modes, cycle_prev(modes, cursor))";
-        let inner = render("cycle_prev", &cycle(&stops), "cursor");
+        let inner = rendered("cycle_prev", &cycle(&stops), "cursor");
         assert_eq!(
             expanded(text, &stops),
-            render("cycle_next", &cycle(&stops), &inner)
+            rendered("cycle_next", &cycle(&stops), &inner)
         );
     }
 
@@ -338,5 +520,64 @@ mod tests {
     fn a_call_to_a_cycle_nobody_declared_is_left_for_the_type_checker() {
         let text = "cycle_next(nothing, cursor)";
         assert_eq!(expanded(text, &["ECO", "NORMAL"]), text);
+    }
+
+    /// Every piece of an expansion knows where it was written: the host's
+    /// text around the call, the cursor copied from the host, each step's
+    /// `when` from that step, and the rest written by the pass.
+    #[test]
+    fn every_piece_of_an_expansion_knows_where_it_was_written() {
+        let cycles = [cycle(&["ECO", "NORMAL"])];
+        let host = "cycle_next(modes, cycle_prev(modes, cursor)) + conut";
+        let (text, map) = expand_spliced(
+            SplicedSource {
+                text: host.to_string(),
+                spelling: None,
+            },
+            &cycles,
+        );
+        let map = map.expect("a call was expanded");
+        assert_eq!(map.text, text);
+
+        let mut at = 0;
+        for piece in &map.pieces {
+            assert_eq!(piece.out.start, at, "the pieces tile the text");
+            at = piece.out.end;
+            if let Some((source, from)) = piece.from {
+                let written = &map.sources[source].text;
+                assert_eq!(
+                    &text[piece.out.clone()],
+                    &written[from..from + piece.out.len()],
+                    "a written piece reads back as its source's text"
+                );
+            }
+        }
+        assert_eq!(at, text.len());
+
+        let conut = text.rfind("conut").expect("the host's text is kept");
+        let in_host = host.find("conut").unwrap();
+        assert_eq!(
+            map.written(conut..conut + 5)
+                .map(|(source, range)| (source.text.as_str(), range)),
+            Some((host, in_host..in_host + 5))
+        );
+        let cursor = text.find("cursor").expect("the cursor is copied");
+        let in_host = host.find("cursor").unwrap();
+        assert_eq!(
+            map.written(cursor..cursor + 6)
+                .map(|(source, range)| (source.text.as_str(), range)),
+            Some((host, in_host..in_host + 6))
+        );
+        let when = text.find("normalOn").expect("a step's when is copied");
+        assert_eq!(
+            map.written(when..when + 8)
+                .map(|(source, range)| (source.text.as_str(), range)),
+            Some(("normalOn", 0..8))
+        );
+        let glue = text.find(" === ").expect("the pass writes comparisons");
+        assert!(
+            map.written(glue..glue + 5).is_none(),
+            "nobody wrote the glue"
+        );
     }
 }

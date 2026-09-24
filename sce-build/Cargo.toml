@@ -783,6 +783,11 @@ path = "tests/a_codec_field_refusal_stands_at_its_field.rs"
 required-features = ["cli"]
 
 [[test]]
+name = "a_refusal_in_a_cycle_expansion_stands_where_it_was_written"
+path = "tests/a_refusal_in_a_cycle_expansion_stands_where_it_was_written.rs"
+required-features = ["cli"]
+
+[[test]]
 name = "an_unresolved_marker_is_placed_where_it_was_written"
 path = "tests/an_unresolved_marker_is_placed_where_it_was_written.rs"
 required-features = ["cli"]

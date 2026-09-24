@@ -508,6 +508,7 @@ mod tests {
             direction: Direction::In,
             expr: None,
             expr_spelling: None,
+            expr_splices: None,
             quantity: None,
             max_size: None,
             default_covers: Vec::new(),

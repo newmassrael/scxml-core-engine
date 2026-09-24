@@ -532,13 +532,17 @@ fn parse_cycles(
                     },
                 ));
             }
+            let when = step
+                .attribute("when")
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
             steps.push(CycleStep {
                 name,
-                when: step
-                    .attribute("when")
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                    .map(str::to_string),
+                when_spelling: when
+                    .as_ref()
+                    .and_then(|_| AttributeSpelling::of(&step, None, "when")),
+                when,
             });
         }
 
@@ -10120,6 +10124,9 @@ fn parse_forge_field(
         direction,
         expr,
         expr_spelling,
+        // Nothing has assembled the text yet; a later pass that does
+        // records where its pieces were written.
+        expr_splices: None,
         quantity,
         max_size,
         default_covers,

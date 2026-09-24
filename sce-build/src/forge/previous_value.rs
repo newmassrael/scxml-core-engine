@@ -324,10 +324,7 @@ pub fn check(parsed: &ParsedForge, label: &str) -> Result<(), Located<ForgeError
 
 /// `out`'s expression, as a refusal of a piece of it is placed against.
 fn site(out: &ForgeField) -> ExpressionSite<'_> {
-    ExpressionSite::new(
-        out.expr.as_deref().unwrap_or(""),
-        out.expr_spelling.as_ref(),
-    )
+    out.expr_site(out.expr.as_deref().unwrap_or(""))
 }
 
 /// `span` of `out`'s expression as the reader decoded it — what a record

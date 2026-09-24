@@ -281,6 +281,7 @@ mod tests {
                 direction: Direction::Internal,
                 expr: None,
                 expr_spelling: None,
+                expr_splices: None,
                 quantity: None,
                 max_size: seed_cap,
                 default_covers: Vec::new(),
