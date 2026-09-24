@@ -3425,8 +3425,7 @@ impl SCXMLParser {
 
         let mut contentexpr = String::new();
         let mut contentexpr_spelling = None;
-        let mut has_inline_scxml = false;
-        let mut inline_scxml_text = String::new();
+        let mut inline_document: Option<InlineDocument> = None;
 
         // Parse inline <content>
         if let Some(content_elem) = scxml_child(elem, "content") {
@@ -3435,10 +3434,10 @@ impl SCXMLParser {
 
             // Check for inline <scxml> child element (static content)
             if let Some(scxml_child_elem) = scxml_child(&content_elem, "scxml") {
-                has_inline_scxml = true;
-                inline_scxml_text = inline_document_text(&scxml_child_elem);
+                inline_document = Some(InlineDocument::of(&scxml_child_elem, source_name));
             }
         }
+        let has_inline_scxml = inline_document.is_some();
 
         // Parse <param> children. Static invokes retain a static-literal
         // optimisation flag so codegen can inline literal values.
@@ -3588,7 +3587,7 @@ impl SCXMLParser {
             // historical empty-`child_name` skip is gone because inline
             // parsing has no filesystem dependency.
             let (resolved_src, resolved_child_name, inline_child_model, inline_child_source_xml) =
-                if has_inline_scxml && !inline_scxml_text.is_empty() {
+                if let Some(inline) = inline_document.as_ref() {
                     // SCE Mesh §9.6.6 rule 1: synthesised machine name is
                     // `<parent_machine_id>__sce_synth_invoke__<invoke_id>`.
                     // `field_suffix` is the invoke_id with its leading
@@ -3603,7 +3602,6 @@ impl SCXMLParser {
                         crate::mesh::deploy::SYNTH_INVOKE_INFIX,
                         field_suffix,
                     );
-                    let xml_content = format!("<?xml version=\"1.0\"?>\n\n{inline_scxml_text}");
                     // Recursive parse uses a fresh parser instance — sharing
                     // `self` would cross-contaminate document_order_counter /
                     // invoke_counter between parent and child. Asymmetric
@@ -3612,19 +3610,20 @@ impl SCXMLParser {
                     // `<synth>.scxml` (matches the historical on-disk file
                     // path so SCE-MAP markers + NDJSON `location.file` stay
                     // byte-stable against the pre-refactor goldens).
+                    //
+                    // A child that does not parse refuses its parent, at the
+                    // row its author wrote. ⚠ Until 2026-09-24 the failure
+                    // was one `Warning:` line on stderr and no child at all:
+                    // the parent generated, its code still included the
+                    // child's header, and the build failed later, far from
+                    // the cause.
                     let synth_diag_label = format!("{synth_name}.scxml");
-                    let inline_child = match SCXMLParser::new().parse_string_with_label(
-                        &xml_content,
-                        DocumentLabel::asymmetric(&synth_name, &synth_diag_label),
-                    ) {
-                        Ok(m) => Some(Box::new(m)),
-                        Err(e) => {
-                            eprintln!(
-                                "Warning: Failed to parse inline <content> for invoke {invoke_id} (synth={synth_name}): {e:?}"
-                            );
-                            None
-                        }
-                    };
+                    let inline_child = SCXMLParser::new()
+                        .parse_string_with_label(
+                            &inline.text,
+                            DocumentLabel::asymmetric(&synth_name, &synth_diag_label),
+                        )
+                        .map_err(|err| inline.placed(&synth_diag_label, err))?;
                     // SCE Mesh §9.6.6 rule 2: the rewritten `<invoke>`
                     // carries the canonical `#<machine>` mesh peer
                     // reference so `classify_remote_scxml_invokes`
@@ -3640,8 +3639,8 @@ impl SCXMLParser {
                     (
                         format!("#{synth_name}"),
                         synth_name,
-                        inline_child,
-                        Some(xml_content),
+                        Some(Box::new(inline_child)),
+                        Some(inline.text.clone()),
                     )
                 } else if !src.is_empty() {
                     let stripped = src.replace("file:", "");
@@ -5682,9 +5681,10 @@ fn serialize_node_c14n(node: &roxmltree::Node) -> String {
 }
 
 /// §scxml-6.4: an in-line child `<scxml>` under `<invoke><content>` as a
-/// document of its own — the text its author wrote, with the bindings it
-/// inherits from the enclosing document ([`inherited_bindings`]) declared on
-/// its root.
+/// document of its own — an XML declaration, then the text its author wrote
+/// with the bindings it inherits from the enclosing document
+/// ([`inherited_bindings`]) declared on its root — and where each byte of
+/// that text came from.
 ///
 /// The declarations go in right after the root's name, so no line of the
 /// child moves, and the child keeps its author's text, comments included —
@@ -5696,18 +5696,65 @@ fn serialize_node_c14n(node: &roxmltree::Node) -> String {
 /// data carried `<books xmlns="">` arrived in no namespace, and one using a
 /// prefix its parent declared named an unbound prefix: both failed to parse,
 /// though both documents are valid (measured 2026-09-24).
-fn inline_document_text(root: &roxmltree::Node) -> String {
-    let text = &root.document().input_text()[root.range()];
-    let after_name = 1 + written_element_name(root).len();
-    let declarations: String = inherited_bindings(root)
-        .into_iter()
-        .map(namespace_declaration)
-        .collect();
-    format!(
-        "{}{declarations}{}",
-        &text[..after_name],
-        &text[after_name..]
-    )
+struct InlineDocument {
+    text: String,
+    /// `text`'s bytes → the enclosing document's. What the child's author
+    /// wrote maps to where they wrote it; the declaration and the inserted
+    /// bindings map to the root's start and the end of its name, where
+    /// nothing an author wrote can be refused.
+    map: crate::position_map::PositionMap,
+}
+
+impl InlineDocument {
+    const DECLARATION: &'static str = "<?xml version=\"1.0\"?>\n\n";
+
+    /// `root`, cut out of the document `parent_label` names.
+    fn of(root: &roxmltree::Node, parent_label: &str) -> Self {
+        use crate::position_map::{Origin, PositionMap};
+
+        let parent = root.document().input_text();
+        let range = root.range();
+        let name_end = range.start + 1 + written_element_name(root).len();
+        let declarations: String = inherited_bindings(root)
+            .into_iter()
+            .map(namespace_declaration)
+            .collect();
+        let text = format!(
+            "{}{}{declarations}{}",
+            Self::DECLARATION,
+            &parent[range.start..name_end],
+            &parent[name_end..range.end]
+        );
+
+        let path = PathBuf::from(parent_label);
+        let from = |source_offset| Origin::File {
+            path: path.clone(),
+            source_offset,
+        };
+        let head = Self::DECLARATION.len();
+        let name = head + (name_end - range.start);
+        let tail = name + declarations.len();
+        let mut map = PositionMap::default();
+        map.register_file(path.clone(), parent);
+        map.push_entry(0, head, from(range.start));
+        map.push_entry(head, name, from(range.start));
+        if tail > name {
+            map.push_entry(name, tail, from(name_end));
+        }
+        map.push_entry(tail, text.len(), from(name_end));
+        Self { text, map }
+    }
+
+    /// `err`, raised against this document under `label`, moved to where
+    /// the child's author wrote what it names — in the enclosing document.
+    fn placed(
+        &self,
+        label: &str,
+        err: crate::forge::error::Located<crate::forge::error::ForgeError>,
+    ) -> crate::forge::error::Located<crate::forge::error::ForgeError> {
+        crate::model::AuthoredPositions::new(label, self.text.as_str(), self.map.clone())
+            .authored(err)
+    }
 }
 
 /// A namespace binding as `(prefix, URI)`; the prefix `None` is the default

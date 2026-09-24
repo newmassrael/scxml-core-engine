@@ -1311,7 +1311,9 @@ pub struct ScxmlInvokeInfo {
     /// (`<?xml version="1.0"?>` prologue + the `<scxml>…</scxml>` body as
     /// its author wrote it, with the namespace bindings it inherits from
     /// the parent declared on its root). Co-populated with
-    /// `inline_child` (both `Some` or both `None`) so codegen can
+    /// `inline_child` (both `Some` or both `None` — a child that does not
+    /// parse refuses its parent rather than leaving `inline_child` empty) so
+    /// codegen can
     /// re-materialise the synth SCXML next to the parent's `_sm.*`
     /// in `-o` when a downstream consumer needs it on disk:
     /// `--deploy` topology iteration (`inject_partition_context_for`

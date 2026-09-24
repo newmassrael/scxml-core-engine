@@ -17,40 +17,44 @@
 mutation_tests -p sce-build --features cli --test an_inline_child_document_keeps_the_names_it_inherits
 mutation_targets sce-build/src/parser.rs
 
+# Re-aimed 2026-09-24: the child's text moved into `InlineDocument::of`,
+# which gained a map from each of its bytes back to the parent's. The four
+# mutations are the same; only their spelling moved.
+
 mutation_case "the child is its author's text alone again" <<'PY'
 edit("sce-build/src/parser.rs",
-     r'''        .map(namespace_declaration)
-        .collect();
-    format!(''',
-     r'''        .map(namespace_declaration)
-        .take(0)
-        .collect();
-    format!(''')
+     r'''            .map(namespace_declaration)
+            .collect();
+        let text = format!(''',
+     r'''            .map(namespace_declaration)
+            .take(0)
+            .collect();
+        let text = format!(''')
 PY
 
 mutation_case "the child is given the default namespace and no prefix" <<'PY'
 edit("sce-build/src/parser.rs",
-     r'''    let declarations: String = inherited_bindings(root)
-        .into_iter()
-        .map(namespace_declaration)''',
-     r'''    let declarations: String = inherited_bindings(root)
-        .into_iter()
-        .filter(|(prefix, _)| prefix.is_none())
-        .map(namespace_declaration)''')
+     r'''        let declarations: String = inherited_bindings(root)
+            .into_iter()
+            .map(namespace_declaration)''',
+     r'''        let declarations: String = inherited_bindings(root)
+            .into_iter()
+            .filter(|(prefix, _)| prefix.is_none())
+            .map(namespace_declaration)''')
 PY
 
 mutation_case "the declarations land before the root's name" <<'PY'
 edit("sce-build/src/parser.rs",
-     r'''        "{}{declarations}{}",
-        &text[..after_name],''',
-     r'''        "{declarations}{}{}",
-        &text[..after_name],''')
+     r'''            "{}{}{declarations}{}",
+            Self::DECLARATION,''',
+     r'''            "{}{declarations}{}{}",
+            Self::DECLARATION,''')
 PY
 
 mutation_case "the declarations are given a line of their own" <<'PY'
 edit("sce-build/src/parser.rs",
-     r'''        "{}{declarations}{}",
-        &text[..after_name],''',
-     r'''        "{}\n{declarations}{}",
-        &text[..after_name],''')
+     r'''            "{}{}{declarations}{}",
+            Self::DECLARATION,''',
+     r'''            "{}{}\n{declarations}{}",
+            Self::DECLARATION,''')
 PY

@@ -1,0 +1,47 @@
+# Mutation cases for "an in-line child document that does not parse refuses
+# its parent, at the row and column its author wrote".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/an_inline_child_that_does_not_parse_refuses_its_parent.cases`.
+#
+# The first case puts the defect back as it was, a refusal the parent does
+# not hear; the second hears it and leaves it in the child's coordinates;
+# the third keeps the map but reads the inserted bindings as text the author
+# wrote, which moves every position after them on the root's line and, by
+# the same byte count, every one after it.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test an_inline_child_that_does_not_parse_refuses_its_parent
+mutation_targets sce-build/src/parser.rs
+
+# Both keep `placed` named: a method nothing calls does not build under
+# `warnings = deny`, and a case that cannot build reports INCONCLUSIVE.
+mutation_case "a child that does not parse leaves its parent standing" <<'PY'
+edit("sce-build/src/parser.rs",
+     r'''                        .map_err(|err| inline.placed(&synth_diag_label, err))?;''',
+     r'''                        .unwrap_or_else(|err| {
+                            let _ = inline.placed(&synth_diag_label, err);
+                            SCXMLModel::default()
+                        });''')
+PY
+
+mutation_case "a child's refusal keeps the child's coordinates" <<'PY'
+edit("sce-build/src/parser.rs",
+     r'''                        .map_err(|err| inline.placed(&synth_diag_label, err))?;''',
+     r'''                        .map_err(|err| {
+                            let _placed = |e| inline.placed(&synth_diag_label, e);
+                            err
+                        })?;''')
+PY
+
+mutation_case "the inserted bindings are mapped as the author's text" <<'PY'
+edit("sce-build/src/parser.rs",
+     r'''        map.push_entry(head, name, from(range.start));
+        if tail > name {
+            map.push_entry(name, tail, from(name_end));
+        }
+        map.push_entry(tail, text.len(), from(name_end));''',
+     r'''        let _ = (name, tail, name_end);
+        map.push_entry(head, text.len(), from(range.start));''')
+PY
