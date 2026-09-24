@@ -27,6 +27,8 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+mod common;
+
 fn sce_codegen_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sce-codegen"))
 }
@@ -255,7 +257,7 @@ fn cmake_bin() -> Option<PathBuf> {
 /// exit status and combined output.
 fn configure_with_stub_generator(dir: &Path, code: i32) -> (bool, String) {
     let stub = dir.join("stub-sce-codegen");
-    std::fs::write(
+    common::executable::install_executable(
         &stub,
         format!(
             "#!/bin/sh\n\
@@ -264,13 +266,7 @@ fn configure_with_stub_generator(dir: &Path, code: i32) -> (bool, String) {
              exit {code}\n"
         ),
     )
-    .expect("write stub");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755))
-            .expect("chmod stub");
-    }
+    .expect("install stub");
 
     std::fs::write(
         dir.join("CMakeLists.txt"),

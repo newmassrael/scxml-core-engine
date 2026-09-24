@@ -1557,7 +1557,7 @@ fn pinned_mnemosyne_short_rev() -> String {
 /// what the gate does with it.
 fn stub_mnemosyne_cli(dir: &Path, name: &str, tail: &str) -> PathBuf {
     let path = dir.join(name);
-    std::fs::write(
+    common::executable::install_executable(
         &path,
         format!(
             "#!/usr/bin/env bash\n\
@@ -1569,13 +1569,7 @@ fn stub_mnemosyne_cli(dir: &Path, name: &str, tail: &str) -> PathBuf {
             rev = pinned_mnemosyne_short_rev(),
         ),
     )
-    .expect("write the stub binary");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
-            .expect("chmod the stub binary");
-    }
+    .expect("install the stub binary");
     path
 }
 
@@ -2251,13 +2245,7 @@ fn a_failing_build_reaches_the_gate_log_through_the_helper() {
         ));
     }
     body.push_str("exit 1\n");
-    std::fs::write(&stub, body).expect("write stub cmake");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755))
-            .expect("chmod stub cmake");
-    }
+    common::executable::install_executable(&stub, body).expect("install stub cmake");
 
     // `lib.sh` turns on `set -e`, and the slug it prints is one it assigns
     // itself — so the status is taken in a `||` list (which `set -e` does not

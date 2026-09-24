@@ -245,6 +245,13 @@ pub mod template_lexing;
 /// `tools/codegen/templates/` by `build.rs`. Serves callers with no
 /// filesystem (WASM) from the same tree the filesystem loader walks.
 pub mod template_registry;
+/// How a unit test installs an executable stand-in it is about to run — the
+/// integration tests' `common::executable`, included here by path so both
+/// halves of the crate's tests share the one installer and the race it
+/// closes (see that file).
+#[cfg(test)]
+#[path = "../tests/common/executable.rs"]
+mod test_executable;
 /// Discovery of the external toolchain binaries the generated-code
 /// verification harness compiles with. Searches beyond `PATH` because a
 /// tool it cannot find is a check that silently does not run.

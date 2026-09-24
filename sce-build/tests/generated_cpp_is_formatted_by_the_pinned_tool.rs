@@ -24,6 +24,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+mod common;
+
 fn codegen() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_sce-codegen"))
 }
@@ -56,18 +58,13 @@ fn stand_in(dir: &Path, version: &str, body: Body) -> PathBuf {
         Body::Mark => format!("cat; echo '{MARK}'"),
         Body::Refuse => "echo 'unterminated comment' >&2; exit 1".to_string(),
     };
-    fs::write(
+    common::executable::install_executable(
         &path,
         format!(
             "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'Ubuntu clang-format version {version} (test)'; exit 0; fi\n{act}\n"
         ),
     )
-    .expect("write the stand-in");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).expect("chmod the stand-in");
-    }
+    .expect("install the stand-in");
     path
 }
 

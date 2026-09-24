@@ -607,13 +607,8 @@ mod tests {
     fn touch_exe(dir: &Path, name: &str) -> PathBuf {
         std::fs::create_dir_all(dir).expect("create fixture dir");
         let path = dir.join(name);
-        std::fs::write(&path, b"#!/bin/sh\n").expect("write fixture binary");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
-                .expect("chmod fixture binary");
-        }
+        crate::test_executable::install_executable(&path, "#!/bin/sh\n")
+            .expect("install fixture binary");
         path
     }
 

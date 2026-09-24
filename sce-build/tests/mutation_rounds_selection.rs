@@ -1331,13 +1331,8 @@ fn prepared_by(body: &str) -> (Vec<String>, String) {
 }
 
 fn write_shim(path: &Path, body: &str) {
-    fs::write(path, format!("#!/usr/bin/env bash\n{body}")).expect("write a shim");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(path, fs::Permissions::from_mode(0o755))
-            .expect("make the shim executable");
-    }
+    common::executable::install_executable(path, format!("#!/usr/bin/env bash\n{body}"))
+        .expect("install a shim");
 }
 
 /// What the gate handed `scripts/mutate` for each round it ran, and whether it

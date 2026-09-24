@@ -413,17 +413,11 @@ mod tests {
     fn fake_clang_format(dir: &Path, name: &str, version_line: &str) -> PathBuf {
         std::fs::create_dir_all(dir).expect("create fixture dir");
         let path = dir.join(name);
-        std::fs::write(
+        crate::test_executable::install_executable(
             &path,
             format!("#!/bin/sh\nif [ \"$1\" = --version ]; then echo '{version_line}'; exit 0; fi\ncat\n"),
         )
-        .expect("write fake clang-format");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
-                .expect("chmod fake clang-format");
-        }
+        .expect("install fake clang-format");
         path
     }
 
@@ -602,16 +596,11 @@ mod tests {
         // it is visibly changed.
         std::fs::create_dir_all(&bin).expect("create fixture dir");
         let path = bin.join("clang-format-19");
-        std::fs::write(
+        crate::test_executable::install_executable(
             &path,
             "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'clang-format version 19.1.1'; exit 0; fi\ntr a-z A-Z\n",
         )
-        .expect("write upper-casing clang-format");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
-        }
+        .expect("install upper-casing clang-format");
         let locator = ToolLocator::over(vec![bin], &[], BTreeMap::new());
         let formatter = CppFormatter::with_locator(None, &locator).expect("formatter");
 
@@ -636,16 +625,11 @@ mod tests {
         let bin = fixture.path().join("bin");
         std::fs::create_dir_all(&bin).expect("create fixture dir");
         let path = bin.join("clang-format-19");
-        std::fs::write(
+        crate::test_executable::install_executable(
             &path,
             "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'clang-format version 19.1.1'; exit 0; fi\necho 'unterminated' >&2; exit 1\n",
         )
-        .expect("write refusing clang-format");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
-        }
+        .expect("install refusing clang-format");
         let locator = ToolLocator::over(vec![bin], &[], BTreeMap::new());
         let formatter = CppFormatter::with_locator(None, &locator).expect("formatter");
 
@@ -673,16 +657,11 @@ mod tests {
         let bin = fixture.path().join("bin");
         std::fs::create_dir_all(&bin).expect("create fixture dir");
         let path = bin.join("clang-format-19");
-        std::fs::write(
+        crate::test_executable::install_executable(
             &path,
             "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'clang-format version 19.1.1'; exit 0; fi\necho 'unterminated' >&2; exit 1\n",
         )
-        .expect("write refusing clang-format");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
-        }
+        .expect("install refusing clang-format");
         let locator = ToolLocator::over(vec![bin], &[], BTreeMap::new());
         let formatter = CppFormatter::with_locator(None, &locator).expect("formatter");
 

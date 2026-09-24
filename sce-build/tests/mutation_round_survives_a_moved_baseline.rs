@@ -52,6 +52,8 @@ use std::process::Command;
 
 use tempfile::{tempdir, TempDir};
 
+mod common;
+
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -480,14 +482,8 @@ fn the_harness_this_replaces_ends_the_casefile_at_its_first_case() {
 
     let dir = tempdir().expect("temp dir");
     let harness = dir.path().join("mutate");
-    fs::write(&harness, &older.stdout).expect("write the earlier harness");
-    let mut perms = fs::metadata(&harness).expect("stat").permissions();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        perms.set_mode(0o755);
-    }
-    fs::set_permissions(&harness, perms).expect("make it executable");
+    common::executable::install_executable(&harness, older.stdout)
+        .expect("install the earlier harness");
 
     let p = project("control", 0, true);
     let (ok, output) = p.round_with(&harness);

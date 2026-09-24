@@ -314,12 +314,7 @@ fn the_cmake_locator_drops_a_cached_path_that_no_longer_exists() {
     .expect("write probe CMakeLists");
 
     let stub = sandbox.join("stub-codegen");
-    std::fs::write(&stub, "#!/bin/sh\nexit 0\n").expect("write stub");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).expect("chmod");
-    }
+    common::executable::install_executable(&stub, "#!/bin/sh\nexit 0\n").expect("install stub");
 
     let build = sandbox.join("build");
     let configure = |extra: Option<&str>| -> String {
@@ -374,13 +369,8 @@ fn the_shell_locator_finds_the_generator_in_either_profile() {
             let dir = sandbox.join("target").join(profile);
             std::fs::create_dir_all(&dir).expect("create sandbox profile dir");
             let binary = dir.join("sce-codegen");
-            std::fs::write(&binary, "#!/bin/sh\nexit 0\n").expect("write stub");
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755))
-                    .expect("chmod stub");
-            }
+            common::executable::install_executable(&binary, "#!/bin/sh\nexit 0\n")
+                .expect("install stub");
         }
         let script = format!(
             "set -euo pipefail\nsource {}/scripts/lib/sce_codegen.sh\nsce_codegen_path {}\n",
@@ -452,13 +442,7 @@ fn the_shell_locator_rebuilds_a_generator_that_disagrees_with_the_tree() {
         std::fs::create_dir_all(&fake_path).expect("create fake PATH dir");
 
         let write_exec = |path: &std::path::Path, body: &str| {
-            std::fs::write(path, body).expect("write stub");
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
-                    .expect("chmod stub");
-            }
+            common::executable::install_executable(path, body).expect("install stub");
         };
 
         write_exec(
