@@ -899,6 +899,7 @@ references against a real document and drift silently.
 | `validation/event-name-grammar` | `validation` | no | W3C SCXML §3.12.1 |
 | `validation/event-payload-field-unknown` | `validation` | `replace_one_of` |  |
 | `validation/event-schema-on-builtin-event` | `validation` | no |  |
+| `validation/exactly-one-attribute` | `validation` | no |  |
 | `validation/incompatible-attributes` | `validation` | no |  |
 | `validation/invalid-attribute` | `validation` | `replace_one_of` |  |
 | `validation/invalid-direction` | `validation` | `replace_one_of` | SCE Forge §3.3 |

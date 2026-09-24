@@ -51,6 +51,7 @@
         "validation/missing-attribute",
         "validation/invalid-attribute",
         "validation/attribute-rule-violated",
+        "validation/exactly-one-attribute",
         "validation/send-operand-type",
         "validation/unexpected-child-element",
         "validation/unknown-sce-attribute",

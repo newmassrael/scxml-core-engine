@@ -130,6 +130,51 @@ fn unexpected_child(
     )
 }
 
+/// The refusal of an element that takes exactly one of several FORMS —
+/// `<sce:capacity source="deploy" key="…"/>` or `<sce:capacity const="…"/>`
+/// — and writes none of them or more than one; `None` when it writes
+/// exactly one. Each form is a set of unqualified attributes and is named
+/// by its first. `asserts` says whether a written attribute asserts its
+/// form: `until-eof="false"` is written and asserts nothing.
+///
+/// The form that starts second, in document order, is the one too many:
+/// its first attribute as written is the record's `actual`, and the record
+/// stands there. With none asserted there is nothing on the row to report,
+/// and it stands at the element.
+fn exactly_one_form(
+    node: &roxmltree::Node,
+    doc_name: &str,
+    element: String,
+    forms: &[&[&str]],
+    asserts: impl Fn(&roxmltree::Attribute) -> bool,
+) -> Option<Located<ForgeError>> {
+    let mut asserted: Vec<usize> = Vec::new();
+    let mut first_attribute: Vec<String> = Vec::new();
+    for attribute in node
+        .attributes()
+        .filter(|a| a.namespace().is_none() && asserts(a))
+    {
+        if let Some(form) = forms.iter().position(|f| f.contains(&attribute.name())) {
+            if !asserted.contains(&form) {
+                asserted.push(form);
+                first_attribute.push(attribute.name().to_string());
+            }
+        }
+    }
+    if asserted.len() == 1 {
+        return None;
+    }
+    Some(located(
+        node,
+        doc_name,
+        ValidationError::ExactlyOneAttribute {
+            element,
+            alternatives: forms.iter().map(|form| form[0].to_string()).collect(),
+            extra: first_attribute.get(1).cloned(),
+        },
+    ))
+}
+
 /// Build a `Located<ForgeError>` from a stored line number rather than
 /// a live `roxmltree::Node`. Used by post-loop validators whose anchor
 /// element is no longer in scope but whose line was captured during
@@ -3597,47 +3642,39 @@ fn parse_codec_repeat_from_node(
         )
     })?;
 
-    // Mutually exclusive count source: exactly one of count /
-    // until-eof. Both unqualified (SCE-internal). Both present or
-    // both absent → reject with a diagnostic that names the legal
-    // forms (the author can flip between length-prefix and greedy
-    // by editing one attribute).
-    let count_attr = node.attribute("count").map(|s| s.to_string());
-    let until_eof_raw = node.attribute("until-eof").map(|s| s.to_string());
-    let until_eof = match until_eof_raw.as_deref() {
-        None => false,
-        Some("true") => true,
-        Some("false") => false,
-        Some(other) => {
-            return Err(located(
-                node,
-                doc_name,
-                ValidationError::InvalidAttribute {
-                    element: format!("<sce:repeat id='{id}'>"),
-                    attr: "sce:until-eof".into(),
-                    value: other.to_string(),
-                    allowed: vec!["true".into(), "false".into()],
-                },
-            ));
-        }
-    };
-    let count_ref = match (count_attr, until_eof) {
-        (Some(target), false) => CountRef::LengthField(target),
-        (None, true) => CountRef::UntilEof,
-        (Some(_), true) | (None, false) => {
-            return Err(located(
-                node,
-                doc_name,
-                ValidationError::AttributeRuleViolated {
-                    element: format!("<sce:repeat id='{id}'>"),
-                    attr: "sce:count / sce:until-eof".into(),
-                    value: "<both or neither>".into(),
-                    rule: "exactly one of sce:count=\"<sibling_field_id>\" \
-                               or sce:until-eof=\"true\""
-                        .into(),
-                },
-            ));
-        }
+    // Mutually exclusive count source: exactly one of count / until-eof,
+    // both unqualified (SCE-internal) — the author flips between
+    // length-prefix and greedy by editing one attribute.
+    if let Some(other) = node
+        .attribute("until-eof")
+        .filter(|value| !matches!(*value, "true" | "false"))
+    {
+        return Err(located(
+            node,
+            doc_name,
+            ValidationError::InvalidAttribute {
+                element: format!("<sce:repeat id='{id}'>"),
+                attr: "until-eof".into(),
+                value: other.to_string(),
+                allowed: vec!["true".into(), "false".into()],
+            },
+        ));
+    }
+    // `until-eof="false"` is written and asserts nothing, so it stands
+    // beside `count` as it always has.
+    if let Some(refusal) = exactly_one_form(
+        node,
+        doc_name,
+        format!("<sce:repeat id='{id}'>"),
+        &[&["count"], &["until-eof"]],
+        |a| !(a.name() == "until-eof" && a.value() == "false"),
+    ) {
+        return Err(refusal);
+    }
+    // Exactly one form is asserted, so `count` decides which.
+    let count_ref = match node.attribute("count") {
+        Some(target) => CountRef::LengthField(target.to_string()),
+        None => CountRef::UntilEof,
     };
 
     let max_count = read_unsigned_attr(
@@ -4774,21 +4811,14 @@ fn parse_one_decoded_field(
     let value_attr = node.attribute("value");
     let hex_attr = node.attribute("hex");
     let string_attr = node.attribute("string");
-    let n_set = usize::from(value_attr.is_some())
-        + usize::from(hex_attr.is_some())
-        + usize::from(string_attr.is_some());
-    if n_set != 1 {
-        return Err(located(
-            node,
-            label.diagnostic_label,
-            ValidationError::AttributeRuleViolated {
-                element: "sce:decoded".into(),
-                attr: "value|hex|string".into(),
-                value: format!("{n_set} of value/hex/string attributes set"),
-                rule: "exactly one of value=, hex=, or string= must be set per <sce:decoded> row"
-                    .into(),
-            },
-        ));
+    if let Some(refusal) = exactly_one_form(
+        node,
+        label.diagnostic_label,
+        "<sce:decoded>".into(),
+        &[&["value"], &["hex"], &["string"]],
+        |_| true,
+    ) {
+        return Err(refusal);
     }
 
     let typed = match &codec_field.sce_type {
@@ -8854,13 +8884,60 @@ fn parse_bounded_collection(
             },
         )
     })?;
-    let capacity = match (
-        capacity_node.attribute("source"),
-        capacity_node.attribute("key"),
-        capacity_node.attribute("const"),
+    // One of two forms: `source="deploy" key="…"`, or `const="…"`.
+    if let Some(refusal) = exactly_one_form(
+        &capacity_node,
+        label.diagnostic_label,
+        "<sce:capacity>".into(),
+        &[&["source", "key"], &["const"]],
+        |_| true,
     ) {
+        return Err(refusal);
+    }
+    // Exactly one form is written, so `const` decides which. The deploy form,
+    // incomplete or naming a source other than `deploy`, is refused for what
+    // it lacks or holds rather than as a choice of form.
+    let capacity = match capacity_node.attribute("const") {
         // `<sce:capacity source="deploy" key="machines.X.limits.Y"/>` — spec lines 2553-2554.
-        (Some("deploy"), Some(key), None) => {
+        None => {
+            let key = match (
+                capacity_node.attribute("source"),
+                capacity_node.attribute("key"),
+            ) {
+                (None, _) => {
+                    return Err(located(
+                        &capacity_node,
+                        label.diagnostic_label,
+                        ValidationError::MissingAttribute {
+                            element: "<sce:capacity>".into(),
+                            attr: "source".into(),
+                        },
+                    ));
+                }
+                (Some(source), _) if source != "deploy" => {
+                    return Err(located(
+                        &capacity_node,
+                        label.diagnostic_label,
+                        ValidationError::InvalidAttribute {
+                            element: "<sce:capacity>".into(),
+                            attr: "source".into(),
+                            value: source.to_string(),
+                            allowed: vec!["deploy".into()],
+                        },
+                    ));
+                }
+                (Some(_), None) => {
+                    return Err(located(
+                        &capacity_node,
+                        label.diagnostic_label,
+                        ValidationError::MissingAttribute {
+                            element: "<sce:capacity>".into(),
+                            attr: "key".into(),
+                        },
+                    ));
+                }
+                (Some(_), Some(key)) => key,
+            };
             let key = key.trim().to_string();
             if key.is_empty() {
                 return Err(located(
@@ -8877,7 +8954,7 @@ fn parse_bounded_collection(
             CapacitySource::DeployKey { key }
         }
         // `<sce:capacity const="N"/>` — spec line 2602.
-        (None, None, Some(c)) => {
+        Some(c) => {
             let value: u32 = c.parse().map_err(|_| {
                 located(
                     &capacity_node,
@@ -8903,18 +8980,6 @@ fn parse_bounded_collection(
                 ));
             }
             CapacitySource::CompileConst { value }
-        }
-        _ => {
-            return Err(located(
-                &capacity_node,
-                label.diagnostic_label,
-                ValidationError::AttributeRuleViolated {
-                    element: "<sce:capacity>".into(),
-                    attr: "(source|key|const)".into(),
-                    value: String::new(),
-                    rule: r#"exactly one of `source="deploy" key="..."` or `const="..."`"#.into(),
-                },
-            ));
         }
     };
 

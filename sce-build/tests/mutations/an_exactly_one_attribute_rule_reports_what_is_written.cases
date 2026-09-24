@@ -1,0 +1,52 @@
+# Mutation cases for "an exactly-one-attribute rule reports what is written".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/an_exactly_one_attribute_rule_reports_what_is_written.cases`.
+#
+# Three rules take exactly one of several attributes, and each used to
+# report an invented value — text no row of the document holds. Each case
+# puts part of the repair back: the one-too-many attribute not reported, the
+# first form reported in place of the second, `until-eof="false"` read as a
+# count, or the incomplete deploy form of `<sce:capacity>` let through. The
+# integration tests in `an_exactly_one_attribute_rule_reports_what_is_written.rs`
+# refuse them.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test an_exactly_one_attribute_rule_reports_what_is_written
+mutation_targets sce-build/src/forge/parser.rs
+mutation_oracles sce-build/tests/an_exactly_one_attribute_rule_reports_what_is_written.rs
+
+mutation_case "the attribute one too many is not reported" <<'PY'
+edit("sce-build/src/forge/parser.rs",
+     r'''            extra: first_attribute.get(1).cloned(),''',
+     r'''            extra: None,''')
+PY
+
+mutation_case "the first form is reported in place of the second" <<'PY'
+edit("sce-build/src/forge/parser.rs",
+     r'''            extra: first_attribute.get(1).cloned(),''',
+     r'''            extra: first_attribute.first().cloned(),''')
+PY
+
+mutation_case "until-eof=\"false\" is read as a count" <<'PY'
+edit("sce-build/src/forge/parser.rs",
+     r'''        |a| !(a.name() == "until-eof" && a.value() == "false"),''',
+     r'''        |_| true,''')
+PY
+
+mutation_case "a deploy form without its key is let through" <<'PY'
+edit("sce-build/src/forge/parser.rs",
+     r'''                (Some(_), None) => {
+                    return Err(located(
+                        &capacity_node,
+                        label.diagnostic_label,
+                        ValidationError::MissingAttribute {
+                            element: "<sce:capacity>".into(),
+                            attr: "key".into(),
+                        },
+                    ));
+                }''',
+     r'''                (Some(_), None) => "",''')
+PY

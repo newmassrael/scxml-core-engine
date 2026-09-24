@@ -559,6 +559,12 @@ pub enum DiagnosticCode {
     /// rides `fix`: here the rule rides `expected` and there is no fix.
     #[serde(rename = "validation/attribute-rule-violated")]
     ValidationAttributeRuleViolated,
+    /// An element that takes exactly one of several attributes carries none
+    /// of them, or more than one. The attributes it takes ride `expected`;
+    /// the one written beyond the first is `actual`, absent when none is
+    /// written. No fix: which one the author meant is theirs to say.
+    #[serde(rename = "validation/exactly-one-attribute")]
+    ValidationExactlyOneAttribute,
     /// A procedure `<send>` operand of a type the service request cannot
     /// carry. The operand as written is `actual`; the type it may have is
     /// `expected`; there is no fix, since the repair is the author's.
@@ -3094,6 +3100,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationMissingAttribute,
         ValidationInvalidAttribute,
         ValidationAttributeRuleViolated,
+        ValidationExactlyOneAttribute,
         ValidationSendOperandType,
         ValidationUnexpectedChildElement,
         ValidationUnknownSceAttribute,
@@ -4232,6 +4239,7 @@ impl DiagnosticCode {
             | ValidationMissingAttribute
             | ValidationInvalidAttribute
             | ValidationAttributeRuleViolated
+            | ValidationExactlyOneAttribute
             | ValidationUnexpectedChildElement
             | ValidationDuplicateId
             | ValidationDuplicateContextObject
@@ -4435,6 +4443,7 @@ impl DiagnosticCode {
             ValidationMissingAttribute => "validation/missing-attribute",
             ValidationInvalidAttribute => "validation/invalid-attribute",
             ValidationAttributeRuleViolated => "validation/attribute-rule-violated",
+            ValidationExactlyOneAttribute => "validation/exactly-one-attribute",
             ValidationSendOperandType => "validation/send-operand-type",
             ValidationUnexpectedChildElement => "validation/unexpected-child-element",
             ValidationUnknownSceAttribute => "validation/unknown-sce-attribute",
@@ -5631,6 +5640,27 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: Some(value.clone()),
             fix: None,
             key_fragments: vec![element.clone(), attr.clone(), value.clone()],
+        },
+        // The attributes the element takes one of are what the position
+        // accepts; which one the author meant is not the producer's to say,
+        // so they ride `expected` and nothing rides `fix`. The attribute
+        // written beyond the first is text its row holds, so it is `actual`;
+        // with none written there is nothing on the row to report.
+        ValidationError::ExactlyOneAttribute {
+            element,
+            alternatives,
+            extra,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationExactlyOneAttribute,
+            stage: Stage::Validation,
+            expected: Some(alternatives.clone()),
+            actual: extra.clone(),
+            fix: None,
+            key_fragments: vec![
+                element.clone(),
+                alternatives.join(","),
+                extra.clone().unwrap_or_default(),
+            ],
         },
         // The operand as written is `actual`; what it is rides the message,
         // and what it may be rides `expected`.
@@ -9943,6 +9973,31 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:2ec9170bf68dc459","code":"validation/attribute-rule-violated","stage":"validation","message":"Filter output: invalid sce:window value '0' (expected: positive integer)","expected":["positive integer"],"actual":"0"}"#,
+            ),
+            (
+                // Exactly one of several attributes, and none written: the
+                // attributes it takes ride `expected`, and nothing on the row
+                // is reported.
+                "forge/exactly-one-attribute-none",
+                ValidationError::ExactlyOneAttribute {
+                    element: "<sce:repeat id='items'>".into(),
+                    alternatives: vec!["count".into(), "until-eof".into()],
+                    extra: None,
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:899bee3569c49d9d","code":"validation/exactly-one-attribute","stage":"validation","message":"<sce:repeat id='items'>: takes exactly one of count, until-eof, and carries none","expected":["count","until-eof"]}"#,
+            ),
+            (
+                // One too many: the attribute written beyond the first is
+                // `actual`, the text its row holds.
+                "forge/exactly-one-attribute-extra",
+                ValidationError::ExactlyOneAttribute {
+                    element: "<sce:repeat id='items'>".into(),
+                    alternatives: vec!["count".into(), "until-eof".into()],
+                    extra: Some("until-eof".into()),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:70cde3f75e7a67e4","code":"validation/exactly-one-attribute","stage":"validation","message":"<sce:repeat id='items'>: takes exactly one of count, until-eof, and 'until-eof' is one too many","expected":["count","until-eof"],"actual":"until-eof"}"#,
             ),
             (
                 // A child its parent does not take: the children it does
@@ -14938,6 +14993,10 @@ mod tests {
             // describes the position and names no replacement, which is
             // exactly why it left `invalid-attribute`'s candidate list.
             | ValidationAttributeRuleViolated
+            // The attributes an element takes one of describe the position;
+            // which one the author meant is theirs to say, so none is
+            // proposed as the edit.
+            | ValidationExactlyOneAttribute
             // The type a `<send>` operand may have is a rule, not a value
             // to put there: which expression is meant is the author's.
             | ValidationSendOperandType
@@ -15852,6 +15911,7 @@ mod tests {
                 | ValidationMissingElement
                 | ValidationMissingAttribute | ValidationInvalidAttribute
                 | ValidationAttributeRuleViolated
+                | ValidationExactlyOneAttribute
                 | ValidationSendOperandType
                 | ValidationUnexpectedChildElement
                 | ValidationUnknownSceAttribute
@@ -16196,9 +16256,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            389,
+            390,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 388 distinct variants to match the DiagnosticCode \
+             expected 390 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -16780,6 +16840,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationMissingAttribute
             | ValidationInvalidAttribute
             | ValidationAttributeRuleViolated
+            | ValidationExactlyOneAttribute
             | ValidationSendOperandType
             | ValidationUnexpectedChildElement
             // Same bucket and the same reason as the sweep described

@@ -591,6 +591,25 @@ pub enum ValidationError {
         rule: String,
     },
 
+    /// An element that takes exactly one of several attributes, carrying
+    /// none of them or more than one — `<sce:repeat>` with both `count` and
+    /// `until-eof`. `alternatives` names every attribute that may stand, as
+    /// the document spells them, and rides the wire as `expected`. `extra`
+    /// is the attribute written beyond the first, as written: the record's
+    /// `actual`, placed at that attribute. `None` when none is written; the
+    /// record then reports nothing and stands at the element.
+    ///
+    /// ⚠ Three sites refused this as [`Self::AttributeRuleViolated`], which
+    /// needs a value, and each invented one: `<both or neither>`, `2 of
+    /// value/hex/string attributes set`, the empty string — text no row of
+    /// the document holds, reported as `actual` (SCE_ERROR_CONTRACT §3.1.1).
+    #[error("{}", exactly_one_attribute_message(.element, .alternatives, .extra.as_deref()))]
+    ExactlyOneAttribute {
+        element: String,
+        alternatives: Vec<String>,
+        extra: Option<String>,
+    },
+
     /// A procedure `<send>` hands its service an operand of a type the
     /// service request cannot carry — a payload that is not bytes, an
     /// address that is neither an integer nor a string.
@@ -4714,6 +4733,22 @@ pub fn joined_or_none(candidates: &[String]) -> String {
         return "<none>".to_string();
     }
     candidates.join(", ")
+}
+
+/// The message of [`ValidationError::ExactlyOneAttribute`]: which attributes
+/// the element takes one of, and whether it carries none or one too many.
+fn exactly_one_attribute_message(
+    element: &str,
+    alternatives: &[String],
+    extra: Option<&str>,
+) -> String {
+    let one_of = alternatives.join(", ");
+    match extra {
+        None => format!("{element}: takes exactly one of {one_of}, and carries none"),
+        Some(extra) => {
+            format!("{element}: takes exactly one of {one_of}, and '{extra}' is one too many")
+        }
+    }
 }
 
 // ── Stage 5: Cross-file import resolution ──────────────────────
