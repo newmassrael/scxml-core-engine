@@ -117,5 +117,15 @@ jobs:
     # delegated to the gate runner: the ordering constraint is a
     # property of the check and belongs with it, not restated in a
     # second file that can be reordered independently.
+    #
+    # `sourcemap_addr2sce` generates C++, and `sce-codegen` formats C++ with
+    # clang-format pinned to major 19 or refuses
+    # (docs/SCE_CODEGEN_DETERMINISM.md §9); the runner image carries other
+    # majors only.
+    - name: Install clang-format-19
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang-format-19
+
     - name: Verify drift suites (B9 + §5.O sourcemap)
       run: scripts/gate drift-suites

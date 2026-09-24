@@ -115,12 +115,19 @@ writes = ["scripts/regen_", "scripts/mutate", "scripts/emit_embed_manifest.sh", 
 # `gradle` is deliberately NOT here: the Kotlin lanes run `./gradlew`, which
 # fetches its own distribution, so the machine needs a JDK and nothing more.
 #
+# `clang-format-19` joined on 2026-09-24, in the same order `kotlinc` did:
+# installed on both machines first (the Ubuntu archive's 19.1.1, the package
+# CI installs), then declared. `sce-codegen` formats the C++ it generates with
+# clang-format pinned to major 19 and refuses without it
+# (docs/SCE_CODEGEN_DETERMINISM.md §9), and pc2's unsuffixed `clang-format`
+# is 18 — so the suffixed name is the tool a host must be able to run.
+#
 # ⚠ ONE LINE. bx reads this key with a single `sed` that anchors on `[` and
 # `]` in the same line, unlike `writes`/`packages` which are read across
 # lines — so a wrapped list parses as EMPTY and every host becomes eligible
 # for everything. Measured 2026-08-24, thirty seconds after wrapping it:
 # `--explain-declaration` printed `decl needs` with nothing after it.
-needs = ["cargo", "cmake", "ninja", "g++", "node", "git", "mnemosyne-cli", "go", "java", "python3", "wasm-pack", "kotlinc"]
+needs = ["cargo", "cmake", "ninja", "g++", "node", "git", "mnemosyne-cli", "go", "java", "python3", "wasm-pack", "kotlinc", "clang-format-19"]
 
 # The C++ tree is the constraint: a debug build of this repository has
 # measured 4.2 GB of debug info in its executables alone.

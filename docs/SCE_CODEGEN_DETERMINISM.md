@@ -336,7 +336,70 @@ where that matters.
 
 ---
 
-## 9. Related contracts
+## 9. Formatters — a declared input, or none
+
+A formatter is part of the function from document to bytes, so its version
+is an input like the generator's own. The rule is the one §3 applies to the
+header: the bytes may depend only on inputs a reader can name.
+
+- **C++ is formatted by default, by clang-format pinned to major 19**
+  (`formatter::CLANG_FORMAT_MAJOR`). Measured 2026-09-24 on the 288 raw
+  C++ forge goldens with the bundled style: clang-format 18.1.3 and 19.1.7
+  disagreed on 17 files, while 19.1.1 and 19.1.7 agreed on every one. So
+  the major is pinned and the patch level is not. 19 is also the major the
+  repository's own C++ is held to (`clang-format-check.yml`).
+- **Resolution** (`formatter::resolve_clang_format`). `SCE_TOOL_CLANG_FORMAT`,
+  when set, is the one answer: it is refused if it is not major 19, never
+  fallen through. Otherwise every discovered `clang-format`, `clang-format-<N>`
+  on `PATH` and `llvm-<N>/bin` install is asked its version, best-ranked
+  first, and the first of major 19 wins — so a host whose unsuffixed
+  `clang-format` is 18, with `clang-format-19` beside it, formats with 19.
+- **No quiet fallback.** A run that would format C++ and finds no clang-format
+  19 stops with `cli/formatter-unavailable`, naming what it found and the three
+  ways out: install `clang-format-19`, point `SCE_TOOL_CLANG_FORMAT` at one,
+  or pass `--no-format`. A file clang-format refuses stops the run with
+  `cli/format-failed`. Until 2026-09-24 both cases wrote unformatted C++
+  behind a note on stderr, so one document produced different bytes on a host
+  that happened to lack the tool.
+- **Only when there is C++ to shape.** The formatter is resolved at the first
+  C++ artefact a run writes. A document that fails validation reports its own
+  diagnostic, and `--list`, `--clean` and a rejected document's stubs never
+  need clang-format.
+- **`--no-format`** emits the templates' own bytes. It is the opt-out on every
+  subcommand that formats — `generate`, `generate-w3c`, `orchestrate` — and it
+  is what a test asserting on generated text passes, since the text it anchors
+  on should be the generator's.
+- **The manifest names it.** A run that formatted records
+  `"formatter": {"tool": "clang-format", "version": "19.1.1"}` beside
+  `generator` (`SCE_ERROR_CONTRACT.md` §10.1).
+- **One formatter, in one place.** `orchestrate` formats exactly as `generate`
+  does, so a document set is not shaped differently from the same documents
+  generated one at a time. The library entry points (`sce_build::generate_*`)
+  never format: their output is the raw template bytes, which is what the
+  forge goldens hold.
+- **CMake passes the choice through.** `SCEClangFormat.cmake` no longer runs a
+  formatter of its own after generation — that was a second, unversioned
+  clang-format over the first one's output, silently skipped where none was
+  found. It hands the build's choice to `sce-codegen` instead:
+  `SCE_FORMAT_GENERATED=OFF` becomes `--no-format`, and `SCE_CLANG_FORMAT_STYLE`
+  becomes `--format-style` (`sce_codegen_format_args`).
+- **Where it must be installed.** Every CI lane that generates C++ installs
+  `clang-format-19`, and the build machines declare it in
+  `.claude/remote-build.toml` `needs`.
+- **Other backends.** Go, Kotlin, Python and C11 are emitted as the templates
+  write them, with no formatter. The committed Rust trees are rustfmt's output
+  applied after generation (§8), the one committed form that is not yet the
+  generator's own.
+
+*Tests:* `formatter::tests` in `sce-build/src/formatter.rs` (resolution,
+version parsing, the refusals that replaced the fallback);
+`every_apt_sourced_tool_is_installed_by_the_requiring_lane`
+(`sce-build/tests/hook_ci_parity.rs` — the lane that requires its tools
+installs `clang-format-19`).
+
+---
+
+## 10. Related contracts
 
 - `SCE_ERROR_CONTRACT.md` §10 — the stdout manifest, including
   `generator`.

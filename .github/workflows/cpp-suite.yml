@@ -224,7 +224,11 @@ jobs:
           libboost-dev \
           libboost-system-dev \
           libboost-thread-dev \
-          libboost-filesystem-dev
+          libboost-filesystem-dev \
+          clang-format-19
+    # clang-format-19: the tree generates its C++ state machines through
+    # `sce-codegen`, which formats them with clang-format pinned to major 19
+    # and refuses without it (docs/SCE_CODEGEN_DETERMINISM.md §9).
 
     # `tests/CMakeLists.txt` registers its transport suites behind
     # `find_package(vsomeip3|zenohcxx|CycloneDDS QUIET)`, so a runner without

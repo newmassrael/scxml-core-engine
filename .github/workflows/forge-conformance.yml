@@ -471,9 +471,12 @@ jobs:
       # binary dynamically links libxml2 for XSD validation via the
       # `libxml` crate. Ubuntu runners pre-install it, but listing it
       # explicitly guards against drift if the base image changes.
+      # clang-format-19 because the binary formats the C++ it generates
+      # with clang-format pinned to major 19, and refuses without it
+      # (docs/SCE_CODEGEN_DETERMINISM.md §9).
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential cmake ninja-build pkg-config libxml2
+        sudo apt-get install -y build-essential cmake ninja-build pkg-config libxml2 clang-format-19
 
     - name: Download sce-codegen Binary
       uses: actions/download-artifact@v8

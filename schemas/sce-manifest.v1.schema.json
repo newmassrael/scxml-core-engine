@@ -89,6 +89,10 @@
       "description": "Declarations read out of --deploy that SCE records without acting on. Omitted whole when the run had no deploy or the deploy declared none of them.",
       "$ref": "#/definitions/deploy"
     },
+    "formatter": {
+      "description": "The external formatter that shaped the emitted artefacts, as the run resolved it. A formatter is an input of the bytes like the generator, so a run that used one names it; its major is pinned by the generator (clang-format 19 for C++). Omitted when the run formatted nothing (--no-format, or no C++ emitted).",
+      "$ref": "#/definitions/formatter"
+    },
     "languages": {
       "description": "Per-language verdict. Present only for kind=\"check\": one entry per language the run checked, in the canonical language order. Names the backend axis explicitly so a consumer never has to infer, from a single exit code, whether a document was refused on its own merits or only by the backend it happened to be generated for.",
       "type": "array",
@@ -220,6 +224,21 @@
           "description": "Which commercial analyzer the deployment declares it relies on. SCE never verifies the claim — carrying it here is the whole of SCE's part. Kept in lockstep with the Rust StaticAnalyzer enum.",
           "type": "string",
           "enum": ["pc-lint-plus", "coverity"]
+        }
+      }
+    },
+    "formatter": {
+      "type": "object",
+      "required": ["tool", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "tool": {
+          "description": "The formatter's name, e.g. clang-format.",
+          "type": "string"
+        },
+        "version": {
+          "description": "The version the formatter reported, e.g. 19.1.1.",
+          "type": "string"
         }
       }
     },

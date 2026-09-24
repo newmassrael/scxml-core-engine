@@ -83,5 +83,14 @@ jobs:
     # and sweeps `check --lint` over every document this repository
     # authors. Its own lower bound (at least 20 documents linted) fails
     # the run if the sweep stops finding the tree.
+    #
+    # The examples are generated as C++, which `sce-codegen` formats with
+    # clang-format pinned to major 19 or refuses
+    # (docs/SCE_CODEGEN_DETERMINISM.md §9).
+    - name: Install clang-format-19
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang-format-19
+
     - name: Run example-codegen gate
       run: scripts/gate example-codegen

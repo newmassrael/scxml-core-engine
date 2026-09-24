@@ -936,6 +936,9 @@ struct GenerateReport {
     ///
     /// `None` means the run did not ask, and the backend's default stands.
     script_engine_target: Option<sce_build::generator::ScriptEngineTarget>,
+    /// The formatter that shaped this run's artefacts — see
+    /// `Manifest::formatter`. `None` when nothing was formatted.
+    formatter: Option<sce_build::manifest::FormatterInfo>,
 }
 
 struct RejectedDocument {
@@ -1002,6 +1005,7 @@ fn build_manifest<'a>(
             name: rd.name.clone(),
         }),
         deploy: DeployInfo::from_facts(report.deploy_facts.as_ref()),
+        formatter: report.formatter.clone(),
         languages,
     }
 }
@@ -1269,7 +1273,10 @@ struct GenerateArgs {
     /// When omitted, the built-in default style is used.
     #[arg(long)]
     format_style: Option<String>,
-    /// Disable clang-format post-processing on C++ output.
+    /// Emit C++ exactly as the templates produce it, without clang-format.
+    /// Formatting is on by default and needs clang-format 19, the pinned
+    /// major; a run that cannot find it stops instead of emitting bytes
+    /// no other host would produce.
     #[arg(long)]
     no_format: bool,
     /// Path to deploy.yaml for SCE Mesh transport codegen.
@@ -1654,7 +1661,10 @@ struct GenerateW3cArgs {
     /// When omitted, the built-in default style is used.
     #[arg(long)]
     format_style: Option<String>,
-    /// Disable clang-format post-processing on C++ output.
+    /// Emit C++ exactly as the templates produce it, without clang-format.
+    /// Formatting is on by default and needs clang-format 19, the pinned
+    /// major; a run that cannot find it stops instead of emitting bytes
+    /// no other host would produce.
     #[arg(long)]
     no_format: bool,
 }
@@ -2601,6 +2611,18 @@ struct OrchestrateArgs {
     /// capability as running a process with a lifecycle.
     #[arg(long = "host-invoker", value_name = "TYPE")]
     host_invoker: Vec<String>,
+    /// Path to a .clang-format file for C++ output formatting, mirroring
+    /// `generate --format-style`. When omitted, the built-in default style
+    /// is used.
+    #[arg(long)]
+    format_style: Option<String>,
+    /// Emit C++ exactly as the templates produce it, mirroring
+    /// `generate --no-format`. Formatting is on by default and needs
+    /// clang-format 19, the pinned major: a document set is no reason for
+    /// its C++ to be shaped differently than the same documents generated
+    /// one at a time.
+    #[arg(long)]
+    no_format: bool,
 }
 
 /// Recover `--error-format` from the raw argument vector.
@@ -2901,6 +2923,8 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
         const_fold_budget,
         host_processor,
         host_invoker,
+        format_style,
+        no_format,
     } = args;
     let include_dirs: Vec<PathBuf> = include_dir.iter().map(PathBuf::from).collect();
     let scxml_paths: &[String] = &scxml;
@@ -2926,6 +2950,8 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
             "",
         )
     });
+    // Resolved at the first C++ file there is to write — see `CppFormatterSlot`.
+    let cpp_formatter = CppFormatterSlot::new(lang, format_style.as_deref(), no_format);
 
     let scxml_path_bufs: Vec<std::path::PathBuf> =
         scxml_paths.iter().map(std::path::PathBuf::from).collect();
@@ -3032,7 +3058,7 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
     accumulate_host_requirements(&mut report, &scxml_path_bufs);
 
     for (basename, generated) in &outputs {
-        for (file_name, code) in &generated.files {
+        for (file_name, code) in &maybe_format_files(generated.files.clone(), &cpp_formatter) {
             let path = out_root.join(file_name);
             write_drift_aware(&path, code, &drift_ctx);
             // Recorded at the write, not from `outputs` — §10.1 defines
@@ -3042,6 +3068,7 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
         }
         let _ = basename; // basename is the input-doc label; outputs already self-name.
     }
+    report.formatter = cpp_formatter.used();
 
     outln!(
         "{}",
@@ -3981,8 +4008,10 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         ..GenerateReport::default()
     };
 
-    // C++ formatter: created once and reused for all output files.
-    let cpp_formatter = create_cpp_formatter(lang, format_style, no_format);
+    // C++ formatter: resolved at the first C++ artefact to shape and reused for
+    // the rest — see `CppFormatterSlot`. The manifest names it only if it
+    // shaped something, which each exit below reads from `used()`.
+    let cpp_formatter = CppFormatterSlot::new(lang, format_style, no_format);
 
     // SCE Forge: detect non-statechart kind and route to forge pipeline.
     // Read the file once; the same content is reused for both detection and compilation.
@@ -4193,6 +4222,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
                     }
                     report.needs_script_engine = Some(false);
                     report.needs_event_scheduler = Some(false);
+                    report.formatter = cpp_formatter.used();
                     emit_generate_manifest(&report);
                     return;
                 }
@@ -4451,6 +4481,9 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         });
         report.needs_script_engine = Some(false);
         report.needs_event_scheduler = Some(false);
+        // Stubs are written as they are, so this reads `None`: nothing was
+        // handed to the formatter.
+        report.formatter = cpp_formatter.used();
         emit_generate_manifest(&report);
         return;
     }
@@ -4950,6 +4983,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         error_format.emit_and_exit(&err, "");
     }
 
+    report.formatter = cpp_formatter.used();
     emit_generate_manifest(&report);
 }
 
@@ -5416,8 +5450,10 @@ fn cmd_generate_w3c(args: GenerateW3cArgs) {
         }),
     };
 
-    // C++ formatter: created once and reused for all generated tests.
-    let cpp_formatter = create_cpp_formatter(lang, format_style, no_format);
+    // C++ formatter: resolved at the first generated test and reused for the
+    // rest — see `CppFormatterSlot`. `--list` and `--clean` emit nothing, so
+    // they never ask for it and a listing needs no clang-format.
+    let cpp_formatter = CppFormatterSlot::new(lang, format_style, no_format);
 
     generate_w3c_unified(
         backend.as_ref(),
@@ -5993,7 +6029,7 @@ fn generate_w3c_unified(
     single_test: Option<&str>,
     clean: bool,
     list: bool,
-    cpp_formatter: &Option<sce_build::formatter::CppFormatter>,
+    cpp_formatter: &CppFormatterSlot<'_>,
 ) {
     if clean {
         backend.clean();
@@ -9151,9 +9187,15 @@ fn resolve_source_path(model: &mut SCXMLModel, scxml_path: &Path) {
     sce_build::resolve_source_path(model, scxml_path.to_str().unwrap_or(""), root.as_deref());
 }
 
-/// Create a C++ formatter if language is C++ and formatting is not disabled.
-/// Returns `None` for non-C++ languages, when `--no-format` is set, or when
-/// no `clang-format` binary can be located.
+/// The C++ formatter a run uses: `None` for a run that emits no C++ or that
+/// passed `--no-format`, and otherwise a clang-format of
+/// [`CLANG_FORMAT_MAJOR`](sce_build::formatter::CLANG_FORMAT_MAJOR) — or the
+/// run stops.
+///
+/// Formatting is on by default and its tool is a declared input of the
+/// bytes. There is no quiet fallback to unformatted output: that fallback,
+/// and a second major on another host, made one document produce different
+/// bytes on different machines (docs/SCE_CODEGEN_DETERMINISM.md §9).
 fn create_cpp_formatter(
     lang: Language,
     format_style: Option<&str>,
@@ -9164,33 +9206,84 @@ fn create_cpp_formatter(
     }
     match sce_build::formatter::CppFormatter::new(format_style.map(Path::new)) {
         Ok(f) => Some(f),
-        Err(sce_build::formatter::FormatError::NotFound) => {
-            eprintln!(
-                "  Note: no clang-format located, skipping C++ formatting \
-                 (set SCE_TOOL_CLANG_FORMAT to point at one)"
-            );
-            None
-        }
         Err(sce_build::formatter::FormatError::StyleNotFound(p)) => {
             cli_exit(CliError::FormatStyleNotFound { path: p });
         }
-        Err(e) => {
-            eprintln!("  Warning: formatter init failed: {e}");
-            None
-        }
+        Err(e) => cli_exit(CliError::FormatterUnavailable {
+            reason: e.to_string(),
+        }),
     }
 }
 
-/// Format generated file contents through the C++ formatter, if available.
-/// Non-C++ files (by extension) pass through unchanged.
+/// The C++ formatter a run uses, resolved the first time the run has C++
+/// bytes to shape.
+///
+/// Lazily, for two reasons. A document that fails validation must be refused
+/// with its own diagnostic rather than with "no clang-format 19" — the mesh
+/// `expect_*_failure` tests assert exactly that diagnostic. And a run that
+/// writes no C++ (a rejected document's stubs, `--list`, `--clean`) needs no
+/// formatter at all. The manifest names the formatter only when it shaped
+/// something ([`Self::used`]).
+struct CppFormatterSlot<'a> {
+    lang: Language,
+    format_style: Option<&'a str>,
+    no_format: bool,
+    formatter: std::cell::OnceCell<Option<sce_build::formatter::CppFormatter>>,
+}
+
+impl<'a> CppFormatterSlot<'a> {
+    fn new(lang: Language, format_style: Option<&'a str>, no_format: bool) -> Self {
+        Self {
+            lang,
+            format_style,
+            no_format,
+            formatter: std::cell::OnceCell::new(),
+        }
+    }
+
+    /// The formatter, resolved now if this is the run's first C++ to shape.
+    /// Exits with the run's refusal when clang-format 19 cannot serve.
+    fn get(&self) -> Option<&sce_build::formatter::CppFormatter> {
+        self.formatter
+            .get_or_init(|| create_cpp_formatter(self.lang, self.format_style, self.no_format))
+            .as_ref()
+    }
+
+    /// What the manifest records: the formatter, if it shaped anything.
+    fn used(&self) -> Option<sce_build::manifest::FormatterInfo> {
+        self.formatter
+            .get()
+            .and_then(Option::as_ref)
+            .map(formatter_info)
+    }
+}
+
+/// What the run manifest records for `formatter`.
+fn formatter_info(
+    formatter: &sce_build::formatter::CppFormatter,
+) -> sce_build::manifest::FormatterInfo {
+    sce_build::manifest::FormatterInfo {
+        tool: sce_build::formatter::CLANG_FORMAT,
+        version: formatter.clang_format().version.clone(),
+    }
+}
+
+/// Format generated file contents through the C++ formatter, when the run has
+/// one. Non-C++ files (by extension) pass through unchanged. A file
+/// clang-format refuses stops the run instead of being written unformatted.
 fn maybe_format_files(
     files: Vec<(String, String)>,
-    formatter: &Option<sce_build::formatter::CppFormatter>,
+    slot: &CppFormatterSlot<'_>,
 ) -> Vec<(String, String)> {
-    let Some(fmt) = formatter else {
+    let Some(fmt) = slot.get() else {
         return files;
     };
-    fmt.format_output(files)
+    fmt.format_output(files).unwrap_or_else(|failure| {
+        cli_exit(CliError::FormatFailed {
+            file: failure.file,
+            detail: failure.detail,
+        })
+    })
 }
 
 /// Write file only if content differs (preserves timestamps).

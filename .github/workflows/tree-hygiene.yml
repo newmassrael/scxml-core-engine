@@ -101,11 +101,14 @@ jobs:
         fetch-depth: 0
 
     # libxml2 backs sce-build's default `xsd` feature; without it the
-    # crate fails at link time before any test runs.
+    # crate fails at link time before any test runs. clang-format-19 because
+    # two of the gate's test targets generate C++, and `sce-codegen` formats
+    # it with clang-format pinned to major 19 or refuses
+    # (docs/SCE_CODEGEN_DETERMINISM.md §9).
     - name: Install Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y pkg-config libxml2-dev
+        sudo apt-get install -y pkg-config libxml2-dev clang-format-19
 
     - name: Install Rust Toolchain
       uses: dtolnay/rust-toolchain@stable

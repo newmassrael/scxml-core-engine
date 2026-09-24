@@ -395,19 +395,24 @@ jobs:
     # Only what this casefile actually needs. A cargo round wants no CMake,
     # and the runner column travelled here from the selection so a cargo
     # casefile in a mixed selection does not pay for a tree it never opens.
+    # clang-format-19 on both rows: the ctest tree generates C++ through
+    # `sce-codegen`, and so do cargo oracles such as `cli_guard_emission` —
+    # the generator formats C++ with clang-format pinned to major 19 and
+    # refuses without it (docs/SCE_CODEGEN_DETERMINISM.md §9).
     - name: Install Dependencies
       if: matrix.runner == 'ctest'
       run: |
         sudo apt-get update
         sudo apt-get install -y \
           build-essential cmake g++ meson ninja-build lld ccache \
-          pkg-config libxml2-dev libspdlog-dev libfmt-dev libboost-dev
+          pkg-config libxml2-dev libspdlog-dev libfmt-dev libboost-dev \
+          clang-format-19
 
     - name: Install libxml2 for sce-build
       if: matrix.runner != 'ctest'
       run: |
         sudo apt-get update
-        sudo apt-get install -y pkg-config libxml2-dev
+        sudo apt-get install -y pkg-config libxml2-dev clang-format-19
 
     # A round whose oracle is a Go suite compiles it with `go test -c`, so the
     # toolchain has to be here and has to be the one `w3c-tests.yml` pins —

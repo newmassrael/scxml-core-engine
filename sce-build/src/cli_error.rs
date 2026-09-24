@@ -137,6 +137,18 @@ pub enum CliError {
     #[error("--format-style file not found: {path}")]
     FormatStyleNotFound { path: String },
 
+    /// The run would format C++ and no clang-format of the pinned major can
+    /// serve: none found, only other majors found, or an override that names
+    /// something else. `reason` is the formatter's own sentence, which names
+    /// what it found and the three ways out.
+    #[error("{reason}")]
+    FormatterUnavailable { reason: String },
+
+    /// clang-format could not format one emitted file. The file is not kept
+    /// unformatted: that would ship bytes no other host produces.
+    #[error("clang-format could not format {file}: {detail}")]
+    FormatFailed { file: String, detail: String },
+
     #[error("No <scxml> tag found in {path}")]
     NoScxmlTag { path: String },
 
@@ -538,6 +550,18 @@ impl SingleDiagnostic for CliError {
                 DiagnosticCode::CliFormatStyleNotFound,
                 vec![path.clone()],
                 Some(path.clone()),
+                None,
+            ),
+            CliError::FormatterUnavailable { reason } => (
+                DiagnosticCode::CliFormatterUnavailable,
+                vec![reason.clone()],
+                None,
+                None,
+            ),
+            CliError::FormatFailed { file, detail } => (
+                DiagnosticCode::CliFormatFailed,
+                vec![file.clone(), detail.clone()],
+                Some(file.clone()),
                 None,
             ),
             CliError::NoScxmlTag { path } => (

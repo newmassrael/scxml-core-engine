@@ -2196,6 +2196,16 @@ pub enum DiagnosticCode {
     CliProjectRootNotFound,
     #[serde(rename = "cli/format-style-not-found")]
     CliFormatStyleNotFound,
+    /// Formatting generated C++ needs clang-format of the pinned major
+    /// (`formatter::CLANG_FORMAT_MAJOR`), and none can serve: none was found,
+    /// only other majors were, or `SCE_TOOL_CLANG_FORMAT` names something
+    /// else. The message names what was found and the three ways out.
+    #[serde(rename = "cli/formatter-unavailable")]
+    CliFormatterUnavailable,
+    /// clang-format could not format one emitted file. The run stops rather
+    /// than keep that file unformatted.
+    #[serde(rename = "cli/format-failed")]
+    CliFormatFailed,
     #[serde(rename = "cli/no-scxml-tag")]
     CliNoScxmlTag,
     #[serde(rename = "cli/invalid-suite-package")]
@@ -3355,6 +3365,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CliJsonSerialization,
         CliProjectRootNotFound,
         CliFormatStyleNotFound,
+        CliFormatterUnavailable,
+        CliFormatFailed,
         CliNoScxmlTag,
         CliInvalidSuitePackage,
         CliGeneratorSourceDrift,
@@ -4257,6 +4269,8 @@ impl DiagnosticCode {
             | CliJsonSerialization
             | CliProjectRootNotFound
             | CliFormatStyleNotFound
+            | CliFormatterUnavailable
+            | CliFormatFailed
             | CliNoScxmlTag
             | CliInvalidSuitePackage
             | CliGeneratorSourceDrift
@@ -4672,6 +4686,8 @@ impl DiagnosticCode {
             CliJsonSerialization => "cli/json-serialization",
             CliProjectRootNotFound => "cli/project-root-not-found",
             CliFormatStyleNotFound => "cli/format-style-not-found",
+            CliFormatterUnavailable => "cli/formatter-unavailable",
+            CliFormatFailed => "cli/format-failed",
             CliNoScxmlTag => "cli/no-scxml-tag",
             CliInvalidSuitePackage => "cli/invalid-suite-package",
             CliGeneratorSourceDrift => "cli/generator-source-drift",
@@ -14176,6 +14192,24 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:84e445e58bbb1bde","code":"cli/format-style-not-found","stage":"cli","message":"--format-style file not found: .rustfmt.toml","actual":".rustfmt.toml"}"#,
             ),
             (
+                "cli/formatter-unavailable",
+                CliError::FormatterUnavailable {
+                    reason: "formatting generated C++ requires clang-format 19, and the only ones \
+                             found are /usr/bin/clang-format (18.1.3); install clang-format-19, \
+                             point SCE_TOOL_CLANG_FORMAT at one, or pass --no-format"
+                        .into(),
+                },
+                r#"{"v":1,"id":"fnv1a:abe57c1bc813d67c","code":"cli/formatter-unavailable","stage":"cli","message":"formatting generated C++ requires clang-format 19, and the only ones found are /usr/bin/clang-format (18.1.3); install clang-format-19, point SCE_TOOL_CLANG_FORMAT at one, or pass --no-format"}"#,
+            ),
+            (
+                "cli/format-failed",
+                CliError::FormatFailed {
+                    file: "door_sm.h".into(),
+                    detail: "unterminated comment".into(),
+                },
+                r#"{"v":1,"id":"fnv1a:3e1f7215f46a74ad","code":"cli/format-failed","stage":"cli","message":"clang-format could not format door_sm.h: unterminated comment","actual":"door_sm.h"}"#,
+            ),
+            (
                 "cli/no-scxml-tag",
                 CliError::NoScxmlTag {
                     path: "notes.txt".into(),
@@ -15210,6 +15244,11 @@ mod tests {
             | CliJsonSerialization
             | CliProjectRootNotFound
             | CliFormatStyleNotFound
+            // The repair is a tool on the host or a different command line
+            // (`--no-format`), and what was found is already named in the
+            // message; there is no candidate set a fix could choose from.
+            | CliFormatterUnavailable
+            | CliFormatFailed
             | CliNoScxmlTag
             // The refusal names one fact about the run — the backend
             // emits no suite name, or the name is unspellable, or the
@@ -15931,7 +15970,8 @@ mod tests {
                 | CliWriteOutput | CliCreateOutputDir | CliScxmlGenerate
                 | CliMissingMetadataField | CliNotADirectory
                 | CliInvalidFormatOption | CliJsonSerialization
-                | CliProjectRootNotFound | CliFormatStyleNotFound | CliNoScxmlTag
+                | CliProjectRootNotFound | CliFormatStyleNotFound
+                | CliFormatterUnavailable | CliFormatFailed | CliNoScxmlTag
                 | CliInvalidSuitePackage
                 | CliGeneratorSourceDrift | CliGeneratorSourceUnverifiable
                 | CliUsage | CliQueryNoMatch | CliClosureInputUnusable
@@ -16096,9 +16136,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            386,
+            388,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 386 distinct variants to match the DiagnosticCode \
+             expected 388 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -17054,6 +17094,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | CliJsonSerialization
             | CliProjectRootNotFound
             | CliFormatStyleNotFound
+            | CliFormatterUnavailable
+            | CliFormatFailed
             | CliNoScxmlTag
             | CliInvalidSuitePackage
             | CliGeneratorSourceDrift
@@ -17724,8 +17766,8 @@ mod anchor_contract_tests {
         // by measuring nothing at all.
         assert_eq!(
             filed.len(),
-            26,
-            "expected the 26 `cli`/`io` codes to be filed as permanent \
+            28,
+            "expected the 28 `cli`/`io` codes to be filed as permanent \
              exemptions; got {}: {filed:?}. If the code set genuinely \
              changed, re-derive this number from the namespace census \
              rather than editing it to match.",

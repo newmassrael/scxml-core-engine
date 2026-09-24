@@ -496,6 +496,11 @@ name = "generation_can_assert_its_output_unchanged"
 path = "tests/generation_can_assert_its_output_unchanged.rs"
 required-features = ["cli"]
 
+[[test]]
+name = "generated_cpp_is_formatted_by_the_pinned_tool"
+path = "tests/generated_cpp_is_formatted_by_the_pinned_tool.rs"
+required-features = ["cli"]
+
 
 
 # Generator content witness, end-to-end. Drives the real binary because

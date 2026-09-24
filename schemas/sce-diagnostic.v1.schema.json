@@ -264,6 +264,8 @@
         "cli/json-serialization",
         "cli/project-root-not-found",
         "cli/format-style-not-found",
+        "cli/formatter-unavailable",
+        "cli/format-failed",
         "cli/no-scxml-tag",
         "cli/invalid-suite-package",
         "cli/generator-source-drift",

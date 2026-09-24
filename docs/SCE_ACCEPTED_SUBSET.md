@@ -3214,6 +3214,8 @@ Codes that the author can avoid by writing a better SCXML /
 | `cli/not-a-directory` | Cli |
 | `cli/invalid-format-option` | Cli |
 | `cli/format-style-not-found` | Cli |
+| `cli/formatter-unavailable` | Cli |
+| `cli/format-failed` | Cli |
 | `cli/no-scxml-tag` | Cli |
 | `cli/invalid-suite-package` | Cli |
 | `cli/generator-source-drift` | Cli |

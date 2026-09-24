@@ -126,13 +126,9 @@ function(sce_generate_static_integration_test STEM OUTPUT_DIR)
         list(APPEND _CHILD_SCXMLS "${OUTPUT_DIR}/${_HYBRID}.scxml")
     endforeach()
 
-    if(SCE_CLANG_FORMAT_FOUND)
-        set(_PARENT_FMT_CMD
-            COMMAND "${SCE_CLANG_FORMAT}" "-style=file:${SCE_CLANG_FORMAT_STYLE}"
-                    -i "${PARENT_HEADER}" "${PARENT_INL}")
-    else()
-        set(_PARENT_FMT_CMD "")
-    endif()
+    # Formatting happens inside sce-codegen, with the pinned clang-format, on
+    # the parent and the synth children it emits alike — see SCEClangFormat.cmake.
+    sce_codegen_format_args(_FORMAT_ARGS)
 
     # `--write-deps` + DEPFILE: the generated source depends on every
     # jinja2 template that rendered it, not just on the SCXML. Without it
@@ -148,7 +144,7 @@ function(sce_generate_static_integration_test STEM OUTPUT_DIR)
                 -l cpp -o "${OUTPUT_DIR}"
                 --input-root "${FIXTURE_ROOT}"
                 --write-deps "${_PARENT_DEPFILE}"
-        ${_PARENT_FMT_CMD}
+                ${_FORMAT_ARGS}
         DEPENDS "${STAGED_SCXML}" "${SCE_CODEGEN}"
         DEPFILE "${_PARENT_DEPFILE}"
         BYPRODUCTS "${PARENT_INL}" ${_CHILD_SCXMLS} ${_CHILD_MACHINES}
@@ -170,14 +166,6 @@ function(sce_generate_static_integration_test STEM OUTPUT_DIR)
         set(_HYBRID_HEADER "${OUTPUT_DIR}/${_HYBRID}_sm.h")
         set(_HYBRID_INL "${OUTPUT_DIR}/${_HYBRID}_sm.inl")
 
-        if(SCE_CLANG_FORMAT_FOUND)
-            set(_HYBRID_FMT_CMD
-                COMMAND "${SCE_CLANG_FORMAT}" "-style=file:${SCE_CLANG_FORMAT_STYLE}"
-                        -i "${_HYBRID_HEADER}" "${_HYBRID_INL}")
-        else()
-            set(_HYBRID_FMT_CMD "")
-        endif()
-
         set(_HYBRID_DEPFILE "${_HYBRID_HEADER}.d")
 
         add_custom_command(
@@ -187,7 +175,7 @@ function(sce_generate_static_integration_test STEM OUTPUT_DIR)
                     -l cpp -o "${OUTPUT_DIR}"
                     --input-root "${FIXTURE_ROOT}"
                     --write-deps "${_HYBRID_DEPFILE}"
-            ${_HYBRID_FMT_CMD}
+                    ${_FORMAT_ARGS}
             DEPENDS "${PARENT_HEADER}" "${SCE_CODEGEN}"
             DEPFILE "${_HYBRID_DEPFILE}"
             BYPRODUCTS "${_HYBRID_INL}"

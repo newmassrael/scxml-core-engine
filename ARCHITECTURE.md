@@ -238,7 +238,7 @@ src/                   — sce_base sources (SCE_BASE_SOURCES SSOT)
 third_party/           — nlohmann_json, pugixml, optional spdlog
 sce_base_sources.cmake — SSOT copy for in-place builds
 SCECodegen.cmake       — sce_add_state_machine() function
-SCEClangFormat.cmake   — clang-format post-processor
+SCEClangFormat.cmake   — how sce-codegen formats generated C++ (pinned clang-format 19)
 tools/codegen/
   ├─ default.clang-format
   └─ templates/          — Jinja2 templates (cpp/rust/kotlin/go/python)

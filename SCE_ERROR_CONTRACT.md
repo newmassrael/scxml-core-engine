@@ -964,7 +964,9 @@ references against a real document and drift silently.
 | `cli/acceptance-lapsed` | `cli` | no |  |
 | `cli/closure-input-unusable` | `cli` | no |  |
 | `cli/create-output-dir` | `cli` | no |  |
+| `cli/format-failed` | `cli` | no |  |
 | `cli/format-style-not-found` | `cli` | no |  |
+| `cli/formatter-unavailable` | `cli` | no |  |
 | `cli/generator-source-drift` | `cli` | no |  |
 | `cli/generator-source-unverifiable` | `cli` | no |  |
 | `cli/invalid-format-option` | `cli` | `replace_one_of` |  |
@@ -1300,6 +1302,7 @@ is registered in `SCE_WIRE_CONTRACTS.md`. The shape is:
 | `holder` | optional object | The object a transform keeps its `previous()` values in, by the names the target backend gave it: `holder` (its type), `outputs` (the record one activation returns), `new`, `reset`, `update`, and — only when a field read through `previous()` is also `sce:retain` — `restored`, which starts the holder from the values the host stored. Present exactly when `generate` emitted one; omitted otherwise, and never on `check`, which sweeps backends whose names differ. A transform is pure functions unless an output reads a field through `previous()`, and then the host must drive it through the holder — construct one, call `update` once per activation — because only the holder keeps what the next activation reads. Which of the two a document is follows from its content, not its `sce:kind`, so a host cannot tell without this. Decided by `forge::generator::transform_holder`, the call the generator itself makes (`docs/SCE_ACCEPTED_SUBSET.md` §3.4.1). |
 | `rejected` | optional object | Present only when the input triggered a W3C-spec rejection (currently `W3C SCXML 5.8`, "untestable manifest") and stub files were written in place of generated code. Absence means clean generation. Fields: `spec` (e.g. `"W3C SCXML 5.8"`) and `name` (the document's `name` attribute). |
 | `deploy` | optional object | Declarations read out of `--deploy` that SCE records without acting on. Omitted whole when the run had no deploy or the deploy declared none of them, so a deploy-unaware manifest carries no new bytes. See [§10.5](#105-deploy-declarations). |
+| `formatter` | optional object `{tool, version}` | The external formatter that shaped the emitted artefacts, as the run resolved it — e.g. `{"tool":"clang-format","version":"19.1.1"}`. A formatter is an input of the bytes like the generator, so a run that used one names it beside `generator`: the generator pins its major (clang-format 19 for C++, and a run that cannot find it fails with `cli/formatter-unavailable` rather than emitting differently-shaped bytes), and this records which build of it ran. Omitted when the run formatted nothing — `--no-format`, or no C++ emitted. See `docs/SCE_CODEGEN_DETERMINISM.md` §9. |
 
 ### 10.2 Stream discipline
 

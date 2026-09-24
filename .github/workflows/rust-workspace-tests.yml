@@ -197,10 +197,15 @@ jobs:
     # where a hosted libc cannot paper over a missing declaration. The
     # runner image does not carry it, so before this line the check was
     # the single `SCE_REQUIRE_TOOLS` casualty in the lane.
+    #
+    # clang-format-19 because `sce-codegen generate -l cpp` formats by default
+    # with clang-format pinned to major 19 and refuses to run without it
+    # (docs/SCE_CODEGEN_DETERMINISM.md §9). The runner image carries other
+    # majors, which the generator rejects; the suite's CLI tests generate C++.
     - name: Install Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y pkg-config libxml2-dev clang gcc-arm-none-eabi
+        sudo apt-get install -y pkg-config libxml2-dev clang gcc-arm-none-eabi clang-format-19
 
     - name: Install Rust Toolchain
       uses: dtolnay/rust-toolchain@stable

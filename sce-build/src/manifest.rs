@@ -153,6 +153,21 @@ pub struct RejectedInfo {
     pub name: String,
 }
 
+/// The external formatter that shaped a run's emitted artefacts, as the run
+/// resolved it.
+///
+/// A formatter is an input of the bytes like the generator itself, so a run
+/// that used one names it beside `generator` — the major is pinned
+/// (`formatter::CLANG_FORMAT_MAJOR`), and this records which build of it ran.
+/// See docs/SCE_CODEGEN_DETERMINISM.md §9.
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct FormatterInfo {
+    /// The tool, e.g. `clang-format`.
+    pub tool: &'static str,
+    /// The version it reported, e.g. `19.1.1`.
+    pub version: String,
+}
+
 /// Deploy declarations SCE records without acting on.
 ///
 /// An object rather than a flat `static_analyzer` key because the spec
@@ -341,6 +356,11 @@ pub struct Manifest<'a> {
     pub rejected: Option<RejectedInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deploy: Option<DeployInfo>,
+    /// The formatter that shaped the emitted artefacts, when one did.
+    /// Omitted when the run formatted nothing: `--no-format`, or no C++ was
+    /// emitted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub formatter: Option<FormatterInfo>,
     /// Present only for `kind = "check"`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub languages: Option<Vec<LanguageVerdict>>,
@@ -535,6 +555,7 @@ mod tests {
             holder: None,
             rejected: None,
             deploy: None,
+            formatter: None,
             languages: None,
         };
         assert_valid(&m.to_line());
@@ -565,6 +586,10 @@ mod tests {
             deploy: Some(DeployInfo {
                 static_analyzer: Some(StaticAnalyzer::Coverity.as_str()),
             }),
+            formatter: Some(FormatterInfo {
+                tool: "clang-format",
+                version: "19.1.1".to_string(),
+            }),
             languages: None,
         };
         assert_valid(&m.to_line());
@@ -588,6 +613,7 @@ mod tests {
             holder: None,
             rejected: None,
             deploy: None,
+            formatter: None,
             languages: Some(vec![
                 LanguageVerdict::ok("rust"),
                 LanguageVerdict::rejected("cpp", "generate/unsupported-feature".to_string()),
@@ -640,6 +666,7 @@ mod tests {
             holder: None,
             rejected: None,
             deploy: None,
+            formatter: None,
             languages: None,
         };
         let line = m.to_line();
@@ -677,6 +704,7 @@ mod tests {
             holder: None,
             rejected: None,
             deploy: None,
+            formatter: None,
             languages: None,
         };
         let line = m.to_line();
@@ -722,6 +750,7 @@ mod tests {
             holder: None,
             rejected: None,
             deploy: None,
+            formatter: None,
             languages: None,
         };
         let line = m.to_line();
@@ -751,6 +780,7 @@ mod tests {
             holder: None,
             rejected: None,
             deploy: None,
+            formatter: None,
             languages: None,
         };
         let line = m.to_line();
@@ -790,6 +820,7 @@ mod tests {
             holder: None,
             rejected: None,
             deploy: None,
+            formatter: None,
             languages: None,
         };
         let line = m.to_line();
@@ -832,6 +863,7 @@ mod tests {
             }),
             rejected: None,
             deploy: None,
+            formatter: None,
             languages: None,
         };
         let line = m.to_line();

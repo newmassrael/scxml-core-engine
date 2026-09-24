@@ -154,8 +154,12 @@ pub const HARNESS_TOOLS: &[(&str, ToolSource)] = &[
     // equivalent, so the typestate check cannot run without it.
     ("clang", ToolSource::AptPackage("clang")),
     ("clang++", ToolSource::AptPackage("clang")),
-    // Formatter for the emitted C sources.
-    ("clang-format", ToolSource::RunnerImage),
+    // Formatter for the emitted C++, pinned to one major
+    // (`formatter::CLANG_FORMAT_MAJOR`): `sce-codegen` formats by default and
+    // refuses to run without it, so every lane that generates C++ through the
+    // binary needs this exact package. The runner image carries other
+    // majors, which the resolver rejects.
+    ("clang-format", ToolSource::AptPackage("clang-format-19")),
     // Host toolchains, version managers, and interpreters the runner
     // image ships. `ld` arrives with binutils, which gcc depends on, so
     // no image carrying a C compiler is missing it.
@@ -222,7 +226,7 @@ pub fn override_var_for(name: &str) -> String {
 
 /// True when `path` names a file this process could execute.
 #[cfg(unix)]
-fn is_executable_file(path: &Path) -> bool {
+pub(crate) fn is_executable_file(path: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
     std::fs::metadata(path)
         .map(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
@@ -230,7 +234,7 @@ fn is_executable_file(path: &Path) -> bool {
 }
 
 #[cfg(not(unix))]
-fn is_executable_file(path: &Path) -> bool {
+pub(crate) fn is_executable_file(path: &Path) -> bool {
     path.is_file()
 }
 
@@ -407,8 +411,8 @@ impl ToolLocator {
     /// An explicit override that silently falls through to a different
     /// compiler would make the setting worse than useless.
     pub fn locate(&self, name: &str) -> Option<PathBuf> {
-        let var = override_var_for(name);
-        if let Some(path) = self.overrides.get(&var) {
+        if let Some(path) = self.override_for(name) {
+            let var = override_var_for(name);
             assert!(
                 is_executable_file(path),
                 "{var} is set to {} but that path is not an executable file. \
@@ -417,40 +421,46 @@ impl ToolLocator {
                  different toolchain than the one named.",
                 path.display(),
             );
-            return Some(path.clone());
+            return Some(path.to_path_buf());
         }
+        self.discovered(name).next()
+    }
 
+    /// The path `SCE_TOOL_<NAME>` names for `name`, if it is set — unchecked.
+    ///
+    /// An override is one explicit answer rather than a place to search, so
+    /// it is reported apart from [`Self::discovered`]. A caller that must
+    /// refuse a bad override instead of panicking on it (a CLI, where a
+    /// panic is a crash report rather than a failing check) reads it here
+    /// and judges it itself.
+    pub fn override_for(&self, name: &str) -> Option<&Path> {
+        self.overrides
+            .get(&override_var_for(name))
+            .map(PathBuf::as_path)
+    }
+
+    /// Every executable discovery hit for `name`, best first, in exactly the
+    /// order [`Self::locate`] ranks them — `locate` is this iterator's first
+    /// element, so the search order is written once.
+    ///
+    /// A caller that needs a hit with a property the name cannot show — a
+    /// particular major version, say — walks this instead of taking the
+    /// first. Lazy, so `locate` still stops at its first hit. Overrides are
+    /// not consulted; see [`Self::override_for`].
+    pub fn discovered<'a>(&'a self, name: &'a str) -> impl Iterator<Item = PathBuf> + 'a {
         // A caller's PATH outranks anything inferred below it.
-        for dir in &self.path_dirs {
-            let candidate = dir.join(name);
-            if is_executable_file(&candidate) {
-                return Some(candidate);
-            }
-        }
-
-        for dir in &self.path_dirs {
-            if let Some(hit) = version_suffixed_binaries_in(dir, name)
-                .into_iter()
-                .find(|path| is_executable_file(path))
-            {
-                return Some(hit);
-            }
-        }
-
-        for dir in &self.versioned_bin_dirs {
-            let exact = dir.join(name);
-            if is_executable_file(&exact) {
-                return Some(exact);
-            }
-            if let Some(hit) = version_suffixed_binaries_in(dir, name)
-                .into_iter()
-                .find(|path| is_executable_file(path))
-            {
-                return Some(hit);
-            }
-        }
-
-        None
+        let exact_on_path = self.path_dirs.iter().map(move |dir| dir.join(name));
+        let suffixed_on_path = self
+            .path_dirs
+            .iter()
+            .flat_map(move |dir| version_suffixed_binaries_in(dir, name));
+        let in_versioned_dirs = self.versioned_bin_dirs.iter().flat_map(move |dir| {
+            std::iter::once(dir.join(name)).chain(version_suffixed_binaries_in(dir, name))
+        });
+        exact_on_path
+            .chain(suffixed_on_path)
+            .chain(in_versioned_dirs)
+            .filter(|path| is_executable_file(path))
     }
 
     /// Locate the first of `names` that resolves. Use for interchangeable

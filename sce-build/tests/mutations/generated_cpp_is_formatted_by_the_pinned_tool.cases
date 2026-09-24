@@ -1,0 +1,68 @@
+# Mutation cases for "generated C++ is formatted by the pinned tool, or the run
+# stops".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/generated_cpp_is_formatted_by_the_pinned_tool.cases`.
+#
+# `sce-codegen` formats the C++ it writes with clang-format of
+# `formatter::CLANG_FORMAT_MAJOR` (docs/SCE_CODEGEN_DETERMINISM.md §9). Each
+# promise in that sentence can be broken on its own and still leave a
+# generator that produces C++:
+#
+#   - accepting any major formats with whatever the host has, which is the
+#     host-dependent output this exists to end (18 and 19 disagree on 17 of
+#     288 goldens);
+#   - falling back to unformatted output on a missing formatter is the exact
+#     behaviour it replaced, and it read as success;
+#   - resolving the formatter before the document is read masks a document's
+#     own refusal behind "no clang-format 19";
+#   - `orchestrate` writing unformatted shapes a document set differently from
+#     the same documents generated one at a time;
+#   - a manifest that stops naming the formatter hides the one input of the
+#     bytes that is not the document or the generator;
+#   - a file clang-format refuses, written unformatted, ships bytes no other
+#     host produces.
+#
+# One case per promise, and each is refused by a test in
+# `generated_cpp_is_formatted_by_the_pinned_tool.rs`.
+
+mutation_tests -p sce-build --features cli --test generated_cpp_is_formatted_by_the_pinned_tool
+mutation_targets sce-build/src/formatter.rs
+mutation_targets sce-build/src/bin/sce_codegen.rs
+mutation_oracles sce-build/tests/generated_cpp_is_formatted_by_the_pinned_tool.rs
+
+mutation_case "an override of another major is accepted" <<'PY'
+edit("sce-build/src/formatter.rs",
+     "Ok((major, version)) if major == CLANG_FORMAT_MAJOR => Ok(ResolvedClangFormat {",
+     "Ok((major, version)) if major > 0 => Ok(ResolvedClangFormat {")
+PY
+
+mutation_case "a formatter that cannot serve falls back to unformatted output" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "        Err(e) => cli_exit(CliError::FormatterUnavailable {\n            reason: e.to_string(),\n        }),",
+     "        Err(_) => None,")
+PY
+
+mutation_case "the formatter is resolved before the document is read" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "    // shaped something, which each exit below reads from `used()`.\n    let cpp_formatter = CppFormatterSlot::new(lang, format_style, no_format);\n",
+     "    // shaped something, which each exit below reads from `used()`.\n    let cpp_formatter = CppFormatterSlot::new(lang, format_style, no_format);\n    cpp_formatter.get();\n")
+PY
+
+mutation_case "orchestrate writes its C++ unformatted" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "for (file_name, code) in &maybe_format_files(generated.files.clone(), &cpp_formatter) {",
+     "for (file_name, code) in &generated.files {")
+PY
+
+mutation_case "the manifest no longer names the formatter that shaped the run" <<'PY'
+edit("sce-build/src/bin/sce_codegen.rs",
+     "    report.formatter = cpp_formatter.used();\n    emit_generate_manifest(&report);\n}",
+     "    emit_generate_manifest(&report);\n}")
+PY
+
+mutation_case "a file clang-format refuses is written unformatted" <<'PY'
+edit("sce-build/src/formatter.rs",
+     "self.format(&code, &name).map(|formatted| (name, formatted))",
+     "Ok((name.clone(), self.format(&code, &name).unwrap_or_else(|_| code.clone())))")
+PY

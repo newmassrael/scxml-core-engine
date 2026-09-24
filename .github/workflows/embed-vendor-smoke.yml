@@ -66,6 +66,10 @@ jobs:
       with:
         submodules: recursive
 
+    # clang-format-19 beside clang-19, which does not provide it: the consumer
+    # smoke generates C++ through `sce-codegen`, which formats it with
+    # clang-format pinned to major 19 and refuses without it
+    # (docs/SCE_CODEGEN_DETERMINISM.md §9).
     - name: Install Dependencies
       run: |
         sudo apt-get update
@@ -75,7 +79,8 @@ jobs:
           g++ \
           ninja-build \
           pkg-config \
-          clang-19
+          clang-19 \
+          clang-format-19
 
     - name: Install Rust Toolchain
       uses: dtolnay/rust-toolchain@stable

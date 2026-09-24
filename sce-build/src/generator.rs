@@ -3577,7 +3577,9 @@ pub fn loader_template_files(dir: &Path) -> Vec<(String, PathBuf)> {
 // (dedent, include sort, blank-line collapse, orphaned-line re-indent).
 //
 // Style-level formatting (pointer alignment, line wrapping, macro alignment,
-// brace insertion) is delegated to clang-format via the CMake build system.
+// brace insertion) is delegated to clang-format, which the `sce-codegen`
+// binary runs by default with its major pinned (`formatter::CLANG_FORMAT_MAJOR`,
+// docs/SCE_CODEGEN_DETERMINISM.md §9); the library's own output stops here.
 // This keeps a clean separation: codegen → structure → style.
 
 /// Post-process generated C++ header (.h) to match clang-format style.

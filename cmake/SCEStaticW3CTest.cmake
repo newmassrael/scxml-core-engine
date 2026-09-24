@@ -151,16 +151,12 @@ function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
 
         # Generate C++ code for sub SCXML (as invoked child)
         set(SUB_INL_FILE "${OUTPUT_DIR}/${SUB_TXML_NAME}_sm.inl")
-        # clang-format post-processing (no-op if not available)
-        if(SCE_CLANG_FORMAT_FOUND)
-            set(_SUB_FORMAT_CMD COMMAND "${SCE_CLANG_FORMAT}" "-style=file:${SCE_CLANG_FORMAT_STYLE}" -i "${SUB_HEADER_FILE}" "${SUB_INL_FILE}")
-        else()
-            set(_SUB_FORMAT_CMD "")
-        endif()
+        # Formatted inside sce-codegen with the pinned clang-format — see
+        # SCEClangFormat.cmake.
+        sce_codegen_format_args(_FORMAT_ARGS)
         add_custom_command(
             OUTPUT "${SUB_HEADER_FILE}"
-            COMMAND "${SCE_CODEGEN}" generate "${SUB_SCXML_FILE}" -l cpp -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --as-child --write-deps "${SUB_HEADER_FILE}.d"
-            ${_SUB_FORMAT_CMD}
+            COMMAND "${SCE_CODEGEN}" generate "${SUB_SCXML_FILE}" -l cpp -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --as-child --write-deps "${SUB_HEADER_FILE}.d" ${_FORMAT_ARGS}
             DEPENDS "${SUB_SCXML_FILE}" "${SCE_CODEGEN}"
             DEPFILE "${SUB_HEADER_FILE}.d"
             BYPRODUCTS "${SUB_INL_FILE}"
@@ -303,9 +299,10 @@ function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
             COMMENT "Staging hybrid child SCXML: ${_CPP_HYBRID_NAME}.scxml"
             VERBATIM
         )
+        sce_codegen_format_args(_FORMAT_ARGS)
         add_custom_command(
             OUTPUT "${_CPP_HYBRID_HEADER}"
-            COMMAND "${SCE_CODEGEN}" generate "${_CPP_HYBRID_SCXML}" -l cpp -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --as-child --write-deps "${_CPP_HYBRID_HEADER}.d"
+            COMMAND "${SCE_CODEGEN}" generate "${_CPP_HYBRID_SCXML}" -l cpp -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --as-child --write-deps "${_CPP_HYBRID_HEADER}.d" ${_FORMAT_ARGS}
             DEPENDS "${_CPP_HYBRID_SCXML}" "${SCE_CODEGEN}"
             DEPFILE "${_CPP_HYBRID_HEADER}.d"
             BYPRODUCTS "${_CPP_HYBRID_INL}"
@@ -318,16 +315,10 @@ function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
         set(GENERATED_W3C_HEADERS ${GENERATED_W3C_HEADERS} PARENT_SCOPE)
     endforeach()
 
-    # clang-format post-processing (no-op if not available)
-    if(SCE_CLANG_FORMAT_FOUND)
-        set(_PARENT_FORMAT_CMD COMMAND "${SCE_CLANG_FORMAT}" "-style=file:${SCE_CLANG_FORMAT_STYLE}" -i "${GENERATED_HEADER}" "${GENERATED_INL}")
-    else()
-        set(_PARENT_FORMAT_CMD "")
-    endif()
+    sce_codegen_format_args(_FORMAT_ARGS)
     add_custom_command(
         OUTPUT "${GENERATED_HEADER}"
-        COMMAND "${SCE_CODEGEN}" generate "${SCXML_FILE}" -l cpp -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --write-deps "${GENERATED_HEADER}.d"
-        ${_PARENT_FORMAT_CMD}
+        COMMAND "${SCE_CODEGEN}" generate "${SCXML_FILE}" -l cpp -o "${OUTPUT_DIR}" --input-root "${RESOURCE_DIR}" --write-deps "${GENERATED_HEADER}.d" ${_FORMAT_ARGS}
         DEPENDS "${SCXML_FILE}" ${SUB_HEADER_DEPENDENCIES} "${SCE_CODEGEN}"
         DEPFILE "${GENERATED_HEADER}.d"
         BYPRODUCTS "${GENERATED_INL}" ${_CPP_PARENT_BYPRODUCTS}
