@@ -10,6 +10,7 @@
 #include "parsing/TemplateExpander.h"
 #include "parsing/XIncludeError.h"
 #include "parsing/XIncludeExpander.h"
+#include <algorithm>
 #include <cerrno>
 #include <cstring>
 #include <filesystem>
@@ -18,6 +19,7 @@
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace SCE {
@@ -226,88 +228,123 @@ std::shared_ptr<IXMLElement> PugiXMLElement::getParent() const {
     return nullptr;
 }
 
+namespace {
+
+// A namespace binding as (prefix, URI); the empty prefix is the default
+// namespace.
+using NamespaceBinding = std::pair<std::string, std::string>;
+
+// The attribute that declares `prefix`: `xmlns` for the default namespace,
+// `xmlns:<prefix>` for any other.
+std::string declarationName(const std::string &prefix) {
+    return prefix.empty() ? std::string("xmlns") : "xmlns:" + prefix;
+}
+
+// The prefix of a qualified name as written; empty for an unprefixed one.
+std::string prefixOf(const char *qname) {
+    const char *colon = std::strchr(qname, ':');
+    return colon ? std::string(qname, colon) : std::string();
+}
+
+// Records the binding `prefix` resolves to where `element` stands, when the
+// element that declares it lies above `root`. pugixml keeps a declaration as
+// an ordinary attribute of the element it is written on, so the nearest one
+// up the tree is the binding in force.
+void recordInheritedUse(pugi::xml_node element, const std::string &prefix, pugi::xml_node root,
+                        std::vector<NamespaceBinding> &inherited) {
+    if (prefix == "xml") {
+        return;  // bound everywhere without a declaration
+    }
+    const std::string declaration = declarationName(prefix);
+    bool withinRoot = true;
+    for (pugi::xml_node at = element; at && at.type() == pugi::node_element; at = at.parent()) {
+        pugi::xml_attribute declared = at.attribute(declaration.c_str());
+        if (declared) {
+            if (withinRoot) {
+                return;  // the fragment declares it itself
+            }
+            NamespaceBinding binding{prefix, declared.value()};
+            if (binding.first.empty() && binding.second.empty()) {
+                return;  // a default naming no namespace is what a copy starts with
+            }
+            if (std::find(inherited.begin(), inherited.end(), binding) == inherited.end()) {
+                inherited.push_back(std::move(binding));
+            }
+            return;
+        }
+        if (at == root) {
+            withinRoot = false;
+        }
+    }
+}
+
+// Every binding `element` and its descendants use and inherit from above
+// `root`, in the order the names first use them: an element's name, which
+// takes the default namespace when it has no prefix, and each prefixed
+// attribute's.
+void collectInheritedBindings(pugi::xml_node element, pugi::xml_node root, std::vector<NamespaceBinding> &inherited) {
+    recordInheritedUse(element, prefixOf(element.name()), root, inherited);
+    for (pugi::xml_attribute attribute : element.attributes()) {
+        const std::string name = attribute.name();
+        if (name == "xmlns" || name.rfind("xmlns:", 0) == 0) {
+            continue;  // a declaration, not a use
+        }
+        const std::string prefix = prefixOf(attribute.name());
+        if (!prefix.empty()) {
+            recordInheritedUse(element, prefix, root, inherited);
+        }
+    }
+    for (pugi::xml_node child : element.children()) {
+        if (child.type() == pugi::node_element) {
+            collectInheritedBindings(child, root, inherited);
+        }
+    }
+}
+
+}  // namespace
+
 std::string PugiXMLElement::serializeChildContent() const {
     if (!node_) {
         return "";
     }
 
-    // §scxml-B-2: Full XML serialization preserving structure.
-    // Use pugixml's print() to serialize each child node compactly.
+    // §scxml-B-2: Full XML serialization preserving structure, through
+    // pugixml's print() of each child.
     //
-    // Namespace propagation across the serialization boundary:
-    // pugixml exposes xmlns declarations only as ordinary attributes
-    // on the declaring element, so a child that inherits the default
-    // xmlns from `node_` (or any ancestor above it) has no xmlns
-    // attribute of its own and `pugi::xml_node::print()` therefore
-    // omits the binding from the serialized fragment. Without
-    // injection the round-trip `<invoke><content><scxml>` → string
-    // → `loadSCXMLFromString` re-parse fails the strict
-    // `ParsingCommon::isScxmlNamespace` gate landed in a46d2c27
-    // (the re-parsed `<scxml>` has no namespace, so it is rejected
-    // as `ParseWrongRootElement` even though the original document
-    // bound it via the ancestor's `xmlns="http://www.w3.org/2005/07/scxml"`).
-    // The fix mirrors the same ancestor-walk `getNamespace()`
-    // performs: pre-compute the default xmlns visible at `node_`,
-    // then inject it onto each unprefixed element child whose own
-    // tag does not already declare a default. Prefixed children
-    // (`<framework:foo>`) and children that ship their own
-    // `xmlns="..."` are left untouched.
-    std::string inheritedDefaultXmlns;
-    for (pugi::xml_node ancestor = node_; ancestor; ancestor = ancestor.parent()) {
-        pugi::xml_attribute decl = ancestor.attribute("xmlns");
-        if (decl) {
-            inheritedDefaultXmlns = decl.value();
-            break;
-        }
-    }
-
+    // A child is cut out of its document, so the namespace bindings its
+    // names inherit from the elements above it have to come with it:
+    // pugixml keeps a declaration as an ordinary attribute of the element it
+    // is written on, and print() of a child writes none of its ancestors'.
+    // Each element child therefore declares on itself every binding its
+    // subtree uses and inherits — the rule sce-build's `inherited_bindings`
+    // states for the generated machines, so both engines hand a fragment's
+    // reader the same names. The declarations go on a copy, so the document
+    // itself is never mutated.
+    //
+    // ⚠ Until 2026-09-24 only the default namespace was declared, and only
+    // on an unprefixed child that did not declare one itself. A child using
+    // a prefix its document bound (`ext:note`, with `xmlns:ext` on the
+    // `<scxml>` root) came out naming an unbound prefix — an in-line child
+    // `<scxml>` handed to the invoked session among them — and the
+    // unprefixed descendants of a prefixed child lost the default namespace.
     std::ostringstream oss;
     for (const auto &child : node_.children()) {
-        if (child.type() != pugi::node_element || inheritedDefaultXmlns.empty()) {
-            // Text / CDATA / comment children round-trip verbatim;
-            // the no-inherited-xmlns case has nothing to inject.
+        std::vector<NamespaceBinding> inherited;
+        if (child.type() == pugi::node_element) {
+            collectInheritedBindings(child, child, inherited);
+        }
+        if (inherited.empty()) {
+            // Text, CDATA and comment children, and an element that
+            // inherits nothing, are written as they are.
             child.print(oss, "", pugi::format_raw);
             continue;
         }
-
-        std::string childName = child.name();
-        bool childIsPrefixed = childName.find(':') != std::string::npos;
-        bool childHasOwnXmlns = static_cast<bool>(child.attribute("xmlns"));
-        if (childIsPrefixed || childHasOwnXmlns) {
-            child.print(oss, "", pugi::format_raw);
-            continue;
+        pugi::xml_document copy;
+        pugi::xml_node root = copy.append_copy(child);
+        for (auto binding = inherited.rbegin(); binding != inherited.rend(); ++binding) {
+            root.prepend_attribute(declarationName(binding->first).c_str()).set_value(binding->second.c_str());
         }
-
-        // Patch `xmlns="<inherited>"` into the child's opening tag.
-        // Serialize to a temporary buffer first because pugixml has
-        // no API to inject an attribute on a const node; the
-        // alternative — mutating the document tree — would risk
-        // surprising the rest of the parser. The opening tag begins
-        // at byte 0 with `<` followed by the local name; the
-        // insertion point is the byte immediately after the local
-        // name (before any whitespace, `/`, or `>`).
-        std::ostringstream child_oss;
-        child.print(child_oss, "", pugi::format_raw);
-        std::string serialized = child_oss.str();
-        if (serialized.size() < 2 || serialized[0] != '<') {
-            // Defensive fallback for unexpected shape (no malformed
-            // root has reached this point in practice, but pugixml's
-            // print contract does not formally guarantee `<` at
-            // byte 0 for every pathological tree).
-            oss << serialized;
-            continue;
-        }
-        size_t pos = 1;
-        while (pos < serialized.size()) {
-            char c = serialized[pos];
-            if (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '/' || c == '>') {
-                break;
-            }
-            ++pos;
-        }
-        std::string injection = " xmlns=\"" + inheritedDefaultXmlns + "\"";
-        serialized.insert(pos, injection);
-        oss << serialized;
+        root.print(oss, "", pugi::format_raw);
     }
 
     return oss.str();

@@ -20,19 +20,98 @@
 //     scxml"). This unit test pins the propagation directly so a
 //     future serializer refactor cannot silently bring the
 //     regression back without tripping here.
+//
+// The default namespace was the only binding carried across until
+// 2026-09-24: a fragment using a prefix its document declared above it came
+// out naming an unbound prefix, and so did an in-line child `<scxml>`. A
+// fragment now declares every binding its names use and inherit, the rule
+// sce-build's `inherited_bindings` states for the generated machines, and
+// the cases that call `undeclaredNames` read it back as a reader of the
+// fragment alone would.
 
 #include "parsing/PugiXMLParser.h"
 #include "parsing/XmlSerializationHelper.h"
 
 #include <gtest/gtest.h>
 
+#include <cstring>
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace {
 
 constexpr const char *SCXML_NS = "http://www.w3.org/2005/07/scxml";
+
+// ── Helper: the names a serialized fragment uses but does not declare ──
+//
+// A fragment is read on its own — by the invoked session's parser, by a
+// backend's DOM reader — so the binding each of its names uses has to be
+// declared inside it. Reads `fragment` under a wrapper that declares
+// nothing, and names each element or prefixed attribute whose binding no
+// element from it up to the wrapper declares. An unprefixed element counts
+// only when `defaultNamespace` is given: it must then resolve to that URI.
+std::vector<std::string> undeclaredNames(const std::string &fragment, const char *defaultNamespace = nullptr) {
+    pugi::xml_document document;
+    const std::string wrapped = "<fragment>" + fragment + "</fragment>";
+    EXPECT_TRUE(document.load_string(wrapped.c_str())) << "the fragment must be XML; got:\n" << fragment;
+    pugi::xml_node wrapper = document.document_element();
+
+    auto boundTo = [&](pugi::xml_node element, const std::string &declaration) -> const char * {
+        for (pugi::xml_node at = element; at && at != wrapper; at = at.parent()) {
+            if (pugi::xml_attribute declared = at.attribute(declaration.c_str())) {
+                return declared.value();
+            }
+        }
+        return nullptr;
+    };
+
+    std::vector<std::string> undeclared;
+    std::function<void(pugi::xml_node)> visit = [&](pugi::xml_node element) {
+        const char *name = element.name();
+        if (const char *colon = std::strchr(name, ':')) {
+            if (!boundTo(element, "xmlns:" + std::string(name, colon))) {
+                undeclared.push_back(name);
+            }
+        } else if (defaultNamespace) {
+            const char *uri = boundTo(element, "xmlns");
+            if (!uri || std::strcmp(uri, defaultNamespace) != 0) {
+                undeclared.push_back(name);
+            }
+        }
+        for (pugi::xml_attribute attribute : element.attributes()) {
+            const std::string attributeName = attribute.name();
+            const auto colon = attributeName.find(':');
+            if (colon == std::string::npos || attributeName.compare(0, colon, "xmlns") == 0 ||
+                attributeName.compare(0, colon, "xml") == 0) {
+                continue;
+            }
+            if (!boundTo(element, "xmlns:" + attributeName.substr(0, colon))) {
+                undeclared.push_back(attributeName);
+            }
+        }
+        for (pugi::xml_node child : element.children()) {
+            if (child.type() == pugi::node_element) {
+                visit(child);
+            }
+        }
+    };
+    for (pugi::xml_node child : wrapper.children()) {
+        if (child.type() == pugi::node_element) {
+            visit(child);
+        }
+    }
+    return undeclared;
+}
+
+std::string joined(const std::vector<std::string> &names) {
+    std::string out;
+    for (const auto &name : names) {
+        out += (out.empty() ? "" : ", ") + name;
+    }
+    return out;
+}
 
 // ── Helper: parse `xml` and return the named child element ─────────
 
@@ -176,13 +255,11 @@ TEST(SerializeChildContentXmlns, ChildWithOwnXmlnsIsLeftAlone) {
                          << serialized;
 }
 
-// Foreign-namespace prefixed children must also be left alone — the
-// `xmlns:<prefix>` resolution is the binding mechanism, and the
-// strict-isScxmlNamespace policy treats prefixed elements as foreign
-// regardless. Injecting a default xmlns onto a prefixed element would
-// not affect its namespace but would inflate the serialization shape;
-// the propagation logic must skip them.
-TEST(SerializeChildContentXmlns, PrefixedChildIsLeftAlone) {
+// A prefixed child takes its namespace from its prefix, so it is given that
+// prefix's declaration — the document declared it above the fragment — and
+// no default namespace, which nothing in it uses. (It was "left alone"
+// until 2026-09-24, which wrote the prefix unbound.)
+TEST(SerializeChildContentXmlns, APrefixedChildDeclaresItsPrefixAndNoDefault) {
     const std::string xml = R"(<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:framework="http://example.com/framework"
@@ -202,10 +279,8 @@ TEST(SerializeChildContentXmlns, PrefixedChildIsLeftAlone) {
 
     EXPECT_NE(serialized.find("<framework:widget"), std::string::npos)
         << "prefixed child must round-trip with its prefix intact";
-    // Prefixed element must NOT receive a default xmlns injection —
-    // its namespace is bound via the prefix on the ancestor, and
-    // injecting `xmlns=` on a prefixed element would be a semantic
-    // change (re-binding the default for unprefixed descendants).
+    // No default namespace: nothing in `widget` takes it, and a default
+    // declared where nothing uses it re-binds nothing and only adds noise.
     // Verify the serialized framework:widget tag has no `xmlns=`.
     auto open_start = serialized.find("<framework:widget");
     ASSERT_NE(open_start, std::string::npos);
@@ -214,6 +289,145 @@ TEST(SerializeChildContentXmlns, PrefixedChildIsLeftAlone) {
     auto open_tag = serialized.substr(open_start, open_end - open_start + 1);
     EXPECT_EQ(open_tag.find("xmlns="), std::string::npos)
         << "prefixed child must not receive a default-xmlns injection; got: " << open_tag;
+    EXPECT_NE(open_tag.find("xmlns:framework=\"http://example.com/framework\""), std::string::npos)
+        << "the prefix the document declared above the fragment must be declared on it; got: " << open_tag;
+    const auto undeclared = undeclaredNames(serialized);
+    EXPECT_TRUE(undeclared.empty()) << "names the fragment does not declare: " << joined(undeclared) << "\nin:\n"
+                                    << serialized;
+}
+
+// W3C SCXML 5.4: in-line `<data>` content using a prefix its document binds
+// above it reads, on its own, as what it read in place.
+TEST(SerializeChildContentXmlns, APrefixItsDocumentBindsIsDeclaredOnTheFragment) {
+    const std::string xml = R"(<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:ext="urn:example:ext" version="1.0" initial="s0">
+  <datamodel>
+    <data id="d"><root ext:note="x"><ext:item/><plain/></root></data>
+  </datamodel>
+  <state id="s0"/>
+</scxml>)";
+
+    auto dataElement = parseAndFindChild(xml, "data");
+    ASSERT_TRUE(dataElement);
+    const std::string serialized = SCE::XmlSerializationHelper::serializeContent(dataElement);
+
+    const auto undeclared = undeclaredNames(serialized, SCXML_NS);
+    EXPECT_TRUE(undeclared.empty()) << "names the fragment does not declare: " << joined(undeclared) << "\nin:\n"
+                                    << serialized;
+    EXPECT_NE(serialized.find("<root xmlns=\"http://www.w3.org/2005/07/scxml\" xmlns:ext=\"urn:example:ext\""),
+              std::string::npos)
+        << "the fragment's root declares what its names inherit, in the order they first use it; got:\n"
+        << serialized;
+}
+
+// W3C SCXML 6.4: the in-line child document an `<invoke>` hands its session.
+// A prefix only the parent declares has to come with it, or the session's
+// parser meets an unbound prefix.
+TEST(SerializeChildContentXmlns, AnInlineChildKeepsAPrefixItsParentDeclares) {
+    const std::string xml = R"(<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:ext="urn:example:ext" version="1.0" initial="s0">
+  <state id="s0">
+    <invoke type="http://www.w3.org/TR/scxml/">
+      <content>
+        <scxml version="1.0" initial="c">
+          <final id="c" ext:note="x"/>
+        </scxml>
+      </content>
+    </invoke>
+  </state>
+</scxml>)";
+
+    auto contentElement = parseAndFindChild(xml, "content");
+    ASSERT_TRUE(contentElement);
+    const std::string serialized = SCE::XmlSerializationHelper::serializeContent(contentElement);
+
+    const auto undeclared = undeclaredNames(serialized, SCXML_NS);
+    EXPECT_TRUE(undeclared.empty()) << "names the child document does not declare: " << joined(undeclared) << "\nin:\n"
+                                    << serialized;
+
+    SCE::PugiXMLParser reparser;
+    auto reparsed = reparser.parseContent(serialized);
+    ASSERT_TRUE(reparsed) << "the child document must re-parse; got:\n" << serialized;
+    auto reroot = reparsed->getRootElement();
+    ASSERT_TRUE(reroot);
+    EXPECT_EQ(reroot->getNamespace(), std::string(SCXML_NS));
+}
+
+// An unprefixed descendant of a prefixed child takes the default namespace
+// in place. The copy declares it on the child, or the descendant falls out
+// of every namespace.
+TEST(SerializeChildContentXmlns, AnUnprefixedDescendantOfAPrefixedChildKeepsTheDefault) {
+    const std::string xml = R"(<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:framework="http://example.com/framework"
+       version="1.0" initial="s0">
+  <state id="s0">
+    <invoke type="http://www.w3.org/TR/scxml/">
+      <content>
+        <framework:widget><part/></framework:widget>
+      </content>
+    </invoke>
+  </state>
+</scxml>)";
+
+    auto contentElement = parseAndFindChild(xml, "content");
+    ASSERT_TRUE(contentElement);
+    const std::string serialized = SCE::XmlSerializationHelper::serializeContent(contentElement);
+
+    const auto undeclared = undeclaredNames(serialized, SCXML_NS);
+    EXPECT_TRUE(undeclared.empty()) << "names the fragment does not declare: " << joined(undeclared) << "\nin:\n"
+                                    << serialized;
+}
+
+// A binding the fragment declares itself, above the name that uses it, is
+// not declared a second time — and a binding one branch declares does not
+// stand in for the one another branch inherits.
+TEST(SerializeChildContentXmlns, ABindingTheFragmentDeclaresIsNotDeclaredAgain) {
+    const std::string xml = R"(<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:ext="urn:example:ext" version="1.0" initial="s0">
+  <datamodel>
+    <data id="d"><root><outer xmlns:deep="urn:example:deep"><deep:leaf/></outer><relay xmlns:ext="urn:example:other"><back xmlns:ext="urn:example:ext" ext:y="1"/></relay><ext:tail/></root></data>
+  </datamodel>
+  <state id="s0"/>
+</scxml>)";
+
+    auto dataElement = parseAndFindChild(xml, "data");
+    ASSERT_TRUE(dataElement);
+    const std::string serialized = SCE::XmlSerializationHelper::serializeContent(dataElement);
+
+    const auto undeclared = undeclaredNames(serialized, SCXML_NS);
+    EXPECT_TRUE(undeclared.empty()) << "names the fragment does not declare: " << joined(undeclared) << "\nin:\n"
+                                    << serialized;
+    size_t deep = 0;
+    for (size_t at = serialized.find("xmlns:deep="); at != std::string::npos;
+         at = serialized.find("xmlns:deep=", at + 1)) {
+        ++deep;
+    }
+    EXPECT_EQ(deep, 1u) << "the author's own declaration is the only one; got:\n" << serialized;
+}
+
+// The declarations go on a copy: the document read afterwards is the one
+// that was parsed, and serializing twice writes the same text.
+TEST(SerializeChildContentXmlns, SerializingLeavesTheDocumentAsItWas) {
+    const std::string xml = R"(<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:ext="urn:example:ext" version="1.0" initial="s0">
+  <datamodel>
+    <data id="d"><root ext:note="x"/></data>
+  </datamodel>
+  <state id="s0"/>
+</scxml>)";
+
+    auto dataElement = parseAndFindChild(xml, "data");
+    ASSERT_TRUE(dataElement);
+    const std::string first = SCE::XmlSerializationHelper::serializeContent(dataElement);
+    const std::string second = SCE::XmlSerializationHelper::serializeContent(dataElement);
+    EXPECT_EQ(first, second);
+
+    auto children = dataElement->getChildren();
+    ASSERT_EQ(children.size(), 1u);
+    const auto attributes = children.front()->getAttributes();
+    EXPECT_EQ(attributes.count("xmlns"), 0u);
+    EXPECT_EQ(attributes.count("xmlns:ext"), 0u);
 }
 
 // Text-only `<data>` content must not gain a phantom xmlns attribute.
