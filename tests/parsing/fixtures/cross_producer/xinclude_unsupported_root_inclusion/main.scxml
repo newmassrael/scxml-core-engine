@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cross-producer fixture: the fragment is written as the one element it
+  means, the way W3C XInclude includes it. Both expanders splice the
+  children of an included root, and this root has none, so both refuse
+  it rather than splice nothing. The rejected feature names the root and
+  is a key fragment, so the two producers agree on the id only if they
+  spell it the same way.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:xi="http://www.w3.org/2001/XInclude" version="1.0" initial="s1">
+  <xi:include href="fragment.scxml"/>
+  <state id="s1"/>
+</scxml>

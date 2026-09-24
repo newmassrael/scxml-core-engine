@@ -35,7 +35,10 @@
 //
 //   * `<xi:fallback>` elements,
 //   * `parse="text"` mode,
-//   * XPointer expressions (`xpointer=`).
+//   * XPointer expressions (`xpointer=`),
+//   * inclusion of the root element itself — a fragment whose root
+//     holds no element and no text beyond whitespace, which the
+//     children rule above would splice as nothing.
 //
 // # AOT vs runtime error model
 //
@@ -525,6 +528,16 @@ fn spelled(value: &str) -> Option<String> {
 /// its own — the children slice is what actually lands in the
 /// outer output, and the range tells the map which sub-region to
 /// inherit.
+///
+/// ⚠ A root with nothing to splice is refused, not spliced as nothing.
+/// W3C XInclude includes the root element itself, so an author who
+/// reads the specification writes the one element they want as the
+/// whole fragment — `<data id="x"/>` — and the children rule would
+/// make it vanish without a word. What counts as something is what
+/// lands in the parent as content: an element, or text that is not
+/// XML whitespace. A comment or processing instruction alone does not.
+/// The C++ expander refuses the same fragments with the same feature
+/// text, so both producers derive one record id.
 fn render_root_children(
     expanded: &str,
     href: &str,
@@ -534,13 +547,56 @@ fn render_root_children(
         detail: e.to_string(),
     })?;
     let root = doc.root_element();
-    let children: Vec<_> = root.children().collect();
-    if children.is_empty() {
-        return Ok((String::new(), 0..0));
+    let carries_content = root.children().any(|child| {
+        child.is_element()
+            || (child.is_text()
+                && child
+                    .text()
+                    .is_some_and(|text| text.contains(|c: char| !is_xml_whitespace(c))))
+    });
+    if !carries_content {
+        let name = written_name(&expanded[root.range()]);
+        return Err(XIncludeError::Unsupported {
+            href: href.to_string(),
+            feature: root_inclusion_feature(name),
+            // The fragment is what is refused, and nothing of it is
+            // written on the include's row.
+            observed: None,
+        });
     }
+    let children: Vec<_> = root.children().collect();
     let start = children.first().unwrap().range().start;
     let end = children.last().unwrap().range().end;
     Ok((expanded[start..end].to_string(), start..end))
+}
+
+/// The feature a fragment with nothing to splice asks for: W3C XInclude's
+/// inclusion of the root element itself. Spelled once, and word for word
+/// by the C++ expander's `rootInclusionFeature`, because it is a key
+/// fragment of the record's id.
+fn root_inclusion_feature(root: &str) -> String {
+    format!(
+        "including the root element <{root}> itself (the children of an \
+         included root are spliced, and <{root}> has none; wrap it in a \
+         container element)"
+    )
+}
+
+/// XML 1.0 §2.3 `S`: the four characters XML calls whitespace — not
+/// Unicode's wider set, which would call a no-break space nothing.
+fn is_xml_whitespace(c: char) -> bool {
+    matches!(c, ' ' | '\t' | '\r' | '\n')
+}
+
+/// The element name a start tag is written with, prefix included — what
+/// the author reads in the fragment, and what pugixml reports as the
+/// name on the C++ side.
+fn written_name(element: &str) -> &str {
+    let tag = element.strip_prefix('<').unwrap_or(element);
+    let end = tag
+        .find(|c: char| is_xml_whitespace(c) || c == '/' || c == '>')
+        .unwrap_or(tag.len());
+    &tag[..end]
 }
 
 /// Convert a byte offset into a 1-based (row, col) pair using
@@ -673,6 +729,65 @@ mod tests {
         // from main.xml, which is wrong for a document with a
         // splice.
         assert!(!map.is_identity());
+    }
+
+    /// The outcome of including a fragment whose whole text is `fragment`.
+    fn include_fragment(fragment: &str) -> Result<String, XIncludeError> {
+        let tmp = TempDir::new().unwrap();
+        write(tmp.path(), "frag.xml", fragment);
+        let main_src = r#"<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="frag.xml"/></root>"#;
+        let main_path = write(tmp.path(), "main.xml", main_src);
+        expand(main_src, main_path.to_str().unwrap(), Some(tmp.path()), &[])
+            .map(|(out, _, _)| out)
+            .map_err(|(error, _)| error)
+    }
+
+    /// A fragment written as the one element it means — how W3C XInclude
+    /// reads it — is refused by name rather than spliced as nothing; so is
+    /// one whose root holds only whitespace, a comment or a processing
+    /// instruction.
+    #[test]
+    fn a_root_with_nothing_to_splice_is_refused() {
+        for (fragment, root) in [
+            (r#"<data id="x" expr="1"/>"#, "data"),
+            (
+                "<sce:entry xmlns:sce=\"http://sce.dev/ext\" key=\"1\"/>",
+                "sce:entry",
+            ),
+            ("<wrap>\n  \t\r\n</wrap>", "wrap"),
+            ("<wrap><!-- a note --><?pi x?></wrap>", "wrap"),
+            ("<wrap><![CDATA[ \n ]]></wrap>", "wrap"),
+        ] {
+            match include_fragment(fragment) {
+                Err(XIncludeError::Unsupported {
+                    href,
+                    feature,
+                    observed,
+                }) => {
+                    assert_eq!(href, "frag.xml", "{fragment}");
+                    assert_eq!(feature, root_inclusion_feature(root), "{fragment}");
+                    assert_eq!(observed, None, "{fragment}");
+                }
+                other => panic!("{fragment}: expected a refusal, got {other:?}"),
+            }
+        }
+    }
+
+    /// Anything that lands in the parent as content is spliced: an element,
+    /// or text beyond XML whitespace — including a no-break space, which XML
+    /// does not call whitespace.
+    #[test]
+    fn a_root_with_content_is_spliced() {
+        for (fragment, spliced) in [
+            ("<wrap><x/></wrap>", "<x/>"),
+            ("<wrap>a = 1;</wrap>", "a = 1;"),
+            ("<wrap><![CDATA[a < 1]]></wrap>", "<![CDATA[a < 1]]>"),
+            ("<wrap>\u{a0}</wrap>", "\u{a0}"),
+        ] {
+            let out = include_fragment(fragment)
+                .unwrap_or_else(|error| panic!("{fragment}: refused: {error}"));
+            assert_eq!(out, format!("<root>{spliced}</root>"), "{fragment}");
+        }
     }
 
     #[test]

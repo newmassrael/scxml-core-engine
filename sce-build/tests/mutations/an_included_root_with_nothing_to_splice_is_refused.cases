@@ -1,0 +1,33 @@
+# Mutation cases for "an included root with nothing to splice is refused".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/an_included_root_with_nothing_to_splice_is_refused.cases`.
+#
+# W3C XInclude includes the root element itself; SCE splices the root's
+# children. A fragment written as the one element it means therefore held
+# nothing to splice, and the element vanished without a word. Each case puts
+# one half of that back: the refusal skipped, or whitespace counted as
+# content, so a root holding only line breaks splices as nothing again. The
+# unit test `a_root_with_nothing_to_splice_is_refused` in `xinclude.rs`
+# refuses both; `a_root_with_content_is_spliced` holds the other side.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --lib
+mutation_targets sce-build/src/xinclude.rs
+mutation_oracles sce-build/src/xinclude.rs
+
+mutation_case "a root with nothing to splice is spliced as nothing" <<'PY'
+edit("sce-build/src/xinclude.rs",
+     r'''    if !carries_content {
+        let name = written_name(&expanded[root.range()]);''',
+     r'''    if !carries_content && false {
+        let name = written_name(&expanded[root.range()]);''')
+PY
+
+mutation_case "whitespace is counted as content" <<'PY'
+edit("sce-build/src/xinclude.rs",
+     r'''                    .is_some_and(|text| text.contains(|c: char| !is_xml_whitespace(c))))''',
+     r'''                    .is_some_and(|text| !text.is_empty()))''')
+PY

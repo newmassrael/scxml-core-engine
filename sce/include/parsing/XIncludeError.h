@@ -302,8 +302,9 @@ private:
 };
 
 // `<xi:include>` requested an XInclude feature that the pugixml
-// runtime does not implement: `parse="text"`, `xpointer=...`, or a
-// `<xi:fallback>` alternative-content child. Mirrors
+// runtime does not implement: `parse="text"`, `xpointer=...`, a
+// `<xi:fallback>` alternative-content child, or inclusion of the root
+// element itself (a fragment whose root has nothing to splice). Mirrors
 // `sce-build/src/xinclude.rs::XIncludeError::Unsupported` (fields
 // `href`, `feature`, `observed`) and maps 1:1 to the Rust
 // `xml/xinclude-unsupported` `DiagnosticCode`. The C++ expander

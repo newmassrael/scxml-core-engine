@@ -23,6 +23,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -33,6 +34,7 @@ using SCE::parsing::PositionMap;
 using SCE::parsing::SourcePos;
 using SCE::parsing::XIncludeExpandResult;
 using SCE::parsing::XIncludeExpansionError;
+using SCE::parsing::XIncludeUnsupported;
 
 namespace {
 
@@ -301,4 +303,43 @@ TEST(XIncludeExpander, UnsupportedFallbackThrows) {
         const std::string what = e.what();
         EXPECT_NE(what.find("xi:fallback"), std::string::npos);
     }
+}
+
+// ── Unsupported feature: inclusion of the root element itself ───────
+// A fragment written as the one element it means — how W3C XInclude
+// reads one — or whose root holds only whitespace is refused by name,
+// not spliced as nothing. Mirrors Rust `a_root_with_nothing_to_splice_is_refused`.
+TEST(XIncludeExpander, RootWithNothingToSpliceThrows) {
+    const std::vector<std::pair<std::string, std::string>> cases = {
+        {R"(<data id="x" expr="1"/>)", "data"},
+        {R"(<sce:entry xmlns:sce="http://sce.dev/ext" key="1"/>)", "sce:entry"},
+        {"<wrap>\n  \t\r\n</wrap>", "wrap"},
+        {"<wrap><!-- a note --></wrap>", "wrap"},
+        {"<wrap><![CDATA[ \n ]]></wrap>", "wrap"},
+    };
+    for (const auto &[fragment, root] : cases) {
+        TempTree tmp;
+        tmp.write("frag.xml", fragment);
+        const std::string src =
+            R"(<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="frag.xml"/></root>)";
+        try {
+            expandStringX(src, (tmp.root() / "main.xml").string(), tmp.root().string(), {});
+            ADD_FAILURE() << fragment << ": a root with nothing to splice must be rejected";
+        } catch (const XIncludeUnsupported &e) {
+            EXPECT_EQ(std::string(e.what()),
+                      "<xi:include href=\"frag.xml\">: unsupported feature: including the root element <" + root +
+                          "> itself (the children of an included root are spliced, and <" + root +
+                          "> has none; wrap it in a container element)")
+                << fragment;
+        }
+    }
+}
+
+// ── A root with content is spliced ──────────────────────────────────
+TEST(XIncludeExpander, RootWithTextIsSpliced) {
+    TempTree tmp;
+    tmp.write("frag.xml", "<wrap>a = 1;</wrap>");
+    const std::string src = R"(<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="frag.xml"/></root>)";
+    const auto result = expandStringX(src, (tmp.root() / "main.xml").string(), tmp.root().string(), {});
+    EXPECT_EQ(result.expanded_text, "<root>a = 1;</root>");
 }

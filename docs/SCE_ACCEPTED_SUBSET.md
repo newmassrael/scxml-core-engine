@@ -980,6 +980,11 @@ produce state machines diverging from runtime parse:
 - `parse="text"` — `xml/xinclude-unsupported`.
 - `xpointer=` — `xml/xinclude-unsupported`.
 - `<xi:fallback>` — `xml/xinclude-unsupported`.
+- Inclusion of the root element itself — a fragment whose root holds
+  no element and no text beyond XML whitespace, so the children rule
+  would splice nothing where W3C XInclude would include the root —
+  `xml/xinclude-unsupported`, naming the root. Wrap the element in a
+  container: `<fragment><data id="x"/></fragment>`.
 
 Rejections the AOT pipeline hard-errors on (the C++ runtime
 warns-and-skips the same inputs; matching behaviour at

@@ -99,7 +99,13 @@ const DOC_WITH_XINCLUDE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "#;
 
-const FRAGMENT_BODY: &str = r#"<sce:entry xmlns:sce="http://sce.dev/ext" key="1" value="TEMPLATE_EXPANDED"/>
+/// The row `DOC_WITH_XINCLUDE` includes. The children of an included
+/// root are what is spliced, so the row sits under a wrapper: written as
+/// the whole fragment, the way W3C XInclude reads one, it is refused
+/// (`xml/xinclude-unsupported`) rather than delivered.
+const FRAGMENT_BODY: &str = r#"<fragment xmlns:sce="http://sce.dev/ext">
+  <sce:entry key="1" value="TEMPLATE_EXPANDED"/>
+</fragment>
 "#;
 
 /// Write the fixture tree and return (dir, main document path).
@@ -156,6 +162,30 @@ fn expanded_forge_lookup_carries_the_templated_row() {
     assert!(
         src.contains(TEMPLATED_VARIANT),
         "expanded lookup must carry the templated row; generated source:\n{src}"
+    );
+}
+
+/// The same row delivered by `<xi:include>`. Without it the fixture above
+/// was only ever read unexpanded, so nothing said whether the fragment it
+/// names delivers a row at all — and written as it was, it did not.
+#[test]
+fn expanded_forge_lookup_carries_the_included_row() {
+    let (dir, main) = fixture(DOC_WITH_XINCLUDE);
+    let expanded = expand(&main);
+
+    let output = sce_build::compile_forge_with_imports(
+        &expanded,
+        DocumentLabel::symmetric("probe"),
+        Language::Rust,
+        dir.path(),
+        &ForgeCompileOptions::default(),
+    )
+    .expect("expanded document must compile");
+
+    let src = generated_source(&output);
+    assert!(
+        src.contains(TEMPLATED_VARIANT),
+        "expanded lookup must carry the included row; generated source:\n{src}"
     );
 }
 

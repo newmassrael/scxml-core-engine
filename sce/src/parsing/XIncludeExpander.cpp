@@ -109,6 +109,40 @@ struct RootChildrenRender {
     std::size_t end;
 };
 
+// XML 1.0 §2.3 `S`. Mirrors Rust `is_xml_whitespace`.
+bool isXmlWhitespace(char c) {
+    return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+}
+
+// Whether `root` holds anything that lands in the parent as content: an
+// element, or character data beyond XML whitespace. Mirrors the test in
+// Rust `render_root_children`; a comment or processing instruction alone
+// is nothing.
+bool carriesContent(const pugi::xml_node &root) {
+    for (const auto &child : root.children()) {
+        if (child.type() == pugi::node_element) {
+            return true;
+        }
+        if (child.type() == pugi::node_pcdata || child.type() == pugi::node_cdata) {
+            const std::string_view text = child.value();
+            for (const char c : text) {
+                if (!isXmlWhitespace(c)) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+// The feature a fragment with nothing to splice asks for: W3C XInclude's
+// inclusion of the root element itself. Word for word Rust
+// `root_inclusion_feature`, because it is a key fragment of the record's id.
+std::string rootInclusionFeature(const std::string &root) {
+    return "including the root element <" + root + "> itself (the children of an included root are spliced, and <" +
+           root + "> has none; wrap it in a container element)";
+}
+
 RootChildrenRender renderRootChildren(std::string_view expanded, std::string_view href) {
     pugi::xml_document doc;
     const auto parseResult = doc.load_buffer(expanded.data(), expanded.size());
@@ -116,8 +150,15 @@ RootChildrenRender renderRootChildren(std::string_view expanded, std::string_vie
         throw XIncludeMalformed(std::string(href), parseResult.description());
     }
     const auto root = doc.document_element();
-    if (!root || !root.first_child()) {
+    if (!root) {
         return RootChildrenRender{std::string(), 0, 0};
+    }
+    // W3C XInclude includes the root element itself, so an author who
+    // writes the one element they mean as the whole fragment would see it
+    // vanish under the children rule. Refused instead; the fragment is
+    // what is refused, and nothing of it is written on the include's row.
+    if (!carriesContent(root)) {
+        throw XIncludeUnsupported(std::string(href), rootInclusionFeature(root.name()), std::nullopt);
     }
 
     // First child's leading `<` (or text-node start) — pugixml
