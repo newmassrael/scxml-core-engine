@@ -197,14 +197,13 @@ PACED_BUDGET_SHARE_CEILING = 0.237
 # than another number would: it is the only thing that says whether the
 # figure still describes the gate.
 COST_MEASURED: dict[str, str] = {
-    # Measured on arrival rather than declared and left, because a gate that
-    # enters unmeasured raises the ceiling this table exists to lower.
-    # `scripts/gate --measure` read 0.262 on 2026-09-19. Timing the runner
-    # from outside read 0.54 three times over, and the difference is the
-    # process the runner starts around the gate — the same gap
-    # `http-endpoint-ssot` records. `cost_s` carries the runner's figure,
-    # because the drift report compares against that one.
-    "authoring-core": "2026-09-19",
+    # Measured on arrival at 0.262 on 2026-09-19, and not again while the
+    # suite grew to 413 cases. Retaken 2026-09-24 as the suite run directly
+    # (`python3 -m unittest discover`), because `scripts/gate --measure` is
+    # now refused locally for this repository: 155s with an opt-0 generator,
+    # 72s with the opt-1 one `Cargo.toml` now builds, under load 23. The
+    # figure is a stopwatch read of the gate's own work, not paced.
+    "authoring-core": "2026-09-24",
     # `scripts/gate --measure rust-modrs-drift` on 2026-09-02 reported 0 —
     # the same figure the table already carried. That is the point rather
     # than an anticlimax: the NUMBER was right and unaskable, and what the
@@ -947,12 +946,25 @@ GATES: dict[str, dict] = {
     },
     # The authoring core's claim is that it knows no subject matter. A claim
     # like that decays silently -- one helpful special case at a time -- so it
-    # is a test, and the test has to be on the same side of the push as the
-    # code it judges. Python only; no engine toolchain, hence the low cost.
+    # is a test. It was declared Python only at 0.262s; the suite since grew
+    # to 413 cases, 86 of which drive a document through `sce-codegen`, and
+    # the figure was never retaken.
+    #
+    # ⚠ What moved it: a push on 2026-09-24 was refused at 331s of the 300s
+    # ceiling with every gate green, this one reading 81s paced. Timed alone
+    # it was 155s with the `cargo build` (opt 0) binary `codegen-build`
+    # leaves for it, and 72s once `sce-build` builds at opt 1 in the dev
+    # profile (`Cargo.toml`). The run-driven 86 are also why CI now builds
+    # the generator for this lane: without it they skipped, and the lane
+    # passed without judging them.
     "authoring-core": {
         "workflows": ["authoring-core.yml"],
         "runner_workflow": True,
-        "cost_s": 0.262,
+        "ci_only": "72s measured with the generator built at opt 1, 155s "
+                   "at opt 0, against a declared 0.262. authoring-core.yml "
+                   "runs it twice: Python only, and with sce-codegen built "
+                   "so the 86 run-driven cases are judged, not skipped.",
+        "cost_s": 72,
         "summary": "authoring core is domain-free, and its refusals still fire",
     },
     # The gate whose absence let a stale verifies-catalog reach CI red:

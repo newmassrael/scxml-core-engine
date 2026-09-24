@@ -66,3 +66,15 @@ opt-level = 3
 # (202 W3C tests are compute-heavy enough that debug=0 slows them badly)
 [profile.test]
 opt-level = 1
+
+# `sce-build` in a plain `cargo build` gets the level the test profile gives
+# it. `target/debug/sce-codegen` is one path written by both, and the tools
+# that spawn it (the authoring core, forge conformance, example-codegen) ran
+# at whichever build wrote it last: measured 2026-09-24 on one commit and one
+# feature set, a tiny statechart generated in 1.3-2.0s from `cargo build`
+# (opt 0) and 0.2-0.3s from a `cargo test` build (opt 1). 94% of the opt-0
+# time is the per-process template rewrite (`generator::rewritten_template`,
+# callgrind), which walks every template character by character. The
+# authoring suite went 155s -> 70s on the same tree.
+[profile.dev.package.sce-build]
+opt-level = 1

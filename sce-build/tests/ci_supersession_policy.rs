@@ -242,21 +242,20 @@ const MEDIAN_PUSH_GAP_MINUTES: f64 = 17.6;
 /// flipping the flag in the workflow is not, and that is what this file exists
 /// to catch.
 const LANES: &[(&str, f64, u32, u32, u32)] = &[
-    // ⚠ STAND-IN, landed 2026-09-19 with no hosted history to take a median
-    // over. Borrowed from `spec-snapshot-drift.yml` (0.3), the nearest lane
-    // with the same shape: checkout, setup-python, `scripts/gate`, no engine
-    // toolchain. Locally `scripts/gate --measure authoring-core` reads 0.262s,
-    // so the gate itself is not what either figure measures -- the runner's
-    // fixed cost is.
+    // ⚠ STAND-IN, re-borrowed 2026-09-24 when the lane gained a second job
+    // that builds `sce-codegen` (its 86 run-driven cases had been skipping).
+    // A run now ends with its slower job, so the nearest lane is no longer
+    // `spec-snapshot-drift.yml` (0.3, Python only) but `example-codegen.yml`
+    // (8.5): a cached debug build of `sce-codegen`, then `scripts/gate`.
     //
-    // The residue, stated rather than hidden: this lane adds a `pip install`
-    // that the lane it borrows from does not have, so the true median will be
-    // HIGHER than 0.3. The direction is the safe one -- both figures sit far
-    // under the push gap, so no plausible correction changes this lane's
-    // classification -- but the row is a borrowed bound until its own runs
-    // exist. Replace it after 25 runs, the way `ecma262-lowered-kotlin.yml`
-    // was replaced, and delete this paragraph when the number is its own.
-    ("authoring-core.yml", 0.3, 0, 0, 0),
+    // The residue, stated rather than hidden: the borrowed lane runs its gate
+    // over examples, this one over a 413-case suite measured at 72s locally,
+    // so the true median may sit a minute or two above 8.5. Both are far under
+    // the 17.6-minute push gap, so no plausible correction changes the
+    // classification. Replace it after 25 runs of its own, the way
+    // `ecma262-lowered-kotlin.yml` was replaced, and delete this paragraph
+    // when the number is its own.
+    ("authoring-core.yml", 8.5, 0, 0, 0),
     ("clang-format-check.yml", 0.8, 0, 25, 0),
     ("clippy-check.yml", 7.7, 0, 22, 1),
     // 12 of its last 25 cancelled while declaring `false`, and that is the

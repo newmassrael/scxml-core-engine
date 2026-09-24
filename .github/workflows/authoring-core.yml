@@ -8,8 +8,17 @@ name: Authoring Core (domain-free)
 # subject in front of whoever is working. So it is measured on every push
 # rather than maintained by care, and this lane is where the measurement runs.
 #
-# Python only. The engine toolchain is not needed and is deliberately not
-# installed, so this lane stays fast and cannot be made to depend on a build.
+# `verify` is Python only. The engine toolchain is not needed and is
+# deliberately not installed, so that job stays fast and cannot be made to
+# depend on a build.
+#
+# `verify-with-codegen` is the other half, and exists because the first one
+# cannot see it. 86 of the suite's 413 cases drive a document through the
+# product (`verify` spawns `target/debug/sce-codegen`) and are
+# `skipUnless(codegen_is_built())`: in a job that builds nothing they were
+# skipped, so the lane passed without judging them. Measured 2026-09-24, those
+# 86 ran nowhere on a generator change — the push selected this gate only for
+# `tools/authoring/**` — so the paths below include what they run through.
 
 on:
   push:
@@ -18,12 +27,24 @@ on:
       - 'tools/authoring/**'
       - '.github/workflows/authoring-core.yml'
       - 'scripts/gates/authoring-core.sh'
+      - 'sce-build/**'
+      - 'tools/codegen/templates/**'
+      - 'backends/python/runtime/**'
+      - 'schemas/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
   pull_request:
     branches: [ main ]
     paths:
       - 'tools/authoring/**'
       - '.github/workflows/authoring-core.yml'
       - 'scripts/gates/authoring-core.sh'
+      - 'sce-build/**'
+      - 'tools/codegen/templates/**'
+      - 'backends/python/runtime/**'
+      - 'schemas/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
   workflow_dispatch:
 
 concurrency:
@@ -42,4 +63,46 @@ jobs:
       - name: Install the two libraries a pack is parsed and validated with
         run: python3 -m pip install --upgrade pyyaml jsonschema
       - name: Authoring core gate
+        run: scripts/gate authoring-core
+
+  verify-with-codegen:
+    name: Suite with the product's generator built
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Dependencies
+        # libxml2-dev: the `libxml` crate behind sce-build's XSD validator
+        # needs the dev headers at build time (see forge-conformance.yml).
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxml2-dev pkg-config
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+      - name: Cache Cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'sce-build/**/*.rs', 'sce-build/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-codegen-
+      - name: Build sce-codegen
+        run: |
+          source scripts/lib/sce_codegen.sh
+          sce_codegen_drop_stale_release
+          cargo build --bin sce-codegen --features cli -p sce-build
+      - name: Refuse to run the suite without the generator
+        # The 86 run-driven cases skip when this file is absent, and a skip
+        # reads as a pass. Built one step up, so absence is a broken build
+        # step, not a reason to judge less.
+        run: test -x target/debug/sce-codegen
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.x'
+      - name: Install the two libraries a pack is parsed and validated with
+        run: python3 -m pip install --upgrade pyyaml jsonschema
+      - name: Authoring core gate, run-driven cases included
         run: scripts/gate authoring-core
