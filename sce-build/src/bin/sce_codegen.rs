@@ -3681,11 +3681,11 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
             // reach a CI gate as `validation/unresolved-placeholder`, not
             // as a puzzle in the generated code.
             if strict_unresolved {
-                if let Err(e) = sce_build::unresolved_check::check_strict_unresolved_forge(
-                    &positions.expanded,
-                    doc_label.diagnostic_label,
-                ) {
-                    error_format.emit_forge_and_exit(&positions.authored(e));
+                // Already placed where the author wrote the marker.
+                if let Err(e) =
+                    sce_build::unresolved_check::check_strict_unresolved_forge(&positions)
+                {
+                    error_format.emit_forge_and_exit(&e);
                 }
             }
 
@@ -4124,11 +4124,11 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
             // refused document exports no AST either: an AST of a document
             // the build rejected is an artifact nothing should read.
             if strict_unresolved {
-                if let Err(e) = sce_build::unresolved_check::check_strict_unresolved_forge(
-                    &positions.expanded,
-                    doc_label.diagnostic_label,
-                ) {
-                    error_format.emit_forge_and_exit(&positions.authored(e));
+                // Already placed where the author wrote the marker.
+                if let Err(e) =
+                    sce_build::unresolved_check::check_strict_unresolved_forge(&positions)
+                {
+                    error_format.emit_forge_and_exit(&e);
                 }
             }
 
@@ -8294,9 +8294,13 @@ fn cmd_unresolved(scxml: &str, error_format: ErrorFormat) {
     });
     match sce_build::forge::parser::detect_kind(&content) {
         Ok(Some(kind)) if kind != sce_build::forge::model::ForgeKind::Statechart => {
+            // Expanded, as every other forge route reads a document: a
+            // marker a template or an included fragment carries is one the
+            // build refuses under `--strict-unresolved`, so it is one this
+            // list names.
+            let positions = read_review_input(scxml, error_format);
             out_stream(|w| {
-                match sce_build::unresolved_check::emit_unresolved_ndjson_forge(&content, scxml, w)
-                {
+                match sce_build::unresolved_check::emit_unresolved_ndjson_forge(&positions, w) {
                     Ok(()) => Ok(()),
                     Err(e) => error_format.emit_forge_and_exit(&e),
                 }

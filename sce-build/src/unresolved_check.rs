@@ -28,7 +28,7 @@ use std::io::{self, Write};
 use serde::Serialize;
 
 use crate::forge::error::{ForgeError, Located, SourceLocation, ValidationError};
-use crate::model::SCXMLModel;
+use crate::model::{AuthoredPositions, SCXMLModel};
 use crate::provenance::{MarkerKind, SpecProvenance, UnresolvedMarker};
 use crate::requirements_report::{walk_nodes, ActionSite, NodeSubject};
 
@@ -128,11 +128,18 @@ pub fn check_strict_unresolved(model: &SCXMLModel) -> Result<(), Located<ForgeEr
     match first_unresolved(model) {
         None => Ok(()),
         Some(found) => {
-            let location = found.marker.location.clone().unwrap_or(SourceLocation {
-                file: String::new(),
-                line: None,
-                col: None,
-            });
+            // Where the author wrote it, not the expanded text's row: a
+            // marker after an XInclude was refused two rows past itself.
+            let location = found
+                .marker
+                .location
+                .as_ref()
+                .map(|at| model.authored_location(at))
+                .unwrap_or(SourceLocation {
+                    file: String::new(),
+                    line: None,
+                    col: None,
+                });
             Err(Located::new(
                 ValidationError::UnresolvedPlaceholder {
                     element: found.element,
@@ -169,8 +176,10 @@ struct UnresolvedRecord<'a> {
     reason: Option<&'a str>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     candidates: Vec<&'a str>,
+    /// Where the author wrote the marker — moved out of the expanded text
+    /// the reader recorded it against.
     #[serde(skip_serializing_if = "Option::is_none")]
-    location: Option<&'a SourceLocation>,
+    location: Option<SourceLocation>,
 }
 
 /// Emit one NDJSON record per `<sce:unresolved>` marker. Stable
@@ -195,18 +204,26 @@ pub fn emit_unresolved_ndjson<W: Write + ?Sized>(
                 node.record.node_type,
                 action_type,
                 marker,
+                marker
+                    .location
+                    .as_ref()
+                    .map(|at| model.authored_location(at)),
             )?;
         }
     }
     Ok(())
 }
 
+/// One record for `marker`, placed at `location` — the marker's own
+/// position already moved to where its author wrote it, which only the
+/// caller holding the expansion's map can do.
 fn write_marker<W: Write + ?Sized>(
     writer: &mut W,
     node_path: &str,
     node_type: &'static str,
     action_type: Option<&str>,
     marker: &UnresolvedMarker,
+    location: Option<SourceLocation>,
 ) -> io::Result<()> {
     let record = UnresolvedRecord {
         node_path: node_path.to_string(),
@@ -216,7 +233,7 @@ fn write_marker<W: Write + ?Sized>(
         id: marker.id.as_str(),
         reason: marker.reason.as_deref(),
         candidates: marker.candidates.iter().map(|s| s.as_str()).collect(),
-        location: marker.location.as_ref(),
+        location,
     };
     let line = serde_json::to_string(&record)
         .expect("UnresolvedRecord serialises; all fields owned or borrowed primitives");
@@ -251,11 +268,25 @@ fn write_marker<W: Write + ?Sized>(
 // It is recorded here rather than left for someone to discover.
 
 /// Every `<sce:unresolved>` marker anywhere in a forge document, in
-/// document order, paired with the element that owns it.
+/// document order, paired with the element that owns it, each placed
+/// where its author wrote it.
+///
+/// ⚠ Read from [`AuthoredPositions::expanded`], never the file as read.
+/// `sce-codegen unresolved` scanned the unexpanded text until 2026-09-24,
+/// so a marker a template or an XInclude fragment carried was not listed —
+/// while `--strict-unresolved`, which read the expanded text, refused the
+/// build over it. The two surfaces disagreed about which markers exist.
+///
+/// ⚠ Each marker's location is moved here, by row and column, rather
+/// than by [`AuthoredPositions::authored`] on the refusal: the reader
+/// labels a marker with the document's basename, `authored` moves only a
+/// record labelled with the caller's path, and so a marker in a document
+/// named with a directory kept its expanded row.
 fn forge_markers(
-    content: &str,
-    source_name: &str,
+    positions: &AuthoredPositions,
 ) -> Result<Vec<(String, UnresolvedMarker)>, Located<ForgeError>> {
+    let content = positions.expanded.as_str();
+    let source_name = positions.document.as_str();
     // The same error the forge parser raises for malformed XML. In
     // practice unreachable from `generate` — the caller parsed this very
     // content a moment ago — but returning `Ok(vec![])` here would report
@@ -271,7 +302,11 @@ fn forge_markers(
     })?;
     let mut out = Vec::new();
     for node in doc.descendants().filter(|n| n.is_element()) {
-        for marker in crate::parser::collect_sce_unresolved(&node, source_name) {
+        for mut marker in crate::parser::collect_sce_unresolved(&node, source_name) {
+            marker.location = marker
+                .location
+                .as_ref()
+                .map(|at| positions.authored_location(at));
             // `<data id="x">` reads better in a refusal than `data`,
             // and the id is what the author named the thing.
             let label = match node.attribute("id") {
@@ -286,11 +321,14 @@ fn forge_markers(
 
 /// `--strict-unresolved` for a forge document: refuse the build when any
 /// marker is present, keyed at the first one in document order.
+///
+/// The refusal is already where its author wrote the marker; a caller
+/// emits it as it is, and must not move it through
+/// [`AuthoredPositions::authored`] a second time.
 pub fn check_strict_unresolved_forge(
-    content: &str,
-    source_name: &str,
+    positions: &AuthoredPositions,
 ) -> Result<(), Located<ForgeError>> {
-    let markers = forge_markers(content, source_name)?;
+    let markers = forge_markers(positions)?;
     // Same filter as `first_unresolved`, same reason — see [`MarkerKind`].
     match markers
         .into_iter()
@@ -299,7 +337,7 @@ pub fn check_strict_unresolved_forge(
         None => Ok(()),
         Some((element, marker)) => {
             let location = marker.location.clone().unwrap_or(SourceLocation {
-                file: source_name.to_string(),
+                file: positions.document.clone(),
                 line: None,
                 col: None,
             });
@@ -322,16 +360,16 @@ pub fn check_strict_unresolved_forge(
 /// marker, the same record shape the statechart path emits so a consumer
 /// does not branch on the kind it was handed.
 pub fn emit_unresolved_ndjson_forge<W: Write + ?Sized>(
-    content: &str,
-    source_name: &str,
+    positions: &AuthoredPositions,
     writer: &mut W,
 ) -> Result<(), Located<ForgeError>> {
-    for (element, marker) in forge_markers(content, source_name)? {
+    for (element, marker) in forge_markers(positions)? {
         // `node_type` is "forge" for every kind rather than the kind's own
         // name: a consumer routes on `code` and reads `node_path`, and a
         // per-kind spelling here would be a second place the seventeen
         // kinds have to stay listed.
-        let _ = write_marker(writer, &element, "forge", None, &marker);
+        let location = marker.location.clone();
+        let _ = write_marker(writer, &element, "forge", None, &marker, location);
     }
     Ok(())
 }

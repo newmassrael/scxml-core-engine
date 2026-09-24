@@ -2043,6 +2043,32 @@ impl AuthoredPositions {
         resolve_authored(&self.expanded, &self.map, line, col)
     }
 
+    /// Where the author wrote `location`, a position recorded against
+    /// [`Self::expanded`] that is not a refusal — a marker, a manifest cause
+    /// — spelled as a diagnostic spells it: in the fragment it was spliced
+    /// from, or in [`Self::document`], the label the caller named.
+    ///
+    /// Unlike [`Self::authored`] it does not ask whether the location's file
+    /// is this document. A record built from the expanded text carries
+    /// whatever label its reader gave it — often the basename — and matching
+    /// on that label silently left such a record unmoved.
+    pub fn authored_location(
+        &self,
+        location: &crate::forge::error::SourceLocation,
+    ) -> crate::forge::error::SourceLocation {
+        match self.resolve(location.line, location.col) {
+            Some((file, line, col)) => crate::forge::error::SourceLocation {
+                file,
+                line: Some(line),
+                col: location.col.map(|_| col),
+            },
+            None => crate::forge::error::SourceLocation {
+                file: self.document.clone(),
+                ..location.clone()
+            },
+        }
+    }
+
     /// The `<sce:use>` that supplied substituted bytes on the expanded
     /// row `line`, if any.
     ///
@@ -3043,19 +3069,9 @@ impl SCXMLModel {
     /// and rows of the expanded text until 2026-09-24: a guard written in
     /// an XInclude fragment was placed at the including file's closing tag.
     pub fn authored_location(&self, location: &SourceLocation) -> SourceLocation {
-        let Some(positions) = &self.authored_positions else {
-            return location.clone();
-        };
-        match positions.resolve(location.line, location.col) {
-            Some((file, line, col)) => SourceLocation {
-                file,
-                line: Some(line),
-                col: location.col.map(|_| col),
-            },
-            None => SourceLocation {
-                file: positions.document.clone(),
-                ..location.clone()
-            },
+        match &self.authored_positions {
+            Some(positions) => positions.authored_location(location),
+            None => location.clone(),
         }
     }
 
