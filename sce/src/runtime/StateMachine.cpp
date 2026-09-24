@@ -4,7 +4,6 @@
 #include "runtime/StateMachine.h"
 #include "scripting/ScriptResultUtils.h"
 #include "scripting/SessionRegistry.h"
-#include "states/ConcurrentStateTypes.h"
 
 #include "common/DoneDataHelper.h"
 #include "core/EntryExitHelper.h"
@@ -33,8 +32,6 @@
 #include "runtime/HistoryValidator.h"
 #include "scripting/IScriptEngine.h"
 #include "scripting/ScriptEngineProvider.h"  // For backward-compat static factory methods
-#include "states/ConcurrentRegion.h"
-#include "states/ConcurrentStateNode.h"
 #include <algorithm>
 #include <fstream>
 #include <set>
@@ -856,10 +853,7 @@ std::optional<StateMachine::Transition> StateMachine::firstEnabledTransition(con
         enabled.targets = document_->targetsOf(transitionNode->getTargets());
         enabled.transitionIndex = static_cast<int>(index);
         enabled.hasActions = !transitionNode->getActionNodes().empty();
-        // `type="internal"` as written. The node's own `isInternal()` also
-        // answers true for a targetless transition, which is a different
-        // property: it exits nothing whatever its type.
-        enabled.isInternal = transitionNode->getAttribute("type") == "internal";
+        enabled.isInternal = transitionNode->isInternal();
 
         const bool seen =
             std::any_of(selectionCandidates_.begin(), selectionCandidates_.end(), [&enabled](const Transition &t) {
@@ -978,7 +972,7 @@ void StateMachine::enterStateInMicrostep(const std::string &state, bool isDefaul
     // its data is initialized on first entry; then its onentry content, and
     // its initial transition's content if and only if it is entered by
     // default.
-    hierarchyManager_->addStateToConfigurationWithoutOnEntry(state);
+    hierarchyManager_->addStateToConfiguration(state);
     IStateNode *node = document_->nodeOf(state);
     if (!node) {
         SCE_LOG_ERROR("StateMachine: entered state '{}' is not in the document", state);
@@ -1215,9 +1209,9 @@ bool StateMachine::isInFinalState() const {
             continue;
         }
 
-        // §scxml-3.4 & 3.7: Only actual <final/> elements halt execution
-        // Parallel states with all regions complete (isFinalState()==true) should still process done.state events
-        // Test570: done.state.p0s2 must be processed even when p0 has all regions in final states
+        // §scxml-3.4 & 3.7: only a top-level <final> element halts execution. A
+        // <parallel> whose regions have all completed has raised done.state, and
+        // that event still has to be processed (test 570).
         if (state->getType() == Type::FINAL && !state->getParent()) {
             SCE_LOG_DEBUG("StateMachine::isInFinalState: Found top-level final state '{}'", stateId);
             return true;
@@ -1289,41 +1283,9 @@ bool StateMachine::restoreFromSnapshot(const std::vector<std::string> &states) {
     return true;
 }
 
-void StateMachine::setRestoringSnapshotOnAllRegions(bool restoring) {
-    // Enable/disable restoration mode on all parallel regions
-    // Prevents side effects (callbacks, event generation) during snapshot restoration
-
-    if (!model_) {
-        SCE_LOG_WARN("StateMachine::setRestoringSnapshotOnAllRegions: model_ is null");
-        return;
-    }
-
-    int regionCount = 0;
-
-    // Iterate through all states in the model to find parallel states
-    const auto &allStates = model_->getAllStates();
-    for (const auto &stateNode : allStates) {
-        // Check if this is a parallel state
-        if (stateNode && stateNode->getType() == Type::PARALLEL) {
-            auto parallelState = dynamic_cast<ConcurrentStateNode *>(stateNode.get());
-            if (parallelState) {
-                // Get all regions and set restoration mode
-                const auto &regions = parallelState->getRegions();
-                for (const auto &region : regions) {
-                    region->setRestoringSnapshot(restoring);
-                    regionCount++;
-                }
-            }
-        }
-    }
-
-    SCE_LOG_DEBUG("StateMachine: Set restoration mode {} on {} regions", restoring ? "ENABLED" : "DISABLED",
-                  regionCount);
-}
-
 void StateMachine::restoreActiveStatesDirectly(const std::vector<std::string> &states) {
-    // Time-travel debugging - restore configuration without side effects
-    // ARCHITECTURE.md Zero Duplication: Uses StateHierarchyManager's addStateToConfigurationWithoutOnEntry
+    // Time-travel debugging - restore configuration without side effects: the
+    // states are written into the configuration and no <onentry> runs.
     // INTERNAL USE ONLY: Called by restoreFromSnapshot() after JS environment initialization
 
     SCE_LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: Called with {} states", states.size());
@@ -1345,7 +1307,7 @@ void StateMachine::restoreActiveStatesDirectly(const std::vector<std::string> &s
         // Restore states in document order (already provided by vector)
         // No sorting needed - vector from snapshot preserves correct document order (Test 570 fix)
         for (const auto &stateId : states) {
-            hierarchyManager_->addStateToConfigurationWithoutOnEntry(stateId);
+            hierarchyManager_->addStateToConfiguration(stateId);
             SCE_LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: Added state '{}' to configuration", stateId);
         }
 
@@ -1358,88 +1320,10 @@ void StateMachine::restoreActiveStatesDirectly(const std::vector<std::string> &s
         SCE_LOG_DEBUG(
             "StateMachine::restoreActiveStatesDirectly: [AFTER isRunning_=true] Set to true, mutex will release");
 
-        // Synchronize parallel region states with restored configuration (Test 570 fix)
-        // After hierarchyManager restoration, parallel regions need their currentState_ updated
-        // Without this, regions have stale state causing recursive event processing failures
-        SCE_LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: Syncing parallel region states");
-        if (model_) {
-            // Iterate through restored active states and find parallel regions
-            for (const auto &stateId : states) {
-                auto stateNode = model_->findStateById(stateId);
-                if (!stateNode) {
-                    continue;
-                }
-
-                // Check if this is a parallel state
-                auto parallelNode = dynamic_cast<ConcurrentStateNode *>(stateNode);
-                if (parallelNode) {
-                    const std::string &parallelId = parallelNode->getId();
-                    SCE_LOG_DEBUG(
-                        "StateMachine::restoreActiveStatesDirectly: Found parallel state '{}' in active states",
-                        parallelId);
-
-                    // Get all regions of this parallel state
-                    const auto &regions = parallelNode->getRegions();
-                    for (const auto &region : regions) {
-                        const std::string &regionId = region->getId();
-
-                        // Find which child state of this region is active in the restored configuration
-                        // A region's active state is the deepest descendant state within the region
-                        std::string regionActiveState;
-                        int maxDepth = -1;
-
-                        for (const auto &candidateStateId : states) {
-                            if (candidateStateId == regionId) {
-                                continue;  // Skip the region itself
-                            }
-
-                            auto candidateNode = model_->findStateById(candidateStateId);
-                            if (!candidateNode) {
-                                continue;
-                            }
-
-                            // Check if this state belongs to this region (is descendant of regionId)
-                            // and calculate its depth
-                            int depth = 0;
-                            auto parent = candidateNode->getParent();
-                            bool belongsToRegion = false;
-
-                            while (parent) {
-                                depth++;
-                                if (parent->getId() == regionId) {
-                                    belongsToRegion = true;
-                                    break;
-                                }
-                                parent = parent->getParent();
-                            }
-
-                            // Select the deepest state (leaf state) within the region
-                            if (belongsToRegion && depth > maxDepth) {
-                                maxDepth = depth;
-                                regionActiveState = candidateStateId;
-                            }
-                        }
-
-                        // Update region's current state and mark as active
-                        if (!regionActiveState.empty()) {
-                            auto concreteRegion = std::dynamic_pointer_cast<ConcurrentRegion>(region);
-                            if (concreteRegion) {
-                                concreteRegion->setCurrentState(regionActiveState);
-                                concreteRegion->setActiveForRestore();  // Mark region as active for
-                                                                        // event processing
-                                SCE_LOG_DEBUG(
-                                    "StateMachine::restoreActiveStatesDirectly: Synced region '{}' to state '{}' "
-                                    "and marked ACTIVE",
-                                    regionId, regionActiveState);
-                            }
-                        } else {
-                            SCE_LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: Region '{}' has no active state",
-                                          regionId);
-                        }
-                    }
-                }
-            }
-        }
+        // The configuration is the whole of the run state: a `<parallel>`'s
+        // regions are its child states in that configuration, read by the
+        // shared microstep like any other, so there is nothing further to
+        // bring into line with the restored set.
     }  // Mutex released here
 
     // Verify final state (outside mutex scope to prevent deadlock with getActiveStates())

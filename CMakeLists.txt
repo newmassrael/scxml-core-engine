@@ -553,7 +553,6 @@ install(DIRECTORY sce/include/
         PATTERN "parsing"     EXCLUDE
         PATTERN "runtime"     EXCLUDE
         PATTERN "scripting"   EXCLUDE
-        PATTERN "states"      EXCLUDE
         PATTERN "static"      EXCLUDE
         PATTERN "wrappers"    EXCLUDE
 )
@@ -586,7 +585,7 @@ set(_sce_runtime_header_excludes)
 foreach(_sce_header IN LISTS SCE_SCRIPTING_EVENT_HEADERS)
     list(APPEND _sce_runtime_header_excludes PATTERN "${_sce_header}" EXCLUDE)
 endforeach()
-foreach(_sce_runtime_dir model runtime actions events states parsing factory)
+foreach(_sce_runtime_dir model runtime actions events parsing factory)
     install(DIRECTORY sce/include/${_sce_runtime_dir}
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
         COMPONENT Runtime

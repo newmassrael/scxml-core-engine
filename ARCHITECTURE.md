@@ -146,7 +146,6 @@ sce_runtime       (STATIC, full interpreter — umbrella target)
 - **Runtime**: `StateMachine`, `InterpreterDocument`, `ActionExecutorImpl`, `StateMachineBuilder`
 - **Actions**: `ScriptAction`, `AssignAction`, `SendAction`, `IfAction`, `ForeachAction`, `CancelAction`
 - **Events**: `EventSchedulerImpl`, `EventDispatcherImpl`, `EventTargetFactoryImpl`, HTTP infrastructure
-- **States**: `ConcurrentStateNode`, `ParallelRegionOrchestrator`, `ConcurrentEventBroadcaster`
 - **Parsing**: `SCXMLParser`, `StateNodeParser`, `TransitionParser`, `ActionParser`
 - **History**: `HistoryManager`, `HistoryStateAutoRegistrar`, `HistoryValidator`
 
@@ -764,7 +763,7 @@ BasicHTTP Event I/O Processor support for `<send type="BasicHTTPEventProcessor">
 
 ### Native (Linux, macOS, Windows)
 - `QueuedExecutionHelper`: Worker thread with operation queue for QuickJS thread safety
-- pthread for `EventDispatcherImpl` and `ConcurrentEventBroadcaster`
+- pthread for `EventDispatcherImpl`
 
 ### WASM (Emscripten)
 - `SynchronousExecutionHelper`: Direct synchronous execution (no pthread for QuickJS)

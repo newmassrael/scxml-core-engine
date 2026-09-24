@@ -8,14 +8,15 @@
 // scheduled is a no-op. `InvokeHelper` is the Single Source of Truth both
 // engines schedule through, which is where that property has to live.
 //
-// It matters because one state entry can reach the scheduler more than once.
-// The Interpreter's `StateHierarchyManager` signals entry through two hooks —
-// an onentry callback whose body defers, and a dedicated invoke-defer
-// callback — and an atomic state trips both. Without the set property the
-// same `<invoke>` reaches `InvokeExecutor::executeInvoke` twice and is only
+// It mattered first because one state entry could reach the scheduler more
+// than once: the Interpreter used to signal entry through two hooks — an
+// onentry callback whose body deferred, and a dedicated invoke-defer callback
+// — and an atomic state tripped both. Without the set property the same
+// `<invoke>` reached `InvokeExecutor::executeInvoke` twice and was only
 // stopped there by an "already active" guard, which is a defensive check
 // doing a data-structure's job and which would hide a genuine double
-// invocation just as effectively.
+// invocation just as effectively. Those hooks are gone, and the property is
+// the specification's either way.
 
 #include "core/InvokeHelper.h"
 

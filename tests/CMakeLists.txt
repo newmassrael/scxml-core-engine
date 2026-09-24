@@ -687,15 +687,12 @@ target_link_libraries(state_machine_tests
 )
 
 # ============================================================================
-# 3.5. States Tests (ConcurrentRegion Unit Tests)
+# 3.5. States Tests (the shared Appendix D state algorithms)
 # ============================================================================
 add_executable(states_tests
-    states/ConcurrentRegionTest.cpp
-    states/ParallelPseudoStateChildTest.cpp
     states/TransitionDomainSelfTransitionTest.cpp
     states/EntrySetAlgorithmsTest.cpp
     states/CompletionAlgorithmsTest.cpp
-    mocks/MockActionExecutor.cpp
 )
 
 target_include_directories(states_tests
@@ -1063,10 +1060,7 @@ add_executable(integration_tests
     integration/SCXMLParallelParsingTest.cpp
     integration/ParallelStateEndToEndTest.cpp
     integration/SCXMLParallelComplianceTest.cpp
-    integration/ConcurrentCompletionMonitoringTest.cpp
-    integration/ExternalTransitionHandlerTest.cpp
-    integration/ParallelStateEventBroadcastingTest.cpp
-    integration/ParallelStateComponentTest.cpp
+    integration/ParallelWithAHistoryChildCompletesTest.cpp
     integration/SCXMLForeachIntegrationTest.cpp
     integration/HistoryStateIntegrationTest.cpp
     integration/StaticCodegenIntegrationTest.cpp

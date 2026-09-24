@@ -73,12 +73,6 @@ public:
     void setEventRaiser(std::shared_ptr<IEventRaiser> eventRaiser) override;
 
     /**
-     * @brief Set immediate mode for event raising (§scxml-3.13 compliance - test 404)
-     * @param immediate true for immediate processing, false for queuing
-     */
-    void setImmediateMode(bool immediate);
-
-    /**
      * @brief Set current event using EventMetadata structure
      * @param metadata Event metadata containing all event fields
      *

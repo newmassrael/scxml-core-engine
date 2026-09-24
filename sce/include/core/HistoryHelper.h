@@ -157,61 +157,6 @@ std::vector<StateType> recordHistory(const std::vector<StateType> &activeStates,
 }
 
 /**
- * @brief §scxml-3.10: Get ancestor chain for entering history target state
- *
- * This function builds the ancestor chain from target state up to (but not including) stopAtParent,
- * then returns them in bottom-up order (parent before child) for proper state entry.
- *
- * This is the core restoration logic shared between Interpreter and AOT engines,
- * matching StateHierarchyManager::enterStateWithAncestors() behavior.
- *
- * @tparam StateType Enum or string type for state representation
- * @tparam GetParentFunc Function type: std::optional<StateType>(StateType) -> parent state
- * @param target Target state to enter (from history restoration)
- * @param stopAtParent Parent state to stop at (usually the history state's parent)
- * @param getParent Function to get parent of a state
- * @return Ancestor chain in bottom-up order (parent before child)
- *
- * Example: getAncestorsToEnter(S021, S0, getParent)
- *   - Builds chain: S021 → S02 → S0 (stop)
- *   - Returns: [S0, S02, S021] (parent before child)
- */
-template <typename StateType, typename GetParentFunc>
-std::vector<StateType> getAncestorsToEnter(StateType target, std::optional<StateType> stopAtParent,
-                                           GetParentFunc getParent) {
-    // §scxml-D-addAncestorStatesToEnter: add the ancestors of target up to, but not
-    // including, the stop state, since ancestors outside the transition domain were
-    // never exited.
-    std::vector<StateType> ancestorsToEnter;
-    StateType current = target;
-
-    // §scxml-3.10: Build ancestor chain from target up to (but not including) stopAtParent
-    // If stopAtParent is nullopt, include ALL ancestors up to root
-    while (true) {
-        ancestorsToEnter.push_back(current);
-
-        // Check if we should stop
-        if (stopAtParent.has_value() && current == stopAtParent.value()) {
-            // Reached stopAtParent - don't include it, but include everything before it
-            ancestorsToEnter.pop_back();  // Remove stopAtParent itself
-            break;
-        }
-
-        auto parent = getParent(current);
-        if (!parent.has_value()) {
-            break;  // Reached root
-        }
-        current = parent.value();
-    }
-
-    // §scxml-3.10: Reverse to get bottom-up order (parent before child)
-    // This matches Interpreter's enterStateWithAncestors behavior
-    std::reverse(ancestorsToEnter.begin(), ancestorsToEnter.end());
-
-    return ancestorsToEnter;
-}
-
-/**
  * @brief §scxml-3.11: Get active state hierarchy (current state + all ancestors)
  *
  * Returns the complete hierarchy of active states from leaf (currentState) to root.

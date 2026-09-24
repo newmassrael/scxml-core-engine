@@ -235,8 +235,8 @@ void SCE::StateNodeParser::parseChildStates(const std::shared_ptr<IXMLElement> &
     // enters <parallel> regions in `getChildStates` order, so the order of
     // this list is observable behaviour, not an implementation detail.
     // <history> is included because it is a legal child that transitions
-    // target by id; ConcurrentStateNode::addChild filters it out of the
-    // region set per §scxml-D-getChildStates.
+    // target by id; the Interpreter's document leaves it out of a state's
+    // child states per §scxml-D-getChildStates.
     auto childStateElements =
         SCE::ParsingCommon::findChildElementsAnyOf(stateElement, {"state", "parallel", "final", "history"});
 

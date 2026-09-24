@@ -10,19 +10,14 @@
 #include "actions/ScriptAction.h"
 #include "actions/SendAction.h"
 #include "core/LogMacros.h"
-#include "states/ConcurrentStateNode.h"
 
 std::shared_ptr<SCE::IStateNode> SCE::NodeFactory::createStateNode(const std::string &id, const Type type) {
     SCE_LOG_DEBUG("Creating state node: {}", id);
 
-    // SCXML W3C specification section 3.4: parallel states require ConcurrentStateNode
-    if (type == Type::PARALLEL) {
-        // Create ConcurrentStateNode with default configuration for SCXML compliance
-        ConcurrentStateConfig config;  // Uses SCXML W3C compliant defaults
-        SCE_LOG_DEBUG("Creating ConcurrentStateNode for parallel state: {}", id);
-        return std::make_shared<SCE::ConcurrentStateNode>(id, config);
-    }
-
+    // One node type for every kind of state. §scxml-3.4's regions are a
+    // `<parallel>`'s child states, which the model already holds as children;
+    // what a region does when the machine runs is Appendix D's, and the shared
+    // microstep reads it off the type and the children alone.
     return std::make_shared<SCE::StateNode>(id, type);
 }
 

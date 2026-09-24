@@ -8,7 +8,6 @@
 #include "runtime/ActionExecutorImpl.h"
 #include "runtime/StateMachine.h"
 #include "scripting/ScriptEngineProvider.h"
-#include "states/SCXMLParallelTypes.h"
 #include <chrono>
 #include <gtest/gtest.h>
 
@@ -501,10 +500,8 @@ TEST_F(SCXMLParallelComplianceTest, W3C_Parallel_RegionActivation_Simultaneous) 
     // Verify parallel state is active
     EXPECT_EQ(sm->getCurrentState(), "test_parallel") << "Parallel state not entered";
 
-    // Check if StateMachine has successfully activated regions through data model
-    // The onentry actions should have executed, setting region variables to true
-    // For now, this is infrastructure verification - actual data model execution
-    // requires full StateMachine integration with ConcurrentRegion
+    // Each region's onentry sets its variable to true, so the data model is the
+    // witness that every region was entered.
 
     // SCXML W3C specification section 3.4 compliance verification:
     // "When a <parallel> element is active, ALL of its children are active"
