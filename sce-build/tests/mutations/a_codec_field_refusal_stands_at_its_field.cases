@@ -1,0 +1,49 @@
+# Mutation cases for "a codec field refusal stands at its field".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_codec_field_refusal_stands_at_its_field.cases`.
+#
+# The codec's post-parse validators raised every refusal of a field at
+# `<datamodel>`, whose attributes hold none of the values reported, so the
+# record stood rows above the element that wrote them; and a repeat's count
+# refusal named an attribute the grammar does not declare. Each case puts part
+# of that back. The integration tests in
+# `a_codec_field_refusal_stands_at_its_field.rs` refuse them.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test a_codec_field_refusal_stands_at_its_field
+mutation_targets sce-build/src/forge/parser.rs sce-build/src/forge/error.rs
+mutation_oracles sce-build/tests/a_codec_field_refusal_stands_at_its_field.rs
+
+mutation_case "every field refusal falls back to the datamodel" <<'PY'
+edit("sce-build/src/forge/parser.rs",
+     r'''        .unwrap_or(*datamodel)''',
+     r'''        .filter(|_| false)
+        .unwrap_or(*datamodel)''')
+PY
+
+mutation_case "a repeat counting a later field stands at the datamodel" <<'PY'
+edit("sce-build/src/forge/parser.rs",
+     r'''                    return Err(located(
+                        &field_element(datamodel, &field.id),
+                        label.diagnostic_label,
+                        ValidationError::CodecRepeatCountRefsLaterField {''',
+     r'''                    return Err(located(
+                        datamodel,
+                        label.diagnostic_label,
+                        ValidationError::CodecRepeatCountRefsLaterField {''')
+PY
+
+mutation_case "a non-integer count names an attribute nobody writes" <<'PY'
+edit("sce-build/src/forge/parser.rs",
+     r'''                                attr: "count".into(),''',
+     r'''                                attr: "sce:count".into(),''')
+PY
+
+mutation_case "the later-field message names an attribute nobody writes" <<'PY'
+edit("sce-build/src/forge/error.rs",
+     r'''repeat field '{field}' has count=\"{refers_to}\" but''',
+     r'''repeat field '{field}' has sce:count=\"{refers_to}\" but''')
+PY

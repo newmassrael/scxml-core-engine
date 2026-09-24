@@ -1673,13 +1673,13 @@ impl Endian {
 /// Two shapes:
 ///   - [`CountRef::LengthField`] — count comes from a sibling integer
 ///     field declared earlier in the same codec (the count value is
-///     the decoded integer). Mirrors the `<sce:repeat sce:count="<id>"/>`
+///     the decoded integer). Mirrors the `<sce:repeat count="<id>"/>`
 ///     authoring form.
 ///   - [`CountRef::UntilEof`] — count is implicit; the decoder consumes
 ///     elements until the cursor's remaining bytes are exhausted. The
 ///     last element MUST decode cleanly off a frame boundary; a partial
 ///     final element returns `NeedMoreBytes`. Mirrors `<sce:repeat
-///     sce:until-eof="true"/>`.
+///     until-eof="true"/>`.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 // ⚠ ADJACENTLY tagged, not internally. `LengthField` is a newtype

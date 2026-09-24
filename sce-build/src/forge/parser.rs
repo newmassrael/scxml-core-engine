@@ -175,6 +175,29 @@ fn exactly_one_form(
     ))
 }
 
+/// The element under `datamodel` that declares the codec field `id` —
+/// where a refusal of that field stands, so [`located`] reaches the
+/// attribute it names on the row that holds it. `datamodel` itself when no
+/// element carries that `id`.
+///
+/// ⚠ The codec's post-parse validators judge a field from its model and
+/// raised every refusal at `datamodel`, whose attributes hold none of the
+/// values reported: `count="len"` naming a later field was reported on
+/// the `<datamodel>` row, rows above the `<sce:repeat>` that wrote it.
+fn field_element<'a, 'input>(
+    datamodel: &roxmltree::Node<'a, 'input>,
+    id: &str,
+) -> roxmltree::Node<'a, 'input> {
+    datamodel
+        .descendants()
+        .find(|node| {
+            node.is_element()
+                && node.tag_name().namespace() == Some(SCE_NAMESPACE)
+                && node.attribute("id") == Some(id)
+        })
+        .unwrap_or(*datamodel)
+}
+
 /// Build a `Located<ForgeError>` from a stored line number rather than
 /// a live `roxmltree::Node`. Used by post-loop validators whose anchor
 /// element is no longer in scope but whose line was captured during
@@ -1651,7 +1674,7 @@ fn parse_codec(
     // shape, since no candidate repairs that).
     validate_codec_present_if_predicates(&fields, &flag_inputs, label, &datamodel)?;
 
-    // RFC §synth-5-B B2 repeat validation — every <sce:repeat sce:count="X"/>
+    // RFC §synth-5-B B2 repeat validation — every <sce:repeat count="X"/>
     // must reference a sibling integer field declared earlier (so the
     // streaming decoder has already decoded N before reading N
     // elements). Forward / unknown count target → typed
@@ -1660,7 +1683,7 @@ fn parse_codec(
     validate_codec_repeat_count_refs(&fields, label, &datamodel)?;
 
     // RFC §synth-5-B — co-gating constraint for
-    // repeat-with-present-if. When a `<sce:repeat sce:count="X"
+    // repeat-with-present-if. When a `<sce:repeat count="X"
     // sce:present-if="P"/>` field is gated, the count source field
     // `X` MUST carry the IDENTICAL `sce:present-if="P"` predicate
     // (same scope, same field_id, same flag_name, same negate). The
@@ -1990,6 +2013,7 @@ fn validate_codec_present_if_predicates(
     use std::collections::BTreeMap;
     let mut by_id_so_far: BTreeMap<&str, &CodecField> = BTreeMap::new();
     for field in fields {
+        let written = field_element(datamodel, &field.id);
         // RFC §synth-5-B disjunction chains: validate every clause of the
         // disjunction chain (`a.X || b.Y || ...`) — each clause
         // independently must satisfy the same Local/Input scope rules
@@ -2010,7 +2034,7 @@ fn validate_codec_present_if_predicates(
                     // A bare name reads one of this codec's declared
                     // `<sce:flag-input>`s, so those names are the set.
                     return Err(located(
-                        datamodel,
+                        &written,
                         label.diagnostic_label,
                         ValidationError::InvalidAttribute {
                             element: format!(
@@ -2027,7 +2051,7 @@ fn validate_codec_present_if_predicates(
                 match by_id_so_far.get(predicate.field_id.as_str()) {
                     None => {
                         return Err(located(
-                            datamodel,
+                            &written,
                             label.diagnostic_label,
                             ValidationError::CodecPresentIfRefsLaterField {
                                 codec: label.identifier.to_string(),
@@ -2039,7 +2063,7 @@ fn validate_codec_present_if_predicates(
                     Some(carrier) => {
                         if !carrier.is_flags_carrier() {
                             return Err(located(
-                                datamodel,
+                                &written,
                                 label.diagnostic_label,
                                 ValidationError::AttributeRuleViolated {
                                     element: format!(
@@ -2065,7 +2089,7 @@ fn validate_codec_present_if_predicates(
                             // spelled as the whole reference so a
                             // candidate replaces the value as written.
                             return Err(located(
-                                datamodel,
+                                &written,
                                 label.diagnostic_label,
                                 ValidationError::InvalidAttribute {
                                     element: format!(
@@ -3560,14 +3584,15 @@ fn parse_codec_flags_from_node(
 }
 
 /// RFC §synth-5-B B2 repeat primitive — parse `<sce:repeat id="..."
-/// sce:type="<imported_alias>" sce:byte="N"
-/// (sce:count="<id>" | sce:until-eof="true")
-/// [sce:max-count="N"]/>`.
+/// type="<imported_alias>" sce:byte="N"
+/// (count="<id>" | until-eof="true")
+/// [max-count="N"]/>`. Every attribute but `sce:byte` is read
+/// unqualified, as the grammar declares it.
 ///
 /// The element produces a `CodecField` whose `bit_size` is
 /// [`BitSize::Repeat`] and whose `repeat_body_alias` names the
 /// imported codec used for each element. Mutually exclusive
-/// `sce:count` / `sce:until-eof` (exactly one required) drives the
+/// `count` / `until-eof` (exactly one required) drives the
 /// streaming loop termination strategy.
 ///
 /// `sce:type` does NOT round-trip through [`SceType`] — it carries
@@ -3736,7 +3761,7 @@ fn parse_codec_repeat_from_node(
 /// line 488 lists `reject` first; matches the safer interpretation
 /// — silent drop requires explicit opt-in).
 ///
-/// Wire shape mirrors `<sce:repeat sce:until-eof="true">` — the chain
+/// Wire shape mirrors `<sce:repeat until-eof="true">` — the chain
 /// iteratively decodes entries off the cursor; each entry's id+len+body
 /// shape is enforced inside the imported entry codec (RFC line 488
 /// "Bounded extension list, each has id+len+body"), not by the chain
@@ -4153,7 +4178,7 @@ fn validate_codec_tail_is_last(
         if matches!(field.bit_size, BitSize::Tail) && i < last {
             let next = &fields[i + 1];
             return Err(located(
-                datamodel,
+                &field_element(datamodel, &field.id),
                 label.diagnostic_label,
                 ValidationError::AttributeRuleViolated {
                     element: format!("field '{}' in codec '{}'", field.id, label.identifier),
@@ -4214,7 +4239,7 @@ fn validate_codec_bytes_is_variable(
             continue;
         }
         return Err(located(
-            datamodel,
+            &field_element(datamodel, &field.id),
             label.diagnostic_label,
             ValidationError::AttributeRuleViolated {
                 element: format!("field '{}' in codec '{}'", field.id, label.identifier),
@@ -4243,7 +4268,7 @@ fn validate_codec_length_field_refs(
         if let Some(raw) = field.length_field.as_deref() {
             let invalid = |rule: String| {
                 located(
-                    datamodel,
+                    &field_element(datamodel, &field.id),
                     label.diagnostic_label,
                     ValidationError::AttributeRuleViolated {
                         element: format!("field '{}' in codec '{}'", field.id, label.identifier),
@@ -4384,7 +4409,7 @@ fn validate_codec_embed_length_from(
         if let Some(target) = field.embed_length_from.as_deref() {
             let invalid = |rule: String| {
                 located(
-                    datamodel,
+                    &field_element(datamodel, &field.id),
                     label.diagnostic_label,
                     ValidationError::AttributeRuleViolated {
                         element: format!(
@@ -4446,7 +4471,7 @@ fn validate_codec_repeat_count_refs(
             match by_id_so_far.get(target.as_str()) {
                 None => {
                     return Err(located(
-                        datamodel,
+                        &field_element(datamodel, &field.id),
                         label.diagnostic_label,
                         ValidationError::CodecRepeatCountRefsLaterField {
                             codec: label.identifier.to_string(),
@@ -4459,14 +4484,15 @@ fn validate_codec_repeat_count_refs(
                     let is_int = carrier.sce_type.is_unsigned() || carrier.sce_type.is_signed();
                     if !is_int {
                         return Err(located(
-                            datamodel,
+                            &field_element(datamodel, &field.id),
                             label.diagnostic_label,
                             ValidationError::AttributeRuleViolated {
                                 element: format!(
                                     "<sce:repeat id='{}'> in codec '{}'",
                                     field.id, label.identifier
                                 ),
-                                attr: "sce:count".into(),
+                                // Read unqualified, as the document writes it.
+                                attr: "count".into(),
                                 value: target.clone(),
                                 rule: format!(
                                     "count target must be an integer field; \
@@ -4486,7 +4512,7 @@ fn validate_codec_repeat_count_refs(
 }
 
 /// RFC §synth-5-B — repeat-with-present-if co-gating validator.
-/// A `<sce:repeat sce:count="X"/>` requires its count source `X` to be
+/// A `<sce:repeat count="X"/>` requires its count source `X` to be
 /// readable on the wire WHENEVER the repeat is decoded. Field presence is
 /// governed by at most one `sce:present-if` predicate, so the rule reduces
 /// to a presence-set containment check on `X` vs the repeat:
@@ -4562,7 +4588,7 @@ fn validate_codec_repeat_present_if_co_gating(
         };
         if let Some((value, rule)) = reject {
             return Err(located(
-                datamodel,
+                &field_element(datamodel, &field.id),
                 label.diagnostic_label,
                 ValidationError::AttributeRuleViolated {
                     element: format!(
@@ -4625,7 +4651,7 @@ fn validate_codec_dma_alignment(
         // Gate 1: byte offset divisible by burst-align.
         if field.byte_offset % burst_align != 0 {
             return Err(located(
-                datamodel,
+                &field_element(datamodel, &field.id),
                 label.diagnostic_label,
                 ValidationError::CodecDmaAlignmentUnsatisfiable {
                     codec: label.identifier.to_string(),
@@ -4657,7 +4683,7 @@ fn validate_codec_dma_alignment(
                     BitSize::Fixed { .. } => unreachable!("matches! guard"),
                 };
                 return Err(located(
-                    datamodel,
+                    &field_element(datamodel, &field.id),
                     label.diagnostic_label,
                     ValidationError::CodecDmaAlignmentUnsatisfiable {
                         codec: label.identifier.to_string(),

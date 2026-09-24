@@ -861,8 +861,9 @@
        <sce:field> / <sce:flags> declarations; carries an imported
        codec alias (`sce:type=`) that names each element's
        encode/decode. The streaming codec iterates either a sibling
-       integer field's decoded value (`sce:count="<id>"`) or
-       cursor-exhaustion (`sce:until-eof="true"`); exactly one of the
+       integer field's decoded value (`count="<id>"`) or
+       cursor-exhaustion (`until-eof="true"`), both unqualified as
+       declared below; exactly one of the
        two MUST be present.
 
        `sce:type` here is locally redeclared as `xs:NCName` (the

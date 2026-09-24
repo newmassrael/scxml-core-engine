@@ -1274,7 +1274,7 @@ pub enum DiagnosticCode {
     CodecPresentIfRefsLaterField,
 
     // ── §synth-5-B repeat primitive (SCE Protocol-Synthesis RFC §synth-5-B, B2). Build-
-    //    time check on `<sce:repeat sce:count="X"/>`: the referenced
+    //    time check on `<sce:repeat count="X"/>`: the referenced
     //    count field `X` must be declared earlier in the same codec
     //    so the streaming decoder has already consumed it by the time
     //    the repeat loop reads N. A forward reference (count field
@@ -12322,7 +12322,7 @@ mod tests {
                     refers_to: "num_frags".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:f1e97717ebdba39a","code":"codec/repeat-count-refs-later-field","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'fragment_burst': repeat field 'frags' has sce:count=\"num_frags\" but 'num_frags' is not declared earlier in this codec — repeat count references must resolve to a sibling integer field that the streaming decoder has already consumed; reorder the fields so the count comes first, or correct the attribute","actual":"frags"}"#,
+                r#"{"v":1,"id":"fnv1a:f1e97717ebdba39a","code":"codec/repeat-count-refs-later-field","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'fragment_burst': repeat field 'frags' has count=\"num_frags\" but 'num_frags' is not declared earlier in this codec — repeat count references must resolve to a sibling integer field that the streaming decoder has already consumed; reorder the fields so the count comes first, or correct the attribute","actual":"frags"}"#,
             ),
             // ── §synth-5-B test-vector primitive (SCE Protocol-Synthesis RFC §synth-5-B, items B2 + B5) ─
             (

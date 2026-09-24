@@ -1260,7 +1260,7 @@
       "type": "object"
     },
     "CountRef": {
-      "description": "RFC §synth-5-B B2 repeat primitive — element count source for a `BitSize::Repeat` field.\n\nTwo shapes: - [`CountRef::LengthField`] — count comes from a sibling integer field declared earlier in the same codec (the count value is the decoded integer). Mirrors the `<sce:repeat sce:count=\"<id>\"/>` authoring form. - [`CountRef::UntilEof`] — count is implicit; the decoder consumes elements until the cursor's remaining bytes are exhausted. The last element MUST decode cleanly off a frame boundary; a partial final element returns `NeedMoreBytes`. Mirrors `<sce:repeat sce:until-eof=\"true\"/>`.",
+      "description": "RFC §synth-5-B B2 repeat primitive — element count source for a `BitSize::Repeat` field.\n\nTwo shapes: - [`CountRef::LengthField`] — count comes from a sibling integer field declared earlier in the same codec (the count value is the decoded integer). Mirrors the `<sce:repeat count=\"<id>\"/>` authoring form. - [`CountRef::UntilEof`] — count is implicit; the decoder consumes elements until the cursor's remaining bytes are exhausted. The last element MUST decode cleanly off a frame boundary; a partial final element returns `NeedMoreBytes`. Mirrors `<sce:repeat until-eof=\"true\"/>`.",
       "oneOf": [
         {
           "description": "Sibling integer field id whose decoded value names the count. Validated at parse time against forward references and against non-integer-typed targets.",
