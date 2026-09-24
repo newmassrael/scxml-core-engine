@@ -1,0 +1,38 @@
+# Mutation cases for "a misplaced sce element is refused, not ignored".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_misplaced_sce_element_is_refused_not_ignored.cases`.
+#
+# The forge kind parsers record on a read ledger (`forge::read_ledger`) what
+# they ask each parent for and what they take; after the parse, an SCE
+# element nothing took is refused as an unexpected child. Each case takes
+# one part of that away: the sweep that refuses, a record the sweep relies
+# on, or the recording itself. The integration test
+# `a_misplaced_sce_element_is_refused_not_ignored.rs` writes a misplaced
+# `<sce:helper>` into every forge resource that parses and refuses them.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test a_misplaced_sce_element_is_refused_not_ignored
+mutation_targets sce-build/src/forge/read_ledger.rs sce-build/src/forge/parser.rs
+
+mutation_case "the sweep refuses nothing" <<'PY'
+edit("sce-build/src/forge/read_ledger.rs",
+     r'''            return Err(refuse(&node, &parent, &asked));''',
+     r'''            let _ = (&refuse, &asked);''')
+PY
+
+mutation_case "the sweep refuses nothing once any parent is closed" <<'PY'
+edit("sce-build/src/forge/read_ledger.rs",
+     r'''        if is_sce && !ledger.taken.contains(&node.id()) && !ledger.closed.contains(&parent.id()) {''',
+     r'''        if is_sce && !ledger.taken.contains(&node.id()) && ledger.closed.is_empty() {''')
+PY
+
+# Every document is then refused, so none parses on its own and the test's
+# floor of judged documents is what goes red.
+mutation_case "a read is recorded on no ledger" <<'PY'
+edit("sce-build/src/forge/read_ledger.rs",
+     r'''            .find(|ledger| ledger.document == document)''',
+     r'''            .find(|ledger| ledger.document != document)''')
+PY

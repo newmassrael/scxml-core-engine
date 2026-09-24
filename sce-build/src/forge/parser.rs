@@ -12,6 +12,7 @@ use crate::forge::error::{
 };
 use crate::forge::expression_site::{ExpressionSite, WrittenAt};
 use crate::forge::model::*;
+use crate::forge::read_ledger;
 use crate::DocumentLabel;
 
 /// Construct a [`Located<ForgeError>`] from a node + the enclosing
@@ -106,15 +107,7 @@ fn unexpected_child(
     parent: String,
     allowed: &[&str],
 ) -> Located<ForgeError> {
-    let name = child.tag_name().name();
-    let written = match child
-        .tag_name()
-        .namespace()
-        .and_then(|ns| child.lookup_prefix(ns))
-    {
-        Some(prefix) if !prefix.is_empty() => format!("{prefix}:{name}"),
-        _ => name.to_string(),
-    };
+    let written = written_tag(child);
     let sce_prefix = sce_prefix_of(child);
     located(
         child,
@@ -128,6 +121,37 @@ fn unexpected_child(
                 .collect(),
         },
     )
+}
+
+/// `node`'s tag with the prefix this document binds to its namespace.
+fn written_tag(node: &roxmltree::Node) -> String {
+    let name = node.tag_name().name();
+    match node
+        .tag_name()
+        .namespace()
+        .and_then(|ns| node.lookup_prefix(ns))
+    {
+        Some(prefix) if !prefix.is_empty() => format!("{prefix}:{name}"),
+        _ => name.to_string(),
+    }
+}
+
+/// Refuse the first SCE element under `root` the parse just recorded in
+/// `recording` did not read — one written where no reader looks for it.
+///
+/// ⚠ Such an element was dropped without a word until 2026-09-24: a
+/// `<sce:helper>` written under a procedure's `<scxml>` root rather than its
+/// `<datamodel>` was never parsed, and the refusal that followed named the
+/// call that used it.
+fn refuse_unread(
+    recording: read_ledger::Recording,
+    root: &roxmltree::Node,
+    doc_name: &str,
+) -> Result<(), Located<ForgeError>> {
+    let ledger = recording.finish();
+    read_ledger::refuse_unread(&ledger, root, |child, parent, asked| {
+        unexpected_child(child, doc_name, format!("<{}>", written_tag(parent)), asked)
+    })
 }
 
 /// The refusal of an element that takes exactly one of several FORMS —
@@ -375,6 +399,7 @@ pub fn parse_forge_with_imports_and_plugin(
         crate::scxml_identifier::Dialect::Forge,
     )?;
 
+    let recording = read_ledger::Recording::open(&root);
     let imports = parse_imports(&root, diag)?;
     let mut externs = parse_externs(&root, diag, plugin)?;
     let document = parse_forge_from_node(&root, label, kind)?;
@@ -397,6 +422,7 @@ pub fn parse_forge_with_imports_and_plugin(
     }
 
     let cycles = parse_cycles(&root, diag)?;
+    refuse_unread(recording, &root, diag)?;
 
     Ok(Some(ParsedForge {
         document,
@@ -435,9 +461,11 @@ pub fn parse_inline_forge(
         crate::scxml_identifier::Dialect::Forge,
     )?;
 
+    let recording = read_ledger::Recording::open(element);
     let externs = parse_externs(element, diag, &[])?;
     let document = parse_forge_from_node(element, label, kind)?;
     let cycles = parse_cycles(element, diag)?;
+    refuse_unread(recording, element, diag)?;
 
     Ok(ParsedForge {
         document,
@@ -462,11 +490,7 @@ fn parse_cycles(
     use crate::forge::model::{Cycle, CycleStep};
 
     let mut cycles: Vec<Cycle> = Vec::new();
-    for child in root.children().filter(|n| n.is_element()) {
-        if child.tag_name().name() != "cycle" || child.tag_name().namespace() != Some(SCE_NAMESPACE)
-        {
-            continue;
-        }
+    for child in sce_children(root, "cycle") {
         let need = |attr: &str| -> Result<String, Located<ForgeError>> {
             match child.attribute(attr) {
                 Some(s) if !s.trim().is_empty() => Ok(s.trim().to_string()),
@@ -496,12 +520,7 @@ fn parse_cycles(
         }
 
         let mut steps: Vec<CycleStep> = Vec::new();
-        for step in child.children().filter(|n| n.is_element()) {
-            if step.tag_name().name() != "step"
-                || step.tag_name().namespace() != Some(SCE_NAMESPACE)
-            {
-                continue;
-            }
+        for step in sce_children(&child, "step") {
             let name = match step.attribute("name") {
                 Some(s) if !s.trim().is_empty() => s.trim().to_string(),
                 _ => {
@@ -648,13 +667,7 @@ fn parse_externs(
 
     let mut declarations = Vec::new();
 
-    for child in root.children().filter(|n| n.is_element()) {
-        if child.tag_name().name() != "extern"
-            || child.tag_name().namespace() != Some(SCE_NAMESPACE)
-        {
-            continue;
-        }
-
+    for child in sce_children(root, "extern") {
         let name = child
             .attribute("name")
             .ok_or_else(|| {
@@ -829,7 +842,14 @@ fn parse_forge_from_node(
     // declared under any other kind here so the rejection anchors at
     // the offending element rather than at codegen time.
     if !matches!(kind, ForgeKind::Algorithm | ForgeKind::Codec) {
-        if let Some(tv_node) = find_sce_child(root, "test-vector") {
+        // Looked up without the read ledger: this asks in order to refuse,
+        // and an ask on the ledger names what the root accepts.
+        let test_vector = root.children().find(|n| {
+            n.is_element()
+                && n.tag_name().namespace() == Some(SCE_NAMESPACE)
+                && n.tag_name().name() == "test-vector"
+        });
+        if let Some(tv_node) = test_vector {
             return Err(located(
                 &tv_node,
                 label.diagnostic_label,
@@ -1290,12 +1310,7 @@ fn parse_enum(
         std::collections::BTreeMap::new();
 
     for data in data_children(&datamodel) {
-        for child in data.children().filter(|n| n.is_element()) {
-            if child.tag_name().name() != "variant"
-                || child.tag_name().namespace() != Some(SCE_NAMESPACE)
-            {
-                continue;
-            }
+        for child in sce_children(&data, "variant") {
             let name = child
                 .attribute("name")
                 .ok_or_else(|| {
@@ -1620,10 +1635,8 @@ fn parse_codec(
     // <sce:repeat> containers (RFC §synth-5-B B2) sit alongside; their
     // bit_size = Repeat carries the count_ref + body alias for the
     // streaming codec to iterate the imported codec's encode/decode.
-    for child in datamodel.children().filter(|n| n.is_element()) {
-        if child.tag_name().namespace() != Some(SCE_NAMESPACE) {
-            continue;
-        }
+    let codec_fields: &'static [&'static str] = &["field", "flags", "repeat", "tlv-chain", "embed"];
+    for child in sce_children_among(&datamodel, codec_fields) {
         match child.tag_name().name() {
             "field" => {
                 fields.push(parse_codec_field_from_node(&child, label.diagnostic_label)?);
@@ -1643,7 +1656,7 @@ fn parse_codec(
             "embed" => {
                 fields.push(parse_codec_embed_from_node(&child, label.diagnostic_label)?);
             }
-            _ => {}
+            other => unreachable!("sce_children_among yields only {codec_fields:?}, not {other}"),
         }
     }
 
@@ -1780,15 +1793,12 @@ fn parse_flag_inputs(
     doc_name: &str,
 ) -> Result<Vec<crate::forge::model::FlagInput>, Located<ForgeError>> {
     use crate::forge::model::FlagInput;
-    let block = codec_root.children().find(|n| {
-        n.is_element()
-            && n.tag_name().namespace() == Some(SCE_NAMESPACE)
-            && n.tag_name().name() == "flag-inputs"
-    });
-    let block = match block {
+    let block = match find_sce_child(codec_root, "flag-inputs") {
         Some(b) => b,
         None => return Ok(Vec::new()),
     };
+    // Every SCE child is judged below: a `<sce:flag-input>` or a refusal.
+    read_ledger::closed(&block);
     let mut inputs: Vec<FlagInput> = Vec::new();
     for child in block.children().filter(|n| n.is_element()) {
         if child.tag_name().namespace() != Some(SCE_NAMESPACE) {
@@ -1907,15 +1917,9 @@ fn parse_flag_binds(
 ) -> Result<Vec<crate::forge::model::FlagBind>, Located<ForgeError>> {
     use crate::forge::model::{FlagBind, FlagBindSource};
     let mut binds: Vec<FlagBind> = Vec::new();
-    for child in import_node.children().filter(|n| n.is_element()) {
-        if child.tag_name().namespace() != Some(SCE_NAMESPACE) {
-            continue;
-        }
-        if child.tag_name().name() != "flag-bind" {
-            // Other child elements (e.g. <sce:variant-dispatch>) are
-            // handled by their own parsers — ignore here.
-            continue;
-        }
+    // Other child elements (e.g. <sce:variant-dispatch>) are handled by
+    // their own parsers.
+    for child in sce_children(import_node, "flag-bind") {
         let input = child
             .attribute("input")
             .map(|s| s.trim().to_string())
@@ -2142,12 +2146,7 @@ fn parse_peek_byte_from_variant_node(
     // At-most-one `<sce:peek-byte>` per `<sce:variant>` — singleton check
     // first, then parse the single instance if present.
     let mut found: Option<roxmltree::Node> = None;
-    for child in variant_node.children().filter(|n| n.is_element()) {
-        if child.tag_name().namespace() != Some(SCE_NAMESPACE)
-            || child.tag_name().name() != "peek-byte"
-        {
-            continue;
-        }
+    for child in sce_children(variant_node, "peek-byte") {
         if found.is_some() {
             return Err(located(
                 &child,
@@ -2228,6 +2227,8 @@ fn parse_peek_byte_from_variant_node(
     let mut seen_names: std::collections::BTreeSet<String> = Default::default();
     let mut occupied: u64 = 0;
     let mut flag_defs: Vec<FlagDef> = Vec::new();
+    // Every child is judged below: a `<sce:flag>` or a refusal.
+    read_ledger::closed(&node);
     for child in node.children().filter(|n| n.is_element()) {
         if child.tag_name().namespace() != Some(SCE_NAMESPACE) || child.tag_name().name() != "flag"
         {
@@ -2388,11 +2389,7 @@ fn parse_codec_variant(
     fields: &[CodecField],
     label: DocumentLabel<'_>,
 ) -> Result<Option<CodecVariant>, Located<ForgeError>> {
-    let variant_node = match datamodel.children().find(|n| {
-        n.is_element()
-            && n.tag_name().name() == "variant"
-            && n.tag_name().namespace() == Some(SCE_NAMESPACE)
-    }) {
+    let variant_node = match find_sce_child(datamodel, "variant") {
         Some(n) => n,
         None => return Ok(None),
     };
@@ -2661,6 +2658,9 @@ fn parse_codec_variant(
     // arm's value preserved for the repair hint.
     let mut default_arm_marker_seen: Option<u64> = None;
 
+    // Every SCE child is judged below: an arm, the default, the peek-byte
+    // read above, or a refusal.
+    read_ledger::closed(&variant_node);
     for child in variant_node.children().filter(|n| n.is_element()) {
         let local = child.tag_name().name();
         let ns = child.tag_name().namespace();
@@ -3381,6 +3381,8 @@ fn parse_codec_flags_from_node(
     // precise repair hint.
     let mut occupied: u64 = 0;
     let mut flag_defs: Vec<FlagDef> = Vec::new();
+    // Every child is judged below: a `<sce:flag>` or a refusal.
+    read_ledger::closed(node);
     for child in node.children().filter(|n| n.is_element()) {
         if child.tag_name().namespace() != Some(SCE_NAMESPACE) || child.tag_name().name() != "flag"
         {
@@ -4730,12 +4732,7 @@ fn parse_codec_test_vectors(
     label: DocumentLabel<'_>,
 ) -> Result<Vec<CodecTestVector>, Located<ForgeError>> {
     let mut vectors = Vec::new();
-    for child in root.children().filter(|n| n.is_element()) {
-        if child.tag_name().namespace() != Some(SCE_NAMESPACE)
-            || child.tag_name().name() != "test-vector"
-        {
-            continue;
-        }
+    for child in sce_children(root, "test-vector") {
         vectors.push(parse_one_codec_test_vector(&child, fields, label)?);
     }
     Ok(vectors)
@@ -4770,6 +4767,8 @@ fn parse_one_codec_test_vector(
     })?;
 
     let mut decoded_fields = Vec::new();
+    // Every SCE child is judged below: a `<sce:decoded>` or a refusal.
+    read_ledger::closed(node);
     for child in node.children().filter(|n| n.is_element()) {
         if child.tag_name().namespace() != Some(SCE_NAMESPACE) {
             continue;
@@ -5280,11 +5279,7 @@ fn parse_procedure(
         // types through enclosing arithmetic / member access. Duplicate names
         // are rejected here so the downstream generator emits clean per-field
         // errors rather than a decipher-the-duplicate-struct-field tailspin.
-        for child in datamodel.children().filter(|n| {
-            n.is_element()
-                && n.tag_name().namespace() == Some(SCE_NAMESPACE)
-                && n.tag_name().name() == "helper"
-        }) {
+        for child in sce_children(&datamodel, "helper") {
             let helper = parse_procedure_helper(&child, label.diagnostic_label)?;
             if helpers
                 .iter()
@@ -6687,11 +6682,8 @@ fn parse_algorithm(
     let signature = parse_algorithm_signature(&signature_node, label.diagnostic_label)?;
 
     let mut consts = Vec::new();
-    for child in root.children().filter(|n| n.is_element()) {
-        if child.tag_name().namespace() == Some(SCE_NAMESPACE) && child.tag_name().name() == "const"
-        {
-            consts.push(parse_algorithm_const(&child, label.diagnostic_label)?);
-        }
+    for child in sce_children(root, "const") {
+        consts.push(parse_algorithm_const(&child, label.diagnostic_label)?);
     }
 
     let body_node = find_sce_child(root, "body").ok_or_else(|| {
@@ -6788,12 +6780,7 @@ fn parse_test_vectors(
     diagnostic_label: &str,
 ) -> Result<Vec<TestVector>, Located<ForgeError>> {
     let mut vectors = Vec::new();
-    for child in root.children().filter(|n| n.is_element()) {
-        if child.tag_name().namespace() != Some(SCE_NAMESPACE)
-            || child.tag_name().name() != "test-vector"
-        {
-            continue;
-        }
+    for child in sce_children(root, "test-vector") {
         vectors.push(parse_one_test_vector(&child, signature, diagnostic_label)?);
     }
     Ok(vectors)
@@ -6963,10 +6950,8 @@ fn parse_algorithm_signature(
     let mut returns_max_size: Option<u32> = None;
     let mut seen_return = false;
 
-    for child in node.children().filter(|n| n.is_element()) {
-        if child.tag_name().namespace() != Some(SCE_NAMESPACE) {
-            continue;
-        }
+    let signature: &'static [&'static str] = &["param", "return"];
+    for child in sce_children_among(node, signature) {
         match child.tag_name().name() {
             "param" => {
                 let name = child
@@ -7098,7 +7083,7 @@ fn parse_algorithm_signature(
                     }
                 }
             }
-            _ => {}
+            other => unreachable!("sce_children_among yields only {signature:?}, not {other}"),
         }
     }
 
@@ -7189,11 +7174,7 @@ fn parse_algorithm_const(
         }
     };
 
-    let fold_node = node.children().find(|n| {
-        n.is_element()
-            && n.tag_name().namespace() == Some(SCE_NAMESPACE)
-            && n.tag_name().name() == "fold"
-    });
+    let fold_node = find_sce_child(node, "fold");
     let init_attr = node.attribute("init").map(str::to_string);
 
     let const_label = format!("<sce:const name=\"{name}\">");
@@ -7352,6 +7333,8 @@ fn parse_fold_body(
     let mut body: Vec<AlgorithmStmt> = Vec::new();
     let mut yield_expr: Option<String> = None;
     let mut yield_spelling = None;
+    // Every SCE child is judged below: the `<sce:yield>` or a statement.
+    read_ledger::closed(node);
     for child in node.children().filter(|c| c.is_element()) {
         if child.tag_name().namespace() != Some(SCE_NAMESPACE) {
             continue;
@@ -7496,6 +7479,9 @@ fn parse_algorithm_body(
     doc_name: &str,
 ) -> Result<Vec<AlgorithmStmt>, Located<ForgeError>> {
     let mut stmts = Vec::new();
+    // Every SCE child is a statement, which `parse_algorithm_stmt` reads or
+    // refuses.
+    read_ledger::closed(node);
     for child in node.children().filter(|n| n.is_element()) {
         if child.tag_name().namespace() != Some(SCE_NAMESPACE) {
             continue;
@@ -7516,6 +7502,8 @@ pub(crate) fn read_record_fields(
     element: String,
 ) -> Result<Vec<RecordFieldInit>, Located<ForgeError>> {
     let mut fields = Vec::new();
+    // Every child is judged below: a `<sce:set>` or a refusal.
+    read_ledger::closed(node);
     for child in node.children().filter(|n| n.is_element()) {
         if child.tag_name().namespace() != Some(SCE_NAMESPACE) || child.tag_name().name() != "set" {
             return Err(unexpected_child(&child, doc_name, element, &["set"]));
@@ -7679,6 +7667,9 @@ fn parse_algorithm_stmt(
             let cond = require_attr(node, "cond", "<sce:if>", doc_name)?;
             let mut then_body = Vec::new();
             let mut else_body: Option<Vec<AlgorithmStmt>> = None;
+            // Every SCE child is judged below: the `<sce:else>` or a
+            // statement, and every SCE child of the else a statement.
+            read_ledger::closed(node);
             for child in node.children().filter(|n| n.is_element()) {
                 if child.tag_name().namespace() != Some(SCE_NAMESPACE) {
                     continue;
@@ -7696,6 +7687,7 @@ fn parse_algorithm_stmt(
                         ));
                     }
                     let mut else_stmts = Vec::new();
+                    read_ledger::closed(&child);
                     for c in child.children().filter(|n| n.is_element()) {
                         if c.tag_name().namespace() == Some(SCE_NAMESPACE) {
                             else_stmts.push(parse_algorithm_stmt(&c, doc_name)?);
@@ -8109,10 +8101,11 @@ fn parse_link(
     let mut inbound: Vec<LinkInboundEvent> = Vec::new();
     let mut outbound: Vec<LinkOutboundEvent> = Vec::new();
     if let Some(events_node) = find_sce_child(root, "events") {
-        for child in events_node.children().filter(|c| c.is_element()) {
-            if child.tag_name().namespace() != Some(SCE_NAMESPACE) {
-                continue;
-            }
+        // ⚠ Rows other than these two were ignored as "forward-compatible"
+        // until 2026-09-24 — a misspelled `<sce:inbnd>` declared nothing and
+        // said so nowhere. The read ledger refuses what this does not take.
+        let event_rows: &'static [&'static str] = &["inbound", "outbound"];
+        for child in sce_children_among(&events_node, event_rows) {
             match child.tag_name().name() {
                 "inbound" => {
                     let event = require_attr(&child, "event", "<sce:inbound>", doc_name)?;
@@ -8124,7 +8117,9 @@ fn parse_link(
                     let encode = require_attr(&child, "encode", "<sce:outbound>", doc_name)?;
                     outbound.push(LinkOutboundEvent { event, encode });
                 }
-                _ => {} // forward-compatible: future event-rows ignored
+                other => {
+                    unreachable!("sce_children_among yields only {event_rows:?}, not {other}")
+                }
             }
         }
     }
@@ -8758,6 +8753,9 @@ fn parse_worker(
 
     // ── Layer 2 guard: <sce:body> SCXML data-refs to foreign namespaces ──
     if let Some(body) = find_sce_child(root, "body") {
+        // The body is the worker's own machine, judged element by element
+        // below rather than read as forge children.
+        read_ledger::delegated(&body);
         let mut allowlist: Vec<String> = vec![
             doc_name.to_string(),
             "_event".to_string(),
@@ -9320,12 +9318,55 @@ fn require_attr(
     })
 }
 
+/// The first SCE child of `node` named `local`. The ask and what it finds
+/// go on the parse's read ledger ([`crate::forge::read_ledger`]).
 fn find_sce_child<'a>(node: &'a roxmltree::Node, local: &str) -> Option<roxmltree::Node<'a, 'a>> {
-    node.children().find(|n| {
+    read_ledger::asked(node, local);
+    let found = node.children().find(|n| {
         n.is_element()
             && n.tag_name().namespace() == Some(SCE_NAMESPACE)
             && n.tag_name().name() == local
-    })
+    });
+    if let Some(found) = &found {
+        read_ledger::taken(found);
+    }
+    found
+}
+
+/// Every SCE child of `node` named `local`, in document order, each put on
+/// the parse's read ledger as it is handed out.
+fn sce_children<'a, 'input>(
+    node: &roxmltree::Node<'a, 'input>,
+    local: &'static str,
+) -> impl Iterator<Item = roxmltree::Node<'a, 'input>> {
+    read_ledger::asked(node, local);
+    node.children()
+        .filter(move |n| {
+            n.is_element()
+                && n.tag_name().namespace() == Some(SCE_NAMESPACE)
+                && n.tag_name().name() == local
+        })
+        .inspect(read_ledger::taken)
+}
+
+/// Every SCE child of `node` whose name is one of `locals`, in document
+/// order, each put on the parse's read ledger as it is handed out — for a
+/// reader that takes several kinds of child from one parent and leaves the
+/// rest to the ledger to refuse.
+fn sce_children_among<'a, 'input>(
+    node: &roxmltree::Node<'a, 'input>,
+    locals: &'static [&'static str],
+) -> impl Iterator<Item = roxmltree::Node<'a, 'input>> {
+    for local in locals {
+        read_ledger::asked(node, local);
+    }
+    node.children()
+        .filter(move |n| {
+            n.is_element()
+                && n.tag_name().namespace() == Some(SCE_NAMESPACE)
+                && locals.contains(&n.tag_name().name())
+        })
+        .inspect(read_ledger::taken)
 }
 
 // ── Import parsing ────────────────────────────────────────────
@@ -9353,13 +9394,7 @@ pub fn parse_imports(
     let mut imports = Vec::new();
     let mut aliases = std::collections::BTreeSet::new();
 
-    for child in root.children().filter(|n| n.is_element()) {
-        if child.tag_name().name() != "import"
-            || child.tag_name().namespace() != Some(SCE_NAMESPACE)
-        {
-            continue;
-        }
-
+    for child in sce_children(root, "import") {
         let src = child
             .attribute("src")
             .ok_or_else(|| {
@@ -9445,12 +9480,7 @@ pub fn parse_imports(
         // attribute is present, non-empty, and contains exactly one
         // dot separating carrier and flag identifiers.
         let mut embed_dispatch: Option<crate::forge::model::EmbedDispatch> = None;
-        for grandchild in child.children().filter(|n| n.is_element()) {
-            if grandchild.tag_name().name() != "variant-dispatch"
-                || grandchild.tag_name().namespace() != Some(SCE_NAMESPACE)
-            {
-                continue;
-            }
+        for grandchild in sce_children(&child, "variant-dispatch") {
             if embed_dispatch.is_some() {
                 return Err(located(
                     &grandchild,
@@ -9976,9 +10006,11 @@ fn parse_sce_entries(
 ) -> Result<Vec<LookupEntry>, Located<ForgeError>> {
     let mut entries = Vec::new();
     let mut seen_keys = std::collections::BTreeSet::new();
+    read_ledger::asked(node, "entry");
     for child in node.children().filter(|n| n.is_element()) {
         if child.tag_name().name() == "entry" && child.tag_name().namespace() == Some(SCE_NAMESPACE)
         {
+            read_ledger::taken(&child);
             let key = child
                 .attribute("key")
                 .ok_or_else(|| {
@@ -10363,19 +10395,27 @@ fn parse_quantity_attrs(
     }))
 }
 
-/// Find a direct child element by local name.
+/// Find a direct child element by local name. What it finds goes on the
+/// parse's read ledger ([`crate::forge::read_ledger`]).
 fn find_child<'a>(node: &'a roxmltree::Node, name: &str) -> Option<roxmltree::Node<'a, 'a>> {
-    node.children()
-        .find(|n| n.is_element() && n.tag_name().name() == name)
+    let found = node
+        .children()
+        .find(|n| n.is_element() && n.tag_name().name() == name);
+    if let Some(found) = &found {
+        read_ledger::taken(found);
+    }
+    found
 }
 
-/// Iterate over <data> children of a <datamodel> element.
+/// Iterate over <data> children of a <datamodel> element, each put on the
+/// parse's read ledger as it is handed out.
 fn data_children<'a>(
     datamodel: &'a roxmltree::Node,
 ) -> impl Iterator<Item = roxmltree::Node<'a, 'a>> {
     datamodel
         .children()
         .filter(|n| n.is_element() && n.tag_name().name() == "data")
+        .inspect(read_ledger::taken)
 }
 
 /// Parse a `u32` from a string, in the grammar every integer-valued
