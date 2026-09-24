@@ -3090,6 +3090,34 @@ impl SCXMLModel {
         }
     }
 
+    /// Where the author wrote `location`, spelled as an ARTIFACT spells a
+    /// file — its basename (`SCE_ERROR_CONTRACT.md` §2.2) — for a position
+    /// this model recorded against its expanded text.
+    ///
+    /// Moved only where an expansion spliced text: a document nothing
+    /// expanded keeps every location byte for byte, so no artifact built
+    /// from one moves. [`Self::authored_location`] answers the same
+    /// question for a diagnostic, which names the file as its caller did.
+    ///
+    /// ⚠ The sourcemap carried the expanded text's rows until 2026-09-24:
+    /// a state an `<xi:include>` spliced in was recorded in the including
+    /// file at the row the splice put it on, and a state after the include
+    /// several rows past its own.
+    pub fn artifact_location(&self, location: &SourceLocation) -> SourceLocation {
+        let resolved = self
+            .authored_positions
+            .as_ref()
+            .and_then(|positions| positions.resolve(location.line, location.col));
+        match resolved {
+            Some((file, line, col)) => SourceLocation {
+                file: crate::parser::artifact_label(&file),
+                line: Some(line),
+                col: location.col.map(|_| col),
+            },
+            None => location.clone(),
+        }
+    }
+
     /// The script-engine causes as a manifest carries them, each placed at
     /// [`Self::authored_location`].
     pub fn script_engine_cause_records(

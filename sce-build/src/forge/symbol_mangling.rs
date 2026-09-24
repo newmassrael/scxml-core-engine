@@ -240,6 +240,13 @@ pub fn build_symbol_table(
         walk_state(&mut table, &machine_name, state_id, state)?;
     }
 
+    // Every statechart entry so far carries a position the model recorded
+    // against its expanded text; the sourcemap names where it was written.
+    // The forge documents below carry their own documents' positions.
+    for entry in table.values_mut() {
+        entry.location = model.artifact_location(&entry.location);
+    }
+
     // 3. Forge-side walk — every ForgeDocument lowers to a per-kind
     //    body function. The mangler keys off `(machine = doc.name,
     //    state_path = "", artifact = "_forge_body")` for the body

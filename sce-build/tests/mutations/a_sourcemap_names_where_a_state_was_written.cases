@@ -1,0 +1,30 @@
+# Mutation cases for "a sourcemap names where a state was written".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_sourcemap_names_where_a_state_was_written.cases`.
+#
+# The statechart symbol table the sourcemap is built from took each node's
+# position from the model, which records it against the expanded text. Each
+# case puts part of that back: the positions left expanded, or moved but the
+# file named as the caller spelled it rather than as an artifact does. The
+# integration test `a_sourcemap_names_where_a_state_was_written.rs` refuses
+# them.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test a_sourcemap_names_where_a_state_was_written
+mutation_targets sce-build/src/forge/symbol_mangling.rs sce-build/src/model.rs
+mutation_oracles sce-build/tests/a_sourcemap_names_where_a_state_was_written.rs
+
+mutation_case "the sourcemap keeps the expanded text's rows" <<'PY'
+edit("sce-build/src/forge/symbol_mangling.rs",
+     r'''        entry.location = model.artifact_location(&entry.location);''',
+     r'''        let _ = &entry.location;''')
+PY
+
+mutation_case "a spliced state is named by its fragment's full path" <<'PY'
+edit("sce-build/src/model.rs",
+     r'''                file: crate::parser::artifact_label(&file),''',
+     r'''                file,''')
+PY
