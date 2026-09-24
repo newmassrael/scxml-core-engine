@@ -575,19 +575,21 @@ fn every_forge_expression_also_parses_as_ecmascript() {
 // `DocumentScope::installed()` would report every `Var1` in the corpus as
 // undeclared and would be measuring the absence of its own input.
 
+// Where a refusal was raised is not what these sweeps judge, so the range
+// each half carries is dropped here.
 fn compiles_as_value(source: &str) -> Result<String, ExprError> {
-    let ast = sce_build::ecmascript::parser::parse_expression(source)?;
-    sce_build::ecmascript::lua::emit_value(&ast)
+    let ast = sce_build::ecmascript::parser::parse_expression(source).map_err(|r| r.error)?;
+    sce_build::ecmascript::lua::emit_value(&ast).map_err(|r| r.error)
 }
 
 fn compiles_as_condition(source: &str) -> Result<String, ExprError> {
-    let ast = sce_build::ecmascript::parser::parse_expression(source)?;
-    sce_build::ecmascript::lua::emit_condition(&ast)
+    let ast = sce_build::ecmascript::parser::parse_expression(source).map_err(|r| r.error)?;
+    sce_build::ecmascript::lua::emit_condition(&ast).map_err(|r| r.error)
 }
 
 fn compiles_as_script(source: &str) -> Result<String, ExprError> {
-    let stmts = sce_build::ecmascript::parser::parse_script(source)?;
-    sce_build::ecmascript::lua::emit_script(&stmts)
+    let stmts = sce_build::ecmascript::parser::parse_script(source).map_err(|r| r.error)?;
+    sce_build::ecmascript::lua::emit_script(&stmts).map_err(|r| r.error)
 }
 
 fn repo_root() -> std::path::PathBuf {

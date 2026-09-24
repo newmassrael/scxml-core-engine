@@ -132,7 +132,11 @@ impl WrittenAt<'_> {
     /// lies on one row, and nothing at all for an empty range — the end of an
     /// expression, where nothing is written. Text over several rows is
     /// neither, and the payload keeps its own `actual`.
-    fn reported(&self) -> Option<AsWritten> {
+    ///
+    /// Visible to the crate for a record that is not a [`ForgeError`] — the
+    /// statechart's ECMAScript refusals — so it reports what this reads by
+    /// the same rule rather than by a copy of it.
+    pub(crate) fn reported(&self) -> Option<AsWritten> {
         self.written
             .and_then(|written| written.on_one_row())
             .map(|text| match text {

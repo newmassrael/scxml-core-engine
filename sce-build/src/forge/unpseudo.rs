@@ -2447,6 +2447,8 @@ fn parse_variable(line: &Line<'_>) -> Result<crate::model::Variable, ParseError>
     let mut v = crate::model::Variable {
         id: undo(id, line.number)?,
         expr: String::new(),
+        // A rendering holds no attribute, so nothing places a refusal here.
+        expr_spelling: None,
         src: String::new(),
         content: String::new(),
         source_location: None,
@@ -2575,6 +2577,7 @@ fn parse_scxml_donedata(kids: &[&Line<'_>]) -> Result<crate::model::DoneData, Pa
         params: Vec::new(),
         content: crate::model::DoneDataContent::None,
         content_location: None,
+        content_spelling: None,
     };
     for (k, sub) in group(kids) {
         if let Some(rest) = k.text.strip_prefix("param ") {
@@ -2884,6 +2887,8 @@ fn parse_donedata_param(
         expr: None,
         location: None,
         source_location: None,
+        expr_spelling: None,
+        location_spelling: None,
     };
     if let Some(head) = s.strip_suffix(':') {
         p.name = undo(head, line)?;

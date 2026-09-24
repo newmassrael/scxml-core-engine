@@ -19,14 +19,14 @@
 //! was whoever ran the machine and read `error.execution`.
 //!
 //! This walker reaches the same verdict on the same entry points — it
-//! calls [`crate::ecmascript::to_lua_value`],
-//! [`crate::ecmascript::to_lua_condition`] and
-//! [`crate::ecmascript::to_lua_script`], the functions the filters call —
-//! and anchors each refusal on the element that wrote the expression, so
-//! it can be reported as the `expression/*` diagnostic the wire contract
-//! already carries. `SCE_ERROR_CONTRACT.md` §4 gives the `expression`
-//! stage exactly this role ("Stateless-subset rejections, ECMAScript
-//! unsupported constructs"); nothing new is added to the wire.
+//! calls [`crate::ecmascript::lower_value`],
+//! [`crate::ecmascript::lower_condition`] and
+//! [`crate::ecmascript::lower_script`], which the filters' `to_lua_*` wrap —
+//! and places each refusal at the token it refuses, as the document spells
+//! it, so it can be reported as the `expression/*` diagnostic the wire
+//! contract already carries. `SCE_ERROR_CONTRACT.md` §4 gives the
+//! `expression` stage exactly this role ("Stateless-subset rejections,
+//! ECMAScript unsupported constructs"); nothing new is added to the wire.
 //!
 //! # What binds this walker to the filters
 //!
@@ -39,8 +39,9 @@
 //! the set this module reports are the same set. A site this walker
 //! forgets, or one it invents, reds that test.
 
-use crate::ecmascript::{DocumentScope, ExprError};
-use crate::forge::error::SourceLocation;
+use crate::attribute_spelling::AttributeSpelling;
+use crate::ecmascript::{DocumentScope, ExprError, Refusal};
+use crate::forge::error::{AsWritten, SourceLocation};
 use crate::model::{Action, DoneDataContent, Invoke, Param, SCXMLModel, State, Variable};
 
 /// The four roles an authored expression can have, one per frontend
@@ -85,12 +86,12 @@ impl ExpressionRole {
         }
     }
 
-    fn lower(self, source: &str, scope: &DocumentScope) -> Result<String, ExprError> {
+    fn lower(self, source: &str, scope: &DocumentScope) -> Result<String, Refusal> {
         match self {
-            ExpressionRole::Value => crate::ecmascript::to_lua_value(source, scope),
-            ExpressionRole::Condition => crate::ecmascript::to_lua_condition(source, scope),
-            ExpressionRole::Script => crate::ecmascript::to_lua_script(source, scope),
-            ExpressionRole::Location => crate::ecmascript::to_lua_location(source),
+            ExpressionRole::Value => crate::ecmascript::lower_value(source, scope),
+            ExpressionRole::Condition => crate::ecmascript::lower_condition(source, scope),
+            ExpressionRole::Script => crate::ecmascript::lower_script(source, scope),
+            ExpressionRole::Location => crate::ecmascript::lower_location(source),
         }
     }
 }
@@ -106,8 +107,17 @@ pub struct RefusedExpression {
     /// The expression as the author wrote it.
     pub source: String,
     pub error: ExprError,
-    /// The owning element's own coordinate, when the parser recorded one.
+    /// Where the refused token was written — its row and column when the
+    /// attribute carrying the expression spells it, the owning element's
+    /// otherwise (a `<script>` body is no attribute) — in the file its author
+    /// wrote it in.
     pub location: Option<SourceLocation>,
+    /// The refused token as the document spells it, when [`Self::location`]
+    /// was read off the attribute and the token lies on one row — what the
+    /// record reports as `actual` in place of the payload's own reading
+    /// (SCE_ERROR_CONTRACT §3.1.1): `['map']` where `arr['map'](f)` was
+    /// written, `&lt;` where the reader decoded `<`.
+    pub as_written: Option<AsWritten>,
     /// `SCE_ERROR_CONTRACT.md` §2.1.2 — the anchors of the innermost
     /// anchored node enclosing [`Self::location`].
     ///
@@ -159,16 +169,23 @@ pub struct ExpressionSite {
     pub source: String,
     /// The owning element's own coordinate, when the parser recorded one.
     pub location: Option<SourceLocation>,
+    /// The attribute the expression was read from, as written and where —
+    /// what places a refusal at its token. `None` for a body (`<script>`,
+    /// `<finalize>`), which is element text rather than an attribute, and
+    /// for a model no document produced.
+    pub spelling: Option<AttributeSpelling>,
 }
 
 impl ExpressionSite {
-    /// Lower this site's source against `scope`, in its own role.
+    /// Lower this site's source against `scope`, in its own role — or the
+    /// refusal, and the range of the source (trimmed, for every role but a
+    /// body) it was raised at.
     ///
     /// The role decides which of the four frontend entry points runs, so a
     /// caller cannot pick one and stay correct — `<assign location>` is
     /// not a value and a `<script>` body is not a condition. This is the
     /// only supported way to lower a site.
-    pub fn lower(&self, scope: &DocumentScope) -> Result<String, ExprError> {
+    pub fn lower(&self, scope: &DocumentScope) -> Result<String, Refusal> {
         self.role.lower(&self.source, scope)
     }
 }
@@ -196,6 +213,7 @@ pub fn sites(model: &SCXMLModel) -> Vec<ExpressionSite> {
             "<script>",
             &script.content,
             script.source_location.as_ref(),
+            None,
             &mut into,
         );
     }
@@ -231,6 +249,14 @@ pub fn sites(model: &SCXMLModel) -> Vec<ExpressionSite> {
 /// hold. It now takes the move every refusal takes
 /// ([`SCXMLModel::authored_location`]); `document` labels a model with no
 /// map, one parsed from a string.
+///
+/// ⚠⚠ A refusal is placed at its token by the rule every expression refusal
+/// takes ([`crate::forge::expression_site::ExpressionSite::locate`]): the
+/// range the frontend raised it at, read back onto the attribute as
+/// written. Until 2026-09-24 it stood on the owning element's row with the
+/// payload's own reading as `actual` — a `cond` continued below its
+/// `<transition` row, or written `arr['map'](f)`, was reported on a row
+/// that does not hold the text it named.
 pub fn refusals(model: &SCXMLModel, document: &str) -> Vec<RefusedExpression> {
     // One scope for the document, assembled before any expression is
     // lowered. A `<data>` declared in the last state is in scope for the
@@ -242,11 +268,34 @@ pub fn refusals(model: &SCXMLModel, document: &str) -> Vec<RefusedExpression> {
     sites(model)
         .into_iter()
         .filter_map(|site| {
-            site.lower(&scope).err().map(|error| RefusedExpression {
+            let refusal = site.lower(&scope).err()?;
+            let placed = crate::forge::expression_site::ExpressionSite::new(
+                &site.source,
+                site.spelling.as_ref(),
+            )
+            .locate(refusal.span.clone());
+            // The token's row and column where the attribute spells the
+            // expression; the owning element's where nothing does — a body
+            // is element text, not an attribute.
+            let expanded = match placed.line {
+                Some(line) => Some(SourceLocation {
+                    file: site
+                        .location
+                        .as_ref()
+                        .map_or_else(|| document.to_string(), |at| at.file.clone()),
+                    line: Some(line),
+                    col: placed.col,
+                }),
+                None => site.location.clone(),
+            };
+            // Read before the record takes the site's text, which the
+            // placement borrows.
+            let as_written = placed.reported();
+            Some(RefusedExpression {
                 role: site.role,
                 site: site.site,
                 source: site.source,
-                error,
+                error: refusal.error,
                 // NL→IR Mapping Roadmap Item 8: this walk is a stage
                 // that holds the model, so it owes its rejections the
                 // anchor enclosing them (`SCE_ERROR_CONTRACT.md`
@@ -260,14 +309,16 @@ pub fn refusals(model: &SCXMLModel, document: &str) -> Vec<RefusedExpression> {
                     .as_ref()
                     .map(|at| model.enclosing_anchors(at).to_vec())
                     .unwrap_or_default(),
-                // The element's row and column where its author wrote it.
-                location: site.location.map(|at| match model.authored_positions {
+                // Where its author wrote it: in the fragment it was spliced
+                // from, or in the document under the caller's label.
+                location: expanded.map(|at| match model.authored_positions {
                     Some(_) => model.authored_location(&at),
                     None => SourceLocation {
                         file: document.to_string(),
                         ..at
                     },
                 }),
+                as_written,
             })
         })
         .collect()
@@ -297,6 +348,7 @@ fn check_state(state: &State, into: &mut Collector) {
             "<transition cond>",
             &transition.cond,
             transition.source_location.as_ref(),
+            transition.cond_spelling.as_ref(),
             into,
         );
         for action in &transition.actions {
@@ -334,6 +386,7 @@ fn check_state(state: &State, into: &mut Collector) {
                     "<donedata><param expr>",
                     expr,
                     at,
+                    param.expr_spelling.as_ref(),
                     into,
                 );
             }
@@ -345,6 +398,7 @@ fn check_state(state: &State, into: &mut Collector) {
                     "<donedata><param location>",
                     location,
                     at,
+                    param.location_spelling.as_ref(),
                     into,
                 );
             }
@@ -365,6 +419,7 @@ fn check_state(state: &State, into: &mut Collector) {
                     .content_location
                     .as_ref()
                     .or(state.source_location.as_ref()),
+                donedata.content_spelling.as_ref(),
                 into,
             );
         }
@@ -382,6 +437,7 @@ fn check_variable(var: &Variable, into: &mut Collector) {
         "<data expr>",
         &var.expr,
         var.source_location.as_ref(),
+        var.expr_spelling.as_ref(),
         into,
     );
 }
@@ -394,6 +450,7 @@ fn check_invoke(invoke: &Invoke, into: &mut Collector) {
                 "<finalize>",
                 &info.finalize_content,
                 info.common.source_location.as_ref(),
+                None,
                 into,
             );
             check_params(
@@ -408,6 +465,7 @@ fn check_invoke(invoke: &Invoke, into: &mut Collector) {
                 "<invoke srcexpr>",
                 &info.srcexpr,
                 info.common.source_location.as_ref(),
+                info.srcexpr_spelling.as_ref(),
                 into,
             );
             check(
@@ -415,6 +473,7 @@ fn check_invoke(invoke: &Invoke, into: &mut Collector) {
                 "<invoke contentexpr>",
                 &info.contentexpr,
                 info.common.source_location.as_ref(),
+                info.contentexpr_spelling.as_ref(),
                 into,
             );
             check_params(
@@ -443,6 +502,7 @@ fn check_params(params: &[Param], fallback: Option<&SourceLocation>, into: &mut 
             "<param expr>",
             &param.expr,
             location,
+            param.expr_spelling.as_ref(),
             into,
         );
         // `location` is the other half of the same element and is
@@ -458,6 +518,7 @@ fn check_params(params: &[Param], fallback: Option<&SourceLocation>, into: &mut 
             "<param location>",
             &param.location,
             location,
+            param.location_spelling.as_ref(),
             into,
         );
     }
@@ -465,6 +526,8 @@ fn check_params(params: &[Param], fallback: Option<&SourceLocation>, into: &mut 
 
 fn check_action(action: &Action, into: &mut Collector) {
     let at = action.source_location.as_ref();
+    // The attribute a site of this action was read from, as written.
+    let written = |attribute: &str| action.spellings.get(attribute);
     match action.action_type.as_str() {
         "send" => {
             check(
@@ -472,6 +535,7 @@ fn check_action(action: &Action, into: &mut Collector) {
                 "<send eventexpr>",
                 &action.eventexpr,
                 at,
+                written("eventexpr"),
                 into,
             );
             check(
@@ -479,6 +543,7 @@ fn check_action(action: &Action, into: &mut Collector) {
                 "<send targetexpr>",
                 &action.targetexpr,
                 at,
+                written("targetexpr"),
                 into,
             );
             check(
@@ -486,6 +551,7 @@ fn check_action(action: &Action, into: &mut Collector) {
                 "<send delayexpr>",
                 &action.delayexpr,
                 at,
+                written("delayexpr"),
                 into,
             );
             check(
@@ -493,6 +559,7 @@ fn check_action(action: &Action, into: &mut Collector) {
                 "<send contentexpr>",
                 &action.contentexpr,
                 at,
+                action.contentexpr_spelling.as_ref(),
                 into,
             );
             check(
@@ -500,6 +567,7 @@ fn check_action(action: &Action, into: &mut Collector) {
                 "<send idlocation>",
                 &action.idlocation,
                 at,
+                written("idlocation"),
                 into,
             );
             check_params(&action.params, at, into);
@@ -510,6 +578,7 @@ fn check_action(action: &Action, into: &mut Collector) {
                 "<assign expr>",
                 &action.expr,
                 at,
+                written("expr"),
                 into,
             );
             check(
@@ -517,15 +586,24 @@ fn check_action(action: &Action, into: &mut Collector) {
                 "<assign location>",
                 &action.location,
                 at,
+                written("location"),
                 into,
             );
         }
-        "log" => check(ExpressionRole::Value, "<log expr>", &action.expr, at, into),
+        "log" => check(
+            ExpressionRole::Value,
+            "<log expr>",
+            &action.expr,
+            at,
+            written("expr"),
+            into,
+        ),
         "cancel" => check(
             ExpressionRole::Value,
             "<cancel sendidexpr>",
             &action.sendidexpr,
             at,
+            written("sendidexpr"),
             into,
         ),
         "foreach" => {
@@ -534,6 +612,7 @@ fn check_action(action: &Action, into: &mut Collector) {
                 "<foreach array>",
                 &action.array,
                 at,
+                written("array"),
                 into,
             );
             // The two iteration variables are written once per turn, so
@@ -544,6 +623,7 @@ fn check_action(action: &Action, into: &mut Collector) {
                 "<foreach item>",
                 &action.item,
                 at,
+                written("item"),
                 into,
             );
             check(
@@ -551,6 +631,7 @@ fn check_action(action: &Action, into: &mut Collector) {
                 "<foreach index>",
                 &action.index,
                 at,
+                written("index"),
                 into,
             );
             for nested in &action.actions {
@@ -558,13 +639,13 @@ fn check_action(action: &Action, into: &mut Collector) {
             }
         }
         "if" => {
-            check_condition("<if cond>", &action.cond, at, into);
+            check_condition("<if cond>", &action.cond, at, written("cond"), into);
             // `Action::nested_blocks` is what "inside an <if>" means, and
             // it carries each branch's own condition, so neither the
             // blocks nor the conditions are enumerated again here.
             for block in action.nested_blocks() {
                 if let Some(cond) = block.cond {
-                    check_condition("<elseif cond>", cond, at, into);
+                    check_condition("<elseif cond>", cond, at, block.cond_spelling, into);
                 }
                 for nested in block.actions {
                     check_action(nested, into);
@@ -581,6 +662,7 @@ fn check_action(action: &Action, into: &mut Collector) {
                 "<script>",
                 &action.content,
                 at,
+                None,
                 into,
             );
         }
@@ -611,6 +693,7 @@ fn check_condition(
     site: &str,
     cond: &str,
     location: Option<&SourceLocation>,
+    spelling: Option<&AttributeSpelling>,
     into: &mut Collector,
 ) {
     let (needs_engine, _has_in) = crate::parser::check_expression_needs(cond);
@@ -623,7 +706,14 @@ fn check_condition(
     if crate::parser::is_pure_in_predicate(cond) {
         return;
     }
-    check(ExpressionRole::Condition, site, cond, location, into);
+    check(
+        ExpressionRole::Condition,
+        site,
+        cond,
+        location,
+        spelling,
+        into,
+    );
 }
 
 fn check(
@@ -631,6 +721,7 @@ fn check(
     site: &str,
     source: &str,
     location: Option<&SourceLocation>,
+    spelling: Option<&AttributeSpelling>,
     into: &mut Collector,
 ) {
     // An absent attribute is not an expression. The filters answer the
@@ -644,5 +735,6 @@ fn check(
         site: site.to_string(),
         source: source.to_string(),
         location: location.cloned(),
+        spelling: spelling.cloned(),
     });
 }

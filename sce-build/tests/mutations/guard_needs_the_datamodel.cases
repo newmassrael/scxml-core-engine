@@ -36,11 +36,13 @@ edit("sce-build/src/parser.rs",
      "    (false, false)")
 PY
 
+# Re-aimed 2026-09-24: the ECMAScript tree became a node carrying its source
+# range, and its variants moved to `ExprKind`; the arms are unchanged.
 mutation_case "the fold answers for a name it cannot see" <<'PY'
 edit("sce-build/src/ecmascript/mod.rs",
-     """        Expr::Bool(b) => Some(*b),""",
-     """        Expr::Bool(b) => Some(*b),
-        Expr::Ident(_) => Some(true),""")
+     """        ExprKind::Bool(b) => Some(*b),""",
+     """        ExprKind::Bool(b) => Some(*b),
+        ExprKind::Ident(_) => Some(true),""")
 PY
 
 mutation_case "the Rust guard arm prints the author's text again" <<'PY'
@@ -58,15 +60,15 @@ PY
 
 mutation_case "the fold reaches into an operator the data model owns" <<'PY'
 edit("sce-build/src/ecmascript/mod.rs",
-     """        Expr::Unary {
+     """        ExprKind::Unary {
             op: UnaryOp::Not,
             operand,
         } => Some(!fold(operand)?),""",
-     """        Expr::Unary {
+     """        ExprKind::Unary {
             op: UnaryOp::Not,
             operand,
         } => Some(!fold(operand)?),
-        Expr::Binary { op, left, right } => match op {
+        ExprKind::Binary { op, left, right } => match op {
             crate::ecmascript::BinOp::StrictEq => Some(fold(left) == fold(right)),
             _ => None,
         },""")

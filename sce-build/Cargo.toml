@@ -800,6 +800,11 @@ path = "tests/a_cause_is_placed_where_its_author_wrote_it.rs"
 required-features = ["cli"]
 
 [[test]]
+name = "an_ecmascript_refusal_names_the_token_it_refuses"
+path = "tests/an_ecmascript_refusal_names_the_token_it_refuses.rs"
+required-features = ["cli"]
+
+[[test]]
 name = "value_space_coverage"
 path = "tests/value_space_coverage.rs"
 required-features = ["cli"]

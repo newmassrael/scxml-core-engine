@@ -45,7 +45,7 @@
 
 use std::collections::BTreeSet;
 
-use super::{Expr, Stmt};
+use super::{Expr, ExprKind, Stmt};
 use crate::model::{Action, Invoke, SCXMLModel, State};
 
 /// How much of a document has been read into a scope.
@@ -319,11 +319,11 @@ fn chunk_declarations(stmts: &[Stmt]) -> BTreeSet<String> {
         match stmt {
             Stmt::VarDecl(bindings) => {
                 for (name, _) in bindings {
-                    out.insert(name.clone());
+                    out.insert(name.text.clone());
                 }
             }
             Stmt::FunctionDecl { name, .. } => {
-                out.insert(name.clone());
+                out.insert(name.text.clone());
             }
             _ => {}
         }
@@ -392,8 +392,8 @@ fn collect_assigned_names(stmt: &Stmt, out: &mut BTreeSet<String>) {
 }
 
 fn collect_assigned_in_expr(expr: &Expr, out: &mut BTreeSet<String>) {
-    if let Expr::Assign { target, value, .. } = expr {
-        if let Expr::Ident(name) = target.as_ref() {
+    if let ExprKind::Assign { target, value, .. } = &expr.kind {
+        if let ExprKind::Ident(name) = &target.kind {
             out.insert(name.clone());
         }
         collect_assigned_in_expr(value, out);
@@ -407,35 +407,35 @@ fn collect_assigned_in_expr(expr: &Expr, out: &mut BTreeSet<String>) {
 /// The sub-expressions of `expr`, for walks that do not care which
 /// position each one holds.
 fn children(expr: &Expr) -> Vec<&Expr> {
-    match expr {
-        Expr::Number(_)
-        | Expr::Str(_)
-        | Expr::Bool(_)
-        | Expr::Nullish
-        | Expr::Ident(_)
-        | Expr::This => Vec::new(),
-        Expr::Array(items) => items.iter().collect(),
-        Expr::Object(props) => props.iter().map(|(_, value)| value).collect(),
-        Expr::Member { object, .. } => vec![object.as_ref()],
-        Expr::Index { object, index } => vec![object.as_ref(), index.as_ref()],
-        Expr::Call { callee, args } | Expr::New { callee, args } => {
+    match &expr.kind {
+        ExprKind::Number(_)
+        | ExprKind::Str(_)
+        | ExprKind::Bool(_)
+        | ExprKind::Nullish
+        | ExprKind::Ident(_)
+        | ExprKind::This => Vec::new(),
+        ExprKind::Array(items) => items.iter().collect(),
+        ExprKind::Object(props) => props.iter().map(|(_, value)| value).collect(),
+        ExprKind::Member { object, .. } => vec![object.as_ref()],
+        ExprKind::Index { object, index } => vec![object.as_ref(), index.as_ref()],
+        ExprKind::Call { callee, args } | ExprKind::New { callee, args } => {
             let mut out = vec![callee.as_ref()];
             out.extend(args.iter());
             out
         }
-        Expr::Unary { operand, .. } => vec![operand.as_ref()],
-        Expr::Update { target, .. } => vec![target.as_ref()],
-        Expr::Binary { left, right, .. } | Expr::Logical { left, right, .. } => {
+        ExprKind::Unary { operand, .. } => vec![operand.as_ref()],
+        ExprKind::Update { target, .. } => vec![target.as_ref()],
+        ExprKind::Binary { left, right, .. } | ExprKind::Logical { left, right, .. } => {
             vec![left.as_ref(), right.as_ref()]
         }
-        Expr::Conditional {
+        ExprKind::Conditional {
             condition,
             consequent,
             alternate,
         } => vec![condition.as_ref(), consequent.as_ref(), alternate.as_ref()],
         // A function literal's body is statements, not expressions; the
         // callers that need it reach it through their own walk.
-        Expr::Function { .. } => Vec::new(),
-        Expr::Assign { target, value, .. } => vec![target.as_ref(), value.as_ref()],
+        ExprKind::Function { .. } => Vec::new(),
+        ExprKind::Assign { target, value, .. } => vec![target.as_ref(), value.as_ref()],
     }
 }

@@ -25,6 +25,8 @@
 //!   means it is a misspelling, and the document's own declarations are
 //!   where the correction comes from.
 //!
+//! Either refusal is raised at the identifier, which is the text it names.
+//!
 //! Before this walk both lowered verbatim and reached Lua as globals,
 //! where reading an unset global yields `nil` and the arithmetic or the
 //! call that followed died with a Lua message naming neither the SCXML
@@ -49,11 +51,11 @@ use std::collections::BTreeSet;
 
 use super::builtins;
 use super::scope::DocumentScope;
-use super::{BinOp, Expr, Stmt};
+use super::{BinOp, Expr, ExprKind, Refusal, Span, Stmt};
 use crate::forge::error::ExprError;
 
 /// Resolve every identifier an expression reads.
-pub fn expression(expr: &Expr, scope: &DocumentScope) -> Result<(), ExprError> {
+pub fn expression(expr: &Expr, scope: &DocumentScope) -> Result<(), Refusal> {
     let mut frames = Frames::new(scope);
     frames.expression(expr)
 }
@@ -63,7 +65,7 @@ pub fn expression(expr: &Expr, scope: &DocumentScope) -> Result<(), ExprError> {
 /// The chunk's own top level is a binding frame: a `<script>`'s `var` is
 /// emitted as a datamodel global, so it binds here as well as in the
 /// [`DocumentScope`] the model built.
-pub fn script(stmts: &[Stmt], scope: &DocumentScope) -> Result<(), ExprError> {
+pub fn script(stmts: &[Stmt], scope: &DocumentScope) -> Result<(), Refusal> {
     let mut frames = Frames::new(scope);
     frames.enter(bindings_hoisted_into(stmts));
     for stmt in stmts {
@@ -103,31 +105,34 @@ impl<'a> Frames<'a> {
         self.lexical.iter().any(|frame| frame.contains(name))
     }
 
-    /// A name read for its value.
-    fn read(&self, name: &str) -> Result<(), ExprError> {
+    /// A name read for its value, written at `at`.
+    fn read(&self, name: &str, at: &Span) -> Result<(), Refusal> {
         if self.bound(name) || self.scope.declares(name) {
             return Ok(());
         }
-        if let Some(refusal) = builtins::unsupported_global(name) {
-            return Err(refusal);
-        }
-        Err(ExprError::UnknownIdentifier {
-            name: name.to_string(),
-            candidates: self.scope.candidates_for(name),
-        })
+        let refusal =
+            builtins::unsupported_global(name).unwrap_or_else(|| ExprError::UnknownIdentifier {
+                name: name.to_string(),
+                candidates: self.scope.candidates_for(name),
+            });
+        Err(refusal.at(Some(at.clone())))
     }
 
-    fn expression(&mut self, expr: &Expr) -> Result<(), ExprError> {
-        match expr {
-            Expr::Number(_) | Expr::Str(_) | Expr::Bool(_) | Expr::Nullish | Expr::This => Ok(()),
-            Expr::Ident(name) => self.read(name),
-            Expr::Array(items) => {
+    fn expression(&mut self, expr: &Expr) -> Result<(), Refusal> {
+        match &expr.kind {
+            ExprKind::Number(_)
+            | ExprKind::Str(_)
+            | ExprKind::Bool(_)
+            | ExprKind::Nullish
+            | ExprKind::This => Ok(()),
+            ExprKind::Ident(name) => self.read(name, &expr.span),
+            ExprKind::Array(items) => {
                 for item in items {
                     self.expression(item)?;
                 }
                 Ok(())
             }
-            Expr::Object(props) => {
+            ExprKind::Object(props) => {
                 // A property key is a name in the object, not in the
                 // datamodel: `{ Date: 1 }` declares nothing and reaches
                 // for nothing.
@@ -138,33 +143,33 @@ impl<'a> Frames<'a> {
             }
             // Likewise a member's property: `x.length` asks `x` for a
             // field, and `length` is answered by the receiver.
-            Expr::Member { object, .. } => self.expression(object),
-            Expr::Index { object, index } => {
+            ExprKind::Member { object, .. } => self.expression(object),
+            ExprKind::Index { object, index } => {
                 self.expression(object)?;
                 self.expression(index)
             }
-            Expr::Call { callee, args } | Expr::New { callee, args } => {
+            ExprKind::Call { callee, args } | ExprKind::New { callee, args } => {
                 self.expression(callee)?;
                 for arg in args {
                     self.expression(arg)?;
                 }
                 Ok(())
             }
-            Expr::Unary { operand, op } => {
+            ExprKind::Unary { operand, op } => {
                 // §ecma-262-11.4.3: `typeof` on an undeclared name is the
                 // one read that does not throw — it answers `"undefined"`.
                 // It is how a document asks whether something exists, so
                 // refusing it would refuse the question.
                 if matches!(op, super::UnaryOp::TypeOf)
-                    && matches!(operand.as_ref(), Expr::Ident(_))
+                    && matches!(operand.kind, ExprKind::Ident(_))
                 {
                     return Ok(());
                 }
                 self.expression(operand)
             }
             // `x++` reads before it writes.
-            Expr::Update { target, .. } => self.expression(target),
-            Expr::Binary { op, left, right } => {
+            ExprKind::Update { target, .. } => self.expression(target),
+            ExprKind::Binary { op, left, right } => {
                 self.expression(left)?;
                 // `x instanceof Array` names the one constructor this
                 // datamodel represents, and [`super::lua`] consumes the
@@ -175,11 +180,11 @@ impl<'a> Frames<'a> {
                 }
                 self.expression(right)
             }
-            Expr::Logical { left, right, .. } => {
+            ExprKind::Logical { left, right, .. } => {
                 self.expression(left)?;
                 self.expression(right)
             }
-            Expr::Conditional {
+            ExprKind::Conditional {
                 condition,
                 consequent,
                 alternate,
@@ -188,51 +193,51 @@ impl<'a> Frames<'a> {
                 self.expression(consequent)?;
                 self.expression(alternate)
             }
-            Expr::Function { name, params, body } => {
+            ExprKind::Function { name, params, body } => {
                 let mut frame = bindings_hoisted_into(body);
-                frame.extend(params.iter().cloned());
+                frame.extend(params.iter().map(|param| param.text.clone()));
                 // A named function expression can call itself.
                 if let Some(name) = name {
-                    frame.insert(name.clone());
+                    frame.insert(name.text.clone());
                 }
                 self.enter(frame);
                 let result = self.statements(body);
                 self.leave();
                 result
             }
-            Expr::Assign { op, target, value } => {
-                match target.as_ref() {
+            ExprKind::Assign { op, target, value } => {
+                match &target.kind {
                     // §ecma-262-10.2.1: assigning to a name nothing
                     // declares creates it. A compound assignment reads
                     // first, so only a plain `=` gets that licence.
-                    Expr::Ident(name) => {
+                    ExprKind::Ident(name) => {
                         if op.is_some() {
-                            self.read(name)?;
+                            self.read(name, &target.span)?;
                         } else {
                             self.bind(name);
                         }
                     }
-                    other => self.expression(other)?,
+                    _ => self.expression(target)?,
                 }
                 self.expression(value)
             }
         }
     }
 
-    fn statements(&mut self, stmts: &[Stmt]) -> Result<(), ExprError> {
+    fn statements(&mut self, stmts: &[Stmt]) -> Result<(), Refusal> {
         for stmt in stmts {
             self.statement(stmt)?;
         }
         Ok(())
     }
 
-    fn statement(&mut self, stmt: &Stmt) -> Result<(), ExprError> {
+    fn statement(&mut self, stmt: &Stmt) -> Result<(), Refusal> {
         match stmt {
             Stmt::Empty | Stmt::Break | Stmt::Continue => Ok(()),
             Stmt::Expr(expr) => self.expression(expr),
             Stmt::VarDecl(bindings) => {
                 for (name, init) in bindings {
-                    self.bind(name);
+                    self.bind(&name.text);
                     if let Some(expr) = init {
                         self.expression(expr)?;
                     }
@@ -275,7 +280,7 @@ impl<'a> Frames<'a> {
                 // The loop variable is written by the loop, whether or not
                 // the source spelled `var` — [`super::lua`] emits it as the
                 // Lua loop variable either way.
-                self.bind(name);
+                self.bind(&name.text);
                 self.expression(object)?;
                 self.statements(body)
             }
@@ -285,8 +290,8 @@ impl<'a> Frames<'a> {
             },
             Stmt::FunctionDecl { name, params, body } => {
                 let mut frame = bindings_hoisted_into(body);
-                frame.extend(params.iter().cloned());
-                frame.insert(name.clone());
+                frame.extend(params.iter().map(|param| param.text.clone()));
+                frame.insert(name.text.clone());
                 self.enter(frame);
                 let result = self.statements(body);
                 self.leave();
@@ -313,11 +318,11 @@ fn hoist(stmts: &[Stmt], out: &mut BTreeSet<String>) {
         match stmt {
             Stmt::VarDecl(bindings) => {
                 for (name, _) in bindings {
-                    out.insert(name.clone());
+                    out.insert(name.text.clone());
                 }
             }
             Stmt::FunctionDecl { name, .. } => {
-                out.insert(name.clone());
+                out.insert(name.text.clone());
             }
             Stmt::If {
                 consequent,
@@ -341,7 +346,7 @@ fn hoist(stmts: &[Stmt], out: &mut BTreeSet<String>) {
                 ..
             } => {
                 if *declares {
-                    out.insert(name.clone());
+                    out.insert(name.text.clone());
                 }
                 hoist(body, out);
             }

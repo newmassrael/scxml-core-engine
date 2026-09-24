@@ -348,6 +348,48 @@ fn a_refusal_is_reached_through_the_literal_key() {
     }
 }
 
+/// A refusal is raised at the text its record names, in the spelling the
+/// source holds — the fold into one node must not fold the RANGE away too.
+///
+/// The name above is the normal form, which a record keys its identity on;
+/// the range is what a caller holding the attribute reads back as the
+/// record's `actual`, and what a proposed repair replaces
+/// (SCE_ERROR_CONTRACT §3.1.1). Before the tree carried ranges the only
+/// text a record could name was the normal form, `.map`, which a document
+/// that wrote `['map']` does not hold.
+#[test]
+fn a_refusal_is_raised_at_the_text_its_record_names() {
+    for (source, raised_at) in [
+        // The name and the call's parentheses: dropping them is the repair.
+        ("t['length']()", "['length']()"),
+        ("t.length ( )", ".length ( )"),
+        ("_event['name']()", "_event['name']()"),
+        // Arguments are the author's, so the name alone.
+        ("t['length'](1)", "['length']"),
+        // The accessor, whichever spelling reached the method.
+        ("arr['map'](handlers.retry)", "['map']"),
+        ("arr . map(handlers.retry)", ". map"),
+        // A namespace member is replaced whole.
+        ("JSON['serialize'](arr)", "JSON['serialize']"),
+        ("Math . tanh(1)", "Math . tanh"),
+        // A name is its identifier.
+        ("Date.now()", "Date"),
+        ("conut + 1", "conut"),
+    ] {
+        let refusal = sce_build::ecmascript::lower_value(source, &probes())
+            .expect_err("each source is refused");
+        let span = refusal
+            .span
+            .unwrap_or_else(|| panic!("{source} was refused at no range: {}", refusal.error));
+        assert_eq!(
+            &source[span.clone()],
+            raised_at,
+            "{source} was refused at {span:?} ({})",
+            refusal.error
+        );
+    }
+}
+
 /// A literal key this datamodel has no rule for is still an ordinary
 /// lookup, and the key is still encoded the way it was.
 ///

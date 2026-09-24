@@ -52,13 +52,71 @@ pub mod scope;
 pub use crate::forge::error::ExprError;
 pub use scope::{DocumentScope, ScopeStage};
 
-/// An ECMAScript expression.
+/// A byte range of the text an entry point handed the parser: an
+/// expression TRIMMED, as [`parser::parse_expression`] reads it — the
+/// convention [`crate::forge::expression_site::ExpressionSite::locate`]
+/// places against — or a `<script>` body as given.
+pub type Span = std::ops::Range<usize>;
+
+// A refusal, and the range of the source it was raised at — the forge
+// dialect's type, since both dialects place a refusal the same way.
+pub use crate::forge::expr::Refusal;
+
+/// An ECMAScript expression, and the range of the source it was read from.
 ///
 /// Untyped by construction: the W3C datamodel has no type annotations and
 /// the Lua interpreter underneath has no static types either, so there is
 /// no inference pass between this AST and the emitter.
+///
+/// `span` is what lets a refusal of the node be placed where its author
+/// wrote it and report what they wrote (SCE_ERROR_CONTRACT §3.1.1). Until
+/// 2026-09-24 the tree carried none, so a refusal could only restate the
+/// name it judged — `.map` for a document that wrote `arr['map'](f)`, a
+/// text its row does not hold.
+#[derive(Debug, Clone)]
+pub struct Expr {
+    pub kind: ExprKind,
+    pub span: Span,
+}
+
+/// Structural equality: two trees are the same expression whatever text
+/// they were read from, so `span` — where, not what — takes no part, as in
+/// the forge dialect's nodes.
+impl PartialEq for Expr {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind
+    }
+}
+
+impl Expr {
+    pub fn new(kind: ExprKind, span: Span) -> Self {
+        Self { kind, span }
+    }
+}
+
+/// A name the author wrote — a member's property, a binding — and where.
+///
+/// For a member, `span` covers the accessor as written, `.name` or
+/// `['name']`: ECMA-262 11.2.1 makes the two one operation and the parser
+/// folds them into one node, so the accessor is the text a refusal of the
+/// member names and a repair replaces, whichever spelling reached it. For a
+/// binding it is the identifier.
+#[derive(Debug, Clone)]
+pub struct Name {
+    pub text: String,
+    pub span: Span,
+}
+
+/// Equal when the names are, for the reason [`Expr`]'s equality gives.
+impl PartialEq for Name {
+    fn eq(&self, other: &Self) -> bool {
+        self.text == other.text
+    }
+}
+
+/// What an ECMAScript expression is, apart from where it was written.
 #[derive(Debug, Clone, PartialEq)]
-pub enum Expr {
+pub enum ExprKind {
     /// Numeric literal, carried in its source spelling (`1`, `0x1f`,
     /// `1.5e3`). Lua 5.4 accepts every form ECMAScript writes here.
     Number(String),
@@ -79,7 +137,7 @@ pub enum Expr {
     Object(Vec<(String, Expr)>),
     Member {
         object: Box<Expr>,
-        property: String,
+        property: Name,
     },
     Index {
         object: Box<Expr>,
@@ -110,7 +168,7 @@ pub enum Expr {
         left: Box<Expr>,
         right: Box<Expr>,
     },
-    /// `&&` / `||`. Separate from [`Expr::Binary`] because these are the
+    /// `&&` / `||`. Separate from [`ExprKind::Binary`] because these are the
     /// operators whose result is one of their *operands* rather than a
     /// boolean, which is what makes ECMAScript's falsy set observable.
     Logical {
@@ -124,8 +182,8 @@ pub enum Expr {
         alternate: Box<Expr>,
     },
     Function {
-        name: Option<String>,
-        params: Vec<String>,
+        name: Option<Name>,
+        params: Vec<Name>,
         body: Vec<Stmt>,
     },
     /// `x = v`, `x += v`. Also an expression in ECMAScript; the emitter
@@ -195,7 +253,7 @@ pub enum BinOp {
 pub enum Stmt {
     Expr(Expr),
     /// `var a = 1, b;` — one statement, possibly several bindings.
-    VarDecl(Vec<(String, Option<Expr>)>),
+    VarDecl(Vec<(Name, Option<Expr>)>),
     If {
         condition: Expr,
         consequent: Vec<Stmt>,
@@ -215,14 +273,14 @@ pub enum Stmt {
         /// `true` for `for (var k in o)`, `false` for `for (k in o)`. The
         /// emitter needs it to decide whether the loop variable is local.
         declares: bool,
-        name: String,
+        name: Name,
         object: Expr,
         body: Vec<Stmt>,
     },
     Return(Option<Expr>),
     FunctionDecl {
-        name: String,
-        params: Vec<String>,
+        name: Name,
+        params: Vec<Name>,
         body: Vec<Stmt>,
     },
     Break,
@@ -246,6 +304,12 @@ pub enum Stmt {
 /// middle one is the only one that needs anything outside the source,
 /// which is why it is the only one with a second parameter.
 pub fn to_lua_value(source: &str, scope: &DocumentScope) -> Result<String, ExprError> {
+    lower_value(source, scope).map_err(|refusal| refusal.error)
+}
+
+/// [`to_lua_value`], keeping the range of `source` — trimmed — a refusal was
+/// raised at, for a caller holding the attribute it was read from.
+pub fn lower_value(source: &str, scope: &DocumentScope) -> Result<String, Refusal> {
     let ast = parser::parse_expression(source)?;
     resolve::expression(&ast, scope)?;
     lua::emit_value(&ast)
@@ -258,6 +322,12 @@ pub fn to_lua_value(source: &str, scope: &DocumentScope) -> Result<String, ExprE
 /// applied here rather than left to Lua's, which counts `0` and `""` as
 /// true.
 pub fn to_lua_condition(source: &str, scope: &DocumentScope) -> Result<String, ExprError> {
+    lower_condition(source, scope).map_err(|refusal| refusal.error)
+}
+
+/// [`to_lua_condition`], keeping where a refusal was raised — see
+/// [`lower_value`].
+pub fn lower_condition(source: &str, scope: &DocumentScope) -> Result<String, Refusal> {
     let ast = parser::parse_expression(source)?;
     resolve::expression(&ast, scope)?;
     lua::emit_condition(&ast)
@@ -290,19 +360,19 @@ pub fn constant_truthiness(source: &str) -> Option<bool> {
 }
 
 fn fold(expr: &Expr) -> Option<bool> {
-    match expr {
+    match &expr.kind {
         // ECMA-262 9.2 ToBoolean, one arm per type it defines.
-        Expr::Bool(b) => Some(*b),
-        Expr::Nullish => Some(false),
-        Expr::Str(s) => Some(!s.is_empty()),
-        Expr::Number(text) => {
+        ExprKind::Bool(b) => Some(*b),
+        ExprKind::Nullish => Some(false),
+        ExprKind::Str(s) => Some(!s.is_empty()),
+        ExprKind::Number(text) => {
             // The literal is carried in its source spelling, so the
             // value it denotes is what decides — `0x0` is false and
             // `0.5` is true, neither of which the text alone shows.
             let value = parse_numeric_literal(text)?;
             Some(value != 0.0 && !value.is_nan())
         }
-        Expr::Unary {
+        ExprKind::Unary {
             op: UnaryOp::Not,
             operand,
         } => Some(!fold(operand)?),
@@ -310,11 +380,11 @@ fn fold(expr: &Expr) -> Option<bool> {
         // (ECMA-262 11.4.7), and neither sign changes what 9.2 answers
         // for a number: only zero and NaN are false, and negating either
         // leaves it that way.
-        Expr::Unary {
+        ExprKind::Unary {
             op: UnaryOp::Neg | UnaryOp::Pos,
             operand,
-        } => match operand.as_ref() {
-            Expr::Number(_) => fold(operand),
+        } => match operand.kind {
+            ExprKind::Number(_) => fold(operand),
             _ => None,
         },
         _ => None,
@@ -335,6 +405,12 @@ fn parse_numeric_literal(text: &str) -> Option<f64> {
 
 /// Translate a `<script>` body: a statement list, emitted as a Lua chunk.
 pub fn to_lua_script(source: &str, scope: &DocumentScope) -> Result<String, ExprError> {
+    lower_script(source, scope).map_err(|refusal| refusal.error)
+}
+
+/// [`to_lua_script`], keeping where a refusal was raised: a range of
+/// `source` as given, since a body is not trimmed before it is read.
+pub fn lower_script(source: &str, scope: &DocumentScope) -> Result<String, Refusal> {
     let stmts = parser::parse_script(source)?;
     resolve::script(&stmts, scope)?;
     lua::emit_script(&stmts)
@@ -354,6 +430,12 @@ pub fn to_lua_script(source: &str, scope: &DocumentScope) -> Result<String, Expr
 /// very documents that clause is written for. [`scope::DocumentScope`]
 /// reads these locations as *declarations* for the same reason.
 pub fn to_lua_location(source: &str) -> Result<String, ExprError> {
+    lower_location(source).map_err(|refusal| refusal.error)
+}
+
+/// [`to_lua_location`], keeping where a refusal was raised — see
+/// [`lower_value`].
+pub fn lower_location(source: &str) -> Result<String, Refusal> {
     let ast = parser::parse_expression(source)?;
     lua::emit_location(&ast)
 }

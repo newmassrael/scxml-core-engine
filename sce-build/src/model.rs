@@ -397,6 +397,19 @@ pub struct Action {
     /// the pre-emit `validate_emission_provenance` walker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
+    /// The element's attributes as written and where, for the reason
+    /// [`Transition::cond_spelling`] gives — so a refusal of a piece of
+    /// `eventexpr` or `cond` names it as the author spelled it, on the row it
+    /// sits on. One map rather than a field per attribute because this
+    /// struct stands for every kind of executable content. Empty for an
+    /// action no document produced. Not part of the IR.
+    #[serde(skip)]
+    pub spellings: crate::attribute_spelling::AttributeSpellings,
+    /// The `expr` of a `<send>`'s `<content>` child, as written and where —
+    /// the attribute [`Self::contentexpr`] was read from, which is not on
+    /// this element and so not in [`Self::spellings`].
+    #[serde(skip)]
+    pub contentexpr_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     /// `sce:req` requirement IDs attached to this executable-content
     /// element. See [`Transition::req`] for the wire-format contract.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -416,6 +429,12 @@ pub struct Action {
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ElseIfBranch {
     pub cond: String,
+    /// The `<elseif>`'s `cond` as written and where, for the reason
+    /// [`Transition::cond_spelling`] gives: the branch is its own element,
+    /// often on a row its `<if>` does not share. `None` for a branch no
+    /// document produced.
+    #[serde(skip)]
+    pub cond_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     pub cond_cpp: String,
     pub cond_kt: String,
     /// See [`Action::cond_cpp_transformed`].
@@ -500,6 +519,9 @@ pub struct NestedBlock<'a> {
     pub cond_constant: Option<bool>,
     pub cond_is_native: bool,
     pub cond_is_pure_in: bool,
+    /// Where [`cond`](Self::cond) was written — the branch's own
+    /// [`ElseIfBranch::cond_spelling`], here for the reason `cond` is.
+    pub cond_spelling: Option<&'a crate::attribute_spelling::AttributeSpelling>,
     pub actions: &'a [Action],
 }
 
@@ -512,6 +534,7 @@ impl<'a> NestedBlock<'a> {
             cond_constant: None,
             cond_is_native: false,
             cond_is_pure_in: false,
+            cond_spelling: None,
             actions,
         }
     }
@@ -671,6 +694,7 @@ impl Action {
                 cond_constant: branch.cond_constant,
                 cond_is_native: branch.is_cpp_condition || branch.is_kt_condition,
                 cond_is_pure_in: branch.is_pure_in_predicate,
+                cond_spelling: branch.cond_spelling.as_ref(),
                 actions: branch.actions.as_slice(),
             });
         }
@@ -751,6 +775,10 @@ pub struct Param {
     pub expr_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub location: String,
+    /// The `location` attribute as written and where — it is read through
+    /// the same value seam `expr` is, so it is refused the same way.
+    #[serde(skip)]
+    pub location_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     pub is_static_literal: bool,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub static_value: String,
@@ -775,6 +803,11 @@ pub struct Param {
 pub struct Variable {
     pub id: String,
     pub expr: String,
+    /// The `expr` attribute as written and where, for the reason
+    /// [`Transition::cond_spelling`] gives. `None` for a variable no
+    /// document produced. Not part of the IR.
+    #[serde(skip)]
+    pub expr_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     pub src: String,
     pub content: String,
     /// The `<data>` element's position, so a build that must stay
@@ -824,6 +857,10 @@ pub struct DoneData {
     /// `<content>` child.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content_location: Option<SourceLocation>,
+    /// The `<content>`'s `expr` as written and where, for the reason
+    /// [`Transition::cond_spelling`] gives. `None` without one.
+    #[serde(skip)]
+    pub content_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
 }
 
 /// §scxml-5.5: `<content>` body semantics.
@@ -892,6 +929,13 @@ pub struct DoneDataParam {
     /// is the fixture).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
+    /// The `expr` and `location` attributes as written and where, for the
+    /// reason [`Transition::cond_spelling`] gives: the row above names the
+    /// element, and these name the token within it.
+    #[serde(skip)]
+    pub expr_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+    #[serde(skip)]
+    pub location_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
 }
 
 /// Named Context object declaration
@@ -1317,9 +1361,17 @@ pub struct HybridInvokeInfo {
     /// Runtime expression that resolves to a child SCXML path.
     /// Empty if `contentexpr` is used instead.
     pub srcexpr: String,
+    /// The `srcexpr` attribute as written and where, for the reason
+    /// [`Transition::cond_spelling`] gives.
+    #[serde(skip)]
+    pub srcexpr_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     /// Runtime expression that produces inline SCXML content.
     /// Empty if `srcexpr` is used instead.
     pub contentexpr: String,
+    /// The `expr` of the `<content>` child `contentexpr` was read from, as
+    /// written and where.
+    #[serde(skip)]
+    pub contentexpr_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     /// The documents `sce:candidates` declares this invoke may start, in
     /// the order written. Empty when the author declared none, which is
     /// the state every hybrid invoke was in before the attribute existed.

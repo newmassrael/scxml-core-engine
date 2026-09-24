@@ -32,44 +32,39 @@ mutation_targets sce-build/src/ecmascript/lua.rs sce-build/tests/ecmascript_prop
 # document spells it, so the anchor that quoted the one-field form matched
 # nothing. `literal_spelling` is discarded with `what` for the reason
 # above — dropping its call would leave a function the tree then refuses.
+# Re-aimed 2026-09-24: the tree became a node carrying its source range —
+# the refusal is raised at the callee's span and the helpers read its
+# `ExprKind` — so each anchor below quotes that shape; the rules broken are
+# the ones they broke before.
 mutation_case "the literal is typed and the answer thrown away" <<'PY'
 edit("sce-build/src/ecmascript/lua.rs",
-     """    if let Some(what) = literal_description(callee) {
-        return Err(ExprError::LiteralNotCallable {
-            what,
-            observed: literal_spelling(callee),
-        });
+     """    if let Some(what) = literal_description(&callee.kind) {
+        return Err(at(
+            &callee.span,
+            ExprError::LiteralNotCallable {
+                what,
+                observed: literal_spelling(&callee.kind),
+            },
+        ));
     }""",
-     """    if let Some(what) = literal_description(callee) {
-        let _ = (what, literal_spelling(callee));
+     """    if let Some(what) = literal_description(&callee.kind) {
+        let _ = (what, literal_spelling(&callee.kind));
     }""")
 PY
 
 mutation_case "the rule takes the function expression with it" <<'PY'
 edit("sce-build/src/ecmascript/lua.rs",
-     """        Expr::Nullish => Some("the literal null or undefined".to_string()),
-        Expr::Number(_) | Expr::Str(_) | Expr::Bool(_) | Expr::Array(_) | Expr::Object(_) => {
-            Some(format!("the {}", describe(expr)))
-        }""",
-     """        Expr::Nullish => Some("the literal null or undefined".to_string()),
-        Expr::Number(_)
-        | Expr::Str(_)
-        | Expr::Bool(_)
-        | Expr::Array(_)
-        | Expr::Object(_)
-        | Expr::Function { .. } => Some(format!("the {}", describe(expr))),""")
+     """        | ExprKind::Object(_) => Some(format!("the {}", describe(expr))),""",
+     """        | ExprKind::Object(_)
+        | ExprKind::Function { .. } => Some(format!("the {}", describe(expr))),""")
 PY
 
 mutation_case "the two spellings this AST folds together are named as one" <<'PY'
 edit("sce-build/src/ecmascript/lua.rs",
-     """        Expr::Nullish => Some("the literal null or undefined".to_string()),
-        Expr::Number(_) | Expr::Str(_) | Expr::Bool(_) | Expr::Array(_) | Expr::Object(_) => {""",
-     """        Expr::Number(_)
-        | Expr::Str(_)
-        | Expr::Bool(_)
-        | Expr::Array(_)
-        | Expr::Object(_)
-        | Expr::Nullish => {""")
+     """        ExprKind::Nullish => Some("the literal null or undefined".to_string()),
+        ExprKind::Number(_)""",
+     """        ExprKind::Nullish
+        | ExprKind::Number(_)""")
 PY
 
 mutation_case "the sweep keeps only the spellings that were valid Lua" <<'PY'

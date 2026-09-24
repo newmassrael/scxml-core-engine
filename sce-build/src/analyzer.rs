@@ -210,7 +210,10 @@ fn readable_variables(model: &SCXMLModel) -> Vec<Variable> {
 fn reachable_as_an_expression(id: &str) -> bool {
     matches!(
         crate::ecmascript::parser::parse_expression(id),
-        Ok(crate::ecmascript::Expr::Ident(parsed)) if parsed == id
+        Ok(crate::ecmascript::Expr {
+            kind: crate::ecmascript::ExprKind::Ident(parsed),
+            ..
+        }) if parsed == id
     )
 }
 
@@ -252,12 +255,12 @@ fn declared_type(expr: &str) -> &'static str {
 /// the engine, because a classifier that folded arithmetic would be a
 /// second evaluator disagreeing with the first one at the margins.
 fn literal_type(expr: &crate::ecmascript::Expr) -> Option<&'static str> {
-    use crate::ecmascript::{BinOp, Expr, UnaryOp};
+    use crate::ecmascript::{BinOp, ExprKind, UnaryOp};
 
-    match expr {
-        Expr::Str(_) => Some("string"),
-        Expr::Bool(_) => Some("bool"),
-        Expr::Number(spelling) => whole_number(spelling).map(|_| "int"),
+    match &expr.kind {
+        ExprKind::Str(_) => Some("string"),
+        ExprKind::Bool(_) => Some("bool"),
+        ExprKind::Number(spelling) => whole_number(spelling).map(|_| "int"),
         // An array or object literal denotes an array or an object whatever
         // its elements turn out to hold, so this arm admits `[a, b]` on the
         // same grounds as `[1, 2]` — the constructor is the literal, and
@@ -273,16 +276,16 @@ fn literal_type(expr: &crate::ecmascript::Expr) -> Option<&'static str> {
         // distinction is already carried — in the first character of the
         // answer. Splitting the type here would name a difference no host
         // signature could express: every backend returns the same string.
-        Expr::Array(_) | Expr::Object(_) => Some("json"),
+        ExprKind::Array(_) | ExprKind::Object(_) => Some("json"),
         // `-7` is not a numeric literal in ECMAScript — it is negation
         // applied to `7` — and the previous classifier's `strip_prefix('-')`
         // was that fact spelled as string surgery. `+7` reaches the same
         // value by the same shape and is admitted with it.
-        Expr::Unary {
+        ExprKind::Unary {
             op: UnaryOp::Neg | UnaryOp::Pos,
             operand,
-        } => match operand.as_ref() {
-            Expr::Number(spelling) => whole_number(spelling).map(|_| "int"),
+        } => match &operand.kind {
+            ExprKind::Number(spelling) => whole_number(spelling).map(|_| "int"),
             _ => None,
         },
         // ECMA-262 3rd ed. §11.6.1: if either operand of `+` is a String
@@ -292,7 +295,7 @@ fn literal_type(expr: &crate::ecmascript::Expr) -> Option<&'static str> {
         // `'Milestone: ' + milestone` while no arm folds `1 + 2`. The
         // asymmetry is ECMAScript's, not a shortcut: `+` is the one
         // operator whose result type a single operand can decide.
-        Expr::Binary {
+        ExprKind::Binary {
             op: BinOp::Add,
             left,
             right,
@@ -301,12 +304,12 @@ fn literal_type(expr: &crate::ecmascript::Expr) -> Option<&'static str> {
         // `c ? a : b` and `a || b` both yield one of two operands, so they
         // have a type exactly when the two agree on one. Which operand wins
         // never has to be decided.
-        Expr::Conditional {
+        ExprKind::Conditional {
             consequent,
             alternate,
             ..
         } => agreed_type(consequent, alternate),
-        Expr::Logical { left, right, .. } => agreed_type(left, right),
+        ExprKind::Logical { left, right, .. } => agreed_type(left, right),
         _ => None,
     }
 }

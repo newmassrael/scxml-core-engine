@@ -1503,6 +1503,15 @@ unevaluable expression to raise `error.execution` at runtime rather
 than be refused at generation time — and `--lint` promotes it to fatal
 for documents this repository writes.
 
+The record is placed at the refused token, on the row and column it
+sits on, and its `actual` is the token as the document spells it: a
+document that wrote `arr['map'](f)` is told `['map']`, and a `cond`
+continued below its `<transition` row is refused on the row that holds
+the token. A candidate replaces exactly that text, so the literal key
+and the dot spelling take the same repair. A `<script>` body is element
+text rather than an attribute, and its refusals are placed at the
+`<script>` element.
+
 `sce_build::ecmascript::builtins` is the single owner of both lists;
 `sce-build/tests/ecmascript_builtin_vocabulary.rs` binds them to the
 emitter and to the shared Lua library, so a name cannot be promised in

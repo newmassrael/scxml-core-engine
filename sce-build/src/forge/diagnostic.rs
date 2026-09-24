@@ -5136,8 +5136,11 @@ impl ToDiagnostics for crate::ecmascript_acceptance::RefusedExpression {
 }
 
 impl SingleDiagnostic for crate::ecmascript_acceptance::RefusedExpression {
+    /// The refusal's payload, with `actual` as the document spells it where
+    /// the walk placed the refusal at its token — the rule a forge refusal's
+    /// record follows ([`restate_actual`]).
     fn diagnostic_payload(&self) -> DiagnosticPayload {
-        expression_fields(&self.error)
+        restate_actual(expression_fields(&self.error), self.as_written.as_ref())
     }
 
     fn diagnostic_location(&self) -> Option<Location> {
@@ -5173,25 +5176,32 @@ impl ToDiagnostics for Located<ForgeError> {
     }
 }
 
-impl SingleDiagnostic for Located<ForgeError> {
-    /// The wrapped error's payload, with `actual` as the document spells it
-    /// where a placement read that off the source (SCE_ERROR_CONTRACT
-    /// §3.1.1). Only a payload that names an `actual` has one to restate:
-    /// a code that reports none keeps reporting none. The key fragments,
-    /// and so the `id`, stay the decoded values — one refusal has one
-    /// identity however its document escapes the token.
-    fn diagnostic_payload(&self) -> DiagnosticPayload {
-        let mut payload = self.error.diagnostic_payload();
-        if payload.actual.is_some() {
-            match self.as_written() {
-                Some(crate::forge::error::AsWritten::Text(text)) => {
-                    payload.actual = Some(text.clone());
-                }
-                Some(crate::forge::error::AsWritten::Nothing) => payload.actual = None,
-                None => {}
+/// `payload`, with `actual` as the document spells it where a placement read
+/// that off the source (SCE_ERROR_CONTRACT §3.1.1). Only a payload that names
+/// an `actual` has one to restate: a code that reports none keeps reporting
+/// none. The key fragments, and so the `id`, stay the decoded values — one
+/// refusal has one identity however its document escapes the token.
+fn restate_actual(
+    mut payload: DiagnosticPayload,
+    as_written: Option<&crate::forge::error::AsWritten>,
+) -> DiagnosticPayload {
+    if payload.actual.is_some() {
+        match as_written {
+            Some(crate::forge::error::AsWritten::Text(text)) => {
+                payload.actual = Some(text.clone());
             }
+            Some(crate::forge::error::AsWritten::Nothing) => payload.actual = None,
+            None => {}
         }
-        payload
+    }
+    payload
+}
+
+impl SingleDiagnostic for Located<ForgeError> {
+    /// The wrapped error's payload, with `actual` restated as written
+    /// ([`restate_actual`]).
+    fn diagnostic_payload(&self) -> DiagnosticPayload {
+        restate_actual(self.error.diagnostic_payload(), self.as_written())
     }
 
     fn diagnostic_location(&self) -> Option<Location> {

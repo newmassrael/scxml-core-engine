@@ -26,10 +26,12 @@ mutation_targets sce-build/src/analyzer.rs
 # declaration falls back to `runtime` — which is the state the AI-loop example
 # shipped in, and which no assertion about the numeric half can see.
 
+# Re-aimed 2026-09-24: the ECMAScript tree became a node carrying its source
+# range, and its variants moved to `ExprKind`; the arms below are unchanged.
 mutation_case "a string literal declares no type" <<'PY'
 edit("sce-build/src/analyzer.rs",
-     'Expr::Str(_) => Some("string"),',
-     "Expr::Str(_) => None,")
+     'ExprKind::Str(_) => Some("string"),',
+     "ExprKind::Str(_) => None,")
 PY
 
 # ── Only the left operand of `+` settles a concatenation ───────────
@@ -93,8 +95,8 @@ PY
 
 mutation_case "an array or object literal declares no type" <<'PY'
 edit("sce-build/src/analyzer.rs",
-     'Expr::Array(_) | Expr::Object(_) => Some("json"),',
-     "Expr::Array(_) | Expr::Object(_) => None,")
+     'ExprKind::Array(_) | ExprKind::Object(_) => Some("json"),',
+     "ExprKind::Array(_) | ExprKind::Object(_) => None,")
 PY
 
 # ── Only arrays are structured ─────────────────────────────────────
@@ -105,8 +107,8 @@ PY
 
 mutation_case "an object literal is not structured" <<'PY'
 edit("sce-build/src/analyzer.rs",
-     'Expr::Array(_) | Expr::Object(_) => Some("json"),',
-     'Expr::Array(_) => Some("json"),')
+     'ExprKind::Array(_) | ExprKind::Object(_) => Some("json"),',
+     'ExprKind::Array(_) => Some("json"),')
 PY
 
 # ── A name only has to parse, not to be a name ─────────────────────
@@ -126,8 +128,11 @@ PY
 
 mutation_case "a json name only has to parse as some expression" <<'PY'
 edit("sce-build/src/analyzer.rs",
-     "Ok(crate::ecmascript::Expr::Ident(parsed)) if parsed == id",
-     "Ok(_)")
+     """        Ok(crate::ecmascript::Expr {
+            kind: crate::ecmascript::ExprKind::Ident(parsed),
+            ..
+        }) if parsed == id""",
+     "        Ok(_)")
 PY
 
 # ── The identifier guard swallows the scalar readers too ───────────

@@ -1233,6 +1233,7 @@ fn stamped_action(
     let mut action = Action {
         action_type: tag.to_string(),
         source_location: source_location_of(node, source_name),
+        spellings: crate::attribute_spelling::AttributeSpellings::of(node),
         ..Default::default()
     };
     (action.req, action.provenance) =
@@ -2180,6 +2181,7 @@ impl SCXMLParser {
         Ok(Some(Variable {
             id: data.attribute("id").unwrap_or("").to_string(),
             expr: data.attribute("expr").unwrap_or("").to_string(),
+            expr_spelling: AttributeSpelling::of(data, None, "expr"),
             src,
             content,
             var_type: String::new(),
@@ -2906,6 +2908,7 @@ impl SCXMLParser {
                 expr: param_expr,
                 expr_spelling: AttributeSpelling::of(&param_elem, None, "expr"),
                 location: param_elem.attribute("location").unwrap_or("").to_string(),
+                location_spelling: AttributeSpelling::of(&param_elem, None, "location"),
                 is_static_literal,
                 static_value,
                 source_location: source_location_of(&param_elem, source_name),
@@ -2915,6 +2918,7 @@ impl SCXMLParser {
         // Parse <content>
         if let Some(content_elem) = scxml_child(elem, "content") {
             action.contentexpr = content_elem.attribute("expr").unwrap_or("").to_string();
+            action.contentexpr_spelling = AttributeSpelling::of(&content_elem, None, "expr");
             if content_elem.children().any(|c| c.is_element()) {
                 let mut xml = String::new();
                 for c in content_elem.children().filter(|c| c.is_element()) {
@@ -3057,6 +3061,7 @@ impl SCXMLParser {
                 expr,
                 expr_spelling: AttributeSpelling::of(&arg, None, "expr"),
                 location: String::new(),
+                location_spelling: None,
                 is_static_literal: false,
                 static_value: String::new(),
                 source_location: source_location_of(&arg, source_name),
@@ -3128,6 +3133,7 @@ impl SCXMLParser {
                     let ei = resolve_cond(&ei_cond, &model.context_object_ids);
                     action.elseif_branches.push(ElseIfBranch {
                         cond: ei_cond,
+                        cond_spelling: AttributeSpelling::of(&child, None, "cond"),
                         cond_cpp: ei.cond_cpp,
                         cond_kt: ei.cond_kt,
                         cond_cpp_transformed: ei.cond_cpp_transformed,
@@ -3418,12 +3424,14 @@ impl SCXMLParser {
         }
 
         let mut contentexpr = String::new();
+        let mut contentexpr_spelling = None;
         let mut has_inline_scxml = false;
         let mut inline_scxml_text = String::new();
 
         // Parse inline <content>
         if let Some(content_elem) = scxml_child(elem, "content") {
             contentexpr = content_elem.attribute("expr").unwrap_or("").to_string();
+            contentexpr_spelling = AttributeSpelling::of(&content_elem, None, "expr");
 
             // Check for inline <scxml> child element (static content)
             if let Some(scxml_child_elem) = scxml_child(&content_elem, "scxml") {
@@ -3446,11 +3454,13 @@ impl SCXMLParser {
             let is_sl = is_static_string_literal(&expr);
             let param_at = source_location_of(&param, source_name);
             let expr_spelling = AttributeSpelling::of(&param, None, "expr");
+            let location_spelling = AttributeSpelling::of(&param, None, "location");
             static_params.push(Param {
                 name: name.clone(),
                 expr: expr.clone(),
                 expr_spelling: expr_spelling.clone(),
                 location: location.clone(),
+                location_spelling: location_spelling.clone(),
                 is_static_literal: is_sl,
                 static_value: if is_sl {
                     extract_static_string_literal(&expr)
@@ -3464,6 +3474,7 @@ impl SCXMLParser {
                 expr,
                 expr_spelling,
                 location,
+                location_spelling,
                 source_location: param_at,
                 ..Default::default()
             });
@@ -3550,7 +3561,9 @@ impl SCXMLParser {
                     ..Default::default()
                 },
                 srcexpr,
+                srcexpr_spelling: AttributeSpelling::of(elem, None, "srcexpr"),
                 contentexpr,
+                contentexpr_spelling,
                 candidates,
             })));
         }
@@ -3894,6 +3907,7 @@ impl SCXMLParser {
                     expr: expr.clone(),
                     expr_spelling: AttributeSpelling::of(&param, None, "expr"),
                     location,
+                    location_spelling: AttributeSpelling::of(&param, None, "location"),
                     is_static_literal: is_sl,
                     static_value: if is_sl {
                         extract_static_string_literal(&expr)
@@ -3950,6 +3964,8 @@ impl SCXMLParser {
                 expr: child.attribute("expr").map(|s| s.to_string()),
                 location: child.attribute("location").map(|s| s.to_string()),
                 source_location: source_location_of(&child, source_name),
+                expr_spelling: AttributeSpelling::of(&child, None, "expr"),
+                location_spelling: AttributeSpelling::of(&child, None, "location"),
             });
         }
 
@@ -3972,6 +3988,7 @@ impl SCXMLParser {
         //   - Omitted → None.
         if let Some(content_elem) = scxml_child(elem, "content") {
             dd.content_location = source_location_of(&content_elem, source_name);
+            dd.content_spelling = AttributeSpelling::of(&content_elem, None, "expr");
             if let Some(expr) = content_elem.attribute("expr") {
                 dd.content = crate::model::DoneDataContent::Expression(expr.to_string());
             } else {

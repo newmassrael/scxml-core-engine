@@ -31,24 +31,27 @@ mutation_tests -p sce-build --features cli --test ecmascript_property_calls --te
 # the surface an authoring consumer actually reads.
 mutation_targets sce-build/src/ecmascript/builtins.rs sce-build/src/ecmascript/lua.rs sce-build/tests/ecmascript_property_calls.rs
 
+# Re-aimed 2026-09-24: the tree became a node carrying its source range, so
+# each refusal is raised at the callee's span and a call reads `callee.kind`;
+# the rules the cases below break are the ones they broke before.
 mutation_case "the namespace falls through to a Lua call again" <<'PY'
 edit("sce-build/src/ecmascript/lua.rs",
      """        if let Some(refusal) = builtins::uncallable_namespace(name) {
-            return Err(refusal);
+            return Err(at(&callee.span, refusal));
         }
     }
 
-    if let Expr::Member { object, property } = callee {""",
+    if let ExprKind::Member { object, property } = &callee.kind {""",
      """    }
 
-    if let Expr::Member { object, property } = callee {""")
+    if let ExprKind::Member { object, property } = &callee.kind {""")
 PY
 
 mutation_case "the constructor form drops its operator before anything reads the callee" <<'PY'
 edit("sce-build/src/ecmascript/lua.rs",
-     """            if let Expr::Ident(name) = callee.as_ref() {
+     """            if let ExprKind::Ident(name) = &callee.kind {
                 if let Some(refusal) = builtins::uncallable_namespace(name) {
-                    return Err(refusal);
+                    return Err(at(&callee.span, refusal));
                 }
             }
             let mut parts = Vec::with_capacity(args.len());""",
@@ -83,13 +86,13 @@ PY
 
 mutation_case "the rule reaches the member call as well" <<'PY'
 edit("sce-build/src/ecmascript/lua.rs",
-     """    if let Expr::Member { object, property } = callee {
-        if let Expr::Ident(name) = object.as_ref() {
+     """        let key = property.text.as_str();
+        if let ExprKind::Ident(name) = &object.kind {
             if let Some(namespace) = builtins::Namespace::from_ident(name) {""",
-     """    if let Expr::Member { object, property } = callee {
-        if let Expr::Ident(name) = object.as_ref() {
+     """        let key = property.text.as_str();
+        if let ExprKind::Ident(name) = &object.kind {
             if let Some(refusal) = builtins::uncallable_namespace(name) {
-                return Err(refusal);
+                return Err(at(&callee.span, refusal));
             }
             if let Some(namespace) = builtins::Namespace::from_ident(name) {""")
 PY

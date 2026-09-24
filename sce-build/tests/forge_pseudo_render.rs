@@ -431,7 +431,9 @@ fn each_invoke_shape_renders_once_and_whole() {
         Invoke::Hybrid(HybridInvokeInfo {
             common: common("i2"),
             srcexpr: "pick()".to_string(),
+            srcexpr_spelling: None,
             contentexpr: "body()".to_string(),
+            contentexpr_spelling: None,
             candidates: ["a.scxml", "b.scxml"]
                 .iter()
                 .map(|p| sce_build::model::InvokeCandidate::from_path(p).unwrap())

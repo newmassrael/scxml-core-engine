@@ -27,22 +27,25 @@
 mutation_tests -p sce-build --features cli --test ecmascript_property_calls --test cli_expression_refusal
 mutation_targets sce-build/src/ecmascript/builtins.rs sce-build/src/ecmascript/lua.rs sce-build/tests/ecmascript_property_calls.rs
 
+# Re-aimed 2026-09-24: the tree became a node carrying its source range, so
+# each refusal is raised at a span and the member's name is `key`. Every
+# case re-aimed here breaks the rule it broke before.
 mutation_case "the namespace is read as a value again" <<'PY'
 edit("sce-build/src/ecmascript/lua.rs",
-     """        Expr::Ident(name) => match builtins::namespace_not_a_value(name) {
-            Some(refusal) => return Err(refusal),
+     """        ExprKind::Ident(name) => match builtins::namespace_not_a_value(name) {
+            Some(refusal) => return Err(at(&expr.span, refusal)),
             None => lua_ident_read(name),
         },""",
-     """        Expr::Ident(name) => lua_ident_read(name),""")
+     """        ExprKind::Ident(name) => lua_ident_read(name),""")
 PY
 
 mutation_case "only Math is asked whether it carries the member being read" <<'PY'
 edit("sce-build/src/ecmascript/lua.rs",
      """        if let Some(namespace) = builtins::Namespace::from_ident(name) {
-            if let Some(refusal) = builtins::unknown_member(namespace, property) {
-                return Err(refusal);
+            if let Some(refusal) = builtins::unknown_member(namespace, key) {
+                return Err(at(&node.span, refusal));
             }
-            return Ok(format!("{name}.{property}"));
+            return Ok(format!("{name}.{key}"));
         }
     }""",
      """    }""")
@@ -51,13 +54,13 @@ PY
 mutation_case "the member reach is refused along with the namespace" <<'PY'
 edit("sce-build/src/ecmascript/lua.rs",
      """        if let Some(namespace) = builtins::Namespace::from_ident(name) {
-            if let Some(refusal) = builtins::unknown_member(namespace, property) {
-                return Err(refusal);
+            if let Some(refusal) = builtins::unknown_member(namespace, key) {
+                return Err(at(&node.span, refusal));
             }
-            return Ok(format!("{name}.{property}"));
+            return Ok(format!("{name}.{key}"));
         }""",
      """        if let Some(refusal) = builtins::namespace_not_a_value(name) {
-            return Err(refusal);
+            return Err(at(&node.span, refusal));
         }""")
 PY
 

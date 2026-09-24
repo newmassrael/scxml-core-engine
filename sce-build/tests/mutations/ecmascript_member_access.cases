@@ -26,10 +26,13 @@ mutation_tests -p sce-build --features cli --test ecmascript_member_access --tes
 # a consumer actually reads.
 mutation_targets sce-build/src/ecmascript/builtins.rs sce-build/src/ecmascript/lua.rs sce-build/src/ecmascript/parser.rs sce-build/tests/ecmascript_member_access.rs
 
+# Re-aimed 2026-09-24: the tree became a node carrying its source range, so
+# the refusal is raised at a span and the member's name is `key`; each case
+# below breaks the same rule it did.
 mutation_case "a call on an event field falls through to a field call again" <<'PY'
 edit("sce-build/src/ecmascript/lua.rs",
-     """            if let Some(refusal) = builtins::uncallable_system_field(name, property, args.len()) {
-                return Err(refusal);
+     """            if let Some(refusal) = builtins::uncallable_system_field(name, key, args.len()) {
+                return Err(at(&uncallable_at(&callee.span, node, args.len()), refusal));
             }""",
      "")
 PY
@@ -47,19 +50,25 @@ edit("sce-build/src/ecmascript/builtins.rs",
     }""")
 PY
 
+# `accessor` stays read in the mutant: an unused binding is a warning the
+# tree denies, and a mutant that does not build proves nothing.
 mutation_case "a literal key becomes an index node again" <<'PY'
 edit("sce-build/src/ecmascript/parser.rs",
-     """                    expr = match index {
-                        Expr::Str(property) => Expr::Member {
+     """                    let kind = match index.kind {
+                        ExprKind::Str(text) => ExprKind::Member {
                             object: Box::new(expr),
-                            property,
+                            property: Name {
+                                text,
+                                span: self.since(accessor),
+                            },
                         },
-                        index => Expr::Index {
+                        kind => ExprKind::Index {
                             object: Box::new(expr),
-                            index: Box::new(index),
+                            index: Box::new(Expr::new(kind, index.span)),
                         },
                     };""",
-     """                    expr = Expr::Index {
+     """                    let _ = accessor;
+                    let kind = ExprKind::Index {
                         object: Box::new(expr),
                         index: Box::new(index),
                     };""")
@@ -79,16 +88,19 @@ mutation_case "the event's reads are narrowed to the clause as well" <<'PY'
 edit("sce-build/src/ecmascript/lua.rs",
      """    // ECMAScript's `.length` is Lua's `#` for both strings and arrays,
     // which are the two things carrying a length in this datamodel.
-    if property == "length" {""",
-     """    if let Expr::Ident(name) = object {
-        if name == "_event" && !builtins::EVENT_FIELDS.contains(&property) {
-            return Err(builtins::unknown_member(builtins::Namespace::Math, property)
-                .expect("a member outside the clause is unknown"));
+    if key == "length" {""",
+     """    if let ExprKind::Ident(name) = &object.kind {
+        if name == "_event" && !builtins::EVENT_FIELDS.contains(&key) {
+            return Err(at(
+                &node.span,
+                builtins::unknown_member(builtins::Namespace::Math, key)
+                    .expect("a member outside the clause is unknown"),
+            ));
         }
     }
     // ECMAScript's `.length` is Lua's `#` for both strings and arrays,
     // which are the two things carrying a length in this datamodel.
-    if property == "length" {""")
+    if key == "length" {""")
 PY
 
 mutation_case "the rule stops consulting the receiver" <<'PY'

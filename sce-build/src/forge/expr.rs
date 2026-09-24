@@ -1650,11 +1650,12 @@ pub(crate) fn tokenize_as(input: &str, mode: LexMode) -> Result<Vec<Token>, Expr
 
 /// A token stream with the byte range each token was read from: one range
 /// per token, `Eof` taking the empty range at the end of `input`.
-type SpannedTokens = (Vec<Token>, Vec<std::ops::Range<usize>>);
+pub(crate) type SpannedTokens = (Vec<Token>, Vec<std::ops::Range<usize>>);
 
 /// [`tokenize_as`], keeping where each token was read from — and where a
-/// refusal was raised, in the same byte ranges.
-fn tokenize_spanned(input: &str, mode: LexMode) -> Result<SpannedTokens, Refusal> {
+/// refusal was raised, in the same byte ranges. Both dialects' parsers read
+/// it, so both place a refusal against the same ranges.
+pub(crate) fn tokenize_spanned(input: &str, mode: LexMode) -> Result<SpannedTokens, Refusal> {
     let mut tokens = Vec::new();
     let mut spans = Vec::new();
     let bytes = input.as_bytes();

@@ -54,6 +54,40 @@ pub struct AttributeSpelling {
     written: String,
 }
 
+/// The attributes of one element that carry no namespace, each as written
+/// and where.
+///
+/// For a model struct that stands for several kinds of element — an
+/// `Action` is a `<send>`, an `<assign>`, a `<foreach>` — so one field
+/// serves whichever attributes its kind carries, rather than a field per
+/// attribute of every kind. A struct that stands for one element kind names
+/// its attribute instead, as `Transition::cond_spelling` does.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AttributeSpellings(Vec<(String, AttributeSpelling)>);
+
+impl AttributeSpellings {
+    /// Every attribute of `node` that carries no namespace.
+    pub fn of(node: &roxmltree::Node) -> Self {
+        Self(
+            node.attributes()
+                .filter(|attribute| attribute.namespace().is_none())
+                .filter_map(|attribute| {
+                    AttributeSpelling::of(node, None, attribute.name())
+                        .map(|spelling| (attribute.name().to_string(), spelling))
+                })
+                .collect(),
+        )
+    }
+
+    /// The spelling of the attribute `local`, when the element carries it.
+    pub fn get(&self, local: &str) -> Option<&AttributeSpelling> {
+        self.0
+            .iter()
+            .find(|(name, _)| name == local)
+            .map(|(_, spelling)| spelling)
+    }
+}
+
 /// A piece of an attribute value as written, and the row and column it
 /// starts on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

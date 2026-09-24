@@ -3,9 +3,10 @@
 //
 //! Recursive-descent parser for the W3C SCXML ECMAScript subset.
 //!
-//! Reads the token stream [`crate::forge::expr::tokenize_as`] produces in
-//! [`LexMode::EcmaScript`], so the two dialects cannot disagree about what
-//! a string literal, a numeric literal or an identifier is.
+//! Reads the token stream [`crate::forge::expr::tokenize_spanned`] produces
+//! in [`LexMode::EcmaScript`], so the two dialects cannot disagree about
+//! what a string literal, a numeric literal or an identifier is — nor about
+//! the range of the source each one was read from.
 //!
 //! Precedence follows ECMA-262 §11 (lowest binding first):
 //!
@@ -25,21 +26,24 @@
 //!   primary       literals, identifiers, this, ( ), [ ], { }, function, new
 //! ```
 
-use super::{BinOp, Expr, LogicalOp, Stmt, UnaryOp, UpdateOp};
+use super::{BinOp, Expr, ExprKind, LogicalOp, Name, Refusal, Span, Stmt, UnaryOp, UpdateOp};
 use crate::forge::error::ExprError;
-use crate::forge::expr::{tokenize_as, LexMode, Token};
+use crate::forge::expr::{tokenize_spanned, LexMode, Token};
 
 /// Parse a single ECMAScript expression — the whole input must be consumed.
-pub fn parse_expression(source: &str) -> Result<Expr, ExprError> {
+///
+/// Every node carries the range of `source`, TRIMMED, it was read from, and
+/// a refusal the range it was raised at ([`super::Span`]).
+pub fn parse_expression(source: &str) -> Result<Expr, Refusal> {
     // §scxml-B-2: the accepted language is ECMAScript, so this reads the
     // ECMAScript grammar rather than pattern-matching the shapes the W3C
     // test corpus happens to use.
     let trimmed = source.trim();
     if trimmed.is_empty() {
-        return Err(ExprError::Empty { what: "expression" });
+        return Err(ExprError::Empty { what: "expression" }.at(None));
     }
-    let tokens = tokenize_as(trimmed, LexMode::EcmaScript)?;
-    let mut parser = Parser::new(&tokens);
+    let (tokens, spans) = tokenize_spanned(trimmed, LexMode::EcmaScript)?;
+    let mut parser = Parser::new(&tokens, &spans);
     let expr = parser.parse_assignment()?;
     // A trailing `;` is what `<data expr="new testobject();">` writes: the
     // author copied a statement into an attribute that takes an expression.
@@ -52,10 +56,11 @@ pub fn parse_expression(source: &str) -> Result<Expr, ExprError> {
     Ok(expr)
 }
 
-/// Parse a `<script>` body — a statement list.
-pub fn parse_script(source: &str) -> Result<Vec<Stmt>, ExprError> {
-    let tokens = tokenize_as(source, LexMode::EcmaScript)?;
-    let mut parser = Parser::new(&tokens);
+/// Parse a `<script>` body — a statement list, its ranges indexing `source`
+/// as given.
+pub fn parse_script(source: &str) -> Result<Vec<Stmt>, Refusal> {
+    let (tokens, spans) = tokenize_spanned(source, LexMode::EcmaScript)?;
+    let mut parser = Parser::new(&tokens, &spans);
     let stmts = parser.parse_statements_until(&Token::Eof)?;
     parser.expect_end()?;
     Ok(stmts)
@@ -63,12 +68,18 @@ pub fn parse_script(source: &str) -> Result<Vec<Stmt>, ExprError> {
 
 struct Parser<'a> {
     tokens: &'a [Token],
+    /// One range per token, `Eof` taking the empty range at the end.
+    spans: &'a [Span],
     pos: usize,
 }
 
 impl<'a> Parser<'a> {
-    fn new(tokens: &'a [Token]) -> Self {
-        Self { tokens, pos: 0 }
+    fn new(tokens: &'a [Token], spans: &'a [Span]) -> Self {
+        Self {
+            tokens,
+            spans,
+            pos: 0,
+        }
     }
 
     fn peek(&self) -> &Token {
@@ -109,39 +120,76 @@ impl<'a> Parser<'a> {
         false
     }
 
-    fn expect(&mut self, expected: &Token) -> Result<(), ExprError> {
+    /// The range of the token at `index` — past the last token, the end of
+    /// the input, where `Eof` stands.
+    fn span_at(&self, index: usize) -> Span {
+        self.spans
+            .get(index)
+            .or(self.spans.last())
+            .cloned()
+            .unwrap_or(0..0)
+    }
+
+    /// Where the next token starts: the first byte of a node about to be
+    /// read.
+    fn start(&self) -> usize {
+        self.span_at(self.pos).start
+    }
+
+    /// The range from `start` to the end of the last token consumed.
+    fn since(&self, start: usize) -> Span {
+        let end = match self.pos.checked_sub(1) {
+            Some(last) => self.span_at(last).end,
+            None => start,
+        };
+        start..end.max(start)
+    }
+
+    /// `error`, raised at the next token.
+    fn refuse_next(&self, error: ExprError) -> Refusal {
+        error.at(Some(self.span_at(self.pos)))
+    }
+
+    /// `error`, raised at the token just consumed.
+    fn refuse_last(&self, error: ExprError) -> Refusal {
+        error.at(Some(self.span_at(self.pos.saturating_sub(1))))
+    }
+
+    fn expect(&mut self, expected: &Token) -> Result<(), Refusal> {
         let got = self.advance();
         if &got == expected {
             return Ok(());
         }
-        Err(ExprError::ParseMismatch {
+        Err(self.refuse_last(ExprError::ParseMismatch {
             expected: format!("'{expected}'"),
             got: got.to_string(),
-        })
+        }))
     }
 
-    fn expect_ident(&mut self) -> Result<String, ExprError> {
+    fn expect_ident(&mut self) -> Result<Name, Refusal> {
+        let span = self.span_at(self.pos);
         match self.advance() {
-            Token::Ident(name) => Ok(name),
+            Token::Ident(text) => Ok(Name { text, span }),
             other => Err(ExprError::ParseMismatch {
                 expected: "identifier".into(),
                 got: other.to_string(),
-            }),
+            }
+            .at(Some(span))),
         }
     }
 
-    fn expect_end(&mut self) -> Result<(), ExprError> {
+    fn expect_end(&mut self) -> Result<(), Refusal> {
         if self.at(&Token::Eof) {
             return Ok(());
         }
-        Err(ExprError::UnexpectedToken {
+        Err(self.refuse_next(ExprError::UnexpectedToken {
             token: self.peek().to_string(),
-        })
+        }))
     }
 
     // ── Statements ──────────────────────────────────────────────────
 
-    fn parse_statements_until(&mut self, end: &Token) -> Result<Vec<Stmt>, ExprError> {
+    fn parse_statements_until(&mut self, end: &Token) -> Result<Vec<Stmt>, Refusal> {
         let mut stmts = Vec::new();
         while !self.at(end) && !self.at(&Token::Eof) {
             stmts.push(self.parse_statement()?);
@@ -150,7 +198,7 @@ impl<'a> Parser<'a> {
     }
 
     /// One statement, or a braced block flattened into the caller's list.
-    fn parse_statement(&mut self) -> Result<Stmt, ExprError> {
+    fn parse_statement(&mut self) -> Result<Stmt, Refusal> {
         if self.eat(&Token::Semi) {
             return Ok(Stmt::Empty);
         }
@@ -158,11 +206,14 @@ impl<'a> Parser<'a> {
             // A bare block. ECMAScript scopes `var` to the function, and so
             // does the Lua this emits (the body is spliced inline), so the
             // braces carry no meaning of their own here.
+            let start = self.start();
             self.advance();
             let body = self.parse_statements_until(&Token::RBrace)?;
             self.expect(&Token::RBrace)?;
             return Ok(Stmt::If {
-                condition: Expr::Bool(true),
+                // No source spells this condition; the block it stands for
+                // is where it was read from.
+                condition: Expr::new(ExprKind::Bool(true), self.since(start)),
                 consequent: body,
                 alternate: Vec::new(),
             });
@@ -250,7 +301,7 @@ impl<'a> Parser<'a> {
 
     /// The body of an `if`/`while`/`for`: either a braced block or the
     /// single statement ECMAScript allows in its place.
-    fn parse_block_or_statement(&mut self) -> Result<Vec<Stmt>, ExprError> {
+    fn parse_block_or_statement(&mut self) -> Result<Vec<Stmt>, Refusal> {
         if self.at(&Token::LBrace) {
             self.advance();
             let body = self.parse_statements_until(&Token::RBrace)?;
@@ -260,7 +311,7 @@ impl<'a> Parser<'a> {
         Ok(vec![self.parse_statement()?])
     }
 
-    fn parse_for(&mut self) -> Result<Stmt, ExprError> {
+    fn parse_for(&mut self) -> Result<Stmt, Refusal> {
         self.advance(); // `for`
         self.expect(&Token::LParen)?;
 
@@ -317,7 +368,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_params(&mut self) -> Result<Vec<String>, ExprError> {
+    fn parse_params(&mut self) -> Result<Vec<Name>, Refusal> {
         self.expect(&Token::LParen)?;
         let mut params = Vec::new();
         if !self.at(&Token::RParen) {
@@ -332,7 +383,7 @@ impl<'a> Parser<'a> {
         Ok(params)
     }
 
-    fn parse_braced_body(&mut self) -> Result<Vec<Stmt>, ExprError> {
+    fn parse_braced_body(&mut self) -> Result<Vec<Stmt>, Refusal> {
         self.expect(&Token::LBrace)?;
         let body = self.parse_statements_until(&Token::RBrace)?;
         self.expect(&Token::RBrace)?;
@@ -341,7 +392,8 @@ impl<'a> Parser<'a> {
 
     // ── Expressions ─────────────────────────────────────────────────
 
-    fn parse_assignment(&mut self) -> Result<Expr, ExprError> {
+    fn parse_assignment(&mut self) -> Result<Expr, Refusal> {
+        let start = self.start();
         let left = self.parse_conditional()?;
         let op = match self.peek() {
             Token::Assign => None,
@@ -350,14 +402,18 @@ impl<'a> Parser<'a> {
         };
         self.advance();
         let value = self.parse_assignment()?;
-        Ok(Expr::Assign {
-            op,
-            target: Box::new(left),
-            value: Box::new(value),
-        })
+        Ok(Expr::new(
+            ExprKind::Assign {
+                op,
+                target: Box::new(left),
+                value: Box::new(value),
+            },
+            self.since(start),
+        ))
     }
 
-    fn parse_conditional(&mut self) -> Result<Expr, ExprError> {
+    fn parse_conditional(&mut self) -> Result<Expr, Refusal> {
+        let start = self.start();
         let condition = self.parse_logical_or()?;
         if !self.eat(&Token::Question) {
             return Ok(condition);
@@ -365,40 +421,35 @@ impl<'a> Parser<'a> {
         let consequent = self.parse_assignment()?;
         self.expect(&Token::Colon)?;
         let alternate = self.parse_assignment()?;
-        Ok(Expr::Conditional {
-            condition: Box::new(condition),
-            consequent: Box::new(consequent),
-            alternate: Box::new(alternate),
-        })
+        Ok(Expr::new(
+            ExprKind::Conditional {
+                condition: Box::new(condition),
+                consequent: Box::new(consequent),
+                alternate: Box::new(alternate),
+            },
+            self.since(start),
+        ))
     }
 
-    fn parse_logical_or(&mut self) -> Result<Expr, ExprError> {
+    fn parse_logical_or(&mut self) -> Result<Expr, Refusal> {
         let mut left = self.parse_logical_and()?;
         while self.eat(&Token::PipePipe) {
             let right = self.parse_logical_and()?;
-            left = Expr::Logical {
-                op: LogicalOp::Or,
-                left: Box::new(left),
-                right: Box::new(right),
-            };
+            left = logical(LogicalOp::Or, left, right);
         }
         Ok(left)
     }
 
-    fn parse_logical_and(&mut self) -> Result<Expr, ExprError> {
+    fn parse_logical_and(&mut self) -> Result<Expr, Refusal> {
         let mut left = self.parse_bitwise_or()?;
         while self.eat(&Token::AmpAmp) {
             let right = self.parse_bitwise_or()?;
-            left = Expr::Logical {
-                op: LogicalOp::And,
-                left: Box::new(left),
-                right: Box::new(right),
-            };
+            left = logical(LogicalOp::And, left, right);
         }
         Ok(left)
     }
 
-    fn parse_bitwise_or(&mut self) -> Result<Expr, ExprError> {
+    fn parse_bitwise_or(&mut self) -> Result<Expr, Refusal> {
         let mut left = self.parse_bitwise_xor()?;
         while self.eat(&Token::Pipe) {
             let right = self.parse_bitwise_xor()?;
@@ -407,7 +458,7 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    fn parse_bitwise_xor(&mut self) -> Result<Expr, ExprError> {
+    fn parse_bitwise_xor(&mut self) -> Result<Expr, Refusal> {
         let mut left = self.parse_bitwise_and()?;
         while self.eat(&Token::Caret) {
             let right = self.parse_bitwise_and()?;
@@ -416,7 +467,7 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    fn parse_bitwise_and(&mut self) -> Result<Expr, ExprError> {
+    fn parse_bitwise_and(&mut self) -> Result<Expr, Refusal> {
         let mut left = self.parse_equality()?;
         while self.eat(&Token::Amp) {
             let right = self.parse_equality()?;
@@ -425,7 +476,7 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    fn parse_equality(&mut self) -> Result<Expr, ExprError> {
+    fn parse_equality(&mut self) -> Result<Expr, Refusal> {
         let mut left = self.parse_relational()?;
         loop {
             let op = match self.peek() {
@@ -441,7 +492,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_relational(&mut self) -> Result<Expr, ExprError> {
+    fn parse_relational(&mut self) -> Result<Expr, Refusal> {
         let mut left = self.parse_shift()?;
         loop {
             let op = match self.peek() {
@@ -459,7 +510,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_shift(&mut self) -> Result<Expr, ExprError> {
+    fn parse_shift(&mut self) -> Result<Expr, Refusal> {
         let mut left = self.parse_additive()?;
         loop {
             let op = match self.peek() {
@@ -474,7 +525,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_additive(&mut self) -> Result<Expr, ExprError> {
+    fn parse_additive(&mut self) -> Result<Expr, Refusal> {
         let mut left = self.parse_multiplicative()?;
         loop {
             let op = match self.peek() {
@@ -488,7 +539,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_multiplicative(&mut self) -> Result<Expr, ExprError> {
+    fn parse_multiplicative(&mut self) -> Result<Expr, Refusal> {
         let mut left = self.parse_unary()?;
         loop {
             let op = match self.peek() {
@@ -503,7 +554,8 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_unary(&mut self) -> Result<Expr, ExprError> {
+    fn parse_unary(&mut self) -> Result<Expr, Refusal> {
+        let start = self.start();
         let op = match self.peek() {
             Token::Minus => Some(UnaryOp::Neg),
             Token::Plus => Some(UnaryOp::Pos),
@@ -515,10 +567,13 @@ impl<'a> Parser<'a> {
         if let Some(op) = op {
             self.advance();
             let operand = self.parse_unary()?;
-            return Ok(Expr::Unary {
-                op,
-                operand: Box::new(operand),
-            });
+            return Ok(Expr::new(
+                ExprKind::Unary {
+                    op,
+                    operand: Box::new(operand),
+                },
+                self.since(start),
+            ));
         }
         let update = match self.peek() {
             Token::PlusPlus => Some(UpdateOp::Inc),
@@ -528,28 +583,41 @@ impl<'a> Parser<'a> {
         if let Some(op) = update {
             self.advance();
             let target = self.parse_unary()?;
-            return Ok(Expr::Update {
-                op,
-                prefix: true,
-                target: Box::new(target),
-            });
+            return Ok(Expr::new(
+                ExprKind::Update {
+                    op,
+                    prefix: true,
+                    target: Box::new(target),
+                },
+                self.since(start),
+            ));
         }
         self.parse_postfix()
     }
 
-    fn parse_postfix(&mut self) -> Result<Expr, ExprError> {
+    fn parse_postfix(&mut self) -> Result<Expr, Refusal> {
         let mut expr = self.parse_primary()?;
         loop {
+            let start = expr.span.start;
             match self.peek() {
                 Token::Dot => {
+                    let accessor = self.start();
                     self.advance();
-                    let property = self.expect_ident()?;
-                    expr = Expr::Member {
-                        object: Box::new(expr),
-                        property,
+                    let name = self.expect_ident()?;
+                    let property = Name {
+                        text: name.text,
+                        span: self.since(accessor),
                     };
+                    expr = Expr::new(
+                        ExprKind::Member {
+                            object: Box::new(expr),
+                            property,
+                        },
+                        self.since(start),
+                    );
                 }
                 Token::LBracket => {
+                    let accessor = self.start();
                     self.advance();
                     let index = self.parse_assignment()?;
                     self.expect(&Token::RBracket)?;
@@ -566,47 +634,62 @@ impl<'a> Parser<'a> {
                     // The lowering is unchanged for every key that is
                     // not one of those names: a `Member` this datamodel
                     // has no rule for emits `obj["key"]` through the
-                    // same encoder `Index` used.
-                    expr = match index {
-                        Expr::Str(property) => Expr::Member {
+                    // same encoder `Index` used. The accessor keeps its
+                    // brackets as written, so a refusal of the member
+                    // names `['length']` where `['length']` was written.
+                    let kind = match index.kind {
+                        ExprKind::Str(text) => ExprKind::Member {
                             object: Box::new(expr),
-                            property,
+                            property: Name {
+                                text,
+                                span: self.since(accessor),
+                            },
                         },
-                        index => Expr::Index {
+                        kind => ExprKind::Index {
                             object: Box::new(expr),
-                            index: Box::new(index),
+                            index: Box::new(Expr::new(kind, index.span)),
                         },
                     };
+                    expr = Expr::new(kind, self.since(start));
                 }
                 Token::LParen => {
                     let args = self.parse_arguments()?;
-                    expr = Expr::Call {
-                        callee: Box::new(expr),
-                        args,
-                    };
+                    expr = Expr::new(
+                        ExprKind::Call {
+                            callee: Box::new(expr),
+                            args,
+                        },
+                        self.since(start),
+                    );
                 }
                 Token::PlusPlus => {
                     self.advance();
-                    expr = Expr::Update {
-                        op: UpdateOp::Inc,
-                        prefix: false,
-                        target: Box::new(expr),
-                    };
+                    expr = Expr::new(
+                        ExprKind::Update {
+                            op: UpdateOp::Inc,
+                            prefix: false,
+                            target: Box::new(expr),
+                        },
+                        self.since(start),
+                    );
                 }
                 Token::MinusMinus => {
                     self.advance();
-                    expr = Expr::Update {
-                        op: UpdateOp::Dec,
-                        prefix: false,
-                        target: Box::new(expr),
-                    };
+                    expr = Expr::new(
+                        ExprKind::Update {
+                            op: UpdateOp::Dec,
+                            prefix: false,
+                            target: Box::new(expr),
+                        },
+                        self.since(start),
+                    );
                 }
                 _ => return Ok(expr),
             }
         }
     }
 
-    fn parse_arguments(&mut self) -> Result<Vec<Expr>, ExprError> {
+    fn parse_arguments(&mut self) -> Result<Vec<Expr>, Refusal> {
         self.expect(&Token::LParen)?;
         let mut args = Vec::new();
         if !self.at(&Token::RParen) {
@@ -621,15 +704,19 @@ impl<'a> Parser<'a> {
         Ok(args)
     }
 
-    fn parse_primary(&mut self) -> Result<Expr, ExprError> {
+    fn parse_primary(&mut self) -> Result<Expr, Refusal> {
+        let start = self.start();
         match self.peek().clone() {
             Token::Number(n) => {
                 self.advance();
-                Ok(Expr::Number(n))
+                Ok(Expr::new(ExprKind::Number(n), self.since(start)))
             }
             Token::String { value, .. } => {
                 self.advance();
-                Ok(Expr::Str(decode_escapes(&value)))
+                Ok(Expr::new(
+                    ExprKind::Str(decode_escapes(&value)),
+                    self.since(start),
+                ))
             }
             Token::LParen => {
                 self.advance();
@@ -654,7 +741,7 @@ impl<'a> Parser<'a> {
                     }
                 }
                 self.expect(&Token::RBracket)?;
-                Ok(Expr::Array(items))
+                Ok(Expr::new(ExprKind::Array(items), self.since(start)))
             }
             Token::LBrace => {
                 self.advance();
@@ -666,10 +753,10 @@ impl<'a> Parser<'a> {
                             Token::String { value, .. } => decode_escapes(&value),
                             Token::Number(n) => n,
                             other => {
-                                return Err(ExprError::ParseMismatch {
+                                return Err(self.refuse_last(ExprError::ParseMismatch {
                                     expected: "property name".into(),
                                     got: other.to_string(),
-                                })
+                                }))
                             }
                         };
                         self.expect(&Token::Colon)?;
@@ -684,26 +771,21 @@ impl<'a> Parser<'a> {
                     }
                 }
                 self.expect(&Token::RBrace)?;
-                Ok(Expr::Object(props))
+                Ok(Expr::new(ExprKind::Object(props), self.since(start)))
             }
             Token::Ident(word) => {
+                let literal = match word.as_str() {
+                    "true" => Some(ExprKind::Bool(true)),
+                    "false" => Some(ExprKind::Bool(false)),
+                    "null" | "undefined" => Some(ExprKind::Nullish),
+                    "this" => Some(ExprKind::This),
+                    _ => None,
+                };
+                if let Some(kind) = literal {
+                    self.advance();
+                    return Ok(Expr::new(kind, self.since(start)));
+                }
                 match word.as_str() {
-                    "true" => {
-                        self.advance();
-                        return Ok(Expr::Bool(true));
-                    }
-                    "false" => {
-                        self.advance();
-                        return Ok(Expr::Bool(false));
-                    }
-                    "null" | "undefined" => {
-                        self.advance();
-                        return Ok(Expr::Nullish);
-                    }
-                    "this" => {
-                        self.advance();
-                        return Ok(Expr::This);
-                    }
                     "function" => {
                         self.advance();
                         let name = match self.peek() {
@@ -712,38 +794,55 @@ impl<'a> Parser<'a> {
                         };
                         let params = self.parse_params()?;
                         let body = self.parse_braced_body()?;
-                        return Ok(Expr::Function { name, params, body });
+                        return Ok(Expr::new(
+                            ExprKind::Function { name, params, body },
+                            self.since(start),
+                        ));
                     }
                     "new" => {
                         self.advance();
                         // `new a.b.C(args)` — the callee is a member path,
                         // and the argument list belongs to the `new`, not to
                         // a call applied to its result.
+                        let callee_start = self.start();
                         let mut callee = match self.advance() {
-                            Token::Ident(name) => Expr::Ident(name),
+                            Token::Ident(name) => {
+                                Expr::new(ExprKind::Ident(name), self.since(callee_start))
+                            }
                             other => {
-                                return Err(ExprError::ParseMismatch {
+                                return Err(self.refuse_last(ExprError::ParseMismatch {
                                     expected: "constructor name after 'new'".into(),
                                     got: other.to_string(),
-                                })
+                                }))
                             }
                         };
-                        while self.eat(&Token::Dot) {
-                            let property = self.expect_ident()?;
-                            callee = Expr::Member {
-                                object: Box::new(callee),
-                                property,
-                            };
+                        while self.at(&Token::Dot) {
+                            let accessor = self.start();
+                            self.advance();
+                            let name = self.expect_ident()?;
+                            callee = Expr::new(
+                                ExprKind::Member {
+                                    object: Box::new(callee),
+                                    property: Name {
+                                        text: name.text,
+                                        span: self.since(accessor),
+                                    },
+                                },
+                                self.since(callee_start),
+                            );
                         }
                         let args = if self.at(&Token::LParen) {
                             self.parse_arguments()?
                         } else {
                             Vec::new()
                         };
-                        return Ok(Expr::New {
-                            callee: Box::new(callee),
-                            args,
-                        });
+                        return Ok(Expr::new(
+                            ExprKind::New {
+                                callee: Box::new(callee),
+                                args,
+                            },
+                            self.since(start),
+                        ));
                     }
                     _ => {}
                 }
@@ -755,17 +854,17 @@ impl<'a> Parser<'a> {
                 // what the *seam* turns into that runtime error, rather than
                 // something the emitter quietly renames into a global.
                 if is_reserved_word(&word) {
-                    return Err(ExprError::UnsupportedConstruct {
+                    return Err(self.refuse_next(ExprError::UnsupportedConstruct {
                         construct: format!("reserved word '{word}' used as a value"),
                         observed: Some(word),
-                    });
+                    }));
                 }
                 self.advance();
-                Ok(Expr::Ident(word))
+                Ok(Expr::new(ExprKind::Ident(word), self.since(start)))
             }
-            other => Err(ExprError::UnexpectedToken {
+            other => Err(self.refuse_next(ExprError::UnexpectedToken {
                 token: other.to_string(),
-            }),
+            })),
         }
     }
 }
@@ -784,12 +883,31 @@ fn is_reserved_word(word: &str) -> bool {
     RESERVED.contains(&word)
 }
 
+/// `left op right`, read from the first byte of `left` to the last of
+/// `right`.
 fn binary(op: BinOp, left: Expr, right: Expr) -> Expr {
-    Expr::Binary {
-        op,
-        left: Box::new(left),
-        right: Box::new(right),
-    }
+    let span = left.span.start..right.span.end;
+    Expr::new(
+        ExprKind::Binary {
+            op,
+            left: Box::new(left),
+            right: Box::new(right),
+        },
+        span,
+    )
+}
+
+/// `left && right` / `left || right`, spanned as [`binary`] spans.
+fn logical(op: LogicalOp, left: Expr, right: Expr) -> Expr {
+    let span = left.span.start..right.span.end;
+    Expr::new(
+        ExprKind::Logical {
+            op,
+            left: Box::new(left),
+            right: Box::new(right),
+        },
+        span,
+    )
 }
 
 /// Map the arithmetic operator a compound assignment carries from the

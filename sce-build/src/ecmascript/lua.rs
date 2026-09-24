@@ -35,30 +35,41 @@
 //! false — which is what makes `&&` collapse to a plain `and` there
 //! instead of the value-preserving function call it needs in value
 //! position.
+//!
+//! # Where a refusal is raised
+//!
+//! Each refusal is raised at the range of the source whose text is what its
+//! record names: the accessor `.map` for a method this datamodel lacks, the
+//! whole `JSON.serialize` for a namespace member, `.length()` — name and
+//! parentheses — for a property called with nothing to pass. A caller holding
+//! the attribute reads that range back as written (SCE_ERROR_CONTRACT
+//! §3.1.1), so the range and the payload's `actual` have to name the same
+//! text, and a repair the payload proposes replaces exactly it.
 
 use super::builtins::{self, DOM_METHODS};
-use super::{BinOp, Expr, LogicalOp, Stmt, UnaryOp, UpdateOp};
+use super::{BinOp, Expr, ExprKind, LogicalOp, Name, Refusal, Span, Stmt, UnaryOp, UpdateOp};
 use crate::forge::error::ExprError;
 
 /// Emit an expression for its value.
-pub fn emit_value(expr: &Expr) -> Result<String, ExprError> {
+pub fn emit_value(expr: &Expr) -> Result<String, Refusal> {
     value(expr)
 }
 
 /// Emit an expression as a condition — a Lua boolean under ECMAScript
 /// truthiness.
-pub fn emit_condition(expr: &Expr) -> Result<String, ExprError> {
+pub fn emit_condition(expr: &Expr) -> Result<String, Refusal> {
     condition(expr)
 }
 
 /// Emit an assignment target.
-pub fn emit_location(expr: &Expr) -> Result<String, ExprError> {
-    match expr {
-        Expr::Ident(_) | Expr::Member { .. } | Expr::Index { .. } => value(expr),
+pub fn emit_location(expr: &Expr) -> Result<String, Refusal> {
+    match &expr.kind {
+        ExprKind::Ident(_) | ExprKind::Member { .. } | ExprKind::Index { .. } => value(expr),
         other => Err(ExprError::InvalidLvalue {
             location: describe(other).to_string(),
             detail: "an assignment target must be an identifier or a member path".into(),
-        }),
+        }
+        .at(Some(expr.span.clone()))),
     }
 }
 
@@ -72,7 +83,7 @@ pub fn string_literal(text: &str) -> String {
 }
 
 /// Emit a statement list as a Lua chunk.
-pub fn emit_script(stmts: &[Stmt]) -> Result<String, ExprError> {
+pub fn emit_script(stmts: &[Stmt]) -> Result<String, Refusal> {
     let mut out = String::new();
     let scope = Scope {
         depth: 0,
@@ -84,59 +95,64 @@ pub fn emit_script(stmts: &[Stmt]) -> Result<String, ExprError> {
     Ok(out.trim_end().to_string())
 }
 
+/// `refusal`, raised at `span`.
+fn at(span: &Span, refusal: ExprError) -> Refusal {
+    refusal.at(Some(span.clone()))
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Expressions
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-fn value(expr: &Expr) -> Result<String, ExprError> {
+fn value(expr: &Expr) -> Result<String, Refusal> {
     // §scxml-B-2: the ECMAScript datamodel's value expressions, lowered to
     // the Lua the engine underneath actually runs.
-    Ok(match expr {
-        Expr::Number(n) => lua_number(n)?,
-        Expr::Str(s) => lua_string(s),
-        Expr::Bool(b) => if *b { "true" } else { "false" }.to_string(),
+    Ok(match &expr.kind {
+        ExprKind::Number(n) => lua_number(n).map_err(|refusal| at(&expr.span, refusal))?,
+        ExprKind::Str(s) => lua_string(s),
+        ExprKind::Bool(b) => if *b { "true" } else { "false" }.to_string(),
         // §scxml-4.6: `null` is a datamodel value, and Lua has one empty
         // value for it and `undefined` both — which is why the engines bind
         // `_NULL` and `_UNDEFINED` to the same thing.
-        Expr::Nullish => "nil".to_string(),
+        ExprKind::Nullish => "nil".to_string(),
         // A namespace reaches here only when it stands somewhere a
         // member expression does not put it — on its own, under a
         // computed key, as an operand. `member` and `call` answer the
         // positions where the name is legal before recursing, so this
         // arm is the whole of the rest.
-        Expr::Ident(name) => match builtins::namespace_not_a_value(name) {
-            Some(refusal) => return Err(refusal),
+        ExprKind::Ident(name) => match builtins::namespace_not_a_value(name) {
+            Some(refusal) => return Err(at(&expr.span, refusal)),
             None => lua_ident_read(name),
         },
         // Bound by the constructor emission in `function_literal`.
-        Expr::This => "self".to_string(),
-        Expr::Array(items) => {
+        ExprKind::This => "self".to_string(),
+        ExprKind::Array(items) => {
             let mut parts = Vec::with_capacity(items.len());
             for item in items {
                 parts.push(value(item)?);
             }
             format!("{{{}}}", parts.join(", "))
         }
-        Expr::Object(props) => {
+        ExprKind::Object(props) => {
             let mut parts = Vec::with_capacity(props.len());
             for (key, prop) in props {
                 parts.push(format!("[{}] = {}", lua_string(key), value(prop)?));
             }
             format!("{{{}}}", parts.join(", "))
         }
-        Expr::Member { object, property } => member(object, property)?,
-        Expr::Index { object, index } => index_access(object, index)?,
-        Expr::Call { callee, args } => call(callee, args)?,
+        ExprKind::Member { object, property } => member(expr, object, property)?,
+        ExprKind::Index { object, index } => index_access(object, index)?,
+        ExprKind::Call { callee, args } => call(expr, callee, args)?,
         // A constructor is a function that fills `this` and returns it, so
         // `new F(a)` is `F(a)`. See `function_literal` for the other half.
-        Expr::New { callee, args } => {
+        ExprKind::New { callee, args } => {
             // `new` changes what a call means, not what may be called:
             // `new Object()` reached Lua as `Object()` once the operator
             // was dropped, so the constructor form has to ask the same
             // question the plain call does.
-            if let Expr::Ident(name) = callee.as_ref() {
+            if let ExprKind::Ident(name) = &callee.kind {
                 if let Some(refusal) = builtins::uncallable_namespace(name) {
-                    return Err(refusal);
+                    return Err(at(&callee.span, refusal));
                 }
             }
             let mut parts = Vec::with_capacity(args.len());
@@ -145,16 +161,16 @@ fn value(expr: &Expr) -> Result<String, ExprError> {
             }
             format!("{}({})", operand(callee)?, parts.join(", "))
         }
-        Expr::Unary { op, operand: inner } => match op {
+        ExprKind::Unary { op, operand: inner } => match op {
             UnaryOp::Not => format!("(not {})", condition(inner)?),
             UnaryOp::Neg => format!("(-{})", operand(inner)?),
             UnaryOp::Pos => format!("_scxml_tonumber({})", value(inner)?),
             UnaryOp::BitNot => format!("_scxml_bitnot({})", value(inner)?),
             UnaryOp::TypeOf => format!("_typeof({})", value(inner)?),
         },
-        Expr::Update { op, prefix, target } => update_expression(*op, *prefix, target)?,
-        Expr::Binary { op, left, right } => binary(*op, left, right)?,
-        Expr::Logical { op, left, right } => {
+        ExprKind::Update { op, prefix, target } => update_expression(*op, *prefix, target)?,
+        ExprKind::Binary { op, left, right } => binary(*op, left, right)?,
+        ExprKind::Logical { op, left, right } => {
             // Value position: the result is one of the operands, so the
             // choice has to be made on ECMAScript truthiness while the
             // operand itself is what comes back.
@@ -165,7 +181,7 @@ fn value(expr: &Expr) -> Result<String, ExprError> {
             let body = keyword.replace("{r}", &value(right)?);
             format!("(function() local __l = {} {} end)()", value(left)?, body)
         }
-        Expr::Conditional {
+        ExprKind::Conditional {
             condition: cond,
             consequent,
             alternate,
@@ -175,8 +191,8 @@ fn value(expr: &Expr) -> Result<String, ExprError> {
             value(consequent)?,
             value(alternate)?
         ),
-        Expr::Function { params, body, .. } => function_literal(params, body)?,
-        Expr::Assign {
+        ExprKind::Function { params, body, .. } => function_literal(params, body)?,
+        ExprKind::Assign {
             op,
             target,
             value: v,
@@ -195,7 +211,7 @@ fn value(expr: &Expr) -> Result<String, ExprError> {
 /// An operand that a postfix operator (`.x`, `[i]`, `(…)`) or a prefix `-`
 /// attaches to. Parenthesised unless it is already a single term, because
 /// `(function() … end)().x` is legal Lua and `1 + 2 .x` is not.
-fn operand(expr: &Expr) -> Result<String, ExprError> {
+fn operand(expr: &Expr) -> Result<String, Refusal> {
     let emitted = value(expr)?;
     if is_term(expr) {
         return Ok(emitted);
@@ -207,45 +223,45 @@ fn operand(expr: &Expr) -> Result<String, ExprError> {
 /// index or a table constructor — and so needs no parentheses around it.
 fn is_term(expr: &Expr) -> bool {
     matches!(
-        expr,
-        Expr::Number(_)
-            | Expr::Str(_)
-            | Expr::Bool(_)
-            | Expr::Nullish
-            | Expr::Ident(_)
-            | Expr::This
-            | Expr::Array(_)
-            | Expr::Object(_)
-            | Expr::Member { .. }
-            | Expr::Index { .. }
-            | Expr::Call { .. }
-            | Expr::New { .. }
-            | Expr::Update { .. }
-            | Expr::Conditional { .. }
-            | Expr::Logical { .. }
-            | Expr::Assign { .. }
+        expr.kind,
+        ExprKind::Number(_)
+            | ExprKind::Str(_)
+            | ExprKind::Bool(_)
+            | ExprKind::Nullish
+            | ExprKind::Ident(_)
+            | ExprKind::This
+            | ExprKind::Array(_)
+            | ExprKind::Object(_)
+            | ExprKind::Member { .. }
+            | ExprKind::Index { .. }
+            | ExprKind::Call { .. }
+            | ExprKind::New { .. }
+            | ExprKind::Update { .. }
+            | ExprKind::Conditional { .. }
+            | ExprKind::Logical { .. }
+            | ExprKind::Assign { .. }
     )
 }
 
-fn condition(expr: &Expr) -> Result<String, ExprError> {
+fn condition(expr: &Expr) -> Result<String, Refusal> {
     // A node that already yields a Lua boolean is its own condition; every
     // other value has to go through ECMAScript's truthiness, which is not
     // Lua's.
-    Ok(match expr {
-        Expr::Bool(b) => if *b { "true" } else { "false" }.to_string(),
-        Expr::Unary {
+    Ok(match &expr.kind {
+        ExprKind::Bool(b) => if *b { "true" } else { "false" }.to_string(),
+        ExprKind::Unary {
             op: UnaryOp::Not,
             operand: inner,
         } => format!("(not {})", condition(inner)?),
-        Expr::Binary { op, left, right } if yields_boolean(*op) => binary(*op, left, right)?,
-        Expr::Logical { op, left, right } => {
+        ExprKind::Binary { op, left, right } if yields_boolean(*op) => binary(*op, left, right)?,
+        ExprKind::Logical { op, left, right } => {
             let keyword = match op {
                 LogicalOp::And => "and",
                 LogicalOp::Or => "or",
             };
             format!("({} {keyword} {})", condition(left)?, condition(right)?)
         }
-        other => format!("_scxml_truthy({})", value(other)?),
+        _ => format!("_scxml_truthy({})", value(expr)?),
     })
 }
 
@@ -265,8 +281,8 @@ fn yields_boolean(op: BinOp) -> bool {
     )
 }
 
-fn binary(op: BinOp, left: &Expr, right: &Expr) -> Result<String, ExprError> {
-    let infix = |symbol: &str| -> Result<String, ExprError> {
+fn binary(op: BinOp, left: &Expr, right: &Expr) -> Result<String, Refusal> {
+    let infix = |symbol: &str| -> Result<String, Refusal> {
         Ok(format!("({} {symbol} {})", value(left)?, value(right)?))
     };
     Ok(match op {
@@ -309,21 +325,29 @@ fn binary(op: BinOp, left: &Expr, right: &Expr) -> Result<String, ExprError> {
             // Lua has no prototype chain, and an author who writes
             // `x instanceof Foo` is asking a question this engine cannot
             // answer — so it is refused rather than answered `false`.
-            match right {
-                Expr::Ident(name) if name == "Array" => format!("_isArray({})", value(left)?),
+            match &right.kind {
+                ExprKind::Ident(name) if name == "Array" => {
+                    format!("_isArray({})", value(left)?)
+                }
                 other => {
-                    return Err(ExprError::UnsupportedConstruct {
-                        construct: format!(
-                            "instanceof {} (only Array is representable)",
-                            describe(other)
-                        ),
-                        // The constructor the author named, when a name is
-                        // what they wrote; otherwise the operator itself.
-                        observed: Some(match other {
-                            Expr::Ident(name) => name.clone(),
-                            _ => "instanceof".to_string(),
-                        }),
-                    });
+                    // Raised at the constructor the author named, which is
+                    // what the refusal is about.
+                    return Err(at(
+                        &right.span,
+                        ExprError::UnsupportedConstruct {
+                            construct: format!(
+                                "instanceof {} (only Array is representable)",
+                                describe(other)
+                            ),
+                            // The constructor the author named, when a name
+                            // is what they wrote; otherwise the operator
+                            // itself.
+                            observed: Some(match other {
+                                ExprKind::Ident(name) => name.clone(),
+                                _ => "instanceof".to_string(),
+                            }),
+                        },
+                    ));
                 }
             }
         }
@@ -332,24 +356,24 @@ fn binary(op: BinOp, left: &Expr, right: &Expr) -> Result<String, ExprError> {
 }
 
 fn is_string_literal(expr: &Expr) -> bool {
-    matches!(expr, Expr::Str(_))
+    matches!(expr.kind, ExprKind::Str(_))
 }
 
 fn is_number_literal(expr: &Expr) -> bool {
-    matches!(expr, Expr::Number(_))
+    matches!(expr.kind, ExprKind::Number(_))
 }
 
 /// An operand of a concatenation. A string literal is already one; anything
 /// else goes through ToString, which is not Lua's `tostring` — Lua prints an
 /// integral float as `1.0` where ECMAScript says `1`.
-fn as_string(expr: &Expr) -> Result<String, ExprError> {
+fn as_string(expr: &Expr) -> Result<String, Refusal> {
     if is_string_literal(expr) {
         return value(expr);
     }
     Ok(format!("_scxml_tostring({})", value(expr)?))
 }
 
-fn update_expression(op: UpdateOp, prefix: bool, target: &Expr) -> Result<String, ExprError> {
+fn update_expression(op: UpdateOp, prefix: bool, target: &Expr) -> Result<String, Refusal> {
     let location = emit_location(target)?;
     let step = match op {
         UpdateOp::Inc => "+ 1",
@@ -369,24 +393,26 @@ fn update_expression(op: UpdateOp, prefix: bool, target: &Expr) -> Result<String
 }
 
 /// The right-hand side of an assignment, folding in the compound operator.
-fn assigned_value(op: Option<BinOp>, target: &Expr, source: &Expr) -> Result<String, ExprError> {
+fn assigned_value(op: Option<BinOp>, target: &Expr, source: &Expr) -> Result<String, Refusal> {
     match op {
         None => value(source),
         Some(op) => binary(op, target, source),
     }
 }
 
-fn member(object: &Expr, property: &str) -> Result<String, ExprError> {
+/// `node` — `object` read at `property` — for its value.
+fn member(node: &Expr, object: &Expr, property: &Name) -> Result<String, Refusal> {
+    let key = property.text.as_str();
     // `Math` is not an object in the datamodel — it is ECMAScript's
     // namespace, and Lua spells its members differently.
-    if let Expr::Ident(name) = object {
+    if let ExprKind::Ident(name) = &object.kind {
         if name == "Math" {
             // ECMA-262 15.8.1, all eight. Lua's `math` table carries one
             // of them under a name of its own and computes the rest, so
             // the arms are the definition and `builtins::MATH_CONSTANTS`
             // is the membership — `every_math_constant_is_lowered` binds
             // the two so a constant cannot be listed and left unlowered.
-            return match property {
+            return match key {
                 "PI" => Ok("math.pi".to_string()),
                 "E" => Ok("math.exp(1)".to_string()),
                 "LN2" => Ok("math.log(2)".to_string()),
@@ -399,14 +425,20 @@ fn member(object: &Expr, property: &str) -> Result<String, ExprError> {
                 // cannot hand out as a value: it has no first-class
                 // functions, so the reach is a construct rejection rather
                 // than a missing name.
-                other if builtins::MATH_FUNCTIONS.contains(&other) => {
-                    Err(ExprError::UnsupportedConstruct {
+                other if builtins::MATH_FUNCTIONS.contains(&other) => Err(at(
+                    &node.span,
+                    ExprError::UnsupportedConstruct {
                         construct: format!("Math.{other}"),
                         observed: Some(other.to_string()),
-                    })
-                }
-                other => Err(builtins::unknown_member(builtins::Namespace::Math, other)
-                    .expect("a member in neither list is unknown")),
+                    },
+                )),
+                // The whole member is what the refusal names, and what each
+                // candidate replaces: `Math.TAU`, `Math['TAU']`.
+                other => Err(at(
+                    &node.span,
+                    builtins::unknown_member(builtins::Namespace::Math, other)
+                        .expect("a member in neither list is unknown"),
+                )),
             };
         }
         // The other two namespaces are ordinary Lua tables, so a member
@@ -417,21 +449,21 @@ fn member(object: &Expr, property: &str) -> Result<String, ExprError> {
         // vocabulary is a fact here, exactly as it is for the call form
         // `unsupported_member` already answers.
         if let Some(namespace) = builtins::Namespace::from_ident(name) {
-            if let Some(refusal) = builtins::unknown_member(namespace, property) {
-                return Err(refusal);
+            if let Some(refusal) = builtins::unknown_member(namespace, key) {
+                return Err(at(&node.span, refusal));
             }
-            return Ok(format!("{name}.{property}"));
+            return Ok(format!("{name}.{key}"));
         }
     }
     // ECMAScript's `.length` is Lua's `#` for both strings and arrays,
     // which are the two things carrying a length in this datamodel.
-    if property == "length" {
+    if key == "length" {
         return Ok(format!("#{}", operand(object)?));
     }
-    if is_lua_ident(property) {
-        return Ok(format!("{}.{property}", operand(object)?));
+    if is_lua_ident(key) {
+        return Ok(format!("{}.{key}", operand(object)?));
     }
-    Ok(format!("{}[{}]", operand(object)?, lua_string(property)))
+    Ok(format!("{}[{}]", operand(object)?, lua_string(key)))
 }
 
 /// `obj[k]` — where the base of the index has to be decided.
@@ -442,12 +474,12 @@ fn member(object: &Expr, property: &str) -> Result<String, ExprError> {
 /// element or an object property depends on what `a` and `i` hold.
 ///
 /// A *string* literal never reaches here: [`super::parser`] folds it into
-/// [`Expr::Member`], because ECMA-262 11.2.1 makes `a['k']` and `a.k` the
-/// same operation and this datamodel's rules are stated about the property
-/// being named. [`member`] emits the same `a["k"]` for a key it has no
-/// rule for.
-fn index_access(object: &Expr, index: &Expr) -> Result<String, ExprError> {
-    if let Expr::Number(text) = index {
+/// [`ExprKind::Member`], because ECMA-262 11.2.1 makes `a['k']` and `a.k`
+/// the same operation and this datamodel's rules are stated about the
+/// property being named. [`member`] emits the same `a["k"]` for a key it
+/// has no rule for.
+fn index_access(object: &Expr, index: &Expr) -> Result<String, Refusal> {
+    if let ExprKind::Number(text) = &index.kind {
         if let Ok(n) = text.parse::<u64>() {
             return Ok(format!("{}[{}]", operand(object)?, n + 1));
         }
@@ -459,7 +491,21 @@ fn index_access(object: &Expr, index: &Expr) -> Result<String, ExprError> {
     ))
 }
 
-fn call(callee: &Expr, args: &[Expr]) -> Result<String, ExprError> {
+/// Where a call on a name that holds a value is refused: what the record
+/// names as `actual` (`ExprError::PropertyNotCallable`) — the name and the
+/// call's parentheses when there is nothing between them, so dropping the
+/// call is the whole repair, and the name alone when the call carries
+/// arguments, whose fate is the author's.
+fn uncallable_at(named: &Span, call: &Expr, arguments: usize) -> Span {
+    if arguments == 0 {
+        named.start..call.span.end
+    } else {
+        named.clone()
+    }
+}
+
+/// `node` — `callee` applied to `args` — for its value.
+fn call(node: &Expr, callee: &Expr, args: &[Expr]) -> Result<String, Refusal> {
     let mut emitted = Vec::with_capacity(args.len());
     for arg in args {
         emitted.push(value(arg)?);
@@ -470,20 +516,23 @@ fn call(callee: &Expr, args: &[Expr]) -> Result<String, ExprError> {
     // before this arm was not merely wrong but unparseable: `1()` and
     // `true()` are Lua syntax errors, so the chunk carrying them failed
     // to load rather than failing to run.
-    if let Some(what) = literal_description(callee) {
-        return Err(ExprError::LiteralNotCallable {
-            what,
-            observed: literal_spelling(callee),
-        });
+    if let Some(what) = literal_description(&callee.kind) {
+        return Err(at(
+            &callee.span,
+            ExprError::LiteralNotCallable {
+                what,
+                observed: literal_spelling(&callee.kind),
+            },
+        ));
     }
 
     // A call on a name that holds a value. The receiver is not consulted
     // and does not need to be: `_sessionid` is bound by the session and
     // `.length` is lowered as a property for every receiver a few lines
     // up, so neither name can be reaching an author's function here.
-    if let Expr::Ident(name) = callee {
+    if let ExprKind::Ident(name) = &callee.kind {
         if let Some(refusal) = builtins::uncallable_global(name, args.len()) {
-            return Err(refusal);
+            return Err(at(&uncallable_at(&callee.span, node, args.len()), refusal));
         }
         // A namespace stands in callee position only as the receiver of
         // a member call, which the arm below answers. Written as the
@@ -491,27 +540,33 @@ fn call(callee: &Expr, args: &[Expr]) -> Result<String, ExprError> {
         // datamodel hands out, and passing it through emitted `Math()`
         // into Lua, where nothing binds the name.
         if let Some(refusal) = builtins::uncallable_namespace(name) {
-            return Err(refusal);
+            return Err(at(&callee.span, refusal));
         }
     }
 
-    if let Expr::Member { object, property } = callee {
-        if let Expr::Ident(name) = object.as_ref() {
+    if let ExprKind::Member { object, property } = &callee.kind {
+        let key = property.text.as_str();
+        if let ExprKind::Ident(name) = &object.kind {
             if let Some(namespace) = builtins::Namespace::from_ident(name) {
                 // A namespace this repository installs, so its member set
                 // is a fact and a member outside it is a mistake rather
                 // than an unknown. `JSON.serialize` used to be emitted
                 // verbatim and reach a nil at runtime.
-                if let Some(refusal) = builtins::unsupported_member(namespace, property, args.len())
-                {
-                    return Err(refusal);
+                if let Some(refusal) = builtins::unsupported_member(namespace, key, args.len()) {
+                    let span = match &refusal {
+                        ExprError::PropertyNotCallable { .. } => {
+                            uncallable_at(&callee.span, node, args.len())
+                        }
+                        _ => callee.span.clone(),
+                    };
+                    return Err(at(&span, refusal));
                 }
                 if namespace == builtins::Namespace::Math {
-                    return math_call(property, &emitted);
+                    return math_call(key, &emitted).map_err(|refusal| at(&callee.span, refusal));
                 }
                 // `JSON` and `Object` are ordinary Lua tables, so their
                 // members are ordinary field calls.
-                return Ok(format!("{name}.{property}({})", emitted.join(", ")));
+                return Ok(format!("{name}.{key}({})", emitted.join(", ")));
             }
             // A field of a system variable, which the specification's
             // internal structure of events fills with a value, never
@@ -520,19 +575,22 @@ fn call(callee: &Expr, args: &[Expr]) -> Result<String, ExprError> {
             // hold a function under — and only the fields the clause
             // names are refused, so `_event.raw` stays whatever the I/O
             // processor made it.
-            if let Some(refusal) = builtins::uncallable_system_field(name, property, args.len()) {
-                return Err(refusal);
+            if let Some(refusal) = builtins::uncallable_system_field(name, key, args.len()) {
+                return Err(at(&uncallable_at(&callee.span, node, args.len()), refusal));
             }
         }
         // `member` lowers `.length` to Lua's `#` whatever the receiver
         // holds, so the call form cannot be an author's own method: the
         // property this datamodel provides is what the name reaches, and
         // calling it is what went wrong.
-        if let Some(refusal) = builtins::uncallable_property(property, args.len()) {
-            return Err(refusal);
+        if let Some(refusal) = builtins::uncallable_property(key, args.len()) {
+            return Err(at(
+                &uncallable_at(&property.span, node, args.len()),
+                refusal,
+            ));
         }
         let receiver = operand(object)?;
-        match property.as_str() {
+        match key {
             // The engines install these under names that take the receiver
             // as their first argument, so a method call becomes a plain one.
             "indexOf" => {
@@ -575,7 +633,7 @@ fn call(callee: &Expr, args: &[Expr]) -> Result<String, ExprError> {
             // conventions, and `"abc".charAt(1)` is not valid Lua at all.
             "substring" | "charAt" | "toLowerCase" | "toUpperCase" | "split" | "replace"
             | "slice" | "sort" | "reverse" => {
-                let helper = match property.as_str() {
+                let helper = match key {
                     "substring" => "_scxml_substring",
                     "charAt" => "_scxml_charat",
                     "toLowerCase" => "_scxml_tolowercase",
@@ -603,13 +661,13 @@ fn call(callee: &Expr, args: &[Expr]) -> Result<String, ExprError> {
                 // `words.map(...)` generate cleanly on every backend and
                 // die at runtime, so the name is answered here rather
                 // than by the interpreter.
-                if let Some(refusal) = builtins::unsupported_method(property) {
-                    return Err(refusal);
+                if let Some(refusal) = builtins::unsupported_method(key) {
+                    return Err(at(&property.span, refusal));
                 }
                 // An ordinary method on an author's object. `this` is not
                 // bound: the datamodel has no prototype chain, and a
                 // function stored in a field is called as a field.
-                return Ok(format!("{receiver}.{property}({})", emitted.join(", ")));
+                return Ok(format!("{receiver}.{key}({})", emitted.join(", ")));
             }
         }
     }
@@ -646,13 +704,22 @@ fn math_call(name: &str, args: &[String]) -> Result<String, ExprError> {
     Ok(format!("math.{name}({})", args.join(", ")))
 }
 
-fn function_literal(params: &[String], body: &[Stmt]) -> Result<String, ExprError> {
+/// A binding named a Lua keyword, refused at the name — `what` says which
+/// kind of binding it is (`parameter`, `local variable`, …).
+fn keyword_binding(what: &str, name: &Name) -> Refusal {
+    at(
+        &name.span,
+        ExprError::UnsupportedConstruct {
+            construct: format!("{what} named '{}' (a Lua keyword)", name.text),
+            observed: Some(name.text.clone()),
+        },
+    )
+}
+
+fn function_literal(params: &[Name], body: &[Stmt]) -> Result<String, Refusal> {
     for param in params {
-        if is_lua_keyword(param) {
-            return Err(ExprError::UnsupportedConstruct {
-                construct: format!("parameter named '{param}' (a Lua keyword)"),
-                observed: Some(param.clone()),
-            });
+        if is_lua_keyword(&param.text) {
+            return Err(keyword_binding("parameter", param));
         }
     }
     let scope = Scope {
@@ -663,6 +730,7 @@ fn function_literal(params: &[String], body: &[Stmt]) -> Result<String, ExprErro
     for stmt in body {
         statement(stmt, scope, &mut rendered)?;
     }
+    let params: Vec<&str> = params.iter().map(|param| param.text.as_str()).collect();
     // A function that writes to `this` is a constructor: ECMAScript's `new`
     // hands it a fresh object and yields that object. With no `new` operator
     // in Lua, the function builds the table and returns it, which is why
@@ -696,7 +764,7 @@ struct Scope {
     in_function: bool,
 }
 
-fn statement(stmt: &Stmt, scope: Scope, out: &mut String) -> Result<(), ExprError> {
+fn statement(stmt: &Stmt, scope: Scope, out: &mut String) -> Result<(), Refusal> {
     let pad = "  ".repeat(scope.depth);
     match stmt {
         Stmt::Empty => {}
@@ -707,17 +775,14 @@ fn statement(stmt: &Stmt, scope: Scope, out: &mut String) -> Result<(), ExprErro
         }
         Stmt::VarDecl(bindings) => {
             for (name, init) in bindings {
-                if scope.in_function && is_lua_keyword(name) {
-                    return Err(ExprError::UnsupportedConstruct {
-                        construct: format!("local variable named '{name}' (a Lua keyword)"),
-                        observed: Some(name.clone()),
-                    });
+                if scope.in_function && is_lua_keyword(&name.text) {
+                    return Err(keyword_binding("local variable", name));
                 }
                 let keyword = if scope.in_function { "local " } else { "" };
                 let target = if scope.in_function {
-                    name.clone()
+                    name.text.clone()
                 } else {
-                    lua_ident_read(name)
+                    lua_ident_read(&name.text)
                 };
                 match init {
                     Some(expr) => {
@@ -741,7 +806,7 @@ fn statement(stmt: &Stmt, scope: Scope, out: &mut String) -> Result<(), ExprErro
         } => {
             // The parser folds a bare `{ … }` block into an `if true`; emit
             // it as the `do … end` it actually is.
-            if *cond == Expr::Bool(true) && alternate.is_empty() {
+            if cond.kind == ExprKind::Bool(true) && alternate.is_empty() {
                 out.push_str(&format!("{pad}do\n"));
                 emit_block(consequent, scope, out)?;
                 out.push_str(&format!("{pad}end\n"));
@@ -817,14 +882,12 @@ fn statement(stmt: &Stmt, scope: Scope, out: &mut String) -> Result<(), ExprErro
             body,
             declares: _,
         } => {
-            if is_lua_keyword(name) {
-                return Err(ExprError::UnsupportedConstruct {
-                    construct: format!("loop variable named '{name}' (a Lua keyword)"),
-                    observed: Some(name.clone()),
-                });
+            if is_lua_keyword(&name.text) {
+                return Err(keyword_binding("loop variable", name));
             }
             out.push_str(&format!(
-                "{pad}for {name} in pairs({}) do\n",
+                "{pad}for {} in pairs({}) do\n",
+                name.text,
                 value(object)?
             ));
             emit_loop_body(body, scope, out)?;
@@ -835,15 +898,12 @@ fn statement(stmt: &Stmt, scope: Scope, out: &mut String) -> Result<(), ExprErro
             None => out.push_str(&format!("{pad}return\n")),
         },
         Stmt::FunctionDecl { name, params, body } => {
-            if is_lua_keyword(name) {
-                return Err(ExprError::UnsupportedConstruct {
-                    construct: format!("function named '{name}' (a Lua keyword)"),
-                    observed: Some(name.clone()),
-                });
+            if is_lua_keyword(&name.text) {
+                return Err(keyword_binding("function", name));
             }
             let literal = function_literal(params, body)?;
             let keyword = if scope.in_function { "local " } else { "" };
-            out.push_str(&format!("{pad}{keyword}{name} = {literal}\n"));
+            out.push_str(&format!("{pad}{keyword}{} = {literal}\n", name.text));
         }
         Stmt::Break => out.push_str(&format!("{pad}break\n")),
         Stmt::Continue => out.push_str(&format!("{pad}goto __sce_continue\n")),
@@ -851,7 +911,7 @@ fn statement(stmt: &Stmt, scope: Scope, out: &mut String) -> Result<(), ExprErro
     Ok(())
 }
 
-fn emit_block(stmts: &[Stmt], scope: Scope, out: &mut String) -> Result<(), ExprError> {
+fn emit_block(stmts: &[Stmt], scope: Scope, out: &mut String) -> Result<(), Refusal> {
     let inner = Scope {
         depth: scope.depth + 1,
         ..scope
@@ -863,7 +923,7 @@ fn emit_block(stmts: &[Stmt], scope: Scope, out: &mut String) -> Result<(), Expr
 }
 
 /// A loop body, with the `continue` label appended when the body uses one.
-fn emit_loop_body(stmts: &[Stmt], scope: Scope, out: &mut String) -> Result<(), ExprError> {
+fn emit_loop_body(stmts: &[Stmt], scope: Scope, out: &mut String) -> Result<(), Refusal> {
     emit_block(stmts, scope, out)?;
     if has_continue(stmts) {
         out.push_str(&format!(
@@ -877,9 +937,9 @@ fn emit_loop_body(stmts: &[Stmt], scope: Scope, out: &mut String) -> Result<(), 
 /// An expression in statement position. Lua accepts only calls and
 /// assignments there, so the side-effecting forms are emitted directly
 /// rather than through the immediately-called function `value` would use.
-fn expression_statement(expr: &Expr) -> Result<String, ExprError> {
-    Ok(match expr {
-        Expr::Assign {
+fn expression_statement(expr: &Expr) -> Result<String, Refusal> {
+    Ok(match &expr.kind {
+        ExprKind::Assign {
             op,
             target,
             value: v,
@@ -890,7 +950,7 @@ fn expression_statement(expr: &Expr) -> Result<String, ExprError> {
                 assigned_value(*op, target, v)?
             )
         }
-        Expr::Update { op, target, .. } => {
+        ExprKind::Update { op, target, .. } => {
             let location = emit_location(target)?;
             let step = match op {
                 UpdateOp::Inc => "+ 1",
@@ -898,11 +958,11 @@ fn expression_statement(expr: &Expr) -> Result<String, ExprError> {
             };
             format!("{location} = _scxml_tonumber({location}) {step}")
         }
-        Expr::Call { .. } | Expr::New { .. } => value(expr)?,
+        ExprKind::Call { .. } | ExprKind::New { .. } => value(expr)?,
         // Anything else has no effect, but discarding it silently would
         // hide a typo; binding it keeps the expression evaluated and the
         // chunk valid Lua.
-        other => format!("local _ = {}", value(other)?),
+        _ => format!("local _ = {}", value(expr)?),
     })
 }
 
@@ -921,28 +981,28 @@ fn has_continue(stmts: &[Stmt]) -> bool {
 
 fn mentions_this(stmts: &[Stmt]) -> bool {
     fn in_expr(expr: &Expr) -> bool {
-        match expr {
-            Expr::This => true,
-            Expr::Array(items) => items.iter().any(in_expr),
-            Expr::Object(props) => props.iter().any(|(_, v)| in_expr(v)),
-            Expr::Member { object, .. } => in_expr(object),
-            Expr::Index { object, index } => in_expr(object) || in_expr(index),
-            Expr::Call { callee, args } | Expr::New { callee, args } => {
+        match &expr.kind {
+            ExprKind::This => true,
+            ExprKind::Array(items) => items.iter().any(in_expr),
+            ExprKind::Object(props) => props.iter().any(|(_, v)| in_expr(v)),
+            ExprKind::Member { object, .. } => in_expr(object),
+            ExprKind::Index { object, index } => in_expr(object) || in_expr(index),
+            ExprKind::Call { callee, args } | ExprKind::New { callee, args } => {
                 in_expr(callee) || args.iter().any(in_expr)
             }
-            Expr::Unary { operand, .. } => in_expr(operand),
-            Expr::Update { target, .. } => in_expr(target),
-            Expr::Binary { left, right, .. } | Expr::Logical { left, right, .. } => {
+            ExprKind::Unary { operand, .. } => in_expr(operand),
+            ExprKind::Update { target, .. } => in_expr(target),
+            ExprKind::Binary { left, right, .. } | ExprKind::Logical { left, right, .. } => {
                 in_expr(left) || in_expr(right)
             }
-            Expr::Conditional {
+            ExprKind::Conditional {
                 condition,
                 consequent,
                 alternate,
             } => in_expr(condition) || in_expr(consequent) || in_expr(alternate),
-            Expr::Assign { target, value, .. } => in_expr(target) || in_expr(value),
+            ExprKind::Assign { target, value, .. } => in_expr(target) || in_expr(value),
             // A nested function has its own `this`.
-            Expr::Function { .. } => false,
+            ExprKind::Function { .. } => false,
             _ => false,
         }
     }
@@ -1067,44 +1127,46 @@ fn lua_number(text: &str) -> Result<String, ExprError> {
 /// string's escapes are decoded and `null`/`undefined` share a node, so
 /// neither can be spelled back, and an array or object literal is no
 /// single token.
-fn literal_spelling(expr: &Expr) -> Option<String> {
+fn literal_spelling(expr: &ExprKind) -> Option<String> {
     match expr {
-        Expr::Number(text) => Some(text.clone()),
-        Expr::Bool(value) => Some(value.to_string()),
+        ExprKind::Number(text) => Some(text.clone()),
+        ExprKind::Bool(value) => Some(value.to_string()),
         _ => None,
     }
 }
 
-fn literal_description(expr: &Expr) -> Option<String> {
+fn literal_description(expr: &ExprKind) -> Option<String> {
     match expr {
-        Expr::Nullish => Some("the literal null or undefined".to_string()),
-        Expr::Number(_) | Expr::Str(_) | Expr::Bool(_) | Expr::Array(_) | Expr::Object(_) => {
-            Some(format!("the {}", describe(expr)))
-        }
+        ExprKind::Nullish => Some("the literal null or undefined".to_string()),
+        ExprKind::Number(_)
+        | ExprKind::Str(_)
+        | ExprKind::Bool(_)
+        | ExprKind::Array(_)
+        | ExprKind::Object(_) => Some(format!("the {}", describe(expr))),
         _ => None,
     }
 }
 
-fn describe(expr: &Expr) -> &'static str {
+fn describe(expr: &ExprKind) -> &'static str {
     match expr {
-        Expr::Number(_) => "number literal",
-        Expr::Str(_) => "string literal",
-        Expr::Bool(_) => "boolean literal",
-        Expr::Nullish => "null",
-        Expr::Ident(_) => "identifier",
-        Expr::This => "this",
-        Expr::Array(_) => "array literal",
-        Expr::Object(_) => "object literal",
-        Expr::Member { .. } => "member access",
-        Expr::Index { .. } => "index access",
-        Expr::Call { .. } => "call",
-        Expr::New { .. } => "new expression",
-        Expr::Unary { .. } => "unary expression",
-        Expr::Update { .. } => "update expression",
-        Expr::Binary { .. } => "binary expression",
-        Expr::Logical { .. } => "logical expression",
-        Expr::Conditional { .. } => "conditional expression",
-        Expr::Function { .. } => "function expression",
-        Expr::Assign { .. } => "assignment",
+        ExprKind::Number(_) => "number literal",
+        ExprKind::Str(_) => "string literal",
+        ExprKind::Bool(_) => "boolean literal",
+        ExprKind::Nullish => "null",
+        ExprKind::Ident(_) => "identifier",
+        ExprKind::This => "this",
+        ExprKind::Array(_) => "array literal",
+        ExprKind::Object(_) => "object literal",
+        ExprKind::Member { .. } => "member access",
+        ExprKind::Index { .. } => "index access",
+        ExprKind::Call { .. } => "call",
+        ExprKind::New { .. } => "new expression",
+        ExprKind::Unary { .. } => "unary expression",
+        ExprKind::Update { .. } => "update expression",
+        ExprKind::Binary { .. } => "binary expression",
+        ExprKind::Logical { .. } => "logical expression",
+        ExprKind::Conditional { .. } => "conditional expression",
+        ExprKind::Function { .. } => "function expression",
+        ExprKind::Assign { .. } => "assignment",
     }
 }
