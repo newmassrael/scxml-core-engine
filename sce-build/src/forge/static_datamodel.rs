@@ -250,24 +250,13 @@ impl<'a> Judge<'a> {
                     Expected::Slot(slot),
                 )?;
             }
-            "if" => {
+            "if" if !action.is_cpp_condition && !action.is_kt_condition => {
                 self.expr(
                     ctx,
                     &action.cond,
                     action.spellings.get("cond"),
                     Expected::Slot(InferredType::Bool),
                 )?;
-                self.actions(ctx, &action.then_actions, state)?;
-                for branch in &action.elseif_branches {
-                    self.expr(
-                        ctx,
-                        &branch.cond,
-                        branch.cond_spelling.as_ref(),
-                        Expected::Slot(InferredType::Bool),
-                    )?;
-                    self.actions(ctx, &branch.actions, state)?;
-                }
-                self.actions(ctx, &action.else_actions, state)?;
             }
             "log" if !action.expr.trim().is_empty() => {
                 self.expr(
@@ -306,6 +295,20 @@ impl<'a> Judge<'a> {
                 ));
             }
             _ => {}
+        }
+        // Everything nested inside, through the model's one definition of
+        // what lies inside an action. An `<elseif>`'s condition travels with
+        // its block.
+        for block in action.nested_blocks() {
+            if let Some(cond) = block.cond.filter(|_| !block.cond_is_native) {
+                self.expr(
+                    ctx,
+                    cond,
+                    block.cond_spelling,
+                    Expected::Slot(InferredType::Bool),
+                )?;
+            }
+            self.actions(ctx, block.actions, state)?;
         }
         Ok(())
     }
