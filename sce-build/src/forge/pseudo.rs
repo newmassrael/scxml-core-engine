@@ -949,13 +949,16 @@ fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out<'_>) {
                 Some(init) => format!(" = {}", text(init)),
                 None => String::new(),
             };
-            out.line(&format!(
-                "var {}: {}{}{}",
-                text(name),
-                sce_type.as_attr(),
-                cap,
-                init
-            ));
+            out.line_of(vec![
+                Part::Word(Word::Var),
+                Part::Text(format!(
+                    "{}: {}{}{}",
+                    text(name),
+                    sce_type.as_attr(),
+                    cap,
+                    init
+                )),
+            ]);
         }
         // A record local is built whole: the declaration, then one nested
         // `field = expr` line per field, in the order the author gave them.
@@ -965,12 +968,18 @@ fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out<'_>) {
             fields,
             ..
         } => {
-            out.line(&format!(
-                "var {}: {}{}",
-                text(name),
-                crate::forge::model::AlgorithmValueType::RECORD_PREFIX,
-                text(alias)
-            ));
+            // The block's opener names its word, so a shape that closes
+            // blocks can write the close (`a_line_that_opens_a_block_
+            // carries_its_word`).
+            out.line_of(vec![
+                Part::Word(Word::Var),
+                Part::Text(format!(
+                    "{}: {}{}",
+                    text(name),
+                    crate::forge::model::AlgorithmValueType::RECORD_PREFIX,
+                    text(alias)
+                )),
+            ]);
             out.nested(|out| {
                 for f in fields {
                     out.line(&format!("{} = {}", text(&f.name), text(&f.expr)));

@@ -71,6 +71,10 @@ pub enum Word {
     Done,
     While,
     Max,
+    /// An algorithm local's declaration. A record local opens a block —
+    /// one nested `field = expr` line per field — so its line must name
+    /// the word a shape closes it with.
+    Var,
     Call,
     Send,
     Log,
@@ -204,6 +208,7 @@ impl Word {
         Word::Done,
         Word::While,
         Word::Max,
+        Word::Var,
         Word::Call,
         Word::Send,
         Word::Log,
@@ -333,6 +338,7 @@ fn en_word(w: Word) -> &'static str {
         Word::Done => "done",
         Word::While => "while",
         Word::Max => "max",
+        Word::Var => "var",
         Word::Call => "call",
         Word::Send => "send",
         Word::Log => "log",
@@ -808,6 +814,7 @@ fn ko_word(w: Word) -> &'static str {
         Word::Done => "완료",
         Word::While => "조건반복",
         Word::Max => "최대",
+        Word::Var => "변수",
         Word::Call => "호출",
         Word::Send => "전송",
         Word::Log => "출력",
