@@ -60,6 +60,14 @@ fn scratch_for(lang: &str) -> PathBuf {
 /// `--go-module-prefix` when targeting Go (resolve_imports rejects bare
 /// Go imports; standalone EventSchema fixtures import nothing, but the
 /// flag must still be supplied because the CLI validates it up-front).
+///
+/// C++ is generated with `--no-format`, so the text the assertions read is
+/// the generator's own. A formatter is an input to a run only when the run
+/// asks for one, and clang-format's output is fixed by no contract: pc2's
+/// 18.1.3 wrote `template <typename M>::std::string` where the generator
+/// writes `template <typename M> ::std::string`, and pc3, which has no
+/// clang-format, handed the generator's text through — so the same tree was
+/// green on one host and red on the next (measured 2026-09-24).
 fn run_generate(lang: &str, out_dir: &Path, fixture: &str) {
     std::fs::create_dir_all(out_dir).expect("create out dir");
     let fx_path = fixtures_dir().join(format!("{fixture}.scxml"));
@@ -71,6 +79,9 @@ fn run_generate(lang: &str, out_dir: &Path, fixture: &str) {
             "--go-module-prefix",
             "example.com/sce-forge/event-schema-smoke",
         ]);
+    }
+    if lang == "cpp" {
+        cmd.arg("--no-format");
     }
     cmd.arg(&fx_path);
 
@@ -570,7 +581,7 @@ fn statechart_native_lowering_cpp_compiles_and_runs() {
         "expected the per-document typed payload tag enum; got:\n{header}"
     );
     assert!(
-        header.contains("template <typename M>::std::string populateTypedPayload(const M &meta)")
+        header.contains("template <typename M> ::std::string populateTypedPayload(const M &meta)")
             && header.contains(
                 "::std::any_cast<StatechartMinimalJobCompletedPayload>(&meta.typedPayload)"
             ),
@@ -594,18 +605,20 @@ fn statechart_native_lowering_cpp_compiles_and_runs() {
             // `sce/include` alone, so a call into the runtime library here
             // would take that property away (measured 2026-09-22).
             //
-            // ⚠ Two fragments rather than the whole statement: clang-format
-            // wraps this call at its own column, and an anchor that spans the
-            // break dies on a reformat rather than on a regression.
-            && header.contains("m.data = ::SCE::Common::EventPayloadFields::wire(")
+            // One anchor for the whole statement. It was two fragments while
+            // the text read here was clang-format's, which wraps the call at
+            // its own column; the generator writes it on one line.
             && header.contains(
-                "::SCE::Common::EventPayloadFields::field(\"elapsed_ms\", elapsed_ms)"
+                "m.data = ::SCE::Common::EventPayloadFields::wire(\
+                 {::SCE::Common::EventPayloadFields::field(\"elapsed_ms\", elapsed_ms)});"
             ),
         "expected the per-event typed inject seam; got:\n{header}"
     );
     assert!(
-        inl.contains("pendingPayloadTag_ == StatechartMinimalPayloadTag::JobCompleted &&")
-            && inl.contains("(pendingJobCompletedPayload_.elapsed_ms == 0)"),
+        inl.contains(
+            "pendingPayloadTag_ == StatechartMinimalPayloadTag::JobCompleted && \
+             (pendingJobCompletedPayload_.elapsed_ms == 0)"
+        ),
         "expected the native typed-payload guard; got:\n{inl}"
     );
     assert!(
