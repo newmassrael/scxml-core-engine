@@ -1,0 +1,41 @@
+# Mutation cases for "the eq builtin is the bytes comparison".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/the_eq_builtin_is_the_bytes_comparison.cases`.
+#
+# `eq(a, b)` is SCE's bytes comparison (docs/SCE_ACCEPTED_SUBSET.md §3.4.1).
+# It was listed as a builtin and lowered by no emitter, so every backend
+# emitted a call to an `eq` it does not have. Each case puts part of that
+# back: the call left as a call, its arguments left unjudged, or an `eq` the
+# document itself provides taken for the builtin. The unit tests in
+# `expr.rs` — `the_eq_builtin_lowers_as_the_bytes_comparison`,
+# `the_eq_builtin_refuses_what_its_signature_does_not_admit`,
+# `an_eq_the_document_provides_is_called_not_lowered` — refuse them.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --lib
+mutation_targets sce-build/src/forge/expr.rs
+mutation_oracles sce-build/src/forge/expr.rs
+
+mutation_case "the eq call is emitted as a call" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     r'''    reject_call_argument_mismatches(ast, ctx, source)?;
+    lower_bytes_eq(ast, ctx);''',
+     r'''    reject_call_argument_mismatches(ast, ctx, source)?;
+    let _ = lower_bytes_eq;''')
+PY
+
+mutation_case "the eq call's arguments are not judged" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     r'''            judge_arguments("eq", &BYTES_EQ_PARAMS, callee, args, source)?;''',
+     r'''            let _ = (&BYTES_EQ_PARAMS, source);''')
+PY
+
+mutation_case "a document's own eq is taken for the builtin" <<'PY'
+edit("sce-build/src/forge/expr.rs",
+     r'''    matches!(&callee.kind, ExprKind::Ident(name) if name == "eq") && ctx.lookup_func("eq").is_none()''',
+     r'''    let _ = ctx;
+    matches!(&callee.kind, ExprKind::Ident(name) if name == "eq")''')
+PY

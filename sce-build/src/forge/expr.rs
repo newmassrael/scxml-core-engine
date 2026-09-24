@@ -448,12 +448,17 @@ fn resolve_then_rename(
 /// needs to know about the expression and nothing it does to it. `source`
 /// is the text the tree was parsed from, which a refusal of an argument
 /// reports.
+///
+/// The `eq` builtin leaves it as the comparison it means ([`lower_bytes_eq`]),
+/// once its arguments are judged: no emitter has an `eq` to call.
 fn resolve_names(ast: &mut TypedExpr, ctx: &TypeCtx<'_>, source: &str) -> Result<(), Refusal> {
     lower_previous(ast, ctx);
     infer_types(ast, ctx);
     reject_unknown_callees(ast, ctx)?;
     reject_unknown_names(ast, ctx)?;
-    reject_call_argument_mismatches(ast, ctx, source)
+    reject_call_argument_mismatches(ast, ctx, source)?;
+    lower_bytes_eq(ast, ctx);
+    Ok(())
 }
 
 /// Whether a value of type `got` may stand where `slot` is declared.
@@ -785,28 +790,43 @@ fn reject_call_argument_mismatches(
                     .map(str::to_string);
                 return Err(host_only_call(&name, slot, observed).at(callee.span.clone()));
             }
-            if args.len() != signature.params.len() {
-                return Err(ExprError::ArgumentCount {
-                    callee: name,
-                    expected: signature.params.len(),
-                    actual: args.len(),
-                }
-                .at(callee.span.clone()));
-            }
-            if let Some((param, arg)) = signature
-                .params
-                .iter()
-                .zip(args)
-                .find(|(param, arg)| !slot_admits(**param, arg.ty))
-            {
-                return Err(type_mismatch(*param, arg, source));
-            }
+            judge_arguments(&name, &signature.params, callee, args, source)?;
+        } else if is_bytes_eq_builtin(callee, ctx) {
+            judge_arguments("eq", &BYTES_EQ_PARAMS, callee, args, source)?;
         }
     }
     for child in expr_children(expr) {
         reject_call_argument_mismatches(child, ctx, source)?;
     }
     Ok(())
+}
+
+/// A call's `args` against the parameters `params` of the function `name`
+/// its `callee` names: as many as it takes, refused at the callee, each of
+/// a kind its parameter admits ([`slot_admits`]), refused at that argument.
+fn judge_arguments(
+    name: &str,
+    params: &[InferredType],
+    callee: &TypedExpr,
+    args: &[TypedExpr],
+    source: &str,
+) -> Result<(), Refusal> {
+    if args.len() != params.len() {
+        return Err(ExprError::ArgumentCount {
+            callee: name.to_string(),
+            expected: params.len(),
+            actual: args.len(),
+        }
+        .at(callee.span.clone()));
+    }
+    match params
+        .iter()
+        .zip(args)
+        .find(|(param, arg)| !slot_admits(**param, arg.ty))
+    {
+        Some((param, arg)) => Err(type_mismatch(*param, arg, source)),
+        None => Ok(()),
+    }
 }
 
 /// `expr` parsed and resolved against `ctx` — typed, and refused for a name
@@ -2949,6 +2969,13 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
                 // conversion adopts its declared output width instead of
                 // forcing one.
                 None if real_to_int_builtin(callee, args).is_some() => InferredType::UntypedInt,
+                // `eq(a, b)` answers whether two byte sequences are equal. Its
+                // parameters are recorded so the argument check judges them
+                // as it judges any declared signature's.
+                None if is_bytes_eq_builtin(callee, ctx) => {
+                    *call_params = BYTES_EQ_PARAMS.to_vec();
+                    InferredType::Bool
+                }
                 None => InferredType::Unknown,
             }
         }
@@ -3643,6 +3670,51 @@ pub(crate) fn lower_previous(ast: &mut TypedExpr, ctx: &TypeCtx<'_>) {
     for child in expr_children_mut(ast) {
         lower_previous(child, ctx);
     }
+}
+
+/// The parameters of the `eq(a, b)` builtin: two byte sequences.
+/// `docs/SCE_ACCEPTED_SUBSET.md` §3.4.1 names it SCE's bytes comparison.
+const BYTES_EQ_PARAMS: [InferredType; 2] = [InferredType::Bytes, InferredType::Bytes];
+
+/// Whether `callee` is the `eq` builtin — not a function the document
+/// provides under that name, an import aliased `eq`, which is the
+/// document's to type and to call.
+///
+/// ⚠ `eq` was listed as a builtin and lowered by no emitter until
+/// 2026-09-24: `expr="eq(frame, expect)"` generated on all six backends as
+/// a call to an `eq` none of them has, so the target compiler was the one
+/// to refuse it. It now has a signature, so its arguments are judged
+/// ([`reject_call_argument_mismatches`]), and it is lowered to the bytes
+/// comparison every emitter already renders ([`lower_bytes_eq`]).
+fn is_bytes_eq_builtin(callee: &TypedExpr, ctx: &TypeCtx<'_>) -> bool {
+    matches!(&callee.kind, ExprKind::Ident(name) if name == "eq") && ctx.lookup_func("eq").is_none()
+}
+
+/// Every call of the `eq` builtin rewritten to the `===` of its two
+/// arguments, then typed again: a comparison is where a string literal
+/// against bytes becomes the bytes it spells ([`infer_types`]), and that
+/// rewrite has to see the comparison, not the call.
+///
+/// Runs after the arguments are judged, so a call it meets has the two
+/// arguments its signature declares.
+fn lower_bytes_eq(ast: &mut TypedExpr, ctx: &TypeCtx<'_>) {
+    for child in expr_children_mut(ast) {
+        lower_bytes_eq(child, ctx);
+    }
+    let ExprKind::Call { callee, args, .. } = &mut ast.kind else {
+        return;
+    };
+    if !is_bytes_eq_builtin(callee, ctx) || args.len() != BYTES_EQ_PARAMS.len() {
+        return;
+    }
+    let right = args.pop().expect("two arguments");
+    let left = args.pop().expect("two arguments");
+    ast.kind = ExprKind::Binary {
+        op: BinOp::StrictEq,
+        left: Box::new(left),
+        right: Box::new(right),
+    };
+    infer_types(ast, ctx);
 }
 
 /// Every sub-expression of `expr`, in source order.
@@ -6219,6 +6291,90 @@ mod tests {
             tp_with("raw === 'ack'", ExprTarget::C, &ctx),
             "raw_len == 3 && memcmp(raw, \"ack\", 3) == 0"
         );
+    }
+
+    /// `eq(a, b)` is the bytes comparison it is documented as, on every
+    /// backend — the same text `a === b` lowers to, not a call to an `eq`
+    /// none of them has.
+    #[test]
+    fn the_eq_builtin_lowers_as_the_bytes_comparison() {
+        let mut ctx = bytes_ctx();
+        ctx.insert_var("expect", InferredType::Bytes);
+        for target in [
+            ExprTarget::Rust,
+            ExprTarget::Cpp,
+            ExprTarget::Go,
+            ExprTarget::Python,
+            ExprTarget::Kotlin,
+            ExprTarget::C,
+        ] {
+            for (called, compared) in [
+                ("eq(raw, 'ack')", "raw === 'ack'"),
+                ("eq(raw, expect)", "raw === expect"),
+                ("!eq(raw, expect)", "!(raw === expect)"),
+            ] {
+                assert_eq!(
+                    tp_with(called, target, &ctx),
+                    tp_with(compared, target, &ctx),
+                    "{target:?}: {called}"
+                );
+            }
+        }
+    }
+
+    /// Its signature is judged like a declared one: two arguments, each of
+    /// a kind bytes admits.
+    #[test]
+    fn the_eq_builtin_refuses_what_its_signature_does_not_admit() {
+        let mut ctx = bytes_ctx();
+        ctx.insert_var("n", int(true, 32));
+        let refused = |expr: &str| {
+            transpile_typed(
+                expr,
+                ExprTarget::Rust,
+                &ctx,
+                &empty_renames(),
+                InferredType::Unknown,
+            )
+            .expect_err(expr)
+            .error
+        };
+        assert!(
+            matches!(
+                refused("eq(raw)"),
+                ExprError::ArgumentCount { ref callee, expected: 2, actual: 1 } if callee == "eq"
+            ),
+            "{:?}",
+            refused("eq(raw)")
+        );
+        assert!(
+            matches!(
+                refused("eq(raw, n)"),
+                ExprError::TypeMismatch { observed: Some(ref written), .. } if written == "n"
+            ),
+            "{:?}",
+            refused("eq(raw, n)")
+        );
+    }
+
+    /// A function the document provides under the name `eq` — an import
+    /// aliased `eq` — is that function, called as declared, not the builtin.
+    /// It takes two arguments, as the builtin does, so only the question of
+    /// WHICH `eq` separates the call from a comparison.
+    #[test]
+    fn an_eq_the_document_provides_is_called_not_lowered() {
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("n", int(true, 32));
+        ctx.insert_var("m", int(true, 32));
+        ctx.insert_func(
+            "eq",
+            FuncSig {
+                params: vec![int(true, 32), int(true, 32)],
+                ret: InferredType::Bool,
+                host_only: None,
+            },
+        );
+        assert_eq!(tp_with("eq(n, m)", ExprTarget::Rust, &ctx), "eq(n, m)");
     }
 
     #[test]
