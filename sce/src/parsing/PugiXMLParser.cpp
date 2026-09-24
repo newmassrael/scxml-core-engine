@@ -151,7 +151,7 @@ std::string PugiXMLElement::getTextContent() const {
     // and CDATA child, not only the first. `child_value()` answered the
     // first, and the default parse drops a comment from the tree while
     // keeping the text on either side of it as two nodes — so a comment in
-    // a <script> body (W3C SCXML 5.8) truncated the script there. The Rust
+    // a <script> body (§scxml-5.8) truncated the script there. The Rust
     // parser reads the same concatenation (`parser::character_data`), so the
     // interpreter and the generated machine run one body.
     std::string text;

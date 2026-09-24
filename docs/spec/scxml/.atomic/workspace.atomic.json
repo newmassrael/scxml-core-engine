@@ -7659,6 +7659,11 @@
         {
           "file": "sce-build/src/unresolved_check.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/parsing/PugiXMLParser.cpp",
+          "symbol": "PugiXMLElement::getTextContent",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -17088,6 +17093,12 @@
       "target_kind": "section",
       "target_id": "scxml-D-computeExitSet",
       "reason": "Stale binding: ConcurrentRegion::computeExitSet no longer exists (gone after 0c4f8a60cf, 2026-08-27). The remaining computeExitSet citations in that file sit in ConcurrentRegion::processEvent and say the region does NOT compute the set; that symbol already has its own references binding."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.8",
+      "reason": "symbol spelled as the code resolver reads it: PugiXMLElement::getTextContent"
     }
   ],
   "frames": {},
