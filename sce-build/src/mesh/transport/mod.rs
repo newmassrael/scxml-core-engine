@@ -6,10 +6,12 @@
 // Each transport declares its codegen shape (field layout in TransportRouter)
 // and communication capabilities (pattern validation) in ONE entry.
 //
-// Adding a new transport requires exactly TWO changes:
-//   1. Add one entry to `lookup()` below   (Rust — shape + capabilities)
-//   2. Add {% elif %} blocks in mesh_transport.h.jinja2  (C++ codegen)
-// The template's `#error` fallback catches (2) drift at C++ compile time.
+// Adding a new transport starts with one entry in `lookup()` below (shape +
+// capabilities) and its name in `implemented_names()` / `known_names()`, but
+// does not end there: typed topology state, codegen inputs, template arms,
+// the runtime, and the registry-derived tests follow. The full procedure is
+// kept in one place rather than restated here: the module docs of
+// `mesh::codegen` name the spec section that lists every step.
 //
 // Per-transport scxml-invoke codegen helpers (SCE_MESH.md §mesh-9.6 (b))
 // live in sibling submodules: resolve_connect_endpoint and future

@@ -775,21 +775,31 @@ sce-build generates code that calls `dds_create_qos()` with every specified poli
 
 ### 6.4 Custom Transport
 
-To add a new transport, update the single registry and the template (§10.4.2 defines the registry entry; this section is the step-by-step):
+To add a new transport, work through every step below (§10.4.2 defines the registry entry; this section is the single step-by-step list — code comments point here rather than restating it):
 
-1. **`mesh::transport` registry entry** — add one `TransportDescriptor` static and list it in `lookup()`. The descriptor declares the codegen shape, the supported communication patterns (§8.2), whether a template exists, the required deploy.yaml binding fields, and the capability flags §10.4.2 tabulates. An unknown transport name yields no descriptor, and codegen rejects it (`CodegenError::UnsupportedTransport`); a descriptor with `implemented: false` is rejected at the Rust stage rather than deferred to a C++ `#error`.
+1. **`mesh::transport` registry entry** — add one `TransportDescriptor` static, list it in `lookup()`, and add its name to `implemented_names()` and `known_names()`. The descriptor declares the codegen shape, the supported communication patterns (§8.2), whether a template exists, the required and optional deploy.yaml binding fields, and the capability flags §10.4.2 tabulates. An unknown transport name yields no descriptor, and codegen rejects it (`CodegenError::UnsupportedTransport`); a descriptor with `implemented: false` is rejected at the Rust stage rather than deferred to a C++ `#error`.
 
-2. **`mesh_transport.h.jinja2` `{% elif %}` blocks** — add transport-specific code at four `NEW TRANSPORT` extension points:
+2. **Typed topology state** — add a `TransportState` variant and its `transport_name()` arm in `mesh/topology.rs`, and build it in `build_transport_state`. Also review the transport-name string literals across `mesh/deploy.rs`, `mesh/topology.rs`, `mesh/codegen.rs` and `lib.rs`: a list that means "every connection-oriented transport" or "every implemented transport" must learn the new name.
+
+3. **Device-shared session config** (only when the transport has one, like Zenoh) — add a typed struct field to `deploy::TransportConfigs`. `serde` + `deny_unknown_fields` then reject invalid values at parse time.
+
+4. **Codegen inputs** — add a context struct in `mesh/codegen.rs`, a field on `MeshCodegenInputs`, and thread it through `compile_mesh_transport` in `lib.rs`, pre-escaping for C++ via `cpp_string_literal()` before inserting into the template context.
+
+5. **`mesh_transport.h.jinja2` `{% elif %}` blocks** — the `NEW TRANSPORT` extension points are the minimum:
    - (A) Includes
    - (B) Per-target constants
    - (C) Per-target send functions
    - (D1-D5) TransportRouter fields, constructor, init/shutdown, route_send
 
-3. If the transport has device-shared session config (like Zenoh), add a typed struct field to `deploy::TransportConfigs`. `serde` + `deny_unknown_fields` then reject invalid values at parse time.
+   An implemented transport is also branched in the server arms, subscribe, the server response deadline (§9.5.1), liveness and the scxml-invoke paths. Search the template for an existing transport of the same shape to find each branch.
 
-4. Thread the new session config through `generate_mesh()` in `lib.rs`, pre-escaping for C++ via `cpp_string_literal()` before inserting into the template context.
+6. **Runtime** — the transport's runtime header under `sce/include/mesh/transports/` (or the vendor library the generated code calls directly), its CMake link, and a mesh fixture in `tests/CMakeLists.txt`.
 
-Steps 1 and 2 are the "exactly two changes" §10.4.2 names; steps 3-4 apply only to transports carrying device-shared session config. Because shape and capabilities now live in one descriptor rather than two parallel functions, they cannot drift apart; the template's `#error` fallback catches step 2 drift at C++ compile time.
+7. **Registry-derived checks** — add the transport's row to the §8.2 matrix and its name to the `ORDER` list of `spec_matrix_matches_the_registry`, and its binding keys to `every_known_binding_field_has_a_reader`.
+
+8. **Fault mapping** — map the transport's disconnect signal onto the §16.7 liveness row, and every native error onto a §16.7 catalogue reason (the catalogue is closed).
+
+Because shape and capabilities live in one descriptor rather than two parallel functions, they cannot drift apart; the template's `#error` fallback catches a missing step 5 arm at C++ compile time.
 
 ```
 // Unknown transport in Rust pipeline:
@@ -1368,7 +1378,7 @@ Remote `<invoke>` inherits all distributed system constraints:
 | `<finalize>` | Called per child event | Not invoked (no event stream) |
 | `done.invoke.ID` | Raised when child reaches `<final>` | Raised when RPC reply arrives |
 | `error.invoke.ID` | Raised on child error or transport loss | Raised on timeout or `RpcStatus != Ok` |
-| `<cancel>` | Terminates child session | Emits `RpcStatus::Cancelled` envelope |
+| `<cancel>` | Terminates child session | **Benign drop**, local only: the correlation entry and the armed deadline are erased, and a reply that arrives later finds no entry and is dropped. No envelope reaches the wire — propagating the cancel to the peer as an `RpcStatus::Cancelled` envelope is not implemented |
 | Correlation | `invoke_id` throughout session | `invoke_id` single round trip |
 | Reserved `<param>` names | None | `_mesh_event` (request event name), `_mesh_deadline_ms` (timeout). See reserved-name rule below. |
 
@@ -1424,9 +1434,11 @@ The W3C foreign-processor fallback (see the **Graceful degradation** paragraph b
 Rule: the `<param>` value, if present, **overrides** any deploy.yaml binding-level deadline for this one invocation. Transport-native deadlines from QoS are independent — they enforce delivery SLAs, not RPC response timeouts. Diagnostic: when both `<param>` and deploy.yaml deadline exist with different values, `sce-build` emits an informational notice; it is not an error because per-invoke override is expected usage.
 
 **Wire mapping**:
-- Request: envelope with `pattern=RpcRequest`, `invoke_id=SCXML invoke id (UUID v7)`, `type=<value of _mesh_event>`, `data=<param payload excluding _mesh_* reserved names>`, `deadline_unix_ms=<now + effective deadline>` (effective deadline = `_mesh_deadline_ms` if present, else deploy.yaml binding-level, else absent).
+- Request: envelope with `pattern=RpcRequest`, `invoke_id=<a UUID v7 the requester mints for this invocation>`, `type=<value of _mesh_event>`, `data=<param payload excluding _mesh_* reserved names>`, `deadline_unix_ms=<now + effective deadline>` (effective deadline = `_mesh_deadline_ms` if present, else deploy.yaml binding-level, else absent).
 - Reply: envelope with `pattern=RpcReply`, `invoke_id=<matching>`, `rpc_status=Ok|…`, `data=<reply payload>`.
-- Cancel: envelope with `pattern=RpcReply`, `invoke_id=<matching>`, `rpc_status=Cancelled`, empty data.
+- Cancel: nothing on the wire (benign drop, see the `<cancel>` row above). The wire value `RpcStatus::Cancelled = 1` is reserved for a future cancel propagation, which would send `pattern=RpcReply`, `invoke_id=<matching>`, `rpc_status=Cancelled`, empty data.
+
+The wire `invoke_id` is **not** the SCXML invoke id. The requester mints it per invocation as the correlation and deadline key, separate from the envelope `id` that keys dedup and retry, so the two never collide in the shared deadline scheduler. The SCXML invoke id never crosses the wire: it stays with the requester and surfaces as `_event.invokeid` below.
 
 **Runtime mapping to `_event`** (on reply delivery to parent):
 - `_event.name` = `done.invoke.<id>` (success) or `error.invoke.<id>` (non-Ok status)
@@ -1788,7 +1800,7 @@ A transport is **conformant** for distributed W3C SCXML 1.0 execution iff it pro
 | **Duplicate tolerance** | §5.10 does not forbid duplicates but the runtime must suppress them (dedup at mesh layer; §10.5) | envelope id (UUID v7) |
 | **Fault signal emission** | §3.2 `error.communication` is raised on transport failure; transport must surface disconnection | all transports (native or wrapper) |
 
-A transport meeting all four is **conformance-complete**. Missing any property makes the transport **conformance-degraded**, and deploy.yaml must flag it:
+A transport meeting all four is **conformance-complete**. Missing any property makes the transport **conformance-degraded**, and deploy.yaml must flag it (schema below; **not parsed today** — see the enforcement note after it):
 
 ```yaml
 topology:
@@ -1800,7 +1812,7 @@ topology:
         degraded_aspects: [ordering, delivery]
 ```
 
-`sce-build` fails the build if a binding uses a degraded transport without the explicit `conformance: degraded` declaration on that transport. This prevents accidental conformance loss.
+The rule: a binding must not use a degraded transport unless that transport carries the explicit `conformance: degraded` declaration, so conformance is never lost by accident. **It is not enforced yet.** Every in-tree transport is conformance-complete, so there is nothing to reject; the `conformance:` key is unparsed today, and the check lands with the first degraded transport together with the `degraded_aspects` registry field (§10.4.1, best-effort transports).
 
 **Reference implementations in-tree**:
 - `local`, `shm`, `someip` (TCP mode), `zenoh` (reliable mode): conformance-complete.
@@ -1854,12 +1866,13 @@ Every transport implementation must honour the following lifecycle phases. The g
 | `pool_shape` | `None \| Open \| Bounded` | Whether the native routing layer can substitute a runtime value into a binding address, and whether the member set must be declared up front (§14.4). Deliberately **not** a `supports_pool: bool`: those are different questions and the second is author-visible — it decides whether a member list is required alongside the placeholder. `Open` where the routing layer resolves any runtime value per message (Zenoh); `Bounded` where each member has to be registered before first use, whether because the middleware's wildcard is not one (SOME/IP `ANY_INSTANCE`) or because a just-created writer has not finished discovery and drops its first sample (DDS). Collapsing the two is what forced the validator to ask `transport == "someip"` — a policy about a transport's discovery model, written at the validation site instead of at the registry that knows it. |
 | `pool_member_carrier` | `None \| TypedInstanceId \| StringSegment` | What a pool member *is* here, which decides the selecting syntax (`instance_from:` vs a `{name}` embed) and the enumerating key (`instances:` vs `members:`) (§14.4). Orthogonal to `pool_shape`: DDS and SOME/IP share a shape and differ in carrier, DDS and Zenoh share a carrier and differ in shape. `None` iff `pool_shape` is `None` — a transport that admits no substitution has nothing to carry. |
 | `supports_machine_lifetime_subscribe` | `bool` | deploy.yaml `machines.<name>.subscriptions:` is realised end-to-end here (§13), which is narrower than the general PubSub capability. |
+| `buffers_outbound` | `bool` | The router holds sends to a target in a per-target `OutboundBuffer` until the peer signals it is ready (§10.10). Also makes deploy validation reject a §14.4 pool binding when the machine declares `outbound_buffer:`, because a buffer gates on one address and a pool has many. |
 | `supports_multi_instance_server` | `bool` | Inbound messages carry a peer-identifying instance dimension, so the machine can host a multi-instance server pool (§14.4). |
 | `supports_inter_partition_ipc` | `bool` | Transport may carry traffic between the OS processes a `partitions:` split creates (§14). |
 | `supports_cross_target_reply` | `bool` | An RpcReply for a request sent to target A can arrive from a different target B, because correlation goes through a lookup table keyed on a sender-minted identifier. `false` where the reply path is bound to the request at the protocol layer (Zenoh `session.get`) or where there is no `RequestReply` capability. Gates a `reply_from:` set wider than the binding's own target (§14.6). |
 | `server_deadline_notice` | `Unsupported \| DropSilently \| ActiveError` | What the requesting peer observes when `server.response_deadline_ms` elapses (§9.5.1). Deliberately **not** a boolean: whether the deadline can be armed and what the peer learns when it fires are different questions, and the second is author-visible — it decides which `RpcStatus` the requester's failure carries, and therefore what the client document can branch on. `ActiveError` where an answer has somewhere to go — a reserved protocol slot (SOME/IP `MT_ERROR` / `E_TIMEOUT`), the request's own return stream (custom_tcp), or the paired reply topic (DDS); `DropSilently` where releasing the parked handle is the only signal available (Zenoh `Query`); `Unsupported` where no server arm parks anything a deadline could bound, which makes the knob a parse-time reject rather than a silent no-op. The parse-time rejection enumerates the realising transports from this registry rather than from prose, so a new arm reaches the diagnostic with its descriptor. |
 
-Adding a transport requires exactly **two changes** (Rust registry entry + Jinja2 template block); the template's `#error` fallback catches drift at C++ compile time. §6.4 is the step-by-step form of the same procedure.
+Adding a transport touches more than the registry entry and the template: typed topology state, codegen inputs, the runtime, tests and this document's §8.2 matrix follow. §6.4 is the single step-by-step list; the template's `#error` fallback still catches a missing template arm at C++ compile time.
 
 **Future extensions**: `conformance_level: Complete | Degraded` (validated against deploy.yaml declarations), `max_payload_bytes: Option<usize>` (envelope size validation at build time).
 
@@ -2550,8 +2563,8 @@ SCXML documents in SCE Mesh are **standard W3C SCXML 1.0** with exactly one exte
 
 - **W3C §6.4.1 compliant**: `done.invoke.ID` / `error.invoke.ID` / `<cancel>` are all standard.
 - Result delivered via `_event.data` per spec.
-- `invoke_id` field in the envelope (CBOR key 9) carries the SCXML invoke ID for correlation across the wire.
-- `<cancel>` emits a `RpcStatus::Cancelled` envelope to the remote peer.
+- `invoke_id` field in the envelope (CBOR key 9) carries a per-invocation UUID v7 the requester mints for correlation across the wire; the SCXML invoke id stays local (§9.5 wire mapping).
+- `<cancel>` is a benign drop: local only, nothing is sent to the remote peer (§9.5).
 - Reserved `<param>` names (stripped from payload, used as codegen metadata): `_mesh_event` (required, the SCXML event name), `_mesh_deadline_ms` (optional, request timeout). All other `<param>`s form the request payload. Shadowing a reserved name with a business payload is a build-time hard error (see §9.5 "Reserved-name conflict").
 
 **RPC response (plain SCXML, no annotations)**

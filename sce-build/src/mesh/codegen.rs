@@ -9,13 +9,9 @@
 //! template generates a single `TransportRouter` that dispatches
 //! per-target to the appropriate transport-specific send function.
 //!
-//! Adding a new transport — two required changes:
-//!   1. Add one entry to `transport::lookup()` (shape + capabilities).
-//!   2. Add `{% elif %}` blocks in `mesh_transport.h.jinja2`.
-//!
-//! If the transport has device-shared session config, also:
-//!   3. Add a typed struct field to `deploy::TransportConfigs`.
-//!   4. Thread the config through `generate_mesh()` in `lib.rs`.
+//! Adding a new transport touches this module (a context struct and a
+//! [`MeshCodegenInputs`] field) among several others; the full procedure
+//! is SCE_MESH.md §mesh-6.4, kept in that one place rather than restated.
 //!
 //! `Option<T>` fields in this module follow the serialization convention
 //! documented at [`crate::model`]: `is not none`-guarded template consumers
