@@ -504,9 +504,9 @@ fn lower_action(
         // A list is an immutable `List<T>` field, so an append builds the
         // next list, and does so only while the list is under its bound — on
         // every backend, so a machine holds the same list wherever it runs.
-        // Past the bound nothing is appended and `error.execution` says so
-        // (W3C SCXML 3.12.2), as every other execution error of this backend
-        // is reported.
+        // Past the bound nothing is appended and `error.execution` says so —
+        // the processor's own signal for an error in executing the document,
+        // raised the way every other execution error of this backend is.
         "sce_append" => {
             reads_payload = reads(&action.expr);
             let target = action.location.trim();
