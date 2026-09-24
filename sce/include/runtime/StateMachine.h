@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "core/EntrySetHelper.h"
 #include "core/HierarchicalStateHelper.h"
 #include "core/InvokeHelper.h"  // §scxml-6.4: Shared invoke lifecycle logic (Zero Duplication)
 #include "core/LogMacros.h"
@@ -13,10 +14,11 @@
 #include "runtime/HistoryManager.h"
 #include "runtime/HistoryStateAutoRegistrar.h"
 #include "runtime/IActionExecutor.h"
+#include "runtime/IEventRaiser.h"
 #include "runtime/IExecutionContext.h"
+#include "runtime/InterpreterDocument.h"
 #include "runtime/InvokeExecutor.h"
 #include "runtime/StateHierarchyManager.h"
-#include "runtime/TransitionDomainCalculator.h"
 #include "scripting/IScriptEngine.h"
 #include "states/ConcurrentStateTypes.h"  // §scxml-D-Datatypes: TransitionDescriptorString
 #include <atomic>
@@ -27,6 +29,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace SCE {
@@ -56,6 +59,10 @@ struct InterpreterPolicy {
  *
  * This class provides a complete implementation of SCXML state machine
  * with JavaScript integration for guards, actions, and data model.
+ *
+ * What it does with a document is W3C SCXML Appendix D: its microstep is
+ * `SCE::Core::MicrostepAlgorithms`, the procedure the AOT engine runs, handed
+ * this machine's parsed model; its macrostep is the appendix's main event loop.
  */
 class StateMachine : public std::enable_shared_from_this<StateMachine> {
 public:
@@ -76,30 +83,6 @@ public:
         TransitionResult(bool s, const std::string &from, const std::string &to, const std::string &event)
             : success(s), fromState(from), toState(to), eventName(event) {}
     };
-
-    /**
-     * @brief §scxml-3.13: Transition information for microstep execution
-     *
-     * Holds all information needed to execute a transition as part of a microstep.
-     * Multiple transitions execute atomically: exit all → execute all → enter all.
-     */
-    struct TransitionInfo {
-        IStateNode *sourceState;                      // Source state node
-        std::shared_ptr<ITransitionNode> transition;  // Transition node
-        std::string targetState;                      // Target state ID
-        std::vector<std::string> exitSet;             // States to exit (in order)
-
-        TransitionInfo(IStateNode *src, std::shared_ptr<ITransitionNode> trans, const std::string &target,
-                       const std::vector<std::string> &exits)
-            : sourceState(src), transition(trans), targetState(target), exitSet(exits) {}
-    };
-
-    /**
-     * @brief §scxml-3.13: Exit set computation result
-     *
-     * Type alias to TransitionDomainCalculator::ExitSetResult (Single Source of Truth).
-     */
-    using ExitSetResult = TransitionDomainCalculator::ExitSetResult;
 
     /**
      * @brief Constructor with explicit script engine injection
@@ -213,8 +196,15 @@ public:
     /**
      * @brief Start the state machine
      *
-     * @param autoProcessQueuedEvents If true (default), automatically process queued events after entering initial
-     * state. If false, queued events remain for manual processing (Interactive mode).
+     * Enters the initial configuration and runs the macrostep it starts to
+     * completion, invokes included.
+     *
+     * @param autoProcessQueuedEvents If true (default), internal events complete
+     * every macrostep, and the main event loop takes external events until the
+     * external queue is empty — the ones the initial configuration queued
+     * included — before returning; `processEvent` does the same. If false
+     * (interactive mode), queued events remain for the host to step through
+     * one at a time.
      * @return true if started successfully
      */
     bool start(bool autoProcessQueuedEvents = true);
@@ -262,6 +252,17 @@ public:
 
     /**
      * @brief Process an event with origin tracking for W3C SCXML finalize support
+     *
+     * The event, and the macrostep it starts. In auto mode the main event
+     * loop then goes on to the external queue, one event and one macrostep at
+     * a time, until that queue is empty or the machine has stopped — so what
+     * the event's macrostep sent this session comes back before the call
+     * does. In interactive mode the queue is left for the host to step.
+     *
+     * Handed to a machine whose macrostep is already running on this thread,
+     * the event is put on its queue instead — Appendix D processes an event
+     * only where its main event loop takes one — and the result says so.
+     *
      * @param eventName Name of the event to process
      * @param eventData Optional event data (JSON string)
      * @param originSessionId Session ID that originated this event (for finalize)
@@ -325,11 +326,6 @@ public:
      */
     int getLastTransitionIndex() const;
 
-private:
-    /** Position of `transition` in `stateId`'s list, or -1. */
-    int indexOfTransitionIn(const std::string &stateId, const std::shared_ptr<ITransitionNode> &transition) const;
-
-public:
     /**
      * @brief Get target state of last executed transition
      *
@@ -469,13 +465,17 @@ public:
         /// empty while it is zero. A count says something was lost; this says
         /// which delivery lost it.
         std::string lastUndecodablePayloadEvent;
-        /// §scxml-3.13: external events handed to this machine after it had
-        /// stopped, which it therefore never looked at.
+        /// §scxml-3.13: external events this machine never looked at — handed
+        /// to it after it had stopped, or still on its external queue when it
+        /// did.
         ///
         /// Appendix D's main event loop exits when the machine reaches a
         /// top-level final state, and the clause is explicit that the
         /// interpreter is then done. Refusing the event is correct; being
-        /// unable to say it happened is what this counts.
+        /// unable to say it happened is what this counts. The queue is the
+        /// second place it happens, and not a door: the loop checks for the
+        /// final state before it dequeues again, so whatever was waiting there
+        /// is never taken. The AOT engine counts both the same way.
         ///
         /// This engine already tells the caller — `processEvent` returns a
         /// `TransitionResult` whose `success` is false and whose
@@ -656,117 +656,51 @@ public:
     void setRestoringSnapshotOnAllRegions(bool restoring);
 
 private:
-    /**
-     * @brief RAII guard for preventing invalid reentrant state entry calls
-     *
-     * Automatically manages isEnteringState_ flag with exception safety.
-     * Throws std::runtime_error if reentrant call detected.
-     */
-    class EnterStateGuard {
-    public:
-        EnterStateGuard(bool &enteringFlag, bool &processingEventFlag)
-            : enteringFlag_(enteringFlag), processingEventFlag_(processingEventFlag), shouldManage_(true),
-              isInvalid_(false) {
-            // Invalid reentrant call if already entering and not processing event
-            if (enteringFlag_ && !processingEventFlag_) {
-                // Don't manage flag, mark as invalid, but don't throw
-                // This matches original behavior: return true silently
-                shouldManage_ = false;
-                isInvalid_ = true;
-                return;
-            }
+    /// A transition a selection enabled — one member of Appendix D's
+    /// `enabledTransitions`, over this machine's string ids.
+    using Transition = SCE::Core::EnabledTransition<std::string, std::string>;
 
-            // Legitimate reentrant call during event processing - allow but don't re-set flag
-            if (enteringFlag_ && processingEventFlag_) {
-                shouldManage_ = false;  // Don't manage flag, it's already true
-            } else {
-                enteringFlag_ = true;  // First entry, set flag
-            }
-        }
-
-        ~EnterStateGuard() {
-            if (shouldManage_) {
-                enteringFlag_ = false;
-            }
-        }
-
-        bool isInvalidCall() const {
-            return isInvalid_;
-        }
-
-        // Manually release the guard before destructor
-        // Used before checkEventlessTransitions() to allow legitimate recursive calls
-        void release() {
-            if (shouldManage_) {
-                enteringFlag_ = false;
-                shouldManage_ = false;
-            }
-        }
-
-        // Prevent copying
-        EnterStateGuard(const EnterStateGuard &) = delete;
-        EnterStateGuard &operator=(const EnterStateGuard &) = delete;
-
-    private:
-        bool &enteringFlag_;
-        bool &processingEventFlag_;
-        bool shouldManage_;
-        bool isInvalid_;
-    };
+    /// This machine as `SCE::Core::MicrostepAlgorithms` reads it. Defined in
+    /// StateMachine.cpp, beside the effects it forwards to.
+    struct MicrostepHost;
 
     /**
-     * @brief RAII guard for managing transition context flag
+     * @brief One macrostep of this machine, from the call that starts it to
+     *        its return
      *
-     * Automatically sets inTransition_ flag on construction and clears it on destruction.
-     * Provides exception safety for transition context management.
+     * Nothing a macrostep raises is processed until its main event loop takes
+     * it, so the raiser's immediate mode — which hands an event straight back
+     * to this machine — is off for the whole step rather than toggled around
+     * each block of content. Between macrosteps it is on in auto mode, so an
+     * event arriving from another thread (a delayed `<send>` firing, a child
+     * session reporting) starts the next macrostep at once.
      */
-    class TransitionGuard {
+    class MacrostepScope {
     public:
-        explicit TransitionGuard(bool &transitionFlag) : transitionFlag_(transitionFlag) {
-            transitionFlag_ = true;
-        }
-
-        ~TransitionGuard() {
-            transitionFlag_ = false;
-        }
-
-        // Prevent copying
-        TransitionGuard(const TransitionGuard &) = delete;
-        TransitionGuard &operator=(const TransitionGuard &) = delete;
+        explicit MacrostepScope(StateMachine &machine);
+        ~MacrostepScope();
+        MacrostepScope(const MacrostepScope &) = delete;
+        MacrostepScope &operator=(const MacrostepScope &) = delete;
 
     private:
-        bool &transitionFlag_;
+        StateMachine &machine_;
     };
 
-    // §scxml-3.3: RAII guard for batch processing to prevent recursive auto-processing
-    struct BatchProcessingGuard {
-        bool &flag_;
+    /// Whether this machine's macrostep is running on the calling thread. Per
+    /// machine rather than a thread-local depth: an autoforward hands a child
+    /// its copy through the child's `processEvent`, on this very thread, and
+    /// the child's macrostep is its own.
+    bool macrostepInProgressOnThisThread() const;
 
-        explicit BatchProcessingGuard(bool &flag) : flag_(flag) {
-            flag_ = true;
-        }
-
-        ~BatchProcessingGuard() {
-            flag_ = false;
-        }
-
-        // Prevent copying
-        BatchProcessingGuard(const BatchProcessingGuard &) = delete;
-        BatchProcessingGuard &operator=(const BatchProcessingGuard &) = delete;
-    };
-
-    // Core state - now delegated to StateHierarchyManager
-    // Removed: std::string currentState_ (use hierarchyManager_->getCurrentState())
-    // Removed: std::vector<std::string> activeStates_ (use hierarchyManager_->getActiveStates())
-    // Thread-safe: accessed from EventRaiser callback (main thread) and enterState() (worker threads)
+    // Thread-safe: accessed from EventRaiser callback (main thread) and from
+    // scheduler threads
     std::atomic<bool> isRunning_{false};
-    bool isEnteringState_ = false;                 // Guard against reentrant enterState calls
-    bool isProcessingEvent_ = false;               // Track event processing context
-    bool autoProcessQueuedEvents_ = true;          // Interactive mode: disable auto-batch processing
-    bool isBatchProcessing_ = false;               // Track batch event processing to prevent recursive auto-processing
-    bool isEnteringInitialConfiguration_ = false;  // §scxml-3.3: Track initial configuration entry
-    bool inTransition_ = false;                    // Track if we're in a transition context (for history recording)
-    std::string initialState_;
+    bool autoProcessQueuedEvents_ = true;  // Interactive mode: the host steps queued events itself
+    std::atomic<std::thread::id> macrostepOwner_{};
+
+    /// Set on entering a top-level `<final>`. The entry point that owns the
+    /// macrostep finishes the session once the microstep is over.
+    bool topLevelFinalReached_ = false;
 
     // Last executed transition tracking (for interactive visualizer)
     std::string lastTransitionSource_{};
@@ -787,13 +721,15 @@ private:
     // position is not part of what a snapshot carries.
     int lastTransitionIndex_{-1};
 
-    // §scxml-D-removeConflictingTransitions: Conflict resolution transition tracking (for interactive visualizer)
-    std::vector<TransitionDescriptorString>
-        lastEnabledTransitions_{};  // All enabled transitions before conflict resolution
-    std::vector<TransitionDescriptorString> lastOptimalTransitions_{};  // Optimal set after conflict resolution
-
-    size_t eventlessRecursionDepth_ = 0;  // Track recursion depth for eventless transitions
-    size_t lastTransitionDepth_ = 0;      // Track depth where lastTransition was set
+    // What the last microstep's selection found and what survived
+    // preemption, for the interactive visualizer.
+    std::vector<TransitionDescriptorString> lastEnabledTransitions_{};
+    std::vector<TransitionDescriptorString> lastOptimalTransitions_{};
+    /// What the selection now running has found, before conflicts are
+    /// removed. Published to `lastEnabledTransitions_` only when a microstep
+    /// is taken, so an eventless selection that finds nothing does not erase
+    /// what the visualizer shows about the event before it.
+    std::vector<Transition> selectionCandidates_{};
 
     /// How many microsteps one macrostep may take before this engine stops
     /// taking them. The clause defines a macrostep as a chain ending where
@@ -820,9 +756,8 @@ private:
 
     /// Macrosteps stopped at that ceiling with the chain still going, and the
     /// state the drain was in when it last happened. `macrostepTruncated_`
-    /// exists because the drain is reached from more than one place per
-    /// macrostep; it is cleared where the algorithm starts a macrostep, which
-    /// for this engine is the host's call.
+    /// is cleared where a macrostep starts: the host's call, and each
+    /// external event this machine takes off its own queue.
     uint32_t truncatedMacrosteps_ = 0;
     std::string lastTruncatedMacrostepState_;
     bool macrostepTruncated_ = false;
@@ -834,21 +769,20 @@ private:
     uint32_t undecodablePayloads_ = 0;
     std::string lastUndecodablePayloadEvent_;
     /// §scxml-3.13: external events refused because this machine had stopped,
-    /// and the name of the last one. Reported through
-    /// `Statistics::unseenExternalEvents`.
+    /// or left on its external queue when it did, and the name of the last
+    /// one. Reported through `Statistics::unseenExternalEvents`.
     uint32_t unseenExternalEvents_ = 0;
     std::string lastUnseenEventName_;
     /// Microsteps this macrostep has taken, on eventless transitions and on
-    /// internal events alike. A member rather than a loop counter because this
-    /// engine's chain is recursive — executing one microstep re-enters the
-    /// macrostep loop, so a local counter is per nesting level and never
-    /// reaches any ceiling — and because the two branches share it: the
-    /// internal half is spent through the `MicrostepBudget` this machine lends
-    /// its raiser, which owns the queue those microsteps come off.
+    /// internal events alike — one count, because a document that alternates
+    /// the two is one chain. Only the main event loop spends it: the raiser
+    /// holds the queues, and the loop is the one party that takes from them
+    /// inside a macrostep.
     uint32_t macrostepMicrostepsTaken_ = 0;
 
-    // SCXML model
+    // SCXML model, and the model as Appendix D reads it
     std::shared_ptr<SCXMLModel> model_;
+    std::unique_ptr<InterpreterDocument> document_;
 
     // Script engine integration
     IScriptEngine &scriptEngine_;
@@ -864,7 +798,7 @@ private:
     ActionExecutorImpl *cachedExecutorImpl_ = nullptr;  // Cached pointer to avoid dynamic_pointer_cast
     std::shared_ptr<IExecutionContext> executionContext_;
 
-    // Hierarchical state management
+    // The configuration
     std::unique_ptr<StateHierarchyManager> hierarchyManager_;
 
     // History state management (SOLID architecture)
@@ -877,16 +811,15 @@ private:
     // Event dispatching for delayed events and external targets
     std::shared_ptr<IEventDispatcher> eventDispatcher_;
 
-    // EventRaiser for SCXML compliance mode control
+    // EventRaiser: holds both of Appendix D's queues
     std::shared_ptr<IEventRaiser> eventRaiser_;
 
     // §scxml-6.4.3: Completion callback for invoke done.invoke event
     CompletionCallback completionCallback_;
 
     // §scxml-5.5 + 6.4.3: donedata payload captured when the machine
-    // enters a top-level `<final>`. Populated once per invocation by
-    // `enterState` before `completionCallback_` fires, mirroring
-    // `StaticExecutionEngine::stashDonedataAtFinal` on the AOT side.
+    // enters a top-level `<final>`, before `completionCallback_` fires,
+    // mirroring `StaticExecutionEngine::stashDonedataAtFinal` on the AOT side.
     // Consumed by `SCXMLInvokeHandler`'s completion callback to populate
     // `done.invoke.<id>._event.data` (`donedataAtFinal()` getter).
     std::string pendingDonedataAtFinal_;
@@ -907,16 +840,14 @@ private:
     // W3C SCXML: Thread safety for StateHierarchyManager access from JSEngine worker thread
     mutable std::mutex hierarchyManagerMutex_;  // Protects hierarchyManager_ read access
 
-    // CRITICAL: Mutex for processEvent execution synchronization (ASAN heap-use-after-free fix)
-    // Ensures destructor waits for any in-progress processEvent calls to complete
-    // before destroying StateMachine, preventing ProcessingEventGuard from accessing freed memory
-    // Thread-local depth tracking handles W3C SCXML nested event processing without recursive_mutex
+    // Serializes macrosteps started from different threads, and lets the
+    // destructor wait for one in progress (ASAN heap-use-after-free fix). A
+    // delivery on the thread already running this machine's macrostep never
+    // takes it: it is queued instead (`macrostepInProgressOnThisThread`).
     std::mutex processEventMutex_;
 
     // Statistics
     mutable Statistics stats_;
-
-    // Helper methods
 
     // §scxml-5.3: Data model initialization (delegated to DataModelInitializer)
     using DataItemInfo = DataModelInitializer::DataItemInfo;
@@ -926,134 +857,74 @@ private:
     void initializeHistoryManager();
     void initializeHistoryAutoRegistrar();
 
-    // Parallel state completion handling
-    void handleParallelStateCompletion(const std::string &stateId);
-    void setupParallelStateCallbacks();
-
-    /**
-     * @brief Generate and queue done.state.{stateId} event (§scxml-3.4)
-     * @param stateId State ID for which to generate the done event
-     */
-    void generateDoneStateEvent(const std::string &stateId);
-
-    /**
-     * @brief Setup and activate parallel state regions (§scxml-3.3 / §scxml-3.4 compliance)
-     *
-     * Configures region callbacks and activates regions for proper event processing.
-     * This ensures regions can defer invokes, evaluate guards, and execute actions.
-     *
-     * @param parallelState Parallel state to setup and activate
-     * @param stateId State ID for logging
-     * @return true if successful, false on failure
-     */
-    bool setupAndActivateParallelState(ConcurrentStateNode *parallelState, const std::string &stateId);
-
     bool evaluateCondition(const std::string &condition);
 
-    /**
-     * @brief Enter a state.
-     *
-     * @param stateId State to enter.
-     * @param pathChild The child of @p stateId the entry set already holds,
-     *        when @p stateId is only an ANCESTOR of the entry target. Such a
-     *        state is entered without its default initial child; a `<parallel>`
-     *        still gives its OTHER regions theirs. Empty means @p stateId is
-     *        the target and takes its defaults. The definition carries the
-     *        citation; see `StateHierarchyManager::enterState`.
-     */
-    bool enterState(const std::string &stateId, const std::string &pathChild = "");
-    bool exitState(const std::string &stateId);
+    // ── W3C SCXML Appendix D over the parsed model ───────────────────────
+    //
+    // What Appendix D does with the answers below is
+    // `SCE::Core::MicrostepAlgorithms`; these are the answers.
 
-    /**
-     * @brief W3C SCXML compliance: Check for eventless transitions on all active states
-     * @return true if an eventless transition was executed, false otherwise
-     */
-    bool checkEventlessTransitions();
+    /// §scxml-D-selectTransitions, or selectEventlessTransitions for an empty
+    /// name — the optimal enabled set, in selection order.
+    std::vector<Transition> selectTransitions(const std::string &eventName);
+    std::optional<Transition> firstEnabledTransition(const std::string &state, const std::string &eventName);
+    void takeMicrostep(const std::vector<Transition> &transitions, const std::string &eventName);
+    void enterInitialConfiguration();
+    void runMainEventLoop();
+    /// The outer loop's one step: take the next external event and start the
+    /// macrostep it opens. False when the external queue is empty.
+    bool takeNextExternalEvent();
+    TransitionResult processTakenEvent(const Core::EventMetadata &event, bool fromExternalQueue);
+    void bindCurrentEvent(const Core::EventMetadata &event);
+    void applyFinalize(const std::string &originSessionId, const std::string &eventName);
+    void autoforward(const Core::EventMetadata &event);
+    void finishAtTopLevelFinal();
+    TransitionResult refuseUnseen(const std::string &eventName);
+    /// Put an event handed to this machine while its macrostep is running on
+    /// this thread onto the queue it belongs to, for the main event loop to
+    /// take in turn.
+    TransitionResult holdDelivery(const Core::EventMetadata &event, bool fromExternalQueue);
+    /// Count an external event this machine will never look at.
+    void noteUnseenEvent(const std::string &eventName);
+    /// Empty both queues at the end of the interpretation: every external
+    /// event still there is counted as unseen.
+    void recordUnseenQueuedEvents();
+
+    void exitStateInMicrostep(const std::string &state, const std::vector<std::string> &configurationBeforeExit);
+    void exitState(const std::string &state);
+    void cancelInvokesOf(const std::string &state);
+    void enterStateInMicrostep(const std::string &state, bool isDefaultEntry);
+    void enterFinalState(const std::string &finalState);
+    void raiseInternal(const std::string &eventName, const std::string &eventData,
+                       std::optional<ScriptValue> typedData);
+    void executeTransitionContent(const Transition &transition);
+    void executeHistoryDefaultContent(const std::string &history);
+    /// Appendix D's isInFinalState over the configuration as it stands now.
+    bool stateIsInFinalState(const std::string &state) const;
+    std::vector<std::string> configurationInExitOrder() const;
+    TransitionDescriptorString describe(const Transition &transition, const std::string &eventName,
+                                        const std::vector<std::string> &configuration);
 
     /// Record that a macrostep was stopped at `MAX_MACROSTEP_MICROSTEPS` with
-    /// its chain still going. Shared by every bounded loop — `start()`'s, the
-    /// one inside a transition's macrostep, and the budget this machine lends
-    /// its event raiser — so all of them report the same fact the same way.
+    /// its chain still going. Shared by both branches of the main event loop,
+    /// so both report the same fact the same way.
     void recordTruncatedMacrostep();
 
     /// §scxml-3.13: may the macrostep now in progress take another microstep?
-    ///
-    /// Publishes the refusal on the way out, because the parties that ask —
-    /// the internal-queue drains and the raiser holding the queue — are not
-    /// the ones that own the ceiling.
+    /// Asked before an internal event leaves the queue, so a refusal leaves
+    /// it for the next macrostep; publishes the refusal on the way out.
     bool mayTakeMicrostep();
 
-    /// W3C SCXML Appendix D (mainEventLoop): drain the internal queue, bounded
-    /// by the macrostep budget.
-    ///
-    /// One function for every site that completes a macrostep, so all of them
-    /// bound the chain the same way; `reason` is the log line that used to be
-    /// the only difference between them.
-    void drainInternalEvents(const char *reason);
-
-    /// §scxml-3.13: the `MicrostepBudget` this machine lends its raiser.
-    ///
-    /// The raiser owns the internal queue, so it is the only party that can
-    /// decline a dispatch without consuming the event; the budget is here
-    /// because the eventless branch spends the same one. Wired where the event
-    /// callback is, and for the same reason: both are how the raiser reaches
-    /// back into this machine.
-    MicrostepBudget makeMicrostepBudget();
-
-    /**
-     * @brief Execute a single transition directly without re-evaluating its condition
-     *
-     * This method is used when a transition's condition has already been evaluated
-     * to avoid side effects from re-evaluation (e.g., W3C test 444: ++var1).
-     *
-     * @param sourceState The state containing the transition
-     * @param transition The transition to execute
-     * @return true if the transition was executed successfully, false otherwise
-     */
-    bool executeTransitionDirect(IStateNode *sourceState, std::shared_ptr<ITransitionNode> transition);
-
-    /**
-     * @brief §scxml-3.13: Execute transitions as a microstep
-     *
-     * Executes multiple transitions atomically with proper phasing:
-     * 1. Exit all source states (executing onexit actions)
-     * 2. Execute all transition actions in document order
-     * 3. Enter all target states (executing onentry actions)
-     *
-     * @param transitions Vector of transitions to execute
-     * @return true if all transitions executed successfully
-     */
-    bool executeTransitionMicrostep(const std::vector<TransitionInfo> &transitions);
-
-    // New IActionNode-based action execution methods
+    // IActionNode-based action execution
     bool initializeActionExecutor();
-    bool executeActionNodes(const std::vector<std::shared_ptr<SCE::IActionNode>> &actions,
-                            bool processEventsAfter = true);
-    bool executeEntryActions(const std::string &stateId);
+    bool executeActionNodes(const std::vector<std::shared_ptr<SCE::IActionNode>> &actions);
     bool executeExitActions(const std::string &stateId);
+    void executeOnEntryActions(const std::string &stateId);
 
     // JavaScript environment lifecycle (internal use only)
     bool ensureJSEnvironment();
     bool setupJSEnvironment();
     void updateStatistics();
-
-    // SCXML W3C compliant state transition processing
-    TransitionResult processStateTransitions(IStateNode *stateNode, const std::string &eventName,
-                                             const std::string &eventData);
-
-    // W3C SCXML transition domain and exit set computation (delegated to TransitionDomainCalculator)
-    std::unique_ptr<TransitionDomainCalculator> transitionDomain_;
-
-    std::string findLCA(const std::string &sourceStateId, const std::string &targetStateId) const;
-    ExitSetResult computeExitSet(const std::string &sourceStateId, const std::string &targetStateId) const;
-    int getStateDocumentPosition(const std::string &stateId) const;
-    std::vector<std::string> getProperAncestors(const std::string &stateId) const;
-    bool isDescendant(const std::string &stateId, const std::string &ancestorId) const;
-    std::vector<std::string> buildExitSetForDescendants(const std::string &ancestorState,
-                                                        bool excludeParallelChildren = true) const;
-
-    // W3C SCXML onentry action execution
-    void executeOnEntryActions(const std::string &stateId);
 
     // Deferred invoke execution for W3C SCXML compliance
     void deferInvokeExecution(const std::string &stateId, const std::vector<std::shared_ptr<IInvokeNode>> &invokes);
@@ -1062,12 +933,9 @@ private:
     // Helper method to reduce code duplication between isInFinalState() and isInitialStateFinal()
     bool isStateInFinalState(const std::string &stateId) const;
 
-    // §scxml-3.7 & 5.5: Compound state done.state event generation
-    void handleCompoundStateFinalChild(const std::string &finalStateId);
+    // §scxml-5.5: donedata, through DoneDataHelper (Zero Duplication)
     bool evaluateDoneData(const std::string &finalStateId, std::string &outEventData,
                           std::optional<ScriptValue> &outTypedData);
-
-    // §scxml-5.5: Helper methods moved to DoneDataHelper (Zero Duplication)
 };
 
 }  // namespace SCE

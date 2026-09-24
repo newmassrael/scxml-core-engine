@@ -1,0 +1,130 @@
+# Mutation cases for the outer half of W3C SCXML Appendix D's main event loop
+# on the two C++ engines ctest drives: after a macrostep, the loop takes the
+# next external event, and goes on until the external queue is empty.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/host_call_takes_the_external_queue_ctest.cases`.
+#
+# The C++ Interpreter's host call used to stop after the macrostep its event
+# opened, leaving on the queue whatever that macrostep sent the session, while
+# its `start` took the queue — so the same document answered differently
+# depending on which call had queued the event. The AOT engine's
+# `runMainEventLoop` always ran the whole loop. Both now take the same path,
+# including after a macrostep stopped at its ceiling, and the cases below hold
+# each piece of it:
+#
+#   - the outer loop itself, and interactive mode's exemption from it;
+#   - an event handed to the machine in the middle of its own macrostep, which
+#     joins the queue it belongs to and is taken in turn;
+#   - the external take reaching under internal events a refused chain left
+#     queued — on the Interpreter the raiser keeps both queues in one
+#     structure, internal first, so this is a property of that take, and on
+#     the AOT engine it is the loop's own fall-through.
+#
+# ⚠ The last case edits `sce/include/static/StaticExecutionEngine.h`, which
+# every generated machine includes, so it costs a full C++ rebuild.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^IntegrationTests$'
+mutation_targets sce/src/runtime/StateMachine.cpp sce/src/runtime/EventRaiserImpl.cpp
+mutation_targets sce/include/static/StaticExecutionEngine.h
+mutation_oracles tests/integration/HostCallTakesTheExternalQueueTest.cpp tests/integration/ReentrantDeliveryWaitsItsTurnTest.cpp
+mutation_oracles tests/integration/InternalChainIsBoundedTest.cpp tests/integration/InternalChainIsBoundedAotTest.cpp
+
+# ── Interpreter: the outer loop ────────────────────────────────────
+#
+# The loop completes the macrostep and stops. `start` loses the external
+# queue too, so the fixtures that order an invoke before the external dequeue
+# go red as well; `HostCallTakesTheExternalQueueTest` is the one that names
+# the host call.
+
+mutation_case "the interpreter stops after one macrostep" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     """        if (!takeNextExternalEvent()) {
+            break;
+        }
+    }
+}""",
+     """        break;
+    }
+}""")
+PY
+
+# ── Interpreter: interactive mode steps its own queue ──────────────
+#
+# The other half of the contract. An interactive host — the visualizer — steps
+# each queued event itself, and a machine that took them for it would run
+# ahead of what the host is showing.
+
+mutation_case "the interpreter takes the external queue in interactive mode" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     """        // Interactive mode: the host steps the external queue itself.
+        if (!autoProcessQueuedEvents_) {
+            break;
+        }
+
+""",
+     """""")
+PY
+
+# ── Interpreter: an event handed over mid-macrostep ────────────────
+#
+# Answered "held" and put nowhere. Nothing crashes and nothing is logged; the
+# event is simply never taken.
+
+mutation_case "the interpreter holds a handed-over event on no queue" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     """    if (eventRaiser_ && eventRaiser_->enqueue(event, queue)) {""",
+     """    if (eventRaiser_ && (queue == EventQueue::Internal || queue == EventQueue::External)) {""")
+PY
+
+# ── Interpreter: ... on the wrong queue ────────────────────────────
+#
+# Held on the internal queue, the event is taken inside the macrostep that is
+# still running — ahead of every external event queued before it arrived. The
+# test whose external event was queued first is the one that sees it; the
+# other order happens to come out the same.
+
+mutation_case "the interpreter holds a handed-over external event on the internal queue" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     """    const EventQueue queue = fromExternalQueue ? EventQueue::External : EventQueue::Internal;""",
+     """    (void)fromExternalQueue;
+    const EventQueue queue = EventQueue::Internal;""")
+PY
+
+# ── Interpreter: the external take under a refused chain ───────────
+#
+# The raiser keeps internal events ahead of external ones, so a take that
+# only looks at the head finds a refused chain's next link there and reports
+# the external queue empty. The loop then ends with the event that would have
+# opened the next macrostep still waiting behind the chain.
+
+mutation_case "the raiser's external take cannot reach under internal events" <<'PY'
+edit("sce/src/runtime/EventRaiserImpl.cpp",
+     """    if (wanted == EventPriority::EXTERNAL) {
+        while (!synchronousQueue_.empty() && synchronousQueue_.top().priority == EventPriority::INTERNAL) {""",
+     """    if (false) {
+        while (!synchronousQueue_.empty() && synchronousQueue_.top().priority == EventPriority::INTERNAL) {""")
+PY
+
+# ── C++ AOT: the loop after a refused macrostep ────────────────────
+#
+# The same property on the other engine, where it is the loop's shape rather
+# than a queue's: a refused macrostep ends the loop instead of falling through
+# to the external dequeue.
+
+mutation_case "the aot loop stops at a refused macrostep" <<'PY'
+edit("sce/include/static/StaticExecutionEngine.h",
+     """            if (!macrostepTruncated_ && internalQueue_.hasEvents()) {
+                continue;
+            }
+""",
+     """            if (!macrostepTruncated_ && internalQueue_.hasEvents()) {
+                continue;
+            }
+            if (macrostepTruncated_) {
+                break;
+            }
+""")
+PY

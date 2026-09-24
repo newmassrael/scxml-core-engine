@@ -83,16 +83,38 @@ PY
 # The engine goes on returning `success = false`, so the assertion that reads
 # the TransitionResult still passes — and only the statistics assertion catches
 # this. That is the whole point of adding a count to an engine that already
-# answered.
+# answered. Every event this engine never looks at is counted in
+# `noteUnseenEvent` — both door refusals, a delivery no queue could hold, and
+# the queue abandoned at the final state — so the count lives in one place and
+# this silences all of them at once.
 
 mutation_case "the interpreter reports the refusal but does not count it" <<'PY'
 edit("sce/src/runtime/StateMachine.cpp",
-     """        ++unseenExternalEvents_;
-        lastUnseenEventName_ = eventName;""",
-     """        if (false) {
-            ++unseenExternalEvents_;
-            lastUnseenEventName_ = eventName;
-        }""")
+     """    ++unseenExternalEvents_;
+    lastUnseenEventName_ = eventName;""",
+     """    if (false) {
+        ++unseenExternalEvents_;
+        lastUnseenEventName_ = eventName;
+    }""")
+PY
+
+# ── C++ Interpreter: the loop's abandoned queue ────────────────────
+#
+# The Interpreter's half of the AOT case above: what still waits on the
+# external queue when the machine reaches its final state. Without the count
+# those events are neither looked at nor reported — and, left on the queue,
+# they would be refused and counted by whatever pumped the raiser next, as
+# though a host had just sent them.
+
+mutation_case "the interpreter loop abandons the queue silently" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     """        cancelInvokesOf(state);
+    }
+    recordUnseenQueuedEvents();
+""",
+     """        cancelInvokesOf(state);
+    }
+""")
 PY
 
 # ── C++ Interpreter: the statistics wiring ─────────────────────────

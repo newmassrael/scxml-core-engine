@@ -3,8 +3,10 @@
 
 #pragma once
 
+#include "core/EventMetadata.h"
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -14,29 +16,20 @@ namespace SCE {
 struct EventSnapshot;
 
 /**
- * @brief §scxml-3.13: how a state machine lends its macrostep budget to whoever holds the internal queue
+ * @brief W3C SCXML Appendix D's two event queues
  *
- * The clause ends a macrostep at a configuration where nothing is enabled by
- * NULL and the internal queue is empty, and the specification's Principles and
- * Constraints allow a document where that never happens — a `<raise>` answered
- * by a transition that raises again. An engine that runs it to the letter never
- * returns.
- *
- * The engine owns the budget because it also spends it on eventless
- * transitions, and one macrostep has one. The raiser owns the queue, and is
- * therefore the only party that can decline a dispatch *without consuming the
- * event*: refusing here leaves it where the next macrostep will find it, which
- * is the difference between a chain this engine declined to keep running and
- * one it silently swallowed.
+ * A raiser keeps both in one structure, ordered internal-first; the main event
+ * loop still takes from them at different points, which is why a state machine
+ * names the one it means — see `IEventRaiser::takeQueuedEvent`.
  */
-struct MicrostepBudget {
-    /// Asked before every internal dispatch. A `false` is expected to have
-    /// published the refusal already — the raiser cannot, because the ceiling
-    /// is not its to report.
-    std::function<bool()> mayTake;
-    /// Told after a dispatch that actually selected a transition. A dispatch
-    /// that matched nothing took no microstep and spends nothing.
-    std::function<void()> spend;
+enum class EventQueue {
+    /// `internalQueue`: what `<raise>`, `<send target="#_internal">` and the
+    /// platform's own error and done events put there. The macrostep completes
+    /// on these alone.
+    Internal,
+    /// `externalQueue`: everything else. One event per macrostep, taken only
+    /// once the previous macrostep is over.
+    External,
 };
 
 /**
@@ -190,6 +183,62 @@ public:
     virtual bool hasQueuedInternalEvents() const = 0;
 
     /**
+     * @brief Take the event at the head of one of the two queues, for the
+     *        caller to process itself
+     *
+     * `processNextInternalEvent` dispatches what it takes through the event
+     * callback, back into the state machine — from inside that machine's own
+     * macrostep when the machine is the one draining. W3C SCXML Appendix D's
+     * main event loop never re-enters itself: it dequeues an event, binds
+     * `_event` to it and selects transitions, one level deep. A machine that
+     * runs that loop takes the event here and processes it where it stands.
+     *
+     * The queue is named rather than implied by the head, because the loop
+     * does not always take the head. A macrostep stopped at its ceiling leaves
+     * internal events queued, and the loop still goes on to the external
+     * queue — that event is what reaches a machine left inside a chain that
+     * never ends, and the internal events queued above it must not hide it.
+     *
+     * @param queue The queue to take from
+     * @return The event, or std::nullopt when that queue is empty
+     */
+    virtual std::optional<Core::EventMetadata> takeQueuedEvent(EventQueue queue) = 0;
+
+    /**
+     * @brief Append an event to one of the two queues without dispatching it
+     *
+     * For an event handed to a state machine while that machine's own
+     * macrostep is running on the calling thread. Appendix D processes an
+     * event only where its main event loop takes one, so the machine puts it
+     * on the queue it belongs to and its loop takes it in turn, in order with
+     * everything else queued there.
+     *
+     * Never dispatches, whatever the immediate mode says: dispatching would
+     * hand the event straight back into the macrostep it is waiting for.
+     *
+     * @param event The event, with every field the loop will bind
+     * @param queue The queue it belongs to
+     * @return false when the event could not be queued, because this raiser
+     *         has been shut down
+     */
+    virtual bool enqueue(const Core::EventMetadata &event, EventQueue queue) = 0;
+
+    /**
+     * @brief Run @p dispatch as the handling of @p eventName
+     *
+     * The error-cascade ceiling needs to know which event is being handled
+     * when an `error.*` is raised; this raiser's own dispatches record that.
+     * An event taken with `takeQueuedEvent` is handled by the caller, which
+     * wraps the handling in this so a chain is still counted.
+     *
+     * Defaulted to running it: a raiser that never counts a chain has nothing
+     * to record.
+     */
+    virtual bool dispatchTaken(const std::string & /*eventName*/, const std::function<bool()> &dispatch) {
+        return dispatch();
+    }
+
+    /**
      * @brief Get snapshot of current event queues for visualization/debugging
      *
      * Retrieves current contents of internal and external event queues
@@ -298,17 +347,6 @@ public:
      * forget.
      */
     virtual void resetErrorCascadeDepth() {}
-
-    /**
-     * @brief §scxml-3.13: hand this raiser the macrostep budget its dispatches spend
-     *
-     * See `MicrostepBudget`. Called once, when the state machine wires its
-     * event callback — the same moment and for the same reason.
-     *
-     * Defaulted to nothing: a raiser whose dispatches cannot form a chain has
-     * no budget to spend.
-     */
-    virtual void setMicrostepBudget(MicrostepBudget /*budget*/) {}
 };
 
 }  // namespace SCE

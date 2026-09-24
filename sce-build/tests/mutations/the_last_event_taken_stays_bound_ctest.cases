@@ -1,0 +1,58 @@
+# Mutation cases for W3C SCXML Appendix D's `_event` binding across the events
+# one macrostep takes: the loop binds each event it takes and never puts an
+# earlier one back.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/the_last_event_taken_stays_bound_ctest.cases`.
+#
+# This file replaces `nested_delivery_restores_the_outer_event_ctest`, which
+# guarded the opposite: the Interpreter used to deliver an internal event by
+# re-entering itself from inside the host's `processEvent`, and a guard's
+# destructor bound the host's event again on the way out. The main event loop
+# now takes internal events itself, one level deep, so there is no nesting and
+# no restore — and a restore creeping back is the defect to catch.
+#
+# The oracle's document takes `done.state.wrapper` inside the macrostep a host
+# event opened; after `processEvent` returns, `_event` must be that done event.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^IntegrationTests$'
+mutation_targets sce/src/runtime/StateMachine.cpp
+mutation_oracles tests/integration/EventBindingAcrossAMacrostepTest.cpp
+
+# ── The host's event bound again after the loop ────────────────────
+#
+# The shape the old restore had, moved to where it would sit now: once the
+# macrostep is over, the event the host handed over is bound once more.
+
+mutation_case "the host's event is bound again after the loop took others" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     """    const TransitionResult result = processTakenEvent(event, fromExternalQueue);
+    runMainEventLoop();
+    if (topLevelFinalReached_) {""",
+     """    const TransitionResult result = processTakenEvent(event, fromExternalQueue);
+    runMainEventLoop();
+    bindCurrentEvent(event);
+    if (topLevelFinalReached_) {""")
+PY
+
+# ── An internal event taken without being bound ────────────────────
+#
+# The other half of the same line of Appendix D: `datamodel["_event"] =
+# internalEvent`. A loop that selected transitions for an internal event
+# without binding it would leave the host's event in place — and every guard
+# and every piece of content the internal event's transition ran would read the
+# wrong event.
+
+mutation_case "an internal event is taken without being bound" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     """    // §scxml-D-mainEventLoop: datamodel["_event"] = the event just taken, and
+    // it stays bound until the loop takes the next one.
+    bindCurrentEvent(event);""",
+     """    // §scxml-D-mainEventLoop: datamodel["_event"] = the event just taken, and
+    // it stays bound until the loop takes the next one.
+    if (fromExternalQueue || !event.originSessionId.empty()) {
+        bindCurrentEvent(event);
+    }""")
+PY

@@ -143,7 +143,7 @@ sce_runtime       (STATIC, full interpreter — umbrella target)
 
 **Contents**:
 - **Model**: `SCXMLModel`, `StateNode`, `TransitionNode`, `GuardNode`, `InvokeNode`
-- **Runtime**: `StateMachine`, `ActionExecutorImpl`, `StateMachineBuilder`
+- **Runtime**: `StateMachine`, `InterpreterDocument`, `ActionExecutorImpl`, `StateMachineBuilder`
 - **Actions**: `ScriptAction`, `AssignAction`, `SendAction`, `IfAction`, `ForeachAction`, `CancelAction`
 - **Events**: `EventSchedulerImpl`, `EventDispatcherImpl`, `EventTargetFactoryImpl`, HTTP infrastructure
 - **States**: `ConcurrentStateNode`, `ParallelRegionOrchestrator`, `ConcurrentEventBroadcaster`
@@ -700,8 +700,19 @@ helpers. An engine hands it a Host: the document as `EntrySetAlgorithms` reads
 it, plus the run — the configuration, which transition of a state an event
 enables, and what one state's entry, exit or transition content does. The AOT
 engine's Host is `StaticExecutionEngine::MicrostepHost`, over the generated
-policy; everything Appendix D does with the Host's answers is the shared
+policy; the Interpreter's is `StateMachine::MicrostepHost`, over
+`InterpreterDocument` — the parsed model read the way Appendix D reads a
+document. Everything Appendix D does with the Host's answers is the shared
 procedure, for a machine with a `<parallel>` and one without alike.
+
+Around the microstep, both engines run `mainEventLoop` in the same shape: a
+macrostep completes on eventless transitions and internal events, the invokes
+it armed start, and only then is the next external event taken — after a
+macrostep stopped at `MAX_MACROSTEP_MICROSTEPS` too. The Interpreter's two
+queues are its `IEventRaiser`'s, which keeps them in one structure, so the loop
+names the one it takes from (`EventQueue::Internal` / `EventQueue::External`).
+An event handed to a machine in the middle of its own macrostep is `enqueue`d
+on the queue it belongs to and taken in turn, never processed where it lands.
 
 **`common/`** — Action/data primitive helpers:
 

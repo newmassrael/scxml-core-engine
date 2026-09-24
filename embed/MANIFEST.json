@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "31c6b58d08",
+  "embed_version": "922b6c100c",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 300,
+  "symbol_count": 297,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -1523,16 +1523,12 @@
     },
     {
       "header": "runtime/IEventRaiser.h",
-      "kind": "struct",
-      "members": [
-        "field std::function<bool ()> mayTake",
-        "field std::function<void ()> spend",
-        "method MicrostepBudget &(MicrostepBudget &&) operator=",
-        "method MicrostepBudget &(const MicrostepBudget &) operator=",
-        "method void (MicrostepBudget &&) MicrostepBudget",
-        "method void (const MicrostepBudget &) MicrostepBudget"
-      ],
-      "name": "SCE::MicrostepBudget"
+      "kind": "enum",
+      "name": "SCE::EventQueue",
+      "values": [
+        "Internal",
+        "External"
+      ]
     },
     {
       "header": "runtime/IExecutionContext.h",
@@ -1541,22 +1537,10 @@
       "name": "SCE::IExecutionContext"
     },
     {
-      "header": "runtime/ImmediateModeGuard.h",
+      "header": "runtime/InterpreterDocument.h",
       "kind": "class",
       "members": [],
-      "name": "SCE::ImmediateModeGuard"
-    },
-    {
-      "header": "runtime/InterpreterEventQueue.h",
-      "kind": "class",
-      "members": [],
-      "name": "SCE::Core::InterpreterEventQueue"
-    },
-    {
-      "header": "runtime/InterpreterEventQueue.h",
-      "kind": "class",
-      "members": [],
-      "name": "SCE::Core::InterpreterInternalEventQueue"
+      "name": "SCE::InterpreterDocument"
     },
     {
       "header": "runtime/InvokeExecutor.h",
@@ -1733,12 +1717,6 @@
         "method void (const std::string &, const std::string &, const std::string &, const std::string &, const std::string &, const std::string &, int64_t) EventSnapshot"
       ],
       "name": "SCE::EventSnapshot"
-    },
-    {
-      "header": "runtime/TransitionDomainCalculator.h",
-      "kind": "class",
-      "members": [],
-      "name": "SCE::TransitionDomainCalculator"
     },
     {
       "header": "runtime/TypeRegistry.h",

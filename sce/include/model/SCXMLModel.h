@@ -141,9 +141,15 @@ public:
 
     /**
      * @brief Get all state nodes
-     * @return State nodes vector
+     * @return Every state and pseudo-state node, each once, in document order
      */
     const std::vector<std::shared_ptr<IStateNode>> &getAllStates() const;
+
+    /**
+     * @brief The `<state>`, `<parallel>` and `<final>` children of `<scxml>`
+     * @return In document order — the order `addState` received them
+     */
+    const std::vector<std::shared_ptr<IStateNode>> &getTopLevelStates() const;
 
     /**
      * @brief Find state node by ID
@@ -241,14 +247,8 @@ private:
     void printStateHierarchy(IStateNode *state, int depth) const;
 
     /**
-     * @brief Collect all states recursively from state hierarchy
-     * @param state Starting state node
-     * @param allStates Vector to store all states
-     */
-    void collectAllStatesRecursively(IStateNode *state, std::vector<std::shared_ptr<IStateNode>> &allStates) const;
-
-    /**
-     * @brief Rebuild all states list (including all nested states from root)
+     * @brief Rebuild all states list: every added state and its subtree,
+     *        pre-order, top-level states first
      */
     void rebuildAllStatesList();
 
@@ -260,6 +260,8 @@ private:
     std::unordered_map<std::string, std::string> contextProperties_;
     std::unordered_map<std::string, std::string> injectPoints_;
     std::vector<std::shared_ptr<IGuardNode>> guards_;
+    std::vector<std::shared_ptr<IStateNode>> addedStates_;     // every addState() argument, in call order
+    std::vector<std::shared_ptr<IStateNode>> topLevelStates_;  // the parentless ones among them
     std::vector<std::shared_ptr<IStateNode>> allStates_;
     std::unordered_map<std::string, IStateNode *> stateIdMap_;
     std::vector<std::shared_ptr<IDataModelItem>> dataModelItems_;
