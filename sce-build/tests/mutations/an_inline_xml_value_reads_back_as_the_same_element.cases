@@ -1,0 +1,205 @@
+# Mutation cases for "an in-line XML value reads back as the element its
+# author wrote".
+#
+# Run with `scripts/mutate sce-build/tests/mutations/an_inline_xml_value_reads_back_as_the_same_element.cases`.
+#
+# The serializer writes an element cut out of its document as text a
+# backend's DOM reader parses at run time. Every clause of it that the
+# oracle cannot see is one the next edit can drop in silence, so each case
+# below takes one clause away:
+#
+# - the escaping, at each call site and at each character a reader would
+#   refuse or fold — a quote ends the value, and a raw tab, line feed or
+#   carriage return comes back as a space or a line feed;
+# - the names as written, which only a reader that does not resolve
+#   prefixes can tell apart from another spelling of the same namespace;
+# - the declarations: the author's own, the rule that tells a declaration
+#   from an inherited binding by BOTH its prefix and its URI, and the
+#   bindings a fragment inherits — declared once, on its root alone, and
+#   only where no element on the way up to the root declares them;
+# - the end tag of an element that holds only whitespace.
+#
+# Two clauses have no case, because no reader the oracle stands for can
+# see them: leaving out the `xml` prefix, which is bound without a
+# declaration, and leaving out a default that names no namespace, which is
+# what a copy starts with. Declaring either changes no name.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test an_inline_xml_value_reads_back_as_the_same_element
+mutation_targets sce-build/src/parser.rs
+
+# ── Escaping ───────────────────────────────────────────────────────
+
+mutation_case "text is written as the reader decoded it again" <<'PY'
+edit("sce-build/src/parser.rs",
+     r'''                result.push_str(&escape_xml_text(child.text().unwrap_or("")));''',
+     r'''                result.push_str(child.text().unwrap_or(""));''')
+PY
+
+mutation_case "an attribute value is written as the reader decoded it again" <<'PY'
+edit("sce-build/src/parser.rs",
+     r'''            escape_xml_attribute(attribute.value())''',
+     r'''            attribute.value()''')
+PY
+
+mutation_case "a quote is written raw inside an attribute value" <<'PY'
+edit("sce-build/src/parser.rs",
+     r'''            '"' => out.push_str("&quot;"),''',
+     r'''            '"' => out.push('"'),''')
+PY
+
+mutation_case "a tab is written raw inside an attribute value" <<'PY'
+edit("sce-build/src/parser.rs",
+     r'''            '\t' => out.push_str("&#x9;"),''',
+     r'''            '\t' => out.push('\t'),''')
+PY
+
+mutation_case "a line feed is written raw inside an attribute value" <<'PY'
+edit("sce-build/src/parser.rs",
+     r'''            '\n' => out.push_str("&#xA;"),
+            '\r' => out.push_str("&#xD;"),''',
+     r'''            '\n' => out.push('\n'),
+            '\r' => out.push_str("&#xD;"),''')
+PY
+
+# Both escapers spell this arm the same way, so the anchor carries the arm
+# before it: the line feed's in the attribute escaper, `>` in the text one.
+mutation_case "a carriage return is written raw inside an attribute value" <<'PY'
+edit("sce-build/src/parser.rs",
+     r'''            '\n' => out.push_str("&#xA;"),
+            '\r' => out.push_str("&#xD;"),''',
+     r'''            '\n' => out.push_str("&#xA;"),
+            '\r' => out.push('\r'),''')
+PY
+
+mutation_case "a carriage return is written raw in text" <<'PY'
+edit("sce-build/src/parser.rs",
+     r'''            '>' => out.push_str("&gt;"),
+            '\r' => out.push_str("&#xD;"),''',
+     r'''            '>' => out.push_str("&gt;"),
+            '\r' => out.push('\r'),''')
+PY
+
+# ── Names as written ───────────────────────────────────────────────
+
+mutation_case "an attribute is written by its local name again" <<'PY'
+edit("sce-build/src/parser.rs",
+     r'''            written_attribute_name(node, &attribute),''',
+     r'''            attribute.name(),''')
+PY
+
+# The spelling a namespace lookup would choose: where the default namespace
+# names the element's own URI, the prefix is dropped. `<ext:hub>` declares
+# that default itself, so a namespace-aware reader resolves both spellings
+# to the same element and only the qualified-name half of the oracle can
+# refuse this.
+mutation_case "an element drops a prefix the default namespace could stand for" <<'PY'
+edit("sce-build/src/parser.rs",
+     r'''    let name = written_element_name(node);
+    let mut result = format!("<{name}");''',
+     r'''    let name = match written_element_name(node).split_once(':') {
+        Some((_, local))
+            if source_binding(node, None) == node.tag_name().namespace().unwrap_or("") =>
+        {
+            local
+        }
+        _ => written_element_name(node),
+    };
+    let mut result = format!("<{name}");''')
+PY
+
+# ── Declarations ───────────────────────────────────────────────────
+
+mutation_case "the author's declarations are dropped again" <<'PY'
+edit("sce-build/src/parser.rs",
+     r'''    for binding in declared_on(node)
+        .into_iter()
+        .chain(inherited.iter().copied())
+    {''',
+     r'''    for binding in inherited.iter().copied() {''')
+PY
+
+mutation_case "a declaration that rebinds an inherited prefix is taken for the inherited one" <<'PY'
+edit("sce-build/src/parser.rs",
+     r'''                    .any(|held| held.name() == binding.name() && held.uri() == binding.uri())''',
+     r'''                    .any(|held| held.name() == binding.name())''')
+PY
+
+mutation_case "a default declaration is taken for a prefix bound to its URI" <<'PY'
+edit("sce-build/src/parser.rs",
+     r'''                    .any(|held| held.name() == binding.name() && held.uri() == binding.uri())''',
+     r'''                    .any(|held| held.uri() == binding.uri())''')
+PY
+
+# Aimed at what the function returns rather than at the push: without the
+# push the list is never mutated, and the tree does not build under
+# `warnings = deny` — a case that cannot build reports INCONCLUSIVE.
+mutation_case "a binding the fragment inherits is left undeclared" <<'PY'
+edit("sce-build/src/parser.rs",
+     r'''            inherited.push(binding);
+        }
+    }
+    inherited
+}''',
+     r'''            inherited.push(binding);
+        }
+    }
+    let _ = inherited;
+    Vec::new()
+}''')
+PY
+
+mutation_case "an inherited binding is declared once for every name that uses it" <<'PY'
+edit("sce-build/src/parser.rs",
+     r'''                || inherited.contains(&binding)
+''',
+     r'''''')
+PY
+
+# A declaration counts only for the names beneath it. `<back>` declares
+# again the binding the value's root inherits, on a branch the root is not
+# under.
+mutation_case "a declaration anywhere in the fragment is taken for one above the name" <<'PY'
+edit("sce-build/src/parser.rs",
+     r'''    for ancestor in element.ancestors() {
+        if declared_on(&ancestor).contains(&binding) {
+            return true;
+        }
+        if ancestor == *root {
+            break;
+        }
+    }
+    false''',
+     r'''    let _ = element;
+    root.descendants()
+        .filter(|node| node.is_element())
+        .any(|node| declared_on(&node).contains(&binding))''')
+PY
+
+mutation_case "the walk up does not stop at the fragment's root" <<'PY'
+edit("sce-build/src/parser.rs",
+     r'''        if ancestor == *root {
+            break;
+        }
+''',
+     r'''        let _ = root;
+''')
+PY
+
+mutation_case "every element repeats the root's inherited declarations" <<'PY'
+edit("sce-build/src/parser.rs",
+     r'''                result.push_str(&serialize_node_inner(&child, &[], c14n));''',
+     r'''                result.push_str(&serialize_node_inner(&child, inherited, c14n));''')
+PY
+
+# ── Content ────────────────────────────────────────────────────────
+
+mutation_case "an element holding only whitespace closes itself again" <<'PY'
+edit("sce-build/src/parser.rs",
+     r'''    let has_content = node.children().any(|c| c.is_element() || c.is_text());''',
+     r'''    let has_content = node
+        .children()
+        .any(|c| c.is_element() || (c.is_text() && !c.text().unwrap_or("").trim().is_empty()));''')
+PY

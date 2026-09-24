@@ -5618,10 +5618,18 @@ pub fn validate_on_sample_link_references(
     Ok(())
 }
 
-/// XML node serialization matching Python lxml etree.tostring(method='xml').
-/// Includes namespace declarations and uses self-closing for empty elements.
+/// `node` as XML text that reads back as the element its author wrote.
+///
+/// Every element is written with the name and the attributes its author
+/// gave it — prefixes as written, values escaped — and with the namespace
+/// declarations the author wrote on it. `node` itself also declares the
+/// bindings its subtree uses but inherits from the document it is cut out
+/// of ([`inherited_bindings`]). A reader that resolves namespaces
+/// therefore reads the same names, and one that does not — the DOM readers
+/// the backends ship, which mirror pugixml's default mode — sees the
+/// author's own spellings. An element with no content closes itself.
 fn serialize_node(node: &roxmltree::Node) -> String {
-    serialize_node_inner(node, None, false)
+    serialize_node_inner(node, &inherited_bindings(node), false)
 }
 
 /// The in-line data value an element's children specify.
@@ -5679,53 +5687,254 @@ fn character_data(node: &roxmltree::Node) -> String {
         .collect()
 }
 
-/// XML node serialization matching Python lxml etree.tostring(method='c14n').
-/// Always uses explicit close tags (never self-closing).
+/// [`serialize_node`], closing every element with an explicit end tag — the
+/// canonical-XML convention, which `<data>` and `<assign>` both take.
 fn serialize_node_c14n(node: &roxmltree::Node) -> String {
-    serialize_node_inner(node, None, true)
+    serialize_node_inner(node, &inherited_bindings(node), true)
 }
 
-fn serialize_node_inner(node: &roxmltree::Node, parent_ns: Option<&str>, c14n: bool) -> String {
-    if !node.is_element() {
-        return node.text().unwrap_or("").to_string();
-    }
-    let tag = node.tag_name().name();
-    let mut result = format!("<{tag}");
+/// A namespace binding as `(prefix, URI)`; the prefix `None` is the default
+/// namespace, and the URI `""` names no namespace.
+type Binding<'a> = (Option<&'a str>, &'a str);
 
-    // Include namespace declaration only if it differs from parent
-    let my_ns = node.tag_name().namespace();
-    if my_ns != parent_ns {
-        if let Some(ns) = my_ns {
-            result.push_str(&format!(" xmlns=\"{ns}\""));
-        } else if parent_ns.is_some() {
-            result.push_str(" xmlns=\"\"");
+/// The bindings `root`'s subtree uses and inherits from the document around
+/// it — what a copy of the subtree has to declare on `root` to mean what it
+/// meant in place.
+///
+/// A name uses the binding its prefix resolves to where it is written: an
+/// element's name, which takes the default namespace when it has no prefix,
+/// and a prefixed attribute's. The binding is inherited when no element
+/// from the name's own up to `root` declares it, so every one resolves to
+/// what `root` has in scope and none binds a prefix twice. The `xml` prefix
+/// is bound everywhere without a declaration, and a default naming no
+/// namespace is what a copy starts with, so neither is listed.
+///
+/// One rule for every place a fragment leaves its document, listed in the
+/// order the names first use them. The C++ interpreter's serializer
+/// declares the inherited default namespace on a fragment's root the same
+/// way.
+fn inherited_bindings<'a>(root: &roxmltree::Node<'a, '_>) -> Vec<Binding<'a>> {
+    let mut inherited: Vec<Binding<'a>> = Vec::new();
+    for element in root.descendants().filter(|node| node.is_element()) {
+        for prefix in prefixes_used(&element) {
+            if prefix == Some(XML_PREFIX) {
+                continue;
+            }
+            let binding = (prefix, source_binding(&element, prefix));
+            if binding == (None, "")
+                || inherited.contains(&binding)
+                || declared_between(&element, root, binding)
+            {
+                continue;
+            }
+            inherited.push(binding);
         }
     }
+    inherited
+}
 
-    for attr in node.attributes() {
-        result.push_str(&format!(" {}=\"{}\"", attr.name(), attr.value()));
+/// The prefix of every name written on `element` that a binding resolves:
+/// its own — `None` when it takes the default namespace — and each prefixed
+/// attribute's.
+fn prefixes_used<'i>(element: &roxmltree::Node<'_, 'i>) -> Vec<Option<&'i str>> {
+    std::iter::once(prefix_of(written_element_name(element)))
+        .chain(
+            element
+                .attributes()
+                .filter_map(|attribute| prefix_of(written_attribute_name(element, &attribute)))
+                .map(Some),
+        )
+        .collect()
+}
+
+/// Whether an element from `element` up to `root`, both included, declares
+/// `binding`.
+fn declared_between(
+    element: &roxmltree::Node<'_, '_>,
+    root: &roxmltree::Node<'_, '_>,
+    binding: Binding<'_>,
+) -> bool {
+    for ancestor in element.ancestors() {
+        if declared_on(&ancestor).contains(&binding) {
+            return true;
+        }
+        if ancestor == *root {
+            break;
+        }
+    }
+    false
+}
+
+/// The namespace `prefix` names where `node` stands in the source — the
+/// empty string where it names none.
+fn source_binding<'a>(node: &roxmltree::Node<'a, '_>, prefix: Option<&str>) -> &'a str {
+    node.namespaces()
+        .find(|binding| binding.name() == prefix)
+        .map_or("", |binding| binding.uri())
+}
+
+/// The bindings the author declared on `node` itself — `(None, "")` for an
+/// `xmlns=""` — in the reader's order.
+///
+/// The reader does not keep declarations as attributes; it keeps the
+/// bindings in scope at each element, so a declaration is a binding the
+/// parent did not have. One that repeats its parent's binding exactly is
+/// therefore not seen, and not written — it changes no name a
+/// namespace-aware reader resolves.
+fn declared_on<'a>(node: &roxmltree::Node<'a, '_>) -> Vec<Binding<'a>> {
+    let parent = node.parent_element();
+    node.namespaces()
+        .filter(|binding| binding.name() != Some(XML_PREFIX))
+        .filter(|binding| {
+            !parent.is_some_and(|parent| {
+                parent
+                    .namespaces()
+                    .any(|held| held.name() == binding.name() && held.uri() == binding.uri())
+            })
+        })
+        .map(|binding| (binding.name(), binding.uri()))
+        .collect()
+}
+
+/// The prefix of a qualified name as written, `None` for an unprefixed one.
+fn prefix_of(qname: &str) -> Option<&str> {
+    qname.split_once(':').map(|(prefix, _)| prefix)
+}
+
+/// The name `node` was written with, prefix included.
+///
+/// Read from the text rather than rebuilt from the namespace: where the
+/// default namespace and a prefix are bound to the same URI, the namespace
+/// cannot say which of the two the author wrote. The reader's ranges index
+/// the input itself, markup an entity supplies included, and an element's
+/// range opens at its `<`.
+fn written_element_name<'i>(node: &roxmltree::Node<'_, 'i>) -> &'i str {
+    let text = node.document().input_text();
+    let start = &text[node.range().start + 1..];
+    let end = start
+        .find(|c: char| c.is_ascii_whitespace() || c == '/' || c == '>')
+        .unwrap_or(start.len());
+    let qname = &start[..end];
+    debug_assert_eq!(
+        qname.rsplit(':').next(),
+        Some(node.tag_name().name()),
+        "an element's range opens at its start tag"
+    );
+    qname
+}
+
+/// The name `attribute` was written with, prefix included — for the reason
+/// [`written_element_name`] gives.
+fn written_attribute_name<'i>(
+    node: &roxmltree::Node<'_, 'i>,
+    attribute: &roxmltree::Attribute<'_, 'i>,
+) -> &'i str {
+    let qname = &node.document().input_text()[attribute.range_qname()];
+    debug_assert_eq!(
+        qname.rsplit(':').next(),
+        Some(attribute.name()),
+        "an attribute's name range covers its qualified name"
+    );
+    qname
+}
+
+/// The prefix bound to `http://www.w3.org/XML/1998/namespace` without a
+/// declaration, and to nothing else (Namespaces in XML 1.0, §3).
+const XML_PREFIX: &str = "xml";
+
+/// `binding` written as the declaration that makes it, with its leading
+/// space.
+fn namespace_declaration((prefix, uri): Binding<'_>) -> String {
+    let uri = escape_xml_attribute(uri);
+    match prefix {
+        Some(prefix) => format!(" xmlns:{prefix}=\"{uri}\""),
+        None => format!(" xmlns=\"{uri}\""),
+    }
+}
+
+/// ⚠ Until 2026-09-24 this wrote attribute values and text as the reader had
+/// DECODED them, so `kind="x&quot;y"` came out `kind="x"y"` and `1 &lt; 2`
+/// came out `1 < 2` — text no XML reader accepts, which the generated
+/// machine handed to its DOM reader at run time. It wrote every name as its
+/// local part, so `xml:lang` lost its namespace and `<ext:item>` became
+/// `<item xmlns="…">` — another name to the backends' DOM readers, which do
+/// not resolve prefixes — and it dropped the declarations an author wrote
+/// inside the fragment. Outside canonical form it also closed an element
+/// that held only whitespace on itself, and the whitespace was gone.
+///
+/// `inherited` is what the element declares beyond its author's own: the
+/// fragment root's [`inherited_bindings`], and nothing below it.
+fn serialize_node_inner(node: &roxmltree::Node, inherited: &[Binding<'_>], c14n: bool) -> String {
+    if !node.is_element() {
+        return escape_xml_text(node.text().unwrap_or(""));
+    }
+    let name = written_element_name(node);
+    let mut result = format!("<{name}");
+    for binding in declared_on(node)
+        .into_iter()
+        .chain(inherited.iter().copied())
+    {
+        result.push_str(&namespace_declaration(binding));
+    }
+    for attribute in node.attributes() {
+        result.push_str(&format!(
+            " {}=\"{}\"",
+            written_attribute_name(node, &attribute),
+            escape_xml_attribute(attribute.value())
+        ));
     }
 
-    // Check if element has any meaningful children (elements or non-empty text)
-    let has_children = node
-        .children()
-        .any(|c| c.is_element() || (c.is_text() && !c.text().unwrap_or("").trim().is_empty()));
-
-    if !has_children && !c14n {
-        // Self-closing tag for empty elements (matches lxml method='xml')
+    let has_content = node.children().any(|c| c.is_element() || c.is_text());
+    if !has_content && !c14n {
         result.push_str("/>");
     } else {
         result.push('>');
         for child in node.children() {
             if child.is_element() {
-                result.push_str(&serialize_node_inner(&child, my_ns, c14n));
+                result.push_str(&serialize_node_inner(&child, &[], c14n));
             } else if child.is_text() {
-                result.push_str(child.text().unwrap_or(""));
+                result.push_str(&escape_xml_text(child.text().unwrap_or("")));
             }
         }
-        result.push_str(&format!("</{tag}>"));
+        result.push_str(&format!("</{name}>"));
     }
     result
+}
+
+/// Character data as canonical XML writes it: `&`, `<` and `>` escaped, and
+/// a carriage return as a reference, since a literal one does not survive
+/// being read back.
+fn escape_xml_text(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '\r' => out.push_str("&#xD;"),
+            ch => out.push(ch),
+        }
+    }
+    out
+}
+
+/// An attribute value as canonical XML writes it between double quotes:
+/// `&`, `<` and `"` escaped, and the whitespace a reader would otherwise
+/// normalise to a space written as references.
+fn escape_xml_attribute(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '"' => out.push_str("&quot;"),
+            '\t' => out.push_str("&#x9;"),
+            '\n' => out.push_str("&#xA;"),
+            '\r' => out.push_str("&#xD;"),
+            ch => out.push(ch),
+        }
+    }
+    out
 }
 
 /// §scxml-5.9.2: Check if expression is pure In() predicate
