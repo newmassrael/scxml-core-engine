@@ -184,6 +184,25 @@ impl<'a> Judge<'a> {
         state: &str,
         value: &str,
     ) -> Located<ForgeError> {
+        self.untyped_at(
+            construct,
+            spelling.map(|s| s.row()),
+            spelling.map(|s| s.col()),
+            state,
+            value,
+        )
+    }
+
+    /// [`Self::untyped`] placed at `line`/`col` — for a construct the model
+    /// records by its element's position rather than by an attribute's.
+    fn untyped_at(
+        &self,
+        construct: String,
+        line: Option<u32>,
+        col: Option<u32>,
+        state: &str,
+        value: &str,
+    ) -> Located<ForgeError> {
         Located::new(
             ScxmlSemanticError::StaticDatamodelRule {
                 construct,
@@ -196,8 +215,8 @@ impl<'a> Judge<'a> {
             }
             .into(),
             self.diag_label,
-            spelling.map(|s| s.row()),
-            spelling.map(|s| s.col()),
+            line,
+            col,
         )
     }
 
@@ -334,13 +353,36 @@ impl<'a> Judge<'a> {
             return Err(self.untyped(format!("{attr}=\"{value}\""), spelling, state, value));
         }
         let base = invoke.base();
-        if !base.idlocation.is_empty() {
-            return Err(self.untyped(
-                format!("idlocation=\"{}\"", base.idlocation),
-                None,
-                state,
-                &base.idlocation,
-            ));
+        let at = base.source_location.as_ref();
+        let (line, col) = (at.and_then(|l| l.line), at.and_then(|l| l.col));
+        // A `namelist` reads datamodel variables by name at entry, and a
+        // mesh-rpc `srcexpr` names its peer by an expression — both are
+        // evaluated as script-engine text.
+        let namelist = match invoke {
+            Invoke::Scxml(info) => info.namelist.as_str(),
+            _ => "",
+        };
+        let srcexpr = match invoke {
+            Invoke::MeshRpc(info) => match &info.target {
+                crate::model::MeshRpcTarget::SrcExpr { srcexpr } => srcexpr.as_str(),
+                _ => "",
+            },
+            _ => "",
+        };
+        for (attr, value) in [
+            ("idlocation", base.idlocation.as_str()),
+            ("namelist", namelist),
+            ("srcexpr", srcexpr),
+        ] {
+            if !value.is_empty() {
+                return Err(self.untyped_at(
+                    format!("{attr}=\"{value}\""),
+                    line,
+                    col,
+                    state,
+                    value,
+                ));
+            }
         }
         for param in &base.params {
             if !param.expr.trim().is_empty() {

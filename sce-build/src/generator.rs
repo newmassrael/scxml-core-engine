@@ -1601,7 +1601,7 @@ fn reject_mesh_rpc_in_unsupported_lang(
 /// Forge-language expressions to Lua or QuickJS — a document evaluated in a
 /// language it never declared, which is what the `datamodel` attribute
 /// exists to prevent.
-const STATIC_DATAMODEL_BACKENDS: &[Language] = &[];
+const STATIC_DATAMODEL_BACKENDS: &[Language] = &[Language::Kotlin];
 
 fn reject_static_datamodel_in_unsupported_lang(
     model: &SCXMLModel,
@@ -1919,6 +1919,13 @@ fn first_silently_folded_cond(model: &SCXMLModel) -> Option<UnlowerableCond> {
 /// Refuse a `cond` no template arm can lower, rather than folding it to
 /// `false` — see [`first_silently_folded_cond`].
 fn reject_silently_folded_conds(model: &SCXMLModel) -> Result<(), GenerateError> {
+    // A `sce-static` condition reaches the native arm by construction: a
+    // backend that lowers the model rewrites every one into it
+    // (`crate::forge::static_lowering`), and one that does not refused the
+    // document before this runs (`reject_static_datamodel_in_unsupported_lang`).
+    if model.datamodel == crate::model::Datamodel::SceStatic {
+        return Ok(());
+    }
     let Some((cond, site, at)) = first_silently_folded_cond(model) else {
         return Ok(());
     };
@@ -2909,8 +2916,18 @@ fn render_kotlin(
         &native_machine_name,
         Language::Kotlin,
     );
-    let payload =
-        crate::forge::generator::build_kotlin_event_payload(model, &native.payload_events);
+    // SCE Accepted Subset §2.15: a `sce-static` machine's expressions are
+    // lowered to native Kotlin on this clone, into the slots the templates
+    // already render natively; its variables come back as field
+    // declarations. The statechart carries no enum imports into its unit, so
+    // the scope names none.
+    let static_lowering = crate::forge::static_lowering::lower_kotlin(&mut model_lowered, &[])?;
+    let payload_events: std::collections::BTreeSet<String> = native
+        .payload_events
+        .union(&static_lowering.payload_events)
+        .cloned()
+        .collect();
+    let payload = crate::forge::generator::build_kotlin_event_payload(model, &payload_events);
     crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
     let model = &model_lowered;
 
@@ -2990,6 +3007,7 @@ fn render_kotlin(
         event_payload_policy_fields => &payload.policy_fields,
         event_payload_populate => &payload.populate,
         event_payload_inject => &payload.inject_methods,
+        static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
         has_native_actions => native.any,
         native_actions_defs => &native.interface_def,
         native_actions_interface => &native.interface_name,

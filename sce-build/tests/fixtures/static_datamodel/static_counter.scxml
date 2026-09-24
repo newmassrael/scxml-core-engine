@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  datamodel="sce-static" (docs/SCE_ACCEPTED_SUBSET.md §2.15): a counter whose
+  variables are native fields of the generated machine and whose every
+  expression — a guard reading a variable and In(), an <assign>, an <if> /
+  <elseif> pair, a <log> — is lowered to native code with no script engine.
+
+  Kotlin compile+run gate: scripts/regen_static_datamodel_kotlin.sh commits
+  the generated machine, and StaticDatamodelTest.kt drives it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="counting" datamodel="sce-static" name="static_counter">
+  <datamodel>
+    <data id="count" sce:type="uint32" expr="0"/>
+    <data id="ready" sce:type="bool" expr="false"/>
+  </datamodel>
+  <state id="counting">
+    <onentry><log label="count" expr="count"/></onentry>
+    <transition event="tick" cond="count &lt; 10 &amp;&amp; In('counting')" type="internal">
+      <assign location="count" expr="count + 1"/>
+      <if cond="count === 5">
+        <assign location="ready" expr="true"/>
+      <elseif cond="count &gt; 7"/>
+        <assign location="ready" expr="false"/>
+      </if>
+    </transition>
+    <transition event="go" cond="ready" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>

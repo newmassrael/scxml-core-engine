@@ -144,8 +144,16 @@ fn classify_variables(model: &mut SCXMLModel) {
 ///
 /// A `json` declaration additionally needs a name the reader can pronounce —
 /// see [`reachable_as_an_expression`].
+///
+/// Empty under `datamodel="sce-static"`: an accessor reads the value a script
+/// engine holds, and that model has no engine — its variables are fields of
+/// the generated machine, read directly (docs/SCE_ACCEPTED_SUBSET.md §2.15).
 fn readable_variables(model: &SCXMLModel) -> Vec<Variable> {
     const TYPED: [&str; 4] = ["int", "string", "bool", "json"];
+
+    if model.datamodel == crate::model::Datamodel::SceStatic {
+        return Vec::new();
+    }
 
     let declarations = model
         .variables

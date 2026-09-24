@@ -1,0 +1,169 @@
+// SCE-GENERATED — DO NOT EDIT
+// source-hash: 6c62d792c25e612ff8d9db26e945af6dafe44ea8c8faef2e29d8c921027a28a5
+
+// GENERATED CODE — DO NOT EDIT
+// Source: sce-build/tests/fixtures/static_datamodel/static_counter.scxml
+// Generator: SCE Kotlin Code Generator v1.0
+// SCE-MAP: static_counter.scxml:11 :: _machine
+
+package com.sce.integration.static_counter
+
+import com.sce.runtime.*
+
+
+// --- States (W3C SCXML 3.2) ---
+
+sealed interface StaticCounterState : State {
+    data object Counting : StaticCounterState
+    data object Done : StaticCounterState
+}
+
+// --- Events (W3C SCXML 3.12.1) ---
+
+sealed interface StaticCounterEvent : Event {
+    data object Go : StaticCounterEvent
+    data object Tick : StaticCounterEvent
+}
+// --- State Machine (W3C SCXML) ---
+
+class StaticCounterStateMachine(
+) : StateMachineEngine<StaticCounterState, StaticCounterEvent>() {
+
+    // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
+    /** W3C SCXML 5.2: the `count` datamodel variable. */
+    var count: UInt = 0.toUInt()
+        private set
+    /** W3C SCXML 5.2: the `ready` datamodel variable. */
+    var ready: Boolean = false
+        private set
+
+    override val initialState: StaticCounterState = StaticCounterState.Counting
+
+    // W3C SCXML 6.2: which entry point a host must drive this machine with in
+    // the synchronous mode. The same verdict the generate manifest publishes
+    // as `needs_event_scheduler`.
+    override val needsEventScheduler: Boolean = false
+
+
+
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): StaticCounterState? = when (stateId) {
+        "counting" -> StaticCounterState.Counting
+        "done" -> StaticCounterState.Done
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: StaticCounterState): String = when (state) {
+        is StaticCounterState.Counting -> "counting"
+        is StaticCounterState.Done -> "done"
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: StaticCounterState): Boolean = when (state) {
+        else -> true
+    }
+
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: StaticCounterState): Int = when (state) {
+        is StaticCounterState.Counting -> 0
+        is StaticCounterState.Done -> 1
+    }
+
+
+
+
+
+    // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
+    override fun processEvent(
+        state: StaticCounterState,
+        event: StaticCounterEvent
+    ): TransitionResult<StaticCounterState> = when (state) {
+        is StaticCounterState.Counting -> processCounting(event)
+        else -> TransitionResult.Ignored
+    }
+
+
+    // --- Per-State Event Handlers ---
+
+    private fun processCounting(
+        event: StaticCounterEvent
+    ): TransitionResult<StaticCounterState> = when {
+        event is StaticCounterEvent.Tick && count < 10.toUInt() && isStateActive("counting") -> TransitionResult.Internal(0)
+        event is StaticCounterEvent.Go && ready -> TransitionResult.External(StaticCounterState.Done, StaticCounterState.Counting, 1)
+
+        else -> TransitionResult.Ignored
+    }
+
+
+
+    // Entry Actions (W3C SCXML 3.8)
+    // SCE-MAP: static_counter.scxml:11 :: _machine
+    override fun onEntry(state: StaticCounterState, pathChild: StaticCounterState?) {
+        when (state) {
+            is StaticCounterState.Counting -> {
+                // SCE-MAP: static_counter.scxml:17 :: counting :: _state_body
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("counting")) return
+
+            println("count: " + count)
+            }
+            is StaticCounterState.Done -> {
+                // SCE-MAP: static_counter.scxml:29 :: done :: _state_body
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("done")) return
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+            }
+        }
+    }
+
+    // Exit Actions (W3C SCXML 3.9)
+    // SCE-MAP: static_counter.scxml:11 :: _machine
+    override fun onExit(state: StaticCounterState) {
+        when (state) {
+            is StaticCounterState.Counting -> {
+                // SCE-MAP: static_counter.scxml:17 :: counting :: _state_body
+                activeStateIds.remove("counting")
+            }
+            is StaticCounterState.Done -> {
+                // SCE-MAP: static_counter.scxml:29 :: done :: _state_body
+                activeStateIds.remove("done")
+            }
+        }
+    }
+
+
+    // Transition Actions (W3C SCXML 3.13)
+    // SCE-MAP: static_counter.scxml:11 :: _machine
+    override fun executeTransitionActions(
+        source: StaticCounterState,
+        event: StaticCounterEvent?,
+        transitionIndex: Int
+    ) {
+        when (source) {
+        is StaticCounterState.Counting -> when (transitionIndex) {
+            0 -> {
+                // SCE-MAP: static_counter.scxml:19 :: counting :: _transition_0
+
+
+            count = count + 1.toUInt()
+
+
+            if (count == 5.toUInt()) {
+
+
+            ready = true
+            } else if (count > 7.toUInt()) {
+
+
+            ready = false
+            }
+            }
+            else -> {}
+        }
+        else -> {}
+        }
+    }
+}

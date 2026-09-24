@@ -232,7 +232,7 @@ fn every_backend_that_does_not_lower_the_model_refuses_to_generate_it() {
         "sce-static",
         r#"<data id="count" sce:type="uint32" expr="0"/>"#,
     );
-    for lang in ["rust", "cpp", "c11", "kotlin", "go", "python"] {
+    for lang in ["rust", "cpp", "c11", "go", "python"] {
         let (ok, out) = run(&["check", "-l", lang], &document);
         assert!(
             !ok,
@@ -245,6 +245,29 @@ fn every_backend_that_does_not_lower_the_model_refuses_to_generate_it() {
              the data model:\n{out}"
         );
     }
+}
+
+#[test]
+fn kotlin_lowers_the_model_with_no_script_engine() {
+    // Kotlin holds the variables as fields and lowers every expression
+    // natively, so the machine it generates carries no engine — the manifest
+    // says so, and the Kotlin integration suite (StaticDatamodelTest.kt)
+    // compiles and drives the committed machine.
+    let (ok, out) = run(
+        &["check", "-l", "kotlin"],
+        &machine(
+            r#"<state id="s">
+    <transition event="tick" cond="count &lt; 10 &amp;&amp; In('s')" type="internal">
+      <assign location="count" expr="count + 1"/>
+    </transition>
+  </state>"#,
+        ),
+    );
+    assert!(ok, "Kotlin lowers sce-static:\n{out}");
+    assert!(
+        out.contains("\"needs_script_engine\":false"),
+        "a sce-static machine needs no script engine:\n{out}"
+    );
 }
 
 // ── Every expression judged against the typed scope ─────────────────────

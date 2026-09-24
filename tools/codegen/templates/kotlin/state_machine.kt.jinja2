@@ -68,6 +68,19 @@ class {{ machine_name }}StateMachine(
 {% else %}
 ) : StateMachineEngine<{{ machine_name }}State, {{ machine_name }}Event>() {
 {% endif %}
+{% if static_fields %}
+
+    // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
+{# Under `sce-static` this class IS the datamodel's home: there is no engine,
+   and every expression was lowered to Kotlin reading and writing these fields
+   (`crate::forge::static_lowering`). The host reads them; only the machine's
+   own `<assign>` writes them. #}
+{% for field in static_fields %}
+    /** W3C SCXML 5.2: the `{{ field.id }}` datamodel variable. */
+    var {{ field.name }}: {{ field.ty }} = {{ field.init }}
+        private set
+{% endfor %}
+{% endif %}
 {# W3C SCXML 5.3: the datamodel has ONE home, and it is not this class.
 
    A `<data>` that carries an initialiser is owned by the script engine for the

@@ -769,6 +769,19 @@ impl Action {
         blocks.push(&mut self.else_actions);
         blocks
     }
+
+    /// Each `<elseif>` branch of this `<if>`, for a pass that rewrites how a
+    /// branch's CONDITION lowers — a backend's native lowering of a typed
+    /// data model (docs/SCE_ACCEPTED_SUBSET.md §2.15).
+    ///
+    /// Here beside [`Self::nested_blocks_mut`] for the reason that one is: a
+    /// branch's condition is not a block, so the block accessors cannot hand
+    /// it out, and a caller reaching for the field itself would be the second
+    /// definition of what lies inside an action those accessors exist to
+    /// prevent.
+    pub fn branch_conditions_mut(&mut self) -> impl Iterator<Item = &mut ElseIfBranch> {
+        self.elseif_branches.iter_mut()
+    }
 }
 
 /// §scxml-6.2.4: Send parameter

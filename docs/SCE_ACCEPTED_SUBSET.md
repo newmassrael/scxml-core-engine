@@ -2373,6 +2373,17 @@ forge-language expressions in Lua or QuickJS — a language the document
 never declared. Which backends lower it is `STATIC_DATAMODEL_BACKENDS` in
 `sce-build/src/generator.rs`.
 
+Kotlin lowers it (`crate::forge::static_lowering`): each variable is a field
+of the generated machine (`var <name>: <type> = <init>`, readable by the
+host, written only by the machine), and each expression is lowered through
+the forge expression lowerer into the slot the Kotlin templates already
+render as native code — a condition as a native guard (`In(id)` as the
+machine's active-state test), an `<assign>` or `<log>` value as the text the
+engine-free arm pastes. A condition that reads the triggering event's typed
+payload takes the payload channel's own null guard. The generated machine
+carries no script engine. An enum-typed variable is refused for Kotlin until
+a statechart imports its enum into the generated unit.
+
 ### Cross-kind typed binding (NL→IR Mapping Roadmap Item 2)
 
 When a forge expression reads an imported kind's member via

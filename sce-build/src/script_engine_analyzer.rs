@@ -126,6 +126,43 @@ pub struct NeedsScriptEngineCause {
     pub location: Option<SourceLocation>,
 }
 
+impl ScriptEngineCauseKind {
+    /// Whether this cause sits on an expression `datamodel="sce-static"`
+    /// types (docs/SCE_ACCEPTED_SUBSET.md §2.15). Under that model such an
+    /// expression is lowered as native code, so it costs no engine; every
+    /// other cause either is refused by the model before this runs
+    /// (`crate::forge::static_datamodel`) or needs an engine whatever the
+    /// document declares.
+    ///
+    /// Exhaustive, so a new cause is decided here rather than falling on
+    /// either side by default.
+    pub fn is_typed_under_static(&self) -> bool {
+        use ScriptEngineCauseKind as C;
+        match self {
+            C::DatamodelVariableInit { .. }
+            | C::TransitionGuard { .. }
+            | C::SendParamExpr { .. }
+            | C::IfCondition { .. }
+            | C::ElseIfCondition { .. }
+            | C::AssignAction { .. }
+            | C::LogExpr { .. }
+            | C::DonedataParam { .. } => true,
+            C::GlobalScript
+            | C::UnresolvedExternalScript
+            | C::SendNamelist { .. }
+            | C::SendDynamicAttr { .. }
+            | C::InlineScriptAction { .. }
+            | C::CancelExpr { .. }
+            | C::ForeachAction { .. }
+            | C::HybridInvoke { .. }
+            | C::StaticInvokeNamelist { .. }
+            | C::MeshRpcSrcExpr { .. }
+            | C::DonedataContent { .. }
+            | C::ChildInvokeNeedsScriptEngine { .. } => false,
+        }
+    }
+}
+
 impl NeedsScriptEngineCause {
     fn new(kind: ScriptEngineCauseKind, location: Option<&SourceLocation>) -> Self {
         Self {
@@ -307,6 +344,9 @@ pub fn analyze(model: &SCXMLModel) -> Vec<NeedsScriptEngineCause> {
     collect_global_script_causes(model, &mut causes);
     for (state_id, state) in &model.states {
         collect_state_causes(state_id, state, &model.imported_event_schemas, &mut causes);
+    }
+    if model.datamodel == crate::model::Datamodel::SceStatic {
+        causes.retain(|cause| !cause.kind.is_typed_under_static());
     }
     causes
 }

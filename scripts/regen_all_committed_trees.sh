@@ -90,6 +90,11 @@ scripts/regen_event_schema_native_kotlin.sh
 stage "EventSchema native-lowering Python tree"
 scripts/regen_event_schema_native_python.sh
 
+# datamodel="sce-static" (SCE Accepted Subset §2.15) — Kotlin only, because
+# Kotlin is the backend that lowers the model today; the others refuse it.
+stage "Static datamodel Kotlin tree"
+scripts/regen_static_datamodel_kotlin.sh
+
 # W3C SCXML G.7 `<sce:action>` native host dispatch gate, driven by its own
 # regen script like the EventSchema gates above.
 #
