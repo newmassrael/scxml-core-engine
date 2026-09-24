@@ -17,10 +17,11 @@
 //!
 //! ## Safety invariants
 //!
-//! The engine uses three scoped `unsafe` blocks to split-borrow `self.policy`
-//! from the rest of `self` when dispatching policy methods that take both
-//! `&mut self` (the policy) and `&mut Engine<Self>` (the engine). Each site
-//! is documented with a safety comment. Generated code never writes `unsafe`.
+//! The engine uses one scoped `unsafe` block, in `Engine::with_policy`, to
+//! split-borrow `self.policy` from the rest of `self` when dispatching policy
+//! methods that take both `&mut self` (the policy) and `&mut Engine<Self>`
+//! (the engine). Every dispatch goes through it, so the argument is made once.
+//! Generated code never writes `unsafe`.
 //!
 //! ## Public surface
 //!
@@ -29,7 +30,13 @@
 //! - Event submission: `raise`, `raise_external`, `process_event`
 //! - Delayed events (§scxml-6.2): `schedule_event`, `cancel_event`,
 //!   `has_ready_events`, backed by [`PullScheduler`]
-//! - Hierarchical transition: `handle_hierarchical_transition`
+//!
+//! ## The microstep
+//!
+//! W3C SCXML Appendix D's procedures are [`helpers::microstep`](crate::helpers::microstep),
+//! written once for every machine. This engine drives them over its policy
+//! through `EngineHost`, and owns what the appendix leaves to the interpreter:
+//! the main event loop, the queues, and where the machine is.
 //!
 //! HTTP send (§scxml-C-2, `http-send` feature) and `<invoke>` plumbing
 //! (§scxml-6.4) are `!no_std`-gated.
@@ -60,6 +67,9 @@ use crate::event::{EventMetadata, EventType, EventWithMetadata};
 use crate::hal::Hal;
 use crate::helpers::configuration::ConfigurationRejection;
 use crate::helpers::event_queue::EventQueueLike;
+use crate::helpers::microstep::{
+    self, EnabledTransition, EntryTarget, EntryTransition, TransitionSet,
+};
 use crate::helpers::{hierarchy, state_policy_concepts as concepts};
 use crate::sched_send_id::ScheduledSendIdLike;
 // SCE Protocol-Synthesis RFC §synth-5-J-2: the HTTP module is alloc-coupled
@@ -95,9 +105,9 @@ use crate::{sce_log_debug, sce_log_error, SceString};
 /// not say what to do when something *does* match it and that handler fails
 /// too: the failure raises the same error, the same transition answers it, and
 /// the machine has no way out. Nothing in the specification bounds that, so
-/// the number is this engine's to choose, and it is chosen to match
-/// `check_eventless_transitions`' ceiling — the sibling case of a document
-/// that cannot finish a macrostep, decided the same way for the same reason.
+/// the number is this engine's to choose, and it is chosen beside
+/// [`MAX_MACROSTEP_MICROSTEPS`] — the sibling case of a document that cannot
+/// finish a macrostep, decided the same way for the same reason.
 ///
 /// A hundred links is far past any repair strategy a document plausibly
 /// spells (a handler that tries a fallback, then a second one, is three) and
@@ -484,20 +494,19 @@ impl<E: Clone, S: ScheduledSendIdLike> Default for PullScheduler<E, S> {
 
 /// What the engine did with one event it offered to the active configuration.
 ///
-/// This used to be a bare `bool` meaning "the configuration changed", which
-/// answers `false` for two unrelated outcomes: an event no transition matched
-/// at all, and a targetless internal transition that ran its actions in place.
-/// Only the first is the discard the spec's compound-state clause describes —
-/// cited at the dequeue that records it — and a count keyed off the old bool
-/// would have reported a handled event as one, so the two facts are spelled
-/// apart rather than inferred from each other.
+/// Its own type rather than a `bool`, because the obvious bool — "the
+/// configuration changed" — answers `false` for two unrelated outcomes: an
+/// event no transition matched at all, and a microstep of targetless
+/// transitions that ran their content in place. Only the first is the discard
+/// the spec's compound-state clause describes — cited at the dequeue that
+/// records it — and a count keyed off that bool would report a handled event
+/// as one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum EventOutcome {
     /// No transition matched the event in any active state, so it is discarded.
     Discarded,
-    /// A transition was selected. `configuration_changed` is `false` for a
-    /// targetless internal transition, which leaves the configuration alone.
-    Taken { configuration_changed: bool },
+    /// A transition was selected and its microstep taken.
+    Taken,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -663,13 +672,11 @@ pub struct Engine<P: StatePolicy> {
     /// Whether the macrostep now in progress has already been stopped at
     /// [`MAX_MACROSTEP_MICROSTEPS`].
     ///
-    /// The drain is reached twice per macrostep — once from
-    /// [`execute_transition`](Self::execute_transition) and once from
-    /// §scxml-D-mainEventLoop's own loop — so without this the ceiling is not
-    /// a ceiling: each caller gets a fresh budget and the machine takes twice
-    /// the microsteps it was allowed, counting each refusal separately.
-    /// Cleared where the algorithm's main event loop starts a macrostep, which
-    /// is the external dequeue.
+    /// Every host call runs §scxml-D-mainEventLoop again, so without this the
+    /// ceiling is not a ceiling: each call would re-enter the inner loop with
+    /// the chain it just refused, walk it to the budget again, and count each
+    /// refusal separately. Cleared where the algorithm's main event loop starts
+    /// a macrostep, which is the external dequeue.
     pub(crate) macrostep_truncated: bool,
     /// §scxml-5.5 + 6.3.1: Donedata payload evaluated on top-level `<final>`,
     /// lifted onto `done.invoke.<id>._event.data` by the invoking parent.
@@ -860,108 +867,55 @@ impl<P: StatePolicy> Engine<P> {
     // ════════════════════════════════════════
     // Internal split-borrow helper
     //
-    // The generated `Policy::execute_entry_actions(state, engine)` and similar
-    // methods need mutable access to the policy AND mutable access to the
-    // engine at the same time. Rust's borrow checker cannot verify this is
-    // safe because both handles point into `self`. We use a scoped raw pointer
-    // cast to split the borrows; this is safe because the policy field does
-    // not alias any other engine field during the scoped call.
+    // The generated `Policy::execute_entry_actions(state, engine, ..)` and
+    // every other hook need mutable access to the policy AND mutable access to
+    // the engine at the same time. Rust's borrow checker cannot verify this is
+    // safe because both handles point into `self`. One helper splits the
+    // borrows, so the argument for it is made in one place.
     //
     // This pattern is equivalent to C++ `policy_.executeEntryActions(state, *this)`
-    // where the compiler has no aliasing restriction at all. In Rust, we
-    // document the invariant and scope the unsafe block to three sites.
+    // where the compiler has no aliasing restriction at all.
     // ════════════════════════════════════════
 
-    /// Execute the policy's `execute_entry_actions` with split-borrowed `self`.
+    /// Run `f` with the policy and the engine borrowed apart — the one route
+    /// by which this engine calls a policy method that takes the engine.
     ///
     /// # Safety
     ///
-    /// This function dereferences a raw pointer to `self.policy` while
-    /// simultaneously passing `&mut self` to the policy method. This is sound
-    /// because:
-    /// 1. The policy method only mutates fields within the policy struct via
-    ///    the `&mut self` receiver.
-    /// 2. The engine fields accessed via the `engine: &mut Engine<P>` parameter
-    ///    do NOT overlap with the policy field (`self.policy` is a distinct
-    ///    struct field with its own memory).
+    /// This dereferences a raw pointer to `self.policy` while simultaneously
+    /// passing `&mut self` to `f`. This is sound because:
+    /// 1. A policy method only mutates fields within the policy struct via its
+    ///    `&mut self` receiver.
+    /// 2. The engine fields it reaches through the `engine: &mut Engine<P>`
+    ///    parameter do NOT overlap with the policy field (`self.policy` is a
+    ///    distinct struct field with its own memory), and the engine exposes no
+    ///    public route back to `policy` for generated code to take.
     /// 3. The pointer is not held beyond the scope of the single call.
-    ///
-    /// The generated code contract (`StatePolicy::execute_entry_actions`) must
-    /// not alias the engine's policy field through `engine.policy` — but this
-    /// is a non-issue because the Engine does not expose `policy` publicly.
-    pub(crate) fn execute_on_entry(&mut self, state: P::State) {
-        self.execute_on_entry_with_path(state, None);
-    }
-
-    /// [`Self::execute_on_entry`] for a state that is only an ANCESTOR of the
-    /// entry target.
-    ///
-    /// `path_child` names the child of `state` the entry set already holds —
-    /// §scxml-D-addAncestorStatesToEnter, which adds such a state without its
-    /// default initial child. See `StatePolicy::execute_entry_actions`.
-    pub(crate) fn execute_on_entry_as_ancestor(&mut self, state: P::State, path_child: P::State) {
-        self.execute_on_entry_with_path(state, Some(path_child));
-    }
-
-    fn execute_on_entry_with_path(&mut self, state: P::State, path_child: Option<P::State>) {
+    fn with_policy<R>(&mut self, f: impl FnOnce(&mut P, &mut Self) -> R) -> R {
         let policy_ptr: *mut P = &mut self.policy as *mut P;
-        // SAFETY: see doc comment above. The policy field and the rest of
-        // Engine's fields are disjoint; the split borrow lasts only for the
-        // duration of the method call.
-        unsafe {
-            (*policy_ptr).execute_entry_actions(state, self, path_child);
-        }
+        // SAFETY: see the doc comment above — the policy field and the rest of
+        // the engine's fields are disjoint, and the split borrow lasts only for
+        // the duration of `f`.
+        unsafe { f(&mut *policy_ptr, self) }
     }
 
-    /// Execute the policy's `execute_exit_actions` with split-borrowed `self`.
+    /// Execute the policy's `execute_exit_actions` for one state.
     ///
-    /// # Safety
-    ///
-    /// See [`Self::execute_on_entry`] for the full safety rationale. The
-    /// `pre_transition_active` slice is borrowed from the caller's stack and
-    /// does not interact with the split borrow.
-    pub(crate) fn execute_on_exit(&mut self, state: P::State, pre_transition_active: &[P::State]) {
-        let policy_ptr: *mut P = &mut self.policy as *mut P;
-        // SAFETY: same as execute_on_entry.
-        unsafe {
-            (*policy_ptr).execute_exit_actions(state, self, pre_transition_active);
-        }
-    }
-
-    /// Execute the policy's `process_transition` with split-borrowed `self`.
-    ///
-    /// # Safety
-    ///
-    /// See [`Self::execute_on_entry`]. The `current_state` parameter is an
-    /// owned local variable on the caller's stack; `process_transition` may
-    /// mutate it through the `&mut P::State` reference without any aliasing
-    /// with engine fields.
-    pub(crate) fn process_transition_dispatch(
+    /// The `configuration_before_exit` slice is borrowed from the caller's
+    /// stack and does not interact with the split borrow.
+    pub(crate) fn execute_on_exit(
         &mut self,
-        current_state: &mut P::State,
-        event: P::Event,
-    ) -> bool {
-        let policy_ptr: *mut P = &mut self.policy as *mut P;
-        // SAFETY: same as execute_on_entry.
-        unsafe { (*policy_ptr).process_transition(current_state, event, self) }
+        state: P::State,
+        configuration_before_exit: &[P::State],
+    ) {
+        self.with_policy(|policy, engine| {
+            policy.execute_exit_actions(state, engine, configuration_before_exit)
+        });
     }
 
-    /// Execute the policy's `execute_transition_actions` with split-borrowed `self`.
-    ///
-    /// # Safety
-    ///
-    /// Same as [`Self::execute_on_entry`].
-    pub(crate) fn execute_transition_actions_dispatch(&mut self) {
-        let policy_ptr: *mut P = &mut self.policy as *mut P;
-        // SAFETY: same as execute_on_entry.
-        unsafe { (*policy_ptr).execute_transition_actions(self) }
-    }
-
-    /// Execute the policy's `initialize_data_model` with split-borrowed `self`.
+    /// Execute the policy's `initialize_data_model`.
     pub(crate) fn initialize_data_model_dispatch(&mut self) {
-        let policy_ptr: *mut P = &mut self.policy as *mut P;
-        // SAFETY: same as execute_on_entry.
-        unsafe { (*policy_ptr).initialize_data_model(self) }
+        self.with_policy(|policy, engine| policy.initialize_data_model(engine));
     }
 
     // ════════════════════════════════════════
@@ -990,13 +944,17 @@ impl<P: StatePolicy> Engine<P> {
             self.initialize_data_model_dispatch();
         }
 
-        // §scxml-3.3: Entry chain from root to initial leaf
-        let entry_chain = hierarchy::build_entry_chain::<P>(self.current_state);
-        for state in entry_chain {
-            self.execute_on_entry(state);
-        }
-        // §scxml-3.3: Resolve current_state to the deepest initial leaf
-        self.resolve_current_state_to_leaf();
+        // §scxml-D-interpret: enterStates([doc.initialTransition]) — the
+        // document's own initial transition, whose source is the `<scxml>`
+        // element, entered by the same procedure every microstep enters by.
+        // It may name several states and a `<history>`, so it is a target
+        // list, not a leaf to walk down to.
+        let initial = [EntryTransition {
+            source: None,
+            targets: P::get_document_initial_targets(),
+            is_internal: false,
+        }];
+        self.enter_states(&initial);
 
         // §scxml-D-mainEventLoop: hand over to the outer loop. The macrostep
         // completes on eventless transitions and internal events, then the
@@ -1043,8 +1001,8 @@ impl<P: StatePolicy> Engine<P> {
     /// [`get_active_states`](Self::get_active_states) and
     /// [`get_current_state`](Self::get_current_state). Handing back both is not
     /// redundancy — for a machine with `<parallel>` states the configuration
-    /// does not determine the current state. `current_state` is the leaf the
-    /// engine descended to through `get_initial_or_history_child`, so which
+    /// does not determine the current state. `current_state` is the atomic
+    /// state under the first target of the last transition taken, so which
     /// region it sits in is a fact about the transition history rather than
     /// about the configuration, and a chain alone cannot recover it. For a
     /// machine without parallel states `current` is the chain's leaf and the
@@ -1269,11 +1227,7 @@ impl<P: StatePolicy> Engine<P> {
 
         // §scxml-6.4: Tick child state machines
         if concepts::has_child_tick::<P>() {
-            let policy_ptr: *mut P = &mut self.policy as *mut P;
-            // SAFETY: see execute_on_entry.
-            unsafe {
-                (*policy_ptr).tick_children(self);
-            }
+            self.with_policy(|policy, engine| policy.tick_children(engine));
         }
 
         // Delegate to step() for the main event loop + completion callback.
@@ -1615,7 +1569,8 @@ impl<P: StatePolicy> Engine<P> {
         self.current_state
     }
 
-    /// §scxml-3.11: Full list of active states (for history recording + In() predicate).
+    /// §scxml-3.11: Full list of active states — the configuration Appendix
+    /// D's procedures read, and what history recording and In() see.
     ///
     /// Non-parallel machines: returns the hierarchy `[leaf, parent, grandparent, ..., root]`.
     /// Parallel machines: returns the union of all active regions via
@@ -1624,14 +1579,14 @@ impl<P: StatePolicy> Engine<P> {
     /// SCE Protocol-Synthesis RFC §synth-5-J-2: returns the bounded
     /// [`StateChain`](crate::helpers::hierarchy::StateChain) which
     /// aliases `Vec<P::State>` under std (ABI-preserving) and
-    /// `heapless::Vec<P::State, MAX_HIERARCHY_DEPTH>` under no_std. The parallel
-    /// branch (`policy.get_active_states()` returning a heap `Vec`) is gated to
-    /// `!no_std` because policy.rs's default impl is itself alloc-coupled (the
-    /// policy.rs port lands in B-γ2d-5). Reuses the existing
-    /// `MAX_HIERARCHY_DEPTH=16` capacity invariant — no new capacity constant
-    /// (D-1 lockin preserved).
+    /// `heapless::Vec<P::State, MAX_HIERARCHY_DEPTH>` under no_std, on BOTH
+    /// branches: the policy's own set is a `StateChain` too. The policy branch
+    /// used to be gated to `!no_std`, from when the policy's set was a heap
+    /// `Vec`. That was harmless while a `<parallel>` machine's microstep read
+    /// the policy's set directly; now that the selection reads THIS, the gate
+    /// would hand an MCU build the ancestor chain of one region, and the other
+    /// regions would never be offered an event.
     pub fn get_active_states(&self) -> hierarchy::StateChain<P::State> {
-        #[cfg(not(feature = "no_std"))]
         if concepts::has_active_states::<P>() {
             return self.policy.get_active_states();
         }
@@ -2531,20 +2486,7 @@ impl<P: StatePolicy> Engine<P> {
         loop {
             // §scxml-D-mainEventLoop: complete the macrostep on eventless
             // transitions and internal events alone.
-            loop {
-                self.check_eventless_transitions();
-                if !self.internal_queue.has_events() {
-                    break;
-                }
-                self.process_internal_queue();
-                if self.macrostep_truncated {
-                    // Either branch may have spent the last of the budget.
-                    // Without this the loop turns forever on a chain that is
-                    // no longer being drained: the queue stays non-empty
-                    // precisely because the drain refused it.
-                    break;
-                }
-            }
+            self.complete_macrostep();
 
             if !self.is_running || self.is_in_final_state() {
                 // §scxml-D-mainEventLoop ends here, and whatever the host put
@@ -2567,11 +2509,7 @@ impl<P: StatePolicy> Engine<P> {
 
             // §scxml-6.4: invokes for states entered during this macrostep.
             if concepts::has_invoke_support::<P>() {
-                let policy_ptr: *mut P = &mut self.policy as *mut P;
-                // SAFETY: see execute_on_entry.
-                unsafe {
-                    (*policy_ptr).execute_pending_invokes(self);
-                }
+                self.with_policy(|policy, engine| policy.execute_pending_invokes(engine));
             }
 
             // §scxml-D-mainEventLoop: invoking may have raised internal error
@@ -2598,115 +2536,155 @@ impl<P: StatePolicy> Engine<P> {
         }
     }
 
-    /// §scxml-C-1: Drain the internal queue (high priority).
+    /// §scxml-D-mainEventLoop's inner loop: take microsteps on eventless
+    /// transitions and internal events until nothing is enabled by NULL and the
+    /// internal queue is empty — the stable configuration a macrostep ends in —
+    /// or until the macrostep's budget is spent.
     ///
-    /// Bounded by the same macrostep budget the eventless branch spends, and
-    /// for the same reason: a `<raise>` answered by a transition that raises
-    /// again is a macrostep that never ends, exactly as a cyclic eventless
-    /// transition is. Until 2026-08-20 this branch had no ceiling in any of the
-    /// seven engines here, so that document did not return at all.
-    pub(crate) fn process_internal_queue(&mut self) {
-        if self.macrostep_truncated {
-            // The eventless branch of this same macrostep already ran out of
-            // budget. Draining now would hand the chain a second one.
-            return;
-        }
-        sce_log_debug!("Engine::process_internal_queue: starting internal queue drain");
+    /// ```text
+    /// while running and not macrostepDone:
+    ///     enabledTransitions = selectEventlessTransitions()
+    ///     if enabledTransitions.isEmpty():
+    ///         if internalQueue.isEmpty():
+    ///             macrostepDone = true
+    ///         else:
+    ///             internalEvent = internalQueue.dequeue()
+    ///             datamodel["_event"] = internalEvent
+    ///             enabledTransitions = selectTransitions(internalEvent)
+    ///     if not enabledTransitions.isEmpty():
+    ///         microstep(enabledTransitions.toList())
+    /// ```
+    ///
+    /// Eventless transitions are selected again after EVERY microstep, whatever
+    /// took it. A targetless transition that only ran content can enable one as
+    /// surely as a transition that entered a state, and the internal event
+    /// queued behind it waits until that has been asked.
+    ///
+    /// One budget for both branches — see [`MAX_MACROSTEP_MICROSTEPS`]. A
+    /// `<raise>` answered by a transition that raises again is a macrostep that
+    /// never ends, exactly as a cyclic eventless transition is; until
+    /// 2026-08-20 the internal branch had no ceiling in any of the seven
+    /// engines here, so that document did not return at all.
+    fn complete_macrostep(&mut self) {
+        // §scxml-D-enterStates sets `running = false` on entering a top-level
+        // `<final>`; this engine keeps `is_running` for the host's `stop()` and
+        // asks the configuration for the other half.
+        while self.is_running && !self.is_in_final_state() && !self.macrostep_truncated {
+            let enabled = self.select_transitions(P::null_event());
+            if !enabled.is_empty() {
+                if self.macrostep_microsteps_taken == MAX_MACROSTEP_MICROSTEPS {
+                    // The chain is still going one microstep past the budget,
+                    // so this is the case the specification calls a macrostep
+                    // that does not terminate. Refuse the microstep rather than
+                    // take it, and publish the refusal: the configuration left
+                    // behind is not a stable one and only the count says so.
+                    self.refuse_macrostep(self.current_state);
+                    return;
+                }
+                self.macrostep_microsteps_taken += 1;
+                self.microstep(&enabled);
+                continue;
+            }
 
-        while self.internal_queue.has_events() {
+            if !self.internal_queue.has_events() {
+                // The queue emptied, so the chain — refused or merely finished —
+                // is over. A machine whose next macrostep starts a new one
+                // starts it from zero, and the count of what was refused stays
+                // where the host reads it.
+                self.error_cascade_depth = 0;
+                return;
+            }
             if self.macrostep_microsteps_taken == MAX_MACROSTEP_MICROSTEPS {
-                // Work is still queued one microstep past the budget, so this
-                // is the case the specification calls a macrostep that does not
-                // terminate. Refuse the microstep rather than take it: the
-                // event stays on the queue, which is where the next macrostep
-                // will find it, and the count says the configuration a host
-                // reads now is not a stable one.
-                self.record_truncated_macrostep(self.current_state);
-                #[cfg(not(feature = "no_macrostep_diagnostics"))]
-                sce_log_error!(
-                    "Engine::process_internal_queue: macrostep still going after {} microsteps; stopped",
-                    MAX_MACROSTEP_MICROSTEPS
-                );
+                // Work is still queued one microstep past the budget. Refuse the
+                // microstep rather than take it: the event stays on the queue,
+                // which is where the next macrostep will find it.
+                self.refuse_macrostep(self.current_state);
                 return;
             }
             let Some(event_with_meta) = self.internal_queue.pop() else {
-                break;
-            };
-            // §scxml-5.4.1: Stop if top-level final state reached. Same
-            // predicate as everything else that means "the machine is done" —
-            // spelling the parent check out a second time here is what let the
-            // public one drift away from it.
-            if self.is_in_final_state() {
-                sce_log_debug!(
-                    "Engine::process_internal_queue: top-level final state reached, stopping"
-                );
                 return;
-            }
-            // §scxml-5.10: Populate policy metadata from event (ports C++ populatePolicyFromMetadata)
-            self.policy
-                .populate_event_metadata(&event_with_meta.metadata);
-            // EventSchema native lowering: bind the typed payload
-            // that rode with this event so `_event.data.<field>` guards read it
-            // natively. No-op for schemaless policies (`Payload = ()`).
-            self.policy.populate_event_payload(&event_with_meta.payload);
-            // …and when no typed payload rode with it, read that view out of
-            // the `data` every other producer fills.
-            #[cfg(not(feature = "no_std"))]
-            self.bind_lifted_payload(event_with_meta.event, &event_with_meta.metadata.data);
-            // §scxml-3.12.2: the processor raises `error.*` into this queue and
-            // the clause says they "are ignored if no transition is found that
-            // matches them". Ignoring them is the clause; staying silent about
-            // it is not. `discarded_external_events` deliberately stops at the
-            // external queue because an unmatched `<raise>` has both ends
-            // inside the document — but the sender of an error event is this
-            // engine, so that reasoning does not reach it. The host never wrote
-            // the document, cannot see the failure in the configuration, and is
-            // the only party able to act on it.
-            //
-            // The selection runs first and unconditionally: it is what
-            // processes every internal event, and making it the right-hand
-            // side of an `&&` would skip it for everything that is not an
-            // error.
-            // An error raised from here on is raised *by an error handler*,
-            // which is the one situation the engine cannot leave to the
-            // document: the handler that failed is the same one that will
-            // answer the failure. The flag is what `raise` reads to tell that
-            // apart from a first failure, and it is cleared before anything
-            // else can run so a chain cannot be attributed to the wrong event.
-            let is_error = crate::helpers::event_matching::is_error_event(P::get_event_name(
-                event_with_meta.event,
-            ));
-            // The chain is not ended by the drain doing something else. An
-            // earlier draft reset the depth on every non-error event, which
-            // reads as the careful choice and is the opposite: a handler that
-            // raises its own event before failing — a document that logs, then
-            // fails, which is most of them — leaves the queue alternating
-            // `tick, error, tick, error…`, and each `tick` put the ceiling
-            // back out of reach. The count needs no such guard, because it
-            // only ever rises while an error handler is running.
-            self.handling_error_event = is_error;
-            let outcome = self.execute_transition(event_with_meta.event);
-            self.handling_error_event = false;
-            if outcome != EventOutcome::Discarded {
-                // Appendix D: the loop turn that selects nothing takes no
-                // microstep, so it spends no budget. Only a turn that answered
-                // the event moved the machine, and only those are what a
-                // ceiling on microsteps can be counted in.
-                self.macrostep_microsteps_taken += 1;
-            }
-            if outcome == EventOutcome::Discarded && is_error {
-                self.unhandled_error_events = self.unhandled_error_events.saturating_add(1);
-                self.last_unhandled_error = Some(event_with_meta.event);
-                sce_log_debug!(
-                    "Engine::process_internal_queue: error event matched no transition; unhandled"
-                );
-            }
-            self.policy.clear_event_metadata();
+            };
+            self.take_internal_event(event_with_meta);
         }
-        // The queue emptied, so the chain — refused or merely finished — is
-        // over. A machine whose next macrostep starts a new one starts it from
-        // zero, and the count of what was refused stays where the host reads it.
-        self.error_cascade_depth = 0;
+    }
+
+    /// Stop the macrostep now in progress at [`MAX_MACROSTEP_MICROSTEPS`], from
+    /// whichever branch of the inner loop found the budget spent, naming
+    /// `stopped_in` — the state the machine is standing in, which is on the
+    /// walk that cannot end, rather than one the refused microstep would have
+    /// entered.
+    fn refuse_macrostep(&mut self, stopped_in: P::State) {
+        self.record_truncated_macrostep(stopped_in);
+        #[cfg(not(feature = "no_macrostep_diagnostics"))]
+        sce_log_error!(
+            "Engine::complete_macrostep: macrostep still going after {} microsteps; stopped",
+            MAX_MACROSTEP_MICROSTEPS
+        );
+    }
+
+    /// §scxml-D-mainEventLoop: bind one event taken off the internal queue as
+    /// `_event`, select, and take the microstep it selects.
+    fn take_internal_event(&mut self, event_with_meta: EventWithMetadata<P::Event, P::Payload>) {
+        // §scxml-5.10: Populate policy metadata from event (ports C++ populatePolicyFromMetadata)
+        self.policy
+            .populate_event_metadata(&event_with_meta.metadata);
+        // EventSchema native lowering: bind the typed payload
+        // that rode with this event so `_event.data.<field>` guards read it
+        // natively. No-op for schemaless policies (`Payload = ()`).
+        self.policy.populate_event_payload(&event_with_meta.payload);
+        // …and when no typed payload rode with it, read that view out of
+        // the `data` every other producer fills.
+        #[cfg(not(feature = "no_std"))]
+        self.bind_lifted_payload(event_with_meta.event, &event_with_meta.metadata.data);
+        // §scxml-3.12.2: the processor raises `error.*` into this queue and
+        // the clause says they "are ignored if no transition is found that
+        // matches them". Ignoring them is the clause; staying silent about
+        // it is not. `discarded_external_events` deliberately stops at the
+        // external queue because an unmatched `<raise>` has both ends
+        // inside the document — but the sender of an error event is this
+        // engine, so that reasoning does not reach it. The host never wrote
+        // the document, cannot see the failure in the configuration, and is
+        // the only party able to act on it.
+        //
+        // The selection runs first and unconditionally: it is what
+        // processes every internal event, and making it the right-hand
+        // side of an `&&` would skip it for everything that is not an
+        // error.
+        // An error raised from here on is raised *by an error handler*,
+        // which is the one situation the engine cannot leave to the
+        // document: the handler that failed is the same one that will
+        // answer the failure. The flag is what `raise` reads to tell that
+        // apart from a first failure, and it is cleared before anything
+        // else can run so a chain cannot be attributed to the wrong event.
+        let is_error = crate::helpers::event_matching::is_error_event(P::get_event_name(
+            event_with_meta.event,
+        ));
+        // The chain is not ended by the drain doing something else. An
+        // earlier draft reset the depth on every non-error event, which
+        // reads as the careful choice and is the opposite: a handler that
+        // raises its own event before failing — a document that logs, then
+        // fails, which is most of them — leaves the queue alternating
+        // `tick, error, tick, error…`, and each `tick` put the ceiling
+        // back out of reach. The count needs no such guard, because it
+        // only ever rises while an error handler is running.
+        self.handling_error_event = is_error;
+        let outcome = self.take_event(event_with_meta.event);
+        self.handling_error_event = false;
+        if outcome == EventOutcome::Taken {
+            // Appendix D: the loop turn that selects nothing takes no
+            // microstep, so it spends no budget. Only a turn that answered
+            // the event moved the machine, and only those are what a
+            // ceiling on microsteps can be counted in.
+            self.macrostep_microsteps_taken += 1;
+        }
+        if outcome == EventOutcome::Discarded && is_error {
+            self.unhandled_error_events = self.unhandled_error_events.saturating_add(1);
+            self.last_unhandled_error = Some(event_with_meta.event);
+            sce_log_debug!(
+                "Engine::take_internal_event: error event matched no transition; unhandled"
+            );
+        }
+        self.policy.clear_event_metadata();
     }
 
     /// §scxml-D-mainEventLoop: take exactly one event off the external queue,
@@ -2738,11 +2716,9 @@ impl<P: StatePolicy> Engine<P> {
         {
             // §scxml-6.5: Execute finalize before parent's own transition matching
             if concepts::has_finalize::<P>() {
-                let policy_ptr: *mut P = &mut self.policy as *mut P;
-                // SAFETY: see execute_on_entry.
-                unsafe {
-                    (*policy_ptr).execute_finalize_for_child_event(&event_with_meta, self);
-                }
+                self.with_policy(|policy, engine| {
+                    policy.execute_finalize_for_child_event(&event_with_meta, engine)
+                });
             }
             // §scxml-D-mainEventLoop: autoforward belongs to the same
             // preliminary step as `<finalize>` above — both run against the
@@ -2770,11 +2746,9 @@ impl<P: StatePolicy> Engine<P> {
             if concepts::has_autoforward::<P>() {
                 let name = P::get_event_name(event_with_meta.event);
                 let metadata = event_with_meta.metadata.clone();
-                let policy_ptr: *mut P = &mut self.policy as *mut P;
-                // SAFETY: see execute_on_entry.
-                unsafe {
-                    (*policy_ptr).forward_to_autoforward_children(name, &metadata, self);
-                }
+                self.with_policy(|policy, engine| {
+                    policy.forward_to_autoforward_children(name, &metadata, engine)
+                });
             }
             // §scxml-5.10: Populate policy metadata from event (ports C++ populatePolicyFromMetadata)
             self.policy
@@ -2796,7 +2770,7 @@ impl<P: StatePolicy> Engine<P> {
             // external queue only: an internal `<raise>` that matches nothing
             // is the document's own business, and both ends of it are in the
             // document.
-            if self.execute_transition(event_with_meta.event) == EventOutcome::Discarded {
+            if self.take_event(event_with_meta.event) == EventOutcome::Discarded {
                 self.discarded_external_events = self.discarded_external_events.saturating_add(1);
                 self.last_discarded_event = Some(event_with_meta.event);
                 sce_log_debug!(
@@ -2835,320 +2809,226 @@ impl<P: StatePolicy> Engine<P> {
         self.macrostep_truncated = true;
     }
 
-    /// §scxml-3.13: Check and execute eventless transitions until stable.
-    ///
-    /// Bounded at [`MAX_MACROSTEP_MICROSTEPS`] microsteps and, when the chain
-    /// is still going at that point, reported through
-    /// [`truncated_macrosteps`](Self::truncated_macrosteps) — the ceiling is a
-    /// departure from a document the specification allows, so it is not a
-    /// silent one. The budget is the macrostep's, not this call's: see
-    /// [`MAX_MACROSTEP_MICROSTEPS`]. Ported from C++
-    /// `EventProcessingAlgorithms.h:98-136`.
-    pub(crate) fn check_eventless_transitions(&mut self) {
-        if self.macrostep_truncated {
-            // This macrostep was already stopped at the ceiling. Re-entering
-            // the drain would hand the same chain a second budget, which is
-            // the runaway the ceiling exists to refuse.
-            return;
-        }
-        let null_event = P::null_event();
-        // Microsteps taken, not loop turns: the turn that finds nothing
-        // enabled is how a macrostep ends, and counting it would spend the
-        // budget on the proof that no budget was needed. The count lives on
-        // the engine because the macrostep does — see
-        // [`Engine::macrostep_microsteps_taken`].
+    // ════════════════════════════════════════
+    // Appendix D over the generated policy
+    //
+    // The policy answers what only the document knows: which of a state's
+    // transitions an event enables, what a transition's content is, what a
+    // state's onentry and onexit do, what a history recorded. What Appendix D
+    // does with those answers is `helpers::microstep`, written once for every
+    // machine; `EngineHost` is how this engine hands it the policy.
+    //
+    // A machine with a `<parallel>` used to take a second microstep written
+    // into its generated code while every other machine took an LCA walk
+    // here. Neither was the appendix's, and they disagreed about eventless
+    // selection (one never looked above the atomic state, the other looked at
+    // every active state without walking), about the order transition content
+    // runs in, about which states a transition to an ancestor exits, and about
+    // how many targets a transition has — both kept only the first.
+    // ════════════════════════════════════════
 
-        loop {
-            let old_state = self.current_state;
-            let pre_transition_states = self.get_active_states();
-            let mut new_state = self.current_state;
-
-            let took_transition = self.process_transition_dispatch(&mut new_state, null_event);
-            if !took_transition {
-                // Nothing is enabled by NULL — the macrostep has
-                // reached the stable configuration the clause describes, and
-                // nothing was refused however long the chain was.
-                break;
-            }
-
-            if self.macrostep_microsteps_taken == MAX_MACROSTEP_MICROSTEPS {
-                // The chain is still going one microstep past the budget, so
-                // this is the case the specification calls a macrostep that
-                // does not terminate. Refuse the microstep rather than take it, and
-                // publish the refusal: the configuration left behind is not a
-                // stable one and only this counter says so.
-                self.record_truncated_macrostep(old_state);
-                #[cfg(not(feature = "no_macrostep_diagnostics"))]
-                sce_log_error!(
-                    "Engine::check_eventless_transitions: macrostep still going after {} microsteps; stopped",
-                    MAX_MACROSTEP_MICROSTEPS
-                );
-                break;
-            }
-            self.macrostep_microsteps_taken += 1;
-
-            self.current_state = new_state;
-            let needs_hierarchical =
-                (old_state != new_state) || (!self.policy.last_transition_is_targetless());
-
-            if !needs_hierarchical {
-                // Targetless transition -- execute actions only
-                self.execute_transition_actions_dispatch();
-                continue;
-            }
-
-            // Hierarchical exit/entry
-            // For parallel state machines, `process_transition` already performed a full
-            // microstep (exit/transition-actions/entry) via `execute_microstep` in the
-            // policy. Calling `handle_hierarchical_transition` again would double-run
-            // onexit/onentry (see `execute_transition` for the full explanation).
-            if !P::HAS_PARALLEL_STATES {
-                self.handle_hierarchical_transition(old_state, new_state, &pre_transition_states);
-            } else {
-                self.resolve_current_state_to_leaf();
-            }
-
-            // Check for final state
-            if self.is_in_final_state() {
-                break;
-            }
-        }
+    /// Appendix D's selectTransitions, or its selectEventlessTransitions for
+    /// the null event: the optimal enabled transition set, in selection order.
+    fn select_transitions(&mut self, event: P::Event) -> TransitionSet<P::State, P::History> {
+        // §scxml-5.10: the event whose transitions are about to be selected is
+        // the `_event` their guards read — bound before the first guard runs.
+        self.with_policy(|policy, engine| policy.bind_current_event(event, engine));
+        microstep::select_transitions(&mut EngineHost { engine: self }, event)
     }
 
-    /// §scxml-3.12 / §scxml-3.13: Dispatch a single transition.
-    ///
-    /// Calls `process_transition` on the policy; if it returns `true`, performs
-    /// the hierarchical exit/entry dance via `handle_hierarchical_transition`.
-    pub(crate) fn execute_transition(&mut self, event: P::Event) -> EventOutcome {
-        let old_state = self.current_state;
-        let pre_transition_states = self.get_active_states();
-        let mut new_state = self.current_state;
+    /// Appendix D's microstep: exit, run the transitions' content, enter.
+    fn microstep(&mut self, transitions: &[EnabledTransition<P::State, P::History>]) {
+        let entry = microstep::microstep(&mut EngineHost { engine: self }, transitions);
+        let targets = transitions.iter().map(|t| t.targets);
+        self.settle_current_state(targets, &entry.states_to_enter);
+    }
 
-        let took_transition = self.process_transition_dispatch(&mut new_state, event);
-        if !took_transition {
+    /// Appendix D's enterStates — for the document's initial transition, the
+    /// whole of §scxml-D-interpret's entry into the initial configuration.
+    fn enter_states(&mut self, transitions: &[EntryTransition<P::State, P::History>]) {
+        let entry = microstep::enter_states(&mut EngineHost { engine: self }, transitions);
+        let targets = transitions.iter().map(|t| t.targets);
+        self.settle_current_state(targets, &entry.states_to_enter);
+    }
+
+    /// Offer one event to the configuration and take the microstep it
+    /// selects.
+    fn take_event(&mut self, event: P::Event) -> EventOutcome {
+        let enabled = self.select_transitions(event);
+        if enabled.is_empty() {
             return EventOutcome::Discarded;
         }
-
-        self.current_state = new_state;
-        let is_self_transition = old_state == new_state;
-        let needs_hierarchical = (old_state != new_state)
-            || (is_self_transition && !self.policy.last_transition_is_targetless());
-
-        if !needs_hierarchical {
-            // §scxml-3.4: targetless transition — execute actions only
-            self.execute_transition_actions_dispatch();
-            return EventOutcome::Taken {
-                configuration_changed: false,
-            };
-        }
-
-        // §scxml-3.12: Hierarchical exit/entry
-        //
-        // For parallel state machines the generated `process_transition` already called
-        // `execute_microstep` internally (it handles exit actions, transition actions,
-        // entry actions, and history recording per Appendix D.2). Calling
-        // `handle_hierarchical_transition` again would double-run onexit/onentry actions
-        // and, worse, exit states from `pre_transition_states` that were already restored
-        // (test 504: Var1/Var2/Var3 increment too many times).
-        if !P::HAS_PARALLEL_STATES {
-            self.handle_hierarchical_transition(old_state, new_state, &pre_transition_states);
-        } else {
-            // §scxml-3.3: Still resolve the current_state leaf (execute_microstep
-            // sets current_state = target or parallel parent; the macrostep loop needs
-            // the deepest active atomic state).
-            self.resolve_current_state_to_leaf();
-        }
-        self.check_eventless_transitions();
-        EventOutcome::Taken {
-            configuration_changed: true,
-        }
+        self.microstep(&enabled);
+        EventOutcome::Taken
     }
 
-    /// §scxml-3.12 / §scxml-3.13: Execute hierarchical exit/entry between two states.
+    /// Point `current_state` at the atomic state the last transition brought
+    /// the machine into.
     ///
-    /// 1:1 port of C++ `StaticExecutionEngine::handleHierarchicalTransition`
-    /// (`StaticExecutionEngine.h:151-299`). Handles:
-    /// - Internal vs external transition LCA calculation (W3C 5.9.2)
-    /// - Active descendant exit before source exit (W3C 3.13)
-    /// - Exit chain to LCA
-    /// - Ancestor/self transition target re-entry (W3C 3.10, test 579)
-    /// - Transition action execution between exit and entry
-    /// - Entry chain from LCA to new state
-    /// - No-LCA top-level case
-    pub(crate) fn handle_hierarchical_transition(
+    /// Without a `<parallel>` the configuration is one chain and the entry set
+    /// ends on its atomic state. With one, `current_state` is the first state
+    /// the last targeted transition names, dereferenced, then down through the
+    /// configuration to an atomic state — the answer every backend gives. A
+    /// microstep of targetless transitions entered nothing and moves nothing.
+    ///
+    /// `targets` are the target lists as written, in selection order — the
+    /// microstep's enabled set, or the initial transition.
+    fn settle_current_state<'t>(
         &mut self,
-        old_state: P::State,
-        new_state: P::State,
-        pre_transition_states: &[P::State],
+        targets: impl DoubleEndedIterator<Item = &'t [EntryTarget<P::State, P::History>]>,
+        entered: &[P::State],
     ) {
-        sce_log_debug!(
-            "Engine::handle_hierarchical_transition: {:?} -> {:?}",
-            old_state,
-            new_state
-        );
-
-        // §scxml-5.9.2: Determine LCA based on transition type
-        let lca: Option<P::State> = if self.policy.last_transition_is_internal() {
-            let is_self_transition = old_state == new_state;
-            let is_proper_descendant =
-                !is_self_transition && P::is_descendant_of(new_state, old_state);
-            let is_source_compound = P::is_compound_state(old_state);
-
-            if is_proper_descendant && is_source_compound {
-                // §scxml-3.13: Internal to proper descendant in compound — source is LCA
-                Some(old_state)
-            } else {
-                // W3C 3.13/5.9.2: Non-compound source or non-descendant — behaves as external
-                hierarchy::find_lca::<P>(old_state, new_state)
-            }
-        } else {
-            hierarchy::find_lca::<P>(old_state, new_state)
+        let Some(&deepest) = entered.last() else {
+            return;
         };
-
-        if let Some(lca_state) = lca {
-            // §scxml-3.13: Exit active descendants of old_state deepest first.
-            // Build via the cfg-branched StateChain so the no_std heapless variant
-            // is bounded by MAX_HIERARCHY_DEPTH (the active states slice is itself
-            // a depth-bounded chain — descendants_to_exit ⊆ pre_transition_states).
-            let mut descendants_to_exit: hierarchy::StateChain<P::State> = hierarchy::new_chain();
-            for &s in pre_transition_states.iter() {
-                if s != old_state && P::is_descendant_of(s, old_state) {
-                    hierarchy::push_chain(&mut descendants_to_exit, s);
-                }
+        if !P::HAS_PARALLEL_STATES {
+            self.current_state = deepest;
+            return;
+        }
+        for written in targets.rev() {
+            let effective =
+                microstep::effective_target_states(&EngineHost { engine: self }, written);
+            if let Some(&first) = effective.first() {
+                self.current_state = first;
+                self.resolve_current_state_to_leaf();
+                return;
             }
-            // Sort by document order descending (deeper first). Use
-            // `sort_unstable_by` (in `core::slice`, no alloc) rather than
-            // `sort_by` (alloc-coupled): document-order values are distinct
-            // by construction so stability is irrelevant, and the unstable
-            // variant compiles under both std and `--features=no_std`.
-            descendants_to_exit
-                .sort_unstable_by(|a, b| P::get_document_order(*b).cmp(&P::get_document_order(*a)));
-
-            for descendant in descendants_to_exit {
-                sce_log_debug!(
-                    "handle_hierarchical_transition: exit descendant {:?}",
-                    descendant
-                );
-                self.execute_on_exit(descendant, pre_transition_states);
-            }
-
-            // §scxml-3.13: Exit from old_state up to (not including) LCA
-            let exit_chain = hierarchy::build_exit_chain::<P>(old_state, lca_state);
-            for state in exit_chain {
-                sce_log_debug!("handle_hierarchical_transition: exit {:?}", state);
-                self.execute_on_exit(state, pre_transition_states);
-            }
-
-            // §scxml-3.10 (test 579): Ancestor/self transition — exit and re-enter target
-            let is_target_active = pre_transition_states.contains(&new_state);
-            if new_state == lca_state && is_target_active {
-                sce_log_debug!(
-                    "handle_hierarchical_transition: ancestor/self transition — exit target {:?}",
-                    new_state
-                );
-                self.execute_on_exit(new_state, pre_transition_states);
-            }
-
-            // §scxml-3.13: Execute transition actions between exit and entry
-            self.execute_transition_actions_dispatch();
-
-            // §scxml-3.13: Enter from LCA down to new_state. Uses StateChain
-            // so the no_std heapless variant is bounded by MAX_HIERARCHY_DEPTH —
-            // same depth invariant as `build_entry_chain_from_ancestor` itself.
-            let entry_chain: hierarchy::StateChain<P::State> = if new_state == lca_state {
-                // Ancestor/self case — enter full subtree from target.
-                let full = hierarchy::build_entry_chain::<P>(new_state);
-                let mut filtered: hierarchy::StateChain<P::State> = hierarchy::new_chain();
-                for s in full.into_iter() {
-                    if s == lca_state || P::is_descendant_of(s, lca_state) {
-                        hierarchy::push_chain(&mut filtered, s);
-                    }
-                }
-                filtered
-            } else {
-                hierarchy::build_entry_chain_from_ancestor::<P>(new_state, lca_state)
-            };
-
-            // §scxml-D-addAncestorStatesToEnter: everything but the last link
-            // is an ancestor of the target, and an ancestor is entered WITHOUT
-            // its default initial child — the entry set already holds the next
-            // link. Only the target itself takes defaults.
-            for (i, state) in entry_chain.iter().enumerate() {
-                sce_log_debug!("handle_hierarchical_transition: enter {:?}", state);
-                match entry_chain.get(i + 1) {
-                    Some(&next) => self.execute_on_entry_as_ancestor(*state, next),
-                    None => self.execute_on_entry(*state),
-                }
-            }
-
-            if let Some(&last) = entry_chain.last() {
-                self.current_state = last;
-            }
-
-            // §scxml-3.3: Resolve current_state to the deepest initial leaf.
-            // execute_entry_actions for compound states recursively enters initial
-            // children, but current_state must track the deepest leaf for
-            // eventless transition checks to work correctly.
-            self.resolve_current_state_to_leaf();
-        } else {
-            // No LCA — top-level transition, exit all ancestors of old_state
-            sce_log_debug!("handle_hierarchical_transition: no LCA (top-level)");
-
-            let mut current = Some(old_state);
-            while let Some(state) = current {
-                sce_log_debug!("handle_hierarchical_transition: exit to root: {:?}", state);
-                self.execute_on_exit(state, pre_transition_states);
-                current = P::get_parent(state);
-            }
-
-            self.execute_transition_actions_dispatch();
-
-            let entry_chain = hierarchy::build_entry_chain::<P>(new_state);
-            // §scxml-D-addAncestorStatesToEnter, as above: only the last link
-            // is the target, and only the target takes defaults.
-            for (i, state) in entry_chain.iter().enumerate() {
-                sce_log_debug!(
-                    "handle_hierarchical_transition: enter from root: {:?}",
-                    state
-                );
-                match entry_chain.get(i + 1) {
-                    Some(&next) => self.execute_on_entry_as_ancestor(*state, next),
-                    None => self.execute_on_entry(*state),
-                }
-            }
-
-            if let Some(&last) = entry_chain.last() {
-                self.current_state = last;
-            }
-
-            self.resolve_current_state_to_leaf();
         }
     }
 
-    /// §scxml-3.3: Walk current_state down through initial children to the leaf.
+    /// Settle `current_state` on an atomic state.
     ///
-    /// For **non-parallel** SMs the generated `execute_entry_actions` does NOT recurse
-    /// into compound→initial child (the engine's entry chain already covers ancestors).
-    /// This method descends into the compound's initial child, calling `execute_on_entry`
-    /// for each level, until it reaches an atomic leaf.
+    /// A transition may target a compound state, or a `<parallel>`, and
+    /// [`get_current_state`](Self::get_current_state) must still name the
+    /// atomic state the machine is *in* rather than one it is *within*.
     ///
-    /// For **parallel** SMs the generated `execute_entry_actions` already recurses (matching
-    /// C++ `executeEntryActions` L319-343), so this is just a pointer walk without entry.
+    /// The descent reads the CONFIGURATION rather than recomputing initial or
+    /// history children: the configuration is what the microstep actually
+    /// entered, so a descent through it cannot disagree with what happened.
+    /// Under a `<parallel>` it takes the first region in document order, so the
+    /// answer does not depend on the order states happened to become active.
     fn resolve_current_state_to_leaf(&mut self) {
-        const MAX_DEPTH: usize = 50;
-        for _ in 0..MAX_DEPTH {
-            if !P::is_compound_state(self.current_state) {
-                break;
+        let active = self.get_active_states();
+        // A region holds one atomic state, so this descends once per level; the
+        // bound is the configuration's own, so a parent chain that loops is
+        // reported rather than walked forever.
+        for _ in 0..hierarchy::MAX_HIERARCHY_DEPTH {
+            if !P::is_compound_state(self.current_state)
+                && !P::is_parallel_state(self.current_state)
+            {
+                return;
             }
-            let child = self.policy.get_initial_or_history_child(self.current_state);
-            if child == self.current_state {
-                break; // No child to descend into
-            }
+            // A compound state with no active child is not a configuration this
+            // can repair, so it is left as it is rather than guessed at.
+            let Some(&child) = P::get_child_states(self.current_state)
+                .iter()
+                .find(|child| active.contains(child))
+            else {
+                return;
+            };
             self.current_state = child;
-            if !P::HAS_PARALLEL_STATES {
-                // Non-parallel: template doesn't recurse, so we enter here.
-                self.execute_on_entry(child);
-            }
         }
+        sce_log_error!(
+            "Engine::resolve_current_state_to_leaf: exceeded {} descents from a compound state — \
+             the parent chain does not terminate",
+            hierarchy::MAX_HIERARCHY_DEPTH
+        );
+    }
+}
+
+/// This engine as [`helpers::microstep`](crate::helpers::microstep) reads it —
+/// that module's traits state what each member answers.
+///
+/// The document is the policy's static tables; the history values and the
+/// configuration are run-time state, which is why this holds the engine. Every
+/// hook is dispatched through [`Engine::with_policy`].
+struct EngineHost<'e, P: StatePolicy> {
+    engine: &'e mut Engine<P>,
+}
+
+impl<P: StatePolicy> microstep::Document for EngineHost<'_, P> {
+    type State = P::State;
+    type History = P::History;
+
+    fn parent_of(&self, state: P::State) -> Option<P::State> {
+        P::get_parent(state)
+    }
+
+    fn is_compound(&self, state: P::State) -> bool {
+        P::is_compound_state(state)
+    }
+
+    fn is_parallel(&self, state: P::State) -> bool {
+        P::is_parallel_state(state)
+    }
+
+    fn is_final(&self, state: P::State) -> bool {
+        P::is_final_state(state)
+    }
+
+    fn child_states(&self, state: P::State) -> &'static [P::State] {
+        P::get_child_states(state)
+    }
+
+    fn initial_targets(&self, state: P::State) -> &'static [EntryTarget<P::State, P::History>] {
+        P::get_initial_targets(state)
+    }
+
+    fn history_parent(&self, history: P::History) -> P::State {
+        P::get_history_parent(history)
+    }
+
+    fn history_value(&self, history: P::History) -> Option<&[P::State]> {
+        self.engine.policy.history_value(history)
+    }
+
+    fn history_default_targets(
+        &self,
+        history: P::History,
+    ) -> &'static [EntryTarget<P::State, P::History>] {
+        P::get_history_default_targets(history)
+    }
+
+    fn document_order(&self, state: P::State) -> u32 {
+        P::get_document_order(state)
+    }
+}
+
+impl<P: StatePolicy> microstep::Run for EngineHost<'_, P> {
+    type Event = P::Event;
+
+    fn configuration(&self) -> hierarchy::StateChain<P::State> {
+        self.engine.get_active_states()
+    }
+
+    fn first_enabled_transition(
+        &mut self,
+        state: P::State,
+        event: P::Event,
+    ) -> Option<EnabledTransition<P::State, P::History>> {
+        self.engine
+            .with_policy(|policy, engine| policy.first_enabled_transition(state, event, engine))
+    }
+
+    fn exit_state(&mut self, state: P::State, configuration_before_exit: &[P::State]) {
+        self.engine
+            .execute_on_exit(state, configuration_before_exit);
+    }
+
+    fn execute_transition_content(&mut self, transition: &EnabledTransition<P::State, P::History>) {
+        let (source, index) = (transition.source, transition.transition_index);
+        self.engine
+            .with_policy(|policy, engine| policy.execute_transition_content(source, index, engine));
+    }
+
+    fn enter_state(&mut self, state: P::State, is_default_entry: bool) {
+        self.engine.with_policy(|policy, engine| {
+            policy.execute_entry_actions(state, engine, is_default_entry)
+        });
+    }
+
+    fn execute_history_default_content(&mut self, history: P::History) {
+        self.engine
+            .with_policy(|policy, engine| policy.execute_history_default_content(history, engine));
     }
 }

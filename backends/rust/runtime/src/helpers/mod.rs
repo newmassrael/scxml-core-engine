@@ -5,16 +5,18 @@
 //!
 //! Ports of the C++ helper headers (`sce/include/core/`,
 //! `sce/include/common/`) that the Rust engine and generated code consume.
-//! All helpers here are pure functions over `P: StatePolicy`, matching the
-//! C++ pattern of template specialization (e.g.,
-//! `HierarchicalStateHelper<StatePolicy>::findLCA(a, b)`).
+//! Most helpers here are pure functions over `P: StatePolicy`, matching the
+//! C++ pattern of template specialization; [`microstep`] is written over its
+//! own `Document` / `Run` traits instead, the way the C++ procedures take a
+//! `Host`.
 //!
-//! The surface is consumed-only by policy: C++ helpers whose algorithms the
-//! Rust AOT generator emits inline on the generated machine (W3C Appendix
-//! D.2 conflict resolution, parallel regions, history, deep state entry) or
-//! whose role lives in generated scripting glue (script-engine guard,
-//! `In()` predicate, `_event.*` object construction) have no Rust module —
-//! the generated machine and the codegen filters are their single home.
+//! W3C SCXML Appendix D's microstep — selection, conflict removal, the exit
+//! and entry sets, history, deep and multi-target entry — is [`microstep`],
+//! written once here and read by the engine for every machine, with the
+//! generated policy supplying only its document's tables and hooks. C++
+//! helpers whose role lives in generated scripting glue (script-engine guard,
+//! `In()` predicate, `_event.*` object construction) have no Rust module — the
+//! generated machine and the codegen filters are their single home.
 //!
 //! ## Module index
 //!
@@ -27,10 +29,12 @@
 //! - [`event_matching`]: W3C 5.9.3 event descriptor matching
 //! - [`event_queue`]: FIFO internal/external queues (`EventQueueManager`)
 //! - [`foreach`]: Foreach iteration (static variant)
-//! - [`hierarchy`]: LCA, entry/exit chain construction (`HierarchicalStateHelper`)
+//! - [`hierarchy`]: the bounded state chain configurations are held in (`StateChain`)
 //! - `invoke_processing` (std-only): §scxml-6.4 invoke processing algorithms
 //! - `io_processors` (std-only): §scxml-C-1-1 `_ioprocessors` descriptors
 //! - [`logger`]: thin `log` crate re-exports (`SCE_LOG_*` macros)
+//! - [`microstep`]: Appendix D's microstep — selection, conflict removal, exit
+//!   set, entry set (`MicrostepAlgorithms` / `EntrySetAlgorithms`)
 //! - [`scxml_constants`]: W3C URIs and string literals
 //! - [`send`]: Send action helpers (static-target subset)
 //! - [`state_policy_concepts`]: Rust trait bounds replacing C++20 concepts
@@ -83,6 +87,10 @@ pub mod invoke_processing;
 #[cfg(not(feature = "no_std"))]
 pub mod io_processors;
 pub mod logger;
+// §scxml-D-microstepProcedure: the appendix's procedures over a document and a
+// running machine the caller supplies. Ungated — every collection it builds is
+// a `StateChain` or a `SceTransitionBuf`, which the no_std profile bounds.
+pub mod microstep;
 pub mod scxml_constants;
 pub mod send;
 pub mod state_policy_concepts;

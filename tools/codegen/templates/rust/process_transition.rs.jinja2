@@ -2,33 +2,65 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
 {#
-    Process Transition Template (Rust Jinja2)
+    Transition Selection Template (Rust Jinja2)
 
-    W3C SCXML 3.12/3.13/Appendix D: Transition processing.
+    What the generated policy knows and the engine does not: which of a
+    state's transitions an event enables, and what each transition's content
+    is. Everything else Appendix D does with a transition — the walk from each
+    atomic state up through its ancestors, the ordered set, conflict removal,
+    the exit set, the entry set — is written once, in
+    `sce_rust_runtime::helpers::microstep`, over the structure
+    state_machine.rs.jinja2 emits.
+
+    It used to be written here as well, in two shapes: machines with a
+    `<parallel>` collected, resolved and ran their own microstep here, while
+    every other machine moved `current_state` here and let the engine walk an
+    LCA. The two disagreed about eventless selection (one never looked above
+    the atomic state, the other looked at every active state without
+    walking), about the order transition content runs in, and about how many
+    targets a transition has — both kept only the first.
 
     Generates:
-    - process_transition(&mut self, current_state, event, engine) -> bool
-    - execute_transition_actions(&mut self, engine)
-    - try_transition_in_state() (helper method in impl block)
+    - bind_current_event(event, engine)             §scxml-5.10 `_event` for the guards
+    - first_enabled_transition(state, event, engine)  the per-state half of selection
+    - execute_transition_content(source, index, engine)
 
-    Ports from C++ process_transition.jinja2.
+    The Rust twin of C++ process_transition.jinja2.
 #}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {%- import '_macros/sce_annotation_marker.jinja2' as annot %}
+{%- import '_macros/rust_entry_target.jinja2' as et %}
 
-    // W3C SCXML 3.13: Evaluate guards and take a matching transition
-    {# SCE Protocol-Synthesis RFC §synth-5-O — function-scope SCE-MAP marker
-       above `process_transition` and `execute_transition_actions`. #}
-    {{ sce_map.source_marker(model.source_location, "rust", symbol_artifact=sce_artifact.machine) }}
-    fn process_transition(
-        &mut self,
-        current_state: &mut Self::State,
-        event: Self::Event,
-        engine: &mut sce_rust_runtime::Engine<Self>,
-    ) -> bool {
-        let mut transition_taken = false;
+{# The guard a transition is taken under, in the one form this machine can
+   evaluate it: a pure In() predicate, a natively lowered typed-payload
+   comparison, the script engine, or a value decided at build time. #}
+{% macro guard_expr(trans) -%}
+{%- if trans.is_pure_in_predicate -%}{{ trans.cond_cpp | replace('this->', '') | replace('isStateActive', 'self.is_state_active') }}
+{%- elif trans.native_payload_guard -%}{{ trans.native_payload_guard }}
+{%- elif model.needs_script_engine -%}self.safe_evaluate_guard("{{ trans.cond | to_lua_guard | escape_rust }}", engine)
+{%- else -%}{{ 'true' if trans.cond_constant else 'false' }}
+{%- endif -%}
+{%- endmacro %}
+
+{# Whether `trans` answers `event`: an eventless transition only an eventless
+   selection, a transition with an event descriptor only a named event —
+   §scxml-3.13 selects the two kinds in separate passes. #}
+{% macro event_match(trans) -%}
+{%- if not trans.event -%}event == {{ machine_name }}Event::Null
+{%- elif trans.needs_string_matching -%}event != {{ machine_name }}Event::Null && sce_rust_runtime::helpers::event_matching::matches_event_descriptor(Self::get_event_name(event), "{{ trans.event }}")
+{%- elif trans.matching_enum_values | length > 0 -%}{% for ev in trans.matching_enum_values %}event == {{ machine_name }}Event::{{ ev | to_event_variant }}{{ ' || ' if not loop.last }}{% endfor %}
+{%- else -%}false
+{%- endif -%}
+{%- endmacro %}
 
 {% if model.needs_script_engine %}
+    // §scxml-5.10: the event whose transitions are about to be selected is the
+    // `_event` their guards read — bound before the first guard runs, and not
+    // for an eventless selection, which has no event of its own.
+    {# SCE Protocol-Synthesis RFC §synth-5-O — function-scope SCE-MAP marker
+       above each function this template emits. #}
+    {{ sce_map.source_marker(model.source_location, "rust", symbol_artifact=sce_artifact.machine) }}
+    fn bind_current_event(&mut self, event: Self::Event, engine: &mut sce_rust_runtime::Engine<Self>) {
         // W3C SCXML 5.10: Ensure script engine and set _event for guard evaluation
         self.ensure_script_engine();
 {% if model.needs_event_name %}
@@ -92,149 +124,74 @@
             );
             engine.note_payload_reading(event, payload_reading);
         }
-{% endif %}
-{% if model.has_parallel_states or model.uses_in_predicate %}
-        // W3C SCXML 5.9.2: Update shared In() active state snapshot
-        if let Some(ref shared) = self.in_predicate_states {
-            let mut states = shared.lock().unwrap();
-            states.clear();
-            states.extend(self.active_states.iter().map(|&s| Self::get_state_name(s).to_string()));
-        }
-{% endif %}
-{% endif %}
-
-{% if model.has_parallel_states %}
-        // W3C SCXML 3.4 + 3.12 + Appendix D: Parallel state transition handling
-        if event == Self::null_event() {
-            // W3C SCXML Appendix D: Eventless transitions - collect then execute
-            let mut enabled_transitions: TransitionList = TransitionList::new();
-            let mut states_to_check = self.active_states.clone();
-
-            // Sort by document order for consistent processing
-            ::sce_rust_runtime::stable_sort_by_key(&mut states_to_check, |&s| Self::get_document_order(s));
-
-            for active_state in &states_to_check {
-                // W3C SCXML 3.13: Eventless transitions do NOT bubble to parent states
-                self.try_transition_in_state(*active_state, event, current_state, &mut transition_taken, engine, Some(&mut enabled_transitions));
-            }
-
-            // Appendix D removeConflictingTransitions: Remove conflicting transitions
-            if !enabled_transitions.is_empty() {
-                enabled_transitions = self.remove_conflicting_transitions(&enabled_transitions);
-            }
-
-            // W3C SCXML Appendix D Steps 2-5: Execute as atomic microstep
-            if !enabled_transitions.is_empty() {
-                self.execute_microstep(&enabled_transitions, current_state, &mut transition_taken, engine);
-            }
-        } else {
-            // W3C SCXML Appendix D: External events - collect then execute
-            let mut enabled_transitions: TransitionList = TransitionList::new();
-
-            for &active_state in &self.active_states.clone() {
-                let is_non_atomic = Self::is_compound_state(active_state) || Self::is_parallel_state(active_state);
-
-                // W3C SCXML 3.13: Check if this is a done.state event
-                let event_name = Self::get_event_name(event);
-                let is_done_state_event = event != Self::null_event() && event_name.starts_with("done.state.");
-
-                // Skip non-atomic states UNLESS processing done.state event
-                if is_non_atomic && !is_done_state_event {
-                    continue;
-                }
-
-                // W3C SCXML 3.12: Hierarchical event bubbling
-                let mut check_state = active_state;
-                loop {
-                    let found = self.try_transition_in_state(check_state, event, current_state, &mut transition_taken, engine, Some(&mut enabled_transitions));
-                    if found {
-                        break;
-                    }
-                    match Self::get_parent(check_state) {
-                        Some(parent) => check_state = parent,
-                        None => break,
-                    }
-                }
-            }
-
-            // W3C SCXML 3.13: Deduplicate transitions collected from multiple descendants
-            // of the same ancestor (e.g., both parallel regions bubble up to the same parent
-            // transition; test 504). Preserves first-match document order.
-            // The runtime owns the std-vs-heapless set choice through the
-            // profile-resolving `SceDedupSet` alias + `dedup_insert` helper
-            // (single source of truth, like `SceString` / `StateChain`), so this
-            // one emission compiles on both runtime profiles: a `HashSet` under
-            // std, a capacity-bounded `heapless::FnvIndexSet` under no_std
-            // (`MAX_MICROSTEP_DEDUP_SLOTS`). `dedup_insert` fails loud on no_std
-            // overflow rather than silently dropping transitions — that would
-            // violate Appendix D microstepProcedure semantics.
-            let mut seen: ::sce_rust_runtime::SceDedupSet<({{ machine_name }}State, usize)> =
-                ::sce_rust_runtime::SceDedupSet::new();
-            enabled_transitions
-                .retain(|t| ::sce_rust_runtime::dedup_insert(&mut seen, (t.source, t.transition_index)));
-
-            // Appendix D removeConflictingTransitions: Remove conflicting transitions
-            if !enabled_transitions.is_empty() {
-                enabled_transitions = self.remove_conflicting_transitions(&enabled_transitions);
-            }
-
-            // W3C SCXML Appendix D Steps 2-5: Execute as atomic microstep
-            if !enabled_transitions.is_empty() {
-                self.execute_microstep(&enabled_transitions, current_state, &mut transition_taken, engine);
-            }
-        }
-{% elif model.has_hierarchy %}
-        // W3C SCXML 3.12: Hierarchical event processing (innermost to outermost)
-        let mut check_state = *current_state;
-
-        loop {
-            let found = self.try_transition_in_state(check_state, event, current_state, &mut transition_taken, engine);
-
-            if found {
-                break;
-            }
-
-            // W3C SCXML 3.13: Eventless transitions do NOT bubble to parent states
-            if event == Self::null_event() {
-                break;
-            }
-
-            // W3C SCXML 3.12: Move to parent state for hierarchical event bubbling
-            match Self::get_parent(check_state) {
-                Some(parent) => check_state = parent,
-                None => break,
-            }
-        }
 {% else %}
-        // Flat state machine: no hierarchy, direct transition check
-        self.try_transition_in_state(*current_state, event, current_state, &mut transition_taken, engine);
+        let _ = (event, engine);
 {% endif %}
-
-        transition_taken
     }
 
-    // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
+{% endif %}
+    // Appendix D selectTransitions, the half only this document can answer:
+    // the first of `state`'s own transitions, in document order, that `event`
+    // enables. The engine walks the atomic states and their ancestors and
+    // keeps the ordered set. `Event::Null` asks for eventless transitions.
     {{ sce_map.source_marker(model.source_location, "rust", symbol_artifact=sce_artifact.machine) }}
-    fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
-{% if model.has_transition_actions %}
-        if !self.has_transition_actions {
-            return;
-        }
-
-        // Switch on source state, then transition index
-        match self.last_transition_source_state {
+    fn first_enabled_transition(
+        &mut self,
+        state: Self::State,
+        event: Self::Event,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+    ) -> Option<::sce_rust_runtime::EnabledTransition<Self::State, Self::History>> {
+        match state {
 {% for state_id, state in model.states | dictsort %}
 {% if state.transitions %}
+            {{ machine_name }}State::{{ state_id | to_state_variant }} => {
+{% for trans in state.transitions %}
+                if {{ event_match(trans) }} {
+{% if trans.cond %}
+                    if {{ guard_expr(trans) }} {
+{% else %}
+                    {
+{% endif %}
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: {{ et.entry_targets(trans.targets, model.history_states, machine_name) }},
+                            transition_index: {{ trans.transition_index }},
+                            has_actions: {{ 'true' if trans.actions else 'false' }},
+                            is_internal: {{ 'true' if trans.type == 'internal' else 'false' }},
+                        });
+                    }
+                }
+{% endfor %}
+                None
+            }
+{% endif %}
+{% endfor %}
+            _ => None,
+        }
+    }
+
+    // W3C SCXML 3.13: a transition's executable content, run by the engine
+    // between the microstep's exits and its entries.
+    {{ sce_map.source_marker(model.source_location, "rust", symbol_artifact=sce_artifact.machine) }}
+    fn execute_transition_content(
+        &mut self,
+        source: Self::State,
+        transition_index: usize,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
+{% if model.has_transition_actions %}
+        match source {
+{% for state_id, state in model.states | dictsort %}
 {% if state.transitions | selectattr("actions") | list %}
             {{ machine_name }}State::{{ state_id | to_state_variant }} => {
-                match self.last_transition_index {
+                match transition_index {
 {% for trans in state.transitions %}
 {% if trans.actions %}
-                    {{ loop.index0 }} => {  {{- annot.annotation_comment(trans, "rust", "                        ") }}
+                    {{ trans.transition_index }} => {  {{- annot.annotation_comment(trans, "rust", "                        ") }}
 {% if trans.source_location %}
                         {{ sce_map.source_marker(trans.source_location, "rust", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
 {% endif %}
-                        // W3C SCXML 3.13: Transition {{ loop.index0 }} actions
+                        // W3C SCXML 3.13: Transition {{ trans.transition_index }} actions
 {% for action in trans.actions %}
 {%- if action.req or action.unresolved %}
 {{ annot.annotation_block(action, "rust", "                        ") -}}
@@ -249,15 +206,11 @@
                 }
             }
 {% endif %}
-{% endif %}
 {% endfor %}
             _ => {}
         }
-
-        // Reset flags after execution
-        self.has_transition_actions = false;
 {% else %}
-        // W3C SCXML 3.13: No transition actions in this state machine
-        let _ = engine;
+        // W3C SCXML 3.13: no transition in this document has content.
+        let _ = (source, transition_index, engine);
 {% endif %}
     }

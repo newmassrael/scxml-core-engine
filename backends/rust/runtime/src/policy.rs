@@ -14,14 +14,25 @@
 //! compile-time polymorphism. Rust uses generics with trait bounds to achieve the
 //! same effect. Generated code becomes fully monomorphized — no dynamic dispatch.
 //!
+//! ## What the policy answers, and what it does not
+//!
+//! The policy answers what only the document knows: its structure, which of a
+//! state's transitions an event enables, what a transition's content is, what a
+//! state's onentry and onexit do, what a history recorded. What W3C SCXML
+//! Appendix D does with those answers — which transitions an event selects,
+//! which survive preemption, which states a microstep exits and enters and in
+//! which order — is [`helpers::microstep`](crate::helpers::microstep), written
+//! once for every machine. It reads a policy as a [`Document`] (see
+//! [`PolicyDocument`]), and the engine hands it the rest.
+//!
 //! ## Static vs Instance Methods
 //!
-//! - **Static methods** (`initial_state()`, `is_final_state()`, etc.) mirror C++
-//!   `constexpr static` methods. They encode compile-time SCXML document structure
-//!   (state hierarchy, parent map, document order).
-//! - **Instance methods** (`execute_entry_actions()`, `process_transition()`, etc.)
-//!   mirror C++ non-static policy methods. They hold mutable datamodel state and
-//!   read/write through `&mut self`.
+//! - **Static methods** (`is_final_state()`, `get_child_states()`, etc.) mirror
+//!   C++ `constexpr static` methods. They encode compile-time SCXML document
+//!   structure (state hierarchy, initial and history targets, document order).
+//! - **Instance methods** (`execute_entry_actions()`,
+//!   `first_enabled_transition()`, etc.) mirror C++ non-static policy methods.
+//!   They hold mutable datamodel state and read/write through `&mut self`.
 //!
 //! ## Optional Features
 //!
@@ -39,20 +50,13 @@ use crate::event::{EventMetadata, EventWithMetadata};
 use crate::hal::Hal;
 use crate::helpers::event_queue::EventQueueLike;
 use crate::helpers::hierarchy::{self, StateChain};
+use crate::helpers::microstep::{Document, EnabledTransition, EntryTarget};
 use crate::Engine;
 
 /// The contract that generated state machine policies must satisfy.
 ///
 /// Ports the C++ `StatePolicy` concept from `sce/include/core/StatePolicyConcepts.h`.
 /// Generated code produces one struct implementing `StatePolicy` per SCXML source file.
-///
-/// ## Required Members (via accessors)
-///
-/// The C++ version uses `static_assert(requires(p) { p.lastTransitionIsInternal_ })` to
-/// enforce member presence. Rust uses accessor methods: [`last_transition_is_internal`](StatePolicy::last_transition_is_internal),
-/// [`last_transition_is_targetless`](StatePolicy::last_transition_is_targetless),
-/// [`last_transition_source_state`](StatePolicy::last_transition_source_state). Generated
-/// code emits these as trivial getters over struct fields.
 pub trait StatePolicy: Sized + 'static {
     // ──────────────────────────────────────────────
     // Associated types (C++ `using State = ...; using Event = ...;`)
@@ -66,6 +70,16 @@ pub trait StatePolicy: Sized + 'static {
 
     /// Event enum type generated per SCXML document (§scxml-3.12).
     type Event: Copy + Eq + Hash + Debug + 'static;
+
+    /// `<history>` enum type generated per SCXML document (§scxml-3.10), or
+    /// [`NoHistory`](crate::helpers::microstep::NoHistory) for a document that
+    /// declares none.
+    ///
+    /// A history is not a state — it is never in a configuration — so it is not
+    /// a variant of [`State`](StatePolicy::State): target lists name one as an
+    /// [`EntryTarget::History`], and the entry procedures dereference it to what
+    /// it recorded or to its default.
+    type History: Copy + Eq + Debug + 'static;
 
     /// Typed event payload for EventSchema native lowering.
     ///
@@ -216,7 +230,12 @@ pub trait StatePolicy: Sized + 'static {
     // because the data is baked into the generated source.
     // ──────────────────────────────────────────────
 
-    /// The initial state of the root `<scxml>` element (§scxml-3.2).
+    /// The state the engine names before [`Engine::initialize`] enters the
+    /// initial configuration, and the state enum's `Default` (§scxml-3.2).
+    ///
+    /// Not what `initialize` enters: that is the document's initial transition,
+    /// [`get_document_initial_targets`](StatePolicy::get_document_initial_targets),
+    /// which may name several states and a `<history>`.
     fn initial_state() -> Self::State;
 
     /// Whether `state` is a `<final>` state (§scxml-3.7).
@@ -225,7 +244,10 @@ pub trait StatePolicy: Sized + 'static {
     /// The parent of `state` in the document hierarchy, or `None` if it's a root child.
     fn get_parent(state: Self::State) -> Option<Self::State>;
 
-    /// Whether `state` is a compound state (has children, §scxml-3.3).
+    /// Whether `state` is a compound state: a `<state>` with child states
+    /// (§scxml-3.3). A `<parallel>` answers `false` — this is Appendix D's
+    /// `isCompoundState`, and it decides which ancestors can be a transition's
+    /// domain.
     fn is_compound_state(state: Self::State) -> bool;
 
     /// Whether `state` is a `<parallel>` state (§scxml-3.4).
@@ -235,21 +257,35 @@ pub trait StatePolicy: Sized + 'static {
         false
     }
 
-    /// The child regions of a parallel `state` (§scxml-3.4).
-    ///
-    /// Only meaningful when `HAS_PARALLEL_STATES` is `true`; the default returns an empty slice.
-    fn get_parallel_regions(_state: Self::State) -> &'static [Self::State] {
-        &[]
-    }
+    /// §scxml-D-getChildStates: `state`'s `<state>`, `<parallel>` and `<final>`
+    /// children, in document order — for a `<parallel>`, its regions.
+    fn get_child_states(state: Self::State) -> &'static [Self::State];
 
-    /// Whether `desc` is a (proper or improper) descendant of `anc` in the hierarchy.
-    ///
-    /// Used by §scxml-3.12 LCA calculation and W3C 3.13 internal transition detection.
-    fn is_descendant_of(desc: Self::State, anc: Self::State) -> bool;
+    /// §scxml-3.3: a compound state's initial transition target, as written —
+    /// one entry per token of `initial` or of the `<initial>` element's
+    /// transition, or the first child state when the document names none.
+    /// Empty for every state that is not compound.
+    fn get_initial_targets(
+        state: Self::State,
+    ) -> &'static [EntryTarget<Self::State, Self::History>];
+
+    /// §scxml-3.2: the target of the document's own initial transition, as
+    /// written — what [`Engine::initialize`] enters, from the `<scxml>`
+    /// element.
+    fn get_document_initial_targets() -> &'static [EntryTarget<Self::State, Self::History>];
+
+    /// §scxml-3.10: the state a `<history>` is declared in.
+    fn get_history_parent(history: Self::History) -> Self::State;
+
+    /// §scxml-3.10.2: a `<history>`'s default transition target, as written —
+    /// its default stored state configuration.
+    fn get_history_default_targets(
+        history: Self::History,
+    ) -> &'static [EntryTarget<Self::State, Self::History>];
 
     /// Document order index of `state` (W3C SCXML Appendix D).
     ///
-    /// Used for deterministic exit ordering and optimal transition set selection.
+    /// Document order is also entry order, and its reverse is exit order.
     fn get_document_order(state: Self::State) -> u32;
 
     /// Human-readable name of `event` (e.g., `"error.execution"`, `"done.state.s1"`).
@@ -285,8 +321,7 @@ pub trait StatePolicy: Sized + 'static {
     /// [`Engine::enter_at`](crate::Engine::enter_at) takes a
     /// [`StateChain`] of `Self::State`. (Bare label: `StateChain` is imported
     /// above, so an explicit target is redundant and `rustdoc-links` rejects
-    /// it — the sibling link on `get_initial_children` carries generics in its
-    /// label, which is why that one still names its path.)
+    /// it.)
     /// Without the reverse, a recorded configuration cannot be turned back into
     /// the argument that door asks for and resuming degrades to replaying from
     /// the initial state. A consumer-side table would age silently the moment
@@ -301,139 +336,117 @@ pub trait StatePolicy: Sized + 'static {
     /// Sentinel event value for eventless transition dispatch (§scxml-3.13).
     ///
     /// Generated code produces an `Event::Null` variant. The engine passes this
-    /// to `process_transition()` when checking eventless transitions.
+    /// to [`first_enabled_transition`](StatePolicy::first_enabled_transition)
+    /// when it selects eventless transitions.
     fn null_event() -> Self::Event;
 
-    /// Get initial children of a compound state (§scxml-3.6).
-    /// Returns the resolved initial child state(s) for deep initial targets.
-    ///
-    /// SCE Protocol-Synthesis RFC §synth-5-J-2: returns the bounded
-    /// [`StateChain<Self::State>`](crate::helpers::hierarchy::StateChain) — aliased
-    /// to `Vec<Self::State>` under std (ABI-preserving — existing generated
-    /// overrides keep emitting `Vec<...>` which is the same type via the alias)
-    /// and to `heapless::Vec<Self::State, MAX_HIERARCHY_DEPTH=16>` under no_std.
-    /// The default no-op returns an empty chain via
-    /// [`new_chain`](crate::helpers::hierarchy::new_chain). Reuses the
-    /// existing `MAX_HIERARCHY_DEPTH` invariant — no new capacity constant
-    /// (D-1 lockin preserved beyond `MAX_SCHEDULED_EVENTS` / `MAX_EVENT_QUEUE_DEPTH`).
-    fn get_initial_children(_state: Self::State) -> StateChain<Self::State> {
-        hierarchy::new_chain()
-    }
-
-    /// Get initial child considering history (§scxml-3.11).
-    /// Non-static: checks history before returning initial child.
-    fn get_initial_or_history_child(&self, state: Self::State) -> Self::State {
-        state
-    }
-
     // ──────────────────────────────────────────────
-    // Required mutable field accessors
-    //
-    // C++ uses `static_assert(requires(p) { p.lastTransitionIsInternal_ })` to
-    // enforce member presence directly on struct fields. Rust exposes these as
-    // read/write methods; generated code emits trivial inline getters.
+    // Run-time state the entry procedures read
     // ──────────────────────────────────────────────
 
-    /// §scxml-3.13: Was the most recently taken transition of type `internal`?
-    ///
-    /// Set by `process_transition` as a side effect and consumed by the engine's
-    /// `handle_hierarchical_transition` to decide LCA behavior.
-    fn last_transition_is_internal(&self) -> bool;
-
-    /// Set the "last transition is internal" flag.
-    fn set_last_transition_is_internal(&mut self, value: bool);
-
-    /// §scxml-3.13: Was the most recently taken transition targetless (no `target` attribute)?
-    fn last_transition_is_targetless(&self) -> bool;
-
-    /// Set the "last transition is targetless" flag.
-    fn set_last_transition_is_targetless(&mut self, value: bool);
-
-    /// §scxml-3.4: The actual source state of the last transition.
-    ///
-    /// For parallel states, differs from the engine's `current_state` when the
-    /// transition originated from an inactive ancestor.
-    fn last_transition_source_state(&self) -> Self::State;
-
-    /// Set the last transition source state.
-    fn set_last_transition_source_state(&mut self, state: Self::State);
+    /// §scxml-3.10: what `history` recorded when its parent was last exited;
+    /// `None` before that ever happened.
+    fn history_value(&self, history: Self::History) -> Option<&[Self::State]>;
 
     // ──────────────────────────────────────────────
     // Instance methods — generated executable content
     //
     // These mirror C++ policy methods that take `Engine&` as a parameter.
     // Generated code mutates the policy via `&mut self` and calls engine
-    // methods through the `engine` parameter.
+    // methods through the `engine` parameter. Each answers for ONE state or
+    // ONE transition: which states a microstep exits and enters, and in which
+    // order, is the engine's Appendix D procedure, not the policy's.
     // ──────────────────────────────────────────────
 
-    /// Execute `<onentry>` actions for `state` (§scxml-3.8), and give `state`
-    /// the descendants Appendix D says it is owed.
+    /// §scxml-5.10: bind the event whose transitions are about to be selected
+    /// as the `_event` their guards read.
     ///
-    /// Ports C++ `executeEntryActions(State, Engine&)`. May:
+    /// Called once per selection, before the first guard runs, and with the
+    /// [`null_event`](StatePolicy::null_event) for an eventless selection —
+    /// which has no event of its own, so a policy binds nothing for it. The
+    /// default binds nothing: a document whose guards never read `_event` has
+    /// nothing to bind.
+    fn bind_current_event(&mut self, _event: Self::Event, _engine: &mut Engine<Self>) {}
+
+    /// Appendix D selectTransitions, the half only the document can answer:
+    /// the first of `state`'s own transitions, in document order, that `event`
+    /// enables and whose guard holds. The [`null_event`](StatePolicy::null_event)
+    /// asks for eventless transitions.
+    ///
+    /// Ports C++ `firstEnabledTransition(State, Event, Engine&)`. The only
+    /// place a guard is evaluated. The engine walks the atomic states and
+    /// their ancestors and keeps the ordered set.
+    fn first_enabled_transition(
+        &mut self,
+        state: Self::State,
+        event: Self::Event,
+        engine: &mut Engine<Self>,
+    ) -> Option<EnabledTransition<Self::State, Self::History>>;
+
+    /// Execute one transition's executable content (§scxml-3.13 — run between
+    /// the microstep's exits and its entries).
+    ///
+    /// `transition_index` is the one `first_enabled_transition` reported for
+    /// `source`. Ports C++ `executeTransitionActions(State, int, Engine&)`.
+    fn execute_transition_content(
+        &mut self,
+        source: Self::State,
+        transition_index: usize,
+        engine: &mut Engine<Self>,
+    );
+
+    /// Enter `state` (§scxml-3.8): add it to the configuration, run its
+    /// `<onentry>`, and its initial transition's content when
+    /// `is_default_entry`.
+    ///
+    /// Ports C++ `executeEntryActions(State, Engine&, bool)`. May:
     /// - raise internal events via `engine.raise(...)`
     /// - schedule delayed sends via `engine.schedule_event(...)`
     /// - mutate datamodel variables on `self`
     /// - defer `<invoke>` starts until the configuration is stable (§scxml-6.4)
     ///
-    /// `path_child` is what tells Appendix D's two entry functions apart, and
-    /// it is the whole of the difference between them:
-    ///
-    /// - `None` — `state` is the entry TARGET, so
-    ///   `addDescendantStatesToEnter` applies: a compound state takes its
-    ///   default initial child and a `<parallel>` takes every region.
-    /// - `Some(child)` — `state` is merely an ANCESTOR on the way to a deeper
-    ///   target, and `child` is the one of its children the entry set already
-    ///   holds. `addAncestorStatesToEnter` adds it WITHOUT its default, since
-    ///   a descendant is already entering; the single exception is a
-    ///   `<parallel>`, whose OTHER regions still take their defaults because
-    ///   nothing is entering inside them.
-    ///
-    /// Answering both with the `None` behaviour is what leaves two children of
-    /// one compound state active at once — measured 2026-08-15 across five
-    /// backends, and pinned by
-    /// `integration_resources/ancestor_entry_is_not_default_entry/`.
+    /// One state, and nothing below it: which states a microstep enters is the
+    /// engine's Appendix D entry set, entered front to back, so this neither
+    /// enters regions nor descends to an initial child. `is_default_entry` is
+    /// the entry set's `statesForDefaultEntry` answer — a compound state
+    /// entered only as an ANCESTOR of a deeper target was not entered by
+    /// default, and its initial transition content does not run. For a
+    /// `<final>`, this is also what the appendix does on entering one.
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
         engine: &mut Engine<Self>,
-        path_child: Option<Self::State>,
+        is_default_entry: bool,
     );
 
-    /// Execute `<onexit>` actions for `state` (§scxml-3.9).
+    /// Exit `state` (§scxml-3.9): record its histories, run its `<onexit>`,
+    /// cancel its invocations, remove it from the configuration.
     ///
     /// Ports C++ `executeExitActions(State, Engine&, const vector<State>&)`.
-    /// The `pre_transition_active` slice captures the active configuration
-    /// before the transition began, for history state recording (§scxml-3.11).
+    /// One state, and nothing below it: the engine's Appendix D exit set
+    /// already holds every active descendant, in exit order, ahead of this
+    /// state. `configuration_before_exit` is the configuration as it stood
+    /// before the microstep's first exit, which every history of the microstep
+    /// is recorded from (§scxml-3.10).
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
         engine: &mut Engine<Self>,
-        pre_transition_active: &[Self::State],
+        configuration_before_exit: &[Self::State],
     );
 
-    /// Evaluate guards and take a matching transition (§scxml-3.13).
+    /// §scxml-3.10.2: a `<history>`'s default transition content, run after
+    /// its parent's onentry (and after the parent's own initial content) when
+    /// the history was taken with nothing recorded.
     ///
-    /// Ports C++ `processTransition(State&, Event, Engine&) -> bool`.
-    ///
-    /// The `current_state` parameter is an in/out: the engine passes its current
-    /// state; generated code updates it to the transition's target if a transition
-    /// is taken. Returns `true` if a transition was taken, `false` otherwise.
-    ///
-    /// For the eventless-transition code path, the engine passes a sentinel event
-    /// value (typically `Event::default()` if `Default` is implemented, or a
-    /// generator-reserved "null" variant).
-    fn process_transition(
+    /// The default runs nothing, which is right for a history whose default
+    /// transition has no content and for a document with no history at all.
+    fn execute_history_default_content(
         &mut self,
-        current_state: &mut Self::State,
-        event: Self::Event,
-        engine: &mut Engine<Self>,
-    ) -> bool;
-
-    /// Execute transition action blocks for the currently-matched transition
-    /// (§scxml-3.13 — executed between exit and entry).
-    ///
-    /// Ports C++ `executeTransitionActions(Engine&)`.
-    fn execute_transition_actions(&mut self, engine: &mut Engine<Self>);
+        _history: Self::History,
+        _engine: &mut Engine<Self>,
+    ) {
+    }
 
     // ──────────────────────────────────────────────
     // Optional instance methods (default no-op; overridden when the
@@ -508,10 +521,10 @@ pub trait StatePolicy: Sized + 'static {
     ///
     /// Generated only when `HAS_ACTIVE_STATES` is `true`.
     ///
-    /// SCE Protocol-Synthesis RFC §synth-5-J-2: return type matches the cfg-conditional
-    /// [`StateChain`] alias — see [`get_initial_children`](Self::get_initial_children)
-    /// above for the std/no_std mapping rationale. The default no-op returns
-    /// an empty chain.
+    /// SCE Protocol-Synthesis RFC §synth-5-J-2: returns the cfg-conditional
+    /// [`StateChain`] alias — `Vec` under std, a `heapless::Vec` bounded by
+    /// [`MAX_HIERARCHY_DEPTH`](crate::helpers::hierarchy::MAX_HIERARCHY_DEPTH)
+    /// under no_std. The default no-op returns an empty chain.
     fn get_active_states(&self) -> StateChain<Self::State> {
         hierarchy::new_chain()
     }
@@ -589,4 +602,66 @@ pub trait StatePolicy: Sized + 'static {
     /// Ports C++ `EventMetadataHelper::clearPolicyMetadata`. Called by the engine
     /// after each event dispatch cycle to reset metadata for the next event.
     fn clear_event_metadata(&mut self) {}
+}
+
+/// A policy, as the document Appendix D's procedures read: its static tables
+/// are the structure, and its recorded histories are the one piece of run-time
+/// state the entry procedures need.
+///
+/// A borrow of the policy alone, never of the engine holding it, so a
+/// generated hook — which runs with the engine borrowed mutably — can hand
+/// [`helpers::microstep`](crate::helpers::microstep) its own `self`: the
+/// completion check a generated `<final>` makes for the `<parallel>` it may
+/// complete (`is_in_final_state`) asks the transcription through this. A
+/// wrapper rather than an implementation on every policy, because the two
+/// traits name their associated types alike and a generated policy spelling
+/// `Self::State` must keep meaning exactly one of them.
+pub struct PolicyDocument<'p, P: StatePolicy>(pub &'p P);
+
+impl<P: StatePolicy> Document for PolicyDocument<'_, P> {
+    type State = P::State;
+    type History = P::History;
+
+    fn parent_of(&self, state: P::State) -> Option<P::State> {
+        P::get_parent(state)
+    }
+
+    fn is_compound(&self, state: P::State) -> bool {
+        P::is_compound_state(state)
+    }
+
+    fn is_parallel(&self, state: P::State) -> bool {
+        P::is_parallel_state(state)
+    }
+
+    fn is_final(&self, state: P::State) -> bool {
+        P::is_final_state(state)
+    }
+
+    fn child_states(&self, state: P::State) -> &'static [P::State] {
+        P::get_child_states(state)
+    }
+
+    fn initial_targets(&self, state: P::State) -> &'static [EntryTarget<P::State, P::History>] {
+        P::get_initial_targets(state)
+    }
+
+    fn history_parent(&self, history: P::History) -> P::State {
+        P::get_history_parent(history)
+    }
+
+    fn history_value(&self, history: P::History) -> Option<&[P::State]> {
+        self.0.history_value(history)
+    }
+
+    fn history_default_targets(
+        &self,
+        history: P::History,
+    ) -> &'static [EntryTarget<P::State, P::History>] {
+        P::get_history_default_targets(history)
+    }
+
+    fn document_order(&self, state: P::State) -> u32 {
+        P::get_document_order(state)
+    }
 }

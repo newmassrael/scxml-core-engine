@@ -1,9 +1,10 @@
-# What the engine costs an MCU image, in bytes, and how far it may drift.
+# What one machine costs an MCU image, in bytes, and how far it may drift.
 #
 # Read by `scripts/gates/nostd-mcu.sh`. Every figure here is MEASURED, on
-# `thumbv7em-none-eabihf` with the toolchain the gates pin, from the staticlib
-# `backends/rust/probes/nostd-footprint` produces — summing the `.text` sizes
-# of every `sce_rust_runtime::engine::Engine<..>` symbol `nm` reports.
+# `thumbv7em-none-eabihf` with the toolchain named in MEASURED_WITH, from the
+# staticlib `backends/rust/probes/nostd-footprint` produces — summing the
+# `.text` sizes of every symbol `nm -C` reports whose name contains
+# MACHINE_SYMBOLS.
 #
 # WHY A BUDGET AND NOT A TREND. A downstream bare-metal consumer measured this
 # growing 60-198 bytes per instantiation across two SCE pins and filed it
@@ -12,54 +13,114 @@
 # A budget is what turns "the engine got bigger" from a consumer's bug report
 # into our own red.
 #
-# RE-PINNING IS A DECISION, NOT A CHORE. When a change legitimately grows the
-# engine, move TOTAL_BYTES and say in the commit message what the bytes bought.
-# The gate fails on a DROP as well, which is not pedantry: the first shape of
-# this probe emitted LLVM bitcode instead of machine code and `nm` reported
-# zero symbols, so a one-sided gate would have passed forever on an empty
-# measurement. A number that falls without a reason means the instrument
-# stopped seeing, and that is the failure this file exists to prevent.
+# RE-PINNING IS A DECISION, NOT A CHORE. When a change legitimately grows what
+# a machine costs, move TOTAL_BYTES and say in the commit message what the
+# bytes bought. The gate fails on a DROP as well, which is not pedantry: the
+# first shape of this probe emitted LLVM bitcode instead of machine code and
+# `nm` reported zero symbols, so a one-sided gate would have passed forever on
+# an empty measurement. A number that falls without a reason means the
+# instrument stopped seeing, and that is the failure this file exists to
+# prevent.
 
-# Sum of every Engine<..> symbol in the staticlib, as the engine ships.
-TOTAL_BYTES=1666
+# Which symbols are the machine's: every one whose demangled name carries the
+# probe machine's crate. That is the runtime's generic code monomorphised for
+# it — `Engine<P>`, the `EngineHost<P>` adapter, Appendix D's transcription in
+# `helpers::microstep` instantiated over that adapter, the event queue over its
+# event type — and the policy generated for it. It is what an image pays AGAIN
+# for every machine it holds, which is the number a consumer multiplies by
+# their machine count. Code the runtime carries once per image whatever it
+# holds (`is_error_event`, the string helpers) is not in it.
+#
+# WHY NOT `Engine<..>` ALONE, which is what this file weighed until the Rust
+# backend moved onto Appendix D (2026-09-24). Where the microstep's code lives
+# — the runtime or the template — is a choice this repository makes and
+# remakes, and an instrument that weighs one side reads a MOVE as a change.
+# That move, measured on both sides of it with one toolchain:
+#
+#                      Engine<..>   per machine   (diagnostics on)
+#   before (fb30b83e)     1702          5858
+#   after                 2318          4976
+#
+# `Engine<..>` alone would have called a 15% shrink a 36% growth. It had also
+# never seen most of what a machine cost: 4156 of those 5858 bytes were in no
+# symbol it weighed, among them the microstep itself, generated into every
+# policy as `execute_microstep`, `try_transition_in_state`,
+# `remove_conflicting_transitions` and `compute_exit_set` (1812 bytes).
+#
+# ⚠ The pattern relies on the v0 symbol-mangling scheme, which the toolchain
+# above emits by default: a v0 name carries its concrete generic arguments, so
+# `enter_states::<EngineHost<ParallelHistoryProbePolicy>>` names the machine.
+# Under the legacy scheme it does not, and the set collapses — measured with
+# `-C symbol-mangling-version=legacy` on the same tree: 3 symbols and 100
+# bytes, against 36 and 4976. MIN_SYMBOLS is what makes that a red rather than
+# a smaller number. It is a literal substring, not a regular expression.
+MACHINE_SYMBOLS='sce_nostd_build_probe::'
+
+# The toolchain the figures below were measured with. Not enforced: the lane
+# installs whatever `stable` is on the day, and a toolchain that inlines
+# differently moves these bytes with no change of ours. The gate prints this
+# beside `rustc --version` when it fails, so a red that is only the toolchain
+# says so, and a re-pin names the toolchain it was taken on.
+MEASURED_WITH='rustc 1.98.1 (48a229cea 2026-09-01)'
+
+# Sum of every machine symbol in the staticlib, as the engine ships.
+TOTAL_BYTES=4976
 
 # The same sum with `no_macrostep_diagnostics`, which compiles the macrostep
 # REPORT out and leaves the bound in place.
 #
-# The difference — 44 bytes per instantiation — is the number that feature is
-# worth, and it is here rather than in a commit message because it is the
-# answer to a question a consumer asked: whether gating the diagnostics would
-# recover what two commits cost their image. Measuring both ways is also what
-# keeps the opt-out configuration from rotting — a feature nothing builds is a
-# feature that stops compiling and nobody learns until a consumer sets it.
+# The difference — 24 bytes per machine — is the number that feature is worth,
+# and it is here rather than in a commit message because it is the answer to a
+# question a consumer asked: whether gating the diagnostics would recover what
+# two commits cost their image. Measuring both ways is also what keeps the
+# opt-out configuration from rotting — a feature nothing builds is a feature
+# that stops compiling and nobody learns until a consumer sets it.
 #
-# WHAT THE 44 IS A FRACTION OF, measured at four pins in this same tree at one
-# fixed path (`7f94b580` -> `7db6aebc` -> `e0fdd46b` -> `a8026fd6`):
+# It was 44 when the feature was offered and 48 just before the microstep moved
+# into the runtime. The two places that refuse a macrostep now share one
+# `refuse_macrostep`, which holds the report's only log call; before, each
+# carried its own.
+#
+# WHAT THE REPORT WAS A FRACTION OF, measured at four pins in this same tree at
+# one fixed path (`7f94b580` -> `7db6aebc` -> `e0fdd46b` -> `a8026fd6`), as
+# `Engine<..>` sums — the metric of the time, not comparable with the figures
+# above:
 #
 #   1072 -> 1418 -> 1418 -> 1666 bytes, i.e. +594 per instantiation over the
 #   two commits that landed the macrostep ceiling (37a47335a3, e00d4eee04).
 #
-# So the report is 44 of 594 — **7%** — and the other 550 is the bound: the
+# So the report was 44 of 594 — **7%** — and the other 550 is the bound: the
 # per-microstep budget and the guard that stops a refused chain being handed a
 # second one. There is no version of this engine that both terminates and does
 # not pay that. The figure is on `thumbv7em-none-eabihf` at `opt-level = "z"`;
 # a consumer on another target or profile should expect the RATIO to hold and
 # the absolutes not to.
 #
-# The two `sce_log_error!` sites are inside the feature gate as well, and
-# measured zero: the sum above is identical with and without them, because the
-# format arguments live in `.rodata` and the call is a handful of instructions
-# the linker folds elsewhere. A downstream consumer reached the same conclusion
-# from the other end — with `lto = true` and no logger installed, their image
-# had already discarded every `log::` call before we asked them to try.
-TOTAL_BYTES_NO_DIAGNOSTICS=1622
+# The report's `sce_log_error!` calls are inside the feature gate as well, and
+# measured zero when there were two of them (2026-08-21): the sum was
+# identical with and without them, because the format arguments live in
+# `.rodata` and the call is a handful of instructions the linker folds
+# elsewhere. A downstream consumer reached the same conclusion from the other
+# end — with `lto = true` and no logger installed, their image had already
+# discarded every `log::` call before we asked them to try.
+TOTAL_BYTES_NO_DIAGNOSTICS=4952
 
-# Drift allowed either way before the gate speaks. Wide enough that an
-# unrelated inlining decision does not cry wolf, tight enough that one more
+# Drift allowed either way before the gate speaks, in BYTES. Wide enough that
+# an unrelated inlining decision does not cry wolf, tight enough that one more
 # copy of a cold path (the 2026-08-21 report's ~170 B per instantiation) does.
-TOLERANCE_PCT=8
+#
+# It was 8 PERCENT while this file weighed `Engine<..>` alone: ±133 bytes of
+# the 1666 it held then. What it encodes is a byte count, and a percentage of a
+# figure that tripled would have let the cold path through (8% of 4976 is
+# ±398). So the band is that one, carried over in bytes.
+TOLERANCE_BYTES=133
 
-# The instrument's own floor. Below this the probe is not measuring the engine
-# at all — a renamed symbol, a bitcode rlib, a driver that stopped driving —
-# and every byte figure above it is meaningless.
-MIN_SYMBOLS=8
+# The instrument's own floor. Below this the probe is not measuring the machine
+# at all — a renamed crate, a bitcode staticlib, a driver that stopped driving,
+# a toolchain that mangles without generic arguments — and every byte figure
+# above it is meaningless. The set held 36 symbols at the last re-pin and 35
+# before it, across a change that moved half its bytes between the runtime and
+# the policy; the legacy scheme leaves 3, and the bitcode staticlib left none.
+# The floor sits between, with room for a refactor to move the count by a
+# dozen.
+MIN_SYMBOLS=24

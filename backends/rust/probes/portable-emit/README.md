@@ -9,10 +9,11 @@ generated machine compiles against **both** runtime profiles:
 ## Why
 
 The runtime owns the std-vs-heapless collection choice through profile-resolving
-aliases — `SceBytes<N>`, `SceString`, `SceTransitionBuf<T>`, `SceIndexBuf`,
-`SceDedupSet<K>`, `StateChain<S>`. Generated code names only those aliases, so
-the runtime's own `#[cfg(feature = "no_std")]` picks the concrete type and one
-emission is portable across profiles.
+aliases — `SceBytes<N>`, `SceString`, `StateChain<S>`. Generated code names only
+those aliases, so the runtime's own `#[cfg(feature = "no_std")]` picks the
+concrete type and one emission is portable across profiles. The microstep's own
+buffers (`SceTransitionBuf<T>` and friends) never appear in an emission at all:
+Appendix D's procedures live in the runtime.
 
 Before that alias layer was complete, a `--no-std` emit hard-coded
 `sce_rust_runtime::heapless::*` (a `no_std`-only re-export) for its `bytes`
@@ -30,8 +31,8 @@ profile-resolving alias in one emission:
 
 - a typed `_event.data.raw` **bytes** guard → `SceBytes` + `SceString` + scalar
   payload struct, and
-- nested `<parallel>` regions → `SceTransitionBuf` / `SceIndexBuf` /
-  `SceDedupSet` + `StateChain`.
+- nested `<parallel>` regions → the `StateChain` active set, and the runtime's
+  microstep monomorphised over it.
 
 ## Run locally
 

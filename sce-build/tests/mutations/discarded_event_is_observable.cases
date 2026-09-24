@@ -10,12 +10,12 @@
 # `processEvent`'s `TransitionResult::success` and
 # `getStatistics().failedTransitions`.
 #
-# The trap these cases exist for is the second one below: the engines already
-# computed a bool at this exact point, and it means "the configuration changed",
-# not "a transition was selected". A targetless internal transition answers
-# false after running its actions, so a count keyed off it reports a HANDLED
-# event as discarded. That is why `execute_transition` now returns
-# `EventOutcome` and why the fixture has a `nudge` transition at all.
+# The trap these cases exist for is the second one below: the obvious bool at
+# this exact point means "the configuration changed", not "a transition was
+# selected". A targetless internal transition answers false after running its
+# actions, so a count keyed off it reports a HANDLED event as discarded. That is
+# why `take_event` returns `EventOutcome` and why the fixture has a `nudge`
+# transition at all.
 #
 # The C++ engine and the C11 template halves of the same axis live in
 # `discarded_event_is_observable_ctest.cases`.
@@ -34,7 +34,7 @@ mutation_oracles backends/rust/tests/tests/discarded_event_is_observable.rs
 
 mutation_case "the external dequeue drops the outcome again" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """            if self.execute_transition(event_with_meta.event) == EventOutcome::Discarded {
+     """            if self.take_event(event_with_meta.event) == EventOutcome::Discarded {
                 self.discarded_external_events = self.discarded_external_events.saturating_add(1);
                 self.last_discarded_event = Some(event_with_meta.event);""",
      """            if false {
@@ -44,18 +44,16 @@ PY
 
 # ── Counting the wrong fact ────────────────────────────────────────
 #
-# The defect this axis is really about: `configuration_changed` is false for a
-# targetless internal transition too, so `nudge` — handled, actions run — is
-# reported as an event that went nowhere.
+# The defect this axis is really about: the configuration does not change for
+# a targetless internal transition either, so `nudge` — handled, actions run —
+# is reported as an event that went nowhere.
 
 mutation_case "the count is keyed off whether the configuration changed" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """            if self.execute_transition(event_with_meta.event) == EventOutcome::Discarded {""",
-     """            if self.execute_transition(event_with_meta.event)
-                != (EventOutcome::Taken {
-                    configuration_changed: true,
-                })
-            {""")
+     """            if self.take_event(event_with_meta.event) == EventOutcome::Discarded {""",
+     """            let configuration_before = self.get_active_states();
+            self.take_event(event_with_meta.event);
+            if self.get_active_states() == configuration_before {""")
 PY
 
 # ── An always-true count ───────────────────────────────────────────
@@ -65,38 +63,39 @@ PY
 
 mutation_case "every dequeued external event is counted" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """            if self.execute_transition(event_with_meta.event) == EventOutcome::Discarded {""",
-     """            self.execute_transition(event_with_meta.event);
+     """            if self.take_event(event_with_meta.event) == EventOutcome::Discarded {""",
+     """            self.take_event(event_with_meta.event);
             if true {""")
 PY
 
 # ── The outcome type's own arms ────────────────────────────────────
 #
-# `execute_transition` reporting "taken" when nothing matched puts the engine
-# back where it started, one layer deeper than the call site.
+# `take_event` reporting "taken" when nothing matched puts the engine back
+# where it started, one layer deeper than the call site.
 
 mutation_case "no-match reports itself as a taken transition" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """        let took_transition = self.process_transition_dispatch(&mut new_state, event);
-        if !took_transition {
+     """        if enabled.is_empty() {
             return EventOutcome::Discarded;
         }""",
-     """        let took_transition = self.process_transition_dispatch(&mut new_state, event);
-        if !took_transition {
-            return EventOutcome::Taken {
-                configuration_changed: false,
-            };
+     """        if enabled.is_empty() {
+            return EventOutcome::Taken;
         }""")
 PY
 
+# The same wrong fact one layer down: a microstep of targetless transitions
+# enters nothing, and reporting it as a discard is the configuration-changed
+# test again, spelled in the outcome type.
 mutation_case "a targetless transition reports itself as discarded" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """            self.execute_transition_actions_dispatch();
-            return EventOutcome::Taken {
-                configuration_changed: false,
-            };""",
-     """            self.execute_transition_actions_dispatch();
-            return EventOutcome::Discarded;""")
+     """        self.microstep(&enabled);
+        EventOutcome::Taken""",
+     """        self.microstep(&enabled);
+        if enabled.iter().all(|t| t.is_targetless()) {
+            EventOutcome::Discarded
+        } else {
+            EventOutcome::Taken
+        }""")
 PY
 
 # ── Naming the event ───────────────────────────────────────────────

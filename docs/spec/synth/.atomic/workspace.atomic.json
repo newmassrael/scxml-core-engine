@@ -3450,11 +3450,6 @@
           "kind": "references"
         },
         {
-          "file": "backends/rust/runtime/src/policy.rs",
-          "symbol": "get_initial_children",
-          "kind": "references"
-        },
-        {
           "file": "sce-build/src/lib.rs",
           "symbol": "populate_event_queue_capacity_from_deploy",
           "kind": "implements"
@@ -5734,6 +5729,12 @@
       "target_kind": "section",
       "target_id": "synth-6.2.6",
       "reason": "The header no longer carries a generated-at stamp, so the scan for a pinned stamp and its helper collect_generated_at were removed. committed_generated_files_carry_the_current_header_shape replaces them: it reads every committed file opening with the header banner and refuses any retired header key."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-J-2",
+      "reason": "Stage E, the Rust backend onto Appendix D: get_initial_children is gone - initial targets are the policy's as-written get_initial_targets table, dereferenced by the runtime's entry procedures"
     }
   ],
   "frames": {},

@@ -12,7 +12,7 @@
 // trivial SM and drive transitions correctly, the trait shape is viable for
 // template-driven generation. Pins that baseline.
 
-use sce_rust_runtime::{Engine, StatePolicy};
+use sce_rust_runtime::{EnabledTransition, Engine, EntryTarget, NoHistory, StatePolicy};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum HwState {
@@ -29,25 +29,32 @@ enum HwEvent {
     End,
 }
 
-struct HwPolicy {
-    last_transition_is_internal: bool,
-    last_transition_is_targetless: bool,
-    last_transition_source_state: HwState,
-}
+struct HwPolicy;
 
 impl HwPolicy {
     fn new() -> Self {
-        Self {
-            last_transition_is_internal: false,
-            last_transition_is_targetless: false,
-            last_transition_source_state: HwState::Stopped,
-        }
+        Self
+    }
+}
+
+/// One targeted transition of `source`, as a policy reports it.
+fn to(
+    source: HwState,
+    target: &'static [EntryTarget<HwState, NoHistory>],
+) -> EnabledTransition<HwState, NoHistory> {
+    EnabledTransition {
+        source,
+        targets: target,
+        transition_index: 0,
+        has_actions: false,
+        is_internal: false,
     }
 }
 
 impl StatePolicy for HwPolicy {
     type State = HwState;
     type Event = HwEvent;
+    type History = NoHistory;
     type Payload = ();
     type Hal = sce_rust_runtime::StdHal;
     type EventQueue = sce_rust_runtime::EventQueueManager<
@@ -71,8 +78,28 @@ impl StatePolicy for HwPolicy {
         false
     }
 
-    fn is_descendant_of(_desc: Self::State, _anc: Self::State) -> bool {
-        false
+    fn get_child_states(_state: Self::State) -> &'static [Self::State] {
+        &[]
+    }
+
+    fn get_initial_targets(
+        _state: Self::State,
+    ) -> &'static [EntryTarget<Self::State, Self::History>] {
+        &[]
+    }
+
+    fn get_document_initial_targets() -> &'static [EntryTarget<Self::State, Self::History>] {
+        &[EntryTarget::State(HwState::Stopped)]
+    }
+
+    fn get_history_parent(history: Self::History) -> Self::State {
+        match history {}
+    }
+
+    fn get_history_default_targets(
+        history: Self::History,
+    ) -> &'static [EntryTarget<Self::State, Self::History>] {
+        match history {}
     }
 
     fn get_document_order(state: Self::State) -> u32 {
@@ -122,32 +149,17 @@ impl StatePolicy for HwPolicy {
         HwEvent::Null
     }
 
-    fn last_transition_is_internal(&self) -> bool {
-        self.last_transition_is_internal
-    }
-    fn set_last_transition_is_internal(&mut self, v: bool) {
-        self.last_transition_is_internal = v;
-    }
-    fn last_transition_is_targetless(&self) -> bool {
-        self.last_transition_is_targetless
-    }
-    fn set_last_transition_is_targetless(&mut self, v: bool) {
-        self.last_transition_is_targetless = v;
-    }
-    fn last_transition_source_state(&self) -> Self::State {
-        self.last_transition_source_state
-    }
-    fn set_last_transition_source_state(&mut self, s: Self::State) {
-        self.last_transition_source_state = s;
+    fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
+        match history {}
     }
 
-    // `_path_child` (§scxml-D) is unused: this policy has no compound states,
-    // so nothing distinguishes an ancestor entry from a target entry.
+    // `_is_default_entry` is unused: this policy has no compound states, so no
+    // state has an initial transition whose content could run.
     fn execute_entry_actions(
         &mut self,
         _state: Self::State,
         _engine: &mut Engine<Self>,
-        _path_child: Option<Self::State>,
+        _is_default_entry: bool,
     ) {
         // No entry actions in this minimal test
     }
@@ -156,40 +168,37 @@ impl StatePolicy for HwPolicy {
         &mut self,
         _state: Self::State,
         _engine: &mut Engine<Self>,
-        _pre: &[Self::State],
+        _before: &[Self::State],
     ) {
         // No exit actions
     }
 
-    fn process_transition(
+    fn first_enabled_transition(
         &mut self,
-        current_state: &mut Self::State,
+        state: Self::State,
         event: Self::Event,
         _engine: &mut Engine<Self>,
-    ) -> bool {
-        // Record the source state before any change
-        self.last_transition_source_state = *current_state;
-        self.last_transition_is_internal = false;
-        self.last_transition_is_targetless = false;
-
-        match (*current_state, event) {
+    ) -> Option<EnabledTransition<Self::State, Self::History>> {
+        match (state, event) {
             (HwState::Stopped, HwEvent::Play) => {
-                *current_state = HwState::Running;
-                true
+                Some(to(state, &[EntryTarget::State(HwState::Running)]))
             }
             (HwState::Running, HwEvent::Stop) => {
-                *current_state = HwState::Stopped;
-                true
+                Some(to(state, &[EntryTarget::State(HwState::Stopped)]))
             }
             (HwState::Running, HwEvent::End) => {
-                *current_state = HwState::Done;
-                true
+                Some(to(state, &[EntryTarget::State(HwState::Done)]))
             }
-            _ => false,
+            _ => None,
         }
     }
 
-    fn execute_transition_actions(&mut self, _engine: &mut Engine<Self>) {
+    fn execute_transition_content(
+        &mut self,
+        _source: Self::State,
+        _index: usize,
+        _engine: &mut Engine<Self>,
+    ) {
         // No transition actions
     }
 }

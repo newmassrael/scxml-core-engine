@@ -1752,9 +1752,11 @@ class Engine(Generic[S, E]):
             (sibling-to-sibling transition under a parallel: the
             parallel stays active, but its other regions were exited
             and must be re-entered — test403c, test364).
-        Mirrors the Rust template's `is_parallel_state(*state)`
-        re-entry fan-out at
-        `tools/codegen/templates/rust/conflict_resolution.rs.jinja2`."""
+        Mirrors the re-entry fan-out the Rust template
+        `conflict_resolution.rs.jinja2` carried before the Rust backend
+        moved onto its runtime's transcription of Appendix D, where the
+        same rule is `add_region_defaults` in
+        `backends/rust/runtime/src/helpers/microstep.rs`."""
         # §scxml-D-addDescendantStatesToEnter: a `<parallel>` anywhere on the
         # entry path pulls in every sibling region through its default initial
         # chain, which the fan-out below performs.

@@ -107,8 +107,11 @@ cargo build --manifest-path backends/rust/probes/nostd-queue-size/Cargo.toml \
 # exists and can be weighed. The budget beside it is measured, two-sided, and
 # carries a symbol floor — the floor because the probe's first shape emitted
 # LLVM bitcode and `nm` saw nothing, which a one-sided gate would have called
-# green forever.
-sce_gate_step "MCU footprint budget (Engine<P> .text on thumb)"
+# green forever. What it weighs is the MACHINE, not `Engine<P>` alone: the
+# runtime's generic code monomorphised for it plus the policy generated for it,
+# because which of the two holds the microstep is a choice this repository
+# remakes, and the budget file says what weighing one side missed.
+sce_gate_step "MCU footprint budget (per-machine .text on thumb)"
 # Regenerated here rather than trusted: the native-action step above stages a
 # DIFFERENT machine into this same path, so whichever ran last decides what the
 # probe crate is. The instrument names `ParallelHistoryProbePolicy`.
@@ -125,10 +128,26 @@ FOOTPRINT_BUDGET="backends/rust/probes/nostd-footprint/footprint.budget"
 # shellcheck source=/dev/null
 source "$FOOTPRINT_BUDGET"
 
-# One configuration: build it, weigh every Engine<..> symbol, hold the sum to
-# its budget in BOTH directions. A drop is a failure too — the probe's first
-# shape emitted LLVM bitcode and `nm` reported nothing, and a gate that only
-# watched for growth would have called that green forever.
+# The machine's code symbols, `size name` in decimal, one per line — the one
+# selection both the sum and the breakdown read, so the bytes the gate judges
+# and the bytes it shows are the same set. `$3` is nm's symbol type: text
+# symbols only, since the budget is `.text`.
+#
+# `-t d` rather than converting hex in awk: `strtonum` is a GNU extension, and
+# this machine's /usr/bin/awk is mawk. Measured the hard way — the gate was
+# written and verified on a build host where awk is gawk, and the first push it
+# guarded died with `function strtonum never defined` after every earlier gate
+# had passed. Letting nm print decimal needs no awk dialect.
+sce_footprint_machine_symbols() {
+    nm --print-size --size-sort -t d -C "$FOOTPRINT_LIB" 2>/dev/null |
+        awk -v machine="$MACHINE_SYMBOLS" \
+            '$3 ~ /^[tTwW]$/ && index($0, machine) { print $2 + 0, substr($0, index($0, $4)) }'
+}
+
+# One configuration: build it, weigh every machine symbol, hold the sum to its
+# budget in BOTH directions. A drop is a failure too — the probe's first shape
+# emitted LLVM bitcode and `nm` reported nothing, and a gate that only watched
+# for growth would have called that green forever.
 sce_footprint_weigh() {
     local label="$1" budget="$2"; shift 2
     cargo build --release --manifest-path backends/rust/probes/nostd-footprint/Cargo.toml \
@@ -138,34 +157,31 @@ sce_footprint_weigh() {
         || sce_gate_fail "footprint probe produced no staticlib at $FOOTPRINT_LIB ($label)"
 
     local syms bytes lo hi
-    # `-t d` rather than converting hex in awk: `strtonum` is a GNU extension,
-    # and this machine's /usr/bin/awk is mawk. Measured the hard way — the gate
-    # was written and verified on a build host where awk is gawk, and the first
-    # push it guarded died with `function strtonum never defined` after every
-    # earlier gate had passed. Letting nm print decimal needs no awk dialect.
     read -r syms bytes < <(
-        nm --print-size --size-sort -t d -C "$FOOTPRINT_LIB" 2>/dev/null |
-            awk '/sce_rust_runtime::engine::Engine</ { n++; s += $2 }
-                 END { printf "%d %d\n", n, s }'
+        sce_footprint_machine_symbols | awk '{ n++; s += $1 } END { printf "%d %d\n", n, s }'
     )
 
     if (( syms < MIN_SYMBOLS )); then
-        printf '  [nostd-mcu] %s: found %d Engine<..> symbol(s), floor is %d\n' \
-            "$label" "$syms" "$MIN_SYMBOLS" >&2
-        printf '  [nostd-mcu] the instrument is not measuring the engine — a renamed symbol,\n' >&2
-        printf '  [nostd-mcu] a bitcode staticlib, or a driver that stopped driving.\n' >&2
+        printf '  [nostd-mcu] %s: found %d machine symbol(s) matching %s, floor is %d\n' \
+            "$label" "$syms" "$MACHINE_SYMBOLS" "$MIN_SYMBOLS" >&2
+        printf '  [nostd-mcu] the instrument is not measuring the machine — a renamed crate,\n' >&2
+        printf '  [nostd-mcu] a bitcode staticlib, a driver that stopped driving, or a\n' >&2
+        printf '  [nostd-mcu] toolchain whose symbol names carry no generic arguments.\n' >&2
+        printf '  [nostd-mcu] running %s; the budget was measured with %s\n' \
+            "$(rustc --version)" "$MEASURED_WITH" >&2
         sce_gate_fail "MCU footprint instrument is blind ($label)"
     fi
 
-    lo=$(( budget * (100 - TOLERANCE_PCT) / 100 ))
-    hi=$(( budget * (100 + TOLERANCE_PCT) / 100 ))
+    lo=$(( budget - TOLERANCE_BYTES ))
+    hi=$(( budget + TOLERANCE_BYTES ))
     printf '  [nostd-mcu] %-16s %5d byte(s) over %2d symbol(s) (budget %d, band %d..%d)\n' \
         "$label:" "$bytes" "$syms" "$budget" "$lo" "$hi"
 
     if (( bytes > hi || bytes < lo )); then
-        printf '  [nostd-mcu] per-symbol breakdown:\n' >&2
-        nm --print-size --size-sort -C "$FOOTPRINT_LIB" 2>/dev/null |
-            grep 'sce_rust_runtime::engine::Engine<' >&2 || true
+        printf '  [nostd-mcu] per-symbol breakdown (bytes, symbol):\n' >&2
+        sce_footprint_machine_symbols >&2
+        printf '  [nostd-mcu] running %s; the budget was measured with %s\n' \
+            "$(rustc --version)" "$MEASURED_WITH" >&2
         printf '  [nostd-mcu] re-pin the budget in %s if the change is meant, and say\n' \
             "$FOOTPRINT_BUDGET" >&2
         printf '  [nostd-mcu] in the commit message what the bytes bought.\n' >&2

@@ -174,8 +174,9 @@ pub fn validate<P: StatePolicy>(
             .count();
 
         if P::is_parallel_state(state) {
-            // §scxml-3.4: every region, simultaneously.
-            let regions = P::get_parallel_regions(state);
+            // §scxml-3.4: every region, simultaneously — a `<parallel>`'s
+            // regions are exactly its child states.
+            let regions = P::get_child_states(state);
             for &region in regions {
                 if !configuration.contains(&region) {
                     return Err(ConfigurationRejection::ParallelRegionMissing {
