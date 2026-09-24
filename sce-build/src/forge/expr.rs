@@ -851,6 +851,25 @@ pub(crate) fn resolve(expr: &str, ctx: &TypeCtx<'_>) -> Result<TypedExpr, Refusa
     Ok(ast)
 }
 
+/// [`resolve`], then judged against what `expected` says about the place
+/// the value lands in, exactly as [`transpile_expecting`] judges it — for a
+/// validator that refuses a document before any backend lowers it. Returns
+/// the value's type.
+///
+/// Emitter-specific refusals are not reached: they belong to the backend
+/// that lowers the expression, and a backend that does not lower the
+/// document says so itself.
+pub(crate) fn judge_into(
+    expr: &str,
+    ctx: &TypeCtx<'_>,
+    expected: Expected,
+) -> Result<InferredType, Refusal> {
+    let expr = expr.trim();
+    let ast = resolve(expr, ctx)?;
+    judge_value(&ast, expected, expr)?;
+    Ok(ast.ty)
+}
+
 /// Walk a TypedExpr in place and rewrite every `Call{Member{Ident(alias),
 /// method}, args}` site whose `alias` matches one of `lowerings` into a
 /// free-function form per the [`ImportLowering`] contract.

@@ -221,6 +221,12 @@ impl ExpressionSite {
 /// inflate every count taken over this walk with expressions no engine
 /// ever sees.
 pub fn sites(model: &SCXMLModel) -> Vec<ExpressionSite> {
+    // A `sce-static` document's expressions are forge expressions, judged by
+    // `crate::forge::static_datamodel::check`; no engine is ever asked to
+    // lower one (docs/SCE_ACCEPTED_SUBSET.md §2.15).
+    if model.datamodel == crate::model::Datamodel::SceStatic {
+        return Vec::new();
+    }
     let mut into = Collector {
         document_needs_script_engine: model.needs_script_engine,
         out: Vec::new(),

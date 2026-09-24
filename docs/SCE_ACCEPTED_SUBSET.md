@@ -2330,7 +2330,24 @@ line of the element or attribute that breaks it:
 | `<data>` without `sce:type` | Every variable declares its type |
 | `<data src>` | The initial value is `expr` — `src` is read at run time and has no type |
 | `<data>` with in-line content | The initial value is `expr` — in-line content has no type |
+| `<data>` without `expr` | Every variable declares its initial value; no zero, empty string or first variant stands in |
 | `<script>` with script text | No scripting language; a native `<script><cpp>` / `<kt>` block is admitted, as under `null` |
+| `<send eventexpr/targetexpr/delayexpr/typeexpr/idlocation/namelist>`, `<send><content expr>`, `<cancel sendidexpr>`, `<foreach>`, `<invoke idlocation>`, a hybrid `<invoke>` (`srcexpr` / `<content expr>`), `<donedata><content expr>` | No typed form: each is evaluated as script-engine text by every backend's templates |
+
+**Expressions.** Every other expression is a forge expression judged
+against one closed scope — the declared variables at their `sce:type`, the
+triggering event's `_event.data.<field>` when the event carries an
+imported schema, the imported enums, and `In(<state id>)` — built by
+`crate::forge::type_ctx::static_statechart`, the builder the typed guard
+path shares its payload registration with. Each is judged against the
+place it lands in: a `<data expr>` and an `<assign expr>` against the
+variable's type (the `location` must name a declared variable), a
+transition's or `<if>`/`<elseif>`'s `cond` as `bool`, a `<log expr>` or
+`<param expr>` as whatever it is. A name the scope does not carry, and a
+value of a kind the place does not admit, are refused at the expression's
+own range with the expression layer's codes (`expression/unknown-identifier`,
+`expression/type-mismatch`, …). The ECMAScript frontend is never asked to
+lower a `sce-static` document's expressions.
 
 Under `null` or `ecmascript` an `sce:type` on `<data>` is not refused and
 not a field type: with `sce:direction` and `sce:initial` it is the

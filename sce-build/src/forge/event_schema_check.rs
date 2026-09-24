@@ -235,18 +235,32 @@ pub fn lower_typed_guard(
 ) -> Result<String, crate::forge::expr::Refusal> {
     // The dotted access-path keys must outlive `ctx` (whose `vars` map
     // borrows its keys), so they are owned here and borrowed in.
-    let keys: Vec<String> = schema
-        .fields
-        .iter()
-        .map(|f| format!("_event.data.{}", f.id))
-        .collect();
+    let paths = event_payload_paths(schema);
     let mut ctx = TypeCtx::new();
-    for (field, key) in schema.fields.iter().zip(keys.iter()) {
-        ctx.insert_var(key.as_str(), InferredType::from_sce_type(&field.sce_type));
+    for (key, ty) in &paths {
+        ctx.insert_var(key.as_str(), *ty);
     }
     let mut renames: HashMap<&str, &str> = HashMap::new();
     renames.insert(EVENT_DATA_PATH, accessor);
     transpile_typed(cond, target, &ctx, &renames, InferredType::Unknown)
+}
+
+/// Each field of `schema` under the access path an expression reads it by,
+/// `_event.data.<field>`, with its declared type — owned, because a
+/// [`TypeCtx`] borrows its keys. The one registration of a typed payload,
+/// shared by [`lower_typed_guard`] and the static data model's scope
+/// ([`crate::forge::type_ctx::static_statechart`]).
+pub(crate) fn event_payload_paths(schema: &EventSchemaModel) -> Vec<(String, InferredType)> {
+    schema
+        .fields
+        .iter()
+        .map(|f| {
+            (
+                format!("{EVENT_DATA_PATH}.{}", f.id),
+                InferredType::from_sce_type(&f.sce_type),
+            )
+        })
+        .collect()
 }
 
 /// `true` iff `schema` can back a native typed-payload channel. The

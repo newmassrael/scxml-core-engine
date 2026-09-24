@@ -810,6 +810,18 @@ fn enforce_static_datamodel(
                     Some(name.to_string()),
                 ));
             }
+            // A field holds a value from the moment the machine exists, so
+            // the value is written rather than implied: no zero, no empty
+            // string, no first variant stands in for one the author left out.
+            if node.attribute("expr").is_none_or(|e| e.trim().is_empty()) {
+                return Err(refused(
+                    element_row(&node),
+                    format!("<data id=\"{id}\">"),
+                    "every <data> declares its initial value with expr",
+                    &node,
+                    Some(name.to_string()),
+                ));
+            }
         }
 
         if name == "script" && !is_native_script_block(&node) {
@@ -2121,7 +2133,7 @@ impl SCXMLParser {
         // compile error in the *generated* code with nothing pointing back
         // at the offending `cond`. Any future entry point that parses a
         // document is now validated by construction.
-        if let Some(dir) = base_dir {
+        let imported_enums = if let Some(dir) = base_dir {
             let (schemas_by_stem, enums_by_stem) = Self::parse_imported_forge_siblings(&model, dir);
             model.imported_event_schemas =
                 crate::forge::event_schema_check::resolve_imported_event_schemas(
@@ -2151,7 +2163,23 @@ impl SCXMLParser {
                 &model.imported_event_schemas,
                 diag_label,
             )?;
-        }
+            imported_enums
+        } else {
+            Default::default()
+        };
+
+        // SCE Accepted Subset §2.15 — under `datamodel="sce-static"` every
+        // expression is judged against the typed scope here, after the
+        // imported schemas are resolved (a transition's payload is part of
+        // its scope). The scope names each enum by its alias: nothing is
+        // lowered here, so no backend's spelling is needed.
+        crate::forge::static_datamodel::check(
+            &model,
+            &crate::forge::type_ctx::StaticEnum::from_imports(&imported_enums, |alias, _| {
+                alias.to_string()
+            }),
+            diag_label,
+        )?;
 
         // SCE script-engine requirement — single source of truth. See
         // [`crate::script_engine_analyzer`]. Must run before the

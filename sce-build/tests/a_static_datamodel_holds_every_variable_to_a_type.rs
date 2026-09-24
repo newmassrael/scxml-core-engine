@@ -246,3 +246,124 @@ fn every_backend_that_does_not_lower_the_model_refuses_to_generate_it() {
         );
     }
 }
+
+// ── Every expression judged against the typed scope ─────────────────────
+
+/// A `sce-static` machine with two variables — `count: uint32` on line 5,
+/// `ready: bool` on line 6 — and `states`, which open on line 8.
+fn machine(states: &str) -> String {
+    format!(
+        r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static">
+  <datamodel>
+    <data id="count" sce:type="uint32" expr="0"/>
+    <data id="ready" sce:type="bool" expr="false"/>
+  </datamodel>
+  {states}
+  <final id="done"/>
+</scxml>
+"##
+    )
+}
+
+#[test]
+fn a_machine_whose_every_expression_is_typed_is_accepted() {
+    let (ok, out) = run(
+        &["check"],
+        &machine(
+            r#"<state id="s">
+    <onentry><log label="n" expr="count"/></onentry>
+    <transition event="tick" cond="count &lt; 10 &amp;&amp; In('s')" target="s">
+      <assign location="count" expr="count + 1"/>
+      <if cond="count === 5"><assign location="ready" expr="true"/></if>
+    </transition>
+    <transition event="go" cond="ready" target="done"/>
+  </state>"#,
+        ),
+    );
+    assert!(ok, "every expression here is typed:\n{out}");
+}
+
+#[test]
+fn a_variable_initialised_with_a_value_of_another_kind_is_refused() {
+    let (ok, out) = run(
+        &["check"],
+        &doc(
+            "sce-static",
+            r#"<data id="ready" sce:type="bool" expr="1"/>"#,
+        ),
+    );
+    assert!(
+        !ok,
+        "an integer does not stand where a bool is declared:\n{out}"
+    );
+    assert_refused_at(&out, "expression/type-mismatch", 5);
+}
+
+#[test]
+fn a_variable_with_no_initial_value_is_refused() {
+    let (ok, out) = run(
+        &["check"],
+        &doc("sce-static", r#"<data id="count" sce:type="uint32"/>"#),
+    );
+    assert!(
+        !ok,
+        "a field's initial value is written, not implied:\n{out}"
+    );
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 5);
+}
+
+#[test]
+fn a_condition_that_is_not_a_bool_is_refused_on_its_line() {
+    let (ok, out) = run(
+        &["check"],
+        &machine(
+            r#"<state id="s"><transition event="go" cond="count + 1" target="done"/></state>"#,
+        ),
+    );
+    assert!(!ok, "a condition is a bool:\n{out}");
+    assert_refused_at(&out, "expression/type-mismatch", 8);
+}
+
+#[test]
+fn a_name_nothing_declares_is_refused() {
+    // The scope is closed: there is no script engine behind it to supply
+    // a name the document does not declare.
+    let (ok, out) = run(
+        &["check"],
+        &machine(
+            r#"<state id="s"><transition event="go" cond="cuont &gt; 1" target="done"/></state>"#,
+        ),
+    );
+    assert!(!ok, "`cuont` is declared nowhere:\n{out}");
+    assert!(
+        out.contains("cuont"),
+        "the refusal names what was written:\n{out}"
+    );
+}
+
+#[test]
+fn an_assignment_of_another_kind_is_refused() {
+    let (ok, out) = run(
+        &["check"],
+        &machine(
+            r#"<state id="s"><onentry><assign location="count" expr="true"/></onentry></state>"#,
+        ),
+    );
+    assert!(!ok, "a bool does not stand in a uint32:\n{out}");
+    assert_refused_at(&out, "expression/type-mismatch", 8);
+}
+
+#[test]
+fn an_expression_the_model_has_no_typed_form_for_is_refused() {
+    // `eventexpr` is evaluated as script text by every backend's templates,
+    // so admitting it would run part of the document in a language it never
+    // declared.
+    let (ok, out) = run(
+        &["check"],
+        &machine(r#"<state id="s"><onentry><send eventexpr="'go'"/></onentry></state>"#),
+    );
+    assert!(!ok, "eventexpr has no typed form here:\n{out}");
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 8);
+}

@@ -384,6 +384,94 @@ pub(crate) fn codec_field_type(f: &CodecField) -> InferredType {
     quantified_type(&f.sce_type, f.quantity)
 }
 
+/// An enum a statechart imports, as the static data model's scope names it:
+/// the import's alias, its variants in the enum document's spelling, the
+/// enum document's name, and the backend type an emitter spells it as.
+/// Owned, because a [`TypeCtx`] borrows what it registers and the
+/// statechart holds its enums as models, not as [`ImportContext`]s.
+#[derive(Debug, Clone)]
+pub struct StaticEnum {
+    pub alias: String,
+    pub variants: Vec<String>,
+    pub source_name: String,
+    pub qualified_type: String,
+}
+
+impl StaticEnum {
+    /// One per imported enum, keyed by alias, with `qualified_type` as the
+    /// backend spells it — the alias itself for a check that lowers
+    /// nothing.
+    pub fn from_imports(
+        enums: &std::collections::BTreeMap<String, EnumModel>,
+        qualified_type: impl Fn(&str, &EnumModel) -> String,
+    ) -> Vec<Self> {
+        enums
+            .iter()
+            .map(|(alias, model)| StaticEnum {
+                alias: alias.clone(),
+                variants: model.variants.iter().map(|v| v.name.clone()).collect(),
+                source_name: model.name.clone(),
+                qualified_type: qualified_type(alias, model),
+            })
+            .collect()
+    }
+}
+
+/// TypeCtx for a statechart's expression under `datamodel="sce-static"`
+/// (docs/SCE_ACCEPTED_SUBSET.md §2.15): every declared variable at its
+/// `sce:type`, the triggering event's `_event.data.<field>` paths when its
+/// event carries a schema (`payload`, from
+/// [`crate::forge::event_schema_check::event_payload_paths`]), the imported
+/// enums, and `In(<state id>)`.
+///
+/// The scope is closed, as every forge kind's is: the model is defined so
+/// that a document needs no script engine, so there is no host behind a
+/// name nothing declares. `_event` is an open record for the reason the
+/// procedure kind gives — its members beyond the typed payload are the
+/// triggering event's, not this document's to judge.
+pub fn static_statechart<'a>(
+    variables: impl IntoIterator<Item = &'a crate::model::Variable>,
+    payload: &'a [(String, InferredType)],
+    enums: &'a [StaticEnum],
+) -> TypeCtx<'a> {
+    let mut ctx = TypeCtx::new();
+    for var in variables {
+        let ty = var
+            .value_type
+            .as_ref()
+            .and_then(AlgorithmValueType::scalar)
+            .map_or(InferredType::Unknown, InferredType::from_sce_type);
+        ctx.insert_var(var.id.as_str(), ty);
+    }
+    for (path, ty) in payload {
+        ctx.insert_var(path.as_str(), *ty);
+    }
+    for e in enums {
+        ctx.insert_enum(
+            e.alias.as_str(),
+            EnumScope {
+                variants: &e.variants,
+                qualified_type: e.qualified_type.as_str(),
+                source_name: e.source_name.as_str(),
+            },
+        );
+    }
+    // `In(stateID)` is the one predicate every data model provides. Its
+    // signature is declared here so the closed scope admits it; lowering it
+    // is each backend's.
+    ctx.insert_func(
+        "In",
+        FuncSig {
+            params: vec![InferredType::Str],
+            ret: InferredType::Bool,
+            host_only: None,
+        },
+    );
+    ctx.insert_record("_event", RecordShape::Open);
+    close_the_scope(&mut ctx);
+    ctx
+}
+
 /// Empty context — no variables, no functions. Used for expressions that
 /// have no access to named identifiers (e.g. default-value initializers
 /// for internal fields that are pure literal constants).

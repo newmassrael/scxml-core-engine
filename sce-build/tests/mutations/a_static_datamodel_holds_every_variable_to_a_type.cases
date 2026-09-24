@@ -1,0 +1,78 @@
+# Mutation cases for "a static data model holds every variable to a type"
+# (docs/SCE_ACCEPTED_SUBSET.md §2.15).
+#
+# Run with:
+#   scripts/mutate sce-build/tests/mutations/a_static_datamodel_holds_every_variable_to_a_type.cases
+#
+# Each case takes one rule of the model away, and each has to turn the
+# suite red on its own. The model's point is that a document under it needs
+# no script engine, so the rules that matter most are the ones that keep an
+# untyped expression from reaching one: a closed scope, a judged place, an
+# attribute with no typed form refused.
+
+mutation_tests -p sce-build --features cli --test a_static_datamodel_holds_every_variable_to_a_type
+# The rules live in `sce-codegen`, which the tests run as a subprocess — the
+# evidence a mutation reached what ran is the file differing on disk while
+# the tests ran.
+mutation_targets sce-build/tests/a_static_datamodel_holds_every_variable_to_a_type.rs
+mutation_runtime_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/type_ctx.rs sce-build/src/parser.rs
+
+# A transition's condition stops being judged as a bool: `cond="count + 1"`
+# generates, and every backend emits a guard of an integer.
+mutation_case "a transition's condition is not judged as a bool" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     """                    transition.cond_spelling.as_ref(),
+                    Expected::Slot(InferredType::Bool),""",
+     """                    transition.cond_spelling.as_ref(),
+                    Expected::Hint(InferredType::Unknown),""")
+PY
+
+# An assignment stops being judged against its variable: a bool lands in a
+# `uint32`.
+mutation_case "an assignment is not judged against its variable" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     """                    action.spellings.get("expr"),
+                    Expected::Slot(slot),""",
+     """                    action.spellings.get("expr"),
+                    Expected::Hint(slot),""")
+PY
+
+# The scope opens: a name nothing declares is admitted, which is the one
+# thing a document with no host behind it cannot afford.
+mutation_case "the scope is left open" <<'PY'
+edit("sce-build/src/forge/type_ctx.rs",
+     """            host_only: None,
+        },
+    );
+    ctx.insert_record("_event", RecordShape::Open);
+    close_the_scope(&mut ctx);""",
+     """            host_only: None,
+        },
+    );
+    ctx.insert_record("_event", RecordShape::Open);""")
+PY
+
+# `eventexpr` stops being refused, so script text reaches a document that
+# declared it has none.
+mutation_case "an attribute with no typed form is admitted" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     """    ("send", "eventexpr"),
+""",
+     "")
+PY
+
+# A variable with no initial value is admitted, and a backend would pick
+# one for it.
+mutation_case "a variable with no initial value is admitted" <<'PY'
+edit("sce-build/src/parser.rs",
+     """            if node.attribute("expr").is_none_or(|e| e.trim().is_empty()) {""",
+     """            if node.attribute("expr").is_none_or(|e| e.trim().is_empty()) && false {""")
+PY
+
+# The gate stops reaching the tool: every document reads as accepted. The
+# refusal cases are what stand between this and a green run.
+mutation_case "the gate reports every document as accepted" <<'PY'
+edit("sce-build/tests/a_static_datamodel_holds_every_variable_to_a_type.rs",
+     "    (\n        out.status.success(),",
+     "    (\n        true,")
+PY
