@@ -2426,8 +2426,9 @@ never declared. Which backends lower it is `STATIC_DATAMODEL_BACKENDS` in
 `sce-build/src/generator.rs`.
 
 Kotlin lowers it (`crate::forge::static_lowering`): each variable is a field
-of the generated machine (`var <name>: <type> = <init>`, readable by the
-host, written only by the machine), and each expression is lowered through
+of the generated machine, written only by the machine — `var <name>: <type>
+= <init>` with a private setter when it is published, a `private var` when it
+is the machine's own — and each expression is lowered through
 the forge expression lowerer into the slot the Kotlin templates already
 render as native code — a condition as a native guard (`In(id)` as the
 machine's active-state test), an `<assign>` or `<log>` value as the text the
@@ -2450,7 +2451,14 @@ imports its enum into the generated unit.
 **Snapshot.** A Kotlin `sce-static` machine publishes what a host observes
 as one immutable value, `snapshot: StateFlow<Snapshot>`: the full active
 configuration (every active state, each `<parallel>` region included), the
-variables as a `Data` value in declaration order, and `truncated`. It is
+published variables as a `Data` value in declaration order, and `truncated`.
+A variable is published by `sce:direction="out"`; `internal`, the default,
+keeps it the machine's own — a private field, in no snapshot — so what a
+host is written against is what the document chose to show, and an internal
+variable can be renamed without breaking it. A document that publishes
+nothing snapshots its configuration and `truncated` alone. `sce:direction="in"`
+is refused as `scxml/static-datamodel-rule`: it would make the variable the
+host's to write, which nothing lowers. It is
 published once per completed macrostep, at the W3C SCXML Appendix D point
 — inner loop drained, invokes started, just before the next external event —
 through the runtime hook `onMacrostepComplete`, and never between two

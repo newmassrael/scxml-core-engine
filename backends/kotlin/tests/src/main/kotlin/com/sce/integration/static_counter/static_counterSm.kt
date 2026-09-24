@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 7f29dbe36a8bb425715abd0f30ccf100bbc7ca289014af631a759a3497b34e98
+// source-hash: 650ce2f72e4fe5a4cf966ce54a0964c73ad4617ce446385f874078c64955fa2f
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_counter.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_counter.scxml:11 :: _machine
+// SCE-MAP: static_counter.scxml:13 :: _machine
 
 package com.sce.integration.static_counter
 
@@ -30,14 +30,16 @@ class StaticCounterStateMachine(
 ) : StateMachineEngine<StaticCounterState, StaticCounterEvent>() {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
-    /** W3C SCXML 5.2: the `count` datamodel variable. */
+    /** W3C SCXML 5.2: the `count` datamodel variable, published (`sce:direction="out"`). */
     var count: UInt = 0.toUInt()
         private set
-    /** W3C SCXML 5.2: the `ready` datamodel variable. */
+    /** W3C SCXML 5.2: the `ready` datamodel variable, published (`sce:direction="out"`). */
     var ready: Boolean = false
         private set
+    /** W3C SCXML 5.2: the `step` datamodel variable, the machine's own. */
+    private var step: UInt = 1.toUInt()
 
-    /** The datamodel as one immutable value, in declaration order. */
+    /** The published variables as one immutable value, in declaration order. */
     data class Data(
         val count: UInt,
         val ready: Boolean,
@@ -45,10 +47,10 @@ class StaticCounterStateMachine(
 
     /**
      * What a host observes: the full active configuration — every active
-     * state, each region of a `<parallel>` included — and the datamodel,
-     * taken together at a macrostep boundary. `truncated` is `true` when that
-     * macrostep was stopped at the microstep ceiling, so the configuration is
-     * not a stable one.
+     * state, each region of a `<parallel>` included — and the published
+     * variables, taken together at a macrostep boundary. `truncated` is
+     * `true` when that macrostep was stopped at the microstep ceiling, so the
+     * configuration is not a stable one.
      */
     data class Snapshot(
         val configuration: Set<StaticCounterState>,
@@ -140,18 +142,18 @@ class StaticCounterStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_counter.scxml:11 :: _machine
+    // SCE-MAP: static_counter.scxml:13 :: _machine
     override fun onEntry(state: StaticCounterState, pathChild: StaticCounterState?) {
         when (state) {
             is StaticCounterState.Counting -> {
-                // SCE-MAP: static_counter.scxml:17 :: counting :: _state_body
+                // SCE-MAP: static_counter.scxml:20 :: counting :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("counting")) return
 
             println("count: " + count)
             }
             is StaticCounterState.Done -> {
-                // SCE-MAP: static_counter.scxml:29 :: done :: _state_body
+                // SCE-MAP: static_counter.scxml:32 :: done :: _state_body
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("done")) return
                 // W3C SCXML 3.7: Top-level final state reached
@@ -161,15 +163,15 @@ class StaticCounterStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_counter.scxml:11 :: _machine
+    // SCE-MAP: static_counter.scxml:13 :: _machine
     override fun onExit(state: StaticCounterState) {
         when (state) {
             is StaticCounterState.Counting -> {
-                // SCE-MAP: static_counter.scxml:17 :: counting :: _state_body
+                // SCE-MAP: static_counter.scxml:20 :: counting :: _state_body
                 activeStateIds.remove("counting")
             }
             is StaticCounterState.Done -> {
-                // SCE-MAP: static_counter.scxml:29 :: done :: _state_body
+                // SCE-MAP: static_counter.scxml:32 :: done :: _state_body
                 activeStateIds.remove("done")
             }
         }
@@ -177,7 +179,7 @@ class StaticCounterStateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: static_counter.scxml:11 :: _machine
+    // SCE-MAP: static_counter.scxml:13 :: _machine
     override fun executeTransitionActions(
         source: StaticCounterState,
         event: StaticCounterEvent?,
@@ -186,10 +188,10 @@ class StaticCounterStateMachine(
         when (source) {
         is StaticCounterState.Counting -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: static_counter.scxml:19 :: counting :: _transition_0
+                // SCE-MAP: static_counter.scxml:22 :: counting :: _transition_0
 
 
-            count = count + 1.toUInt()
+            count = count + step
 
 
             if (count == 5.toUInt()) {

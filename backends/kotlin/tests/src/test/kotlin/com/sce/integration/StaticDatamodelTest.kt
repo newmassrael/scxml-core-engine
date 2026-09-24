@@ -19,6 +19,7 @@ import com.sce.integration.static_counter.StaticCounterState
 import com.sce.integration.static_counter.StaticCounterStateMachine
 import com.sce.integration.static_host_call.StaticHostCallActions
 import com.sce.integration.static_host_call.StaticHostCallEvent
+import com.sce.integration.static_host_call.StaticHostCallState
 import com.sce.integration.static_host_call.StaticHostCallStateMachine
 import com.sce.integration.static_list.StaticListEvent
 import com.sce.integration.static_list.StaticListStateMachine
@@ -178,6 +179,24 @@ class StaticDatamodelTest {
                 "one call per entry of `idle`, each with the datamodel as it stood; " +
                     "the fourth retry finds `attempts < 3` false and re-enters nothing"
             )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun aMachineThatPublishesNoVariableSnapshotsItsConfigurationAlone() {
+        // `attempts` is not declared sce:direction="out", so it is the
+        // machine's own: the snapshot carries no `Data`, only where the
+        // machine is.
+        val host = object : StaticHostCallActions {
+            override fun showAttempts(count: UInt, exhausted: Boolean) {}
+        }
+        val sm = StaticHostCallStateMachine(host)
+        sm.initialize()
+        try {
+            assertEquals(setOf(StaticHostCallState.Idle), sm.snapshot.value.configuration)
+            assertEquals(false, sm.snapshot.value.truncated)
         } finally {
             sm.cleanup()
         }

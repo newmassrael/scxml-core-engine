@@ -1964,6 +1964,9 @@ fn render_variable(v: &crate::model::Variable, out: &mut Out<'_>) {
     if let Some(n) = v.capacity {
         let _ = write!(line, " capacity {n}");
     }
+    if let Some(d) = v.direction {
+        let _ = write!(line, " direction {}", d.as_attr());
+    }
     if !v.src.is_empty() {
         let _ = write!(line, " src {}", text(&v.src));
     }

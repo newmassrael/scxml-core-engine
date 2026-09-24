@@ -880,6 +880,13 @@ pub struct Variable {
     /// execution error, not growth. `None` for any other variable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub capacity: Option<u32>,
+    /// `sce:direction` under `datamodel="sce-static"`: `out` publishes the
+    /// variable — the host reads it and the snapshot carries it — and
+    /// `internal`, the default, keeps it the machine's own. `None` under any
+    /// other data model, where the attribute is the authoring tool's
+    /// input/output declaration and the model does not carry it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub direction: Option<crate::forge::model::Direction>,
 }
 
 /// §scxml-3.11: History state information

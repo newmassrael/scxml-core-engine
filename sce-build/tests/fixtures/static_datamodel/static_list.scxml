@@ -13,8 +13,8 @@
        version="1.0" initial="collecting" datamodel="sce-static" name="static_list">
   <sce:import kind="event-schema" src="schema_day.scxml" as="Day"/>
   <datamodel>
-    <data id="picked" sce:type="list&lt;uint8&gt;" sce:capacity="3"/>
-    <data id="refusals" sce:type="uint32" expr="0"/>
+    <data id="picked" sce:type="list&lt;uint8&gt;" sce:capacity="3" sce:direction="out"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>
   <state id="collecting">
     <transition event="day.picked" type="internal">

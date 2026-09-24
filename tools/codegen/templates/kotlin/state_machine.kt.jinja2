@@ -77,42 +77,55 @@ class {{ machine_name }}StateMachine(
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
 {# Under `sce-static` this class IS the datamodel's home: there is no engine,
    and every expression was lowered to Kotlin reading and writing these fields
-   (`crate::forge::static_lowering`). The host reads them; only the machine's
-   own `<assign>` writes them. #}
+   (`crate::forge::static_lowering`). Only the machine's own statements write
+   them. A variable declared `sce:direction="out"` is published — the host
+   reads it, and the snapshot carries it; every other one is private, so
+   renaming it never changes what a host was written against. #}
 {% for field in static_fields %}
-    /** W3C SCXML 5.2: the `{{ field.id }}` datamodel variable. */
+{% if field.published %}
+    /** W3C SCXML 5.2: the `{{ field.id }}` datamodel variable, published (`sce:direction="out"`). */
     var {{ field.name }}: {{ field.ty }} = {{ field.init }}
         private set
+{% else %}
+    /** W3C SCXML 5.2: the `{{ field.id }}` datamodel variable, the machine's own. */
+    private var {{ field.name }}: {{ field.ty }} = {{ field.init }}
+{% endif %}
 {% endfor %}
+{% if static_published %}
 
-    /** The datamodel as one immutable value, in declaration order. */
+    /** The published variables as one immutable value, in declaration order. */
     data class Data(
-{% for field in static_fields %}
+{% for field in static_published %}
         val {{ field.name }}: {{ field.ty }},
 {% endfor %}
     )
+{% endif %}
 
     /**
      * What a host observes: the full active configuration — every active
-     * state, each region of a `<parallel>` included — and the datamodel,
-     * taken together at a macrostep boundary. `truncated` is `true` when that
-     * macrostep was stopped at the microstep ceiling, so the configuration is
-     * not a stable one.
+     * state, each region of a `<parallel>` included —{% if static_published %} and the published
+     * variables,{% endif %} taken together at a macrostep boundary. `truncated` is
+     * `true` when that macrostep was stopped at the microstep ceiling, so the
+     * configuration is not a stable one.
      */
     data class Snapshot(
         val configuration: Set<{{ machine_name }}State>,
+{% if static_published %}
         val data: Data,
+{% endif %}
         val truncated: Boolean,
     )
+{% if static_published %}
 
     private fun currentData(): Data = Data(
-{% for field in static_fields %}
+{% for field in static_published %}
         {{ field.name }} = {{ field.name }},
 {% endfor %}
     )
+{% endif %}
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
-        Snapshot(emptySet(), currentData(), false)
+        Snapshot(emptySet(){% if static_published %}, currentData(){% endif %}, false)
     )
 
     /**
@@ -125,7 +138,7 @@ class {{ machine_name }}StateMachine(
         get() = _snapshot
 
     override fun onMacrostepComplete(truncated: Boolean) {
-        _snapshot.value = Snapshot(activeConfiguration, currentData(), truncated)
+        _snapshot.value = Snapshot(activeConfiguration{% if static_published %}, currentData(){% endif %}, truncated)
     }
 {% endif %}
 {# W3C SCXML 5.3: the datamodel has ONE home, and it is not this class.

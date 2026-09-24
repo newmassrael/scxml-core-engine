@@ -13,12 +13,12 @@
        version="1.0" initial="showing" datamodel="sce-static" name="static_record">
   <sce:import kind="event-schema" src="schema_day.scxml" as="Day"/>
   <datamodel>
-    <data id="shown" sce:type="record:Day">
+    <data id="shown" sce:type="record:Day" sce:direction="out">
       <sce:set name="year" expr="2026"/>
       <sce:set name="month" expr="9"/>
       <sce:set name="dayOfMonth" expr="24"/>
     </data>
-    <data id="refusals" sce:type="uint32" expr="0"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
   </datamodel>
   <state id="showing">
     <transition event="next" cond="shown.dayOfMonth &lt; 28" type="internal">

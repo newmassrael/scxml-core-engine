@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 7f29dbe36a8bb425715abd0f30ccf100bbc7ca289014af631a759a3497b34e98
+// source-hash: 650ce2f72e4fe5a4cf966ce54a0964c73ad4617ce446385f874078c64955fa2f
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_host_call.scxml
@@ -50,34 +50,22 @@ class StaticHostCallStateMachine(
 ) : StateMachineEngine<StaticHostCallState, StaticHostCallEvent>() {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
-    /** W3C SCXML 5.2: the `attempts` datamodel variable. */
-    var attempts: UInt = 0.toUInt()
-        private set
-
-    /** The datamodel as one immutable value, in declaration order. */
-    data class Data(
-        val attempts: UInt,
-    )
+    /** W3C SCXML 5.2: the `attempts` datamodel variable, the machine's own. */
+    private var attempts: UInt = 0.toUInt()
 
     /**
      * What a host observes: the full active configuration — every active
-     * state, each region of a `<parallel>` included — and the datamodel,
-     * taken together at a macrostep boundary. `truncated` is `true` when that
-     * macrostep was stopped at the microstep ceiling, so the configuration is
-     * not a stable one.
+     * state, each region of a `<parallel>` included — taken together at a macrostep boundary. `truncated` is
+     * `true` when that macrostep was stopped at the microstep ceiling, so the
+     * configuration is not a stable one.
      */
     data class Snapshot(
         val configuration: Set<StaticHostCallState>,
-        val data: Data,
         val truncated: Boolean,
     )
 
-    private fun currentData(): Data = Data(
-        attempts = attempts,
-    )
-
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
-        Snapshot(emptySet(), currentData(), false)
+        Snapshot(emptySet(), false)
     )
 
     /**
@@ -90,7 +78,7 @@ class StaticHostCallStateMachine(
         get() = _snapshot
 
     override fun onMacrostepComplete(truncated: Boolean) {
-        _snapshot.value = Snapshot(activeConfiguration, currentData(), truncated)
+        _snapshot.value = Snapshot(activeConfiguration, truncated)
     }
 
     override val initialState: StaticHostCallState = StaticHostCallState.Idle

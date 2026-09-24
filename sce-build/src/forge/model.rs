@@ -929,6 +929,15 @@ impl Direction {
             _ => None,
         }
     }
+
+    /// The `sce:direction` spelling [`Self::from_attr`] reads.
+    pub fn as_attr(self) -> &'static str {
+        match self {
+            Self::In => "in",
+            Self::Out => "out",
+            Self::Internal => "internal",
+        }
+    }
 }
 
 // ── Typed field ────────────────────────────────────────────────

@@ -790,6 +790,24 @@ fn enforce_static_datamodel(
                     Some(name.to_string()),
                 ));
             }
+            // `out` publishes a variable to the host and `internal` keeps it
+            // the machine's own. `in` would make it the host's to write, and
+            // nothing lowers such a write, so it is refused rather than
+            // accepted with no effect.
+            if let Some((written, pos)) =
+                attribute_as_written_ns(&node, Some(SCE_NAMESPACE), "direction")
+                    .filter(|(written, _)| written.trim() == "in")
+            {
+                return Err(refused(
+                    pos,
+                    format!("sce:direction=\"{written}\""),
+                    "a variable is written only by the machine: sce:direction=\"out\" \
+                     publishes it to the host, \"internal\" (the default) keeps it the \
+                     machine's own",
+                    &node,
+                    Some(written.to_string()),
+                ));
+            }
             if let Some((written, pos)) = attribute_as_written(&node, "src") {
                 return Err(refused(
                     pos,
@@ -2486,6 +2504,13 @@ impl SCXMLParser {
             .attribute((SCE_NAMESPACE, "capacity"))
             .filter(|_| model.datamodel == Datamodel::SceStatic)
             .and_then(|text| text.trim().parse::<u32>().ok().filter(|n| *n > 0));
+        // Whether the host sees the variable; `enforce_static_datamodel` has
+        // already refused a direction this data model gives no meaning to.
+        let direction = (model.datamodel == Datamodel::SceStatic).then(|| {
+            data.attribute((SCE_NAMESPACE, "direction"))
+                .and_then(|text| crate::forge::model::Direction::from_attr(text.trim()))
+                .unwrap_or(crate::forge::model::Direction::Internal)
+        });
         // `needs_script_engine` is derived post-parse by
         // [`crate::script_engine_analyzer`] —
         // [`NeedsScriptEngineCause::DatamodelVariableInit`].
@@ -2501,6 +2526,7 @@ impl SCXMLParser {
             value_type_spelling: AttributeSpelling::of(data, Some(SCE_NAMESPACE), "type"),
             record_fields,
             capacity,
+            direction,
         }))
     }
 

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 7f29dbe36a8bb425715abd0f30ccf100bbc7ca289014af631a759a3497b34e98
+// source-hash: 650ce2f72e4fe5a4cf966ce54a0964c73ad4617ce446385f874078c64955fa2f
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_record.scxml
@@ -50,14 +50,14 @@ class StaticRecordStateMachine(
 ) : StateMachineEngine<StaticRecordState, StaticRecordEvent>() {
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
-    /** W3C SCXML 5.2: the `shown` datamodel variable. */
+    /** W3C SCXML 5.2: the `shown` datamodel variable, published (`sce:direction="out"`). */
     var shown: StaticRecordDayRecord = StaticRecordDayRecord(year = 2026.toUShort(), month = 9.toUByte(), dayOfMonth = 24.toUByte())
         private set
-    /** W3C SCXML 5.2: the `refusals` datamodel variable. */
+    /** W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`). */
     var refusals: UInt = 0.toUInt()
         private set
 
-    /** The datamodel as one immutable value, in declaration order. */
+    /** The published variables as one immutable value, in declaration order. */
     data class Data(
         val shown: StaticRecordDayRecord,
         val refusals: UInt,
@@ -65,10 +65,10 @@ class StaticRecordStateMachine(
 
     /**
      * What a host observes: the full active configuration — every active
-     * state, each region of a `<parallel>` included — and the datamodel,
-     * taken together at a macrostep boundary. `truncated` is `true` when that
-     * macrostep was stopped at the microstep ceiling, so the configuration is
-     * not a stable one.
+     * state, each region of a `<parallel>` included — and the published
+     * variables, taken together at a macrostep boundary. `truncated` is
+     * `true` when that macrostep was stopped at the microstep ceiling, so the
+     * configuration is not a stable one.
      */
     data class Snapshot(
         val configuration: Set<StaticRecordState>,

@@ -2451,7 +2451,7 @@ fn parse_statechart(
     Ok(m)
 }
 
-/// `data <id>[: <type>] [sce-type <t>] [capacity <n>] [src <s>] [= <expr>] [content <c>]`,
+/// `data <id>[: <type>] [sce-type <t>] [capacity <n>] [direction <d>] [src <s>] [= <expr>] [content <c>]`,
 /// and for a record variable one nested `<field> = <expr>` line per field —
 /// the lines an algorithm's record local nests.
 fn parse_variable(
@@ -2490,6 +2490,7 @@ fn parse_variable(
         value_type_spelling: None,
         record_fields: Vec::new(),
         capacity: None,
+        direction: None,
     };
     for kid in kids {
         let (name, expr) = kid.text.split_once(" = ").ok_or_else(|| ParseError {
@@ -2528,6 +2529,20 @@ fn parse_variable(
             line: line.number,
             why: format!("`{n}` is not a list capacity"),
         })?);
+        tail = more;
+    }
+    if let Some(after) = tail.strip_prefix("direction ") {
+        let (d, more) = match after.split_once(' ') {
+            Some((d, m)) => (d, m),
+            None => (after, ""),
+        };
+        v.direction =
+            Some(
+                crate::forge::model::Direction::from_attr(d).ok_or_else(|| ParseError {
+                    line: line.number,
+                    why: format!("`{d}` is not a direction"),
+                })?,
+            );
         tail = more;
     }
     if let Some(after) = tail.strip_prefix("src ") {

@@ -3013,6 +3013,15 @@ fn render_kotlin(
         event_payload_populate => &payload.populate,
         event_payload_inject => &payload.inject_methods,
         static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
+        // The `sce:direction="out"` variables — what the host reads and the
+        // snapshot carries (SCE Accepted Subset §2.15).
+        static_published => minijinja::Value::from_serialize(
+            static_lowering
+                .fields
+                .iter()
+                .filter(|f| f.published)
+                .collect::<Vec<_>>()
+        ),
         static_record_defs => static_lowering.record_defs.join("\n"),
         has_native_actions => native.any,
         native_actions_defs => &native.interface_def,

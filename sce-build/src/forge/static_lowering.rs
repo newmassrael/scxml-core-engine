@@ -31,6 +31,10 @@ pub struct StaticField {
     pub name: String,
     pub ty: String,
     pub init: String,
+    /// Declared `sce:direction="out"`: the host reads it, and the snapshot
+    /// carries it. Every other variable is the machine's own, so that renaming
+    /// one never changes what a host was written against.
+    pub published: bool,
 }
 
 /// What lowering a `sce-static` machine for Kotlin produced beyond the
@@ -153,6 +157,7 @@ pub fn lower_kotlin(
         let ctx = scope.ctx(&no_payload, enums);
         let renames = renames(&names, None);
         for var in variables {
+            let published = var.direction == Some(crate::forge::model::Direction::Out);
             // A record variable is built whole from its `<sce:set>`s, in
             // the schema's order — the rule the judge already held it to.
             if let Some(alias) = var.value_type.as_ref().and_then(|t| t.record_alias()) {
@@ -200,6 +205,7 @@ pub fn lower_kotlin(
                     name: filters::to_camel_case(var.id.clone()),
                     init: format!("{class}({})", args.join(", ")),
                     ty: class,
+                    published,
                 });
                 continue;
             }
@@ -211,6 +217,7 @@ pub fn lower_kotlin(
                     name: filters::to_camel_case(var.id.clone()),
                     ty: format!("List<{}>", crate::forge::generator::kotlin_type(elem)),
                     init: "emptyList()".to_string(),
+                    published,
                 });
                 continue;
             }
@@ -240,6 +247,7 @@ pub fn lower_kotlin(
                 name: filters::to_camel_case(var.id.clone()),
                 ty: crate::forge::generator::kotlin_type(ty).to_string(),
                 init,
+                published,
             });
         }
     }

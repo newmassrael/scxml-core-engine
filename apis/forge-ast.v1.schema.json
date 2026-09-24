@@ -5883,6 +5883,17 @@
         "content": {
           "type": "string"
         },
+        "direction": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Direction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`sce:direction` under `datamodel=\"sce-static\"`: `out` publishes the variable — the host reads it and the snapshot carries it — and `internal`, the default, keeps it the machine's own. `None` under any other data model, where the attribute is the authoring tool's input/output declaration and the model does not carry it."
+        },
         "expr": {
           "type": "string"
         },

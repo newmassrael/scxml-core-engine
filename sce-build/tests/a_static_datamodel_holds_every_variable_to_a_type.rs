@@ -607,6 +607,39 @@ fn an_assignment_to_a_whole_record_is_refused() {
     assert_refused_at(&out, "expression/unsupported-construct", 12);
 }
 
+// ── A variable is published by sce:direction="out" ──────────────────────
+
+#[test]
+fn a_variable_the_host_would_write_is_refused() {
+    // `out` publishes a variable and `internal` keeps it the machine's own;
+    // `in` would hand the host a write nothing lowers.
+    let (ok, out) = run(
+        &["check"],
+        &doc(
+            "sce-static",
+            r#"<data id="count" sce:type="uint32" expr="0" sce:direction="in"/>"#,
+        ),
+    );
+    assert!(
+        !ok,
+        "a sce-static variable is written by the machine:\n{out}"
+    );
+    assert_refused_at(&out, "scxml/static-datamodel-rule", 5);
+}
+
+#[test]
+fn a_published_and_an_internal_variable_are_accepted() {
+    let (ok, out) = run(
+        &["check", "-l", "kotlin"],
+        &doc(
+            "sce-static",
+            r#"<data id="count" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="step" sce:type="uint32" expr="1" sce:direction="internal"/>"#,
+        ),
+    );
+    assert!(ok, "out and internal both mean something here:\n{out}");
+}
+
 // ── A list variable starts empty, is appended to and cleared ────────────
 
 /// A list variable, `days: list<uint8>` of capacity 4, on line 5.
