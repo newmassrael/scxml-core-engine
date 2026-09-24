@@ -1,0 +1,33 @@
+# Mutation cases for "a table element past Long is spelled as each backend
+# reads it".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_table_element_past_long_is_spelled_as_each_backend_reads_it.cases`.
+#
+# A `<sce:const>` table's elements are serialised by `FormatValue`, apart from
+# the expression emitters that already spelled a `uint64` past `i64::MAX` and
+# `int64`'s minimum the way C, C++ and Kotlin read them. Each case puts the
+# table's half of the defect back: an element spelled bare, as it was before
+# the table went through `expr::wide_literal_spelling`. The unit test
+# `a_table_element_past_long_is_spelled_as_each_backend_reads_it` in
+# `const_fold.rs` refuses both.
+#
+# Anchors are literal slices of the source; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --lib
+mutation_targets sce-build/src/forge/const_fold.rs
+mutation_oracles sce-build/src/forge/const_fold.rs
+
+mutation_case "an unsigned element past Long is spelled bare" <<'PY'
+edit("sce-build/src/forge/const_fold.rs",
+     r'''            ConstValue::U64(v) => match expr::WideLiteral::of_unsigned(v)''',
+     r'''            ConstValue::U64(v) => match expr::WideLiteral::of_unsigned(v)
+                .filter(|_| false)''')
+PY
+
+mutation_case "Long's minimum as an element is spelled bare" <<'PY'
+edit("sce-build/src/forge/const_fold.rs",
+     r'''            ConstValue::I64(v) => match expr::WideLiteral::of_signed(v).and_then(|wide| {''',
+     r'''            ConstValue::I64(v) => match expr::WideLiteral::of_signed(v).filter(|_| false).and_then(|wide| {''')
+PY

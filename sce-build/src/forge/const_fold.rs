@@ -338,9 +338,18 @@ impl std::fmt::Display for FormatValue {
                 Language::Kotlin => write!(f, "{v}u"),
                 _ => write!(f, "{v}"),
             },
-            ConstValue::U64(v) => match self.lang {
-                Language::Kotlin => write!(f, "{v}uL"),
-                _ => write!(f, "{v}"),
+            // A value past `i64::MAX`, or `i64::MIN` below, is spelled the
+            // way an expression's literal is (`expr::wide_literal_spelling`):
+            // gcc and g++ refuse the bare decimal under `-Werror`, and
+            // kotlinc has no literal for `Long`'s minimum.
+            ConstValue::U64(v) => match expr::WideLiteral::of_unsigned(v)
+                .and_then(|wide| expr::wide_literal_spelling(self.lang, wide, &v.to_string()))
+            {
+                Some(spelled) => f.write_str(&spelled),
+                None => match self.lang {
+                    Language::Kotlin => write!(f, "{v}uL"),
+                    _ => write!(f, "{v}"),
+                },
             },
             ConstValue::I8(v) => match self.lang {
                 Language::Kotlin => write!(f, "({v}).toByte()"),
@@ -351,9 +360,14 @@ impl std::fmt::Display for FormatValue {
                 _ => write!(f, "{v}"),
             },
             ConstValue::I32(v) => write!(f, "{v}"),
-            ConstValue::I64(v) => match self.lang {
-                Language::Kotlin => write!(f, "{v}L"),
-                _ => write!(f, "{v}"),
+            ConstValue::I64(v) => match expr::WideLiteral::of_signed(v).and_then(|wide| {
+                expr::wide_literal_spelling(self.lang, wide, &v.unsigned_abs().to_string())
+            }) {
+                Some(spelled) => f.write_str(&spelled),
+                None => match self.lang {
+                    Language::Kotlin => write!(f, "{v}L"),
+                    _ => write!(f, "{v}"),
+                },
             },
             ConstValue::F32(v) => format_float_lit(f, v as f64, true, self.lang),
             ConstValue::F64(v) => format_float_lit(f, v, false, self.lang),
@@ -1214,5 +1228,58 @@ mod tests {
         assert_eq!(body, "0, 2, 4129");
         let cpp_body = serialize_array_literal_body(&[ConstValue::U16(0xFFFF)], Language::Cpp);
         assert_eq!(cpp_body, "65535");
+    }
+
+    /// A table element past `i64::MAX`, and `i64::MIN`, are spelled the way
+    /// each backend reads them — the same spellings an expression's literal
+    /// takes — while a value just inside `Long` stands as it was.
+    #[test]
+    fn a_table_element_past_long_is_spelled_as_each_backend_reads_it() {
+        use crate::generator::Language;
+        let values = [
+            ConstValue::U64(u64::MAX),
+            ConstValue::I64(i64::MIN),
+            ConstValue::U64(i64::MAX as u64),
+            ConstValue::I64(i64::MIN + 1),
+        ];
+        let expected = [
+            (
+                Language::C11,
+                "18446744073709551615ULL, (-9223372036854775807LL - 1), \
+                 9223372036854775807, -9223372036854775807",
+            ),
+            (
+                Language::Cpp,
+                "18446744073709551615ULL, (-9223372036854775807LL - 1), \
+                 9223372036854775807, -9223372036854775807",
+            ),
+            (
+                Language::Kotlin,
+                "18446744073709551615uL, Long.MIN_VALUE, \
+                 9223372036854775807uL, -9223372036854775807L",
+            ),
+            (
+                Language::Rust,
+                "18446744073709551615, -9223372036854775808, \
+                 9223372036854775807, -9223372036854775807",
+            ),
+            (
+                Language::Go,
+                "18446744073709551615, -9223372036854775808, \
+                 9223372036854775807, -9223372036854775807",
+            ),
+            (
+                Language::Python,
+                "18446744073709551615, -9223372036854775808, \
+                 9223372036854775807, -9223372036854775807",
+            ),
+        ];
+        for (lang, body) in expected {
+            assert_eq!(
+                serialize_array_literal_body(&values, lang),
+                body,
+                "{lang:?}"
+            );
+        }
     }
 }

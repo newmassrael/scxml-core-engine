@@ -670,15 +670,33 @@ fn integer_literal_value(text: &str) -> Option<u64> {
 /// ⚠ Both were emitted bare until 2026-09-24: gcc and g++ refuse a decimal
 /// constant that large under `-Werror` ("so large that it is unsigned"),
 /// and kotlinc refuses it outright ("value out of range").
+///
+/// The same two values reach a backend a second way — folded into a
+/// `<sce:const>` table's elements — and are spelled there by the same
+/// [`wide_literal_spelling`], so an expression and a table cannot disagree
+/// about how C, C++ or Kotlin writes them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum WideLiteral {
+pub(crate) enum WideLiteral {
     Unsigned,
     Int64Min,
 }
 
+const LONG_MAX: u64 = i64::MAX.unsigned_abs();
+
+impl WideLiteral {
+    /// An unsigned value as a [`WideLiteral`], when it passes `i64::MAX`.
+    pub(crate) fn of_unsigned(value: u64) -> Option<Self> {
+        (value > LONG_MAX).then_some(Self::Unsigned)
+    }
+
+    /// A signed value as a [`WideLiteral`], when it is `i64::MIN`.
+    pub(crate) fn of_signed(value: i64) -> Option<Self> {
+        (value == i64::MIN).then_some(Self::Int64Min)
+    }
+}
+
 /// `node` as a [`WideLiteral`], when it is one.
 fn wide_literal(node: &TypedExpr) -> Option<WideLiteral> {
-    const LONG_MAX: u64 = i64::MAX.unsigned_abs();
     let magnitude = |kind: &ExprKind| match kind {
         ExprKind::NumberLit(text) if !is_float_literal_text(text) => integer_literal_value(text),
         _ => None,
@@ -688,9 +706,7 @@ fn wide_literal(node: &TypedExpr) -> Option<WideLiteral> {
             op: UnaryOp::Neg,
             operand,
         } => (magnitude(&operand.kind) == Some(LONG_MAX + 1)).then_some(WideLiteral::Int64Min),
-        kind => magnitude(kind)
-            .filter(|value| *value > LONG_MAX)
-            .map(|_| WideLiteral::Unsigned),
+        kind => magnitude(kind).and_then(WideLiteral::of_unsigned),
     }
 }
 
@@ -698,16 +714,34 @@ fn wide_literal(node: &TypedExpr) -> Option<WideLiteral> {
 /// `long long` cannot hold, so the value is spelled as an expression.
 pub(crate) const C_INT64_MIN: &str = "(-9223372036854775807LL - 1)";
 
+/// `Long`'s minimum in Kotlin, which has no literal for it.
+const KOTLIN_LONG_MIN: &str = "Long.MIN_VALUE";
+
+/// `wide`, whose unsigned value is written `raw`, as `lang` spells it; `None`
+/// for a backend whose bare literal already carries it (Rust, Go, Python).
+pub(crate) fn wide_literal_spelling(
+    lang: crate::generator::Language,
+    wide: WideLiteral,
+    raw: &str,
+) -> Option<String> {
+    use crate::generator::Language;
+    match (lang, wide) {
+        (Language::C11 | Language::Cpp, WideLiteral::Unsigned) => Some(format!("{raw}ULL")),
+        (Language::C11 | Language::Cpp, WideLiteral::Int64Min) => Some(C_INT64_MIN.to_string()),
+        (Language::Kotlin, WideLiteral::Unsigned) => Some(format!("{raw}uL")),
+        (Language::Kotlin, WideLiteral::Int64Min) => Some(KOTLIN_LONG_MIN.to_string()),
+        (Language::Rust | Language::Go | Language::Python, _) => None,
+    }
+}
+
 /// `node`, of integer type `to`, as C and C++ spell it when it is a
 /// [`WideLiteral`]; `None` for anything else, which stands as emitted.
 fn c_family_wide_literal(raw: &str, to: InferredType, node: &TypedExpr) -> Option<String> {
     if !matches!(to.strip_quantity(), InferredType::Int { .. }) {
         return None;
     }
-    Some(match wide_literal(node)? {
-        WideLiteral::Unsigned => format!("{raw}ULL"),
-        WideLiteral::Int64Min => C_INT64_MIN.to_string(),
-    })
+    // C and C++ spell both the same way; either names the family.
+    wide_literal_spelling(crate::generator::Language::C11, wide_literal(node)?, raw)
 }
 
 /// Refuse a call of a function `ctx` registers — an imported function, a
@@ -4347,10 +4381,10 @@ fn kotlin_coerce(raw: String, from: InferredType, to: InferredType, node: &Typed
     // Kotlin has no bare literal past `Long`: the unsigned value takes the
     // `uL` suffix, and `Long`'s minimum is its named constant.
     if matches!(to.strip_quantity(), Int { .. }) {
-        match wide_literal(node) {
-            Some(WideLiteral::Unsigned) => return format!("{raw}uL"),
-            Some(WideLiteral::Int64Min) => return "Long.MIN_VALUE".to_string(),
-            None => {}
+        if let Some(spelled) = wide_literal(node)
+            .and_then(|wide| wide_literal_spelling(crate::generator::Language::Kotlin, wide, &raw))
+        {
+            return spelled;
         }
     }
     if from == to || matches!(to, Unknown) {
