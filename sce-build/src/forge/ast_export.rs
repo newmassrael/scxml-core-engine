@@ -175,7 +175,18 @@ pub fn write_envelope_to_path(path: &std::path::Path, parsed: &ParsedForge) -> s
 /// owns a `Box<SCXMLModel>`. Callers retaining the model for downstream
 /// codegen must clone first — typically a one-off cost on the
 /// `--emit-ast` path that is not in the hot loop.
-pub fn statechart_parsed_forge(model: crate::model::SCXMLModel) -> ParsedForge {
+///
+/// Every `source_location` the envelope carries names where the author
+/// wrote the node ([`crate::model::SCXMLModel::into_artifact_coordinates`]):
+/// the line and column are what an IDE consumer jumps to (§10), and the
+/// model records them against the expanded text.
+///
+/// ⚠ The envelope carried the expanded text's rows until 2026-09-24: a
+/// state an `<xi:include>` spliced in was placed in the including file at
+/// the row the splice put it on, and every node after the include rows
+/// past its own.
+pub fn statechart_parsed_forge(mut model: crate::model::SCXMLModel) -> ParsedForge {
+    model.into_artifact_coordinates();
     ParsedForge {
         document: crate::forge::model::ForgeDocument::Statechart(Box::new(model)),
         imports: Vec::new(),

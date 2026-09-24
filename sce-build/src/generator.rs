@@ -2447,6 +2447,7 @@ fn render_rust(
     let externally_drivable_events: Vec<&String> =
         model.externally_drivable_events.iter().collect();
 
+    model_lowered.into_artifact_coordinates();
     let ctx = minijinja::context! {
         model => minijinja::Value::from_serialize(&model_lowered),
         machine_name => machine_name,
@@ -2574,6 +2575,7 @@ fn render_cpp(
         .get_template("state_machine_inl.jinja2")
         .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?;
 
+    model_lowered.into_artifact_coordinates();
     let model_val = minijinja::Value::from_serialize(&model_lowered);
     let license_val = minijinja::Value::from_serialize(license_config());
 
@@ -2743,6 +2745,7 @@ fn render_c11(
         .get_template("c/state_machine.c.jinja2")
         .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?;
 
+    model_lowered.into_artifact_coordinates();
     let model_val = minijinja::Value::from_serialize(&model_lowered);
     let license_val = minijinja::Value::from_serialize(license_config());
 
@@ -2929,6 +2932,7 @@ fn render_kotlin(
         .collect();
     let payload = crate::forge::generator::build_kotlin_event_payload(model, &payload_events);
     crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
+    model_lowered.into_artifact_coordinates();
     let model = &model_lowered;
 
     let machine_name = filters::to_pascal_case(model.name.clone());
@@ -3284,6 +3288,7 @@ fn render_python(env: &mut Environment, model: &SCXMLModel) -> Result<String, Ge
     let payload =
         crate::forge::generator::build_python_event_payload(model, &native.payload_events);
     crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
+    model_lowered.into_artifact_coordinates();
     let model = &model_lowered;
 
     let tmpl = env
@@ -3333,6 +3338,7 @@ fn render_go(env: &mut Environment, model: &SCXMLModel) -> Result<String, Genera
         crate::forge::native_action::render(&mut model_lowered, &machine_name, Language::Go);
     let payload = crate::forge::generator::build_go_event_payload(model, &native.payload_events);
     crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
+    model_lowered.into_artifact_coordinates();
     let model = &model_lowered;
 
     let tmpl = env

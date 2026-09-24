@@ -1032,6 +1032,62 @@ impl Invoke {
             Invoke::Unsupported(info) => &info.base,
         }
     }
+
+    /// [`Self::base`], for a pass that rewrites what every variant shares.
+    pub fn base_mut(&mut self) -> &mut InvokeBase {
+        match self {
+            Invoke::Scxml(info) => &mut info.common.base,
+            Invoke::Hybrid(info) => &mut info.common.base,
+            Invoke::MeshRpc(info) => &mut info.base,
+            Invoke::Unsupported(info) => &mut info.base,
+        }
+    }
+}
+
+/// Visit the positions an `<invoke>` carries, for
+/// [`SCXMLModel::for_each_source_location_mut`].
+fn visit_invoke_locations(base: &mut InvokeBase, visit: &mut dyn FnMut(&mut SourceLocation)) {
+    visit_optional(&mut base.source_location, visit);
+    visit_marker_locations(&mut base.unresolved, visit);
+    visit_param_locations(&mut base.params, visit);
+}
+
+/// Visit the positions a block of executable content carries, nested
+/// blocks included, for [`SCXMLModel::for_each_source_location_mut`].
+fn visit_action_locations(actions: &mut [Action], visit: &mut dyn FnMut(&mut SourceLocation)) {
+    for action in actions {
+        visit_optional(&mut action.source_location, visit);
+        visit_marker_locations(&mut action.unresolved, visit);
+        visit_param_locations(&mut action.params, visit);
+        for block in action.nested_blocks_mut() {
+            visit_action_locations(block, visit);
+        }
+    }
+}
+
+fn visit_param_locations(params: &mut [Param], visit: &mut dyn FnMut(&mut SourceLocation)) {
+    for param in params {
+        visit_optional(&mut param.source_location, visit);
+    }
+}
+
+fn visit_optional(
+    location: &mut Option<SourceLocation>,
+    visit: &mut dyn FnMut(&mut SourceLocation),
+) {
+    if let Some(location) = location {
+        visit(location);
+    }
+}
+
+/// Visit the positions `sce:unresolved` markers carry.
+fn visit_marker_locations(
+    markers: &mut [crate::provenance::UnresolvedMarker],
+    visit: &mut dyn FnMut(&mut SourceLocation),
+) {
+    for marker in markers {
+        visit_optional(&mut marker.location, visit);
+    }
 }
 
 /// §scxml-6.4.1: an `<invoke>` whose `type` names no processor this
@@ -2084,6 +2140,26 @@ impl AuthoredPositions {
         }
     }
 
+    /// Where the author wrote `location`, spelled as an ARTIFACT spells a
+    /// file — its basename (`SCE_ERROR_CONTRACT.md` §2.2).
+    ///
+    /// Moved only where an expansion spliced text: an identity mapping keeps
+    /// the location byte for byte, so no artifact built from a document
+    /// nothing expanded moves.
+    pub fn artifact_location(
+        &self,
+        location: &crate::forge::error::SourceLocation,
+    ) -> crate::forge::error::SourceLocation {
+        match self.resolve(location.line, location.col) {
+            Some((file, line, col)) => crate::forge::error::SourceLocation {
+                file: crate::parser::artifact_label(&file),
+                line: Some(line),
+                col: location.col.map(|_| col),
+            },
+            None => location.clone(),
+        }
+    }
+
     /// The `<sce:use>` that supplied substituted bytes on the expanded
     /// row `line`, if any.
     ///
@@ -3104,17 +3180,86 @@ impl SCXMLModel {
     /// file at the row the splice put it on, and a state after the include
     /// several rows past its own.
     pub fn artifact_location(&self, location: &SourceLocation) -> SourceLocation {
-        let resolved = self
-            .authored_positions
-            .as_ref()
-            .and_then(|positions| positions.resolve(location.line, location.col));
-        match resolved {
-            Some((file, line, col)) => SourceLocation {
-                file: crate::parser::artifact_label(&file),
-                line: Some(line),
-                col: location.col.map(|_| col),
-            },
+        match &self.authored_positions {
+            Some(positions) => positions.artifact_location(location),
             None => location.clone(),
+        }
+    }
+
+    /// Move every position this model carries to where it was written,
+    /// spelled as an artifact spells it ([`Self::artifact_location`]), and
+    /// drop [`Self::authored_positions`] — the coordinate system those
+    /// positions no longer live in.
+    ///
+    /// For the copy a backend renders from: its templates stamp positions
+    /// into the artifact (the SCE-MAP markers, `#line` directives) and read
+    /// them off the model as they are. Dropping the map keeps the copy
+    /// self-consistent, so a later reader of it cannot move a position a
+    /// second time. The parsed model keeps its expanded coordinates, which
+    /// every refusal is still placed through.
+    ///
+    /// ⚠ The markers carried the expanded text's rows until 2026-09-24: a
+    /// state an `<xi:include>` spliced in was marked in the including file
+    /// at the row the splice put it on.
+    pub fn into_artifact_coordinates(&mut self) {
+        let Some(positions) = self.authored_positions.take() else {
+            return;
+        };
+        self.for_each_source_location_mut(&mut |location| {
+            *location = positions.artifact_location(location);
+        });
+    }
+
+    /// Visit every position this model carries, however deep — the set
+    /// [`Self::into_artifact_coordinates`] moves. A field holding a
+    /// position that is not reached here keeps the expanded text's row
+    /// in every artifact rendered from the model.
+    fn for_each_source_location_mut(&mut self, visit: &mut dyn FnMut(&mut SourceLocation)) {
+        visit_optional(&mut self.source_location, visit);
+        visit_optional(&mut self.http_send_location, visit);
+        for variable in self
+            .variables
+            .iter_mut()
+            .chain(self.readable_variables.iter_mut())
+        {
+            visit_optional(&mut variable.source_location, visit);
+        }
+        for driver in &mut self.driver_refs {
+            visit_optional(&mut driver.source_location, visit);
+        }
+        visit_action_locations(&mut self.global_scripts, visit);
+        for invoke in &mut self.invokes {
+            visit_invoke_locations(invoke.base_mut(), visit);
+        }
+        for state in self.states.values_mut() {
+            visit_optional(&mut state.source_location, visit);
+            visit_marker_locations(&mut state.unresolved, visit);
+            for transition in &mut state.transitions {
+                visit_optional(&mut transition.source_location, visit);
+                visit_marker_locations(&mut transition.unresolved, visit);
+                visit_action_locations(&mut transition.actions, visit);
+            }
+            for block in state
+                .on_entry_blocks
+                .iter_mut()
+                .chain(state.on_exit_blocks.iter_mut())
+            {
+                visit_action_locations(block, visit);
+            }
+            visit_action_locations(&mut state.initial_transition_actions, visit);
+            visit_action_locations(&mut state.initial_history_default_actions, visit);
+            for variable in &mut state.datamodel {
+                visit_optional(&mut variable.source_location, visit);
+            }
+            for invoke in &mut state.invokes {
+                visit_invoke_locations(invoke.base_mut(), visit);
+            }
+            if let Some(donedata) = &mut state.donedata {
+                visit_optional(&mut donedata.content_location, visit);
+                for param in &mut donedata.params {
+                    visit_optional(&mut param.source_location, visit);
+                }
+            }
         }
     }
 
@@ -3727,5 +3872,150 @@ mod model_attribute_names {
                  silently exempts real typos"
             );
         }
+    }
+}
+
+/// [`SCXMLModel::into_artifact_coordinates`] reaches every position a
+/// template can read.
+///
+/// The fixture writes everything but the `<scxml>` root in an XInclude
+/// fragment, so after the move every position the serialised model carries
+/// — which is exactly what a template sees — names the fragment. The
+/// positions are found by their shape in the JSON, not by a list of fields,
+/// so a position-bearing field the walk forgets is caught here rather than
+/// shipping the expanded text's row.
+#[cfg(test)]
+mod artifact_coordinates {
+    use super::SCXMLModel;
+
+    const FRAGMENT: &str = r#"<wrap xmlns="http://www.w3.org/2005/07/scxml">
+  <state id="a">
+    <datamodel><data id="x" expr="1"/></datamodel>
+    <onentry>
+      <if cond="x == 1">
+        <assign location="x" expr="2"/>
+      <elseif cond="x == 2"/>
+        <log expr="x"/>
+      <else/>
+        <raise event="e"/>
+      </if>
+      <send event="go"><param name="p" expr="x"/></send>
+    </onentry>
+    <invoke type="scxml" src="child.scxml"><param name="q" expr="x"/></invoke>
+    <transition event="go" target="f"><log expr="'t'"/></transition>
+  </state>
+  <final id="f"><donedata><param name="r" expr="x"/></donedata></final>
+</wrap>
+"#;
+
+    const HOST: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:xi="http://www.w3.org/2001/XInclude" version="1.0" initial="a" datamodel="ecmascript">
+  <xi:include href="states.xml"/>
+</scxml>
+"#;
+
+    const CHILD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="c">
+  <final id="c"/>
+</scxml>
+"#;
+
+    fn parsed() -> (tempfile::TempDir, SCXMLModel) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("states.xml"), FRAGMENT).expect("write fragment");
+        std::fs::write(dir.path().join("child.scxml"), CHILD).expect("write child");
+        let doc = dir.path().join("sc.scxml");
+        std::fs::write(&doc, HOST).expect("write host");
+        let model = crate::parser::SCXMLParser::new()
+            .parse_file(doc.to_str().expect("a UTF-8 path"))
+            .unwrap_or_else(|e| panic!("the fixture parses: {e:?}"));
+        (dir, model)
+    }
+
+    /// Every `(file, line)` the serialised model carries, found by shape.
+    fn positions(model: &SCXMLModel) -> Vec<(String, u64)> {
+        fn walk(value: &serde_json::Value, out: &mut Vec<(String, u64)>) {
+            match value {
+                serde_json::Value::Object(map) => {
+                    if let (Some(file), Some(line)) = (
+                        map.get("file").and_then(|f| f.as_str()),
+                        map.get("line").and_then(|l| l.as_u64()),
+                    ) {
+                        out.push((file.to_string(), line));
+                    }
+                    map.values().for_each(|v| walk(v, out));
+                }
+                serde_json::Value::Array(items) => items.iter().for_each(|v| walk(v, out)),
+                _ => {}
+            }
+        }
+        let mut out = Vec::new();
+        walk(
+            &serde_json::to_value(model).expect("the model serialises"),
+            &mut out,
+        );
+        out
+    }
+
+    fn row_count(text: &str) -> u64 {
+        text.lines().count() as u64
+    }
+
+    #[test]
+    fn every_position_names_the_fragment_that_wrote_it() {
+        let (_dir, mut model) = parsed();
+        let root = model.source_location.clone().expect("the root is placed");
+
+        // Before the move the spliced positions name the including file, so
+        // the fixture does exercise the move.
+        let before = positions(&model);
+        assert!(
+            before.iter().all(|(file, _)| file != "states.xml"),
+            "a position already names the fragment before the move: {before:?}"
+        );
+
+        model.into_artifact_coordinates();
+        assert!(
+            model.authored_positions.is_none(),
+            "the map is dropped with the move"
+        );
+
+        let after = positions(&model);
+        // Floor: the fixture writes fourteen placed elements in the
+        // fragment, and the model repeats some of them (its flat variable
+        // and invoke lists). A walk that reached nothing passes nothing.
+        assert!(
+            after.len() > 14,
+            "only {} position(s) were found: {after:?}",
+            after.len()
+        );
+
+        let wrong: Vec<_> = after
+            .iter()
+            .filter(|(file, line)| {
+                let is_root = *file == root.file && Some(*line as u32) == root.line;
+                !is_root && (file != "states.xml" || *line > row_count(FRAGMENT))
+            })
+            .collect();
+        assert!(
+            wrong.is_empty(),
+            "position(s) left in the expanded text: {wrong:?}\nall: {after:?}"
+        );
+    }
+
+    /// A document nothing expanded keeps every position byte for byte.
+    #[test]
+    fn a_document_nothing_expanded_does_not_move() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let doc = dir.path().join("plain.scxml");
+        std::fs::write(&doc, CHILD).expect("write document");
+        let mut model = crate::parser::SCXMLParser::new()
+            .parse_file(doc.to_str().expect("a UTF-8 path"))
+            .unwrap_or_else(|e| panic!("the fixture parses: {e:?}"));
+        let before = positions(&model);
+        assert!(!before.is_empty(), "the fixture carries positions");
+        model.into_artifact_coordinates();
+        assert_eq!(positions(&model), before);
     }
 }
