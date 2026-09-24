@@ -20,26 +20,26 @@ mutation_oracles sce-build/src/parser.rs
 
 mutation_case "a final state is not taken for the owning state" <<'PY'
 edit("sce-build/src/parser.rs",
-     r'''        node.ancestors()
-            .find(|ancestor| is_scxml_state_element(ancestor))''',
-     r'''        node.ancestors()
-            .skip(1)
-            .find(|ancestor| matches!(ancestor.tag_name().name(), "state" | "parallel"))''')
+     r'''    node.ancestors()
+        .find(|ancestor| is_scxml_state_element(ancestor))''',
+     r'''    node.ancestors()
+        .skip(1)
+        .find(|ancestor| matches!(ancestor.tag_name().name(), "state" | "parallel"))''')
 PY
 
 mutation_case "the outermost state is named instead of the nearest" <<'PY'
 edit("sce-build/src/parser.rs",
-     r'''        node.ancestors()
-            .find(|ancestor| is_scxml_state_element(ancestor))''',
-     r'''        node.ancestors()
-            .filter(|ancestor| is_scxml_state_element(ancestor))
-            .last()''')
+     r'''    node.ancestors()
+        .find(|ancestor| is_scxml_state_element(ancestor))''',
+     r'''    node.ancestors()
+        .filter(|ancestor| is_scxml_state_element(ancestor))
+        .last()''')
 PY
 
 mutation_case "document scope names the root element" <<'PY'
 edit("sce-build/src/parser.rs",
-     r'''            .and_then(|state| state.attribute("id"))
-            .unwrap_or("")''',
-     r'''            .and_then(|state| state.attribute("id"))
-            .unwrap_or("scxml")''')
+     r'''        .and_then(|state| state.attribute("id"))
+        .unwrap_or("")''',
+     r'''        .and_then(|state| state.attribute("id"))
+        .unwrap_or("scxml")''')
 PY

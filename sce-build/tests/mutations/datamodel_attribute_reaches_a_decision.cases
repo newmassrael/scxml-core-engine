@@ -25,35 +25,15 @@ mutation_runtime_targets sce-build/src/parser.rs
 # The original defect, restored exactly: the attribute is read and no
 # value is ever refused.
 #
-# The replacement keeps `UnsupportedDatamodelKind` referenced: the
-# workspace denies warnings, so dropping the only use of an import turns
-# the mutation into a compile error, and a mutation rustc rejects is
-# reported INCONCLUSIVE and says nothing about the suite.
+# An unknown value falls back to `ecmascript` before the refusal is ever
+# built, so the refusal stays in the source — every import still used, no
+# compile error that would read as INCONCLUSIVE — and never fires.
 mutation_case "any datamodel string is accepted again" <<'PY'
 edit("sce-build/src/parser.rs",
-     """        "ecmascript" => Ok(Datamodel::EcmaScript),
-        other => Err(ScxmlSemanticError::UnsupportedDatamodel {
-            declared: other.to_string(),
-            // §scxml-3.2 names `xpath` as a data model; SCE has no XPath
-            // expression pipeline, so it is refused as unimplemented
-            // rather than as nonsense. Any other token is a value the
-            // spec permits a platform to define and SCE has not.
-            kind: if other == "xpath" {
-                UnsupportedDatamodelKind::Unimplemented
-            } else {
-                UnsupportedDatamodelKind::Undefined
-            },
-            supported: vec![
-                Datamodel::Null.as_str().to_string(),
-                Datamodel::EcmaScript.as_str().to_string(),
-            ],
-        }),
-    }""",
-     """        _ => {
-            let _unused = UnsupportedDatamodelKind::Undefined;
-            Ok(Datamodel::EcmaScript)
-        }
-    }""")
+     """    Datamodel::from_attr(declared).ok_or_else(|| ScxmlSemanticError::UnsupportedDatamodel {""",
+     """    Datamodel::from_attr(declared)
+        .or(Some(Datamodel::EcmaScript))
+        .ok_or_else(|| ScxmlSemanticError::UnsupportedDatamodel {""")
 PY
 
 # The two refusals collapse into one. Both still reject, so a suite that
@@ -61,12 +41,12 @@ PY
 # repairs differ, and only an assertion on which one fired can see it.
 mutation_case "an unimplemented data model is reported as nonsense" <<'PY'
 edit("sce-build/src/parser.rs",
-     """            kind: if other == "xpath" {
-                UnsupportedDatamodelKind::Unimplemented
-            } else {
-                UnsupportedDatamodelKind::Undefined
-            },""",
-     """            kind: UnsupportedDatamodelKind::Undefined,""")
+     """        kind: if declared == "xpath" {
+            UnsupportedDatamodelKind::Unimplemented
+        } else {
+            UnsupportedDatamodelKind::Undefined
+        },""",
+     """        kind: UnsupportedDatamodelKind::Undefined,""")
 PY
 
 # §B-1 stops being enforced at all. The rule that the Null data model
