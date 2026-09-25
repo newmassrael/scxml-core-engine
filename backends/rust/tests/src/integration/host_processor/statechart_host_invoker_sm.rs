@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 787a9105d95e061c8817f6d59cb2907d5bb12acf7e54887949738cf456466835
+// source-hash: e9c8544fc577b0f10a7b3d3f2c55aa52bb95a3f439b9ed10ddb1632871bd6aa8
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -1726,7 +1726,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
     ) {
         match state {
             StatechartHostInvokerState::Done => {
-                // SCE-MAP: statechart_host_invoker.scxml:138 :: done :: _state_body
+                // SCE-MAP: statechart_host_invoker.scxml:141 :: done :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1773,7 +1773,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                 }
             }
             StatechartHostInvokerState::Evaluating => {
-                // SCE-MAP: statechart_host_invoker.scxml:122 :: evaluating :: _state_body
+                // SCE-MAP: statechart_host_invoker.scxml:125 :: evaluating :: _state_body
                 // §scxml-6.4.1: `type` names an invoker the HOST declared to
                 // this build. Deferred exactly like the refused arm above and
                 // for the same reason — §scxml-6.4 orders invokes after the
@@ -1818,7 +1818,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                 }
             }
             StatechartHostInvokerState::Invoking => {
-                // SCE-MAP: statechart_host_invoker.scxml:96 :: invoking :: _state_body
+                // SCE-MAP: statechart_host_invoker.scxml:99 :: invoking :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1880,7 +1880,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                 }
             }
             StatechartHostInvokerState::Locating => {
-                // SCE-MAP: statechart_host_invoker.scxml:149 :: locating :: _state_body
+                // SCE-MAP: statechart_host_invoker.scxml:152 :: locating :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -2361,7 +2361,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
             StatechartHostInvokerState::Done => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:143 :: done :: _transition_0
+                        // SCE-MAP: statechart_host_invoker.scxml:146 :: done :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -2394,7 +2394,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
             StatechartHostInvokerState::Evaluating => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:133 :: evaluating :: _transition_0
+                        // SCE-MAP: statechart_host_invoker.scxml:136 :: evaluating :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -2427,7 +2427,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
             StatechartHostInvokerState::Invoking => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:106 :: invoking :: _transition_0
+                        // SCE-MAP: statechart_host_invoker.scxml:109 :: invoking :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -2455,7 +2455,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:109 :: invoking :: _transition_1
+                        // SCE-MAP: statechart_host_invoker.scxml:112 :: invoking :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
 
                         {
@@ -2483,7 +2483,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:112 :: invoking :: _transition_2
+                        // SCE-MAP: statechart_host_invoker.scxml:115 :: invoking :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
 
                         {
@@ -2516,7 +2516,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
             StatechartHostInvokerState::Locating => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:157 :: locating :: _transition_0
+                        // SCE-MAP: statechart_host_invoker.scxml:160 :: locating :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -2544,7 +2544,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:160 :: locating :: _transition_1
+                        // SCE-MAP: statechart_host_invoker.scxml:163 :: locating :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
 
                         {
@@ -2572,7 +2572,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:163 :: locating :: _transition_2
+                        // SCE-MAP: statechart_host_invoker.scxml:166 :: locating :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
 
                         {
@@ -2600,7 +2600,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                         }
                     }
                     3 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:166 :: locating :: _transition_3
+                        // SCE-MAP: statechart_host_invoker.scxml:169 :: locating :: _transition_3
                         // W3C SCXML 3.13: Transition 3 actions
 
                         {

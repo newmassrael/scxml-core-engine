@@ -152,12 +152,10 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
     override fun setVariable(sessionId: String, name: String, value: Any?) {
         val session = sessions[sessionId] ?: return
         val handle = session.handle
-
-        // Validate variable name before interpolation into JS code (injection guard)
-        fun requireSafeName() {
-            if (!isSimpleVariableName(name))
-                throw ScriptEngineException("Illegal variable name: '$name'")
-        }
+        // The name crosses into JS code only as a quoted key (`globalThis`
+        // reference), so it cannot inject, and a `<data id>` that is an XML
+        // name but no identifier — `screen-rules` — is stored like any other.
+        val target = globalReference(name)
 
         when (value) {
             null -> QuickJSNative.setGlobalUndefined(handle, name)
@@ -168,7 +166,6 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
             is Float -> QuickJSNative.setGlobalDouble(handle, name, value.toDouble())
             is String -> QuickJSNative.setGlobalString(handle, name, value)
             is QuickJSRef -> {
-                requireSafeName()
                 if (value.originHandle != handle) {
                     throw ScriptEngineException(
                         "Cross-session QuickJSRef rejected: refId=${value.refId} " +
@@ -177,17 +174,15 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
                 }
                 // Restore from JS-side registry and release the ref
                 QuickJSNative.eval(handle,
-                    "$name = __sce_refs[${value.refId}]; delete __sce_refs[${value.refId}]")
+                    "$target = __sce_refs[${value.refId}]; delete __sce_refs[${value.refId}]")
             }
             is List<*> -> {
-                requireSafeName()
                 val json = toJSON(value)
-                QuickJSNative.eval(handle, "$name = JSON.parse(${jsStringLiteral(json)})")
+                QuickJSNative.eval(handle, "$target = JSON.parse(${jsStringLiteral(json)})")
             }
             is Map<*, *> -> {
-                requireSafeName()
                 val json = toJSON(value)
-                QuickJSNative.eval(handle, "$name = JSON.parse(${jsStringLiteral(json)})")
+                QuickJSNative.eval(handle, "$target = JSON.parse(${jsStringLiteral(json)})")
             }
             else -> QuickJSNative.setGlobalString(handle, name, value.toString())
         }
@@ -195,10 +190,20 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
 
     override fun getVariable(sessionId: String, name: String): Any? {
         val session = sessions[sessionId] ?: return null
-        if (!isSimpleVariableName(name)) return null
-        val result = QuickJSNative.evalExpression(session.handle, name)
+        if (name.isEmpty()) return null
+        val result = QuickJSNative.evalExpression(session.handle, globalReference(name))
         return if (result != null) decodeTypedResult(result, session) else null
     }
+
+    /**
+     * W3C SCXML 5.3: the data model variable `name` as a JS reference. A bare
+     * identifier stays itself; any other name — a `<data id>` is an XML name,
+     * so `screen-rules` is legal — is reached by key on the global object,
+     * the way the setters above store it. Quoted by [jsStringLiteral], the
+     * name is data to the evaluator and never code.
+     */
+    private fun globalReference(name: String): String =
+        if (isSimpleVariableName(name)) name else "globalThis[${jsStringLiteral(name)}]"
 
     override fun hasVariable(sessionId: String, name: String): Boolean {
         val session = sessions[sessionId] ?: return false

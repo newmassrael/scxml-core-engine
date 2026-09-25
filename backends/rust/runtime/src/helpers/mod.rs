@@ -30,6 +30,7 @@
 //! - [`event_queue`]: FIFO internal/external queues (`EventQueueManager`)
 //! - [`foreach`]: Foreach iteration (static variant)
 //! - [`hierarchy`]: the bounded state chain configurations are held in (`StateChain`)
+//! - `idlocation` (std-only): §scxml-6.2.4 / §scxml-6.4.1 an `idlocation` written as a location
 //! - `invoke_processing` (std-only): §scxml-6.4 invoke processing algorithms
 //! - `io_processors` (std-only): §scxml-C-1-1 `_ioprocessors` descriptors
 //! - [`logger`]: thin `log` crate re-exports (`SCE_LOG_*` macros)

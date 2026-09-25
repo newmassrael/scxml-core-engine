@@ -86,7 +86,10 @@
     <data id="dropped" expr="0"/>
     <data id="doneId" expr="''"/>
     <data id="matched" expr="0"/>
-    <data id="slot" expr="{ id: '', sid: '' }"/>
+    <!-- Parenthesized: a bare `{` opens a block statement in an engine that
+         evaluates the text as a program (Rhino), which read this as a
+         syntax error and raised error.execution before anything ran. -->
+    <data id="slot" expr="({ id: '', sid: '' })"/>
     <data id="slotted" expr="0"/>
     <data id="pinged" expr="0"/>
     <data id="leaked" expr="0"/>

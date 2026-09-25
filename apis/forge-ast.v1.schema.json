@@ -2319,6 +2319,11 @@
             "needs_http_send": {
               "type": "boolean"
             },
+            "needs_idlocation_store": {
+              "default": false,
+              "description": "§scxml-6.2.4 / §scxml-6.4.1: some `<send>` or `<invoke>` names an `idlocation`, so the machine writes a generated id through the `<assign>` path at run time. Gates the per-policy store helper the backends without a shared runtime function emit (Go, Python, Kotlin), so a machine that stores no id does not carry one.",
+              "type": "boolean"
+            },
             "needs_namelist_helper": {
               "type": [
                 "boolean",
@@ -5122,6 +5127,39 @@
       "pattern": "^-?\\d+(/\\d+)?$",
       "type": "string"
     },
+    "ReaderNames": {
+      "description": "Each backend's spelling of one variable's reader.\n\nTemplates read the field for their own backend and nothing else, so a backend cannot spell a reader some other way than the one whose existence was decided here.",
+      "properties": {
+        "c11": {
+          "description": "The suffix after `<prefix><machine>_`; C11 readers are free functions, so this is the part the variable contributes.",
+          "type": "string"
+        },
+        "cpp": {
+          "type": "string"
+        },
+        "go": {
+          "type": "string"
+        },
+        "kotlin": {
+          "type": "string"
+        },
+        "python": {
+          "type": "string"
+        },
+        "rust": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "c11",
+        "cpp",
+        "go",
+        "kotlin",
+        "python",
+        "rust"
+      ],
+      "type": "object"
+    },
     "RecordFieldInit": {
       "description": "One `<sce:set name=... expr=.../>` of a record local ([`AlgorithmStmt::RecordVar`]): the schema field it gives and the expression that gives it.",
       "properties": {
@@ -5919,6 +5957,17 @@
         },
         "id": {
           "type": "string"
+        },
+        "reader": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ReaderNames"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "§scxml-5.3: each backend's name for this variable's typed reader. Set only on the entries of [`SCXMLModel::readable_variables`], by [`crate::reader_names::assign`]; templates spell the reader from this and from nothing else."
         },
         "record_fields": {
           "description": "A `record:<alias>` variable's initial value: one `<sce:set name expr>` per field of the schema, built whole the way an algorithm's record local is (SCE_FORGE.md §4.12). Empty for any other variable.",

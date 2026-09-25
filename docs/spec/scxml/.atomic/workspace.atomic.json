@@ -8201,11 +8201,6 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "sce/include/common/SendHelper.h",
-          "symbol": "SendHelper",
-          "kind": "implements"
-        },
-        {
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
           "symbol": "ActionExecutorImpl::executeSendAction",
           "kind": "implements"
@@ -19117,6 +19112,12 @@
       "target_kind": "section",
       "target_id": "scxml-6.4.1",
       "reason": "added this round against a class template the code-ref checker attributes to SCE::Core; replaced by the header's existing SCE::Core references convention"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.2.3",
+      "reason": "The §scxml-6.2.3 citation lived on SendHelper::storeInIdLocation, removed when every idlocation write moved to AssignmentExecutionHelper::storeIdInLocation (f372828498); nothing in SendHelper cites the section any more."
     }
   ],
   "frames": {},
