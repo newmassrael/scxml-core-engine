@@ -1589,6 +1589,39 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # §scxml-6.4.1: the invoke half of the host seam, from the document the
+    # C++, Rust, Go, Python and Kotlin channels drive. HOST_INVOKER rather than
+    # HOST_PROCESSOR because they are separate contracts, and load-bearing for
+    # the same reason: codegen decides at compile time whether the invoke
+    # starts or refuses.
+    sce_generate_static_integration_c_test(statechart_host_invoker
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/host_processor/statechart_host_invoker.scxml"
+        HOST_INVOKER x-sce-host
+    )
+    add_executable(sce_c_integration_host_invoker
+        integration/test_host_invoker.c
+        ${INTEGRATION_C_TEST_statechart_host_invoker_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_host_invoker PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_host_invoker PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_host_invoker PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_host_invoker
+        COMMAND sce_c_integration_host_invoker
+    )
+    set_tests_properties(c11_integration_host_invoker PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # §scxml-6.2.4 + §scxml-6.3: the delay side of the same surface. A separate
     # document rather than a `delay` added to the one above, because that one is
     # driven with `_step` and this one can only be driven with `_tick`: folding

@@ -225,6 +225,11 @@ endfunction()
 #                            registering a handler against a machine built
 #                            without the flag meets the refusal and reads
 #                            as a feature that does not work.
+#   HOST_INVOKER <type>...   Pass `--host-invoker <type>` to codegen — the
+#                            `<invoke type>` twin of HOST_PROCESSOR, and
+#                            load-bearing for the same reason: codegen
+#                            decides at compile time whether the invoke
+#                            starts or refuses.
 #   STAGE_ALSO <file>...     Sibling documents to copy beside the staged
 #                            fixture, named relative to its directory.
 #                            The staging copies ONE file, so a fixture
@@ -238,7 +243,7 @@ endfunction()
 #                            fails at the copy, where it can be read.
 function(sce_generate_static_integration_c_test STEM OUTPUT_DIR)
     cmake_parse_arguments(_INT "" "SCXML_FILE"
-        "SYNTH_INVOKE_CHILDREN;HYBRID_INVOKE_CHILDREN;HOST_PROCESSOR;STAGE_ALSO" ${ARGN})
+        "SYNTH_INVOKE_CHILDREN;HYBRID_INVOKE_CHILDREN;HOST_PROCESSOR;HOST_INVOKER;STAGE_ALSO" ${ARGN})
 
     if(_INT_SCXML_FILE)
         get_filename_component(FIXTURE_ROOT "${_INT_SCXML_FILE}" DIRECTORY)
@@ -251,6 +256,9 @@ function(sce_generate_static_integration_c_test STEM OUTPUT_DIR)
     set(_HOST_PROCESSOR_ARGS "")
     foreach(_TYPE ${_INT_HOST_PROCESSOR})
         list(APPEND _HOST_PROCESSOR_ARGS --host-processor "${_TYPE}")
+    endforeach()
+    foreach(_TYPE ${_INT_HOST_INVOKER})
+        list(APPEND _HOST_PROCESSOR_ARGS --host-invoker "${_TYPE}")
     endforeach()
 
     if(NOT EXISTS "${FIXTURE}")

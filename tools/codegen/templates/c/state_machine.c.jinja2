@@ -5394,7 +5394,8 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_issue_session_identity({
 SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_init_construct({{ csym_prefix }}{{ model.name }}_t *sm{% if model.needs_event_scheduler %},
                                                        sce_clock_t clock{% endif %}{% if model.needs_script_engine %},
                                                        const char *basic_http_access_uri{% endif %}{% if model.host_processor_types %},
-                                                       const sce_host_processor_registry_t *host_processors{% endif %}{% if has_native_actions %},
+                                                       const sce_host_processor_registry_t *host_processors{% endif %}{% if model.host_invoker_types %},
+                                                       const sce_host_invoker_registry_t *host_invokers{% endif %}{% if has_native_actions %},
                                                        const {{ native_actions_interface }} *actions{% endif %}) {
 {% if has_native_actions %}
     /* W3C SCXML G.7: refuse a host that does not perform every act this
@@ -5430,6 +5431,16 @@ SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_init_construct({{ csym_p
        this call MEMSETS cannot be set before it. */
     if (host_processors != NULL) {
         sm->host_processors = *host_processors;
+    }
+{% endif %}
+{% if model.host_invoker_types %}
+    /* §scxml-6.4.1: the invokers too, and for the same reason. §scxml-6.4 runs
+       an `<invoke>` at the end of the macrostep that entered its state, and for
+       the initial configuration that macrostep is this call's own — so an
+       invoker registered after `_init` meets an invocation that has already
+       raised `error.execution`. */
+    if (host_invokers != NULL) {
+        sm->host_invokers = *host_invokers;
     }
 {% endif %}
 {% if model.needs_event_scheduler %}
@@ -5477,9 +5488,10 @@ SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_init_construct({{ csym_p
 SCE_SM_FN static {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_impl({{ csym_prefix }}{{ model.name }}_t *sm{% if model.needs_event_scheduler %},
                                                        sce_clock_t clock{% endif %}{% if model.needs_script_engine %},
                                                        const char *basic_http_access_uri{% endif %}{% if model.host_processor_types %},
-                                                       const sce_host_processor_registry_t *host_processors{% endif %}{% if has_native_actions %},
+                                                       const sce_host_processor_registry_t *host_processors{% endif %}{% if model.host_invoker_types %},
+                                                       const sce_host_invoker_registry_t *host_invokers{% endif %}{% if has_native_actions %},
                                                        const {{ native_actions_interface }} *actions{% endif %}) {
-    if (!{{ csym_prefix }}{{ model.name }}_init_construct(sm{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, basic_http_access_uri{% endif %}{% if model.host_processor_types %}, host_processors{% endif %}{% if has_native_actions %}, actions{% endif %})) {
+    if (!{{ csym_prefix }}{{ model.name }}_init_construct(sm{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, basic_http_access_uri{% endif %}{% if model.host_processor_types %}, host_processors{% endif %}{% if model.host_invoker_types %}, host_invokers{% endif %}{% if has_native_actions %}, actions{% endif %})) {
 {% if has_native_actions %}
         return false;
 {% else %}
@@ -5541,13 +5553,13 @@ SCE_SM_FN {{ csym_prefix }}{{ model.name }}_configuration_rejection_t {{ csym_pr
     }
 
 {% if has_native_actions %}
-    if (!{{ csym_prefix }}{{ model.name }}_init_construct(sm{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, basic_http_access_uri{% endif %}{% if model.host_processor_types %}, host_processors{% endif %}, actions)) {
+    if (!{{ csym_prefix }}{{ model.name }}_init_construct(sm{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, basic_http_access_uri{% endif %}{% if model.host_processor_types %}, host_processors{% endif %}{% if model.host_invoker_types %}, NULL{% endif %}, actions)) {
         return {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_HOST_ACTIONS_INCOMPLETE;
     }
 {% else %}
     /* Cannot fail for this document: the act table is the only thing
        construction refuses, and this document declares no acts. */
-    (void){{ csym_prefix }}{{ model.name }}_init_construct(sm{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, basic_http_access_uri{% endif %}{% if model.host_processor_types %}, host_processors{% endif %});
+    (void){{ csym_prefix }}{{ model.name }}_init_construct(sm{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, basic_http_access_uri{% endif %}{% if model.host_processor_types %}, host_processors{% endif %}{% if model.host_invoker_types %}, NULL{% endif %});
 {% endif %}
 
     /* W3C SCXML 3.2: the configuration IS the bitmap on this backend, so the
@@ -5565,17 +5577,17 @@ SCE_SM_FN {{ csym_prefix }}{{ model.name }}_configuration_rejection_t {{ csym_pr
 {% if has_native_actions %}
 SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_init_with_actions({{ csym_prefix }}{{ model.name }}_t *sm,
                                   const {{ native_actions_interface }} *actions) {
-    return {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}, actions);
+    return {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %}, actions);
 }
 {% else %}
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init({{ csym_prefix }}{{ model.name }}_t *sm) {
-    {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %});
+    {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %});
 }
 {% endif %}
 {% if model.needs_event_scheduler %}
 
 SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_clock({{ csym_prefix }}{{ model.name }}_t *sm, sce_clock_t clock{% if has_native_actions %}, const {{ native_actions_interface }} *actions{% endif %}) {
-    {% if has_native_actions %}return {% endif %}{{ csym_prefix }}{{ model.name }}_init_impl(sm, clock{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if has_native_actions %}, actions{% endif %});
+    {% if has_native_actions %}return {% endif %}{{ csym_prefix }}{{ model.name }}_init_impl(sm, clock{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %}{% if has_native_actions %}, actions{% endif %});
 }
 {% endif %}
 {% if model.host_processor_types %}
@@ -5583,7 +5595,7 @@ SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_clock({{ csy
 SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_host_processors({{ csym_prefix }}{{ model.name }}_t *sm,
                                   const sce_host_processor_registry_t *host_processors{% if has_native_actions %},
                                   const {{ native_actions_interface }} *actions{% endif %}) {
-    {% if has_native_actions %}return {% endif %}{{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL{% endif %}, host_processors{% if has_native_actions %}, actions{% endif %});
+    {% if has_native_actions %}return {% endif %}{{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL{% endif %}, host_processors{% if model.host_invoker_types %}, NULL{% endif %}{% if has_native_actions %}, actions{% endif %});
 }
 {% if model.needs_event_scheduler %}
 
@@ -5603,8 +5615,59 @@ SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_clock_and_ho
                                   sce_clock_t clock,
                                   const sce_host_processor_registry_t *host_processors{% if has_native_actions %},
                                   const {{ native_actions_interface }} *actions{% endif %}) {
-    {% if has_native_actions %}return {% endif %}{{ csym_prefix }}{{ model.name }}_init_impl(sm, clock{% if model.needs_script_engine %}, NULL{% endif %}, host_processors{% if has_native_actions %}, actions{% endif %});
+    {% if has_native_actions %}return {% endif %}{{ csym_prefix }}{{ model.name }}_init_impl(sm, clock{% if model.needs_script_engine %}, NULL{% endif %}, host_processors{% if model.host_invoker_types %}, NULL{% endif %}{% if has_native_actions %}, actions{% endif %});
 }
+{% endif %}
+{% endif %}
+{% if model.host_invoker_types %}
+
+/* §scxml-6.4.1: start the machine with what RUNS its host invokes.
+
+   An argument rather than a registration made afterwards, for the reason the
+   send half's registry is: §scxml-6.4 runs an `<invoke>` at the end of the
+   macrostep that entered its state, and for the initial configuration that
+   macrostep is `_init`'s own — so an invoker registered after `_init` meets an
+   invocation that has already raised `error.execution`. `_register_invoker`
+   serves every later moment. */
+SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_host_invokers({{ csym_prefix }}{{ model.name }}_t *sm,
+                                  const sce_host_invoker_registry_t *host_invokers{% if has_native_actions %},
+                                  const {{ native_actions_interface }} *actions{% endif %}) {
+    {% if has_native_actions %}return {% endif %}{{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}, host_invokers{% if has_native_actions %}, actions{% endif %});
+}
+{% if model.needs_event_scheduler %}
+
+/* §scxml-6.2.2 + §scxml-6.4.1: the host's clock and its invokers at once, for
+   the reason `_init_with_clock_and_host_processors` exists — `_init` is
+   construction and entry in one call, so both have to arrive as arguments. */
+SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_clock_and_host_invokers({{ csym_prefix }}{{ model.name }}_t *sm,
+                                  sce_clock_t clock,
+                                  const sce_host_invoker_registry_t *host_invokers{% if has_native_actions %},
+                                  const {{ native_actions_interface }} *actions{% endif %}) {
+    {% if has_native_actions %}return {% endif %}{{ csym_prefix }}{{ model.name }}_init_impl(sm, clock{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, NULL{% endif %}, host_invokers{% if has_native_actions %}, actions{% endif %});
+}
+{% endif %}
+{% if model.host_processor_types %}
+
+/* §scxml-6.2.5 + §scxml-6.4.1: both host seams at once. A machine the build
+   declared both for can perform a host-served act in its first `<onentry>` AND
+   invoke the host from its initial state, and each single-seam initialiser
+   would leave the other registry empty through exactly that first macrostep. */
+SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_host_surfaces({{ csym_prefix }}{{ model.name }}_t *sm,
+                                  const sce_host_processor_registry_t *host_processors,
+                                  const sce_host_invoker_registry_t *host_invokers{% if has_native_actions %},
+                                  const {{ native_actions_interface }} *actions{% endif %}) {
+    {% if has_native_actions %}return {% endif %}{{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL{% endif %}, host_processors, host_invokers{% if has_native_actions %}, actions{% endif %});
+}
+{% if model.needs_event_scheduler %}
+
+SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_clock_and_host_surfaces({{ csym_prefix }}{{ model.name }}_t *sm,
+                                  sce_clock_t clock,
+                                  const sce_host_processor_registry_t *host_processors,
+                                  const sce_host_invoker_registry_t *host_invokers{% if has_native_actions %},
+                                  const {{ native_actions_interface }} *actions{% endif %}) {
+    {% if has_native_actions %}return {% endif %}{{ csym_prefix }}{{ model.name }}_init_impl(sm, clock{% if model.needs_script_engine %}, NULL{% endif %}, host_processors, host_invokers{% if has_native_actions %}, actions{% endif %});
+}
+{% endif %}
 {% endif %}
 {% endif %}
 
@@ -5640,11 +5703,11 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_has_event_processor(const {{ cs
    contracts: a host that can deliver an event is not thereby able to run a
    process with a lifetime.
 
-   Usable on a machine that is already initialised — unlike the send half,
-   whose first act can run during `_init`. An `<invoke>` never does: §scxml-6.4
-   runs it at the END of the entry macrostep, so a registration made after
-   `_init` and before the first `_step` still arrives in time. `_init_with_host_invokers`
-   exists anyway, for a host that wires both seams in one place. */
+   For every moment after `_init`. Not for an invocation of the initial
+   configuration: §scxml-6.4 runs it at the end of the macrostep that entered
+   its state, and that macrostep is `_init`'s own — so it has already started
+   (or raised `error.execution`) by the time this can be called.
+   `_init_with_host_invokers` is the door for that one. */
 SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_register_invoker({{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type,
                                                                   sce_host_invoke_handler_fn handler, void *user_data) {
     if (sm == NULL) {
@@ -5938,7 +6001,7 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_{{ var.id | to_snake_case }}(co
 SCE_SM_FN {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_basic_http({{ csym_prefix }}{{ model.name }}_t *sm,
                                                                       const char *basic_http_access_uri{% if has_native_actions %},
                                                                       const {{ native_actions_interface }} *actions{% endif %}) {
-    {% if has_native_actions %}return {% endif %}{{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}, basic_http_access_uri{% if model.host_processor_types %}, NULL{% endif %}{% if has_native_actions %}, actions{% endif %});
+    {% if has_native_actions %}return {% endif %}{{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}, basic_http_access_uri{% if model.host_processor_types %}, NULL{% endif %}{% if model.host_invoker_types %}, NULL{% endif %}{% if has_native_actions %}, actions{% endif %});
 }
 {% endif %}
 {% else %}

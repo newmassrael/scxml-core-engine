@@ -699,15 +699,30 @@ const char *{{ csym_prefix }}{{ model.name }}_scxml_location(const {{ csym_prefi
    Returns false when the registry is full or the type does not fit its
    slot, because a registration that did not happen must not read as one
    that did. */
+bool {{ csym_prefix }}{{ model.name }}_register_event_processor({{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type,
+                                                                sce_host_send_handler_fn handler, void *user_data);
+
+/* Whether a handler is registered for `processor_type`. Two things can go
+   wrong with a host-served send — no handler, or a handler that reported
+   nothing — and only the first is an error; this is how a host tells them
+   apart from outside. */
+bool {{ csym_prefix }}{{ model.name }}_has_event_processor(const {{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type);
+{% endif %}
+{# The invoke half is declared on its own condition, not inside the send
+    half's: a machine the build declared `--host-invoker` for and no
+    `--host-processor` defines these three in its `.c`, and nested under
+    `host_processor_types` their declarations vanished — no host could call
+    them, and a C11 host-invoker machine had never been compiled. #}
 {% if model.host_invoker_types %}
 /* W3C SCXML 6.4.1: register what RUNS `processor_type`, and ask what is
    registered. Separate from the `<send>` half because they are separate
    contracts — delivering an event is not the same capability as running a
    process with a lifetime.
 
-   Unlike the send half these are safe after `_init`: §scxml-6.4 runs an
-   `<invoke>` at the END of the entry macrostep, so a registration made before
-   the first `_step` still arrives in time. */
+   For every moment after `_init`. An invocation of the initial configuration
+   runs inside `_init` — §scxml-6.4 runs an `<invoke>` at the end of the
+   macrostep that entered its state — so its invokers arrive through
+   `_init_with_host_invokers` instead. */
 bool {{ csym_prefix }}{{ model.name }}_register_invoker({{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type,
                                   sce_host_invoke_handler_fn handler, void *user_data);
 bool {{ csym_prefix }}{{ model.name }}_has_invoker(const {{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type);
@@ -718,15 +733,38 @@ bool {{ csym_prefix }}{{ model.name }}_has_invoker(const {{ csym_prefix }}{{ mod
    the exit chain also asks. */
 bool {{ csym_prefix }}{{ model.name }}_cancel_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type,
                                   const char *invoke_id);
-{% endif %}
-bool {{ csym_prefix }}{{ model.name }}_register_event_processor({{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type,
-                                                                sce_host_send_handler_fn handler, void *user_data);
+{% if not model.has_parent_communication %}
 
-/* Whether a handler is registered for `processor_type`. Two things can go
-   wrong with a host-served send — no handler, or a handler that reported
-   nothing — and only the first is an error; this is how a host tells them
-   apart from outside. */
-bool {{ csym_prefix }}{{ model.name }}_has_event_processor(const {{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type);
+/* W3C SCXML 6.4.1: start the machine with what RUNS its host invokes — the
+   door for an invocation of the initial configuration, which runs inside this
+   call and so before any `_register_invoker` could. */
+{{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_host_invokers({{ csym_prefix }}{{ model.name }}_t *sm,
+                                  const sce_host_invoker_registry_t *host_invokers{% if has_native_actions %},
+                                  const {{ native_actions_interface }} *actions{% endif %});
+{% if model.needs_event_scheduler %}
+{{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_clock_and_host_invokers({{ csym_prefix }}{{ model.name }}_t *sm,
+                                  sce_clock_t clock,
+                                  const sce_host_invoker_registry_t *host_invokers{% if has_native_actions %},
+                                  const {{ native_actions_interface }} *actions{% endif %});
+{% endif %}
+{% if model.host_processor_types %}
+
+/* W3C SCXML 6.2.5 + 6.4.1: both host seams at once, for a machine that can
+   perform a host-served act in its first `<onentry>` and invoke the host from
+   its initial state. */
+{{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_host_surfaces({{ csym_prefix }}{{ model.name }}_t *sm,
+                                  const sce_host_processor_registry_t *host_processors,
+                                  const sce_host_invoker_registry_t *host_invokers{% if has_native_actions %},
+                                  const {{ native_actions_interface }} *actions{% endif %});
+{% if model.needs_event_scheduler %}
+{{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_with_clock_and_host_surfaces({{ csym_prefix }}{{ model.name }}_t *sm,
+                                  sce_clock_t clock,
+                                  const sce_host_processor_registry_t *host_processors,
+                                  const sce_host_invoker_registry_t *host_invokers{% if has_native_actions %},
+                                  const {{ native_actions_interface }} *actions{% endif %});
+{% endif %}
+{% endif %}
+{% endif %}
 {% endif %}
 
 {% if model.readable_variables %}
