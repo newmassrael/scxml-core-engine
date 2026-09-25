@@ -77,7 +77,8 @@ class StatePolicy(ABC, Generic[S, E]):
         """W3C SCXML 3.2 — the target set of the document's initial
         transition, as written: one entry per token of `<scxml initial>`, or
         the first child state in document order when the attribute is absent.
-        What §scxml-D-interpret enters from the `<scxml>` element."""
+        What Appendix D's interpret enters from the `<scxml>` element."""
+        # §scxml-D-interpret: the initial transition of the <scxml> element.
 
     @abstractmethod
     def is_final_state(self, state: S) -> bool:
@@ -132,7 +133,7 @@ class StatePolicy(ABC, Generic[S, E]):
         `null_event()`, the first eventless one whose guard holds. `None` when
         there is none.
 
-        Only `state`'s own transitions: §scxml-D-selectTransitions walks the
+        Only `state`'s own transitions: Appendix D's selectTransitions walks the
         ancestors, and the runtime does that walk. The targets are the
         `target` attribute as written — a `<history>` stays a `HistoryTarget`,
         which the runtime dereferences when it computes the entry set.
@@ -143,17 +144,19 @@ class StatePolicy(ABC, Generic[S, E]):
         error the SCXML Processor MUST place error.execution on the
         internal queue and treat the cond as having the value 'false'").
         """
+        # §scxml-D-selectTransitions: the per-state half of the selection.
 
     @abstractmethod
     def execute_entry_actions(
         self, state: S, engine: "Engine[S, E]", is_default_entry: bool
     ) -> None:
-        """W3C SCXML 3.8 — what §scxml-D-enterStates does for `state` once it
-        is in the configuration: its `<onentry>` blocks, then — only when
+        """W3C SCXML 3.8 — what Appendix D's enterStates does for `state` once
+        it is in the configuration: its `<onentry>` blocks, then — only when
         `is_default_entry` — its `<initial>` transition's executable content,
         then, for a `<final>`, the `done.state` events its entry raises.
         Actions that raise internal events do so via
         `engine.raise_internal(...)`."""
+        # §scxml-D-enterStates: one state's share of the entry.
 
     @abstractmethod
     def execute_exit_actions(self, state: S, engine: "Engine[S, E]") -> None:
@@ -164,7 +167,8 @@ class StatePolicy(ABC, Generic[S, E]):
         self, state: S, transition_index: int, engine: "Engine[S, E]"
     ) -> None:
         """W3C SCXML 3.13 — run the executable content of `state`'s transition
-        `transition_index` (§scxml-D-executeTransitionContent)."""
+        `transition_index` (Appendix D's executeTransitionContent)."""
+        # §scxml-D-executeTransitionContent: one selected transition's content.
 
     @abstractmethod
     def get_document_order(self, state: S) -> int:
@@ -184,9 +188,10 @@ class StatePolicy(ABC, Generic[S, E]):
         return False
 
     def get_child_states(self, state: S) -> Sequence[S]:
-        """§scxml-D-getChildStates — `state`'s `<state>`, `<parallel>` and
+        """Appendix D's getChildStates — `state`'s `<state>`, `<parallel>` and
         `<final>` children in document order; for a `<parallel>`, its regions.
         Empty for an atomic state and a `<final>`."""
+        # §scxml-D-getChildStates: the default is a state with no children.
         return ()
 
     def get_initial_targets(self, state: S) -> Sequence[EntryTarget]:
@@ -225,9 +230,10 @@ class StatePolicy(ABC, Generic[S, E]):
         self, history_id: str, engine: "Engine[S, E]"
     ) -> None:
         """W3C SCXML 3.10.2 — run the executable content of the history's
-        default `<transition>`. §scxml-D-enterStates runs it after the
+        default `<transition>`. Appendix D's enterStates runs it after the
         history's parent is entered, when the history was taken with nothing
         recorded. Default no-op."""
+        # §scxml-D-enterStates: owed once the history's parent is entered.
 
     def initialize_datamodel(self, engine: "Engine[S, E]") -> None:
         """W3C SCXML 5.3 — root datamodel + (early-binding) all state-local

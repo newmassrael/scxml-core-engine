@@ -764,11 +764,12 @@ class Engine(Generic[S, E]):
         return set(self._configuration)
 
     def is_in_final_state(self, state: S) -> bool:
-        """§scxml-D-isInFinalState, over this engine's configuration.
+        """Appendix D's isInFinalState, over this engine's configuration.
 
         What a generated `<final>`'s entry asks of its grandparent: a
         `<parallel>` whose every region is now in a final state is itself
         done, and raises `done.state.<id>` from that same entry."""
+        # §scxml-D-isInFinalState: asked of the configuration as it stands.
         return is_in_final_state(self._host, state, self._configuration)
 
     # ── Event injection ────────────────────────────────────────────

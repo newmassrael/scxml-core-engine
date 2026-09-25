@@ -161,8 +161,9 @@ class Document(Protocol[S, H]):
         final state; that is ``is_in_final_state``."""
 
     def child_states(self, state: S) -> Sequence[S]:
-        """§scxml-D-getChildStates: the state's ``<state>``, ``<parallel>`` and
-        ``<final>`` children, in document order."""
+        """Appendix D's getChildStates: the state's ``<state>``, ``<parallel>``
+        and ``<final>`` children, in document order."""
+        # §scxml-D-getChildStates: for a <parallel>, these are its regions.
 
     def initial_targets(self, state: S) -> Sequence[EntryTarget]:
         """A compound state's initial transition target, as written — the
@@ -464,9 +465,11 @@ def enter_states(run: Run, transitions: Sequence[EntryTransition]) -> EntrySet:
     """Appendix D's enterStates.
 
     Also the whole of the appendix's entry into the initial configuration
-    (§scxml-D-interpret): hand it the document's initial transition, whose
+    (Appendix D's interpret): hand it the document's initial transition, whose
     source is the ``<scxml>`` element (``source`` ``None``).
     """
+    # §scxml-D-interpret enters the initial configuration through this same
+    # procedure, with a transition whose source is the <scxml> element.
     entry = compute_entry_set(run, transitions)
     for state in entry.states_to_enter:
         # §scxml-D-enterStates: onentry, then the initial transition's content
