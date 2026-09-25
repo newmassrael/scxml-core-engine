@@ -1,0 +1,894 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+//
+// Which integer operations of an algorithm body can fail — the analysis the
+// integer arithmetic contract (E12) rests on.
+//
+// Under that contract an integer `+ - *` or unary `-` whose result leaves its
+// type, a `/ %` by zero and a signed `MIN / -1` are failures of the
+// algorithm, not values: a wrapped result is a wrong answer delivered in
+// silence, which is the one outcome the contract exists to end. Bitwise
+// operations and shifts keep the declared width's two's-complement meaning
+// and never fail.
+//
+// An algorithm that can reach such an operation must say so in its
+// signature; one that cannot keeps an API that does not fail. Which is which
+// is not left to a pattern the author has to match: this module proves it,
+// by interval analysis over the body. Each integer value is tracked as the
+// range it can hold — a parameter as its whole type, a local from its
+// initialiser — and narrowed by the conditions that guard it (inside
+// `while i < 8`, `i` is at most 7). A loop is iterated until its ranges stop
+// growing; a range still growing after a few rounds is widened to its whole
+// type, which the guarding condition then narrows again. What remains is an
+// over-approximation: every hazard it reports is an operation the analysis
+// could not prove safe, and every one it does not report is proven safe.
+//
+// It judges each expression against the same typed tree the emitters lower
+// (`expr::resolve` + `expr::infer_types` over the algorithm's own scope), so
+// the width an operation is judged at is the width it is emitted at.
+
+use std::collections::BTreeMap;
+use std::ops::Range;
+
+use crate::attribute_spelling::AttributeSpelling;
+use crate::forge::expr::{infer_types, resolve, BinOp, ExprKind, TypedExpr, UnaryOp};
+use crate::forge::model::{AlgorithmStmt, AlgorithmValueType};
+use crate::forge::types::{InferredType, TypeCtx};
+
+/// Why an operation can fail.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HazardKind {
+    /// `+ - *` or unary `-` whose result can leave its type.
+    Overflow,
+    /// `/ %` whose divisor can be zero.
+    DivideByZero,
+    /// A signed `/ %` that can divide its type's minimum by `-1`, whose
+    /// quotient its type cannot hold.
+    MinDividedByMinusOne,
+}
+
+/// One operation the analysis could not prove safe.
+#[derive(Debug, Clone)]
+pub struct IntHazard {
+    /// The expression it sits in, as written.
+    pub expr: String,
+    /// Where in `expr` the operation is written, when the parser knows.
+    pub span: Option<Range<usize>>,
+    /// The attribute `expr` was read from, so a refusal lands on the
+    /// operation's own row and column.
+    pub spelling: Option<AttributeSpelling>,
+    pub kind: HazardKind,
+    /// The type the operation computes in.
+    pub ty: InferredType,
+}
+
+/// Every operation of `body` that can fail, given `params` (name and type)
+/// and `ctx`, the scope the algorithm's expressions are typed in.
+pub fn hazards(
+    params: &[(String, AlgorithmValueType)],
+    body: &[AlgorithmStmt],
+    ctx: &TypeCtx<'_>,
+) -> Vec<IntHazard> {
+    let mut analysis = Analysis {
+        ctx,
+        found: Vec::new(),
+        recording: true,
+    };
+    let mut env = Env::default();
+    for (name, ty) in params {
+        if let Some(range) = scalar_range(ty) {
+            env.vars.insert(name.clone(), range);
+        }
+    }
+    analysis.block(body, &mut env);
+    analysis.found
+}
+
+/// A closed integer range. Every width SCE declares fits in `i128` with room
+/// for the product of two of its values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Interval {
+    lo: i128,
+    hi: i128,
+}
+
+impl Interval {
+    fn point(v: i128) -> Self {
+        Self { lo: v, hi: v }
+    }
+
+    fn join(self, other: Self) -> Self {
+        Self {
+            lo: self.lo.min(other.lo),
+            hi: self.hi.max(other.hi),
+        }
+    }
+
+    fn contains(self, v: i128) -> bool {
+        self.lo <= v && v <= self.hi
+    }
+
+    fn within(self, outer: Self) -> bool {
+        outer.lo <= self.lo && self.hi <= outer.hi
+    }
+
+    /// `self` limited to `outer` — the values an operation that did not fail
+    /// can have produced.
+    fn clamp(self, outer: Self) -> Self {
+        Self {
+            lo: self.lo.max(outer.lo),
+            hi: self.hi.min(outer.hi),
+        }
+    }
+}
+
+/// The values an integer type holds; `None` for any other type.
+fn type_range(ty: InferredType) -> Option<Interval> {
+    match ty.strip_quantity() {
+        InferredType::Int { signed, bits } if bits > 0 && bits <= 64 => Some(if signed {
+            let half = 1i128 << (bits - 1);
+            Interval {
+                lo: -half,
+                hi: half - 1,
+            }
+        } else {
+            Interval {
+                lo: 0,
+                hi: (1i128 << bits) - 1,
+            }
+        }),
+        _ => None,
+    }
+}
+
+fn scalar_range(ty: &AlgorithmValueType) -> Option<Interval> {
+    ty.scalar()
+        .and_then(|t| type_range(InferredType::from_sce_type(t)))
+}
+
+/// The range each tracked name holds at one point of the body, or none at a
+/// point no execution reaches.
+#[derive(Debug, Clone, Default, PartialEq)]
+struct Env {
+    vars: BTreeMap<String, Interval>,
+    /// Names a guard has shown to be non-zero. A range cannot say "any value
+    /// but 0" of a signed type, and `if (b !== 0) … a / b` is the idiom a
+    /// divisor is guarded by, so the fact is kept beside the range.
+    nonzero: std::collections::BTreeSet<String>,
+    unreachable: bool,
+}
+
+impl Env {
+    fn dead() -> Self {
+        Self {
+            unreachable: true,
+            ..Self::default()
+        }
+    }
+
+    /// The ranges either of two paths can leave. A name only one path tracks
+    /// is dropped: after the join it is known only by its type.
+    fn join(&self, other: &Self) -> Self {
+        if self.unreachable {
+            return other.clone();
+        }
+        if other.unreachable {
+            return self.clone();
+        }
+        let vars = self
+            .vars
+            .iter()
+            .filter_map(|(k, a)| other.vars.get(k).map(|b| (k.clone(), a.join(*b))))
+            .collect();
+        Self {
+            vars,
+            nonzero: self.nonzero.intersection(&other.nonzero).cloned().collect(),
+            unreachable: false,
+        }
+    }
+}
+
+struct Analysis<'c, 'a> {
+    ctx: &'c TypeCtx<'a>,
+    found: Vec<IntHazard>,
+    /// Off while a loop is iterated towards its fixed point, whose early
+    /// rounds see narrower ranges than the loop really reaches; on for the
+    /// one pass over the stable ranges, which is the one that reports.
+    recording: bool,
+}
+
+/// Rounds a loop is iterated before its still-growing ranges are widened.
+const ROUNDS_BEFORE_WIDENING: usize = 3;
+
+impl Analysis<'_, '_> {
+    fn block(&mut self, stmts: &[AlgorithmStmt], env: &mut Env) {
+        for stmt in stmts {
+            if env.unreachable {
+                return;
+            }
+            self.stmt(stmt, env);
+        }
+    }
+
+    fn stmt(&mut self, stmt: &AlgorithmStmt, env: &mut Env) {
+        match stmt {
+            AlgorithmStmt::Var {
+                name,
+                sce_type,
+                init,
+                init_spelling,
+                ..
+            } => {
+                let value = init
+                    .as_deref()
+                    .and_then(|e| self.value(e, init_spelling.as_ref(), env));
+                self.store(env, name, scalar_range(sce_type), value);
+            }
+            AlgorithmStmt::RecordVar { name, fields, .. } => {
+                for field in fields {
+                    let value = self.value(&field.expr, field.expr_spelling.as_ref(), env);
+                    let key = format!("{name}.{}", field.name);
+                    let slot = self.declared_range(&key);
+                    self.store(env, &key, slot, value);
+                }
+            }
+            AlgorithmStmt::Assign {
+                target,
+                expr,
+                expr_spelling,
+                ..
+            } => {
+                let value = self.value(expr, expr_spelling.as_ref(), env);
+                let key = target.trim().to_string();
+                let slot = self.declared_range(&key);
+                self.store(env, &key, slot, value);
+            }
+            AlgorithmStmt::Append {
+                expr,
+                expr_spelling,
+                ..
+            } => {
+                self.value(expr, expr_spelling.as_ref(), env);
+            }
+            AlgorithmStmt::Return {
+                expr,
+                expr_spelling,
+            } => {
+                if let Some(e) = expr {
+                    self.value(e, expr_spelling.as_ref(), env);
+                }
+                *env = Env::dead();
+            }
+            AlgorithmStmt::Call { args, .. } => {
+                for arg in args {
+                    self.value(&arg.expr, None, env);
+                }
+            }
+            AlgorithmStmt::If {
+                cond,
+                cond_spelling,
+                then_body,
+                else_body,
+            } => {
+                let tree = self.typed(cond);
+                if let Some(tree) = &tree {
+                    self.eval(tree, cond, cond_spelling.as_ref(), env);
+                }
+                let mut then_env = self.narrowed(tree.as_ref(), env, true);
+                self.block(then_body, &mut then_env);
+                let mut else_env = self.narrowed(tree.as_ref(), env, false);
+                if let Some(body) = else_body {
+                    self.block(body, &mut else_env);
+                }
+                *env = then_env.join(&else_env);
+            }
+            AlgorithmStmt::While {
+                cond,
+                cond_spelling,
+                body,
+                ..
+            } => {
+                let tree = self.typed(cond);
+                let head = self.fixed_point(env, |this, head| {
+                    let mut inner = this.narrowed(tree.as_ref(), head, true);
+                    this.block(body, &mut inner);
+                    inner
+                });
+                // The reporting pass, over the ranges the loop really reaches.
+                if let Some(tree) = &tree {
+                    self.eval(tree, cond, cond_spelling.as_ref(), &head);
+                }
+                let mut inner = self.narrowed(tree.as_ref(), &head, true);
+                self.block(body, &mut inner);
+                *env = self.narrowed(tree.as_ref(), &head, false);
+            }
+            AlgorithmStmt::Foreach {
+                item, source, body, ..
+            } => {
+                // The item holds any element of the source; how many there
+                // are is the caller's, so the body runs any number of times.
+                let item_range = self
+                    .typed(&format!("{source}[0]"))
+                    .and_then(|t| type_range(t.ty))
+                    .or(Some(Interval { lo: 0, hi: 255 }));
+                let head = self.fixed_point(env, |this, head| {
+                    let mut inner = head.clone();
+                    if let Some(r) = item_range {
+                        inner.vars.insert(item.clone(), r);
+                    }
+                    this.block(body, &mut inner);
+                    inner.vars.remove(item);
+                    inner
+                });
+                let mut inner = head.clone();
+                if let Some(r) = item_range {
+                    inner.vars.insert(item.clone(), r);
+                }
+                self.block(body, &mut inner);
+                inner.vars.remove(item);
+                *env = head.join(&inner);
+            }
+        }
+    }
+
+    /// The loop-head ranges a loop whose one round is `round` reaches from
+    /// `entry`: iterated without reporting, then widened.
+    fn fixed_point(&mut self, entry: &Env, mut round: impl FnMut(&mut Self, &Env) -> Env) -> Env {
+        let recording = std::mem::replace(&mut self.recording, false);
+        let mut head = entry.clone();
+        let mut rounds = 0;
+        loop {
+            let after = round(self, &head);
+            let next = head.join(&after);
+            if next == head {
+                break;
+            }
+            rounds += 1;
+            head = if rounds < ROUNDS_BEFORE_WIDENING {
+                next
+            } else {
+                self.widened(&head, &next)
+            };
+        }
+        self.recording = recording;
+        head
+    }
+
+    /// `next` with every range that grew from `prev` widened to its whole
+    /// type — the step that ends a loop whose ranges would grow for as many
+    /// rounds as its type has values.
+    fn widened(&self, prev: &Env, next: &Env) -> Env {
+        let mut out = next.clone();
+        for (name, range) in out.vars.iter_mut() {
+            if prev.vars.get(name) != Some(range) {
+                if let Some(full) = self.declared_range(name) {
+                    *range = full;
+                }
+            }
+        }
+        out
+    }
+
+    /// Store `value` in `name`, whose declared type holds `slot`. A value the
+    /// slot cannot hold is converted into it, which the type rules define as
+    /// wrapping to the slot — not an arithmetic failure — so after it the
+    /// name is known only by its type.
+    fn store(&self, env: &mut Env, name: &str, slot: Option<Interval>, value: Option<Interval>) {
+        // A new value keeps no fact a guard proved of the old one.
+        env.nonzero.remove(name);
+        match (slot, value) {
+            (Some(slot), Some(v)) if v.within(slot) => {
+                env.vars.insert(name.to_string(), v);
+            }
+            (Some(slot), _) => {
+                env.vars.insert(name.to_string(), slot);
+            }
+            (None, _) => {
+                env.vars.remove(name);
+            }
+        }
+    }
+
+    /// The range `name`'s declared type holds, from the scope.
+    fn declared_range(&self, name: &str) -> Option<Interval> {
+        self.ctx.vars.get(name).and_then(|ty| type_range(*ty))
+    }
+
+    /// `expr` as the typed tree the emitters lower, or `None` for one the
+    /// typed pipeline refuses — that refusal is reported where it is lowered.
+    fn typed(&self, expr: &str) -> Option<TypedExpr> {
+        let mut tree = resolve(expr, self.ctx).ok()?;
+        infer_types(&mut tree, self.ctx);
+        Some(tree)
+    }
+
+    /// Judge `expr`, recording its hazards, and return the range of its value
+    /// when it is an integer.
+    fn value(
+        &mut self,
+        expr: &str,
+        spelling: Option<&AttributeSpelling>,
+        env: &Env,
+    ) -> Option<Interval> {
+        let tree = self.typed(expr)?;
+        self.eval(&tree, expr, spelling, env)
+    }
+
+    fn hazard(
+        &mut self,
+        node: &TypedExpr,
+        expr: &str,
+        spelling: Option<&AttributeSpelling>,
+        kind: HazardKind,
+    ) {
+        if !self.recording {
+            return;
+        }
+        let already = self
+            .found
+            .iter()
+            .any(|h| h.expr == expr && h.span == node.span && h.kind == kind);
+        if !already {
+            self.found.push(IntHazard {
+                expr: expr.to_string(),
+                span: node.span.clone(),
+                spelling: spelling.cloned(),
+                kind,
+                ty: node.ty,
+            });
+        }
+    }
+
+    /// The range of `node`'s value when it is an integer, recording every
+    /// hazard in it.
+    fn eval(
+        &mut self,
+        node: &TypedExpr,
+        expr: &str,
+        spelling: Option<&AttributeSpelling>,
+        env: &Env,
+    ) -> Option<Interval> {
+        let own = type_range(node.ty);
+        match &node.kind {
+            ExprKind::NumberLit(text) => integer_literal(text).or(own),
+            ExprKind::Ident(name) | ExprKind::Raw(name) => env.vars.get(name).copied().or(own),
+            ExprKind::Member { .. } => member_key(node)
+                .and_then(|k| env.vars.get(&k).copied())
+                .or(own),
+            ExprKind::Unary { op, operand } => {
+                let v = self.eval(operand, expr, spelling, env);
+                match op {
+                    UnaryOp::Neg => {
+                        let (Some(v), Some(own)) = (v, own) else {
+                            return own;
+                        };
+                        let r = Interval {
+                            lo: -v.hi,
+                            hi: -v.lo,
+                        };
+                        if !r.within(own) {
+                            self.hazard(node, expr, spelling, HazardKind::Overflow);
+                        }
+                        Some(r.clamp(own))
+                    }
+                    UnaryOp::Pos => v.or(own),
+                    UnaryOp::Not | UnaryOp::BitNot => own,
+                }
+            }
+            ExprKind::Binary { op, left, right } => {
+                let l = self.eval(left, expr, spelling, env);
+                let r = self.eval(right, expr, spelling, env);
+                let (Some(l), Some(r), Some(own)) = (l, r, own) else {
+                    return own;
+                };
+                match op {
+                    BinOp::Add | BinOp::Sub | BinOp::Mul => {
+                        let result = arith(*op, l, r);
+                        if !result.within(own) {
+                            self.hazard(node, expr, spelling, HazardKind::Overflow);
+                        }
+                        Some(result.clamp(own))
+                    }
+                    BinOp::Div | BinOp::Mod => {
+                        let guarded = name_of(right).is_some_and(|k| env.nonzero.contains(&k));
+                        if r.contains(0) && !guarded {
+                            self.hazard(node, expr, spelling, HazardKind::DivideByZero);
+                        }
+                        if own.lo < 0 && l.contains(own.lo) && r.contains(-1) {
+                            self.hazard(node, expr, spelling, HazardKind::MinDividedByMinusOne);
+                        }
+                        Some(if *op == BinOp::Mod {
+                            modulo_range(l, r).clamp(own)
+                        } else {
+                            own
+                        })
+                    }
+                    // Bitwise operations and shifts keep the declared width's
+                    // meaning and never fail; their value is the whole type.
+                    _ => Some(own),
+                }
+            }
+            _ => {
+                for child in node.children() {
+                    self.eval(child, expr, spelling, env);
+                }
+                own
+            }
+        }
+    }
+
+    /// `env` with the names `cond` compares narrowed to the ranges that make
+    /// it `truth`, or a dead environment when no value can.
+    fn narrowed(&mut self, cond: Option<&TypedExpr>, env: &Env, truth: bool) -> Env {
+        let mut out = env.clone();
+        if let Some(cond) = cond {
+            let recording = std::mem::replace(&mut self.recording, false);
+            self.narrow(cond, &mut out, truth);
+            self.recording = recording;
+        }
+        out
+    }
+
+    fn narrow(&mut self, cond: &TypedExpr, env: &mut Env, truth: bool) {
+        if env.unreachable {
+            return;
+        }
+        match &cond.kind {
+            ExprKind::Unary {
+                op: UnaryOp::Not,
+                operand,
+            } => self.narrow(operand, env, !truth),
+            ExprKind::Binary { op, left, right } => match (op, truth) {
+                (BinOp::And, true) | (BinOp::Or, false) => {
+                    self.narrow(left, env, truth);
+                    self.narrow(right, env, truth);
+                }
+                (
+                    BinOp::Lt
+                    | BinOp::LtEq
+                    | BinOp::Gt
+                    | BinOp::GtEq
+                    | BinOp::StrictEq
+                    | BinOp::StrictNeq,
+                    _,
+                ) => {
+                    let op = if truth { *op } else { negate(*op) };
+                    // Narrow whichever side names a tracked value, against
+                    // the range of the other.
+                    if let (Some(key), Some(bound)) =
+                        (name_of(left), self.eval(right, "", None, env))
+                    {
+                        restrict(env, &key, op, bound);
+                    }
+                    if let (Some(key), Some(bound)) =
+                        (name_of(right), self.eval(left, "", None, env))
+                    {
+                        restrict(env, &key, flip(op), bound);
+                    }
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+}
+
+/// The exact range of `l op r` for `+ - *`.
+fn arith(op: BinOp, l: Interval, r: Interval) -> Interval {
+    match op {
+        BinOp::Add => Interval {
+            lo: l.lo + r.lo,
+            hi: l.hi + r.hi,
+        },
+        BinOp::Sub => Interval {
+            lo: l.lo - r.hi,
+            hi: l.hi - r.lo,
+        },
+        _ => {
+            let products = [l.lo * r.lo, l.lo * r.hi, l.hi * r.lo, l.hi * r.hi];
+            Interval {
+                lo: *products.iter().min().unwrap_or(&0),
+                hi: *products.iter().max().unwrap_or(&0),
+            }
+        }
+    }
+}
+
+/// A range the remainder `l % r` lies in: less than the largest divisor in
+/// magnitude, with the dividend's sign (truncated division, as every backend
+/// performs it).
+fn modulo_range(l: Interval, r: Interval) -> Interval {
+    let m = r.lo.abs().max(r.hi.abs()).max(1) - 1;
+    let lo = if l.lo < 0 { -m.min(-l.lo) } else { 0 };
+    let hi = if l.hi > 0 { m.min(l.hi) } else { 0 };
+    Interval { lo, hi }
+}
+
+/// An integer literal's value; `None` for a real one.
+fn integer_literal(text: &str) -> Option<Interval> {
+    let t = text.replace('_', "");
+    let v = if let Some(h) = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")) {
+        i128::from_str_radix(h, 16).ok()?
+    } else if let Some(b) = t.strip_prefix("0b").or_else(|| t.strip_prefix("0B")) {
+        i128::from_str_radix(b, 2).ok()?
+    } else if let Some(o) = t.strip_prefix("0o").or_else(|| t.strip_prefix("0O")) {
+        i128::from_str_radix(o, 8).ok()?
+    } else {
+        t.parse::<i128>().ok()?
+    };
+    Some(Interval::point(v))
+}
+
+/// The key a tracked value is stored under: a bare name, or `object.field`.
+fn name_of(node: &TypedExpr) -> Option<String> {
+    match &node.kind {
+        ExprKind::Ident(n) | ExprKind::Raw(n) => Some(n.clone()),
+        ExprKind::Member { .. } => member_key(node),
+        _ => None,
+    }
+}
+
+fn member_key(node: &TypedExpr) -> Option<String> {
+    let ExprKind::Member { object, property } = &node.kind else {
+        return None;
+    };
+    Some(format!("{}.{property}", name_of(object)?))
+}
+
+fn negate(op: BinOp) -> BinOp {
+    match op {
+        BinOp::Lt => BinOp::GtEq,
+        BinOp::LtEq => BinOp::Gt,
+        BinOp::Gt => BinOp::LtEq,
+        BinOp::GtEq => BinOp::Lt,
+        BinOp::StrictEq => BinOp::StrictNeq,
+        BinOp::StrictNeq => BinOp::StrictEq,
+        other => other,
+    }
+}
+
+/// `a op b` restated as `b op' a`.
+fn flip(op: BinOp) -> BinOp {
+    match op {
+        BinOp::Lt => BinOp::Gt,
+        BinOp::LtEq => BinOp::GtEq,
+        BinOp::Gt => BinOp::Lt,
+        BinOp::GtEq => BinOp::LtEq,
+        other => other,
+    }
+}
+
+/// Narrow `key` to the values for which `key op bound` can hold.
+fn restrict(env: &mut Env, key: &str, op: BinOp, bound: Interval) {
+    if op == BinOp::StrictNeq && bound == Interval::point(0) {
+        env.nonzero.insert(key.to_string());
+    }
+    let Some(cur) = env.vars.get(key).copied() else {
+        return;
+    };
+    let next = match op {
+        BinOp::Lt => Interval {
+            lo: cur.lo,
+            hi: cur.hi.min(bound.hi - 1),
+        },
+        BinOp::LtEq => Interval {
+            lo: cur.lo,
+            hi: cur.hi.min(bound.hi),
+        },
+        BinOp::Gt => Interval {
+            lo: cur.lo.max(bound.lo + 1),
+            hi: cur.hi,
+        },
+        BinOp::GtEq => Interval {
+            lo: cur.lo.max(bound.lo),
+            hi: cur.hi,
+        },
+        BinOp::StrictEq => cur.clamp(bound),
+        // `!==` narrows only a bound equal to an end of the range.
+        BinOp::StrictNeq if bound.lo == bound.hi => {
+            if bound.lo == cur.lo {
+                Interval {
+                    lo: cur.lo + 1,
+                    hi: cur.hi,
+                }
+            } else if bound.hi == cur.hi {
+                Interval {
+                    lo: cur.lo,
+                    hi: cur.hi - 1,
+                }
+            } else {
+                cur
+            }
+        }
+        _ => cur,
+    };
+    if next.lo > next.hi {
+        *env = Env::dead();
+    } else {
+        env.vars.insert(key.to_string(), next);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::forge::model::SceType;
+
+    fn u8t() -> AlgorithmValueType {
+        AlgorithmValueType::Scalar(SceType::Uint8)
+    }
+
+    fn var(name: &str, ty: AlgorithmValueType, init: &str) -> AlgorithmStmt {
+        AlgorithmStmt::Var {
+            name: name.into(),
+            name_spelling: None,
+            sce_type: ty,
+            init: Some(init.into()),
+            init_spelling: None,
+            capacity: None,
+            capacity_spelling: None,
+        }
+    }
+
+    fn assign(target: &str, expr: &str) -> AlgorithmStmt {
+        AlgorithmStmt::Assign {
+            target: target.into(),
+            target_spelling: None,
+            expr: expr.into(),
+            expr_spelling: None,
+        }
+    }
+
+    fn while_(cond: &str, max_iter: u32, body: Vec<AlgorithmStmt>) -> AlgorithmStmt {
+        AlgorithmStmt::While {
+            cond: cond.into(),
+            cond_spelling: None,
+            body,
+            max_iter: Some(max_iter),
+        }
+    }
+
+    fn if_(cond: &str, then_body: Vec<AlgorithmStmt>) -> AlgorithmStmt {
+        AlgorithmStmt::If {
+            cond: cond.into(),
+            cond_spelling: None,
+            then_body,
+            else_body: None,
+        }
+    }
+
+    fn ret(expr: &str) -> AlgorithmStmt {
+        AlgorithmStmt::Return {
+            expr: Some(expr.into()),
+            expr_spelling: None,
+        }
+    }
+
+    /// The hazards of `body`, every name in `names` typed as given.
+    fn analyse(
+        params: &[(&str, SceType)],
+        locals: &[(&str, SceType)],
+        body: &[AlgorithmStmt],
+    ) -> Vec<(String, HazardKind)> {
+        let mut ctx = TypeCtx::new();
+        for (n, t) in params.iter().chain(locals) {
+            ctx.insert_var(n, InferredType::from_sce_type(t));
+        }
+        let params: Vec<(String, AlgorithmValueType)> = params
+            .iter()
+            .map(|(n, t)| (n.to_string(), AlgorithmValueType::Scalar(t.clone())))
+            .collect();
+        hazards(&params, body, &ctx)
+            .into_iter()
+            .map(|h| (h.expr, h.kind))
+            .collect()
+    }
+
+    #[test]
+    fn a_counter_bounded_by_its_loop_condition_cannot_overflow() {
+        // `i < 8` keeps `i` at most 7 inside the body, so `i + 1` is at most
+        // 8 — widening the loop head to the whole of uint8 does not lose it,
+        // because the condition narrows it again.
+        let body = [
+            var("i", u8t(), "0"),
+            while_("i < 8", 8, vec![assign("i", "i + 1")]),
+            ret("i"),
+        ];
+        assert!(analyse(&[], &[("i", SceType::Uint8)], &body).is_empty());
+    }
+
+    #[test]
+    fn an_unbounded_increment_of_a_parameter_can_overflow() {
+        // The HLC counter: `prev + 1` for any uint32 `prev` passes 2^32 - 1.
+        let body = [ret("prev + 1")];
+        assert_eq!(
+            analyse(&[("prev", SceType::Uint32)], &[], &body),
+            vec![("prev + 1".to_string(), HazardKind::Overflow)]
+        );
+    }
+
+    #[test]
+    fn a_guard_that_excludes_the_maximum_makes_the_increment_safe() {
+        let body = [
+            var("n", AlgorithmValueType::Scalar(SceType::Uint32), "0"),
+            if_("prev < 4294967295", vec![assign("n", "prev + 1")]),
+            ret("n"),
+        ];
+        assert!(analyse(
+            &[("prev", SceType::Uint32)],
+            &[("n", SceType::Uint32)],
+            &body
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn a_divisor_that_can_be_zero_is_a_hazard_and_a_nonzero_one_is_not() {
+        let body = [ret("a / b")];
+        assert_eq!(
+            analyse(
+                &[("a", SceType::Uint16), ("b", SceType::Uint16)],
+                &[],
+                &body
+            ),
+            vec![("a / b".to_string(), HazardKind::DivideByZero)]
+        );
+        let guarded = [if_("b !== 0", vec![ret("a / b")]), ret("0")];
+        assert!(analyse(
+            &[("a", SceType::Uint16), ("b", SceType::Uint16)],
+            &[],
+            &guarded
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn a_signed_division_that_can_take_min_by_minus_one_is_a_hazard() {
+        let body = [if_("b !== 0", vec![ret("a / b")]), ret("0")];
+        assert_eq!(
+            analyse(&[("a", SceType::Int32), ("b", SceType::Int32)], &[], &body),
+            vec![("a / b".to_string(), HazardKind::MinDividedByMinusOne)]
+        );
+    }
+
+    #[test]
+    fn bitwise_operations_and_shifts_never_fail() {
+        // CRC arithmetic: a shift that drops the high bit is the declared
+        // width's meaning, not an overflow.
+        let body = [ret("(crc << 1) ^ 4129")];
+        assert!(analyse(&[("crc", SceType::Uint16)], &[], &body).is_empty());
+    }
+
+    #[test]
+    fn an_accumulator_growing_each_round_is_widened_and_found() {
+        // `sum` grows every round with no guard that bounds it: widening
+        // takes it to the whole of uint16, and `sum + i` can then pass it.
+        let body = [
+            var("sum", AlgorithmValueType::Scalar(SceType::Uint16), "0"),
+            var("i", u8t(), "0"),
+            while_(
+                "i < 200",
+                200,
+                vec![assign("sum", "sum + i"), assign("i", "i + 1")],
+            ),
+            ret("sum"),
+        ];
+        assert_eq!(
+            analyse(
+                &[],
+                &[("sum", SceType::Uint16), ("i", SceType::Uint8)],
+                &body
+            ),
+            vec![("sum + i".to_string(), HazardKind::Overflow)]
+        );
+    }
+
+    #[test]
+    fn a_negation_of_a_signed_minimum_is_a_hazard() {
+        let body = [ret("-x")];
+        assert_eq!(
+            analyse(&[("x", SceType::Int8)], &[], &body),
+            vec![("-x".to_string(), HazardKind::Overflow)]
+        );
+    }
+}

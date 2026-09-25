@@ -29,6 +29,7 @@ pub mod extern_validator;
 pub mod generator;
 pub mod import_source;
 pub mod import_use;
+pub mod int_ranges;
 pub mod intrinsic_registry;
 pub mod limits;
 pub mod manifest;
