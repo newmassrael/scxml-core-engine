@@ -324,7 +324,23 @@ class TheCheckRefuses(Fixture):
 
     def test_a_document_value_with_no_binding_at_all(self):
         b = {**BINDING, "outputs": {}}
-        self.assertIn("computed and dropped", str(self.bind(b)[0]))
+        self.assertIn("computed and dropped", " ".join(map(str, self.bind(b))))
+
+    def test_a_binding_with_no_output_rule_is_refused(self):
+        """A binding with no output rule has nothing anyone can observe.
+
+        Measured 2026-09-25: a writer reached "0 refusals" by deleting every
+        output rule, and `verify` then passed cases that read nothing.
+        """
+        b = {**BINDING, "outputs": {}}
+        self.assertIn("declares no output rule", " ".join(map(str, self.bind(b))))
+
+    def test_an_output_rule_marked_internal_still_counts_as_one(self):
+        """The boundary: only ZERO rules is refused. A rule that says the
+        value stays inside the document is still the author saying something
+        about every output."""
+        b = {**BINDING, "outputs": {"lamp": {"internal": True}}}
+        self.assertNotIn("declares no output rule", " ".join(map(str, self.bind(b))))
 
     def test_carried_state_that_names_no_output(self):
         b = {**BINDING, "inputs": {**BINDING["inputs"],

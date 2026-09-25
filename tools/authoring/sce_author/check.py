@@ -647,6 +647,24 @@ def check(pack: Pack, binding_path: pathlib.Path) -> list[Finding]:
     declared_inputs = dict(binding.get("inputs") or {})
     declared_outputs = dict(binding.get("outputs") or {})
 
+    # ⚠ A binding with NO output rule has no behaviour anyone can observe:
+    # nothing the document computes is placed anywhere, so no case can compare
+    # a value and nothing reaches the platform. That is a property of this one
+    # document, which makes it this command's question -- whether a SET of
+    # documents writes every position is `coverage`'s, and a position no rule
+    # of this binding claims stays allowed for exactly that reason. Only zero
+    # rules is refused; one marked `internal` or `unresolved` still counts.
+    # Measured 2026-09-25: a writer reached "0 refusals" by deleting every
+    # output rule, and `verify` then passed cases none of which read a value.
+    if not declared_outputs:
+        out.append(Finding(
+            "binding",
+            "declares no output rule, so the document has no behaviour anyone "
+            "can observe: nothing it computes is placed at an address, no case "
+            "can compare a value, and nothing reaches the platform. Bind at "
+            "least one output (marking it `internal` or `unresolved` where "
+            "that is the truth)."))
+
     # ⚠ Declared unknowns are reported FIRST and as their own thing. A binding
     # written before the platform's list exists is an ordinary state -- the
     # document is already platform-free, so the logic can be authored long
