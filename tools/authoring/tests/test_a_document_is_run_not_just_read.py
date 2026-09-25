@@ -109,6 +109,34 @@ class ADocumentIsRunNotJustRead(unittest.TestCase):
         # the count would say this document got better.
         self.assertEqual(0, result.failed)
 
+    def test_a_case_that_compared_nothing_is_not_a_pass(self):
+        """A binding that writes NONE of what a case expects has judged nothing.
+
+        A position no rule claims stays `unchecked` rather than failing the
+        case -- another document may write it, which is `coverage`'s question.
+        But when every position a case expects is like that, the case compared
+        nothing, and a pass there is a verdict about nothing. Measured
+        2026-09-25: a written binding with its input rules and no output rule
+        came back "8 passed, 0 failed" over cases none of which read a value it
+        computed.
+        """
+        pack, binding = self.staged(lambda b: b.pop("outputs"))
+        result = verify(pack, binding)
+        self.assertTrue(result.ran, f"it would not run: {result.refusal}")
+        self.assertEqual(0, result.passed)
+        self.assertEqual(0, result.failed)
+        self.assertEqual(len(result.results), result.unjudged)
+        for case in result.results:
+            self.assertIn("nothing was compared", case.refusal)
+
+        # The control: a binding that writes SOME of what a case expects is
+        # still judged on what it writes. Dropping one output leaves the other
+        # positions compared, so no case becomes unjudged for that reason.
+        pack, binding = self.staged(lambda b: b["outputs"].pop("bell"))
+        partial = verify(pack, binding)
+        self.assertTrue(partial.ran, f"it would not run: {partial.refusal}")
+        self.assertFalse(any("nothing was compared" in c.refusal for c in partial.results))
+
     # ------------------------------------------------------------ refusing
 
     def test_an_open_decision_reaches_the_caller_with_its_authors_reason(self):

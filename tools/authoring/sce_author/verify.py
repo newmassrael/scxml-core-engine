@@ -1222,6 +1222,7 @@ class CaseJudge:
         names what it rested on, for the refusal.
         """
         resting_on: set = set()
+        compared = 0
         for address, want in sorted(case.expect.items()):
             maybe = self.landing_here(address)
             if address in undetermined or maybe:
@@ -1238,6 +1239,7 @@ class CaseJudge:
                 (result.unwritten if address in self.bound
                  else result.unchecked).append(address)
                 continue
+            compared += 1
             if not _same(want, produced[address], _field_at(self.model, address)):
                 result.failures.append((address, want, produced[address]))
                 rests_on = assumption_behind(self.writes.get(address),
@@ -1274,6 +1276,20 @@ class CaseJudge:
         if why:
             result.refusal = ("; ".join(why) + "; the rest agreed, but a case "
                               "is not passed on part of what it asserts")
+            return
+        # ⚠ A case that compared NOTHING is not a pass either. A position no
+        # rule of this binding claims stays `unchecked` rather than refusing
+        # the case, because another document may write it -- that is
+        # `coverage`'s question. But when that is true of EVERY position a
+        # case expects, the case has judged nothing, and counting it passed
+        # is a verdict about nothing. Measured 2026-09-25: a binding with
+        # input rules and no output rule at all came back "8 passed, 0 failed"
+        # over eight cases none of which read a single value it computed.
+        if case.expect and not compared and result.unchecked:
+            result.refusal = (
+                f"no rule of this binding writes any of the "
+                f"{len(result.unchecked)} position(s) this case expects "
+                f"({', '.join(result.unchecked)}), so nothing was compared")
 
 
 def unchanged_drives(step, last: dict, model) -> set:
