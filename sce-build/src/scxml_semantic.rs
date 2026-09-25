@@ -1080,18 +1080,28 @@ mod tests {
                 "validation/attribute-rule-violated",
                 "SemanticIllegalStateSpecification",
             ),
+            // The `<assign>` attribute-table leaves: an absent `location`,
+            // and `expr` beside children. They mirror the forge
+            // `ValidationError::MissingAttribute` / `IncompatibleAttributes`
+            // the frontend's `check_assign_attributes` raises, so both reuse
+            // those codes.
+            ("validation/missing-attribute", "SemanticMissingAttribute"),
+            (
+                "validation/incompatible-attributes",
+                "SemanticIncompatibleAttributes",
+            ),
         ];
         assert_eq!(
             rust_to_cpp.len(),
-            7,
-            "Expected 7 W5 leaves (§wire-W5 D2 inventory: 1 NEW + 6 REUSED)"
+            9,
+            "Expected 9 W5 leaves (§wire-W5 D2 inventory: 1 NEW + 8 REUSED)"
         );
 
         let expected_cpp: BTreeSet<&str> = rust_to_cpp.iter().map(|(_, cpp)| *cpp).collect();
         assert_eq!(
             expected_cpp.len(),
-            7,
-            "Expected 7 distinct SemanticError subtypes"
+            9,
+            "Expected 9 distinct SemanticError subtypes"
         );
 
         let hdr = include_str!("../../sce/include/parsing/SemanticError.h");
@@ -1166,8 +1176,13 @@ mod tests {
                 "SemanticIllegalStateSpecification",
                 "validation/attribute-rule-violated",
             ),
+            ("SemanticMissingAttribute", "validation/missing-attribute"),
+            (
+                "SemanticIncompatibleAttributes",
+                "validation/incompatible-attributes",
+            ),
         ];
-        assert_eq!(class_to_code.len(), 6);
+        assert_eq!(class_to_code.len(), 8);
 
         let hdr = include_str!("../../sce/include/parsing/SemanticError.h");
 
