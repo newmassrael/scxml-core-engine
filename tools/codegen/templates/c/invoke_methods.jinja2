@@ -226,30 +226,22 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                         "<invoke> names an invoker the host declared but never registered");
 {% endif %}
                 } else {
+                    /* W3C SCXML 6.4: recorded, with its token, BEFORE the
+                       handler runs, so a handler that completes
+                       synchronously completes an invocation the set already
+                       holds. */
+                    _host_inv.token = sce_host_invocation_mark(&sm->started_host_invokes,
+                                                               "{{ invoke_info.invoke_type | escape_c }}",
+                                                               "{{ invoke_info.invoke_id | escape_c }}");
                     _host_inv_entry->handler(_host_inv_entry->user_data, &_host_inv, &_host_inv_out);
-                    sce_host_invocation_mark(&sm->started_host_invokes,
-                                             "{{ invoke_info.invoke_type | escape_c }}",
-                                             "{{ invoke_info.invoke_id | escape_c }}");
                     if (_host_inv_out.has_done_data) {
-                        /* W3C SCXML 6.4: a completion the host reported NOW.
-                           One it reports later arrives the same way, by
-                           raising the event itself. */
-                        {{ csym_prefix }}{{ model.name }}_event_with_meta_t _done_evt;
-                        const {{ csym_prefix }}{{ model.name }}_event_t _done_ev =
-                            {{ csym_prefix }}{{ model.name }}_event_from_name(
-                                "done.invoke.{{ invoke_info.invoke_id | escape_c }}",
-                                strlen("done.invoke.{{ invoke_info.invoke_id | escape_c }}"));
-                        if (_done_ev != {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE) {
-                            memset(&_done_evt, 0, sizeof(_done_evt));
-                            _done_evt.event = _done_ev;
-                            sce_copy_bounded_data(_done_evt.data, _host_inv_out.done_data);
-                            /* W3C SCXML 5.10.1: the completion is an event of
-                               the invocation, so `_event.invokeid` is the
-                               invocation's id — the one `done.invoke.<id>`
-                               names and the host was handed. */
-                            sce_copy_bounded_id(_done_evt.invoke_id, "{{ invoke_info.invoke_id | escape_c }}");
-                            {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_done_evt);
-                        }
+                        /* W3C SCXML 6.4: a completion the host reported NOW
+                           takes the same door as one it reports later, so
+                           the two cannot disagree about whether the
+                           invocation is over. */
+                        (void){{ csym_prefix }}{{ model.name }}_complete_host_invoke(
+                            sm, "{{ invoke_info.invoke_type | escape_c }}", "{{ invoke_info.invoke_id | escape_c }}",
+                            _host_inv.token, _host_inv_out.done_data);
                     }
                 }
             }

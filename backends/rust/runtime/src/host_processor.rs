@@ -144,6 +144,16 @@ pub struct HostInvokeRequest {
     pub params: std::collections::HashMap<String, Vec<String>>,
     /// Inline `<content>`, empty when the document carried none.
     pub content: String,
+    /// Which start of this invoke this is. The engine assigns it, and a host
+    /// that finishes later hands it back to `Engine::complete_host_invoke`.
+    ///
+    /// The id alone cannot say it: a state that exits and is entered again
+    /// starts the same `<invoke>` a second time under the same id, and a
+    /// result the first run produces after it was cancelled would otherwise
+    /// read as the second run's (§scxml-6.4 — once the state has exited, what
+    /// the cancelled process sends is ignored). Distinct for every start of
+    /// every invocation within one engine.
+    pub token: u64,
 }
 
 /// An `<invoke>` the host was running, at the point its state exited.
@@ -154,6 +164,9 @@ pub struct HostInvokeCancel {
     /// The invoke being cancelled — the same id its
     /// [`HostInvokeEvent::Start`] carried.
     pub invoke_id: String,
+    /// The token its [`HostInvokeEvent::Start`] carried, so a host running
+    /// more than one start of the same id stops the right one.
+    pub token: u64,
 }
 
 /// One turn of a host-run invoke's lifecycle.
@@ -170,10 +183,10 @@ pub enum HostInvokeEvent {
     Start(HostInvokeRequest),
     /// §scxml-6.4: the state exited. Stop it.
     ///
-    /// Delivered only for an invocation that actually started: a state
-    /// that exits before the macrostep ends never runs its invoke, and
-    /// cancelling something that never began would have the host tearing
-    /// down state it never built.
+    /// Delivered only for an invocation that is still running: one that
+    /// never started (its state exited before the macrostep ended) has
+    /// nothing to tear down, and one that already completed has nothing left
+    /// to stop — `done.invoke` said the process is over.
     Cancel(HostInvokeCancel),
 }
 
@@ -187,10 +200,10 @@ pub struct HostInvokeResponse {
     /// invocation that completed before returning.
     ///
     /// `None` is the ordinary case: the work outlives the call, and the
-    /// host raises `done.invoke.<invoke_id>` itself when it finishes.
-    /// SCE does not synthesise a completion the host did not report — an
-    /// invoked process that never terminates never fires `done.invoke`,
-    /// which is what §scxml-6.4 says.
+    /// host reports it through `Engine::complete_host_invoke` with the
+    /// request's token when it finishes. SCE does not synthesise a completion
+    /// the host did not report — an invoked process that never terminates
+    /// never fires `done.invoke`, which is what §scxml-6.4 says.
     pub done_data: Option<String>,
 }
 
@@ -207,16 +220,23 @@ pub(crate) type HostInvokeHandler =
 pub(crate) struct HostProcessorRegistry {
     handlers: HashMap<String, HostSendHandler>,
     invokers: HashMap<String, HostInvokeHandler>,
-    /// `(processor_type, invoke_id)` for every invocation the host was
-    /// told to start and has not been told to stop.
+    /// `(processor_type, invoke_id)` → token for every invocation that was
+    /// started and has neither completed nor been cancelled.
     ///
-    /// Held here rather than left to the generated machine because
-    /// "did this one start?" is the question the cancel path has to
-    /// answer, and answering it in each backend's template would be the
-    /// same bookkeeping written once per language. It also keeps the
-    /// emitted exit chain to an unconditional call: the engine decides
-    /// whether there is anything to cancel.
-    started: std::collections::BTreeSet<(String, String)>,
+    /// Held here rather than left to the generated machine because "is
+    /// this one still running?" is the question both the cancel path and a
+    /// completion have to answer, and answering it in each backend's
+    /// template would be the same bookkeeping written once per language. It
+    /// also keeps the emitted exit chain to an unconditional call: the
+    /// engine decides whether there is anything to cancel.
+    ///
+    /// One entry per key is enough: an `<invoke>` belongs to one state and a
+    /// state is in the configuration at most once, so the same id is never
+    /// running twice. A second start under the same id replaces the entry,
+    /// and its new token is what makes the first run's late reply stale.
+    started: std::collections::BTreeMap<(String, String), u64>,
+    /// The token the next start receives.
+    next_token: u64,
 }
 
 impl HostProcessorRegistry {
@@ -264,34 +284,78 @@ impl HostProcessorRegistry {
     /// the §scxml-6.4.1 `error.execution`, because an invoke nobody ran
     /// is the same fact whether the type was undeclared or the handler
     /// was never wired up.
+    ///
+    /// The token is assigned and recorded BEFORE the handler runs, so a
+    /// handler that completes synchronously is completing an invocation the
+    /// engine already knows is running. Returned beside the response for
+    /// that synchronous completion to name.
     pub(crate) fn start_invoke(
         &mut self,
-        request: HostInvokeRequest,
-    ) -> Option<Option<HostInvokeResponse>> {
-        let key = (request.processor_type.clone(), request.invoke_id.clone());
+        mut request: HostInvokeRequest,
+    ) -> Option<(u64, Option<HostInvokeResponse>)> {
         let handler = self.invokers.get_mut(&request.processor_type)?;
+        let token = self.next_token;
+        self.next_token = self.next_token.wrapping_add(1);
+        request.token = token;
+        self.started.insert(
+            (request.processor_type.clone(), request.invoke_id.clone()),
+            token,
+        );
         let response = handler(HostInvokeEvent::Start(request));
-        self.started.insert(key);
-        Some(response)
+        Some((token, response))
     }
 
-    /// Cancel an invocation, if it started.
+    /// Take the running invocation `(processor_type, invoke_id, token)` out of
+    /// the set, reporting whether it was there.
     ///
-    /// Returns whether a `Cancel` was delivered. A state that exits
-    /// before the macrostep settles never ran its invoke, so there is
-    /// nothing to tear down and nothing is sent.
-    pub(crate) fn cancel_invoke(&mut self, processor_type: &str, invoke_id: &str) -> bool {
+    /// This is the one door a completion goes through: taking it is what
+    /// makes the completion exactly-once, since a second completion, a
+    /// cancel, or a stale token from an earlier start all find nothing.
+    pub(crate) fn take_started(
+        &mut self,
+        processor_type: &str,
+        invoke_id: &str,
+        token: u64,
+    ) -> bool {
         let key = (processor_type.to_string(), invoke_id.to_string());
-        if !self.started.remove(&key) {
+        if self.started.get(&key) != Some(&token) {
             return false;
         }
+        self.started.remove(&key);
+        true
+    }
+
+    /// Cancel an invocation, if it is still running.
+    ///
+    /// Returns whether a `Cancel` was delivered. One whose state exited
+    /// before the macrostep settled never started, and one that already
+    /// completed is over, so neither has anything to tear down.
+    pub(crate) fn cancel_invoke(&mut self, processor_type: &str, invoke_id: &str) -> bool {
+        let key = (processor_type.to_string(), invoke_id.to_string());
+        let Some(token) = self.started.remove(&key) else {
+            return false;
+        };
         let Some(handler) = self.invokers.get_mut(processor_type) else {
             return false;
         };
         handler(HostInvokeEvent::Cancel(HostInvokeCancel {
             processor_type: processor_type.to_string(),
             invoke_id: invoke_id.to_string(),
+            token,
         }));
         true
     }
+}
+
+/// Whether `event_name` is the completion of a host-run invocation — a
+/// `done.invoke.<id>` whose `<id>` is one of `host_invoke_ids`.
+///
+/// Such an event is accepted only through `Engine::complete_host_invoke`,
+/// which is the one path that knows the invocation is still running. Raised
+/// any other way it could be a cancelled run's late reply, so the engine
+/// refuses it at dequeue.
+pub(crate) fn is_host_invoke_completion(event_name: &str, host_invoke_ids: &[&str]) -> bool {
+    event_name
+        .strip_prefix(crate::invoke::DONE_INVOKE_PREFIX)
+        .is_some_and(|id| host_invoke_ids.contains(&id))
 }

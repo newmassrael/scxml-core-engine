@@ -29,6 +29,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional
 
+from .invoke import DONE_INVOKE_PREFIX
+
 
 @dataclass
 class HostSendRequest:
@@ -124,6 +126,16 @@ class HostInvokeRequest:
     params: Dict[str, List[str]] = field(default_factory=dict)
     #: Inline ``<content>``, empty when the document carried none.
     content: str = ""
+    #: Which start of this invoke this is. The engine assigns it, and a host
+    #: that finishes later hands it back to ``Engine.complete_host_invoke``.
+    #:
+    #: The id alone cannot say it: a state that exits and is entered again
+    #: starts the same ``<invoke>`` a second time under the same id, and a
+    #: result the first run produces after it was cancelled would otherwise
+    #: read as the second run's (§scxml-6.4 — once the state has exited, what
+    #: the cancelled process sends is ignored). Distinct for every start of
+    #: every invocation within one engine.
+    token: int = 0
 
 
 @dataclass
@@ -134,6 +146,9 @@ class HostInvokeCancel:
     processor_type: str = ""
     #: The invocation being cancelled — the same id its start carried.
     invoke_id: str = ""
+    #: The token its start carried, so a host running more than one start of
+    #: the same id stops the right one.
+    token: int = 0
 
 
 @dataclass
@@ -151,10 +166,10 @@ class HostInvokeEvent:
     start: Optional[HostInvokeRequest] = None
     #: §scxml-6.4: the state exited. Stop it.
     #:
-    #: Delivered only for an invocation that actually started: a state that
-    #: exits before the macrostep ends never runs its invoke, and cancelling
-    #: something that never began would have the host tearing down state it
-    #: never built.
+    #: Delivered only for an invocation that is still running: one that
+    #: never started (its state exited before the macrostep ended) has
+    #: nothing to tear down, and one that already completed has nothing left
+    #: to stop — ``done.invoke`` said the process is over.
     cancel: Optional[HostInvokeCancel] = None
 
 
@@ -167,12 +182,26 @@ class HostInvokeResponse:
 
     #: Payload for an immediate ``done.invoke.<invoke_id>``, for an
     #: invocation that completed before returning. ``None`` is the ordinary
-    #: case: the work outlives the call and the host raises the completion
-    #: itself when it finishes. SCE does not synthesise a completion the
-    #: host did not report — an invoked process that never terminates never
-    #: fires ``done.invoke``, which is what §scxml-6.4 says.
+    #: case: the work outlives the call and the host reports it through
+    #: ``Engine.complete_host_invoke`` with the request's token when it
+    #: finishes. SCE does not synthesise a completion the host did not report
+    #: — an invoked process that never terminates never fires
+    #: ``done.invoke``, which is what §scxml-6.4 says.
     done_data: Optional[str] = None
 
 
 #: A registered invoke-lifecycle handler.
 HostInvokeHandler = Callable[[HostInvokeEvent], Optional[HostInvokeResponse]]
+
+
+def is_host_invoke_completion(event_name: str, host_invoke_ids) -> bool:
+    """Whether ``event_name`` is the completion of a host-run invocation — a
+    ``done.invoke.<id>`` whose ``<id>`` is one of ``host_invoke_ids``.
+
+    Such an event is accepted only through ``Engine.complete_host_invoke``,
+    the one path that knows the invocation is still running. Raised any other
+    way it could be a cancelled run's late reply (§scxml-6.4), so the engine
+    refuses it."""
+    if not event_name.startswith(DONE_INVOKE_PREFIX):
+        return False
+    return event_name[len(DONE_INVOKE_PREFIX):] in host_invoke_ids

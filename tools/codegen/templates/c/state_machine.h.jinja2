@@ -240,6 +240,15 @@ typedef struct {{ csym_prefix }}{{ model.name }}_event_with_meta {
        transition guards simply fail. */
     {{ event_payload_type }} payload;
 {% endif %}
+{% if model.host_invoker_types %}
+    /* W3C SCXML 6.4: the token of the host-run invocation this event
+       completes, set only by `_complete_host_invoke` after it confirmed the
+       invocation was still running. A host invoke's `done.invoke.<id>` that
+       arrives without one did not come through that check, so the machine
+       refuses it. Not script-visible: `_event` has no field for it. */
+    bool has_host_invoke_token;
+    uint64_t host_invoke_token;
+{% endif %}
 } {{ csym_prefix }}{{ model.name }}_event_with_meta_t;
 
 /* ── Appendix D: one transition of the optimal enabled transition set ─── */
@@ -604,6 +613,9 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
        tells a host to stop something. */
     sce_host_invoker_registry_t host_invokers;
     sce_host_invocation_set_t started_host_invokes;
+    /* W3C SCXML 6.4: host invokes' `done.invoke` events refused at dequeue;
+       see `_refused_host_invoke_completions`. */
+    uint32_t refused_host_invoke_completions;
     {% endif %}
 } {{ csym_prefix }}{{ model.name }}_t;
 
@@ -712,6 +724,20 @@ bool {{ csym_prefix }}{{ model.name }}_has_invoker(const {{ csym_prefix }}{{ mod
    the exit chain also asks. */
 bool {{ csym_prefix }}{{ model.name }}_cancel_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type,
                                   const char *invoke_id);
+
+/* W3C SCXML 6.4: a host-run invocation finished — raise its
+   `done.invoke.<invoke_id>` with `done_data`. `token` is the one its start
+   carried; the completion is accepted at most once, and only while that start
+   is still running. Returns false, raising nothing, for a cancelled, already
+   completed or restarted invocation. The only way a host invoke's
+   `done.invoke` reaches the document: one raised through `_raise_external` is
+   refused when it is dequeued. */
+bool {{ csym_prefix }}{{ model.name }}_complete_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm, const char *processor_type,
+                                  const char *invoke_id, uint64_t token, const char *done_data);
+
+/* W3C SCXML 6.4: how many host invokes' `done.invoke` events were refused
+   because they did not arrive through `_complete_host_invoke`. */
+uint32_t {{ csym_prefix }}{{ model.name }}_refused_host_invoke_completions(const {{ csym_prefix }}{{ model.name }}_t *sm);
 {% if not model.has_parent_communication %}
 
 /* W3C SCXML 6.4.1: start the machine with what RUNS its host invokes — the

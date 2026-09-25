@@ -60,6 +60,13 @@ type EventMetadata struct {
 	// InvokeID is the _event.invokeid if event came from a child invoke (W3C 6.4.1).
 	InvokeID string
 
+	// HostInvokeToken is the token of the host-run invocation this event
+	// completes, set only by Engine.CompleteHostInvoke after it confirmed the
+	// invocation was still running. A host invoke's `done.invoke.<id>` that
+	// arrives without one did not come through that check, so the engine
+	// refuses it (§scxml-6.4). Not script-visible: `_event` has no field for it.
+	HostInvokeToken *uint64
+
 	// TypedPayload is the NL→IR Item C1 Path A typed `_event.data` payload —
 	// a generated per-event payload struct carried through the queue when an
 	// EventSchema-imported event is injected via the generated

@@ -470,6 +470,18 @@ class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_n
         # child-raised `<send target="#_parent">` name) onto the
         # generated `Event` enum.
         return _EVENT_BY_NAME.get(event_name)
+{% if model.host_invoker_types %}
+
+    def host_invoke_ids(self) -> Tuple[str, ...]:
+        # W3C SCXML 6.4: these invokes are run by the host, so their
+        # `done.invoke` is accepted only through
+        # `Engine.complete_host_invoke`.
+        return (
+{% for inv in model.invokes | host_invoker %}
+            {{ inv.invoke_id | py_string_literal }},
+{% endfor %}
+        )
+{% endif %}
 
     def null_event(self) -> {{ machine_name }}Event:
         return {{ machine_name }}Event.NULL

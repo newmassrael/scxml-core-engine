@@ -30,6 +30,12 @@ import kotlinx.coroutines.launch
 private val scriptSessionIdCounter = AtomicLong(0)
 
 /**
+ * §scxml-6.3.1: what every `done.invoke.<id>` begins with, spelled once so
+ * building the name and recognising it cannot disagree.
+ */
+const val DONE_INVOKE_PREFIX = "done.invoke."
+
+/**
  * §scxml-5.10: Event metadata for _event system variable.
  *
  * Carries type, data, sendid, origin, origintype, and invokeid
@@ -42,6 +48,12 @@ data class EventMetadata(
     val origin: String = "",
     val originType: String = "",
     val invokeId: String = "",
+    // §scxml-6.4: the token of the host-run invocation this event completes,
+    // set only by `completeHostInvoke` after it confirmed the invocation was
+    // still running. A host invoke's `done.invoke.<id>` that arrives without
+    // one did not come through that check, so the engine refuses it. Not
+    // script-visible: `_event` has no field for it.
+    val hostInvokeToken: Long? = null,
     // NL→IR Item C1 Path A (EventSchema MCU native lowering): the type-erased
     // typed `_event.data` payload carrier. For an event whose imported
     // EventSchema lowered a transition guard to a native comparison, the
@@ -653,11 +665,27 @@ abstract class StateMachineEngine<S : State, E : Event>(
         /** `<param>` values keyed by name; repeats keep document order. */
         val params: Map<String, List<String>> = emptyMap(),
         /** Inline `<content>`, empty when the document carried none. */
-        val content: String = ""
+        val content: String = "",
+        /**
+         * Which start of this invoke this is. The engine assigns it, and a
+         * host that finishes later hands it back to [completeHostInvoke].
+         *
+         * The id alone cannot say it: a state that exits and is entered again
+         * starts the same `<invoke>` a second time under the same id, and a
+         * result the first run produces after it was cancelled would otherwise
+         * read as the second run's (§scxml-6.4 — once the state has exited,
+         * what the cancelled process sends is ignored). Distinct for every
+         * start of every invocation within one engine.
+         */
+        val token: Long = 0
     )
 
-    /** An `<invoke>` the host was running, at the point its state exited. */
-    data class HostInvokeCancel(val processorType: String, val invokeId: String)
+    /**
+     * An `<invoke>` the host was running, at the point its state exited.
+     * [token] is the one its start carried, so a host running more than one
+     * start of the same id stops the right one.
+     */
+    data class HostInvokeCancel(val processorType: String, val invokeId: String, val token: Long = 0)
 
     /**
      * One turn of a host-run invoke's lifecycle. Exactly one arm is non-null.
@@ -676,17 +704,61 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * A host invoker's answer to a start; an answer to a cancel is ignored.
      *
      * [doneData] null is the ordinary case: the work outlives the call and the
-     * host raises `done.invoke.<id>` itself when it finishes. SCE does not
-     * synthesise a completion the host did not report — an invoked process
-     * that never terminates never fires `done.invoke`, which is what
-     * §scxml-6.4 says.
+     * host reports it through [completeHostInvoke] with the request's token
+     * when it finishes. SCE does not synthesise a completion the host did not
+     * report — an invoked process that never terminates never fires
+     * `done.invoke`, which is what §scxml-6.4 says.
      */
     data class HostInvokeResponse(val doneData: String? = null)
 
     private val hostInvokers = mutableMapOf<String, (HostInvokeEvent) -> HostInvokeResponse?>()
 
-    /** Every host-run invocation started and not yet cancelled. */
-    private val startedHostInvokes = mutableSetOf<Pair<String, String>>()
+    /**
+     * Every host-run invocation started and neither completed nor cancelled,
+     * mapped to its start's token. One entry per key: an `<invoke>` belongs
+     * to one state and a state is in the configuration at most once, so the
+     * same id is never running twice; a restart replaces the entry, and its
+     * new token is what makes the first run's reply stale.
+     */
+    private val startedHostInvokes = mutableMapOf<Pair<String, String>, Long>()
+
+    /** The token the next host-run start receives. */
+    private var nextHostInvokeToken: Long = 0
+
+    /**
+     * How many host-run invocations' `done.invoke` events the engine refused
+     * because they did not arrive through [completeHostInvoke].
+     *
+     * A refusal is correct — such an event may be a cancelled run's late
+     * reply — and saying it happened is not optional: a host that raised its
+     * completion the old way and saw the document never move would otherwise
+     * have nothing to find.
+     */
+    var refusedHostInvokeCompletions: Long = 0
+        private set
+
+    /**
+     * §scxml-6.4.1: the ids of the `<invoke>`s this document hands to a host
+     * invoker. Their `done.invoke.<id>` is accepted only through
+     * [completeHostInvoke]. Empty — nothing refused — unless the generated
+     * machine was built with a host-invoker declaration.
+     */
+    protected open val hostInvokeIds: Set<String> = emptySet()
+
+    /**
+     * §scxml-6.4: whether [queued] is a host-run invocation's `done.invoke`
+     * that did not come through [completeHostInvoke] — refused at dequeue,
+     * because it may be a cancelled run's late reply. Counts the refusal.
+     */
+    private fun refusesHostInvokeCompletion(queued: QueuedEvent<E>): Boolean {
+        if (queued.metadata.hostInvokeToken != null || hostInvokeIds.isEmpty()) return false
+        val name = eventNameOf(queued.event) ?: return false
+        if (!name.startsWith(DONE_INVOKE_PREFIX) || name.removePrefix(DONE_INVOKE_PREFIX) !in hostInvokeIds) {
+            return false
+        }
+        refusedHostInvokeCompletions++
+        return true
+    }
 
     /**
      * §scxml-6.4.1: register what RUNS every `<invoke type="<t>">` this
@@ -713,25 +785,55 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * into `error.execution` — an invoke nobody ran is the same fact whether
      * the type was undeclared or the handler was never wired up.
      *
-     * A started invocation is RECORDED here so the cancel path can find it:
-     * "did this one start?" is the question the exit chain has to answer, and
+     * A started invocation is RECORDED here: "is this one still running?" is
+     * the question both the cancel path and a completion have to answer, and
      * answering it in each backend's template would be the same bookkeeping
-     * written once per language.
+     * written once per language. The token is assigned and recorded BEFORE
+     * the handler runs, so a handler that completes synchronously completes an
+     * invocation the engine already knows is running.
      */
     protected fun performHostInvoke(request: HostInvokeRequest): Boolean {
         val handler = hostInvokers[request.processorType] ?: return false
-        val response = handler(HostInvokeEvent(start = request))
-        startedHostInvokes.add(request.processorType to request.invokeId)
-        val doneData = response?.doneData
+        val token = nextHostInvokeToken++
+        val started = request.copy(token = token)
+        startedHostInvokes[started.processorType to started.invokeId] = token
+        val doneData = handler(HostInvokeEvent(start = started))?.doneData
         if (doneData != null) {
-            // §scxml-6.4: a completion the host reported NOW, under the id the
-            // AUTHOR wrote a transition for. §scxml-5.10.1: it is an event of
-            // the invocation, so `_event.invokeid` is that same id.
-            sendEventByName(
-                "done.invoke.${request.invokeId}",
-                EventMetadata(type = "external", data = doneData, invokeId = request.invokeId),
-            )
+            // §scxml-6.4: a completion the host reported NOW takes the same
+            // door as one it reports later, so the two cannot disagree about
+            // whether the invocation is over.
+            completeHostInvoke(started.processorType, started.invokeId, token, doneData)
         }
+        return true
+    }
+
+    /**
+     * §scxml-6.4: a host-run invocation finished; raise its
+     * `done.invoke.<invokeId>` with [doneData] as `_event.data`.
+     *
+     * [token] is the one the invocation's start request carried. The
+     * completion is accepted only while that start is still running, and
+     * accepting it ends the invocation, so it is accepted at most once and the
+     * state's exit no longer cancels it. Returns `false` — raising nothing —
+     * for a completion of an invocation that was cancelled, already completed,
+     * or restarted since (a stale token): §scxml-6.4 has the processor ignore
+     * what a cancelled process sends, and a restarted `<invoke>` is a
+     * different process under the same id.
+     *
+     * This is the only way a host-run invocation's `done.invoke` reaches the
+     * document. One raised through the ordinary external-event API skips the
+     * check above, so the engine refuses it when it is dequeued.
+     */
+    fun completeHostInvoke(processorType: String, invokeId: String, token: Long, doneData: String): Boolean {
+        val key = processorType to invokeId
+        if (startedHostInvokes[key] != token) return false
+        startedHostInvokes.remove(key)
+        // Under the id the AUTHOR wrote a transition for. §scxml-5.10.1: it is
+        // an event of the invocation, so `_event.invokeid` is that same id.
+        sendEventByName(
+            DONE_INVOKE_PREFIX + invokeId,
+            EventMetadata(type = "external", data = doneData, invokeId = invokeId, hostInvokeToken = token),
+        )
         return true
     }
 
@@ -739,16 +841,15 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * §scxml-6.4: stop a host-run invocation whose state has exited.
      *
      * Unconditional from the emitted exit chain; the engine knows whether the
-     * invocation ever started and stays silent when it did not. Public because
-     * the exit chain is not the only way an invocation ends — a host that
-     * tears its own session down needs to say so.
+     * invocation is still running and stays silent when it never started or
+     * already completed. Public because the exit chain is not the only way an
+     * invocation ends — a host that tears its own session down needs to say
+     * so.
      */
     fun cancelHostInvoke(processorType: String, invokeId: String): Boolean {
-        if (!startedHostInvokes.remove(processorType to invokeId)) {
-            return false
-        }
+        val token = startedHostInvokes.remove(processorType to invokeId) ?: return false
         val handler = hostInvokers[processorType] ?: return false
-        handler(HostInvokeEvent(cancel = HostInvokeCancel(processorType, invokeId)))
+        handler(HostInvokeEvent(cancel = HostInvokeCancel(processorType, invokeId, token)))
         return true
     }
 
@@ -1423,6 +1524,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
             if (!isInFinalState) {
                 for (queued in eventChannel) {
                     if (isInFinalState) break
+                    // §scxml-6.4: the refusal the sync loop applies at its
+                    // dequeue, applied at this one.
+                    if (refusesHostInvokeCompletion(queued)) continue
                     currentEventMetadata = queued.metadata
                     bindTypedPayload(queued.event, queued.metadata)
                     processMicrostep(queued.event, queued.metadata)
@@ -2108,6 +2212,12 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     private fun processNextExternalEvent() {
         val queued = externalEventQueue.removeFirst()
+        // §scxml-6.4: a host-run invocation's `done.invoke` counts only when
+        // [completeHostInvoke] confirmed the invocation was still running and
+        // stamped its token. Without the stamp it may be a cancelled run's late
+        // reply, which the processor ignores — so it is refused here, counted,
+        // and never reaches transition selection.
+        if (refusesHostInvokeCompletion(queued)) return
         // Taking an event off the external queue is
         // where a macrostep begins, so it is where the previous one's ceiling
         // stops applying. A machine left inside an endless chain gets a full

@@ -97,6 +97,47 @@ protected:
     /// this: the fixture's invoke runs at the end of the entry macrostep, so an
     /// invoker registered afterwards would be measuring a run that had already
     /// refused.
+    // Every start the running invoker saw: (invokeId, token), in order.
+    std::vector<std::pair<std::string, uint64_t>> starts;
+
+    // An invoker whose work outlives the call: it answers nothing on start, so
+    // each invocation stays running until the test completes or cancels it.
+    // Records the lines the recording invoker does and every start's token for
+    // a later completeHostInvoke().
+    void registerRunningInvoker(Machine &sm) {
+        sm.registerInvoker(DECLARED_TYPE, [this](const SCE::HostInvokeEvent &ev) {
+            if (ev.start.has_value()) {
+                log.push_back("START id=" + ev.start->invokeId);
+                starts.emplace_back(ev.start->invokeId, ev.start->token);
+            }
+            if (ev.cancel.has_value()) {
+                log.push_back("CANCEL id=" + ev.cancel->invokeId);
+            }
+            return std::optional<SCE::HostInvokeResponse>();
+        });
+    }
+
+    // The token of the latest start of `invokeId`.
+    uint64_t tokenOf(const std::string &invokeId) const {
+        for (auto it = starts.rbegin(); it != starts.rend(); ++it) {
+            if (it->first == invokeId) {
+                return it->second;
+            }
+        }
+        ADD_FAILURE() << "`" << invokeId << "` never started";
+        return 0;
+    }
+
+    std::vector<std::string> cancels() const {
+        std::vector<std::string> out;
+        for (const auto &entry : log) {
+            if (entry.rfind("CANCEL", 0) == 0) {
+                out.push_back(entry);
+            }
+        }
+        return out;
+    }
+
     static void boot(Machine &sm) {
         sm.setScriptEngine(std::shared_ptr<SCE::IScriptEngine>(&SCE::ScriptEngineProvider::getScriptEngine(),
                                                                [](SCE::IScriptEngine *) {}));
@@ -173,7 +214,9 @@ TEST_F(HostInvokerAotTest, WhatTheRequestSaysIsEvaluatedWhenTheInvocationStarts)
 
 TEST_F(HostInvokerAotTest, LeavingTheStateCancelsTheInvocation) {
     Machine sm;
-    registerRecordingInvoker(sm);
+    // Still running when the state exits — a completed invocation has nothing
+    // left to cancel (ACompletedInvocationIsNotCancelled).
+    registerRunningInvoker(sm);
     boot(sm);
     sm.processEvent(Event::Leave);
 
@@ -202,7 +245,7 @@ TEST_F(HostInvokerAotTest, LeavingTheStateCancelsTheInvocation) {
 // macrostep and the pending invoke executes at the end of that macrostep.
 TEST_F(HostInvokerAotTest, CancelIsNotDeliveredForAnInvocationThatNeverStarted) {
     Machine sm;
-    registerRecordingInvoker(sm);
+    registerRunningInvoker(sm);
 
     EXPECT_FALSE(sm.cancelHostInvoke(DECLARED_TYPE, "probe"))
         << "a cancel was reported for an invocation that never started";
@@ -231,6 +274,100 @@ TEST_F(HostInvokerAotTest, CancelIsNotDeliveredForAnInvocationThatNeverStarted) 
 // This is the scenario that keeps the repair honest: without it the feature
 // could start nothing and the document would proceed as though its process
 // were running.
+// W3C SCXML 6.4: `done.invoke` says the invoked process is over, so leaving
+// the state afterwards has nothing to stop. Both invocations here complete
+// synchronously; neither is cancelled.
+TEST_F(HostInvokerAotTest, ACompletedInvocationIsNotCancelled) {
+    Machine sm;
+    registerRecordingInvoker(sm);
+    boot(sm);
+    sm.processEvent(Event::Leave);
+
+    EXPECT_EQ(sm.getPolicy().started(), std::optional<int64_t>(1));
+    EXPECT_TRUE(cancels().empty()) << "a completed invocation was cancelled";
+}
+
+// A host that finishes later reports it with the start's token, and the
+// completion is taken once: a second report of the same run finds nothing,
+// and the state's exit then cancels only the invocation still running.
+TEST_F(HostInvokerAotTest, ALateCompletionIsAcceptedExactlyOnce) {
+    Machine sm;
+    registerRunningInvoker(sm);
+    boot(sm);
+    EXPECT_EQ(sm.getPolicy().started(), std::optional<int64_t>(0));
+
+    const uint64_t token = tokenOf("probe");
+    EXPECT_TRUE(sm.completeHostInvoke(DECLARED_TYPE, "probe", token, "ok"))
+        << "a running invocation's completion was refused";
+    sm.step();
+    // The fixture counts it only when `_event.invokeid` names the invocation
+    // (W3C SCXML 5.10.1), so this is that assertion too.
+    EXPECT_EQ(sm.getPolicy().started(), std::optional<int64_t>(1));
+    EXPECT_FALSE(sm.completeHostInvoke(DECLARED_TYPE, "probe", token, "again")) << "the same run completed twice";
+    sm.step();
+    EXPECT_EQ(sm.getPolicy().started(), std::optional<int64_t>(1));
+
+    sm.processEvent(Event::Leave);
+    EXPECT_EQ(cancels(), std::vector<std::string>{"CANCEL id=probe2"})
+        << "only the invocation still running is cancelled";
+}
+
+// W3C SCXML 6.4: once the state has exited, what the cancelled process sends
+// is ignored. The host's reply arrives after the cancel and is refused.
+TEST_F(HostInvokerAotTest, ACompletionAfterTheCancelIsRefused) {
+    Machine sm;
+    registerRunningInvoker(sm);
+    boot(sm);
+    const uint64_t token = tokenOf("probe");
+    sm.processEvent(Event::Leave);
+
+    EXPECT_FALSE(sm.completeHostInvoke(DECLARED_TYPE, "probe", token, "late"))
+        << "a cancelled run's completion was accepted";
+    sm.step();
+    EXPECT_EQ(sm.getPolicy().started(), std::optional<int64_t>(0));
+}
+
+// Re-entering the state starts the same `<invoke>` again under the same id.
+// The first run's late reply carries the first start's token and is refused;
+// the second run's is accepted.
+TEST_F(HostInvokerAotTest, ARestartedInvokeRefusesTheFirstRunsReply) {
+    Machine sm;
+    registerRunningInvoker(sm);
+    boot(sm);
+    const uint64_t first = tokenOf("probe");
+    sm.processEvent(Event::Leave);
+    sm.processEvent(Event::Again);
+    const uint64_t second = tokenOf("probe");
+    ASSERT_NE(first, second) << "a restart reused the first start's token";
+
+    EXPECT_FALSE(sm.completeHostInvoke(DECLARED_TYPE, "probe", first, "stale"))
+        << "the first run's reply was taken for the second run's";
+    sm.step();
+    EXPECT_EQ(sm.getPolicy().started(), std::optional<int64_t>(0));
+    EXPECT_TRUE(sm.completeHostInvoke(DECLARED_TYPE, "probe", second, "ok"));
+    sm.step();
+    EXPECT_EQ(sm.getPolicy().started(), std::optional<int64_t>(1));
+}
+
+// A host-run invocation's `done.invoke` raised through the ordinary
+// external-event API skipped the running check, so the engine refuses it and
+// counts the refusal. The metadata names the invocation, so without the
+// refusal the fixture's guarded transition would take it.
+TEST_F(HostInvokerAotTest, ADoneInvokeRaisedTheOldWayIsRefusedAndCounted) {
+    Machine sm;
+    registerRunningInvoker(sm);
+    boot(sm);
+
+    const auto doneEvent = sm.getPolicy().getEventFromName("done.invoke.probe");
+    ASSERT_TRUE(doneEvent.has_value()) << "the fixture declares done.invoke.probe";
+    sm.raiseExternal(Machine::EventWithMetadata(*doneEvent, "x", "", "", "external", "", "probe"));
+    sm.step();
+
+    EXPECT_EQ(sm.getPolicy().started(), std::optional<int64_t>(0))
+        << "a completion that skipped the running check reached the document";
+    EXPECT_EQ(sm.refusedHostInvokeCompletions(), 1u);
+}
+
 TEST_F(HostInvokerAotTest, ADeclaredTypeWithNoInvokerStillRaisesErrorExecution) {
     Machine sm;
     boot(sm);

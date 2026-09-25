@@ -16,7 +16,7 @@ resolves a target, walks a hierarchy or decides what to enter.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Dict, Generic, Optional, Sequence, TypeVar
+from typing import TYPE_CHECKING, Any, Dict, Generic, Optional, Sequence, Tuple, TypeVar
 
 from .microstep import EnabledTransition, EntryTarget
 
@@ -295,6 +295,15 @@ class StatePolicy(ABC, Generic[S, E]):
         external sends override against the module-level
         `_EVENT_BY_NAME` dictionary."""
         return None
+
+    def host_invoke_ids(self) -> Tuple[str, ...]:
+        """W3C SCXML 6.4.1 — the ids of the ``<invoke>``s this document hands
+        to a host invoker. Their ``done.invoke.<id>`` is accepted only
+        through ``Engine.complete_host_invoke``, the one path that knows the
+        invocation is still running. Default empty — nothing refused — for a
+        document with no host-run invoke; a generated policy built with a
+        host-invoker declaration overrides it."""
+        return ()
 
     def defer_invokes_on_entry(
         self, state: S, engine: "Engine[S, E]"

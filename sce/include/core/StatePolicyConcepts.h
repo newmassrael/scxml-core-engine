@@ -95,6 +95,15 @@ template <typename P>
 struct NeedsEventSchedulerTrait<P, std::void_t<decltype(P::NEEDS_EVENT_SCHEDULER)>>
     : std::bool_constant<P::NEEDS_EVENT_SCHEDULER> {};
 
+/// Policy names the `<invoke>`s its document hands to a host invoker
+/// (§scxml-6.4.1), as `static constexpr` `HOST_INVOKE_IDS` — a range of
+/// strings. Their `done.invoke.<id>` is accepted only through the engine's
+/// `completeHostInvoke`. Detected rather than required: a policy without a
+/// host-run invoke has nothing to list, and a hand-written one keeps compiling.
+template <typename P, typename = void> struct HasHostInvokeIdsTrait : std::false_type {};
+
+template <typename P> struct HasHostInvokeIdsTrait<P, std::void_t<decltype(P::HOST_INVOKE_IDS)>> : std::true_type {};
+
 /// Policy can hand an event to a live `<invoke>` child named by session id.
 ///
 /// A session's published location is a usable `<send>` target,
@@ -275,6 +284,10 @@ concept HasChildSessionDelivery = HasChildSessionDeliveryTrait<P>::value;
 template <typename P>
 concept NeedsEventScheduler = NeedsEventSchedulerTrait<P>::value;
 
+/// Policy lists the invokes a host runs
+template <typename P>
+concept HasHostInvokeIds = HasHostInvokeIdsTrait<P>::value;
+
 #else  // C++17 fallback
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -302,6 +315,8 @@ template <typename P> inline constexpr bool HasExternalEventFlag = HasExternalEv
 template <typename P> inline constexpr bool HasChildSessionDelivery = HasChildSessionDeliveryTrait<P>::value;
 
 template <typename P> inline constexpr bool NeedsEventScheduler = NeedsEventSchedulerTrait<P>::value;
+
+template <typename P> inline constexpr bool HasHostInvokeIds = HasHostInvokeIdsTrait<P>::value;
 
 #endif  // __cpp_concepts >= 202002L
 

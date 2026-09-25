@@ -3,6 +3,11 @@
 
 package sce
 
+import (
+	"slices"
+	"strings"
+)
+
 // Host-supplied Event I/O Processors — the payload types a host registers a
 // handler for.
 //
@@ -224,6 +229,16 @@ type HostInvokeRequest struct {
 	Params map[string][]string
 	// Content is inline `<content>`, empty when the document carried none.
 	Content string
+	// Token says which start of this invoke this is. The engine assigns it,
+	// and a host that finishes later hands it back to CompleteHostInvoke.
+	//
+	// The id alone cannot say it: a state that exits and is entered again
+	// starts the same `<invoke>` a second time under the same id, and a result
+	// the first run produces after it was cancelled would otherwise read as
+	// the second run's (§scxml-6.4 — once the state has exited, what the
+	// cancelled process sends is ignored). Distinct for every start of every
+	// invocation within one engine.
+	Token uint64
 }
 
 // HostInvokeCancel is an `<invoke>` the host was running, at the point its
@@ -234,6 +249,9 @@ type HostInvokeCancel struct {
 	// InvokeID is the invocation being cancelled — the same id its Start
 	// carried.
 	InvokeID string
+	// Token is the one its Start carried, so a host running more than one
+	// start of the same id stops the right one.
+	Token uint64
 }
 
 // HostInvokeEvent is one turn of a host-run invoke's lifecycle. Exactly one of
@@ -249,10 +267,10 @@ type HostInvokeEvent struct {
 	Start *HostInvokeRequest
 	// Cancel is §scxml-6.4: the state exited. Stop it.
 	//
-	// Delivered only for an invocation that actually started: a state that
-	// exits before the macrostep ends never runs its invoke, and cancelling
-	// something that never began would have the host tearing down state it
-	// never built.
+	// Delivered only for an invocation that is still running: one that never
+	// started (its state exited before the macrostep ended) has nothing to
+	// tear down, and one that already completed has nothing left to stop —
+	// `done.invoke` said the process is over.
 	Cancel *HostInvokeCancel
 }
 
@@ -263,8 +281,9 @@ type HostInvokeEvent struct {
 type HostInvokeResponse struct {
 	// DoneData is the payload for an immediate `done.invoke.<InvokeID>`, for an
 	// invocation that completed before returning. Nil is the ordinary case: the
-	// work outlives the call and the host raises the completion itself when it
-	// finishes. SCE does not synthesise a completion the host did not report —
+	// work outlives the call and the host reports it through CompleteHostInvoke
+	// with the request's Token when it finishes. SCE does not synthesise a
+	// completion the host did not report —
 	// an invoked process that never terminates never fires `done.invoke`, which
 	// is what §scxml-6.4 says.
 	DoneData *string
@@ -300,48 +319,92 @@ func (e *Engine[S, E]) HasInvoker(processorType string) bool {
 // was undeclared or the handler was never wired up.
 //
 // A started invocation is RECORDED here rather than in the generated machine,
-// because "did this one start?" is the question the cancel path has to answer,
-// and answering it in each backend's template would be the same bookkeeping
-// written once per language.
+// because "is this one still running?" is the question both the cancel path
+// and a completion have to answer, and answering it in each backend's template
+// would be the same bookkeeping written once per language. The token is
+// assigned and recorded BEFORE the handler runs, so a handler that completes
+// synchronously completes an invocation the engine already knows is running.
 func (e *Engine[S, E]) PerformHostInvoke(request HostInvokeRequest) bool {
 	handler, ok := e.hostInvokers[request.ProcessorType]
 	if !ok {
 		return false
 	}
-	key := hostInvokeKey{request.ProcessorType, request.InvokeID}
-	response := handler(HostInvokeEvent{Start: &request})
+	token := e.nextHostInvokeToken
+	e.nextHostInvokeToken++
+	request.Token = token
 	if e.startedHostInvokes == nil {
-		e.startedHostInvokes = make(map[hostInvokeKey]struct{})
+		e.startedHostInvokes = make(map[hostInvokeKey]uint64)
 	}
-	e.startedHostInvokes[key] = struct{}{}
+	e.startedHostInvokes[hostInvokeKey{request.ProcessorType, request.InvokeID}] = token
+	response := handler(HostInvokeEvent{Start: &request})
 	if response != nil && response.DoneData != nil {
-		// §scxml-6.4: a completion the host reported NOW. One it reports later
-		// arrives the same way, by raising the event itself — the engine does
-		// not distinguish the two, and it never synthesises a completion the
-		// host did not report. The id is the DOCUMENT's, because
-		// `done.invoke.<id>` is the name the author wrote a transition for.
-		if evt, known := e.policy.GetEventFromName(CreateDoneInvokeEventName(request.InvokeID)); known {
-			meta := NewEventWithMetadata(evt)
-			meta.Metadata = ExternalMetadata("", "")
-			meta.Metadata.Data = *response.DoneData
-			// §scxml-5.10.1: the completion is an event of the invocation, so
-			// `_event.invokeid` is the invocation's id — the one
-			// `done.invoke.<id>` names and the host was handed.
-			meta.Metadata.InvokeID = request.InvokeID
-			e.externalQueue.Raise(meta)
-		}
+		// §scxml-6.4: a completion the host reported NOW takes the same door as
+		// one it reports later, so the two cannot disagree about whether the
+		// invocation is over. The engine never synthesises a completion the host
+		// did not report.
+		e.CompleteHostInvoke(request.ProcessorType, request.InvokeID, token, *response.DoneData)
 	}
 	return true
 }
 
-// CancelHostInvoke stops a host-run invocation, if it started (§scxml-6.4).
+// CompleteHostInvoke reports that a host-run invocation finished, raising its
+// `done.invoke.<invokeID>` with doneData as `_event.data` (§scxml-6.4).
 //
-// Unconditional at the call site: the engine knows whether this one ever
-// started and stays silent when it did not, so the emitted exit chain does not
-// need its own bookkeeping.
+// token is the one the invocation's Start request carried. The completion is
+// accepted only while that start is still running, and accepting it ends the
+// invocation, so it is accepted at most once and the state's exit no longer
+// cancels it. It returns false — raising nothing — for a completion of an
+// invocation that was cancelled, already completed, or restarted since (a
+// stale token): §scxml-6.4 has the processor ignore what a cancelled process
+// sends, and a restarted `<invoke>` is a different process under the same id.
+//
+// This is the only way a host-run invocation's `done.invoke` reaches the
+// document. One raised through the ordinary external-event API skips the check
+// above, so the engine refuses it when it is dequeued.
+func (e *Engine[S, E]) CompleteHostInvoke(processorType, invokeID string, token uint64, doneData string) bool {
+	key := hostInvokeKey{processorType, invokeID}
+	if running, ok := e.startedHostInvokes[key]; !ok || running != token {
+		return false
+	}
+	delete(e.startedHostInvokes, key)
+	// The id is the DOCUMENT's, because `done.invoke.<id>` is the name the
+	// author wrote a transition for.
+	if evt, known := e.policy.GetEventFromName(CreateDoneInvokeEventName(invokeID)); known {
+		meta := NewEventWithMetadata(evt)
+		meta.Metadata = ExternalMetadata("", "")
+		meta.Metadata.Data = doneData
+		// §scxml-5.10.1: the completion is an event of the invocation, so
+		// `_event.invokeid` is the invocation's id — the one `done.invoke.<id>`
+		// names and the host was handed.
+		meta.Metadata.InvokeID = invokeID
+		meta.Metadata.HostInvokeToken = &token
+		e.externalQueue.Raise(meta)
+	}
+	return true
+}
+
+// RefusedHostInvokeCompletions reports how many host-run invocations'
+// `done.invoke` events the engine refused because they did not arrive through
+// CompleteHostInvoke.
+//
+// A refusal is correct — such an event may be a cancelled run's late reply —
+// and saying it happened is not optional: a host that raised its completion
+// the old way and saw the document never move would otherwise have nothing to
+// find.
+func (e *Engine[S, E]) RefusedHostInvokeCompletions() uint64 {
+	return e.refusedHostInvokeCompletions
+}
+
+// CancelHostInvoke stops a host-run invocation, if it is still running
+// (§scxml-6.4).
+//
+// Unconditional at the call site: the engine knows whether this one is still
+// running and stays silent when it never started or already completed, so the
+// emitted exit chain does not need its own bookkeeping.
 func (e *Engine[S, E]) CancelHostInvoke(processorType, invokeID string) bool {
 	key := hostInvokeKey{processorType, invokeID}
-	if _, started := e.startedHostInvokes[key]; !started {
+	token, running := e.startedHostInvokes[key]
+	if !running {
 		return false
 	}
 	delete(e.startedHostInvokes, key)
@@ -352,12 +415,42 @@ func (e *Engine[S, E]) CancelHostInvoke(processorType, invokeID string) bool {
 	handler(HostInvokeEvent{Cancel: &HostInvokeCancel{
 		ProcessorType: processorType,
 		InvokeID:      invokeID,
+		Token:         token,
 	}})
 	return true
 }
 
-// hostInvokeKey identifies one invocation the host was told to start and has
-// not been told to stop.
+// HostInvokePolicy is implemented by a generated policy whose document hands
+// `<invoke>`s to a host invoker (§scxml-6.4.1). Optional, because a document
+// with no host-run invoke has nothing to list.
+type HostInvokePolicy interface {
+	// HostInvokeIDs returns the ids of those invokes. Their `done.invoke.<id>`
+	// is accepted only through CompleteHostInvoke.
+	HostInvokeIDs() []string
+}
+
+// isRefusedHostInvokeCompletion reports whether meta is a host-run
+// invocation's `done.invoke` that did not come through CompleteHostInvoke —
+// one the engine refuses at dequeue (§scxml-6.4), because it may be a
+// cancelled run's late reply.
+func (e *Engine[S, E]) isRefusedHostInvokeCompletion(meta EventWithMetadata[E]) bool {
+	if meta.Metadata.HostInvokeToken != nil {
+		return false
+	}
+	hostPolicy, ok := any(e.policy).(HostInvokePolicy)
+	if !ok {
+		return false
+	}
+	id, isDone := strings.CutPrefix(e.policy.GetEventName(meta.Event), DoneInvokePrefix)
+	return isDone && slices.Contains(hostPolicy.HostInvokeIDs(), id)
+}
+
+// hostInvokeKey identifies one host-run invocation that was started and has
+// neither completed nor been cancelled. One entry per key is enough: an
+// `<invoke>` belongs to one state and a state is in the configuration at most
+// once, so the same id is never running twice. A second start under the same
+// id replaces the entry, and its new token is what makes the first run's late
+// reply stale.
 type hostInvokeKey struct {
 	processorType string
 	invokeID      string

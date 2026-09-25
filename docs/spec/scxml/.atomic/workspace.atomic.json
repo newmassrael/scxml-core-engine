@@ -5318,6 +5318,31 @@
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "perform_host_invoke",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/host_processor.go",
+          "symbol": "CompleteHostInvoke",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "completeHostInvoke",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "complete_host_invoke",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "complete_host_invoke",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "completeHostInvoke",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -8710,6 +8735,26 @@
           "file": "backends/go/runtime/invoke.go",
           "symbol": "RaiseDoneInvoke",
           "kind": "implements"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/host_processor.h",
+          "symbol": "SCE_DONE_INVOKE_PREFIX",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/invoke.go",
+          "symbol": "DoneInvokePrefix",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "DONE_INVOKE_PREFIX",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/InvokeHelper.h",
+          "symbol": "DONE_INVOKE_PREFIX",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -9829,6 +9874,101 @@
           "file": "backends/c/runtime/include/sce/host_processor.h",
           "symbol": "sce_host_invocation_mark",
           "kind": "implements"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/host_processor.h",
+          "symbol": "token",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/host_processor.h",
+          "symbol": "sce_host_invocation_take_token",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/event.go",
+          "symbol": "EventMetadata",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/host_processor.go",
+          "symbol": "HostInvokeRequest",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/host_processor.go",
+          "symbol": "CompleteHostInvoke",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/host_processor.go",
+          "symbol": "isRefusedHostInvokeCompletion",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "EventMetadata",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "HostInvokeRequest",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "refusesHostInvokeCompletion",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "completeHostInvoke",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "processNextExternalEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_process_next_external_event",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/event.py",
+          "symbol": "EventMetadata",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/host_processor.py",
+          "symbol": "HostInvokeRequest",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/event.rs",
+          "symbol": "EventMetadata",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/HostProcessor.h",
+          "symbol": "token",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/HostProcessor.h",
+          "symbol": "isHostInvokeCompletion",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "hostInvokeToken",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "completeHostInvoke",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -10160,6 +10300,26 @@
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "forward_to_autoforward_children",
           "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/host_processor.go",
+          "symbol": "HostInvokePolicy",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "hostInvokeIds",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "HOST_INVOKE_IDS",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/StatePolicyConcepts.h",
+          "symbol": "SCE::Core",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -18811,6 +18971,12 @@
       "target_kind": "section",
       "target_id": "scxml-D-microstepProcedure",
       "reason": "Its only cite sat on SCE_MAX_ENABLED_TRANSITIONS, the fixed cap on the optimal enabled transition set; the C11 Appendix D transcription (tools/codegen/templates/c/microstep.jinja2) sizes that set by the document's atomic state count instead, so the knob and its cite are gone"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4.1",
+      "reason": "added this round against a class template the code-ref checker attributes to SCE::Core; replaced by the header's existing SCE::Core references convention"
     }
   ],
   "frames": {},

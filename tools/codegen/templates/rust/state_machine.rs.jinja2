@@ -691,6 +691,16 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
             _ => None,
         }
     }
+{% if model.host_invoker_types %}
+
+    // §scxml-6.4: these invokes are run by the host, so their `done.invoke`
+    // is accepted only through `Engine::complete_host_invoke`.
+    const HOST_INVOKE_IDS: &'static [&'static str] = &[
+{% for inv in model.invokes | host_invoker %}
+        "{{ inv.invoke_id }}",
+{% endfor %}
+    ];
+{% endif %}
 
     fn get_state_name(state: Self::State) -> &'static str {
         match state {

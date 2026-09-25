@@ -211,6 +211,11 @@ class ScxmlInvoke(Invoke):
         return self._child
 
 
+#: W3C SCXML 6.3.1 — what every ``done.invoke.<id>`` begins with, spelled
+#: once so building the name and recognising it cannot disagree.
+DONE_INVOKE_PREFIX = "done.invoke."
+
+
 def create_done_invoke_event_name(invoke_id: str) -> str:
     """W3C SCXML 6.3.1 — `done.invoke.<id>` event name."""
-    return f"done.invoke.{invoke_id}"
+    return f"{DONE_INVOKE_PREFIX}{invoke_id}"

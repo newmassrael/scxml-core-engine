@@ -27,6 +27,7 @@ package com.sce.integration
 
 import com.sce.integration.statechart_host_invoker.StatechartHostInvokerEvent
 import com.sce.integration.statechart_host_invoker.StatechartHostInvokerStateMachine
+import com.sce.runtime.EventMetadata
 import com.sce.runtime.StateMachineEngine
 import com.sce.w3c.W3CTestBase
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -157,11 +158,42 @@ class HostInvokerTest {
         }
     }
 
+    /**
+     * An invoker whose work outlives the call: it answers nothing on start,
+     * so each invocation stays running until the test completes or cancels
+     * it. Records the lines [recordingInvoker] does and every start's token
+     * for a later `completeHostInvoke`.
+     */
+    private fun runningInvoker(
+        log: MutableList<String>,
+        starts: MutableList<Pair<String, Long>>,
+    ): (StateMachineEngine.HostInvokeEvent) -> StateMachineEngine.HostInvokeResponse? =
+        { ev ->
+            ev.start?.let {
+                log.add("START id=${it.invokeId}")
+                starts.add(it.invokeId to it.token)
+            }
+            ev.cancel?.let { log.add("CANCEL id=${it.invokeId}") }
+            null
+        }
+
+    /** The token of the latest start of [invokeId]. */
+    private fun tokenOf(starts: List<Pair<String, Long>>, invokeId: String): Long =
+        starts.lastOrNull { it.first == invokeId }?.second ?: error("`$invokeId` never started")
+
+    /** `send` queues; `tick` is this backend's macrostep driver. */
+    private fun deliver(sm: StatechartHostInvokerStateMachine, event: StatechartHostInvokerEvent) {
+        sm.send(event)
+        sm.tick()
+    }
+
     @Test
     fun leavingTheStateCancelsTheInvocation() {
         val sm = machine()
         val log = mutableListOf<String>()
-        sm.registerInvoker(declaredType, recordingInvoker(log))
+        // Still running when the state exits — a completed invocation has
+        // nothing left to cancel (aCompletedInvocationIsNotCancelled).
+        sm.registerInvoker(declaredType, runningInvoker(log, mutableListOf()))
         sm.initialize()
         try {
             // `send` queues; `tick` is this backend's macrostep driver.
@@ -185,7 +217,7 @@ class HostInvokerTest {
     fun cancelIsNotDeliveredForAnInvocationThatNeverStarted() {
         val sm = machine()
         val log = mutableListOf<String>()
-        sm.registerInvoker(declaredType, recordingInvoker(log))
+        sm.registerInvoker(declaredType, runningInvoker(log, mutableListOf()))
         try {
             assertFalse(sm.cancelHostInvoke(declaredType, "probe"), "a cancel was reported for an invocation that never started")
             assertTrue(log.isEmpty(), "the invoker was called for an invocation that never started: $log")
@@ -194,6 +226,128 @@ class HostInvokerTest {
             assertTrue(sm.cancelHostInvoke(declaredType, "probe"), "a started invocation reported nothing to cancel")
             assertFalse(sm.cancelHostInvoke(declaredType, "probe"), "the same invocation was cancelled twice")
             assertEquals(1, log.count { it.startsWith("CANCEL") }, "cancel reached the invoker more than once: $log")
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    /**
+     * §scxml-6.4: `done.invoke` says the invoked process is over, so leaving
+     * the state afterwards has nothing to stop. Both invocations here complete
+     * synchronously; neither is cancelled.
+     */
+    @Test
+    fun aCompletedInvocationIsNotCancelled() {
+        val sm = machine()
+        val log = mutableListOf<String>()
+        sm.registerInvoker(declaredType, recordingInvoker(log))
+        sm.initialize()
+        try {
+            deliver(sm, StatechartHostInvokerEvent.Leave)
+            assertEquals(1L, counter(sm, "started"))
+            assertTrue(log.none { it.startsWith("CANCEL") }, "a completed invocation was cancelled: $log")
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    /**
+     * A host that finishes later reports it with the start's token, and the
+     * completion is taken once: a second report of the same run finds nothing,
+     * and the state's exit then cancels only the invocation still running.
+     */
+    @Test
+    fun aLateCompletionIsAcceptedExactlyOnce() {
+        val sm = machine()
+        val log = mutableListOf<String>()
+        val starts = mutableListOf<Pair<String, Long>>()
+        sm.registerInvoker(declaredType, runningInvoker(log, starts))
+        sm.initialize()
+        try {
+            assertEquals(0L, counter(sm, "started"))
+            val token = tokenOf(starts, "probe")
+            assertTrue(sm.completeHostInvoke(declaredType, "probe", token, "ok"), "a running invocation's completion was refused")
+            sm.tick()
+            // The fixture counts it only when `_event.invokeid` names the
+            // invocation (§scxml-5.10.1), so this is that assertion too.
+            assertEquals(1L, counter(sm, "started"))
+            assertFalse(sm.completeHostInvoke(declaredType, "probe", token, "again"), "the same run completed twice")
+            sm.tick()
+            assertEquals(1L, counter(sm, "started"))
+
+            deliver(sm, StatechartHostInvokerEvent.Leave)
+            assertEquals(listOf("CANCEL id=probe2"), log.filter { it.startsWith("CANCEL") }, "only the invocation still running is cancelled")
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    /**
+     * §scxml-6.4: once the state has exited, what the cancelled process sends
+     * is ignored. The host's reply arrives after the cancel and is refused.
+     */
+    @Test
+    fun aCompletionAfterTheCancelIsRefused() {
+        val sm = machine()
+        val starts = mutableListOf<Pair<String, Long>>()
+        sm.registerInvoker(declaredType, runningInvoker(mutableListOf(), starts))
+        sm.initialize()
+        try {
+            val token = tokenOf(starts, "probe")
+            deliver(sm, StatechartHostInvokerEvent.Leave)
+            assertFalse(sm.completeHostInvoke(declaredType, "probe", token, "late"), "a cancelled run's completion was accepted")
+            sm.tick()
+            assertEquals(0L, counter(sm, "started"))
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    /**
+     * Re-entering the state starts the same `<invoke>` again under the same
+     * id. The first run's late reply carries the first start's token and is
+     * refused; the second run's is accepted.
+     */
+    @Test
+    fun aRestartedInvokeRefusesTheFirstRunsReply() {
+        val sm = machine()
+        val starts = mutableListOf<Pair<String, Long>>()
+        sm.registerInvoker(declaredType, runningInvoker(mutableListOf(), starts))
+        sm.initialize()
+        try {
+            val first = tokenOf(starts, "probe")
+            deliver(sm, StatechartHostInvokerEvent.Leave)
+            deliver(sm, StatechartHostInvokerEvent.Again)
+            val second = tokenOf(starts, "probe")
+            assertTrue(first != second, "a restart reused the first start's token")
+
+            assertFalse(sm.completeHostInvoke(declaredType, "probe", first, "stale"), "the first run's reply was taken for the second run's")
+            sm.tick()
+            assertEquals(0L, counter(sm, "started"))
+            assertTrue(sm.completeHostInvoke(declaredType, "probe", second, "ok"))
+            sm.tick()
+            assertEquals(1L, counter(sm, "started"))
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    /**
+     * A host-run invocation's `done.invoke` raised through the ordinary
+     * external-event API skipped the running check, so the engine refuses it
+     * and counts the refusal. The metadata names the invocation, so without
+     * the refusal the fixture's guarded transition would take it.
+     */
+    @Test
+    fun aDoneInvokeRaisedTheOldWayIsRefusedAndCounted() {
+        val sm = machine()
+        sm.registerInvoker(declaredType, runningInvoker(mutableListOf(), mutableListOf()))
+        sm.initialize()
+        try {
+            sm.sendEventByName("done.invoke.probe", EventMetadata(invokeId = "probe"))
+            sm.tick()
+            assertEquals(0L, counter(sm, "started"), "a completion that skipped the running check reached the document")
+            assertEquals(1L, sm.refusedHostInvokeCompletions)
         } finally {
             sm.cleanup()
         }

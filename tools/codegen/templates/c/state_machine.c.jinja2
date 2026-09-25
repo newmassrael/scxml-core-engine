@@ -2718,9 +2718,10 @@ SCE_SM_FN static void execute_exit_actions({{ csym_prefix }}{{ model.name }}_t *
         {
             const sce_host_invoker_entry_t *_host_cancel_entry =
                 sce_host_invoker_find(&sm->host_invokers, "{{ invoke_info.invoke_type | escape_c }}");
+            uint64_t _host_cancel_token = 0u;
             if (sce_host_invocation_take(&sm->started_host_invokes,
                                          "{{ invoke_info.invoke_type | escape_c }}",
-                                         "{{ invoke_info.invoke_id | escape_c }}")
+                                         "{{ invoke_info.invoke_id | escape_c }}", &_host_cancel_token)
                 && _host_cancel_entry != NULL) {
                 sce_host_invoke_event_t _host_cancel;
                 sce_host_invoke_response_t _host_cancel_out;
@@ -2733,6 +2734,7 @@ SCE_SM_FN static void execute_exit_actions({{ csym_prefix }}{{ model.name }}_t *
                 _host_cancel.content = "";
                 _host_cancel.params = NULL;
                 _host_cancel.param_count = 0;
+                _host_cancel.token = _host_cancel_token;
                 _host_cancel_entry->handler(_host_cancel_entry->user_data, &_host_cancel, &_host_cancel_out);
             }
         }
@@ -3979,6 +3981,29 @@ SCE_SM_FN static void process_internal_queue({{ csym_prefix }}{{ model.name }}_t
     sm->error_cascade_depth = 0u;
 {% endif %}
 }
+{% if model.host_invoker_types %}
+
+/* W3C SCXML 6.4: whether `evt` is a host-run invocation's `done.invoke` that
+   did not come through `_complete_host_invoke` — refused at dequeue, because
+   it may be a cancelled run's late reply. The cases are the invokes the host
+   runs whose completion this document declares. */
+SCE_SM_FN static bool is_refused_host_invoke_completion(const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt) {
+    if (evt->has_host_invoke_token) {
+        return false;
+    }
+    switch (evt->event) {
+{% for inv in model.invokes | host_invoker %}
+{% set done_name = 'done.invoke.' ~ inv.invoke_id %}
+{% if done_name in model.events %}
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ done_name | upper | replace('.', '_') | replace('-', '_') }}:
+        return true;
+{% endif %}
+{% endfor %}
+    default:
+        return false;
+    }
+}
+{% endif %}
 
 /* W3C SCXML Appendix D `mainEventLoop`: take exactly one event off the
    external queue, run the preliminary `<finalize>` / autoforward step
@@ -4001,6 +4026,18 @@ SCE_SM_FN static bool process_next_external_event({{ csym_prefix }}{{ model.name
     uint8_t count;
 
     if (event_queue_pop(&sm->external_queue, &evt)) {
+        {% if model.host_invoker_types %}
+        /* W3C SCXML 6.4: a host-run invocation's `done.invoke` counts only
+           when `_complete_host_invoke` confirmed the invocation was still
+           running and stamped its token. Without the stamp it may be a
+           cancelled run's late reply, which the processor ignores — so it is
+           refused here, counted, and never reaches transition selection.
+           Reports true because an event was taken. */
+        if (is_refused_host_invoke_completion(&evt)) {
+            sm->refused_host_invoke_completions++;
+            return true;
+        }
+        {% endif %}
         /* W3C SCXML Appendix D: taking an event off the external queue is
            where a macrostep begins, so it is where the previous one's ceiling
            stops applying. A machine left inside an endless chain gets a full
@@ -4916,10 +4953,11 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_cancel_host_invoke({{ csym_pref
     const sce_host_invoker_entry_t *entry;
     sce_host_invoke_event_t event;
     sce_host_invoke_response_t out;
+    uint64_t token = 0u;
     if (sm == NULL) {
         return false;
     }
-    if (!sce_host_invocation_take(&sm->started_host_invokes, processor_type, invoke_id)) {
+    if (!sce_host_invocation_take(&sm->started_host_invokes, processor_type, invoke_id, &token)) {
         return false;
     }
     entry = sce_host_invoker_find(&sm->host_invokers, processor_type);
@@ -4935,9 +4973,73 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_cancel_host_invoke({{ csym_pref
     event.content = "";
     event.params = NULL;
     event.param_count = 0;
+    event.token = token;
     entry->handler(entry->user_data, &event, &out);
     return true;
 }
+
+/* W3C SCXML 6.4: a host-run invocation finished; raise its
+   `done.invoke.<invoke_id>` with `done_data` as `_event.data`.
+
+   `token` is the one the invocation's start carried. The completion is
+   accepted only while that start is still running, and accepting it ends the
+   invocation, so it is accepted at most once and the state's exit no longer
+   cancels it. Returns false — raising nothing — for a completion of an
+   invocation that was cancelled, already completed, or restarted since (a
+   stale token): the processor ignores what a cancelled process sends, and a
+   restarted `<invoke>` is a different process under the same id.
+
+   The only way a host-run invocation's `done.invoke` reaches the document.
+   One raised through `_raise_external` skips the check above, so the machine
+   refuses it when it is dequeued. */
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_complete_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm,
+                                                                      const char *processor_type,
+                                                                      const char *invoke_id, uint64_t token,
+                                                                      const char *done_data) {
+    char name[SCE_MAX_ID_LEN];
+    const size_t prefix_len = sizeof(SCE_DONE_INVOKE_PREFIX) - 1u;
+    size_t id_len;
+    {{ csym_prefix }}{{ model.name }}_event_t done_event;
+    if (sm == NULL || processor_type == NULL || invoke_id == NULL) {
+        return false;
+    }
+    if (!sce_host_invocation_take_token(&sm->started_host_invokes, processor_type, invoke_id, token)) {
+        return false;
+    }
+    id_len = strlen(invoke_id);
+    if (prefix_len + id_len >= sizeof(name)) {
+        /* A name longer than any event this machine declares cannot name one
+           of them; the invocation is over either way. */
+        return true;
+    }
+    memcpy(name, SCE_DONE_INVOKE_PREFIX, prefix_len);
+    memcpy(name + prefix_len, invoke_id, id_len);
+    name[prefix_len + id_len] = '\0';
+    done_event = {{ csym_prefix }}{{ model.name }}_event_from_name(name, prefix_len + id_len);
+    if (done_event != {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE) {
+        {{ csym_prefix }}{{ model.name }}_event_with_meta_t completion;
+        memset(&completion, 0, sizeof(completion));
+        completion.event = done_event;
+        sce_copy_bounded_data(completion.data, done_data != NULL ? done_data : "");
+        /* W3C SCXML 5.10.1: the completion is an event of the invocation, so
+           `_event.invokeid` is the invocation's id — the one `done.invoke.<id>`
+           names and the host was handed. */
+        sce_copy_bounded_id(completion.invoke_id, invoke_id);
+        completion.has_host_invoke_token = true;
+        completion.host_invoke_token = token;
+        {{ csym_prefix }}{{ model.name }}_raise_external(sm, &completion);
+    }
+    return true;
+}
+
+/* W3C SCXML 6.4: how many host-run invocations' `done.invoke` events this
+   machine refused because they did not arrive through `_complete_host_invoke`.
+   A refusal is correct — such an event may be a cancelled run's late reply —
+   and saying it happened is not optional. */
+SCE_SM_FN uint32_t {{ csym_prefix }}{{ model.name }}_refused_host_invoke_completions(const {{ csym_prefix }}{{ model.name }}_t *sm) {
+    return (sm == NULL) ? 0u : sm->refused_host_invoke_completions;
+}
+
 {% endif %}
 
 /* W3C SCXML 3.1.2: external events this machine discarded because nothing

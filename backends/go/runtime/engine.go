@@ -72,10 +72,18 @@ type Engine[S comparable, E comparable] struct {
 	// process with a lifecycle — see host_processor.go's invoker half.
 	hostInvokers map[string]HostInvokeHandler
 
-	// startedHostInvokes records every host-run invocation started and not yet
-	// cancelled, so the exit chain can be an unconditional call: the engine
-	// knows whether there is anything to cancel.
-	startedHostInvokes map[hostInvokeKey]struct{}
+	// startedHostInvokes maps every host-run invocation started and neither
+	// completed nor cancelled to its start's token, so the exit chain can be an
+	// unconditional call and a completion can be judged against the run it
+	// names (§scxml-6.4).
+	startedHostInvokes map[hostInvokeKey]uint64
+
+	// nextHostInvokeToken is the token the next host-run start receives.
+	nextHostInvokeToken uint64
+
+	// refusedHostInvokeCompletions counts host invokes' `done.invoke` events
+	// refused at dequeue; see RefusedHostInvokeCompletions.
+	refusedHostInvokeCompletions uint64
 
 	// scheduler is the §scxml-6.2 delayed event scheduler.
 	scheduler *PullScheduler[E]
@@ -1437,6 +1445,15 @@ func (e *Engine[S, E]) processNextExternalEvent() bool {
 	eventWithMeta, ok := e.externalQueue.Pop()
 	if !ok {
 		return false
+	}
+	// §scxml-6.4: a host-run invocation's `done.invoke` counts only when
+	// CompleteHostInvoke confirmed the invocation was still running and stamped
+	// its token. Without the stamp it may be a cancelled run's late reply,
+	// which the processor ignores — so it is refused here, counted, and never
+	// reaches transition selection. Reports true because an event was taken.
+	if e.isRefusedHostInvokeCompletion(eventWithMeta) {
+		e.refusedHostInvokeCompletions++
+		return true
 	}
 	// Taking an event off the external queue is where
 	// a macrostep begins, so it is where the previous one's ceiling stops

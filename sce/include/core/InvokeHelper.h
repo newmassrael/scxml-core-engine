@@ -19,6 +19,7 @@
 #include "core/LogMacros.h"
 #include <algorithm>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace SCE::Core {
@@ -263,8 +264,14 @@ public:
      */
     static std::string createDoneInvokeEventName(const std::string &invokeId) {
         // §scxml-6.4.3: done.invoke.{invokeid} event naming
-        return "done.invoke." + invokeId;
+        return std::string(DONE_INVOKE_PREFIX) + invokeId;
     }
+
+    /**
+     * @brief §scxml-6.3.1: what every `done.invoke.<id>` begins with, spelled
+     *        once so building the name and recognising it cannot disagree
+     */
+    static constexpr std::string_view DONE_INVOKE_PREFIX = "done.invoke.";
 
     /**
      * @brief §scxml-6.4.1: Validate invoke ID format

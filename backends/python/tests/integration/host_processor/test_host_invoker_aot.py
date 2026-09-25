@@ -84,6 +84,41 @@ def _recording_invoker(log: List[str]):
     return handler
 
 
+def _running_invoker(log: List[str], starts: List[tuple]):
+    """An invoker whose work outlives the call: it answers nothing on start,
+    so each invocation stays running until the test completes or cancels it.
+    Records the lines `_recording_invoker` does, and every start's token for
+    a later ``Engine.complete_host_invoke``."""
+
+    def handler(ev: HostInvokeEvent) -> Optional[HostInvokeResponse]:
+        if ev.start is not None:
+            log.append(f"START id={ev.start.invoke_id}")
+            starts.append((ev.start.invoke_id, ev.start.token))
+        if ev.cancel is not None:
+            log.append(f"CANCEL id={ev.cancel.invoke_id}")
+        return None
+
+    return handler
+
+
+def _token_of(starts: List[tuple], invoke_id: str) -> int:
+    """The token of the latest start of `invoke_id`."""
+    for started_id, token in reversed(starts):
+        if started_id == invoke_id:
+            return token
+    raise AssertionError(f"`{invoke_id}` never started")
+
+
+def _running():
+    """A machine whose invocations stay running, already initialized."""
+    engine = _sm.create_engine()
+    log: List[str] = []
+    starts: List[tuple] = []
+    engine.register_invoker(DECLARED_TYPE, _running_invoker(log, starts))
+    engine.initialize()
+    return engine, log, starts
+
+
 def _started(with_invoker: bool = True):
     """A machine with the invoker each case decides on, already initialized.
 
@@ -163,8 +198,11 @@ def test_what_the_request_says_is_evaluated_when_the_invocation_starts() -> None
 def test_leaving_the_state_cancels_the_invocation() -> None:
     """The invocation ends with the state that started it. Without this the
     host is told to begin work and never told to stop — which no configuration
-    assertion can detect, because the machine looks correct either way."""
-    engine, log = _started()
+    assertion can detect, because the machine looks correct either way.
+
+    Still running when the state exits — a completed invocation has nothing
+    left to cancel (the case after this one)."""
+    engine, log, _starts = _running()
     # `send_external` + a macrostep is this backend's delivery pair; there is
     # no single-call `process_event` here, and the sibling channels drive their
     # machines the same way.
@@ -192,7 +230,8 @@ def test_cancel_is_not_delivered_for_an_invocation_that_never_started() -> None:
     macrostep and the pending invoke executes at the end of that macrostep."""
     engine = _sm.create_engine()
     log: List[str] = []
-    engine.register_invoker(DECLARED_TYPE, _recording_invoker(log))
+    starts: List[tuple] = []
+    engine.register_invoker(DECLARED_TYPE, _running_invoker(log, starts))
 
     assert not engine.cancel_host_invoke(
         DECLARED_TYPE, "probe"
@@ -211,6 +250,105 @@ def test_cancel_is_not_delivered_for_an_invocation_that_never_started() -> None:
     ), "the same invocation was cancelled twice"
     cancels = [e for e in log if e.startswith("CANCEL")]
     assert len(cancels) == 1, f"cancel reached the invoker {len(cancels)} times: {log}"
+
+
+def _deliver(engine, event) -> None:
+    """This backend's delivery pair: enqueue, then run a macrostep."""
+    engine.send_external(event)
+    engine.advance_time(0)
+
+
+def test_a_completed_invocation_is_not_cancelled() -> None:
+    """§scxml-6.4: ``done.invoke`` says the invoked process is over, so
+    leaving the state afterwards has nothing to stop. Both invocations here
+    complete synchronously; neither is cancelled."""
+    engine, log = _started()
+    _deliver(engine, Event.LEAVE)
+
+    assert _counter(engine, "started") == 1
+    assert not [e for e in log if e.startswith("CANCEL")], (
+        f"a completed invocation was cancelled: {log}"
+    )
+
+
+def test_a_late_completion_is_accepted_exactly_once() -> None:
+    """A host that finishes later reports it with the start's token, and the
+    completion is taken once: a second report of the same run finds nothing,
+    and the state's exit then cancels only the invocation still running."""
+    engine, log, starts = _running()
+    assert _counter(engine, "started") == 0
+
+    token = _token_of(starts, "probe")
+    assert engine.complete_host_invoke(DECLARED_TYPE, "probe", token, "ok"), (
+        "a running invocation's completion was refused"
+    )
+    engine.advance_time(0)
+    # The fixture counts it only when `_event.invokeid` names the invocation
+    # (§scxml-5.10.1), so this is that assertion too.
+    assert _counter(engine, "started") == 1
+
+    assert not engine.complete_host_invoke(DECLARED_TYPE, "probe", token, "again"), (
+        "the same run completed twice"
+    )
+    engine.advance_time(0)
+    assert _counter(engine, "started") == 1
+
+    _deliver(engine, Event.LEAVE)
+    assert [e for e in log if e.startswith("CANCEL")] == ["CANCEL id=probe2"], (
+        f"only the invocation still running is cancelled: {log}"
+    )
+
+
+def test_a_completion_after_the_cancel_is_refused() -> None:
+    """§scxml-6.4: once the state has exited, what the cancelled process
+    sends is ignored. The host's reply arrives after the cancel and is
+    refused."""
+    engine, _log, starts = _running()
+    token = _token_of(starts, "probe")
+    _deliver(engine, Event.LEAVE)
+
+    assert not engine.complete_host_invoke(DECLARED_TYPE, "probe", token, "late"), (
+        "a cancelled run's completion was accepted"
+    )
+    engine.advance_time(0)
+    assert _counter(engine, "started") == 0
+
+
+def test_a_restarted_invoke_refuses_the_first_runs_reply() -> None:
+    """Re-entering the state starts the same ``<invoke>`` again under the
+    same id. The first run's late reply carries the first start's token and
+    is refused; the second run's is accepted."""
+    engine, _log, starts = _running()
+    first = _token_of(starts, "probe")
+    _deliver(engine, Event.LEAVE)
+    _deliver(engine, Event.AGAIN)
+    second = _token_of(starts, "probe")
+    assert first != second, "a restart reused the first start's token"
+
+    assert not engine.complete_host_invoke(DECLARED_TYPE, "probe", first, "stale"), (
+        "the first run's reply was taken for the second run's"
+    )
+    engine.advance_time(0)
+    assert _counter(engine, "started") == 0
+    assert engine.complete_host_invoke(DECLARED_TYPE, "probe", second, "ok")
+    engine.advance_time(0)
+    assert _counter(engine, "started") == 1
+
+
+def test_a_done_invoke_raised_the_old_way_is_refused_and_counted() -> None:
+    """A host-run invocation's ``done.invoke`` raised through the ordinary
+    external-event API skipped the running check, so the engine refuses it
+    and counts the refusal. The metadata names the invocation, so without the
+    refusal the fixture's guarded transition would take it."""
+    engine, _log, _starts = _running()
+
+    engine.send_external_by_name("done.invoke.probe", data="x", invoke_id="probe")
+    engine.advance_time(0)
+
+    assert _counter(engine, "started") == 0, (
+        "a completion that skipped the running check reached the document"
+    )
+    assert engine.refused_host_invoke_completions() == 1
 
 
 def test_a_declared_type_with_no_invoker_still_raises_error_execution() -> None:

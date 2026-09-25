@@ -538,6 +538,19 @@ func (p *{{ machine_name }}Policy) GetEventFromName(name string) ({{ machine_nam
 	}
 	return {{ machine_name }}EventNull, false
 }
+{% if model.host_invoker_types %}
+
+// HostInvokeIDs lists the invokes the host runs (sce.HostInvokePolicy). W3C
+// SCXML 6.4: their `done.invoke` is accepted only through
+// Engine.CompleteHostInvoke.
+func (p *{{ machine_name }}Policy) HostInvokeIDs() []string {
+	return []string{
+{% for inv in model.invokes | host_invoker %}
+		"{{ inv.invoke_id }}",
+{% endfor %}
+	}
+}
+{% endif %}
 
 // GetStateName returns the string name of a state (W3C SCXML 3.3).
 func (p *{{ machine_name }}Policy) GetStateName(state {{ machine_name }}State) string {

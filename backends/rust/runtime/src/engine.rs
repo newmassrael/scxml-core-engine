@@ -576,6 +576,9 @@ pub struct Engine<P: StatePolicy> {
     /// refused at build time there.
     #[cfg(not(feature = "no_std"))]
     pub(crate) host_processors: crate::host_processor::HostProcessorRegistry,
+    /// See [`Engine::refused_host_invoke_completions`].
+    #[cfg(not(feature = "no_std"))]
+    pub(crate) refused_host_invoke_completions: u64,
     #[cfg(not(feature = "no_std"))]
     pub(crate) on_http_send:
         Option<Box<dyn FnMut(HttpSendRequest) -> Option<HttpSendResponse> + Send>>,
@@ -712,6 +715,8 @@ impl<P: StatePolicy> Engine<P> {
             completion_callback: None,
             #[cfg(not(feature = "no_std"))]
             host_processors: Default::default(),
+            #[cfg(not(feature = "no_std"))]
+            refused_host_invoke_completions: 0,
             #[cfg(not(feature = "no_std"))]
             on_http_send: None,
             scheduler: PullScheduler::new(),
@@ -2312,35 +2317,86 @@ impl<P: StatePolicy> Engine<P> {
         &mut self,
         request: crate::host_processor::HostInvokeRequest,
     ) -> bool {
+        let processor_type = request.processor_type.clone();
         let invoke_id = request.invoke_id.clone();
-        let Some(response) = self.host_processors.start_invoke(request) else {
+        let Some((token, response)) = self.host_processors.start_invoke(request) else {
             return false;
         };
-        // §scxml-6.4: a completion the host reported now. One it reports
-        // later arrives the same way, by raising the event itself — the
-        // engine does not distinguish the two, and it never synthesises a
-        // completion the host did not report.
+        // §scxml-6.4: a completion the host reported now takes the same door
+        // as one it reports later, so the two cannot disagree about whether
+        // the invocation is over. The engine never synthesises a completion
+        // the host did not report.
         if let Some(done_data) = response.and_then(|r| r.done_data) {
-            let event_name = crate::invoke::create_done_invoke_event_name(&invoke_id);
-            if let Some(evt) = P::get_event_from_name(&event_name) {
-                let mut meta = EventWithMetadata::new(evt);
-                meta.metadata = EventMetadata::external(SceString::new(), SceString::new());
-                meta.metadata.data = done_data;
-                // §scxml-5.10.1: the completion is an event of the
-                // invocation, so `_event.invokeid` is the invocation's id —
-                // the one `done.invoke.<id>` names and the host was handed.
-                meta.metadata.invoke_id = crate::sce_string_from_str(&invoke_id);
-                self.external_queue.raise(meta);
-            }
+            self.complete_host_invoke(&processor_type, &invoke_id, token, &done_data);
         }
         true
+    }
+
+    /// §scxml-6.4: a host-run invocation finished; raise its
+    /// `done.invoke.<invoke_id>` with `done_data` as `_event.data`.
+    ///
+    /// `token` is the one the invocation's
+    /// [`HostInvokeEvent::Start`](crate::host_processor::HostInvokeEvent::Start)
+    /// request carried. The completion is accepted only while that start is
+    /// still running, and accepting it ends the invocation, so it is
+    /// accepted at most once and the state's exit no longer cancels it.
+    /// Returns `false` — raising nothing — for a completion of an invocation
+    /// that was cancelled, already completed, or restarted since (a stale
+    /// token): §scxml-6.4 has the processor ignore what a cancelled process
+    /// sends, and a restarted `<invoke>` is a different process under the
+    /// same id.
+    ///
+    /// This is the only way a host-run invocation's `done.invoke` reaches the
+    /// document. One raised through the ordinary external-event API skips the
+    /// check above, so the engine refuses it when it is dequeued.
+    #[cfg(not(feature = "no_std"))]
+    pub fn complete_host_invoke(
+        &mut self,
+        processor_type: &str,
+        invoke_id: &str,
+        token: u64,
+        done_data: &str,
+    ) -> bool {
+        if !self
+            .host_processors
+            .take_started(processor_type, invoke_id, token)
+        {
+            return false;
+        }
+        let event_name = crate::invoke::create_done_invoke_event_name(invoke_id);
+        if let Some(evt) = P::get_event_from_name(&event_name) {
+            let mut meta = EventWithMetadata::new(evt);
+            meta.metadata = EventMetadata::external(SceString::new(), SceString::new());
+            meta.metadata.data = crate::sce_string_from_str(done_data);
+            // §scxml-5.10.1: the completion is an event of the invocation, so
+            // `_event.invokeid` is the invocation's id — the one
+            // `done.invoke.<id>` names and the host was handed.
+            meta.metadata.invoke_id = crate::sce_string_from_str(invoke_id);
+            meta.metadata.host_invoke_token = Some(token);
+            self.external_queue.raise(meta);
+        }
+        true
+    }
+
+    /// How many host-run invocations' `done.invoke` events the engine refused
+    /// because they did not arrive through
+    /// [`complete_host_invoke`](Self::complete_host_invoke).
+    ///
+    /// A refusal is correct — such an event may be a cancelled run's late
+    /// reply — and saying it happened is not optional: a host that raised its
+    /// completion the old way and saw the document never move would
+    /// otherwise have nothing to find.
+    #[cfg(not(feature = "no_std"))]
+    pub fn refused_host_invoke_completions(&self) -> u64 {
+        self.refused_host_invoke_completions
     }
 
     /// §scxml-6.4: stop a host-run invocation whose state has exited.
     ///
     /// Unconditional from the emitted exit chain; the engine knows
-    /// whether the invocation ever started and stays silent when it did
-    /// not. Returns whether a cancel was delivered.
+    /// whether the invocation is still running and stays silent when it
+    /// never started or already completed. Returns whether a cancel was
+    /// delivered.
     #[cfg(not(feature = "no_std"))]
     pub fn cancel_host_invoke(&mut self, processor_type: &str, invoke_id: &str) -> bool {
         self.host_processors
@@ -2702,6 +2758,23 @@ impl<P: StatePolicy> Engine<P> {
         let Some(event_with_meta) = self.external_queue.pop() else {
             return false;
         };
+        // §scxml-6.4: a host-run invocation's `done.invoke` counts only when
+        // `complete_host_invoke` confirmed the invocation was still running
+        // and stamped its token. Without the stamp it may be a cancelled
+        // run's late reply, which the processor ignores — so it is refused
+        // here, counted, and never reaches transition selection. Returns
+        // `true` because an event was taken; the loop goes on to the next.
+        #[cfg(not(feature = "no_std"))]
+        if event_with_meta.metadata.host_invoke_token.is_none()
+            && crate::host_processor::is_host_invoke_completion(
+                P::get_event_name(event_with_meta.event),
+                P::HOST_INVOKE_IDS,
+            )
+        {
+            self.refused_host_invoke_completions =
+                self.refused_host_invoke_completions.saturating_add(1);
+            return true;
+        }
         // §scxml-D-mainEventLoop: taking an event off the external queue is
         // where a macrostep begins, so it is where the previous one's ceiling
         // stops applying. A machine left inside an endless chain gets a full

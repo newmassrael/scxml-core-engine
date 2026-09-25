@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, Optional, TypeVar
 
 E = TypeVar("E")
 
@@ -20,6 +20,12 @@ class EventMetadata:
     origin: str = ""
     origin_type: str = ""
     invoke_id: str = ""
+    # §scxml-6.4: the token of the host-run invocation this event completes,
+    # set only by `Engine.complete_host_invoke` after it confirmed the
+    # invocation was still running. A host invoke's `done.invoke.<id>` that
+    # arrives without one did not come through that check, so the engine
+    # refuses it. Not script-visible: `_event` has no field for it.
+    host_invoke_token: Optional[int] = None
     # NL→IR Item C1 Path A (EventSchema MCU native lowering): the type-erased
     # typed `_event.data` payload carrier. For an event whose imported
     # EventSchema lowered a transition guard to a native comparison, the

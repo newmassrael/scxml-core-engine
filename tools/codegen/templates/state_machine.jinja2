@@ -300,6 +300,16 @@ struct {{ model.name }}Policy {
     // forever with nothing said. The same verdict the generate manifest
     // publishes as `needs_event_scheduler`.
     static constexpr bool NEEDS_EVENT_SCHEDULER = {{ 'true' if model.needs_tick_driving else 'false' }};
+{% if model.host_invoker_types %}
+
+    // W3C SCXML 6.4: these invokes are run by the host, so their `done.invoke`
+    // is accepted only through the engine's completeHostInvoke().
+    static constexpr std::string_view HOST_INVOKE_IDS[] = {
+{% for inv in model.invokes | host_invoker %}
+        "{{ inv.invoke_id | escape_cpp }}",
+{% endfor %}
+    };
+{% endif %}
 
     {% if model.context_objects %}
     // Named Context: individual pointers for dependency injection

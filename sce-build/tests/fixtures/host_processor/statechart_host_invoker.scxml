@@ -43,6 +43,12 @@
     dropped  — the error.execution events `evaluating` saw: one for the bad
                `<param>` and one for req3, so 2.
 
+  And a completion is accepted at most once, and only from the run it
+  belongs to (W3C SCXML 6.4): `again` re-enters `invoking`, which starts
+  `probe` a second time under the same id, so a late reply from the first
+  run can be told apart from the second run's by the start's token and
+  refused.
+
   The generated machine is compiled with the host-invoker declaration
   `x-sce-host` (scripts/regen_host_processor.sh names the flag; an XML
   comment cannot spell a double hyphen).
@@ -106,5 +112,6 @@
     <onentry>
       <assign location="ended" expr="ended + 1"/>
     </onentry>
+    <transition event="again" target="invoking"/>
   </state>
 </scxml>

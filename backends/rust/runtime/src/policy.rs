@@ -298,6 +298,18 @@ pub trait StatePolicy: Sized + 'static {
     /// Used by `raiseExternal(const std::string&)` overload and child invoke autoforward.
     fn get_event_from_name(name: &str) -> Option<Self::Event>;
 
+    /// The ids of the `<invoke>`s this document hands to a host invoker
+    /// (§scxml-6.4.1), emitted when the build declared one.
+    ///
+    /// Their `done.invoke.<id>` is accepted only through
+    /// `Engine::complete_host_invoke` (a plain label: that method does not
+    /// exist on the no_std profile, where this constant still does), the one
+    /// path that knows the invocation is still running; the engine
+    /// refuses one raised any other way. Empty — nothing refused — for a
+    /// document with no host-run invoke, whose `done.invoke` events all come
+    /// from SCXML children.
+    const HOST_INVOKE_IDS: &'static [&'static str] = &[];
+
     /// Human-readable name of `state` (e.g., `"s0"`, `"passingState"`).
     ///
     /// Required (no default): the State→id mapping is structural and external

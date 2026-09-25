@@ -3,10 +3,6 @@
 
 package sce
 
-import (
-	"fmt"
-)
-
 // PendingInvoke represents a §scxml-6.4 pending invoke structure for the
 // defer/cancel/execute pattern.
 //
@@ -88,11 +84,15 @@ func ExecutePendingInvokes[S comparable](pending *[]PendingInvoke[S], executor f
 	}
 }
 
+// DoneInvokePrefix is what every `done.invoke.<id>` begins with (§scxml-6.3.1),
+// spelled once so building the name and recognising it cannot disagree.
+const DoneInvokePrefix = "done.invoke."
+
 // CreateDoneInvokeEventName creates a done.invoke event name (§scxml-6.3.1).
 //
 // Ports Rust create_done_invoke_event_name from backends/rust/runtime/src/invoke.rs.
 func CreateDoneInvokeEventName(invokeID string) string {
-	return fmt.Sprintf("done.invoke.%s", invokeID)
+	return DoneInvokePrefix + invokeID
 }
 
 // IsValidInvokeID validates invoke ID format (§scxml-3.12.1).

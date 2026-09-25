@@ -3,11 +3,16 @@
 
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
+
+#include "core/InvokeHelper.h"
 
 namespace SCE {
 
@@ -142,6 +147,16 @@ struct HostInvokeRequest {
     std::map<std::string, std::vector<std::string>> params;
     /// Inline `<content>`, empty when the document carried none.
     std::string content;
+    /// Which start of this invoke this is. The engine assigns it, and a host
+    /// that finishes later hands it back to `completeHostInvoke`.
+    ///
+    /// The id alone cannot say it: a state that exits and is entered again
+    /// starts the same `<invoke>` a second time under the same id, and a result
+    /// the first run produces after it was cancelled would otherwise read as
+    /// the second run's (§scxml-6.4 — once the state has exited, what the
+    /// cancelled process sends is ignored). Distinct for every start of every
+    /// invocation within one engine.
+    uint64_t token = 0;
 };
 
 /**
@@ -152,6 +167,9 @@ struct HostInvokeCancel {
     std::string processorType;
     /// The invocation being cancelled — the same id its start carried.
     std::string invokeId;
+    /// The token its start carried, so a host running more than one start of
+    /// the same id stops the right one.
+    uint64_t token = 0;
 };
 
 /**
@@ -169,10 +187,10 @@ struct HostInvokeEvent {
     std::optional<HostInvokeRequest> start;
     /// §scxml-6.4: the state exited. Stop it.
     ///
-    /// Delivered only for an invocation that actually started: a state that
-    /// exits before the macrostep ends never runs its invoke, and cancelling
-    /// something that never began would have the host tearing down state it
-    /// never built.
+    /// Delivered only for an invocation that is still running: one that never
+    /// started (its state exited before the macrostep ended) has nothing to
+    /// tear down, and one that already completed has nothing left to stop —
+    /// `done.invoke` said the process is over.
     std::optional<HostInvokeCancel> cancel;
 };
 
@@ -187,10 +205,10 @@ struct HostInvokeResponse {
     /// that completed before returning.
     ///
     /// `std::nullopt` is the ordinary case: the work outlives the call, and
-    /// the host raises the completion itself when it finishes. SCE does not
-    /// synthesise a completion the host did not report — an invoked process
-    /// that never terminates never fires `done.invoke`, which is what
-    /// §scxml-6.4 says.
+    /// the host reports it through `completeHostInvoke` with the request's
+    /// token when it finishes. SCE does not synthesise a completion the host
+    /// did not report — an invoked process that never terminates never fires
+    /// `done.invoke`, which is what §scxml-6.4 says.
     std::optional<std::string> doneData;
 };
 
@@ -198,5 +216,28 @@ struct HostInvokeResponse {
  * @brief A registered invoke-lifecycle handler
  */
 using HostInvokeHandler = std::function<std::optional<HostInvokeResponse>(const HostInvokeEvent &)>;
+
+/**
+ * @brief Whether `eventName` is the completion of a host-run invocation — a
+ *        `done.invoke.<id>` whose `<id>` is one of `hostInvokeIds`
+ *
+ * Such an event is accepted only through `completeHostInvoke`, the one path
+ * that knows the invocation is still running. Raised any other way it could
+ * be a cancelled run's late reply (§scxml-6.4), so the engine refuses it.
+ */
+inline bool isHostInvokeCompletion(std::string_view eventName, const std::string_view *hostInvokeIds,
+                                   std::size_t hostInvokeIdCount) {
+    constexpr std::string_view prefix = ::SCE::Core::InvokeHelper::DONE_INVOKE_PREFIX;
+    if (eventName.substr(0, prefix.size()) != prefix) {
+        return false;
+    }
+    const std::string_view id = eventName.substr(prefix.size());
+    for (std::size_t i = 0; i < hostInvokeIdCount; ++i) {
+        if (id == hostInvokeIds[i]) {
+            return true;
+        }
+    }
+    return false;
+}
 
 }  // namespace SCE

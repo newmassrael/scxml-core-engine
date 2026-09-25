@@ -55,6 +55,7 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <optional>
@@ -317,6 +318,12 @@ public:
         // guards' tag check fails. The name↔type pairing is enforced at the
         // single generated raise<Event>() inject seam.
         std::any typedPayload;
+        // §scxml-6.4: the token of the host-run invocation this event
+        // completes, set only by completeHostInvoke() after it confirmed the
+        // invocation was still running. A host invoke's `done.invoke.<id>`
+        // that arrives without one did not come through that check, so the
+        // engine refuses it. Not script-visible: `_event` has no field for it.
+        std::optional<uint64_t> hostInvokeToken;
 
         // Default constructor for aggregate initialization
         EventWithMetadata() = default;
@@ -769,13 +776,21 @@ private:
     // delivering an event is not the same capability as running a process with
     // a lifecycle — see `core/HostProcessor.h`'s invoker half.
     std::map<std::string, ::SCE::HostInvokeHandler> hostInvokers_;
-    // §scxml-6.4: every host-run invocation started and not yet cancelled, so
-    // the emitted exit chain can be an unconditional call — the engine knows
-    // whether there is anything to cancel. Held here rather than in the
-    // generated machine because "did this one start?" is the question the
-    // cancel path has to answer, and answering it in each backend's template
-    // would be the same bookkeeping written once per language.
-    std::set<std::pair<std::string, std::string>> startedHostInvokes_;
+    // §scxml-6.4: every host-run invocation started and neither completed nor
+    // cancelled, mapped to its start's token, so the emitted exit chain can be
+    // an unconditional call and a completion can be judged against the run it
+    // names. Held here rather than in the generated machine because "is this
+    // one still running?" is the question both paths have to answer, and
+    // answering it in each backend's template would be the same bookkeeping
+    // written once per language. One entry per key: an `<invoke>` belongs to
+    // one state and a state is in the configuration at most once, so the same
+    // id is never running twice; a restart replaces the entry, and its new
+    // token is what makes the first run's reply stale.
+    std::map<std::pair<std::string, std::string>, uint64_t> startedHostInvokes_;
+    // The token the next host-run start receives.
+    uint64_t nextHostInvokeToken_ = 0;
+    // See refusedHostInvokeCompletions().
+    uint64_t refusedHostInvokeCompletions_ = 0;
     MeshSendCallback onMeshSend_;      // SCE Mesh: cross-machine <send> callback
     MeshInvokeCallback onMeshInvoke_;  // SCE Mesh §mesh-9.5: <invoke type="sce:mesh-rpc"> entry hook
     MeshCancelCallback onMeshCancel_;  // SCE Mesh §mesh-9.5: mesh-rpc exit / cancel hook
@@ -1937,6 +1952,20 @@ protected:
             return false;
         }
         const EventWithMetadata eventWithMeta = externalQueue_.pop();
+        // §scxml-6.4: a host-run invocation's `done.invoke` counts only when
+        // completeHostInvoke() confirmed the invocation was still running and
+        // stamped its token. Without the stamp it may be a cancelled run's late
+        // reply, which the processor ignores — so it is refused here, counted,
+        // and never reaches transition selection. Returns true because an
+        // event was taken.
+        if constexpr (SCE::Core::HasHostInvokeIds<StatePolicy>) {
+            if (!eventWithMeta.hostInvokeToken.has_value() &&
+                ::SCE::isHostInvokeCompletion(policy_.getEventName(eventWithMeta.event), StatePolicy::HOST_INVOKE_IDS,
+                                              std::size(StatePolicy::HOST_INVOKE_IDS))) {
+                ++refusedHostInvokeCompletions_;
+                return true;
+            }
+        }
         // §scxml-D-mainEventLoop: taking an event off the external queue is
         // where a macrostep begins, so it is where the previous one's ceiling
         // stops applying. A machine left inside an endless chain gets a full
@@ -2708,61 +2737,111 @@ public:
      * into `error.execution` — an invoke nobody ran is the same fact whether
      * the type was undeclared or the handler was never wired up.
      *
-     * A started invocation is RECORDED here so the cancel path can find it;
-     * see `startedHostInvokes_` for why that bookkeeping is the engine's.
+     * A started invocation is RECORDED here; see `startedHostInvokes_` for why
+     * that bookkeeping is the engine's. The token is assigned and recorded
+     * BEFORE the handler runs, so a handler that completes synchronously
+     * completes an invocation the engine already knows is running.
      *
-     * §scxml-6.4: a completion the host reports NOW rides back as
-     * `done.invoke.<id>`, under the id the AUTHOR wrote a transition for. One
-     * it reports later arrives the same way, by raising the event itself — the
-     * engine does not distinguish the two, and never synthesises a completion
-     * the host did not report.
+     * §scxml-6.4: a completion the host reports NOW takes the same door as one
+     * it reports later, completeHostInvoke(), so the two cannot disagree about
+     * whether the invocation is over. The engine never synthesises a
+     * completion the host did not report.
      */
     bool performHostInvoke(const ::SCE::HostInvokeRequest &request) {
         const auto it = hostInvokers_.find(request.processorType);
         if (it == hostInvokers_.end()) {
             return false;
         }
+        const uint64_t token = nextHostInvokeToken_++;
         ::SCE::HostInvokeEvent event;
         event.start = request;
+        event.start->token = token;
+        startedHostInvokes_[std::make_pair(request.processorType, request.invokeId)] = token;
         const auto response = it->second(event);
-        startedHostInvokes_.emplace(request.processorType, request.invokeId);
         if (response.has_value() && response->doneData.has_value()) {
-            // §scxml-5.10.1: the completion is an event of the invocation, so
-            // its `_event.invokeid` is the invocation's id — the one
-            // `done.invoke.<id>` names and the host was handed.
-            const std::string name = std::string("done.invoke.") + request.invokeId;
-            if (auto done = policy_.getEventFromName(name)) {
-                raiseExternal(EventWithMetadata(*done, *response->doneData, "", "", "external",
-                                                SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE, request.invokeId));
-            } else {
-                // The degradation raiseExternal(name) has: a document that
-                // wrote no transition on the completion declares no such
-                // event, and there is nothing to deliver it to.
-                SCE_LOG_DEBUG("AOT performHostInvoke: '{}' not in Event enum, ignoring", name);
-            }
+            completeHostInvoke(request.processorType, request.invokeId, token, *response->doneData);
         }
         return true;
+    }
+
+    /**
+     * @brief §scxml-6.4: a host-run invocation finished; raise its
+     *        `done.invoke.<invokeId>` with `doneData` as `_event.data`
+     *
+     * `token` is the one the invocation's start request carried. The
+     * completion is accepted only while that start is still running, and
+     * accepting it ends the invocation, so it is accepted at most once and the
+     * state's exit no longer cancels it. Returns `false` — raising nothing —
+     * for a completion of an invocation that was cancelled, already completed,
+     * or restarted since (a stale token): §scxml-6.4 has the processor ignore
+     * what a cancelled process sends, and a restarted `<invoke>` is a
+     * different process under the same id.
+     *
+     * This is the only way a host-run invocation's `done.invoke` reaches the
+     * document. One raised through the ordinary external-event API skips the
+     * check above, so the engine refuses it when it is dequeued.
+     */
+    bool completeHostInvoke(const std::string &processorType, const std::string &invokeId, uint64_t token,
+                            const std::string &doneData) {
+        const auto key = std::make_pair(processorType, invokeId);
+        const auto running = startedHostInvokes_.find(key);
+        if (running == startedHostInvokes_.end() || running->second != token) {
+            return false;
+        }
+        startedHostInvokes_.erase(running);
+        // §scxml-5.10.1: the completion is an event of the invocation, so its
+        // `_event.invokeid` is the invocation's id — the one `done.invoke.<id>`
+        // names and the host was handed.
+        const std::string name = ::SCE::Core::InvokeHelper::createDoneInvokeEventName(invokeId);
+        if (auto done = policy_.getEventFromName(name)) {
+            EventWithMetadata completion(*done, doneData, "", "", "external",
+                                         SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE, invokeId);
+            completion.hostInvokeToken = token;
+            raiseExternal(completion);
+        } else {
+            // The degradation raiseExternal(name) has: a document that wrote
+            // no transition on the completion declares no such event, and
+            // there is nothing to deliver it to.
+            SCE_LOG_DEBUG("AOT completeHostInvoke: '{}' not in Event enum, ignoring", name);
+        }
+        return true;
+    }
+
+    /**
+     * @brief How many host-run invocations' `done.invoke` events the engine
+     *        refused because they did not arrive through completeHostInvoke()
+     *
+     * A refusal is correct — such an event may be a cancelled run's late
+     * reply — and saying it happened is not optional: a host that raised its
+     * completion the old way and saw the document never move would otherwise
+     * have nothing to find.
+     */
+    uint64_t refusedHostInvokeCompletions() const {
+        return refusedHostInvokeCompletions_;
     }
 
     /**
      * @brief §scxml-6.4: stop a host-run invocation whose state has exited
      *
      * Unconditional from the emitted exit chain; the engine knows whether the
-     * invocation ever started and stays silent when it did not.
+     * invocation is still running and stays silent when it never started or
+     * already completed.
      *
      * @return whether a cancel was delivered
      */
     bool cancelHostInvoke(const std::string &processorType, const std::string &invokeId) {
-        const auto key = std::make_pair(processorType, invokeId);
-        if (startedHostInvokes_.erase(key) == 0) {
+        const auto running = startedHostInvokes_.find(std::make_pair(processorType, invokeId));
+        if (running == startedHostInvokes_.end()) {
             return false;
         }
+        const uint64_t token = running->second;
+        startedHostInvokes_.erase(running);
         const auto it = hostInvokers_.find(processorType);
         if (it == hostInvokers_.end()) {
             return false;
         }
         ::SCE::HostInvokeEvent event;
-        event.cancel = ::SCE::HostInvokeCancel{processorType, invokeId};
+        event.cancel = ::SCE::HostInvokeCancel{processorType, invokeId, token};
         (void)it->second(event);
         return true;
     }

@@ -528,6 +528,9 @@
                     src: host_invoke_src,
                     params: host_invoke_params,
                     content: host_invoke_content,
+                    // §scxml-6.4: which start this is belongs to the engine,
+                    // which assigns it when the invocation starts.
+                    token: 0,
                 });
                 if !started {
                     // §scxml-6.4.1: declared but no invoker registered. The

@@ -54,6 +54,7 @@ from .host_processor import (
     HostSendHandler,
     HostSendRequest,
     HostSendResponse,
+    is_host_invoke_completion,
 )
 from .http import HttpSendRequest, HttpSendResponse
 from . import io_processors
@@ -294,10 +295,18 @@ class Engine(Generic[S, E]):
         # delivering an event is not the same capability as running a
         # process with a lifecycle; see `host_processor.py`'s invoker half.
         self._host_invokers: Dict[str, HostInvokeHandler] = {}
-        # §scxml-6.4 — every host-run invocation started and not yet
-        # cancelled, so the emitted exit chain can be an unconditional call:
-        # the engine knows whether there is anything to cancel.
-        self._started_host_invokes: Set[Tuple[str, str]] = set()
+        # §scxml-6.4 — every host-run invocation started and neither
+        # completed nor cancelled, mapped to its start's token, so the emitted
+        # exit chain can be an unconditional call and a completion can be
+        # judged against the run it names. One entry per key: an `<invoke>`
+        # belongs to one state and a state is in the configuration at most
+        # once, so the same id is never running twice; a restart replaces the
+        # entry, and its new token is what makes the first run's reply stale.
+        self._started_host_invokes: Dict[Tuple[str, str], int] = {}
+        # The token the next host-run start receives.
+        self._next_host_invoke_token: int = 0
+        # See `refused_host_invoke_completions`.
+        self._refused_host_invoke_completions: int = 0
         # §scxml-5.5 + 6.3.1 — donedata stashed when a top-level
         # `<final>` is entered. The invoking parent's `ScxmlInvoke`
         # reads this via `getattr(child, "done_data", None)` so it can
@@ -964,48 +973,105 @@ class Engine(Generic[S, E]):
         turns into `error.execution` — an invoke nobody ran is the same fact
         whether the type was undeclared or the handler was never wired up.
 
-        A started invocation is RECORDED here so the cancel path can find
-        it: "did this one start?" is the question the cancel path has to
-        answer, and answering it in each backend's template would be the
-        same bookkeeping written once per language.
+        A started invocation is RECORDED here: "is this one still running?"
+        is the question both the cancel path and a completion have to answer,
+        and answering it in each backend's template would be the same
+        bookkeeping written once per language. The token is assigned and
+        recorded BEFORE the handler runs, so a handler that completes
+        synchronously completes an invocation the engine already knows is
+        running.
 
-        W3C SCXML 6.4: a completion the host reports NOW rides back as
-        ``done.invoke.<id>``, under the id the AUTHOR wrote a transition
-        for. One it reports later arrives the same way, by raising the event
-        itself — the engine does not distinguish the two, and never
+        W3C SCXML 6.4: a completion the host reports NOW takes the same door
+        as one it reports later, `complete_host_invoke`, so the two cannot
+        disagree about whether the invocation is over. The engine never
         synthesises a completion the host did not report."""
         handler = self._host_invokers.get(request.processor_type)
         if handler is None:
             return False
+        token = self._next_host_invoke_token
+        self._next_host_invoke_token += 1
+        request.token = token
+        self._started_host_invokes[(request.processor_type, request.invoke_id)] = token
         response = handler(HostInvokeEvent(start=request))
-        self._started_host_invokes.add((request.processor_type, request.invoke_id))
         if response is not None and response.done_data is not None:
-            # §scxml-5.10.1: the completion is an event of the
-            # invocation, so `_event.invokeid` is the invocation's id — the
-            # one `done.invoke.<id>` names and the host was handed.
-            self.send_external_by_name(
-                f"done.invoke.{request.invoke_id}",
-                data=response.done_data,
-                invoke_id=request.invoke_id,
+            self.complete_host_invoke(
+                request.processor_type, request.invoke_id, token, response.done_data
             )
+        return True
+
+    def complete_host_invoke(
+        self, processor_type: str, invoke_id: str, token: int, done_data: str
+    ) -> bool:
+        """W3C SCXML 6.4 — a host-run invocation finished; raise its
+        ``done.invoke.<invoke_id>`` with `done_data` as ``_event.data``.
+
+        `token` is the one the invocation's start request carried. The
+        completion is accepted only while that start is still running, and
+        accepting it ends the invocation, so it is accepted at most once and
+        the state's exit no longer cancels it. Returns `False` — raising
+        nothing — for a completion of an invocation that was cancelled,
+        already completed, or restarted since (a stale token): W3C SCXML 6.4
+        has the processor ignore what a cancelled process sends, and a
+        restarted ``<invoke>`` is a different process under the same id.
+
+        This is the only way a host-run invocation's ``done.invoke`` reaches
+        the document. One raised through the ordinary external-event API
+        skips the check above, so the engine refuses it."""
+        key = (processor_type, invoke_id)
+        if self._started_host_invokes.get(key) != token:
+            return False
+        del self._started_host_invokes[key]
+        # §scxml-5.10.1: the completion is an event of the invocation, so
+        # `_event.invokeid` is the invocation's id — the one
+        # `done.invoke.<id>` names and the host was handed.
+        self.send_external_by_name(
+            create_done_invoke_event_name(invoke_id),
+            data=done_data,
+            invoke_id=invoke_id,
+            host_invoke_token=token,
+        )
+        return True
+
+    def refused_host_invoke_completions(self) -> int:
+        """How many host-run invocations' ``done.invoke`` events the engine
+        refused because they did not arrive through `complete_host_invoke`.
+
+        A refusal is correct — such an event may be a cancelled run's late
+        reply — and saying it happened is not optional: a host that raised
+        its completion the old way and saw the document never move would
+        otherwise have nothing to find."""
+        return self._refused_host_invoke_completions
+
+    def _refuses_host_invoke_completion(
+        self, event_name: str, metadata: EventMetadata
+    ) -> bool:
+        """W3C SCXML 6.4 — whether an event named `event_name` is a host-run
+        invocation's ``done.invoke`` that did not come through
+        `complete_host_invoke`. Counts the refusal when it is."""
+        if metadata.host_invoke_token is not None:
+            return False
+        if not is_host_invoke_completion(event_name, self._policy.host_invoke_ids()):
+            return False
+        self._refused_host_invoke_completions += 1
         return True
 
     def cancel_host_invoke(self, processor_type: str, invoke_id: str) -> bool:
         """W3C SCXML 6.4 — stop a host-run invocation whose state has exited.
 
         Unconditional from the emitted exit chain; the engine knows whether
-        the invocation ever started and stays silent when it did not."""
+        the invocation is still running and stays silent when it never
+        started or already completed."""
         key = (processor_type, invoke_id)
-        if key not in self._started_host_invokes:
+        token = self._started_host_invokes.pop(key, None)
+        if token is None:
             return False
-        self._started_host_invokes.discard(key)
         handler = self._host_invokers.get(processor_type)
         if handler is None:
             return False
         handler(
             HostInvokeEvent(
                 cancel=HostInvokeCancel(
-                    processor_type=processor_type, invoke_id=invoke_id
+                    processor_type=processor_type, invoke_id=invoke_id, token=token
                 )
             )
         )
@@ -1021,6 +1087,7 @@ class Engine(Generic[S, E]):
         invoke_id: str = "",
         origin: str = "",
         origin_type: str = "",
+        host_invoke_token: Optional[int] = None,
     ) -> None:
         """W3C SCXML 5.10 + 6.4 — enqueue an external event addressed by
         its wire name (`done.invoke.<id>`, `error.execution`, or any
@@ -1028,8 +1095,24 @@ class Engine(Generic[S, E]):
         drop silently; matches W3C 5.10.1 ("if no transition is enabled
         the event is lost"). Used by the runtime to lift child-raised
         events onto the parent's external queue with the originating
-        invoke's metadata intact."""
+        invoke's metadata intact.
+
+        `host_invoke_token` is `complete_host_invoke`'s to set. A host-run
+        invocation's ``done.invoke`` without it is refused here, by its wire
+        name, before the dot-token fallback below could turn it into the
+        generic ``done.invoke`` the dequeue check no longer recognises."""
         if not self._is_running:
+            return
+        metadata = EventMetadata(
+            send_id=sendid,
+            event_type="external",
+            data=data,
+            invoke_id=invoke_id,
+            origin=origin,
+            origin_type=origin_type,
+            host_invoke_token=host_invoke_token,
+        )
+        if self._refuses_host_invoke_completion(event_name, metadata):
             return
         event = self._policy.get_event_from_name(event_name)
         if event is None:
@@ -1044,14 +1127,6 @@ class Engine(Generic[S, E]):
                 event = self._policy.get_event_from_name(".".join(parts))
             if event is None:
                 return
-        metadata = EventMetadata(
-            send_id=sendid,
-            event_type="external",
-            data=data,
-            invoke_id=invoke_id,
-            origin=origin,
-            origin_type=origin_type,
-        )
         self._external_queue.append(EventWithMetadata(event=event, metadata=metadata))
 
     def send_external(self, event: E, sendid: str = "", data: Any = "") -> None:
@@ -1418,6 +1493,17 @@ class Engine(Generic[S, E]):
         # §scxml-D-mainEventLoop — one external event per iteration of the
         # outer loop, taken after the macrostep has completed.
         evt = self._external_queue.popleft()
+        # §scxml-6.4 — a host-run invocation's `done.invoke` counts only when
+        # `complete_host_invoke` confirmed the invocation was still running
+        # and stamped its token. Without the stamp it may be a cancelled run's
+        # late reply, which the processor ignores — so it is refused here,
+        # counted, and never reaches transition selection. Events enqueued by
+        # wire name were judged at `send_external_by_name`; this catches the
+        # typed paths.
+        if self._refuses_host_invoke_completion(
+            self._policy.get_event_name(evt.event), evt.metadata
+        ):
+            return
         # Taking an event off the external queue is where a macrostep begins,
         # so it is where the previous one's ceiling stops applying. A machine
         # left inside an endless chain gets a full budget for each event it

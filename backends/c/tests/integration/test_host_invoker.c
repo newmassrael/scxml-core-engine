@@ -26,6 +26,7 @@
 //   * an invoker registered for another type does not run this one.
 
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -212,17 +213,192 @@ static int what_the_request_says_is_evaluated_when_the_invocation_starts(void) {
     return bad;
 }
 
-// The invocation ends with the state that started it.
-static int leaving_the_state_cancels_the_invocation(void) {
+// An invoker whose work outlives the call: it answers nothing on a start, so
+// each invocation stays running until the test completes or cancels it. It
+// records the lines `recording_invoker` does, and every start's token for a
+// later `_complete_host_invoke`.
+typedef struct {
+    recorder_t rec;
+    char ids[8][32];
+    uint64_t tokens[8];
+    int starts;
+} running_t;
+
+static void running_invoker(void *user_data, const sce_host_invoke_event_t *event, sce_host_invoke_response_t *out) {
+    (void)out;
+    running_t *run = (running_t *)user_data;
+    char line[128];
+    if (event->phase == SCE_HOST_INVOKE_START) {
+        (void)snprintf(line, sizeof(line), "START id=%s", event->invoke_id);
+        if (run->starts < (int)(sizeof(run->tokens) / sizeof(run->tokens[0]))) {
+            (void)snprintf(run->ids[run->starts], sizeof(run->ids[0]), "%s", event->invoke_id);
+            run->tokens[run->starts] = event->token;
+        }
+        run->starts++;
+    } else {
+        (void)snprintf(line, sizeof(line), "CANCEL id=%s", event->invoke_id);
+    }
+    record(&run->rec, line);
+}
+
+// The token of the latest start of `invoke_id`.
+static uint64_t token_of(const running_t *run, const char *invoke_id) {
+    for (int i = run->starts - 1; i >= 0; i--) {
+        if (i < (int)(sizeof(run->tokens) / sizeof(run->tokens[0])) && strcmp(run->ids[i], invoke_id) == 0) {
+            return run->tokens[i];
+        }
+    }
+    (void)fprintf(stderr, "host_invoker: FAIL - `%s` never started\n", invoke_id);
+    return UINT64_MAX;
+}
+
+static void boot_running(statechart_host_invoker_t *sm, running_t *run) {
+    sce_host_invoker_registry_t wiring;
+    memset(run, 0, sizeof(*run));
+    memset(&wiring, 0, sizeof(wiring));
+    (void)sce_host_invoker_register(&wiring, DECLARED_TYPE, running_invoker, run);
+    statechart_host_invoker_init_with_host_invokers(sm, &wiring);
+}
+
+// This backend's delivery pair: enqueue, then run a macrostep.
+static void deliver(statechart_host_invoker_t *sm, statechart_host_invoker_event_t event) {
+    statechart_host_invoker_event_with_meta_t meta;
+    memset(&meta, 0, sizeof(meta));
+    meta.event = event;
+    statechart_host_invoker_raise_external(sm, &meta);
+    statechart_host_invoker_step(sm);
+}
+
+static int expect(const char *scenario, const char *what, bool ok) {
+    if (ok) {
+        return 0;
+    }
+    (void)fprintf(stderr, "host_invoker: FAIL [%s] - %s\n", scenario, what);
+    return 1;
+}
+
+// W3C SCXML 6.4: `done.invoke` says the invoked process is over, so leaving the
+// state afterwards has nothing to stop. Both invocations here complete
+// synchronously; neither is cancelled.
+static int a_completed_invocation_is_not_cancelled(void) {
     recorder_t rec;
     memset(&rec, 0, sizeof(rec));
     statechart_host_invoker_t sm;
     boot(&sm, &rec, DECLARED_TYPE);
-    statechart_host_invoker_event_with_meta_t leave;
-    memset(&leave, 0, sizeof(leave));
-    leave.event = STATECHART_HOST_INVOKER_EVENT_LEAVE;
-    statechart_host_invoker_raise_external(&sm, &leave);
+    deliver(&sm, STATECHART_HOST_INVOKER_EVENT_LEAVE);
+
+    int bad = 0;
+    bad |= check("completed", "started", counter(&sm, "started"), 1);
+    bad |=
+        check("completed", "cancels", count_lines(&rec, "CANCEL id=probe") + count_lines(&rec, "CANCEL id=probe2"), 0);
+    statechart_host_invoker_destroy(&sm);
+    return bad;
+}
+
+// A host that finishes later reports it with the start's token, and the
+// completion is taken once: a second report of the same run finds nothing, and
+// the state's exit then cancels only the invocation still running.
+static int a_late_completion_is_accepted_exactly_once(void) {
+    running_t run;
+    statechart_host_invoker_t sm;
+    boot_running(&sm, &run);
+
+    int bad = 0;
+    bad |= check("late", "started before any completion", counter(&sm, "started"), 0);
+    const uint64_t token = token_of(&run, "probe");
+    bad |= expect("late", "a running invocation's completion was refused",
+                  statechart_host_invoker_complete_host_invoke(&sm, DECLARED_TYPE, "probe", token, "ok"));
     statechart_host_invoker_step(&sm);
+    // The fixture counts it only when `_event.invokeid` names the invocation
+    // (W3C SCXML 5.10.1), so this is that assertion too.
+    bad |= check("late", "started", counter(&sm, "started"), 1);
+    bad |= expect("late", "the same run completed twice",
+                  !statechart_host_invoker_complete_host_invoke(&sm, DECLARED_TYPE, "probe", token, "again"));
+    statechart_host_invoker_step(&sm);
+    bad |= check("late", "started after a second completion", counter(&sm, "started"), 1);
+
+    deliver(&sm, STATECHART_HOST_INVOKER_EVENT_LEAVE);
+    bad |= check("late", "cancels of probe", count_lines(&run.rec, "CANCEL id=probe"), 0);
+    bad |= check("late", "cancels of probe2", count_lines(&run.rec, "CANCEL id=probe2"), 1);
+    statechart_host_invoker_destroy(&sm);
+    return bad;
+}
+
+// W3C SCXML 6.4: once the state has exited, what the cancelled process sends is
+// ignored. The host's reply arrives after the cancel and is refused.
+static int a_completion_after_the_cancel_is_refused(void) {
+    running_t run;
+    statechart_host_invoker_t sm;
+    boot_running(&sm, &run);
+    const uint64_t token = token_of(&run, "probe");
+    deliver(&sm, STATECHART_HOST_INVOKER_EVENT_LEAVE);
+
+    int bad = 0;
+    bad |= expect("after-cancel", "a cancelled run's completion was accepted",
+                  !statechart_host_invoker_complete_host_invoke(&sm, DECLARED_TYPE, "probe", token, "late"));
+    statechart_host_invoker_step(&sm);
+    bad |= check("after-cancel", "started", counter(&sm, "started"), 0);
+    statechart_host_invoker_destroy(&sm);
+    return bad;
+}
+
+// Re-entering the state starts the same `<invoke>` again under the same id.
+// The first run's late reply carries the first start's token and is refused;
+// the second run's is accepted.
+static int a_restarted_invoke_refuses_the_first_runs_reply(void) {
+    running_t run;
+    statechart_host_invoker_t sm;
+    boot_running(&sm, &run);
+    const uint64_t first = token_of(&run, "probe");
+    deliver(&sm, STATECHART_HOST_INVOKER_EVENT_LEAVE);
+    deliver(&sm, STATECHART_HOST_INVOKER_EVENT_AGAIN);
+    const uint64_t second = token_of(&run, "probe");
+
+    int bad = 0;
+    bad |= expect("restart", "a restart reused the first start's token", first != second);
+    bad |= expect("restart", "the first run's reply was taken for the second run's",
+                  !statechart_host_invoker_complete_host_invoke(&sm, DECLARED_TYPE, "probe", first, "stale"));
+    statechart_host_invoker_step(&sm);
+    bad |= check("restart", "started after a stale reply", counter(&sm, "started"), 0);
+    bad |= expect("restart", "the second run's completion was refused",
+                  statechart_host_invoker_complete_host_invoke(&sm, DECLARED_TYPE, "probe", second, "ok"));
+    statechart_host_invoker_step(&sm);
+    bad |= check("restart", "started", counter(&sm, "started"), 1);
+    statechart_host_invoker_destroy(&sm);
+    return bad;
+}
+
+// A host-run invocation's `done.invoke` raised through `_raise_external`
+// skipped the running check, so the machine refuses it and counts the refusal.
+// The metadata names the invocation, so without the refusal the fixture's
+// guarded transition would take it.
+static int a_done_invoke_raised_the_old_way_is_refused_and_counted(void) {
+    running_t run;
+    statechart_host_invoker_t sm;
+    boot_running(&sm, &run);
+    statechart_host_invoker_event_with_meta_t done;
+    memset(&done, 0, sizeof(done));
+    done.event = STATECHART_HOST_INVOKER_EVENT_DONE_INVOKE_PROBE;
+    (void)snprintf(done.invoke_id, sizeof(done.invoke_id), "%s", "probe");
+    statechart_host_invoker_raise_external(&sm, &done);
+    statechart_host_invoker_step(&sm);
+
+    int bad = 0;
+    bad |= check("old-way", "started", counter(&sm, "started"), 0);
+    bad |= check("old-way", "refused completions", statechart_host_invoker_refused_host_invoke_completions(&sm), 1);
+    statechart_host_invoker_destroy(&sm);
+    return bad;
+}
+
+// The invocation ends with the state that started it. Still running when the
+// state exits — a completed invocation has nothing left to cancel (the case
+// above).
+static int leaving_the_state_cancels_the_invocation(void) {
+    running_t run;
+    statechart_host_invoker_t sm;
+    boot_running(&sm, &run);
+    deliver(&sm, STATECHART_HOST_INVOKER_EVENT_LEAVE);
+    recorder_t rec = run.rec;
 
     int bad = 0;
     bad |= check("leave", "ended", counter(&sm, "ended"), 1);
@@ -256,11 +432,10 @@ static int cancel_is_not_delivered_for_an_invocation_that_never_started(void) {
     bad |= check("never-started", "calls to the late invoker", late.calls, 0);
     statechart_host_invoker_destroy(&sm);
 
-    // Now one that started: cancelled once, and the second cancel has nothing
-    // left to do.
-    recorder_t rec;
-    memset(&rec, 0, sizeof(rec));
-    boot(&sm, &rec, DECLARED_TYPE);
+    // Now one that is still running: cancelled once, and the second cancel has
+    // nothing left to do.
+    running_t run;
+    boot_running(&sm, &run);
     if (!statechart_host_invoker_cancel_host_invoke(&sm, DECLARED_TYPE, "probe")) {
         (void)fprintf(stderr, "host_invoker: FAIL [never-started] - a started invocation reported nothing to cancel\n");
         bad = 1;
@@ -269,7 +444,7 @@ static int cancel_is_not_delivered_for_an_invocation_that_never_started(void) {
         (void)fprintf(stderr, "host_invoker: FAIL [never-started] - the same invocation was cancelled twice\n");
         bad = 1;
     }
-    bad |= check("never-started", "cancels of probe", count_lines(&rec, "CANCEL id=probe"), 1);
+    bad |= check("never-started", "cancels of probe", count_lines(&run.rec, "CANCEL id=probe"), 1);
     statechart_host_invoker_destroy(&sm);
     return bad;
 }
@@ -311,6 +486,11 @@ int main(void) {
     bad |= what_the_request_says_is_evaluated_when_the_invocation_starts();
     bad |= leaving_the_state_cancels_the_invocation();
     bad |= cancel_is_not_delivered_for_an_invocation_that_never_started();
+    bad |= a_completed_invocation_is_not_cancelled();
+    bad |= a_late_completion_is_accepted_exactly_once();
+    bad |= a_completion_after_the_cancel_is_refused();
+    bad |= a_restarted_invoke_refuses_the_first_runs_reply();
+    bad |= a_done_invoke_raised_the_old_way_is_refused_and_counted();
     bad |= a_declared_type_with_no_invoker_still_raises_error_execution();
     bad |= an_invoker_registered_for_another_type_does_not_run_this_one();
 

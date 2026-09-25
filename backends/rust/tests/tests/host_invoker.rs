@@ -78,6 +78,52 @@ fn recording_invoker(
     }
 }
 
+/// Every start the running invoker saw: `(invoke_id, token)`, in order.
+type Starts = Arc<Mutex<Vec<(String, u64)>>>;
+
+/// An invoker whose work outlives the call: it answers nothing on `Start`,
+/// so each invocation stays running until the test completes or cancels
+/// it. Records the log lines [`recording_invoker`] does, and the token of
+/// every start for a later [`Engine::complete_host_invoke`].
+fn running_invoker(
+    log: &Arc<Mutex<Vec<String>>>,
+    starts: &Starts,
+) -> impl FnMut(HostInvokeEvent) -> Option<HostInvokeResponse> + Send + 'static {
+    let log = Arc::clone(log);
+    let starts = Arc::clone(starts);
+    move |ev: HostInvokeEvent| {
+        match ev {
+            HostInvokeEvent::Start(req) => {
+                log.lock()
+                    .expect("invoker log")
+                    .push(format!("START id={}", req.invoke_id));
+                starts
+                    .lock()
+                    .expect("invoker starts")
+                    .push((req.invoke_id, req.token));
+            }
+            HostInvokeEvent::Cancel(c) => {
+                log.lock()
+                    .expect("invoker log")
+                    .push(format!("CANCEL id={}", c.invoke_id));
+            }
+        }
+        None
+    }
+}
+
+/// The token of the latest start of `invoke_id`.
+fn token_of(starts: &Starts, invoke_id: &str) -> u64 {
+    starts
+        .lock()
+        .expect("invoker starts")
+        .iter()
+        .rev()
+        .find(|(id, _)| id == invoke_id)
+        .map(|(_, token)| *token)
+        .unwrap_or_else(|| panic!("`{invoke_id}` never started"))
+}
+
 #[test]
 fn a_registered_invoker_is_started_with_what_the_document_wrote() {
     let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
@@ -177,8 +223,11 @@ fn what_the_request_says_is_evaluated_when_the_invocation_starts() {
 #[test]
 fn leaving_the_state_cancels_the_invocation() {
     let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let starts: Starts = Arc::default();
     let (mut engine, script_engine) = started();
-    engine.register_invoker(DECLARED_TYPE, recording_invoker(&log));
+    // Still running when the state exits — a completed invocation has
+    // nothing left to cancel (see the case after this one).
+    engine.register_invoker(DECLARED_TYPE, running_invoker(&log, &starts));
     engine.initialize();
     engine.step();
     engine.process_event(Event::Leave);
@@ -217,8 +266,9 @@ fn leaving_the_state_cancels_the_invocation() {
 #[test]
 fn cancel_is_not_delivered_for_an_invocation_that_never_started() {
     let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let starts: Starts = Arc::default();
     let (mut engine, _script_engine) = started();
-    engine.register_invoker(DECLARED_TYPE, recording_invoker(&log));
+    engine.register_invoker(DECLARED_TYPE, running_invoker(&log, &starts));
 
     // Nothing has started, so there is nothing to cancel.
     assert!(
@@ -246,6 +296,146 @@ fn cancel_is_not_delivered_for_an_invocation_that_never_started() {
         1,
         "cancel reached the invoker more than once: {seen:?}",
     );
+}
+
+/// §scxml-6.4: `done.invoke` says the invoked process is over, so leaving
+/// the state afterwards has nothing to stop. Both invocations here complete
+/// synchronously; neither is cancelled.
+#[test]
+fn a_completed_invocation_is_not_cancelled() {
+    let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let (mut engine, script_engine) = started();
+    engine.register_invoker(DECLARED_TYPE, recording_invoker(&log));
+    engine.initialize();
+    engine.step();
+    engine.process_event(Event::Leave);
+
+    assert_eq!(counter(&engine, &script_engine, "started"), 1);
+    assert_eq!(counter(&engine, &script_engine, "ended"), 1);
+    let seen = log.lock().expect("invoker log");
+    assert!(
+        !seen.iter().any(|e| e.starts_with("CANCEL")),
+        "a completed invocation was cancelled: {seen:?}",
+    );
+}
+
+/// A host that finishes later reports it with the start's token, and the
+/// completion is taken once: a second report of the same run finds nothing,
+/// and the state's exit then cancels only the invocation still running.
+#[test]
+fn a_late_completion_is_accepted_exactly_once() {
+    let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let starts: Starts = Arc::default();
+    let (mut engine, script_engine) = started();
+    engine.register_invoker(DECLARED_TYPE, running_invoker(&log, &starts));
+    engine.initialize();
+    engine.step();
+    assert_eq!(counter(&engine, &script_engine, "started"), 0);
+
+    let token = token_of(&starts, "probe");
+    assert!(
+        engine.complete_host_invoke(DECLARED_TYPE, "probe", token, "ok"),
+        "a running invocation's completion was refused",
+    );
+    engine.step();
+    // The fixture counts it only when `_event.invokeid` names the
+    // invocation (§scxml-5.10.1), so this is that assertion too.
+    assert_eq!(counter(&engine, &script_engine, "started"), 1);
+
+    assert!(
+        !engine.complete_host_invoke(DECLARED_TYPE, "probe", token, "again"),
+        "the same run completed twice",
+    );
+    engine.step();
+    assert_eq!(counter(&engine, &script_engine, "started"), 1);
+
+    engine.process_event(Event::Leave);
+    let seen = log.lock().expect("invoker log");
+    assert_eq!(
+        seen.iter()
+            .filter(|e| e.starts_with("CANCEL"))
+            .cloned()
+            .collect::<Vec<_>>(),
+        ["CANCEL id=probe2"],
+        "only the invocation still running is cancelled",
+    );
+}
+
+/// §scxml-6.4: once the state has exited, what the cancelled process sends
+/// is ignored. The host's reply arrives after the cancel and is refused.
+#[test]
+fn a_completion_after_the_cancel_is_refused() {
+    let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let starts: Starts = Arc::default();
+    let (mut engine, script_engine) = started();
+    engine.register_invoker(DECLARED_TYPE, running_invoker(&log, &starts));
+    engine.initialize();
+    engine.step();
+    let token = token_of(&starts, "probe");
+    engine.process_event(Event::Leave);
+
+    assert!(
+        !engine.complete_host_invoke(DECLARED_TYPE, "probe", token, "late"),
+        "a cancelled run's completion was accepted",
+    );
+    engine.step();
+    assert_eq!(counter(&engine, &script_engine, "started"), 0);
+}
+
+/// Re-entering the state starts the same `<invoke>` again under the same
+/// id. The first run's late reply carries the first start's token and is
+/// refused; the second run's is accepted.
+#[test]
+fn a_restarted_invoke_refuses_the_first_runs_reply() {
+    let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let starts: Starts = Arc::default();
+    let (mut engine, script_engine) = started();
+    engine.register_invoker(DECLARED_TYPE, running_invoker(&log, &starts));
+    engine.initialize();
+    engine.step();
+    let first = token_of(&starts, "probe");
+    engine.process_event(Event::Leave);
+    engine.process_event(Event::Again);
+    let second = token_of(&starts, "probe");
+    assert_ne!(first, second, "a restart reused the first start's token");
+
+    assert!(
+        !engine.complete_host_invoke(DECLARED_TYPE, "probe", first, "stale"),
+        "the first run's reply was taken for the second run's",
+    );
+    engine.step();
+    assert_eq!(counter(&engine, &script_engine, "started"), 0);
+    assert!(engine.complete_host_invoke(DECLARED_TYPE, "probe", second, "ok"));
+    engine.step();
+    assert_eq!(counter(&engine, &script_engine, "started"), 1);
+}
+
+/// A host-run invocation's `done.invoke` raised through the ordinary
+/// external-event API skipped the running check, so the engine refuses it
+/// and counts the refusal. The metadata names the invocation, so without
+/// the refusal the fixture's guarded transition would take it.
+#[test]
+fn a_done_invoke_raised_the_old_way_is_refused_and_counted() {
+    let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let starts: Starts = Arc::default();
+    let (mut engine, script_engine) = started();
+    engine.register_invoker(DECLARED_TYPE, running_invoker(&log, &starts));
+    engine.initialize();
+    engine.step();
+
+    let metadata = sce_rust_runtime::event::EventMetadata {
+        invoke_id: "probe".into(),
+        ..Default::default()
+    };
+    engine.raise_external_by_name_with_meta("done.invoke.probe", &metadata);
+    engine.step();
+
+    assert_eq!(
+        counter(&engine, &script_engine, "started"),
+        0,
+        "a completion that skipped the running check reached the document",
+    );
+    assert_eq!(engine.refused_host_invoke_completions(), 1);
 }
 
 /// The other half. The build declared the type, so codegen emitted a start

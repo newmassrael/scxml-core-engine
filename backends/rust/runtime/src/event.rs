@@ -99,6 +99,13 @@ pub struct EventMetadata {
     /// `_event.invokeid` — invoke ID if event came from a child invoke (W3C 6.4.1).
     #[cfg(not(feature = "no_std"))]
     pub invoke_id: SceString,
+    /// The token of the host-run invocation this event completes, set only by
+    /// `Engine::complete_host_invoke` after it confirmed the invocation was
+    /// still running. A host invoke's `done.invoke.<id>` that arrives without
+    /// one did not come through that check, so the engine refuses it
+    /// (§scxml-6.4). Not script-visible: `_event` has no field for it.
+    #[cfg(not(feature = "no_std"))]
+    pub host_invoke_token: Option<u64>,
 }
 
 impl EventMetadata {

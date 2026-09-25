@@ -113,11 +113,15 @@ pub fn execute_pending_invokes<S: Copy + PartialEq + Debug, F>(
     }
 }
 
+/// §scxml-6.3.1: what every `done.invoke.<id>` begins with, spelled once so
+/// building the name and recognising it cannot disagree.
+pub const DONE_INVOKE_PREFIX: &str = "done.invoke.";
+
 /// §scxml-6.3.1: Create done.invoke event name.
 ///
 /// 1:1 port of C++ `InvokeHelper::createDoneInvokeEventName`.
 pub fn create_done_invoke_event_name(invoke_id: &str) -> String {
-    format!("done.invoke.{}", invoke_id)
+    format!("{DONE_INVOKE_PREFIX}{invoke_id}")
 }
 
 /// §scxml-3.12.1: Validate invoke ID format.

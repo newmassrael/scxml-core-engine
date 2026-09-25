@@ -448,6 +448,16 @@ class {{ machine_name }}StateMachine(
     override fun eventNameOf(event: {{ machine_name }}Event): String? = null
 {% endif %}
 {% endif %}
+{% if model.host_invoker_types %}
+
+    // W3C SCXML 6.4: these invokes are run by the host, so their `done.invoke`
+    // is accepted only through `completeHostInvoke`.
+    override val hostInvokeIds: Set<String> = setOf(
+{% for inv in model.invokes | host_invoker %}
+        "{{ inv.invoke_id | escape_kotlin }}",
+{% endfor %}
+    )
+{% endif %}
 
 {% include 'scriptengine_helpers.kt.jinja2' %}
 

@@ -28,6 +28,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 
 #include "sce/types.h"
@@ -313,6 +314,11 @@ static inline const sce_host_processor_entry_t *sce_host_registry_find(const sce
 #define SCE_MAX_HOST_INVOKERS 4
 #endif
 
+/** §scxml-6.3.1: what every `done.invoke.<id>` begins with, spelled once so
+    the completion a host reports and the name the machine declares cannot
+    disagree. */
+#define SCE_DONE_INVOKE_PREFIX "done.invoke."
+
 /** How many host-run invocations may be in flight at once. Each generated
     machine asserts it covers the most its own configurations can hold. */
 #ifndef SCE_MAX_HOST_INVOCATIONS
@@ -364,6 +370,17 @@ typedef struct sce_host_invoke_event_s {
         and two structs would be two spellings of one fact. */
     const sce_host_send_param_t *params;
     int param_count;
+    /** Which start of this invoke this is, on both a start and a cancel.
+        The engine assigns it, and a host that finishes later hands it back
+        to the machine's `_complete_host_invoke`.
+
+        The id alone cannot say it: a state that exits and is entered again
+        starts the same `<invoke>` a second time under the same id, and a
+        result the first run produces after it was cancelled would otherwise
+        read as the second run's (§scxml-6.4 — once the state has exited,
+        what the cancelled process sends is ignored). Distinct for every
+        start of every invocation within one machine. */
+    uint64_t token;
 } sce_host_invoke_event_t;
 
 /**
@@ -376,10 +393,11 @@ typedef struct sce_host_invoke_response_s {
     /** Whether `done_data` below carries a completion.
 
         false is the ordinary case: the work outlives the call, and the
-        host raises `done.invoke.<id>` itself when it finishes. SCE does
-        not synthesise a completion the host did not report — an invoked
-        process that never terminates never fires `done.invoke`, which is
-        what §scxml-6.4 says. */
+        host reports it through the machine's `_complete_host_invoke` with
+        the start's token when it finishes. SCE does not synthesise a
+        completion the host did not report — an invoked process that never
+        terminates never fires `done.invoke`, which is what §scxml-6.4
+        says. */
     bool has_done_data;
     /** Payload for an immediate `done.invoke.<invoke_id>`. Copied by the
         engine before this struct goes out of scope. */
@@ -466,52 +484,119 @@ static inline const sce_host_invoker_entry_t *sce_host_invoker_find(const sce_ho
 }
 
 /**
- * Every host-run invocation started and not yet cancelled.
+ * Every host-run invocation started and neither completed nor cancelled,
+ * with its start's token.
  *
- * Held by the generated machine but WALKED here, so "did this one start?"
- * — the question the cancel path has to answer — is answered once rather
- * than once per backend. Bounded for the reason the registries are.
+ * Held by the generated machine but WALKED here, so "is this one still
+ * running?" — the question both the cancel path and a completion have to
+ * answer — is answered once rather than once per backend. Bounded for the
+ * reason the registries are.
+ *
+ * One entry per `(type, invoke_id)`: an `<invoke>` belongs to one state and a
+ * state is in the configuration at most once, so the same id is never
+ * running twice. A restart replaces the entry's token, which is what makes
+ * the first run's late reply stale.
  */
 typedef struct sce_host_invocation_set_s {
     char types[SCE_MAX_HOST_INVOCATIONS][SCE_MAX_ID_LEN];
     char ids[SCE_MAX_HOST_INVOCATIONS][SCE_MAX_ID_LEN];
+    uint64_t tokens[SCE_MAX_HOST_INVOCATIONS];
     int count;
+    /** The token the next start receives. */
+    uint64_t next_token;
 } sce_host_invocation_set_t;
 
-/** Record that `(type, invoke_id)` started.
+/* The slot holding `(type, invoke_id)`, or -1. */
+static inline int sce_host_invocation_find_(const sce_host_invocation_set_t *set, const char *type,
+                                            const char *invoke_id) {
+    int i;
+    for (i = 0; i < set->count; i++) {
+        if (strcmp(set->types[i], type) == 0 && strcmp(set->ids[i], invoke_id) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/* Close the gap slot `i` leaves. */
+static inline void sce_host_invocation_remove_(sce_host_invocation_set_t *set, int i) {
+    int j;
+    for (j = i; j + 1 < set->count; j++) {
+        sce_copy_bounded_id(set->types[j], set->types[j + 1]);
+        sce_copy_bounded_id(set->ids[j], set->ids[j + 1]);
+        set->tokens[j] = set->tokens[j + 1];
+    }
+    set->count--;
+}
+
+/** Record that `(type, invoke_id)` started, returning the token this start
+    receives. Called BEFORE the handler runs, so a handler that completes
+    synchronously completes an invocation the set already holds.
 
     A generated machine cannot reach the full case: its header asserts at
     compile time that `SCE_MAX_HOST_INVOCATIONS` covers the most invocations
     its configurations hold at once (§scxml-6.4), so a ceiling too small is a
     build error rather than a cancel the host never receives. The guard stays
     for a hand-written caller, where it keeps the bound. */
-static inline void sce_host_invocation_mark(sce_host_invocation_set_t *set, const char *type, const char *invoke_id) {
-    if (set == NULL || set->count >= (int)SCE_MAX_HOST_INVOCATIONS) {
-        return;
+static inline uint64_t sce_host_invocation_mark(sce_host_invocation_set_t *set, const char *type,
+                                                const char *invoke_id) {
+    uint64_t token;
+    int i;
+    if (set == NULL || type == NULL || invoke_id == NULL) {
+        return 0u;
+    }
+    token = set->next_token++;
+    i = sce_host_invocation_find_(set, type, invoke_id);
+    if (i >= 0) {
+        set->tokens[i] = token;
+        return token;
+    }
+    if (set->count >= (int)SCE_MAX_HOST_INVOCATIONS) {
+        return token;
     }
     sce_copy_bounded_id(set->types[set->count], type);
     sce_copy_bounded_id(set->ids[set->count], invoke_id);
+    set->tokens[set->count] = token;
     set->count++;
+    return token;
 }
 
-/** Remove `(type, invoke_id)` if present, reporting whether it was. */
-static inline bool sce_host_invocation_take(sce_host_invocation_set_t *set, const char *type, const char *invoke_id) {
+/** Remove `(type, invoke_id)` whatever its token — the cancel path's
+    question, since a state's exit ends the run it started. Reports whether
+    it was running and, when it was, writes its token to `token_out`. */
+static inline bool sce_host_invocation_take(sce_host_invocation_set_t *set, const char *type, const char *invoke_id,
+                                            uint64_t *token_out) {
     int i;
-    int j;
     if (set == NULL || type == NULL || invoke_id == NULL) {
         return false;
     }
-    for (i = 0; i < set->count; i++) {
-        if (strcmp(set->types[i], type) == 0 && strcmp(set->ids[i], invoke_id) == 0) {
-            for (j = i; j + 1 < set->count; j++) {
-                sce_copy_bounded_id(set->types[j], set->types[j + 1]);
-                sce_copy_bounded_id(set->ids[j], set->ids[j + 1]);
-            }
-            set->count--;
-            return true;
-        }
+    i = sce_host_invocation_find_(set, type, invoke_id);
+    if (i < 0) {
+        return false;
     }
-    return false;
+    if (token_out != NULL) {
+        *token_out = set->tokens[i];
+    }
+    sce_host_invocation_remove_(set, i);
+    return true;
+}
+
+/** Remove `(type, invoke_id)` only while it is still the start `token`
+    names — the completion's question (§scxml-6.4). Taking it is what makes a
+    completion exactly-once: a second completion, a cancel, or a stale token
+    from an earlier start all find nothing. */
+static inline bool sce_host_invocation_take_token(sce_host_invocation_set_t *set, const char *type,
+                                                  const char *invoke_id, uint64_t token) {
+    int i;
+    if (set == NULL || type == NULL || invoke_id == NULL) {
+        return false;
+    }
+    i = sce_host_invocation_find_(set, type, invoke_id);
+    if (i < 0 || set->tokens[i] != token) {
+        return false;
+    }
+    sce_host_invocation_remove_(set, i);
+    return true;
 }
 
 #ifdef __cplusplus

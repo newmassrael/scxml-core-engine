@@ -34,6 +34,7 @@ package statechart_host_invoker
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	sce "github.com/newmassrael/sce-go-runtime"
@@ -176,8 +177,11 @@ func TestWhatTheRequestSaysIsEvaluatedWhenTheInvocationStarts(t *testing.T) {
 // can detect, because the machine looks correct either way.
 func TestLeavingTheStateCancelsTheInvocation(t *testing.T) {
 	var log []string
+	var starts []hostStart
 	s := newStarted()
-	s.engine.RegisterInvoker(declaredType, recordingInvoker(&log))
+	// Still running when the state exits — a completed invocation has nothing
+	// left to cancel (TestACompletedInvocationIsNotCancelled).
+	s.engine.RegisterInvoker(declaredType, runningInvoker(&log, &starts))
 	s.engine.Initialize()
 	s.engine.Step()
 	s.engine.ProcessEvent(StatechartHostInvokerEventLeave)
@@ -212,8 +216,9 @@ func TestLeavingTheStateCancelsTheInvocation(t *testing.T) {
 // macrostep and the pending invoke executes at the end of that macrostep.
 func TestCancelIsNotDeliveredForAnInvocationThatNeverStarted(t *testing.T) {
 	var log []string
+	var starts []hostStart
 	s := newStarted()
-	s.engine.RegisterInvoker(declaredType, recordingInvoker(&log))
+	s.engine.RegisterInvoker(declaredType, runningInvoker(&log, &starts))
 
 	if s.engine.CancelHostInvoke(declaredType, "probe") {
 		t.Fatal("a cancel was reported for an invocation that never started")
@@ -241,6 +246,187 @@ func TestCancelIsNotDeliveredForAnInvocationThatNeverStarted(t *testing.T) {
 	}
 	if cancels != 1 {
 		t.Fatalf("cancel reached the invoker %d times: %v", cancels, log)
+	}
+}
+
+// hostStart is one start the running invoker saw.
+type hostStart struct {
+	invokeID string
+	token    uint64
+}
+
+// runningInvoker's work outlives the call: it answers nothing on Start, so each
+// invocation stays running until the test completes or cancels it. It records
+// the lines recordingInvoker does and every start's token for a later
+// CompleteHostInvoke.
+func runningInvoker(log *[]string, starts *[]hostStart) sce.HostInvokeHandler {
+	return func(ev sce.HostInvokeEvent) *sce.HostInvokeResponse {
+		if ev.Start != nil {
+			*log = append(*log, "START id="+ev.Start.InvokeID)
+			*starts = append(*starts, hostStart{ev.Start.InvokeID, ev.Start.Token})
+		}
+		if ev.Cancel != nil {
+			*log = append(*log, "CANCEL id="+ev.Cancel.InvokeID)
+		}
+		return nil
+	}
+}
+
+// tokenOf returns the token of the latest start of invokeID.
+func tokenOf(t *testing.T, starts []hostStart, invokeID string) uint64 {
+	t.Helper()
+	for i := len(starts) - 1; i >= 0; i-- {
+		if starts[i].invokeID == invokeID {
+			return starts[i].token
+		}
+	}
+	t.Fatalf("`%s` never started", invokeID)
+	return 0
+}
+
+// cancelsIn lists the CANCEL lines of log, in order.
+func cancelsIn(log []string) []string {
+	var out []string
+	for _, e := range log {
+		if strings.HasPrefix(e, "CANCEL") {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// §scxml-6.4: `done.invoke` says the invoked process is over, so leaving the
+// state afterwards has nothing to stop. Both invocations here complete
+// synchronously; neither is cancelled.
+func TestACompletedInvocationIsNotCancelled(t *testing.T) {
+	var log []string
+	s := newStarted()
+	s.engine.RegisterInvoker(declaredType, recordingInvoker(&log))
+	s.engine.Initialize()
+	s.engine.Step()
+	s.engine.ProcessEvent(StatechartHostInvokerEventLeave)
+
+	if got := s.counter(t, "started"); got != 1 {
+		t.Fatalf("started = %d", got)
+	}
+	if got := cancelsIn(log); len(got) != 0 {
+		t.Fatalf("a completed invocation was cancelled: %v", log)
+	}
+}
+
+// A host that finishes later reports it with the start's token, and the
+// completion is taken once: a second report of the same run finds nothing, and
+// the state's exit then cancels only the invocation still running.
+func TestALateCompletionIsAcceptedExactlyOnce(t *testing.T) {
+	var log []string
+	var starts []hostStart
+	s := newStarted()
+	s.engine.RegisterInvoker(declaredType, runningInvoker(&log, &starts))
+	s.engine.Initialize()
+	s.engine.Step()
+	if got := s.counter(t, "started"); got != 0 {
+		t.Fatalf("started before any completion: %d", got)
+	}
+
+	token := tokenOf(t, starts, "probe")
+	if !s.engine.CompleteHostInvoke(declaredType, "probe", token, "ok") {
+		t.Fatal("a running invocation's completion was refused")
+	}
+	s.engine.Step()
+	// The fixture counts it only when `_event.invokeid` names the invocation
+	// (§scxml-5.10.1), so this is that assertion too.
+	if got := s.counter(t, "started"); got != 1 {
+		t.Fatalf("started = %d", got)
+	}
+	if s.engine.CompleteHostInvoke(declaredType, "probe", token, "again") {
+		t.Fatal("the same run completed twice")
+	}
+	s.engine.Step()
+	if got := s.counter(t, "started"); got != 1 {
+		t.Fatalf("started = %d after a second completion", got)
+	}
+
+	s.engine.ProcessEvent(StatechartHostInvokerEventLeave)
+	if got := cancelsIn(log); len(got) != 1 || got[0] != "CANCEL id=probe2" {
+		t.Fatalf("only the invocation still running is cancelled: %v", got)
+	}
+}
+
+// §scxml-6.4: once the state has exited, what the cancelled process sends is
+// ignored. The host's reply arrives after the cancel and is refused.
+func TestACompletionAfterTheCancelIsRefused(t *testing.T) {
+	var log []string
+	var starts []hostStart
+	s := newStarted()
+	s.engine.RegisterInvoker(declaredType, runningInvoker(&log, &starts))
+	s.engine.Initialize()
+	s.engine.Step()
+	token := tokenOf(t, starts, "probe")
+	s.engine.ProcessEvent(StatechartHostInvokerEventLeave)
+
+	if s.engine.CompleteHostInvoke(declaredType, "probe", token, "late") {
+		t.Fatal("a cancelled run's completion was accepted")
+	}
+	s.engine.Step()
+	if got := s.counter(t, "started"); got != 0 {
+		t.Fatalf("started = %d", got)
+	}
+}
+
+// Re-entering the state starts the same `<invoke>` again under the same id. The
+// first run's late reply carries the first start's token and is refused; the
+// second run's is accepted.
+func TestARestartedInvokeRefusesTheFirstRunsReply(t *testing.T) {
+	var log []string
+	var starts []hostStart
+	s := newStarted()
+	s.engine.RegisterInvoker(declaredType, runningInvoker(&log, &starts))
+	s.engine.Initialize()
+	s.engine.Step()
+	first := tokenOf(t, starts, "probe")
+	s.engine.ProcessEvent(StatechartHostInvokerEventLeave)
+	s.engine.ProcessEvent(StatechartHostInvokerEventAgain)
+	second := tokenOf(t, starts, "probe")
+	if first == second {
+		t.Fatal("a restart reused the first start's token")
+	}
+
+	if s.engine.CompleteHostInvoke(declaredType, "probe", first, "stale") {
+		t.Fatal("the first run's reply was taken for the second run's")
+	}
+	s.engine.Step()
+	if got := s.counter(t, "started"); got != 0 {
+		t.Fatalf("started = %d after a stale reply", got)
+	}
+	if !s.engine.CompleteHostInvoke(declaredType, "probe", second, "ok") {
+		t.Fatal("the second run's completion was refused")
+	}
+	s.engine.Step()
+	if got := s.counter(t, "started"); got != 1 {
+		t.Fatalf("started = %d", got)
+	}
+}
+
+// A host-run invocation's `done.invoke` raised through the ordinary
+// external-event API skipped the running check, so the engine refuses it and
+// counts the refusal. The metadata names the invocation, so without the
+// refusal the fixture's guarded transition would take it.
+func TestADoneInvokeRaisedTheOldWayIsRefusedAndCounted(t *testing.T) {
+	var log []string
+	var starts []hostStart
+	s := newStarted()
+	s.engine.RegisterInvoker(declaredType, runningInvoker(&log, &starts))
+	s.engine.Initialize()
+	s.engine.Step()
+
+	s.engine.RaiseExternalByNameWithMeta("done.invoke.probe", sce.EventMetadata{InvokeID: "probe"})
+	s.engine.Step()
+
+	if got := s.counter(t, "started"); got != 0 {
+		t.Fatalf("a completion that skipped the running check reached the document: started = %d", got)
+	}
+	if got := s.engine.RefusedHostInvokeCompletions(); got != 1 {
+		t.Fatalf("refused completions = %d", got)
 	}
 }
 
