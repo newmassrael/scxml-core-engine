@@ -2809,6 +2809,11 @@
         {
           "file": "tests/forge/resources/algorithm_const_scalar_init.scxml",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "type_ctx",
+          "kind": "implements"
         }
       ]
     },

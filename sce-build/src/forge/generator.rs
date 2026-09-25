@@ -23449,6 +23449,263 @@ fn reject_may_fail_in_unsupported_lang(
     .into())
 }
 
+/// Every name an algorithm body's expressions are typed against, and its
+/// type — what [`AlgorithmTypes::type_ctx`] assembles into the one
+/// [`TypeCtx`](crate::forge::types::TypeCtx) the renderer lowers with and the
+/// integer arithmetic contract judges with (SCE_FORGE.md §3.4.1), so the two
+/// cannot type a name differently. Nothing here depends on the language:
+/// what a backend spells differently (a record member's identifier) is
+/// derived from [`AlgorithmTypes::records`] where it is rendered.
+pub(crate) struct AlgorithmTypes<'a> {
+    /// Parameters, locals and byte foreach items, each a scalar.
+    env: Vec<(String, SceType)>,
+    /// Foreach items over a bounded collection, and whether their element
+    /// schema was threaded (closed) or not (open).
+    record_items: Vec<(&'a str, crate::forge::types::RecordShape)>,
+    /// Every `record:<alias>` parameter and local — its name, the alias, and
+    /// the event-schema import that types it (SCE_FORGE.md §4.12).
+    pub(crate) records: Vec<(&'a str, &'a str, &'a RecordImport)>,
+    /// `"<name>.<field>"` for a record's and a collection element's fields.
+    members: Vec<(String, SceType)>,
+    /// A collection element's `"<item>.<field>"` and its length sibling.
+    member_lens: Vec<(String, String)>,
+}
+
+impl<'a> AlgorithmTypes<'a> {
+    /// Collect the names of `m` and their types, resolving each record
+    /// through `imports`.
+    ///
+    /// ⚠ No duplicate check here. `forge::namespace::check` owns it and runs
+    /// before any backend renders: a name declared twice is the DOCUMENT's
+    /// fault. This renderer used to refuse a duplicate parameter itself, as
+    /// `generate/invalid-config` — a rendering-stage code, so `check` filed
+    /// it as six backend gaps and exited 0 (measured 2026-09-21).
+    pub(crate) fn collect(
+        m: &'a AlgorithmModel,
+        imports: &'a [ImportContext],
+        options: &crate::ForgeCompileOptions,
+    ) -> Result<Self, ForgeError> {
+        use crate::forge::types::RecordShape;
+        // A `list<T>` parameter is refused by the parser in v1, so every
+        // parameter here is a scalar; `filter_map` states that rather than
+        // assuming it.
+        let mut env: Vec<(String, SceType)> = m
+            .signature
+            .params
+            .iter()
+            .filter_map(|p| p.sce_type.scalar().map(|t| (p.name.clone(), t.clone())))
+            .collect();
+        // An item over a bounded collection is an element — a record whose
+        // fields `members` below registers when the element schema was
+        // threaded. Only then are its members known: on a single-file path
+        // the element type is a name in another document this compile never
+        // reads, so the item is an open record there.
+        //
+        // ⚠ This used to type EVERY foreach item a byte. Nothing read the slot
+        // for a collection item, so nothing noticed until a value's members
+        // were checked: `entry.pattern` then read as a member of a `uint8`
+        // wherever the element schema is not threaded (measured 2026-09-21).
+        let mut record_items: Vec<(&str, RecordShape)> = Vec::new();
+        for binding in m.body_bindings() {
+            let ty = match binding {
+                // A `list<T>` local is a buffer read by name — the
+                // `<sce:append>` target and the returned value — and never as
+                // an expression operand, so it is left out of the expression
+                // type context. Registering it as `Unknown` would let
+                // `out + 1` through unjudged; left out, such a use is refused
+                // as an unknown name.
+                crate::forge::model::AlgorithmBinding::Local { sce_type, .. } => {
+                    match sce_type.scalar() {
+                        Some(t) => t.clone(),
+                        None => continue,
+                    }
+                }
+                crate::forge::model::AlgorithmBinding::ForeachItem { name, source } => {
+                    if let Some(imp) = bounded_collection_import(imports, source) {
+                        let schema_known = imp
+                            .bc_element_snake
+                            .as_ref()
+                            .zip(options.element_type_field_schemas.as_ref())
+                            .is_some_and(|(element, schemas)| schemas.contains_key(element));
+                        let shape = if schema_known {
+                            RecordShape::Closed
+                        } else {
+                            RecordShape::Open
+                        };
+                        record_items.push((name, shape));
+                        continue;
+                    }
+                    SceType::Uint8
+                }
+                // Registered with its fields from the record bindings below.
+                crate::forge::model::AlgorithmBinding::RecordLocal { .. } => continue,
+            };
+            env.push((binding.name().to_string(), ty));
+        }
+
+        // RFC c7-wildcard W-project: register element fields of every
+        // `<sce:foreach item in="<bc>">` as `"<item>.<field>"` so
+        // `infer_types` types `entry.pattern` (Str) / `entry.callback_id`
+        // (uint32). Empty when the element schema was not threaded (deploy /
+        // CLI single-file path) — the byte-view projection then does not
+        // fire and args fall through verbatim, exactly as in pre-W-project
+        // C7 cross-algo dispatch. `member_lens` carries each field's C11
+        // length sibling from the codec SSOT rather than a `<field>_len`
+        // guess (borrowed-view projection fix).
+        let mut members: Vec<(String, SceType)> = Vec::new();
+        let mut member_lens: Vec<(String, String)> = Vec::new();
+        if let Some(schemas) = options.element_type_field_schemas.as_ref() {
+            collect_bc_foreach_member_types(
+                &m.body,
+                imports,
+                schemas,
+                &mut members,
+                &mut member_lens,
+            );
+        }
+
+        // SCE_FORGE.md §4.12 records: every `record:<alias>` parameter and
+        // local is a closed record whose members are the schema's fields,
+        // typed as the schema types them — registered the way a collection
+        // element's are.
+        let bindings = m
+            .signature
+            .params
+            .iter()
+            .filter_map(|p| {
+                p.sce_type.record_alias().map(|alias| {
+                    (
+                        p.name.as_str(),
+                        alias,
+                        p.type_spelling.as_ref(),
+                        format!("<sce:param name=\"{}\">", p.name),
+                    )
+                })
+            })
+            .chain(
+                record_locals(&m.body)
+                    .into_iter()
+                    .map(|(name, alias, spelling)| {
+                        (name, alias, spelling, format!("<sce:var name=\"{name}\">"))
+                    }),
+            )
+            .collect::<Vec<_>>();
+        let mut records = Vec::new();
+        for (name, alias, spelling, element) in &bindings {
+            let record = resolve_record(imports, alias, *spelling, element)?;
+            for (id, ty) in &record.fields {
+                members.push((format!("{name}.{id}"), ty.clone()));
+            }
+            records.push((*name, *alias, record));
+        }
+
+        Ok(Self {
+            env,
+            record_items,
+            records,
+            members,
+            member_lens,
+        })
+    }
+
+    /// The type context an expression of `m`'s body is lowered and judged in.
+    pub(crate) fn type_ctx(
+        &'a self,
+        m: &'a AlgorithmModel,
+        imports: &'a [ImportContext],
+    ) -> crate::forge::types::TypeCtx<'a> {
+        use crate::forge::types::{FuncSig, InferredType, RecordShape, TypeCtx};
+        let mut type_ctx = TypeCtx::new();
+        for (name, ty) in &self.env {
+            type_ctx.insert_var(name.as_str(), InferredType::from_sce_type(ty));
+        }
+        for &(name, shape) in &self.record_items {
+            type_ctx.insert_record(name, shape);
+        }
+        for &(name, _, _) in &self.records {
+            type_ctx.insert_record(name, RecordShape::Closed);
+        }
+        for (name, ty) in &self.members {
+            type_ctx.insert_var(name.as_str(), InferredType::from_sce_type(ty));
+        }
+        for (path, len_member) in &self.member_lens {
+            type_ctx.insert_member_len_field(path.as_str(), len_member.as_str());
+        }
+        // RFC c7-wildcard W-project: only the algorithm kind projects a `Str`
+        // argument into a borrowed `bytes` view at a call site.
+        // The per-backend `BytesView` emit assumes the algorithm-kind string
+        // representation, so the flag stays off for every other kind.
+        type_ctx.project_str_args_as_bytes_view = true;
+        // SCE_FORGE.md §3.4.1: a `may-fail` algorithm checks every integer
+        // operation it emits, not only the ones the range analysis flags.
+        type_ctx.checked_arithmetic = m.signature.may_fail;
+        crate::forge::type_ctx::insert_enum_imports(&mut type_ctx, imports);
+        type_ctx.reject_unknown_identifiers = true;
+        // RFC §synth-5-F `<sce:const name="X" type="array<elem, N>">` registers
+        // X as an indexable container with element type elem so `X[idx]` is
+        // typed as `elem` instead of falling through to `Unknown`. Required
+        // for Kotlin to emit a `.toInt()` wrap when the bitwise XOR widens
+        // a UShort table lookup into Int operand context (see
+        // crc16_table fixture). Other backends are unaffected — Rust /
+        // Cpp / C11 rely on the host language's strict-type checker to
+        // resolve the access at compile time.
+        for c in &m.consts {
+            if let crate::forge::model::AlgorithmConstType::Array { elem, .. } = &c.sce_type {
+                type_ctx.insert_array_elem(c.name.as_str(), InferredType::from_sce_type(elem));
+            }
+            // ⚠ The NAME is declared too, not only an array's element type.
+            // Registering only the element left `CRC16_TABLE` undeclared as a
+            // value, which nothing noticed until names were checked (measured
+            // 2026-09-21: 29 refusals, every one a committed fixture). It is
+            // registered `Unknown` on purpose: this pass declares the name,
+            // and what inference makes of a const's value is
+            // `lookup_array_elem`'s for an array and was never claimed for a
+            // scalar — claiming it here would change emitted code under the
+            // cover of a name check.
+            type_ctx.insert_var(c.name.as_str(), InferredType::Unknown);
+        }
+
+        // RFC c7-wildcard W-project: register each cross-algorithm import's
+        // signature under its alias so `infer_types` resolves the param /
+        // return types of an `eq(a, b)` dispatch. The bounded-string
+        // element-field → borrowed-`bytes`-view projection keys on a `bytes`
+        // parameter receiving a `Str` argument; without the registered
+        // FuncSig the argument would infer `Unknown` and the projection could
+        // neither fire nor reject a mistyped argument. The alias also lives
+        // in the rename map (`const_renames`), but that only rewrites the
+        // callee spelling — not its type.
+        for imp in imports {
+            if imp.kind == "algorithm" {
+                // A `list<T>` slot, a record slot or a `may-fail` declaration
+                // has no signature to register: the alias is registered as
+                // callable only by a host (SCE_FORGE.md §4.12, §3.4.1).
+                if let Some(slot) = &imp.host_only {
+                    type_ctx.insert_func(imp.alias.as_str(), FuncSig::host_only(slot.as_str()));
+                    continue;
+                }
+                let params = imp
+                    .param_types
+                    .iter()
+                    .map(InferredType::from_sce_type)
+                    .collect();
+                let ret = imp
+                    .ret_type
+                    .as_ref()
+                    .map_or(InferredType::Unknown, InferredType::from_sce_type);
+                type_ctx.insert_func(
+                    imp.alias.as_str(),
+                    FuncSig {
+                        params,
+                        ret,
+                        host_only: None,
+                    },
+                );
+            }
+        }
+        type_ctx
+    }
+}
+
 fn render_algorithm(
     env: &minijinja::Environment,
     m: &AlgorithmModel,
@@ -23456,7 +23713,7 @@ fn render_algorithm(
     lang: crate::generator::Language,
     options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
-    use crate::forge::types::{FuncSig, InferredType, RecordShape, TypeCtx};
+    use crate::forge::types::InferredType;
     use crate::generator::Language;
     // RFC §synth-5-B item B2 test-vector: closure rotation complete — every
     // backend (Rust + C11 + Kotlin + Cpp + Go + Python) now ships
@@ -23508,224 +23765,24 @@ fn render_algorithm(
         }
     });
 
-    // Build TypeCtx from params + collected local vars / foreach items.
-    // Owned strings live in `env_pairs` for the lifetime of `type_ctx`.
-    //
-    // ⚠ No duplicate check here. `forge::namespace::check` owns it and runs
-    // before any backend renders: a name declared twice is the DOCUMENT's
-    // fault. This renderer used to refuse a duplicate parameter itself, as
-    // `generate/invalid-config` — a rendering-stage code, so `check` filed
-    // it as six backend gaps and exited 0 (measured 2026-09-21).
-    // A `list<T>` parameter is refused by the parser in v1, so every
-    // parameter here is a scalar; `filter_map` states that rather than
-    // assuming it.
-    let mut env_pairs: Vec<(String, SceType)> = m
-        .signature
-        .params
-        .iter()
-        .filter_map(|p| p.sce_type.scalar().map(|t| (p.name.clone(), t.clone())))
-        .collect();
-    // An item over a bounded collection is an element — a record whose
-    // fields `member_field_pairs` below registers when the element schema
-    // was threaded. Only then are its members known: on a single-file path
-    // the element type is a name in another document this compile never
-    // reads, so the item is an open record there.
-    //
-    // ⚠ This used to type EVERY foreach item a byte. Nothing read the slot
-    // for a collection item, so nothing noticed until a value's members
-    // were checked: `entry.pattern` then read as a member of a `uint8`
-    // wherever the element schema is not threaded (measured 2026-09-21).
-    let mut record_items: Vec<(&str, RecordShape)> = Vec::new();
-    for binding in m.body_bindings() {
-        let ty = match binding {
-            // A `list<T>` local is a buffer read by name — the `<sce:append>`
-            // target and the returned value — and never as an expression
-            // operand, so it is left out of the expression type context.
-            // Registering it as `Unknown` would let `out + 1` through
-            // unjudged; left out, such a use is refused as an unknown name.
-            crate::forge::model::AlgorithmBinding::Local { sce_type, .. } => {
-                match sce_type.scalar() {
-                    Some(t) => t.clone(),
-                    None => continue,
-                }
-            }
-            crate::forge::model::AlgorithmBinding::ForeachItem { name, source } => {
-                if let Some(imp) = bounded_collection_import(imports, source) {
-                    let schema_known = imp
-                        .bc_element_snake
-                        .as_ref()
-                        .zip(options.element_type_field_schemas.as_ref())
-                        .is_some_and(|(element, schemas)| schemas.contains_key(element));
-                    let shape = if schema_known {
-                        RecordShape::Closed
-                    } else {
-                        RecordShape::Open
-                    };
-                    record_items.push((name, shape));
-                    continue;
-                }
-                SceType::Uint8
-            }
-            // Registered with its fields from the record bindings below.
-            crate::forge::model::AlgorithmBinding::RecordLocal { .. } => continue,
-        };
-        env_pairs.push((binding.name().to_string(), ty));
-    }
-
-    // RFC c7-wildcard W-project: register element fields of every
-    // `<sce:foreach item in="<bc>">` as `"<item>.<field>"` so
-    // `infer_types` types `entry.pattern` (Str) / `entry.callback_id`
-    // (uint32). Owned strings live in `member_field_pairs` for the
-    // lifetime of `type_ctx`, mirroring `env_pairs`. Empty when the
-    // element schema was not threaded (deploy / CLI single-file path) —
-    // the byte-view projection then does not fire and args fall through
-    // verbatim, exactly as in pre-W-project C7 cross-algo dispatch.
-    let mut member_field_pairs: Vec<(String, SceType)> = Vec::new();
-    // `member_len_pairs` carries `("<item>.<field>", "<len_member>")` so the
-    // projection resolves the C11 length sibling from the codec SSOT rather
-    // than guessing `<field>_len` (borrowed-view projection fix). Owned for the
-    // lifetime of `type_ctx`, like `member_field_pairs`.
-    let mut member_len_pairs: Vec<(String, String)> = Vec::new();
-    if let Some(schemas) = options.element_type_field_schemas.as_ref() {
-        collect_bc_foreach_member_types(
-            &m.body,
-            imports,
-            schemas,
-            &mut member_field_pairs,
-            &mut member_len_pairs,
-        );
-    }
-
-    // SCE_FORGE.md §4.12 records: every `record:<alias>` parameter and local
-    // is a closed record whose members are the schema's fields, typed as the
-    // schema types them — registered the way a collection element's are —
-    // and each member access is renamed to the field identifier the payload
-    // struct was emitted with on this backend (`event_schema_field_ident`),
-    // through the local's own backend identifier.
-    let mut record_names: Vec<&str> = Vec::new();
+    // The names the body's expressions are typed against — collected once,
+    // for the renderer and the integer arithmetic contract alike.
+    let types = AlgorithmTypes::collect(m, imports, options)?;
+    // SCE_FORGE.md §4.12 records: each member access is renamed to the field
+    // identifier the payload struct was emitted with on this backend
+    // (`event_schema_field_ident`), through the local's own backend
+    // identifier — the one part of a record's typing that is the backend's.
     let mut record_renames: Vec<(String, String)> = Vec::new();
-    let record_bindings = m
-        .signature
-        .params
-        .iter()
-        .filter_map(|p| {
-            p.sce_type.record_alias().map(|alias| {
-                (
-                    p.name.as_str(),
-                    alias,
-                    p.type_spelling.as_ref(),
-                    format!("<sce:param name=\"{}\">", p.name),
-                )
-            })
-        })
-        .chain(
-            record_locals(&m.body)
-                .into_iter()
-                .map(|(name, alias, spelling)| {
-                    (name, alias, spelling, format!("<sce:var name=\"{name}\">"))
-                }),
-        )
-        .collect::<Vec<_>>();
-    for (name, alias, spelling, element) in &record_bindings {
-        let record = resolve_record(imports, alias, *spelling, element)?;
-        record_names.push(name);
+    for &(name, _, record) in &types.records {
         let local = l.local_id(name);
-        for (id, ty) in &record.fields {
-            member_field_pairs.push((format!("{name}.{id}"), ty.clone()));
+        for (id, _) in &record.fields {
             record_renames.push((
                 format!("{name}.{id}"),
                 format!("{local}.{}", event_schema_field_ident(id, lang)),
             ));
         }
     }
-
-    let mut type_ctx = TypeCtx::new();
-    for (name, ty) in &env_pairs {
-        type_ctx.insert_var(name.as_str(), InferredType::from_sce_type(ty));
-    }
-    for &(name, shape) in &record_items {
-        type_ctx.insert_record(name, shape);
-    }
-    for name in &record_names {
-        type_ctx.insert_record(name, RecordShape::Closed);
-    }
-    for (name, ty) in &member_field_pairs {
-        type_ctx.insert_var(name.as_str(), InferredType::from_sce_type(ty));
-    }
-    for (path, len_member) in &member_len_pairs {
-        type_ctx.insert_member_len_field(path.as_str(), len_member.as_str());
-    }
-    // RFC c7-wildcard W-project: only the algorithm kind projects a `Str`
-    // argument into a borrowed `bytes` view at a call site.
-    // The per-backend `BytesView` emit assumes the algorithm-kind string
-    // representation, so the flag stays off for every other kind.
-    type_ctx.project_str_args_as_bytes_view = true;
-    // SCE_FORGE.md §3.4.1: a `may-fail` algorithm checks every integer
-    // operation it emits, not only the ones the range analysis flags.
-    type_ctx.checked_arithmetic = m.signature.may_fail;
-    crate::forge::type_ctx::insert_enum_imports(&mut type_ctx, imports);
-    type_ctx.reject_unknown_identifiers = true;
-    // RFC §synth-5-F `<sce:const name="X" type="array<elem, N>">` registers X
-    // as an indexable container with element type elem so `X[idx]` is
-    // typed as `elem` instead of falling through to `Unknown`. Required
-    // for Kotlin to emit a `.toInt()` wrap when the bitwise XOR widens
-    // a UShort table lookup into Int operand context (see
-    // crc16_table fixture). Other backends are unaffected — Rust /
-    // Cpp / C11 rely on the host language's strict-type checker to
-    // resolve the access at compile time.
-    for c in &m.consts {
-        if let crate::forge::model::AlgorithmConstType::Array { elem, .. } = &c.sce_type {
-            type_ctx.insert_array_elem(c.name.as_str(), InferredType::from_sce_type(elem));
-        }
-        // ⚠ The NAME is declared too, not only an array's element type.
-        // Registering only the element left `CRC16_TABLE` undeclared as a
-        // value, which nothing noticed until names were checked (measured
-        // 2026-09-21: 29 refusals, every one a committed fixture). It is
-        // registered `Unknown` on purpose: this pass declares the name, and
-        // what inference makes of a const's value is `lookup_array_elem`'s
-        // for an array and was never claimed for a scalar — claiming it
-        // here would change emitted code under the cover of a name check.
-        type_ctx.insert_var(c.name.as_str(), InferredType::Unknown);
-    }
-
-    // RFC c7-wildcard W-project: register each cross-algorithm import's
-    // signature under its alias so `infer_types` resolves the param /
-    // return types of an `eq(a, b)` dispatch. The bounded-string
-    // element-field → borrowed-`bytes`-view projection
-    // keys on a `bytes` parameter receiving a `Str` argument; without the
-    // registered FuncSig the argument would infer `Unknown` and the
-    // projection could neither fire nor reject a mistyped argument. This
-    // is stateless-import parity for the algorithm kind, which builds its
-    // TypeCtx inline rather than via the `type_ctx::*` builders. The alias
-    // also lives in the rename map (`const_renames`), but that only
-    // rewrites the callee spelling — not its type.
-    for imp in imports {
-        if imp.kind == "algorithm" {
-            // A `list<T>` slot has no signature to register: the alias is
-            // registered as callable only by a host (SCE_FORGE.md §4.12).
-            if let Some(slot) = &imp.host_only {
-                type_ctx.insert_func(imp.alias.as_str(), FuncSig::host_only(slot.as_str()));
-                continue;
-            }
-            let params = imp
-                .param_types
-                .iter()
-                .map(InferredType::from_sce_type)
-                .collect();
-            let ret = imp
-                .ret_type
-                .as_ref()
-                .map_or(InferredType::Unknown, InferredType::from_sce_type);
-            type_ctx.insert_func(
-                imp.alias.as_str(),
-                FuncSig {
-                    params,
-                    ret,
-                    host_only: None,
-                },
-            );
-        }
-    }
+    let type_ctx = types.type_ctx(m, imports);
 
     // Per-RFC §synth-5-J-5 signature emit (item C7 lowering, 2026-05-13):
     // each `<sce:import kind="bounded-collection">` adds a
@@ -23993,9 +24050,10 @@ fn render_algorithm(
     // never used to judge an expression.
     let return_ty_inferred =
         return_scalar.map_or(InferredType::Unknown, InferredType::from_sce_type);
-    let records: std::collections::HashMap<String, String> = record_bindings
+    let records: std::collections::HashMap<String, String> = types
+        .records
         .iter()
-        .map(|(name, alias, _, _)| (name.to_string(), alias.to_string()))
+        .map(|(name, alias, _)| (name.to_string(), alias.to_string()))
         .collect();
     let body = lower_algorithm_body(
         &m.body,
