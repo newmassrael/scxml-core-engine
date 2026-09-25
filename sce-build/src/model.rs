@@ -100,9 +100,9 @@ pub struct Transition {
     /// ([`crate::forge::static_lowering::lower_kotlin`]) on the clone it
     /// renders, never by the parser. A delivery that did not carry the
     /// payload cannot run that content, so the backend opens it with a check
-    /// that signals `error.execution` and runs none of it — what a native
-    /// action whose argument reads the payload already does, as one block
-    /// rather than per statement, because an error stops the block.
+    /// that runs none of it — one check for the block rather than one per
+    /// statement, because an error stops the block. The error is the engine's
+    /// to report, once, where it failed to read the payload from the delivery.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub content_reads_payload: bool,
     #[serde(rename = "type")]

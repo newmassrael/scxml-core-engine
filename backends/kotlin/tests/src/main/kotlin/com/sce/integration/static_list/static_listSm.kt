@@ -252,7 +252,6 @@ class StaticListStateMachine(
             0 -> {
                 // SCE-MAP: static_list.scxml:20 :: collecting :: _transition_0
                 if (pendingDayPickedPayload == null) {
-                    raisePlatformError(StaticListEvent.Error.Execution, "the content of a transition on 'day.picked' needs its typed payload, which this delivery did not carry")
                     return
                 }
 

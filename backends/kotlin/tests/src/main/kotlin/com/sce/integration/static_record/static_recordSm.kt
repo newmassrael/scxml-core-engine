@@ -260,7 +260,6 @@ class StaticRecordStateMachine(
             1 -> {
                 // SCE-MAP: static_record.scxml:27 :: showing :: _transition_1
                 if (pendingDayPickedPayload == null) {
-                    raisePlatformError(StaticRecordEvent.Error.Execution, "the content of a transition on 'day.picked' needs its typed payload, which this delivery did not carry")
                     return
                 }
 

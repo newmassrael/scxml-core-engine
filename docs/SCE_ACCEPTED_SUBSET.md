@@ -2444,10 +2444,11 @@ machine's active-state test), an `<assign>` or `<log>` value as the text the
 engine-free arm pastes. A condition that reads the triggering event's typed
 payload takes the payload channel's own null guard. A transition whose
 content reads it runs that content only for a delivery that carried the
-payload: otherwise none of it runs and `error.execution` goes on the internal
-queue (W3C SCXML 3.12.2, 4.9) — what a host action whose argument reads the
-payload does, checked once for the whole block because an error stops the
-block. A record variable is a field of an immutable data class,
+payload: otherwise none of it runs, checked once for the whole block because
+an error stops the block (W3C SCXML 4.9). The error itself is reported once,
+as `error.execution` on the internal queue, by the engine where it failed to
+read the payload from the delivery — the check does not report it a second
+time. A record variable is a field of an immutable data class,
 `<Machine><Alias>Record`, and a field update lowers to
 `shown = shown.copy(<field> = …)`. A list variable is an immutable
 `List<T>` field that starts `emptyList()`; an append lowers to

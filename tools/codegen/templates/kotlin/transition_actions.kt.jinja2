@@ -76,18 +76,15 @@
                 {{ sce_map.source_marker(trans.source_location, "kotlin", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
 {% endif %}
 {#  SCE Accepted Subset §2.15: content that reads the event's typed payload
-    cannot run for a delivery that did not carry one. The failure is the
-    processor's own, signalled as `error.execution` on the internal queue
-    (W3C SCXML 3.12.2), and an error stops the block it arose in (W3C SCXML
-    4.9) — so the check guards the whole content, once, before any of it
-    runs. A document that declares no `error.execution` has no variant to
-    name and nothing could match one: the content is skipped in silence, as a
-    native action's payload guard does. #}
+    cannot run for a delivery that did not carry one, and an error stops the
+    block it arose in (W3C SCXML 4.9) — so the check guards the whole content,
+    once, before any of it runs. It raises nothing: the payload is null only
+    when the engine could not read it from the delivery, and the engine has
+    already said so with `error.execution` where it read it
+    (`StateMachineEngine.bindTypedPayload`). One unreadable delivery is one
+    error; a second raise here would report it twice. #}
 {% if trans.content_reads_payload %}
                 if (pending{{ trans.event | to_event_variant }}Payload == null) {
-{% if "error.execution" in model.events %}
-                    raisePlatformError({{ machine_name }}Event.Error.Execution, "the content of a transition on '{{ trans.event | escape_kotlin }}' needs its typed payload, which this delivery did not carry")
-{% endif %}
                     return
                 }
 {% endif %}
