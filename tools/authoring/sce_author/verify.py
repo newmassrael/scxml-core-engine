@@ -655,8 +655,11 @@ class Latches:
     the tie-break is declared rather than assumed.
     """
 
-    def __init__(self, conventions):
+    def __init__(self, conventions, model=None):
         self.protocols = getattr(conventions, "protocols", None) or {}
+        # What the component RECEIVES, when known: the interface model's
+        # inputs. See `receives`.
+        self.model = model
         self.previous: dict[str, object] = {}
         self.state: dict[str, bool] = {}
         self._ladder_case = None
@@ -665,6 +668,27 @@ class Latches:
 
     def defines(self, protocol: str) -> bool:
         return bool((self.protocols.get(protocol) or {}).get("latch"))
+
+    def receives(self, rungs) -> list:
+        """The rungs of a shared ladder this component can observe.
+
+        ⚠ A convention's ladder is the platform's whole ladder, and a
+        component is handed only the rungs it reads. A record may still drive
+        a rung this component never receives -- it sets up the platform, not
+        the component -- and counting it here judged a reading the product
+        cannot make: measured 2026-09-25, a component reading two of seven
+        rungs was verified against all seven while its host saw two. The
+        interface model says which addresses a component reads, so it is what
+        decides; with no model to ask, the ladder is taken whole, as before.
+        """
+        if self.model is None:
+            return list(rungs)
+        received = []
+        for rung in rungs:
+            entry = self.model.owning(rung)
+            if entry is not None and entry.role != "output":
+                received.append(rung)
+        return received
 
     def _ladder_changes(self, rungs, case) -> list:
         """Which rungs of a shared ladder moved this round.
@@ -727,7 +751,7 @@ class Latches:
         # reading passes -- which is precisely the state that input exists to
         # describe. The ladder is watched globally rather than per input,
         # because a rung this input does not name is still a rung it includes.
-        rungs = latch.get("cumulative")
+        rungs = self.receives(latch.get("cumulative") or [])
         # ⚠ Read the ladder on EVERY round, not only on the rounds where this
         # input has not already been set. Where the ladder stands is a global
         # observation, not this input's conclusion, and skipping it whenever
@@ -1851,7 +1875,7 @@ def _verify(pack: Pack, binding_path: pathlib.Path, codegen: pathlib.Path | None
     # A latch carries state between cases, so it exists only when the pack says
     # the cases are a timeline. Without that, `None` here is what makes the
     # refusal above fire rather than reading file order as an order.
-    latches = Latches(pack.conventions) if examples.ordered else None
+    latches = Latches(pack.conventions, pack.model) if examples.ordered else None
     history = History() if examples.ordered else None
 
     # ⚠ Needing the round before is a property of the BINDING against the

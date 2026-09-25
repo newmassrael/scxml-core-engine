@@ -27,7 +27,7 @@ import unittest
 
 import yaml
 
-from sce_author.pack import Case as RealCase, load_pack
+from sce_author.pack import Case as RealCase, Entry, Field, Model, load_pack
 from sce_author.verify import Latches, VerifyError, input_value, verify
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -238,6 +238,38 @@ class AProtocolCanBeDefinedAsData(unittest.TestCase):
         self.assertTrue(rung(ladder[0], quiet),
                         "the ladder stood at the longest reading; an input "
                         "asking for the first time must be told so")
+
+    def test_a_rung_the_component_does_not_receive_is_not_on_its_ladder(self):
+        """⚠⚠ The ladder a component can see is the rungs it reads.
+
+        A convention's ladder is the platform's whole ladder. A record may
+        drive a rung the component never receives -- it sets up the platform,
+        not the component -- and the latch read it anyway, so the judge saw a
+        reading the product cannot make. The interface model says what the
+        component reads; given one, it decides. Without one, the ladder is
+        taken whole, which is the discriminating other half.
+        """
+        ladder = ["plant/count/on0", "plant/count/on500", "plant/count/on3500"]
+        protocols = {"ladder": {**LADDER,
+                                "latch": {**LADDER["latch"],
+                                          "cumulative": ladder}}}
+        read = ["plant/count/on0", "plant/count/on500", "plant/count/off"]
+        entries = [Entry(a, "input", (), (Field("", None, "uint64"),)) for a in read]
+        model = Model(entries=entries, by_address={e.address: e for e in entries})
+
+        def gate(latches):
+            rule = {"protocol": "ladder",
+                    "parameters": {"on_counter": ladder[1],
+                                   "off_counter": "plant/count/off"}}
+            given = {**dict.fromkeys(ladder, 1), "plant/count/off": 0}
+            # The record moves only the longest rung, which this component
+            # does not read.
+            return input_value("gate", rule, Case(given, drove=[ladder[2]]), latches)
+
+        self.assertTrue(gate(Latches(Conventions(protocols))),
+                        "with no model, the whole ladder counts")
+        self.assertFalse(gate(Latches(Conventions(protocols), model)),
+                         "a rung the component does not read moved nothing it can see")
 
     def test_a_reading_restated_unchanged_is_still_a_statement(self):
         """⚠⚠ The assumption that cost a whole component.
