@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cross-producer fixture: an <assign> carrying `expr` and in-line content
+  (W3C SCXML 5.4.1). key_fragments are ("<assign>", the detail sentence
+  both producers write).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript" initial="s">
+  <datamodel>
+    <data id="v" expr="0"/>
+  </datamodel>
+  <state id="s">
+    <onentry>
+      <assign location="v" expr="1">2</assign>
+    </onentry>
+  </state>
+</scxml>

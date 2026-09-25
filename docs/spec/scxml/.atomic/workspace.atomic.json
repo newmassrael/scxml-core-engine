@@ -6029,6 +6029,11 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/ScxmlScriptEngine.kt",
           "symbol": "assign",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/parsing/ActionParser.cpp",
+          "symbol": "SCE::ActionParser::parseActionNode",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -6055,6 +6060,11 @@
         {
           "file": "sce-build/src/parser.rs",
           "symbol": "check_assign_attributes",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/parsing/ActionParser.cpp",
+          "symbol": "SCE::ActionParser::parseActionNode",
           "kind": "implements"
         }
       ],

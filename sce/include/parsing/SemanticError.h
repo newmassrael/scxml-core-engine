@@ -459,4 +459,74 @@ private:
     std::string kind_;
 };
 
+// An element lacks an attribute the Recommendation requires. Mirrors Rust
+// `ValidationError::MissingAttribute { element, attr }` — the same
+// `validation/missing-attribute` code, the same message, key fragments
+// (element, attr), and the same `add_attribute` fix. First raised by
+// `ActionParser` for an `<assign>` that names no `location`.
+class SemanticMissingAttribute : public SemanticError {
+public:
+    SemanticMissingAttribute(std::string element, std::string attr)
+        : SemanticError(element + " must have an '" + attr + "' attribute", {element, attr}),
+          element_(std::move(element)), attr_(std::move(attr)) {}
+
+    std::string_view code() const noexcept override {
+        return "validation/missing-attribute";
+    }
+
+    nlohmann::ordered_json to_json() const override;
+
+    std::unique_ptr<Diagnostic> clone() const override {
+        return std::make_unique<SemanticMissingAttribute>(*this);
+    }
+
+    const std::string &element() const noexcept {
+        return element_;
+    }
+
+    const std::string &attr() const noexcept {
+        return attr_;
+    }
+
+private:
+    std::string element_;
+    std::string attr_;
+};
+
+// Attributes, or an attribute and content, that cannot occur together on
+// one element. Mirrors Rust `ValidationError::IncompatibleAttributes
+// { element, detail }` — `validation/incompatible-attributes`, message
+// "<element>: <detail>", key fragments (element, detail), no fix. The
+// detail is a sentence SCE writes, so both producers must spell it alike;
+// `CrossProducerDiagnosticId_test` holds them to it. First raised by
+// `ActionParser` for an `<assign>` carrying both `expr` and children.
+class SemanticIncompatibleAttributes : public SemanticError {
+public:
+    SemanticIncompatibleAttributes(std::string element, std::string detail)
+        : SemanticError(element + ": " + detail, {element, detail}), element_(std::move(element)),
+          detail_(std::move(detail)) {}
+
+    std::string_view code() const noexcept override {
+        return "validation/incompatible-attributes";
+    }
+
+    nlohmann::ordered_json to_json() const override;
+
+    std::unique_ptr<Diagnostic> clone() const override {
+        return std::make_unique<SemanticIncompatibleAttributes>(*this);
+    }
+
+    const std::string &element() const noexcept {
+        return element_;
+    }
+
+    const std::string &detail() const noexcept {
+        return detail_;
+    }
+
+private:
+    std::string element_;
+    std::string detail_;
+};
+
 }  // namespace SCE::parsing

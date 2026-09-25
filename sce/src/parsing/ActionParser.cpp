@@ -14,8 +14,10 @@
 #include "common/FileLoadingHelper.h"
 #include "core/LogMacros.h"
 #include "parsing/ParsingCommon.h"
+#include "parsing/SemanticError.h"
 #include "parsing/XmlSerializationHelper.h"
 #include <algorithm>
+#include <cctype>
 #include <sstream>
 
 #ifndef __EMSCRIPTEN__
@@ -322,10 +324,31 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
         return std::make_shared<SCE::ScriptAction>(content, id);
 
     } else if (elementName == "assign") {
+        // §scxml-5.4.1: 'location' is required, and 'expr' must not occur in
+        // an <assign> that has children. Refused as the code generator's
+        // frontend refuses them (`check_assign_attributes` in
+        // sce-build/src/parser.rs), so the Interpreter and the generated
+        // machines accept the same documents. What is required is the
+        // ATTRIBUTE: `location=""` names nothing and is §scxml-5.4's run-time
+        // error.execution, which the W3C suite relies on (test286).
+        if (!actionElement->hasAttribute("location")) {
+            throw SCE::parsing::SemanticMissingAttribute("<assign>", "location");
+        }
+        const std::string text = actionElement->getTextContent();
+        const bool hasChildren =
+            !actionElement->getChildren().empty() ||
+            std::any_of(text.begin(), text.end(), [](unsigned char c) { return !std::isspace(c); });
+        if (actionElement->hasAttribute("expr") && hasChildren) {
+            throw SCE::parsing::SemanticIncompatibleAttributes(
+                "<assign>",
+                "'expr' must not occur in an <assign> element that has children; the value is specified by one or "
+                "the other");
+        }
+
         // §scxml-5.4.2: the child content of <assign> is an in-line
         // specification of the value, mutually exclusive with 'expr' — so the
         // text content is read only when 'expr' is absent.
-        std::string location = actionElement->hasAttribute("location") ? actionElement->getAttribute("location") : "";
+        std::string location = actionElement->getAttribute("location");
         std::string expr;
 
         if (actionElement->hasAttribute("expr")) {

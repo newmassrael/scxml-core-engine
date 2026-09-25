@@ -186,4 +186,22 @@ nlohmann::ordered_json SemanticTopLevelScriptUnloaded::to_json() const {
     return out;
 }
 
+nlohmann::ordered_json SemanticMissingAttribute::to_json() const {
+    // The Rust arm carries no `expected` or `actual`, and the repair as
+    // `add_attribute` on the element that lacks it.
+    auto out = baseEnvelope();
+    nlohmann::ordered_json fix;
+    fix["kind"] = "add_attribute";
+    fix["element"] = element_;
+    fix["attr"] = attr_;
+    out["fix"] = std::move(fix);
+    return out;
+}
+
+nlohmann::ordered_json SemanticIncompatibleAttributes::to_json() const {
+    // No `expected`, `actual` or `fix` on the Rust arm: which of the two to
+    // drop is the author's call, so no single repair is proposed.
+    return baseEnvelope();
+}
+
 }  // namespace SCE::parsing
