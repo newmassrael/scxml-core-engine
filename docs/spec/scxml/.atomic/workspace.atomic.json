@@ -759,11 +759,6 @@
           "kind": "implements"
         },
         {
-          "file": "backends/go/runtime/policy.go",
-          "symbol": "StatePolicy",
-          "kind": "references"
-        },
-        {
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::processEvent",
           "kind": "implements"
@@ -6056,6 +6051,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-5.4",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "check_assign_attributes",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -18741,6 +18743,12 @@
       "target_kind": "section",
       "target_id": "scxml-3.4",
       "reason": "Every 3.4 cite in analyzer.rs sat on the Kotlin-only leaf-map, initial-entry-root and parallel-descendant precomputations, deleted when the Kotlin backend moved onto the runtime's Appendix D microstep"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12",
+      "reason": "Its only 3.12 cite sat on the policy's ancestor check used for the LCA, which the Go backend's move onto runtime/microstep.go deleted; the LCA is now microstep.go's findLCCA, bound to scxml-D-findLCCA"
     }
   ],
   "frames": {},

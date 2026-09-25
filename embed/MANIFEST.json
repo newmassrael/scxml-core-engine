@@ -1,6 +1,6 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "6fa8e018e2",
+  "embed_version": "cd59c76656",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
   "symbol_count": 266,
@@ -1640,6 +1640,7 @@
       "header": "runtime/StateSnapshot.h",
       "kind": "struct",
       "members": [
+        "field bool running",
         "field int stepNumber",
         "field int64_t schedulerLogicalTimeMs",
         "field std::map<std::string, std::string> dataModel",

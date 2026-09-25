@@ -3555,6 +3555,7 @@ impl SCXMLParser {
             }
             (true, "send") => self.parse_send_action(child, &mut action, model, source_name)?,
             (true, "assign") => {
+                check_assign_attributes(child, source_name)?;
                 action.location = child.attribute("location").unwrap_or("").to_string();
                 action.expr = child.attribute("expr").unwrap_or("").to_string();
                 // §scxml-5.4: "The children of the <assign> element provide
@@ -3567,16 +3568,8 @@ impl SCXMLParser {
                 // half of it. See [`inline_data_value`] for what the missing
                 // half cost.
                 //
-                // Read only when 'expr' is absent, because the attribute
-                // "must not occur in an <assign> element that has children"
-                // and a conformant document specifies one "but not both". A
-                // document carrying both is non-conformant either way;
-                // letting the attribute win keeps every backend answering
-                // alike, where template-by-template precedence would not.
-                //
-                // ⚠ Neither is diagnosed today — a document that supplies
-                // both is accepted in silence. That is a missing check, not a
-                // decision.
+                // Read only when 'expr' is absent. A document carrying both
+                // never reaches here: [`check_assign_attributes`] refuses it.
                 if action.expr.is_empty() {
                     action.content = inline_data_value(child);
                 }
@@ -6001,6 +5994,51 @@ pub fn validate_on_sample_link_references(
 /// author's own spellings. An element with no content closes itself.
 fn serialize_node(node: &roxmltree::Node) -> String {
     serialize_node_inner(node, &inherited_bindings(node), false)
+}
+
+/// §scxml-5.4.1: the two constraints the attribute table puts on
+/// `<assign>`, refused where the document is read so every backend refuses
+/// alike.
+///
+/// - `location` is required. What is required is the ATTRIBUTE: a
+///   `location` that is present and denotes nothing (`location=""`) is a
+///   document the specification accepts and answers at run time with
+///   `error.execution` (§scxml-5.4). The W3C suite relies on that —
+///   test286 and its siblings write exactly `location=""` — so only an
+///   absent attribute is refused here.
+/// - `expr` "must not occur in an <assign> element that has children".
+///   Children are what [`inline_data_value`] would read: an element child,
+///   or character data that is not whitespace.
+///
+/// Until 2026-09-25 neither was checked: a document carrying both was read
+/// with the attribute winning, in silence.
+fn check_assign_attributes(
+    node: &roxmltree::Node,
+    source_name: &str,
+) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
+    use crate::forge::error::{Located, ValidationError};
+
+    let at = |err: ValidationError| {
+        let pos = node.document().text_pos_at(node.range().start);
+        Located::new(err.into(), source_name, Some(pos.row), Some(pos.col))
+    };
+    if node.attribute("location").is_none() {
+        return Err(at(ValidationError::MissingAttribute {
+            element: "<assign>".to_string(),
+            attr: "location".to_string(),
+        }));
+    }
+    let has_children =
+        node.children().any(|c| c.is_element()) || !character_data(node).trim().is_empty();
+    if node.attribute("expr").is_some() && has_children {
+        return Err(at(ValidationError::IncompatibleAttributes {
+            element: "<assign>".to_string(),
+            detail: "'expr' must not occur in an <assign> element that has children; \
+                     the value is specified by one or the other"
+                .to_string(),
+        }));
+    }
+    Ok(())
 }
 
 /// The in-line data value an element's children specify.
