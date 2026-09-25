@@ -440,6 +440,15 @@ fn forge_cpp_algorithm_checked_arith() {
     assert_standalone_forge("algorithm_checked_arith", "algorithm_checked_arith.h");
 }
 
+#[test]
+fn forge_c11_algorithm_checked_arith() {
+    assert_standalone_forge_lang(
+        "algorithm_checked_arith",
+        "algorithm_checked_arith.c.h",
+        sce_build::generator::Language::C11,
+    );
+}
+
 // ── Item C7 wildcard keyexpr: bytes-view random index + `len` builtin ──
 // `algorithm_bytes_equal` exercises `a[i]`/`b[i]` (bytes-view
 // index) and `len(a)`/`len(b)` (length builtin) on all six

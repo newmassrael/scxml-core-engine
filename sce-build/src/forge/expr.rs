@@ -6241,7 +6241,28 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             };
             format!("(sce_forge_bytes_view_t){{ (const uint8_t *){s}, {len_expr} }}")
         }
-        ExprKind::Checked { .. } => return Err(checked_arithmetic_unlowered("C11")),
+        // SCE_FORGE.md §3.4.1: the runtime's helper for the operation's own
+        // width, which records a failure in the body's `sce_failure_` and
+        // yields 0; the statement around it returns that failure. C has no
+        // overloading, so the width is in the helper's name.
+        ExprKind::Checked { op, left, right } => {
+            let InferredType::Int { signed, bits } = expr.ty else {
+                return Err(ExprError::UnsupportedConstruct {
+                    construct: format!("a checked operation of type {:?}", expr.ty),
+                    observed: None,
+                });
+            };
+            let mut operands = vec!["&sce_failure_".to_string(), emit_c(left, expr.ty)?];
+            if let Some(right) = right {
+                operands.push(emit_c(right, expr.ty)?);
+            }
+            format!(
+                "sce_forge_checked_{}_{}{bits}({})",
+                op.helper(),
+                if signed { "i" } else { "u" },
+                operands.join(", ")
+            )
+        }
     })
 }
 

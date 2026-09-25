@@ -21402,10 +21402,12 @@ impl<'a> ListSpelling<'a> {
     }
 
     /// The C11 result struct a list-returning function hands back by value.
-    fn c11_result_typedef(&self, cap: u32, primary_symbol: &str) -> String {
+    fn c11_result_typedef(&self, cap: u32, primary_symbol: &str, may_fail: bool) -> String {
         let t = &self.elem_name;
-        format!(
-            "typedef struct {{\n    {t} items[{cap}];\n    size_t len;\n    bool ok;\n}} {primary_symbol}_result_t;\n\n"
+        c11_result_struct(
+            &format!("    {t} items[{cap}];\n    size_t len;\n"),
+            primary_symbol,
+            may_fail,
         )
     }
 
@@ -21441,15 +21443,16 @@ impl<'a> ListSpelling<'a> {
 
     /// Append one element `e`, already lowered into the element's slot.
     /// Overflow is fallible on the bounded backends and grows the others,
-    /// exactly as for `bytes`.
-    fn push(&self, pad: &str, local: &str, e: &str, cap: u32) -> String {
+    /// exactly as for `bytes`; `channel` spells C11's overflow return.
+    fn push(&self, pad: &str, local: &str, e: &str, cap: u32, channel: &ReturnChannel) -> String {
         use crate::generator::Language;
         let t = &self.elem_name;
         match self.lang {
             Language::Rust => format!("{pad}{local}.push({e})?;\n"),
             Language::Cpp => format!("{pad}{local}.push_back(static_cast<{t}>({e}));\n"),
             Language::C11 => format!(
-                "{pad}if ({local}.len < {cap}u) {{ {local}.items[{local}.len++] = ({t})({e}); }} else {{ {local}.ok = false; return {local}; }}\n"
+                "{pad}if ({local}.len < {cap}u) {{ {local}.items[{local}.len++] = ({t})({e}); }} else {{ {} }}\n",
+                channel.c11_capacity_exceeded(local)
             ),
             Language::Go => format!("{pad}{local} = append({local}, {t}({e}))\n"),
             Language::Python => format!("{pad}{local}.append({e})\n"),
@@ -21457,10 +21460,9 @@ impl<'a> ListSpelling<'a> {
         }
     }
 
-    /// Return the finished buffer in the function's declared return shape.
     /// The value a list buffer `local` is returned as — Kotlin converts its
     /// working buffer to the declared array; every other backend returns the
-    /// buffer itself. [`algorithm_return`] spells the statement.
+    /// buffer itself. [`ReturnChannel::value`] spells the statement.
     fn return_value(&self, local: &str) -> String {
         use crate::generator::Language;
         match self.lang {
@@ -22079,7 +22081,7 @@ fn lower_algorithm_stmt(
                     InferredType::from_sce_type(elem),
                 )
                 .map_err(|refusal| rhs_site.place(refusal))?;
-                out.push_str(&ListSpelling::new(l, elem).push(pad, &local, &e, cap_n));
+                out.push_str(&ListSpelling::new(l, elem).push(pad, &local, &e, cap_n, &channel));
                 return Ok(());
             }
             // The RHS static type selects the operation: a `bytes` value
@@ -22123,13 +22125,14 @@ fn lower_algorithm_stmt(
                     Language::Kotlin => format!("{pad}{local}.addAll({e})\n"),
                     Language::C11 => {
                         let n = cap_n;
+                        let overflow = channel.c11_capacity_exceeded(&local);
                         // Hoist the source view so a compound RHS evaluates once.
                         format!(
                             "{pad}{{\n\
                              {pad}    sce_forge_bytes_view_t __src = {e};\n\
                              {pad}    for (size_t __k = 0; __k < __src.len; ++__k) {{\n\
                              {pad}        if ({local}.len < {n}u) {{ {local}.bytes[{local}.len++] = __src.data[__k]; }}\n\
-                             {pad}        else {{ {local}.ok = false; return {local}; }}\n\
+                             {pad}        else {{ {overflow} }}\n\
                              {pad}    }}\n\
                              {pad}}}\n"
                         )
@@ -22158,7 +22161,8 @@ fn lower_algorithm_stmt(
                     Language::C11 => {
                         let n = cap_n;
                         format!(
-                            "{pad}if ({local}.len < {n}u) {{ {local}.bytes[{local}.len++] = (uint8_t)({e}); }} else {{ {local}.ok = false; return {local}; }}\n"
+                            "{pad}if ({local}.len < {n}u) {{ {local}.bytes[{local}.len++] = (uint8_t)({e}); }} else {{ {} }}\n",
+                            channel.c11_capacity_exceeded(&local)
                         )
                     }
                 }
@@ -22196,25 +22200,42 @@ fn lower_algorithm_stmt(
                     }
                 }
                 _ => {
-                    let header_open = match lang {
-                        Language::Rust => format!("{pad}if {cond_lowered} {{\n"),
-                        Language::Cpp if channel.checks_conditions() => {
-                            channel.cpp_if_header(pad, &cond_lowered, indent)
+                    // A C11 condition is computed in a block of its own
+                    // (`ReturnChannel::c11_if_header`), so its `if` sits one
+                    // level in and `block_close` closes the block after it.
+                    let c11_block = lang == Language::C11 && channel.checks_conditions();
+                    let if_indent = if c11_block { indent + 1 } else { indent };
+                    let if_pad = "    ".repeat(if_indent);
+                    let (header_open, block_close) = match lang {
+                        Language::Rust => (format!("{pad}if {cond_lowered} {{\n"), String::new()),
+                        Language::Cpp if channel.checks_conditions() => (
+                            channel.cpp_if_header(pad, &cond_lowered, indent),
+                            String::new(),
+                        ),
+                        Language::C11 if c11_block => {
+                            channel.c11_if_header(pad, &cond_lowered, indent)
                         }
-                        _ => format!("{pad}if ({cond_lowered}) {{\n"),
+                        _ => (format!("{pad}if ({cond_lowered}) {{\n"), String::new()),
                     };
                     out.push_str(&header_open);
-                    let inner_pad = "    ".repeat(indent + 1);
+                    let inner_pad = "    ".repeat(if_indent + 1);
                     for st in then_body {
-                        lower_algorithm_stmt_and_check(st, ctx, &inner_pad, indent + 1, out)?;
+                        lower_algorithm_stmt_and_check(st, ctx, &inner_pad, if_indent + 1, out)?;
                     }
                     if let Some(eb) = else_body {
-                        out.push_str(&format!("{pad}}} else {{\n"));
+                        out.push_str(&format!("{if_pad}}} else {{\n"));
                         for st in eb {
-                            lower_algorithm_stmt_and_check(st, ctx, &inner_pad, indent + 1, out)?;
+                            lower_algorithm_stmt_and_check(
+                                st,
+                                ctx,
+                                &inner_pad,
+                                if_indent + 1,
+                                out,
+                            )?;
                         }
                     }
-                    out.push_str(&format!("{pad}}}\n"));
+                    out.push_str(&format!("{if_pad}}}\n"));
+                    out.push_str(&block_close);
                 }
             }
         }
@@ -22247,8 +22268,8 @@ fn lower_algorithm_stmt(
                     let header_open = match lang {
                         Language::Rust => format!("{pad}while {cond_lowered} {{\n"),
                         Language::Go => format!("{pad}for {cond_lowered} {{\n"),
-                        Language::Cpp if channel.checks_conditions() => {
-                            channel.cpp_while_header(pad, &cond_lowered, indent)
+                        Language::Cpp | Language::C11 if channel.checks_conditions() => {
+                            channel.checked_while_header(pad, &cond_lowered, indent)
                         }
                         _ => format!("{pad}while ({cond_lowered}) {{\n"),
                     };
@@ -23143,6 +23164,19 @@ pub(crate) fn forge_interpolation_symbol(language: crate::generator::Language) -
     }
 }
 
+/// C11's `<symbol>_result_t`: the value `members`, then whether there is
+/// one. A `may-fail` algorithm adds why there is not (SCE_FORGE.md §3.4.1),
+/// one field for every failure the contract admits, a buffer's overflow
+/// included.
+fn c11_result_struct(members: &str, primary_symbol: &str, may_fail: bool) -> String {
+    let why = if may_fail {
+        "    sce_forge_algorithm_error_t why;\n"
+    } else {
+        ""
+    };
+    format!("typedef struct {{\n{members}    bool ok;\n{why}}} {primary_symbol}_result_t;\n\n")
+}
+
 /// The error a Rust algorithm's `Result` carries. A buffer append past its
 /// capacity is the only failure of an algorithm that does not declare
 /// `may-fail`; one that does returns `sce_forge_runtime::algorithm::
@@ -23163,8 +23197,8 @@ fn rust_algorithm_failure(may_fail: bool) -> &'static str {
 ///
 /// The backends reach a failure two ways. Rust and Kotlin carry it out of
 /// the expression that failed (`?`, a thrown `AlgorithmFailure`), so a
-/// statement needs nothing after it. C++ has neither in its embedded
-/// profile: a checked helper records the failure in the body's
+/// statement needs nothing after it. C++ (in its embedded profile) and C11
+/// have neither: a checked helper records the failure in the body's
 /// `sce_failure_` and yields 0, and the body reads that record after each
 /// statement and returns it — [`ReturnChannel::check`].
 #[derive(Clone, Copy)]
@@ -23174,12 +23208,36 @@ struct ReturnChannel<'a> {
     /// The declared return as the backend spells its value, before any
     /// failure channel wraps it (`std::int32_t`, `std::vector<…>`).
     value_type: &'a str,
+    /// C11's result struct, `<symbol>_result_t` — the buffer a buffer return
+    /// builds in place, or a scalar's `{ value, ok, why }` when the algorithm
+    /// declares `may-fail`.
+    c11_result: &'a str,
 }
 
 impl ReturnChannel<'_> {
     /// The C++ type the body returns when it `may-fail`.
     fn cpp_result(&self) -> String {
         format!("SCE::Forge::AlgorithmResult<{}>", self.value_type)
+    }
+
+    /// Whether failures are recorded and read back after each statement,
+    /// rather than leaving the expression that failed.
+    fn records_failures(&self) -> bool {
+        use crate::generator::Language;
+        self.may_fail && matches!(self.lang, Language::Cpp | Language::C11)
+    }
+
+    /// C11's statement returning the buffer `local` whose append ran past its
+    /// capacity (§4.12). In a `may-fail` algorithm it also names the failure,
+    /// so the caller reads one `why` for every failure the contract admits.
+    fn c11_capacity_exceeded(&self, local: &str) -> String {
+        if self.may_fail {
+            format!(
+                "{local}.ok = false; {local}.why = SCE_FORGE_ALGORITHM_CAPACITY_EXCEEDED; return {local};"
+            )
+        } else {
+            format!("{local}.ok = false; return {local};")
+        }
     }
 
     /// The statement that returns `value`. `buffer` says the value is a
@@ -23207,22 +23265,58 @@ impl ReturnChannel<'_> {
                     ty = self.value_type,
                 )
             }
+            // A buffer is its own result struct, `ok` already set; a scalar
+            // is computed first and then wrapped.
+            Language::C11 if self.may_fail && buffer => {
+                format!("{}{pad}return {value};\n", self.check(pad))
+            }
+            Language::C11 if self.may_fail => format!(
+                "{pad}{{\n\
+                 {pad}    const {ty} sce_value_ = {value};\n\
+                 {check}\
+                 {pad}    return ({result}){{ .value = sce_value_, .ok = true }};\n\
+                 {pad}}}\n",
+                ty = self.value_type,
+                check = self.check(&format!("{pad}    ")),
+                result = self.c11_result,
+            ),
             Language::Python | Language::Kotlin | Language::Go => format!("{pad}return {value}\n"),
             Language::Rust | Language::Cpp | Language::C11 => format!("{pad}return {value};\n"),
         }
     }
 
-    /// What follows a statement whose expressions may have failed: on C++, a
-    /// return of the recorded failure; nothing on a backend whose failure
-    /// leaves the expression by itself, or in a body that cannot fail.
+    /// What follows a statement whose expressions may have failed: on C++
+    /// and C11, a return of the recorded failure; nothing on a backend whose
+    /// failure leaves the expression by itself, or in a body that cannot fail.
     fn check(&self, pad: &str) -> String {
+        use crate::generator::Language;
         match self.lang {
-            crate::generator::Language::Cpp if self.may_fail => format!(
+            Language::Cpp if self.may_fail => format!(
                 "{pad}if (sce_failure_.failed()) return {}::failure(sce_failure_.error());\n",
                 self.cpp_result()
             ),
+            Language::C11 if self.may_fail => format!(
+                "{pad}if (sce_failure_.failed) {{ return ({}){{ .ok = false, .why = sce_failure_.error }}; }}\n",
+                self.c11_result
+            ),
             _ => String::new(),
         }
+    }
+
+    /// The C11 `if` head for `cond` and the brace it leaves open: C has no
+    /// `if` initializer, so the condition is computed in a block of its own
+    /// for the reason [`Self::cpp_if_header`] gives.
+    fn c11_if_header(&self, pad: &str, cond: &str, depth: usize) -> (String, String) {
+        (
+            format!(
+                "{pad}{{\n\
+                 {pad}    const bool sce_cond{depth}_ = {cond};\n\
+                 {check}\
+                 {pad}    if (sce_cond{depth}_) {{\n",
+                check = self.check(&format!("{pad}    ")),
+            ),
+            format!("{pad}}}\n"),
+        )
     }
 
     /// The C++ `if` header for `cond`, computed before the branch: a failure
@@ -23237,9 +23331,10 @@ impl ReturnChannel<'_> {
         )
     }
 
-    /// The C++ loop head for `cond`, computed at the top of every pass for the
-    /// reason [`Self::cpp_if_header`] gives; the caller closes the `while`.
-    fn cpp_while_header(&self, pad: &str, cond: &str, depth: usize) -> String {
+    /// The C++ and C11 loop head for `cond`, computed at the top of every pass
+    /// for the reason [`Self::cpp_if_header`] gives; the caller closes the
+    /// `while`. `true` is C11's `<stdbool.h>` spelling as well as C++'s.
+    fn checked_while_header(&self, pad: &str, cond: &str, depth: usize) -> String {
         format!(
             "{pad}while (true) {{\n\
              {pad}    const bool sce_cond{depth}_ = {cond};\n\
@@ -23252,7 +23347,7 @@ impl ReturnChannel<'_> {
     /// Whether a condition must be computed before the branch it decides,
     /// so a failure in it is returned rather than taken as `false`.
     fn checks_conditions(&self) -> bool {
-        self.may_fail && self.lang == crate::generator::Language::Cpp
+        self.records_failures()
     }
 }
 
@@ -23268,6 +23363,7 @@ const MAY_FAIL_BACKENDS: &[crate::generator::Language] = &[
     crate::generator::Language::Rust,
     crate::generator::Language::Kotlin,
     crate::generator::Language::Cpp,
+    crate::generator::Language::C11,
 ];
 
 /// Whether `lang` lowers a `may-fail` algorithm — the question the
@@ -23707,10 +23803,12 @@ fn render_algorithm(
     // the signature's `<sce:return>`, so there is always a value to wrap.
     let returns_buffer = declared_return.is_some_and(|t| t.is_append_buffer());
     let value_type = return_type.clone();
+    let c11_result_name = format!("{primary_symbol}_result_t");
     let channel = ReturnChannel {
         lang,
         may_fail,
         value_type: &value_type,
+        c11_result: &c11_result_name,
     };
     // Kotlin and C++ wrap every return, a buffer's included — their buffers
     // grow and have no failure of their own (§4.12).
@@ -23722,6 +23820,8 @@ fn render_algorithm(
             format!("com.sce.forge.runtime.AlgorithmResult<{return_type}>")
         }
         Language::Cpp if may_fail => channel.cpp_result(),
+        // A buffer return is already its result struct (§4.12).
+        Language::C11 if may_fail && !returns_buffer => c11_result_name.clone(),
         _ => return_type,
     };
 
@@ -23773,6 +23873,7 @@ fn render_algorithm(
                 Language::C11 => list.c11_result_typedef(
                     list_return_cap.expect("checked when building return_type"),
                     &primary_symbol,
+                    may_fail,
                 ),
                 Language::Cpp | Language::Go | Language::Python => String::new(),
             }
@@ -23788,9 +23889,16 @@ fn render_algorithm(
         }
         (Some(SceType::Bytes), Language::C11) => {
             let n = bytes_return_cap.expect("checked when building return_type");
-            format!(
-                "typedef struct {{\n    uint8_t bytes[{n}];\n    size_t len;\n    bool ok;\n}} {primary_symbol}_result_t;\n\n"
+            c11_result_struct(
+                &format!("    uint8_t bytes[{n}];\n    size_t len;\n"),
+                &primary_symbol,
+                may_fail,
             )
+        }
+        // SCE_FORGE.md §3.4.1: a `may-fail` scalar or record return rides in
+        // a result struct of its own, as a buffer's does.
+        (_, Language::C11) if may_fail => {
+            c11_result_struct(&format!("    {value_type} value;\n"), &primary_symbol, true)
         }
         _ => String::new(),
     };

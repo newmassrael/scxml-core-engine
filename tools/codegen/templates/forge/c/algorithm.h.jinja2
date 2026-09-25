@@ -19,9 +19,15 @@
 #include <stdbool.h>
 #include <stddef.h>
 {% if needs_span %}#include "sce/forge/bytes.h"  /* sce_forge_bytes_view_t */
+{% endif %}{% if may_fail %}#include "sce/forge/algorithm.h"  /* checked arithmetic, SCE_FORGE.md §3.4.1 */
 {% endif %}{% if all_imports %}{% for imp in all_imports %}{{ imp.include_stmt }}
 {% endfor %}{% endif %}
 {{ consts_prelude }}static inline {{ return_type }} {{ primary_symbol }}({{ params_str }}) {
+{% if may_fail %}
+    /* SCE_FORGE.md §3.4.1: each checked operation records a failure here,
+     * and the statement around it returns it before the next statement runs. */
+    sce_forge_algorithm_failure_t sce_failure_ = { false, SCE_FORGE_ALGORITHM_OVERFLOW };
+{% endif %}
 {{ body }}
 }
 

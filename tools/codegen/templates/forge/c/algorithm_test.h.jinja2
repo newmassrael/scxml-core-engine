@@ -33,12 +33,28 @@ static inline int test_vector_{{ name }}(void) {
         memcpy(input.data, row_bytes, sizeof row_bytes);
         input.len = sizeof row_bytes;
 {% endif %}
-        {{ return_type }} actual = {{ primary_symbol }}((sce_forge_bytes_view_t){ input.data, input.len });
+{% set call %}{{ primary_symbol }}((sce_forge_bytes_view_t){ input.data, input.len }){% endset %}
 {% else %}
-        {{ return_type }} actual = {{ primary_symbol }}();
+{% set call %}{{ primary_symbol }}(){% endset %}
+{% endif %}
+{% if may_fail %}
+        /* SCE_FORGE.md §3.4.1: a row expects a value, so a failure fails it. */
+        const {{ primary_symbol }}_result_t result = {{ call }};
+        {{ return_type }} actual = result.value;
+{% else %}
+        {{ return_type }} actual = {{ call }};
 {% endif %}
         const {{ return_type }} expected = {{ tv.value_literal_c }};
+{% if may_fail %}
+        if (!result.ok) {
+            fprintf(stderr,
+                "FAIL: {{ primary_symbol }} test_vector @SCXML L{{ tv.source_line }}: failed with %s\n",
+                sce_forge_algorithm_error_name(result.why));
+            ++failures;
+        } else if (actual != expected) {
+{% else %}
         if (actual != expected) {
+{% endif %}
             fprintf(stderr,
                 "FAIL: {{ primary_symbol }} test_vector @SCXML L{{ tv.source_line }}: actual={{ tv.printf_fmt }} expected={{ tv.printf_fmt }}\n",
                 ({{ tv.printf_cast }})actual, ({{ tv.printf_cast }})expected);

@@ -21,7 +21,14 @@
    `<Pascal>Payload_t`, baked into the case table with a designated
    initializer per field and compared field by field; `fields` carries each
    field's C name, derived from the schema document when the harness
-   renders. #}
+   renders.
+
+   A `may-fail` algorithm (SCE_FORGE.md §3.4.1) returns its
+   `<fn>_result_t` with `ok` false and `why` naming the failure. A case that
+   names a failure (`"fails": "overflow"`) is baked with `fails` set and no
+   `expected`, and is judged by the failure's contract name before anything
+   reads `expected`. #}
+{% set call_args %}{% for arg_ty in f.args %}{% if arg_ty == "bytes" %}(sce_forge_bytes_view_t){ arg{{ loop.index0 }}.data, arg{{ loop.index0 }}.len }{% else %}arg{{ loop.index0 }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}{% endset %}
 {% if f.output.list_of is defined %}
 {% set ns = namespace(width=1) %}
 {% for c in f.cases %}
@@ -52,6 +59,9 @@ static void test_{{ f.name }}(void) {
 {% else %}
         {{ f.output.type | c_type }} expected;
 {% endif %}
+{% if f.may_fail %}
+        const char *fails;
+{% endif %}
     } cases[] = {
 {% for c in f.cases %}
         {
@@ -66,7 +76,9 @@ static void test_{{ f.name }}(void) {
             .input_arg{{ ai }} = {{ c.args[ai] | c_literal(arg_ty) }},
 {% endif %}
 {% endfor %}
-{% if f.output.record is defined %}
+{% if c.fails is defined %}
+            .fails = "{{ c.fails }}",
+{% elif f.output.record is defined %}
             .expected = { {% for fld in f.output.fields %}.{{ fld.ident }} = {{ c.expected[fld.name] | c_literal(fld.type) }}, {% endfor %}},
 {% elif f.output.list_of is defined %}
             .expected = { {% for v in c.expected %}{{ v | c_literal(f.output.list_of) }}, {% else %}0{% endfor %} },
@@ -90,8 +102,27 @@ static void test_{{ f.name }}(void) {
         {{ arg_ty | c_type }} arg{{ loop.index0 }} = cases[i].input_arg{{ loop.index0 }};
 {% endif %}
 {% endfor %}
+{% if f.may_fail %}
+        const {{ f.function }}_result_t result = {{ f.function }}({{ call_args }});
+        if (cases[i].fails != NULL) {
+            if (result.ok || strcmp(cases[i].fails, sce_forge_algorithm_error_name(result.why)) != 0) {
+                fprintf(stderr,
+                    "FAIL: {{ f.name }} case %zu: expected failure %s, got %s\n",
+                    i, cases[i].fails, result.ok ? "a value" : sce_forge_algorithm_error_name(result.why));
+                ++g_failures;
+            }
+            continue;
+        }
+        if (!result.ok) {
+            fprintf(stderr,
+                "FAIL: {{ f.name }} case %zu: expected a value, failed with %s\n",
+                i, sce_forge_algorithm_error_name(result.why));
+            ++g_failures;
+            continue;
+        }
+{% endif %}
 {% if f.output.record is defined %}
-        {{ f.output.record | to_pascal_case }}Payload_t actual = {{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+        {{ f.output.record | to_pascal_case }}Payload_t actual = {% if f.may_fail %}result.value{% else %}{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %}){% endif %};
 {% for fld in f.output.fields %}
         if (actual.{{ fld.ident }} != cases[i].expected.{{ fld.ident }}) {
             fprintf(stderr,
@@ -101,7 +132,7 @@ static void test_{{ f.name }}(void) {
         }
 {% endfor %}
 {% elif f.output.list_of is defined %}
-        {{ f.function }}_result_t actual = {{ f.function }}({% for arg_ty in f.args %}{% if arg_ty == "bytes" %}(sce_forge_bytes_view_t){ arg{{ loop.index0 }}.data, arg{{ loop.index0 }}.len }{% else %}arg{{ loop.index0 }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %});
+        {{ f.function }}_result_t actual = {% if f.may_fail %}result{% else %}{{ f.function }}({{ call_args }}){% endif %};
         if (!actual.ok || actual.len != cases[i].expected_len) {
             fprintf(stderr,
                 "FAIL: {{ f.name }} case %zu: ok=%d len=%zu expected_len=%zu\n",
@@ -132,7 +163,7 @@ static void test_{{ f.name }}(void) {
             }
         }
 {% else %}
-        {{ f.output.type | c_type }} actual = {{ f.function }}({% for arg_ty in f.args %}{% if arg_ty == "bytes" %}(sce_forge_bytes_view_t){ arg{{ loop.index0 }}.data, arg{{ loop.index0 }}.len }{% else %}arg{{ loop.index0 }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %});
+        {{ f.output.type | c_type }} actual = {% if f.may_fail %}result.value{% else %}{{ f.function }}({{ call_args }}){% endif %};
 {% if f.output.compare == "tolerance" %}
         if (!close_enough((double)actual, (double)cases[i].expected, FLOAT_TOL)) {
             fprintf(stderr,
