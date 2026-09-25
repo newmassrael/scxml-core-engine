@@ -1111,6 +1111,10 @@ pub enum DiagnosticCode {
     AlgorithmConstFoldBudgetExceeded,
     #[serde(rename = "algorithm/const-yield-type-mismatch")]
     AlgorithmConstYieldTypeMismatch,
+    // The integer arithmetic contract (SCE_FORGE.md §3.4.1) at build time:
+    // folding a const met an operation the runtime would refuse.
+    #[serde(rename = "algorithm/const-integer-failure")]
+    AlgorithmConstIntegerFailure,
 
     // ── §synth-5-B variant primitive (SCE Protocol-Synthesis RFC §synth-5-B, item B1).
     //    Build-time check on `<sce:variant>` codec suffix: the
@@ -3251,6 +3255,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         AlgorithmConstNotFoldable,
         AlgorithmConstFoldBudgetExceeded,
         AlgorithmConstYieldTypeMismatch,
+        AlgorithmConstIntegerFailure,
         // Codec §synth-5-B variant primitive (SCE Protocol-Synthesis RFC §synth-5-B, item B1)
         CodecVariantArmUnreachable,
         // RFC variant-default-uniformity — duplicate default-arm marker
@@ -3845,7 +3850,9 @@ impl DiagnosticCode {
             }
 
             // ── The integer arithmetic contract (SCE_FORGE.md §3.4.1) ──
-            AlgorithmUndeclaredIntegerFailure => Some("SCE Forge §3.4.1"),
+            AlgorithmUndeclaredIntegerFailure | AlgorithmConstIntegerFailure => {
+                Some("SCE Forge §3.4.1")
+            }
 
             // ── Algorithm §synth-5-F build-time const-fold ─────────────
             AlgorithmConstNotFoldable
@@ -4587,6 +4594,7 @@ impl DiagnosticCode {
             AlgorithmConstNotFoldable => "algorithm/const-not-foldable",
             AlgorithmConstFoldBudgetExceeded => "algorithm/const-fold-budget-exceeded",
             AlgorithmConstYieldTypeMismatch => "algorithm/const-yield-type-mismatch",
+            AlgorithmConstIntegerFailure => "algorithm/const-integer-failure",
             CodecVariantArmUnreachable => "codec/variant-arm-unreachable",
             CodecVariantDuplicateDefaultArm => "codec/variant-duplicate-default-arm",
             CodecVariantArmMidMismatch => "codec/variant-arm-mid-mismatch",
@@ -9211,6 +9219,34 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
                 produced.clone(),
             ],
         },
+        GenerateError::ConstIntegerFailure {
+            algorithm,
+            const_name,
+            operation,
+            hazard,
+            ty,
+            observed: _,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::AlgorithmConstIntegerFailure,
+            stage: Stage::Generate,
+            expected: None,
+            // The const's name, as its sibling fold codes report: the record
+            // sits on the `<sce:const>` row, which spells the name and not
+            // the operation (SCE_ERROR_CONTRACT §3.1.1).
+            actual: Some(const_name.clone()),
+            // Widen the type, bound the operation, or shorten the range —
+            // the author's call, so the record names none.
+            fix: None,
+            // The operands the fold met are the message's, not the key's: a
+            // changed range moves them and leaves the defect the same.
+            key_fragments: vec![
+                algorithm.clone(),
+                const_name.clone(),
+                operation.clone(),
+                hazard.described().to_string(),
+                ty.clone(),
+            ],
+        },
     }
 }
 
@@ -12123,6 +12159,19 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:78909bc65a6cad7b","code":"algorithm/const-yield-type-mismatch","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.F","message":"algorithm 'crc16': <sce:const name=\"table\">: const-yield-type-mismatch: cannot coerce float to uint16","actual":"table"}"#,
+            ),
+            (
+                "forge/algorithm-const-integer-failure",
+                GenerateError::ConstIntegerFailure {
+                    algorithm: "crc16".into(),
+                    const_name: "table".into(),
+                    operation: "c + 1".into(),
+                    hazard: crate::forge::int_ranges::HazardKind::Overflow,
+                    ty: "uint16".into(),
+                    observed: "65535 + 1".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:0e8b0545f6b2fdf5","code":"algorithm/const-integer-failure","stage":"generate","spec":"SCE Forge §3.4.1","message":"algorithm 'crc16': <sce:const name=\"table\">: `c + 1` would overflow (uint16) while folding, at 65535 + 1 — a build-time value cannot fail, so widen the type or bound the operation","actual":"table"}"#,
             ),
             // ── §synth-5-B variant primitive (SCE Protocol-Synthesis RFC §synth-5-B, item B1) ─
             (
@@ -15381,6 +15430,7 @@ mod tests {
             | AlgorithmConstNotFoldable
             | AlgorithmConstFoldBudgetExceeded
             | AlgorithmConstYieldTypeMismatch
+            | AlgorithmConstIntegerFailure
             | CodecVariantArmUnreachable
             | CodecVariantDuplicateDefaultArm
             | CodecVariantNoDefaultArm
@@ -16053,6 +16103,7 @@ mod tests {
                 | AlgorithmConstNotFoldable
                 | AlgorithmConstFoldBudgetExceeded
                 | AlgorithmConstYieldTypeMismatch
+                | AlgorithmConstIntegerFailure
                 | CodecVariantArmUnreachable
                 | CodecVariantDuplicateDefaultArm
                 | CodecVariantArmMidMismatch
@@ -16300,9 +16351,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            391,
+            392,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 390 distinct variants to match the DiagnosticCode \
+             expected 392 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -17003,6 +17054,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | AlgorithmConstNotFoldable
             | AlgorithmConstFoldBudgetExceeded
             | AlgorithmConstYieldTypeMismatch
+            | AlgorithmConstIntegerFailure
             | CodecVariantArmUnreachable
             | CodecVariantDuplicateDefaultArm
             | CodecVariantArmMidMismatch

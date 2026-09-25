@@ -1382,6 +1382,52 @@ fn forge_const_yield_type_mismatch_rejects_float_into_uint() {
     );
 }
 
+/// `algorithm/const-integer-failure` — the integer arithmetic contract
+/// (SCE_FORGE.md §3.4.1) at build time: an operation of a fold that leaves
+/// its width refuses the build on every backend alike, on the `<sce:const>`
+/// row, rather than wrapping into the table.
+#[test]
+fn forge_const_integer_failure_refuses_an_overflowing_fold() {
+    use sce_build::forge::error::{ForgeError, GenerateError};
+    use sce_build::forge::int_ranges::HazardKind;
+
+    let scxml_path = resource_dir().join("algorithm_const_integer_failure.scxml");
+    let content = std::fs::read_to_string(&scxml_path).expect("read fixture");
+
+    for &lang in sce_build::generator::Language::ALL {
+        let err = match sce_build::compile_forge_with_imports(
+            &content,
+            sce_build::DocumentLabel::symmetric("algorithm_const_integer_failure"),
+            lang,
+            scxml_path.parent().unwrap(),
+            &sce_build::ForgeCompileOptions::default(),
+        ) {
+            Ok(_) => panic!("{lang:?}: a fold that overflows uint8 must be refused"),
+            Err(e) => e,
+        };
+        assert!(
+            matches!(
+                err.error,
+                ForgeError::Generate(ref boxed)
+                    if matches!(
+                        **boxed,
+                        GenerateError::ConstIntegerFailure {
+                            ref const_name, ref operation, hazard, ref ty, ref observed, ..
+                        } if const_name == "DOUBLED" && operation == "i * 2"
+                            && hazard == HazardKind::Overflow && ty == "uint8"
+                            && observed == "128 * 2"
+                    )
+            ),
+            "{lang:?}: must surface as ConstIntegerFailure at `i * 2`, 128 * 2; got: {err:?}"
+        );
+        assert_eq!(
+            err.location.line,
+            Some(21),
+            "{lang:?}: placed at the <sce:const> row: {err:?}"
+        );
+    }
+}
+
 // ── Transform conformance (3 tests) ────────────────────────────
 
 #[test]

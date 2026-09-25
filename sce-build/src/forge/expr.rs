@@ -1607,6 +1607,32 @@ pub(crate) enum BinOp {
 }
 
 impl BinOp {
+    /// The operator as the expression language spells it — what a refusal
+    /// quotes, not any backend's spelling of it.
+    pub(crate) fn token(self) -> &'static str {
+        match self {
+            Self::Add => "+",
+            Self::Sub => "-",
+            Self::Mul => "*",
+            Self::Div => "/",
+            Self::Mod => "%",
+            Self::StrictEq => "===",
+            Self::StrictNeq => "!==",
+            Self::Lt => "<",
+            Self::Gt => ">",
+            Self::LtEq => "<=",
+            Self::GtEq => ">=",
+            Self::And => "&&",
+            Self::Or => "||",
+            Self::BitAnd => "&",
+            Self::BitOr => "|",
+            Self::BitXor => "^",
+            Self::Shl => "<<",
+            Self::Shr => ">>",
+            Self::UShr => ">>>",
+        }
+    }
+
     fn is_arith(self) -> bool {
         matches!(
             self,

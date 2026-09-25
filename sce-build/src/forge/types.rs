@@ -224,6 +224,23 @@ impl InferredType {
         }
     }
 
+    /// The least and greatest value of a declared integer width, or `None`
+    /// for any other type — the bounds the integer arithmetic contract
+    /// (SCE_FORGE.md §3.4.1) checks an operation against. A `Quantity`
+    /// answers for its integer base. Every width SCE declares fits in `i128`
+    /// with room for the product of two of its values.
+    pub(crate) fn int_bounds(self) -> Option<(i128, i128)> {
+        match self.strip_quantity() {
+            Self::Int { signed, bits } if bits > 0 && bits <= 64 => Some(if signed {
+                let half = 1i128 << (bits - 1);
+                (-half, half - 1)
+            } else {
+                (0, (1i128 << bits) - 1)
+            }),
+            _ => None,
+        }
+    }
+
     /// If this is a `Quantity`, return the conversion descriptor.
     pub fn quantity(self) -> Option<Quantity> {
         match self {

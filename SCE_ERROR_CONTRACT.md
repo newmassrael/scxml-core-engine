@@ -724,6 +724,7 @@ references against a real document and drift silently.
 | `algorithm/call-target-method-unknown` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.A + §5.L |
 | `algorithm/call-target-unknown` | `validation` | `replace_one_of` | SCE Protocol-Synthesis RFC §5.A + §5.L |
 | `algorithm/const-fold-budget-exceeded` | `generate` | no | SCE Protocol-Synthesis RFC §5.F |
+| `algorithm/const-integer-failure` | `generate` | no | SCE Forge §3.4.1 |
 | `algorithm/const-not-foldable` | `generate` | no | SCE Protocol-Synthesis RFC §5.F |
 | `algorithm/const-yield-type-mismatch` | `generate` | no | SCE Protocol-Synthesis RFC §5.F |
 | `algorithm/foreach-source-bc-with-bytes-item-type` | `validation` | no | SCE Protocol-Synthesis RFC §5.A + §5.L |

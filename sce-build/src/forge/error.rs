@@ -5080,6 +5080,33 @@ pub enum GenerateError {
         expected: SceType,
         produced: String,
     },
+
+    /// SCE_FORGE.md §3.4.1, the integer arithmetic contract, at build time:
+    /// folding a `<sce:const>` met an integer operation that overflows its
+    /// width, divides by zero, or divides a signed MIN by -1 — or a value
+    /// the slot it is stored in cannot hold. The runtime refuses the same
+    /// operation, so a table folded by wrapping would hold a value no
+    /// backend computes; and a build-time value has no caller to hand a
+    /// failure to, so the build is refused.
+    ///
+    /// `operation` is the operation as written, `observed` the operands the
+    /// fold met it with (`65535 + 1`). No `fix`: whether to widen the type,
+    /// bound the operation, or shorten the range is the author's call.
+    #[error(
+        "algorithm '{algorithm}': <sce:const name=\"{const_name}\">: `{operation}` would \
+         {} ({ty}) while folding, at {observed} — a build-time value cannot fail, \
+         so widen the type or bound the operation",
+        hazard.described()
+    )]
+    ConstIntegerFailure {
+        algorithm: String,
+        const_name: String,
+        operation: String,
+        hazard: crate::forge::int_ranges::HazardKind,
+        /// The integer type the operation computes in.
+        ty: String,
+        observed: String,
+    },
 }
 
 impl GenerateError {

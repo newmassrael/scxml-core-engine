@@ -133,21 +133,7 @@ impl Interval {
 
 /// The values an integer type holds; `None` for any other type.
 fn type_range(ty: InferredType) -> Option<Interval> {
-    match ty.strip_quantity() {
-        InferredType::Int { signed, bits } if bits > 0 && bits <= 64 => Some(if signed {
-            let half = 1i128 << (bits - 1);
-            Interval {
-                lo: -half,
-                hi: half - 1,
-            }
-        } else {
-            Interval {
-                lo: 0,
-                hi: (1i128 << bits) - 1,
-            }
-        }),
-        _ => None,
-    }
+    ty.int_bounds().map(|(lo, hi)| Interval { lo, hi })
 }
 
 fn scalar_range(ty: &AlgorithmValueType) -> Option<Interval> {
@@ -767,7 +753,7 @@ fn restrict(env: &mut Env, key: &str, op: BinOp, bound: Interval) {
 
 impl HazardKind {
     /// What the operation can do, as the refusal says it.
-    fn described(self) -> &'static str {
+    pub(crate) fn described(self) -> &'static str {
         match self {
             HazardKind::Overflow => "overflow",
             HazardKind::DivideByZero => "divide by zero",

@@ -32,7 +32,7 @@
 // error-collection sink through the inference recursion.
 
 use crate::forge::error::{Located, ValidationError};
-use crate::forge::expr::{infer_types, lower_previous, parse_to_ast, BinOp, ExprKind, TypedExpr};
+use crate::forge::expr::{infer_types, lower_previous, parse_to_ast, ExprKind, TypedExpr};
 use crate::forge::expression_site::ExpressionSite;
 use crate::forge::model::{
     ConditionModel, ForgeDocument, ForgeKind, ParsedForge, TransformModel, ValidatorModel,
@@ -188,7 +188,7 @@ fn find_unit_mismatch(ast: &TypedExpr) -> Option<UnitMismatch> {
             {
                 if u_l != u_r {
                     return Some(UnitMismatch {
-                        op: binop_token(*op),
+                        op: op.token(),
                         left_unit: u_l.as_str(),
                         right_unit: u_r.as_str(),
                         span: ast.span.clone(),
@@ -246,30 +246,6 @@ struct UnitMismatch {
     right_unit: &'static str,
     /// Where the operation the units meet in was read from.
     span: Option<std::ops::Range<usize>>,
-}
-
-fn binop_token(op: BinOp) -> &'static str {
-    match op {
-        BinOp::Add => "+",
-        BinOp::Sub => "-",
-        BinOp::Mul => "*",
-        BinOp::Div => "/",
-        BinOp::Mod => "%",
-        BinOp::StrictEq => "===",
-        BinOp::StrictNeq => "!==",
-        BinOp::Lt => "<",
-        BinOp::Gt => ">",
-        BinOp::LtEq => "<=",
-        BinOp::GtEq => ">=",
-        BinOp::And => "&&",
-        BinOp::Or => "||",
-        BinOp::BitAnd => "&",
-        BinOp::BitOr => "|",
-        BinOp::BitXor => "^",
-        BinOp::Shl => "<<",
-        BinOp::Shr => ">>",
-        BinOp::UShr => ">>>",
-    }
 }
 
 #[cfg(test)]

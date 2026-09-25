@@ -20,20 +20,32 @@
 // rejected (a fold body produces an array element via `<sce:yield>`,
 // not via early return, and cannot invoke other algorithms).
 //
-// Numeric model: every arithmetic step computes in widened domains
-// (`i128` for integers, `f64` for floats). Storage into a typed slot
-// (Var.init, Assign target, yield element) coerces back to the
-// declared `SceType` with two-complement truncation for narrow
-// integers — matching the wrapping semantics every target backend
-// uses for fixed-width integer arithmetic. This keeps CRC-class
-// algorithms (whose canonical implementation relies on truncating
-// shifts) byte-equivalent to a hand-coded reference.
+// Numeric model: the integer arithmetic contract (SCE_FORGE.md §3.4.1),
+// the one the runtime follows. Each expression is typed as the emitters
+// type it (`expr::infer_types` over the fold's locals), and an integer
+// operation computes at the width that typing gives it:
+//
+// - `+ - *` and unary `-` that leave the width, and `/ %` by zero or of a
+//   signed MIN by -1, refuse the build (`algorithm/const-integer-failure`):
+//   the runtime refuses the same operation, and a build-time value has no
+//   caller to hand a failure to.
+// - Bitwise operations and shifts wrap at the width — which is what keeps
+//   CRC-class tables, whose canonical form shifts bits out of the top,
+//   byte-equivalent to a hand-coded reference.
+// - An operation on literals alone has no width until it lands, and is
+//   computed exactly.
+//
+// Storing into a typed slot (Var.init, Assign target, yield element, the
+// iter variable) takes the value exactly or refuses it; nothing truncates.
+// Floats compute in `f64`.
 
 use std::collections::HashMap;
 
 use crate::forge::error::{ExprError, GenerateError};
 use crate::forge::expr::{self, BinOp, ExprKind, TypedExpr, UnaryOp};
+use crate::forge::int_ranges::HazardKind;
 use crate::forge::model::{AlgorithmStmt, FoldBody, SceType};
+use crate::forge::types::{InferredType, TypeCtx};
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Internal error kind — boundary-lifted to typed `GenerateError`
@@ -51,6 +63,7 @@ use crate::forge::model::{AlgorithmStmt, FoldBody, SceType};
 /// | `NotFoldable`        | `algorithm/const-not-foldable` |
 /// | `BudgetExceeded`     | `algorithm/const-fold-budget-exceeded` |
 /// | `YieldTypeMismatch`  | `algorithm/const-yield-type-mismatch` |
+/// | `IntegerFailure`     | `algorithm/const-integer-failure` |
 #[derive(Debug)]
 enum ConstFoldKind {
     /// Body construct outside the foldable substrate. `detail` quotes
@@ -65,6 +78,16 @@ enum ConstFoldKind {
     /// Coercion to the declared scalar / element type rejected:
     /// `produced` is the value's domain, `expected` the declared type.
     YieldTypeMismatch { expected: SceType, produced: String },
+    /// An integer operation the contract refuses (SCE_FORGE.md §3.4.1), or
+    /// a value the slot it is stored in cannot hold. `operation` is what the
+    /// document writes — the operation, or the stored expression or iter
+    /// variable — and `observed` what the fold met it with.
+    IntegerFailure {
+        operation: String,
+        hazard: HazardKind,
+        ty: InferredType,
+        observed: String,
+    },
 }
 
 impl ConstFoldKind {
@@ -95,6 +118,19 @@ impl ConstFoldKind {
                     produced,
                 }
             }
+            Self::IntegerFailure {
+                operation,
+                hazard,
+                ty,
+                observed,
+            } => GenerateError::ConstIntegerFailure {
+                algorithm: site.algorithm.to_string(),
+                const_name: site.const_name.to_string(),
+                operation,
+                hazard,
+                ty: ty.describe(),
+                observed,
+            },
         }
     }
 }
@@ -229,7 +265,11 @@ fn evaluate_fold_inner(
     for i in fold.range_start..fold.range_end {
         budget.consume()?;
         let mut scope = Scope::new();
-        let iter_value = scalar_from_i128(i as i128, &iter_var_type(&fold.elem_type, i))?;
+        let iter_value = coerce_to_const(
+            EvalValue::Int(i as i128),
+            &iter_var_type(&fold.elem_type, i),
+            &fold.iter_var,
+        )?;
         scope.declare(&fold.iter_var, iter_value);
 
         eval_stmts(&fold.body, &mut scope, budget)?;
@@ -436,6 +476,19 @@ impl Scope {
     fn lookup(&self, name: &str) -> Option<ConstValue> {
         self.vars.get(name).copied()
     }
+
+    /// The scope as the typing the emitters run reads it: each local at the
+    /// type it was declared with.
+    fn type_ctx(&self) -> TypeCtx<'_> {
+        let mut ctx = TypeCtx::new();
+        for (name, value) in &self.vars {
+            ctx.vars.insert(
+                name.as_str(),
+                InferredType::from_sce_type(&value.declared_type()),
+            );
+        }
+        ctx
+    }
 }
 
 /// Wide intermediate value used during arithmetic. Storage variables
@@ -635,19 +688,99 @@ fn eval_expr_typed(
     expected: &SceType,
 ) -> Result<ConstValue, ConstFoldKind> {
     let value = eval_expr(expr_text, scope)?;
-    coerce_to_const(value, expected)
+    coerce_to_const(value, expected, expr_text.trim())
 }
 
 /// Evaluate an expression to a wide [`EvalValue`] without type
 /// coercion. Used at every site that does not store the result
 /// (If.cond, While.cond) and as the inner step of
 /// [`eval_expr_typed`].
+///
+/// The tree is typed as the emitters type it before it is evaluated, so an
+/// integer operation computes at the width it has at runtime. Typing
+/// refuses nothing here: a name out of scope keeps its fold-specific
+/// refusal in [`eval_node`].
 fn eval_expr(expr_text: &str, scope: &Scope) -> Result<EvalValue, ConstFoldKind> {
-    let ast = expr::parse_to_ast(expr_text).map_err(|refusal| map_expr_err(refusal.error))?;
-    eval_node(&ast, scope)
+    let text = expr_text.trim();
+    let mut ast = expr::parse_to_ast(text).map_err(|refusal| map_expr_err(refusal.error))?;
+    expr::infer_types(&mut ast, &scope.type_ctx());
+    eval_node(&ast, scope, text)
 }
 
-fn eval_node(node: &TypedExpr, scope: &Scope) -> Result<EvalValue, ConstFoldKind> {
+/// The integer width an operation computes at, as typing gave it, with the
+/// operation as written — what the integer arithmetic contract checks it
+/// against (SCE_FORGE.md §3.4.1).
+struct IntWidth<'t> {
+    ty: InferredType,
+    lo: i128,
+    hi: i128,
+    operation: &'t str,
+}
+
+impl<'t> IntWidth<'t> {
+    /// `None` for an operation typing gave no integer width: one on
+    /// literals alone, or a real one.
+    fn of(node: &TypedExpr, text: &'t str) -> Option<Self> {
+        let (lo, hi) = node.ty.int_bounds()?;
+        let operation = node
+            .span
+            .clone()
+            .and_then(|span| text.get(span))
+            .unwrap_or(text);
+        Some(Self {
+            ty: node.ty.strip_quantity(),
+            lo,
+            hi,
+            operation,
+        })
+    }
+
+    fn signed(&self) -> bool {
+        self.lo < 0
+    }
+
+    /// `v` modulo the width, read back at its signedness — the wrap a
+    /// bitwise operation or a shift has at runtime.
+    fn wrap(&self, v: i128) -> i128 {
+        let span = self.hi - self.lo + 1;
+        (v - self.lo).rem_euclid(span) + self.lo
+    }
+
+    fn fail(&self, hazard: HazardKind, observed: String) -> ConstFoldKind {
+        ConstFoldKind::IntegerFailure {
+            operation: self.operation.to_string(),
+            hazard,
+            ty: self.ty,
+            observed,
+        }
+    }
+
+    /// `a op b` at this width, or the failure the contract names for it.
+    fn arith(&self, op: BinOp, a: i128, b: i128) -> Result<i128, ConstFoldKind> {
+        let observed = || format!("{a} {} {b}", op.token());
+        let exact = match op {
+            BinOp::Div | BinOp::Mod if b == 0 => {
+                return Err(self.fail(HazardKind::DivideByZero, observed()));
+            }
+            BinOp::Div | BinOp::Mod if self.signed() && a == self.lo && b == -1 => {
+                return Err(self.fail(HazardKind::MinDividedByMinusOne, observed()));
+            }
+            BinOp::Add => a.checked_add(b),
+            BinOp::Sub => a.checked_sub(b),
+            BinOp::Mul => a.checked_mul(b),
+            BinOp::Div => a.checked_div(b),
+            BinOp::Mod => a.checked_rem(b),
+            _ => unreachable!("non-arith op routed to IntWidth::arith: {op:?}"),
+        };
+        exact
+            .filter(|v| (self.lo..=self.hi).contains(v))
+            .ok_or_else(|| self.fail(HazardKind::Overflow, observed()))
+    }
+}
+
+/// `text` is the expression `node` was parsed from, which an integer
+/// failure quotes the operation from.
+fn eval_node(node: &TypedExpr, scope: &Scope, text: &str) -> Result<EvalValue, ConstFoldKind> {
     match &node.kind {
         ExprKind::NumberLit(s) => parse_number_lit(s),
         ExprKind::BoolLit(b) => Ok(EvalValue::Bool(*b)),
@@ -674,24 +807,26 @@ fn eval_node(node: &TypedExpr, scope: &Scope) -> Result<EvalValue, ConstFoldKind
             "pre-rendered fragment '{s}' has no fold-time value"
         ))),
         ExprKind::Binary { op, left, right } => {
-            let l = eval_node(left, scope)?;
-            let r = eval_node(right, scope)?;
-            eval_binop(*op, l, r)
+            let l = eval_node(left, scope, text)?;
+            let r = eval_node(right, scope, text)?;
+            let width = IntWidth::of(node, text);
+            eval_binop(*op, l, r, width.as_ref())
         }
         ExprKind::Unary { op, operand } => {
-            let v = eval_node(operand, scope)?;
-            eval_unop(*op, v)
+            let v = eval_node(operand, scope, text)?;
+            let width = IntWidth::of(node, text);
+            eval_unop(*op, v, width.as_ref())
         }
         ExprKind::Conditional {
             condition,
             consequent,
             alternate,
         } => {
-            let c = eval_node(condition, scope)?.to_bool()?;
+            let c = eval_node(condition, scope, text)?.to_bool()?;
             if c {
-                eval_node(consequent, scope)
+                eval_node(consequent, scope, text)
             } else {
-                eval_node(alternate, scope)
+                eval_node(alternate, scope, text)
             }
         }
         ExprKind::Member { .. } => Err(ConstFoldKind::NotFoldable(
@@ -726,11 +861,21 @@ fn eval_node(node: &TypedExpr, scope: &Scope) -> Result<EvalValue, ConstFoldKind
     }
 }
 
-fn eval_binop(op: BinOp, l: EvalValue, r: EvalValue) -> Result<EvalValue, ConstFoldKind> {
+/// `width` is the integer width typing gave the operation, `None` when it
+/// gave none (see [`IntWidth::of`]).
+fn eval_binop(
+    op: BinOp,
+    l: EvalValue,
+    r: EvalValue,
+    width: Option<&IntWidth<'_>>,
+) -> Result<EvalValue, ConstFoldKind> {
     use EvalValue as V;
     match op {
         BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod => match (l, r) {
-            (V::Int(a), V::Int(b)) => Ok(V::Int(arith_int(op, a, b)?)),
+            (V::Int(a), V::Int(b)) => Ok(V::Int(match width {
+                Some(w) => w.arith(op, a, b)?,
+                None => arith_int(op, a, b)?,
+            })),
             (V::Float(a), V::Float(b)) => Ok(V::Float(arith_float(op, a, b)?)),
             (V::Int(a), V::Float(b)) => Ok(V::Float(arith_float(op, a as f64, b)?)),
             (V::Float(a), V::Int(b)) => Ok(V::Float(arith_float(op, a, b as f64)?)),
@@ -752,39 +897,46 @@ fn eval_binop(op: BinOp, l: EvalValue, r: EvalValue) -> Result<EvalValue, ConstF
         BinOp::And => Ok(V::Bool(l.to_bool()? && r.to_bool()?)),
         BinOp::Or => Ok(V::Bool(l.to_bool()? || r.to_bool()?)),
         BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor | BinOp::Shl | BinOp::Shr | BinOp::UShr => {
-            let a = require_int(l)?;
+            let mut a = require_int(l)?;
             let b = require_int(r)?;
-            Ok(V::Int(bitwise_int(op, a, b)?))
+            // A logical shift reads the operand's bits at its width, so a
+            // negative one enters as the unsigned value of those bits.
+            if let (BinOp::UShr, Some(w)) = (op, width) {
+                a = a.rem_euclid(w.hi - w.lo + 1);
+            }
+            let v = bitwise_int(op, a, b)?;
+            Ok(V::Int(width.map_or(v, |w| w.wrap(v))))
         }
     }
 }
 
+/// Arithmetic on an operation typing gave no width — literals alone —
+/// computed exactly; its value is checked where it is stored.
 fn arith_int(op: BinOp, a: i128, b: i128) -> Result<i128, ConstFoldKind> {
-    match op {
-        // Wrapping at i128 width — this is wider than every target's
-        // fixed-width int, so the eventual coerce-to-stored-type
-        // truncation is what produces target-equivalent wrapping.
-        BinOp::Add => Ok(a.wrapping_add(b)),
-        BinOp::Sub => Ok(a.wrapping_sub(b)),
-        BinOp::Mul => Ok(a.wrapping_mul(b)),
-        BinOp::Div => {
-            if b == 0 {
-                return Err(ConstFoldKind::NotFoldable(
-                    "integer division by zero".to_string(),
-                ));
-            }
-            Ok(a.wrapping_div(b))
+    let exact = match op {
+        BinOp::Div | BinOp::Mod if b == 0 => {
+            return Err(ConstFoldKind::NotFoldable(format!(
+                "integer {} by zero",
+                if op == BinOp::Div {
+                    "division"
+                } else {
+                    "modulo"
+                }
+            )));
         }
-        BinOp::Mod => {
-            if b == 0 {
-                return Err(ConstFoldKind::NotFoldable(
-                    "integer modulo by zero".to_string(),
-                ));
-            }
-            Ok(a.wrapping_rem(b))
-        }
+        BinOp::Add => a.checked_add(b),
+        BinOp::Sub => a.checked_sub(b),
+        BinOp::Mul => a.checked_mul(b),
+        BinOp::Div => a.checked_div(b),
+        BinOp::Mod => a.checked_rem(b),
         _ => unreachable!("non-arith op routed to arith_int: {op:?}"),
-    }
+    };
+    exact.ok_or_else(|| {
+        ConstFoldKind::NotFoldable(format!(
+            "`{a} {} {b}` leaves the 128-bit range the fold computes literals in",
+            op.token()
+        ))
+    })
 }
 
 fn arith_float(op: BinOp, a: f64, b: f64) -> Result<f64, ConstFoldKind> {
@@ -837,13 +989,9 @@ fn bitwise_int(op: BinOp, a: i128, b: i128) -> Result<i128, ConstFoldKind> {
                     "shift count {b} out of range"
                 )));
             }
-            // RFC §synth-5-F evaluator follows arithmetic-right-shift on
-            // the wide i128 domain. Per-language `>>>` (unsigned)
-            // semantics are reproduced at storage time: every
-            // non-negative coerce-into-unsigned-narrow target masks
-            // off high bits, matching `u8/u16/u32/u64`'s logical
-            // shift behaviour. CRC-class fixtures stay in
-            // non-negative u16/u32 territory throughout.
+            // Arithmetic shift on the wide domain. `>>>` of a typed operand
+            // arrives here already read as its width's unsigned bits
+            // (`eval_binop`), where the two shifts agree.
             Ok(a >> (b as u32))
         }
         _ => unreachable!("non-bitwise op routed to bitwise_int: {op:?}"),
@@ -871,12 +1019,26 @@ fn eq(a: EvalValue, b: EvalValue) -> bool {
     }
 }
 
-fn eval_unop(op: UnaryOp, v: EvalValue) -> Result<EvalValue, ConstFoldKind> {
+/// `width` as for [`eval_binop`].
+fn eval_unop(
+    op: UnaryOp,
+    v: EvalValue,
+    width: Option<&IntWidth<'_>>,
+) -> Result<EvalValue, ConstFoldKind> {
     use EvalValue as V;
     match op {
         UnaryOp::Pos => Ok(v),
         UnaryOp::Neg => match v {
-            V::Int(i) => Ok(V::Int(i.wrapping_neg())),
+            V::Int(i) => Ok(V::Int(match width {
+                Some(w) => Some(-i)
+                    .filter(|n| (w.lo..=w.hi).contains(n))
+                    .ok_or_else(|| w.fail(HazardKind::Overflow, format!("-({i})")))?,
+                None => i.checked_neg().ok_or_else(|| {
+                    ConstFoldKind::NotFoldable(format!(
+                        "`-{i}` leaves the 128-bit range the fold computes literals in"
+                    ))
+                })?,
+            })),
             V::Float(f) => Ok(V::Float(-f)),
             V::Bool(_) => Err(ConstFoldKind::NotFoldable(
                 "unary minus on bool".to_string(),
@@ -884,7 +1046,7 @@ fn eval_unop(op: UnaryOp, v: EvalValue) -> Result<EvalValue, ConstFoldKind> {
         },
         UnaryOp::Not => Ok(V::Bool(!v.to_bool()?)),
         UnaryOp::BitNot => match v {
-            V::Int(i) => Ok(V::Int(!i)),
+            V::Int(i) => Ok(V::Int(width.map_or(!i, |w| w.wrap(!i)))),
             _ => Err(ConstFoldKind::NotFoldable(
                 "bitwise NOT on non-integer".to_string(),
             )),
@@ -919,7 +1081,14 @@ fn parse_number_lit(s: &str) -> Result<EvalValue, ConstFoldKind> {
     }
 }
 
-fn coerce_to_const(value: EvalValue, ty: &SceType) -> Result<ConstValue, ConstFoldKind> {
+/// Store `value` in a slot of type `ty`. `written` is what the document
+/// writes for the value — the stored expression, or the iter variable's
+/// name — which a refusal quotes.
+fn coerce_to_const(
+    value: EvalValue,
+    ty: &SceType,
+    written: &str,
+) -> Result<ConstValue, ConstFoldKind> {
     use SceType::*;
     match (value, ty) {
         (EvalValue::Bool(b), Bool) => Ok(ConstValue::Bool(b)),
@@ -939,16 +1108,26 @@ fn coerce_to_const(value: EvalValue, ty: &SceType) -> Result<ConstValue, ConstFo
             produced: "float".to_string(),
         }),
 
-        (EvalValue::Int(i), Uint8) => Ok(ConstValue::U8((i as u128 & 0xFF) as u8)),
-        (EvalValue::Int(i), Uint16) => Ok(ConstValue::U16((i as u128 & 0xFFFF) as u16)),
-        (EvalValue::Int(i), Uint32) => Ok(ConstValue::U32((i as u128 & 0xFFFF_FFFF) as u32)),
-        (EvalValue::Int(i), Uint64) => {
-            Ok(ConstValue::U64((i as u128 & 0xFFFF_FFFF_FFFF_FFFF) as u64))
+        // Exactly, or not at all (SCE_FORGE.md §3.4.1): truncating here
+        // would store a value no backend computes.
+        (EvalValue::Int(i), Uint8 | Uint16 | Uint32 | Uint64 | Int8 | Int16 | Int32 | Int64) => {
+            let fits = match ty {
+                Uint8 => u8::try_from(i).map(ConstValue::U8).ok(),
+                Uint16 => u16::try_from(i).map(ConstValue::U16).ok(),
+                Uint32 => u32::try_from(i).map(ConstValue::U32).ok(),
+                Uint64 => u64::try_from(i).map(ConstValue::U64).ok(),
+                Int8 => i8::try_from(i).map(ConstValue::I8).ok(),
+                Int16 => i16::try_from(i).map(ConstValue::I16).ok(),
+                Int32 => i32::try_from(i).map(ConstValue::I32).ok(),
+                _ => i64::try_from(i).map(ConstValue::I64).ok(),
+            };
+            fits.ok_or_else(|| ConstFoldKind::IntegerFailure {
+                operation: written.to_string(),
+                hazard: HazardKind::Overflow,
+                ty: InferredType::from_sce_type(ty),
+                observed: i.to_string(),
+            })
         }
-        (EvalValue::Int(i), Int8) => Ok(ConstValue::I8(i as i8)),
-        (EvalValue::Int(i), Int16) => Ok(ConstValue::I16(i as i16)),
-        (EvalValue::Int(i), Int32) => Ok(ConstValue::I32(i as i32)),
-        (EvalValue::Int(i), Int64) => Ok(ConstValue::I64(i as i64)),
 
         // String / Bytes are not RFC §synth-5-F element types — the parser
         // already rejects them on `array<elem>` so this arm is
@@ -968,10 +1147,6 @@ fn coerce_to_const(value: EvalValue, ty: &SceType) -> Result<ConstValue, ConstFo
             produced: "scalar fold yield".to_string(),
         }),
     }
-}
-
-fn scalar_from_i128(i: i128, ty: &SceType) -> Result<ConstValue, ConstFoldKind> {
-    coerce_to_const(EvalValue::Int(i), ty)
 }
 
 fn map_expr_err(e: ExprError) -> ConstFoldKind {
@@ -1216,6 +1391,139 @@ mod tests {
     fn scalar_init_evaluates_hex_to_u16() {
         let v = evaluate_scalar_init("0xFFFF", &SceType::Uint16, TEST_SITE).unwrap();
         assert_eq!(v, ConstValue::U16(0xFFFF));
+    }
+
+    /// A one-local fold over `0..end` of `elem` elements, the local holding
+    /// `init` and the element yielding it.
+    fn fold_of(elem: SceType, end: u32, init: &str) -> FoldBody {
+        FoldBody {
+            range_start: 0,
+            range_end: end,
+            iter_var: "i".into(),
+            elem_type: elem.clone(),
+            body: vec![AlgorithmStmt::Var {
+                name: "x".into(),
+                name_spelling: None,
+                sce_type: crate::forge::model::AlgorithmValueType::Scalar(elem),
+                init: Some(init.into()),
+                init_spelling: None,
+                capacity: None,
+                capacity_spelling: None,
+            }],
+            yield_expr: "x".into(),
+            yield_spelling: None,
+        }
+    }
+
+    /// The integer failure `fold` is refused with, as (operation, hazard,
+    /// type, observed).
+    fn integer_failure(fold: &FoldBody) -> (String, String, String, String) {
+        match evaluate_fold(fold, &mut Budget::default(), TEST_SITE) {
+            Err(GenerateError::ConstIntegerFailure {
+                operation,
+                hazard,
+                ty,
+                observed,
+                ..
+            }) => (operation, hazard.described().into(), ty, observed),
+            other => panic!("expected an integer failure, got {other:?}"),
+        }
+    }
+
+    fn failure(
+        operation: &str,
+        hazard: &str,
+        ty: &str,
+        observed: &str,
+    ) -> (String, String, String, String) {
+        (operation.into(), hazard.into(), ty.into(), observed.into())
+    }
+
+    /// SCE_FORGE.md §3.4.1 at build time: an operation that leaves its width
+    /// is refused where the runtime would refuse it, not wrapped into the
+    /// table — at the operation as written, with the operands the fold met.
+    #[test]
+    fn an_operation_that_overflows_its_width_refuses_the_fold() {
+        assert_eq!(
+            integer_failure(&fold_of(SceType::Uint8, 256, "(i + 1) & 0xFF")),
+            failure("(i + 1)", "overflow", "uint8", "255 + 1")
+        );
+        assert_eq!(
+            integer_failure(&fold_of(SceType::Int8, 1, "i - 100 - 100")),
+            failure("i - 100 - 100", "overflow", "int8", "-100 - 100")
+        );
+        assert_eq!(
+            integer_failure(&fold_of(SceType::Int16, 1, "-(i - 32767 - 1)")),
+            failure("-(i - 32767 - 1)", "overflow", "int16", "-(-32768)")
+        );
+    }
+
+    #[test]
+    fn a_division_the_contract_names_refuses_the_fold() {
+        assert_eq!(
+            integer_failure(&fold_of(SceType::Uint16, 1, "7 % i")),
+            failure("7 % i", "divide by zero", "uint16", "7 % 0")
+        );
+        assert_eq!(
+            integer_failure(&fold_of(SceType::Int8, 1, "(i - 127 - 1) / (i - 1)")),
+            failure(
+                "(i - 127 - 1) / (i - 1)",
+                "divide the minimum by -1",
+                "int8",
+                "-128 / -1"
+            )
+        );
+    }
+
+    /// Bitwise operations and shifts wrap at the operation's width — the
+    /// rule that keeps a CRC table's shifted-out bits out of its elements.
+    #[test]
+    fn a_shift_wraps_at_its_width() {
+        let out = evaluate_fold(
+            &fold_of(SceType::Uint8, 256, "(i << 1) >> 1"),
+            &mut Budget::default(),
+            TEST_SITE,
+        )
+        .unwrap();
+        assert_eq!(
+            out[0x81],
+            ConstValue::U8(0x01),
+            "the top bit is shifted out"
+        );
+        let out = evaluate_fold(
+            &fold_of(SceType::Int8, 1, "(i - 1) >>> 4"),
+            &mut Budget::default(),
+            TEST_SITE,
+        )
+        .unwrap();
+        assert_eq!(
+            out,
+            vec![ConstValue::I8(0x0F)],
+            "`>>>` shifts the width's bits"
+        );
+    }
+
+    /// Nothing a slot cannot hold is truncated into it: not a stored value,
+    /// and not the iter variable the range walks past its type.
+    #[test]
+    fn a_value_its_slot_cannot_hold_is_refused_not_truncated() {
+        match evaluate_scalar_init("300", &SceType::Uint8, TEST_SITE) {
+            Err(GenerateError::ConstIntegerFailure {
+                operation,
+                hazard,
+                ty,
+                observed,
+                ..
+            }) => assert_eq!(
+                (operation, hazard.described().into(), ty, observed),
+                failure("300", "overflow", "uint8", "300")
+            ),
+            other => panic!("expected an integer failure, got {other:?}"),
+        }
+        assert_eq!(
+            integer_failure(&fold_of(SceType::Uint8, 300, "i")),
+            failure("i", "overflow", "uint8", "256")
+        );
     }
 
     /// Per-language array-literal serialisation.

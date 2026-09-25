@@ -171,6 +171,7 @@
         "algorithm/const-not-foldable",
         "algorithm/const-fold-budget-exceeded",
         "algorithm/const-yield-type-mismatch",
+        "algorithm/const-integer-failure",
         "codec/variant-arm-unreachable",
         "codec/variant-duplicate-default-arm",
         "codec/variant-arm-mid-mismatch",

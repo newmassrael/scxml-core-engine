@@ -3164,7 +3164,7 @@ does not hold a value it never declared.
 
 ---
 
-## Appendix — `DiagnosticCode` index (380 codes)
+## Appendix — `DiagnosticCode` index (381 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -3275,6 +3275,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `algorithm/const-not-foldable` | Generate |
 | `algorithm/const-fold-budget-exceeded` | Generate |
 | `algorithm/const-yield-type-mismatch` | Generate |
+| `algorithm/const-integer-failure` | Generate |
 | `codec/variant-arm-unreachable` | Validation |
 | `codec/variant-duplicate-default-arm` | Validation |
 | `codec/variant-arm-mid-mismatch` | Validation |

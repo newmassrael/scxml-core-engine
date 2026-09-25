@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Negative fixture for `algorithm/const-integer-failure` — the integer
+  arithmetic contract (SCE_FORGE.md §3.4.1) at build time.
+
+  `i * 2` computes in uint8, the type of `i`, and leaves it once `i`
+  reaches 128. The runtime refuses that operation, so a table folded by
+  wrapping would hold elements no backend computes; and a build-time value
+  has no caller to hand a failure to. The build is refused, on the
+  `<sce:const>` row.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="algorithm"
+       version="1.0">
+  <sce:signature>
+    <sce:return type="uint8"/>
+  </sce:signature>
+  <sce:const name="DOUBLED" type="array&lt;u8, 256&gt;" sce:compute-at="build">
+    <sce:fold range="0..256" as="i" elem-type="uint8">
+      <sce:yield expr="i * 2"/>
+    </sce:fold>
+  </sce:const>
+  <sce:body>
+    <sce:return expr="0"/>
+  </sce:body>
+</scxml>
