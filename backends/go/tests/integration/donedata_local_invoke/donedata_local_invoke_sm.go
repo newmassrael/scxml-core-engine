@@ -440,7 +440,7 @@ func (p *DonedataLocalInvokePolicy) ExecutePendingInvokes(engine *sce.Engine[Don
 	p.pendingInvokes = p.pendingInvokes[:0]
 
 	for _, pending := range invokesToExecute {
-		if strings.Contains(pending.InvokeID, ".inv_content") {
+		if pending.DocumentID == "inv_content" {
 
 			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
@@ -502,7 +502,7 @@ func (p *DonedataLocalInvokePolicy) ExecutePendingInvokes(engine *sce.Engine[Don
 			}
 			continue
 		}
-		if strings.Contains(pending.InvokeID, ".inv_param") {
+		if pending.DocumentID == "inv_param" {
 
 			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
@@ -878,8 +878,9 @@ func (p *DonedataLocalInvokePolicy) ExecuteEntryActions(state DonedataLocalInvok
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.inv_content", "phase_content", sce.NextInvokeCounter())
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[DonedataLocalInvokeState]{
-				InvokeID: generatedInvokeID,
-				State:    DonedataLocalInvokeStatePhaseContent,
+				InvokeID:   generatedInvokeID,
+				State:      DonedataLocalInvokeStatePhaseContent,
+				DocumentID: "inv_content",
 			})
 		}
 	case DonedataLocalInvokeStatePhaseParam:
@@ -888,8 +889,9 @@ func (p *DonedataLocalInvokePolicy) ExecuteEntryActions(state DonedataLocalInvok
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.inv_param", "phase_param", sce.NextInvokeCounter())
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[DonedataLocalInvokeState]{
-				InvokeID: generatedInvokeID,
-				State:    DonedataLocalInvokeStatePhaseParam,
+				InvokeID:   generatedInvokeID,
+				State:      DonedataLocalInvokeStatePhaseParam,
+				DocumentID: "inv_param",
 			})
 		}
 	default:

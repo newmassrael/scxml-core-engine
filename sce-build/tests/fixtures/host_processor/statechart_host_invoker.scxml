@@ -19,6 +19,16 @@
                broke the entry chain while leaving the invoke arm working
                would otherwise read as a pass.
 
+  Two things the counters also hold, because nothing else would:
+
+    `_event.invokeid` — a completion counts only when it names its
+               invocation (W3C SCXML 5.10.1). One raised with no invokeid
+               falls through and `started` stays 0.
+    probe2   — a second invocation in the same state whose id begins with
+               the first's. A dispatch that found an entry by substring
+               started `probe` for it, so `started2` stays 0 and the host
+               sees `probe` twice.
+
   The generated machine is compiled with the host-invoker declaration
   `x-sce-host` (scripts/regen_host_processor.sh names the flag; an XML
   comment cannot spell a double hyphen).
@@ -28,6 +38,7 @@
 
   <datamodel>
     <data id="started" expr="0"/>
+    <data id="started2" expr="0"/>
     <data id="refused" expr="0"/>
     <data id="ended" expr="0"/>
     <data id="entered" expr="0"/>
@@ -41,9 +52,13 @@
     <invoke id="probe" type="x-sce-host" src="pane://turn">
       <param name="within" expr="'2500'"/>
     </invoke>
+    <invoke id="probe2" type="x-sce-host" src="pane://other"/>
 
-    <transition event="done.invoke.probe">
+    <transition event="done.invoke.probe" cond="_event.invokeid === 'probe'">
       <assign location="started" expr="started + 1"/>
+    </transition>
+    <transition event="done.invoke.probe2" cond="_event.invokeid === 'probe2'">
+      <assign location="started2" expr="started2 + 1"/>
     </transition>
     <transition event="error.execution">
       <assign location="refused" expr="refused + 1"/>

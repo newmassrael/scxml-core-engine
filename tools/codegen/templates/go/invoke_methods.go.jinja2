@@ -81,7 +81,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 {% for state_id, state in model.states | dictsort %}
 {% if state.invokes | scxml %}
 {% for invoke_info in state.invokes | scxml %}
-		if strings.Contains(pending.InvokeID, ".{{ invoke_info.invoke_id }}") {
+		if pending.DocumentID == "{{ invoke_info.invoke_id }}" {
 {% if invoke_info.namelist %}
 			// W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
 {% if model.needs_script_engine %}
@@ -245,7 +245,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 {% for state_id, state in model.states | dictsort %}
 {% if state.invokes | unsupported_refused %}
 {% for invoke_info in state.invokes | unsupported_refused %}
-		if strings.Contains(pending.InvokeID, ".{{ invoke_info.invoke_id }}") {
+		if pending.DocumentID == "{{ invoke_info.invoke_id }}" {
 			// W3C SCXML 6.4.1: unsupported `type` — place error.execution on
 			// the internal queue and start nothing.
 			engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke type='{{ invoke_info.invoke_type | escape_go }}'> names an external service this platform does not support"))
@@ -257,7 +257,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 {% for state_id, state in model.states | dictsort %}
 {% if state.invokes | host_invoker %}
 {% for invoke_info in state.invokes | host_invoker %}
-		if strings.Contains(pending.InvokeID, ".{{ invoke_info.invoke_id }}") {
+		if pending.DocumentID == "{{ invoke_info.invoke_id }}" {
 			// W3C SCXML 6.4.1: the host declared this `type`, so START the
 			// invocation rather than refusing it. The id handed over is the
 			// DOCUMENT's, not the per-instance one the pending queue carries:
@@ -290,7 +290,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 {% for state_id, state in model.states | dictsort %}
 {% if state.invokes | hybrid %}
 {% for invoke_info in state.invokes | hybrid %}
-		if strings.Contains(pending.InvokeID, ".{{ invoke_info.invoke_id }}") {
+		if pending.DocumentID == "{{ invoke_info.invoke_id }}" {
 {% if invoke_info.candidates %}
 			// Which candidate the evaluated value names (§2.13: matched on the
 			// document stem, so `file:x.scxml` and `./x.scxml` are one child).

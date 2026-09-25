@@ -470,7 +470,7 @@ impl Test422Policy {
         let invokes_to_execute = std::mem::take(&mut self.pending_invokes);
 
         for pending in &invokes_to_execute {
-            if pending.invoke_id.contains("._invoke_0") {
+            if pending.document_id == "_invoke_0" {
                 // W3C SCXML 6.5: Generate child session ID for finalize origin matching
                 let child_session_id = format!(
                     "{}.{}",
@@ -565,7 +565,7 @@ impl Test422Policy {
                 }
                 continue;
             }
-            if pending.invoke_id.contains("._invoke_1") {
+            if pending.document_id == "_invoke_1" {
                 // W3C SCXML 6.5: Generate child session ID for finalize origin matching
                 let child_session_id = format!(
                     "{}.{}",
@@ -660,7 +660,7 @@ impl Test422Policy {
                 }
                 continue;
             }
-            if pending.invoke_id.contains("._invoke_2") {
+            if pending.document_id == "_invoke_2" {
                 // W3C SCXML 6.5: Generate child session ID for finalize origin matching
                 let child_session_id = format!(
                     "{}.{}",
@@ -1211,6 +1211,7 @@ impl StatePolicy for Test422Policy {
                         sce_rust_runtime::invoke::PendingInvoke {
                             invoke_id: generated_invoke_id,
                             state: Test422State::S1,
+                            document_id: "_invoke_0",
                         },
                     );
                 }
@@ -1226,6 +1227,7 @@ impl StatePolicy for Test422Policy {
                         sce_rust_runtime::invoke::PendingInvoke {
                             invoke_id: generated_invoke_id,
                             state: Test422State::S11,
+                            document_id: "_invoke_1",
                         },
                     );
                 }
@@ -1241,6 +1243,7 @@ impl StatePolicy for Test422Policy {
                         sce_rust_runtime::invoke::PendingInvoke {
                             invoke_id: generated_invoke_id,
                             state: Test422State::S12,
+                            document_id: "_invoke_2",
                         },
                     );
                 }

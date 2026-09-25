@@ -2727,7 +2727,19 @@ public:
         const auto response = it->second(event);
         startedHostInvokes_.emplace(request.processorType, request.invokeId);
         if (response.has_value() && response->doneData.has_value()) {
-            raiseExternal(std::string("done.invoke.") + request.invokeId, *response->doneData);
+            // §scxml-5.10.1: the completion is an event of the invocation, so
+            // its `_event.invokeid` is the invocation's id — the one
+            // `done.invoke.<id>` names and the host was handed.
+            const std::string name = std::string("done.invoke.") + request.invokeId;
+            if (auto done = policy_.getEventFromName(name)) {
+                raiseExternal(EventWithMetadata(*done, *response->doneData, "", "", "external",
+                                                SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE, request.invokeId));
+            } else {
+                // The degradation raiseExternal(name) has: a document that
+                // wrote no transition on the completion declares no such
+                // event, and there is nothing to deliver it to.
+                SCE_LOG_DEBUG("AOT performHostInvoke: '{}' not in Event enum, ignoring", name);
+            }
         }
         return true;
     }

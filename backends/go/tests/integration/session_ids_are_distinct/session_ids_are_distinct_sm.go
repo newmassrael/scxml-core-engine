@@ -467,7 +467,7 @@ func (p *SessionIdsAreDistinctPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 	p.pendingInvokes = p.pendingInvokes[:0]
 
 	for _, pending := range invokesToExecute {
-		if strings.Contains(pending.InvokeID, ".inv_a") {
+		if pending.DocumentID == "inv_a" {
 
 			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
@@ -529,7 +529,7 @@ func (p *SessionIdsAreDistinctPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			}
 			continue
 		}
-		if strings.Contains(pending.InvokeID, ".inv_b") {
+		if pending.DocumentID == "inv_b" {
 
 			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
@@ -909,15 +909,17 @@ func (p *SessionIdsAreDistinctPolicy) ExecuteEntryActions(state SessionIdsAreDis
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.inv_a", "phase", sce.NextInvokeCounter())
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[SessionIdsAreDistinctState]{
-				InvokeID: generatedInvokeID,
-				State:    SessionIdsAreDistinctStatePhase,
+				InvokeID:   generatedInvokeID,
+				State:      SessionIdsAreDistinctStatePhase,
+				DocumentID: "inv_a",
 			})
 		}
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.inv_b", "phase", sce.NextInvokeCounter())
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[SessionIdsAreDistinctState]{
-				InvokeID: generatedInvokeID,
-				State:    SessionIdsAreDistinctStatePhase,
+				InvokeID:   generatedInvokeID,
+				State:      SessionIdsAreDistinctStatePhase,
+				DocumentID: "inv_b",
 			})
 		}
 	default:

@@ -199,7 +199,7 @@ impl Test229Policy {
         let invokes_to_execute = std::mem::take(&mut self.pending_invokes);
 
         for pending in &invokes_to_execute {
-            if pending.invoke_id.contains("._invoke_0") {
+            if pending.document_id == "_invoke_0" {
                 // W3C SCXML 6.5: Generate child session ID for finalize origin matching
                 let child_session_id = format!(
                     "{}.{}",
@@ -640,6 +640,7 @@ impl StatePolicy for Test229Policy {
                         sce_rust_runtime::invoke::PendingInvoke {
                             invoke_id: generated_invoke_id,
                             state: Test229State::S0,
+                            document_id: "_invoke_0",
                         },
                     );
                 }

@@ -405,7 +405,7 @@ func (p *InvokeExpressionFailureIsReportedPolicy) ExecutePendingInvokes(engine *
 	p.pendingInvokes = p.pendingInvokes[:0]
 
 	for _, pending := range invokesToExecute {
-		if strings.Contains(pending.InvokeID, "._invoke_0") {
+		if pending.DocumentID == "_invoke_0" {
 			// W3C SCXML 6.4.3: Evaluate srcexpr at runtime
 			p.ensureScriptEngine()
 			{
@@ -723,8 +723,9 @@ func (p *InvokeExpressionFailureIsReportedPolicy) ExecuteEntryActions(state Invo
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d._invoke_0", "probe", sce.NextInvokeCounter())
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[InvokeExpressionFailureIsReportedState]{
-				InvokeID: generatedInvokeID,
-				State:    InvokeExpressionFailureIsReportedStateProbe,
+				InvokeID:   generatedInvokeID,
+				State:      InvokeExpressionFailureIsReportedStateProbe,
+				DocumentID: "_invoke_0",
 			})
 		}
 	default:

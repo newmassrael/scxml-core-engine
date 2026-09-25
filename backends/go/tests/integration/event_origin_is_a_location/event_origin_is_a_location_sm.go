@@ -427,7 +427,7 @@ func (p *EventOriginIsALocationPolicy) ExecutePendingInvokes(engine *sce.Engine[
 	p.pendingInvokes = p.pendingInvokes[:0]
 
 	for _, pending := range invokesToExecute {
-		if strings.Contains(pending.InvokeID, ".inv_peer") {
+		if pending.DocumentID == "inv_peer" {
 
 			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
@@ -783,8 +783,9 @@ func (p *EventOriginIsALocationPolicy) ExecuteEntryActions(state EventOriginIsAL
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.inv_peer", "phase", sce.NextInvokeCounter())
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[EventOriginIsALocationState]{
-				InvokeID: generatedInvokeID,
-				State:    EventOriginIsALocationStatePhase,
+				InvokeID:   generatedInvokeID,
+				State:      EventOriginIsALocationStatePhase,
+				DocumentID: "inv_peer",
 			})
 		}
 	default:

@@ -209,6 +209,11 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                             memset(&_done_evt, 0, sizeof(_done_evt));
                             _done_evt.event = _done_ev;
                             sce_copy_bounded_data(_done_evt.data, _host_inv_out.done_data);
+                            /* W3C SCXML 5.10.1: the completion is an event of
+                               the invocation, so `_event.invokeid` is the
+                               invocation's id — the one `done.invoke.<id>`
+                               names and the host was handed. */
+                            sce_copy_bounded_id(_done_evt.invoke_id, "{{ invoke_info.invoke_id | escape_c }}");
                             {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_done_evt);
                         }
                     }

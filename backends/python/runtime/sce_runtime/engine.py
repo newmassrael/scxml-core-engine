@@ -980,9 +980,13 @@ class Engine(Generic[S, E]):
         response = handler(HostInvokeEvent(start=request))
         self._started_host_invokes.add((request.processor_type, request.invoke_id))
         if response is not None and response.done_data is not None:
+            # W3C SCXML 5.10.1: the completion is an event of the
+            # invocation, so `_event.invokeid` is the invocation's id — the
+            # one `done.invoke.<id>` names and the host was handed.
             self.send_external_by_name(
                 f"done.invoke.{request.invoke_id}",
                 data=response.done_data,
+                invoke_id=request.invoke_id,
             )
         return True
 

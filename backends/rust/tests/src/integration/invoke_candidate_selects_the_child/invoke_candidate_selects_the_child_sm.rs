@@ -449,7 +449,7 @@ impl InvokeCandidateSelectsTheChildPolicy {
         let invokes_to_execute = std::mem::take(&mut self.pending_invokes);
 
         for pending in &invokes_to_execute {
-            if pending.invoke_id.contains("._invoke_0") {
+            if pending.document_id == "_invoke_0" {
                 // W3C SCXML 6.4: Hybrid invoke — evaluate expression at runtime, create pre-generated child
                 // Which candidate the evaluated value names. Declared here
                 // because the evaluation below is a `match` of its own.
@@ -985,6 +985,7 @@ impl StatePolicy for InvokeCandidateSelectsTheChildPolicy {
                         sce_rust_runtime::invoke::PendingInvoke {
                             invoke_id: generated_invoke_id,
                             state: InvokeCandidateSelectsTheChildState::Probe,
+                            document_id: "_invoke_0",
                         },
                     );
                 }

@@ -119,7 +119,7 @@
                     // W3C SCXML 3.12.1: Match runtime-generated invoke ID (stateid.platformid.index format)
                     // Full ID example: "s0.123456789._invoke_0" where 123456789 is runtime platformid (pointer address)
                     // Match on "._invoke_0" suffix to identify this invoke - substring matching required because platformid is runtime-only
-                    if (pending.invokeId.find(".{{ invoke_info.invoke_id }}") != std::string::npos) {
+                    if (pending.documentId == "{{ invoke_info.invoke_id }}") {
                         {% if invoke_info.namelist %}
                         // W3C SCXML 6.4.1: Namelist handling - validate and pass values to child
                         std::map<std::string, std::vector<std::string>> namelistParams;
@@ -358,7 +358,7 @@
                 {% if state.invokes | hybrid %}
                 if (pending.state == State::{{ state_id | capitalize }}) {
                     {% for invoke_info in state.invokes | hybrid %}
-                    if (pending.invokeId.find(".{{ invoke_info.invoke_id }}") != std::string::npos) {
+                    if (pending.documentId == "{{ invoke_info.invoke_id }}") {
                         // W3C SCXML 6.4: Hybrid invoke — evaluate expression, then run pre-generated AOT child
 {% if invoke_info.candidates %}
                         // Which candidate the evaluated value names. Declared
@@ -451,7 +451,7 @@
                 {% if state.invokes | host_invoker %}
                 if (pending.state == State::{{ state_id | capitalize }}) {
                     {% for invoke_info in state.invokes | host_invoker %}
-                    if (pending.invokeId.find(".{{ invoke_info.invoke_id }}") != std::string::npos) {
+                    if (pending.documentId == "{{ invoke_info.invoke_id }}") {
                         // W3C SCXML 6.4.1: the host declared this `type`, so
                         // START the invocation rather than refusing it. The id
                         // handed over is the DOCUMENT's, not the per-instance
@@ -486,7 +486,7 @@
                 {% if state.invokes | unsupported_refused %}
                 if (pending.state == State::{{ state_id | capitalize }}) {
                     {% for invoke_info in state.invokes | unsupported_refused %}
-                    if (pending.invokeId.find(".{{ invoke_info.invoke_id }}") != std::string::npos) {
+                    if (pending.documentId == "{{ invoke_info.invoke_id }}") {
                         // W3C SCXML 6.4.1: the `type` names no processor this
                         // platform supports. Place error.execution on the
                         // internal queue and start nothing — no child session

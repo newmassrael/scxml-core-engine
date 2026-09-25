@@ -61,6 +61,7 @@
             engine._pending_invokes.append(PendingInvoke(
                 invoke_id=_runtime_invoke_id,
                 owner_state_name={{ state_id | py_string_literal }},
+                document_id={{ inv.invoke_id | py_string_literal }},
             ))
 {% endfor %}
 {% endif %}
@@ -75,6 +76,7 @@
             engine._pending_invokes.append(PendingInvoke(
                 invoke_id=f"{{ state_id }}.{id(self)}.{{ inv.invoke_id }}",
                 owner_state_name={{ state_id | py_string_literal }},
+                document_id={{ inv.invoke_id | py_string_literal }},
             ))
 {% endfor %}
 {% endif %}
@@ -99,10 +101,9 @@
         for entry in pending:
 {% for state_id, state in model.states | dictsort %}
 {% for inv in state.invokes | scxml_family %}
-            # W3C SCXML 6.4.1: Match by `.<element_id>` suffix because
-            # `defer_invokes_on_entry` decorates the static id with the
-            # owning-state + instance prefix (Rust `contains(".{id}")` parity).
-            if entry.invoke_id.endswith({{ ('.' + inv.invoke_id) | py_string_literal }}):
+            # W3C SCXML 6.4.1: the entry carries the document's id beside the
+            # decorated runtime one, and is dispatched on it whole.
+            if entry.document_id == {{ inv.invoke_id | py_string_literal }}:
 {% if inv.srcexpr or inv.contentexpr %}
                 # W3C SCXML 6.4.3: evaluate the expression at invoke-fire
                 # time and raise `error.execution` when it cannot be
@@ -312,7 +313,7 @@
                 continue
 {% endfor %}
 {% for inv in state.invokes | unsupported_refused %}
-            if entry.invoke_id.endswith({{ ('.' + inv.invoke_id) | py_string_literal }}):
+            if entry.document_id == {{ inv.invoke_id | py_string_literal }}:
                 # W3C SCXML 6.4.1: unsupported `type` — place error.execution
                 # on the internal queue and start nothing.
                 self._raise_error_execution(
@@ -322,7 +323,7 @@
                 continue
 {% endfor %}
 {% for inv in state.invokes | host_invoker %}
-            if entry.invoke_id.endswith({{ ('.' + inv.invoke_id) | py_string_literal }}):
+            if entry.document_id == {{ inv.invoke_id | py_string_literal }}:
                 # W3C SCXML 6.4.1: the host declared this `type`, so START the
                 # invocation rather than refusing it. The id handed over is the
                 # DOCUMENT's, not the per-instance one the pending queue
@@ -363,10 +364,9 @@
 {% for inv in unsup_list %}
             # §scxml-6.4.1: an unsupported-type entry that never ran must
             # raise nothing, so drop it from the pending queue on exit.
-            _suffix = {{ ('.' + inv.invoke_id) | py_string_literal }}
             engine._pending_invokes = [
                 p for p in engine._pending_invokes
-                if not p.invoke_id.endswith(_suffix)
+                if p.document_id != {{ inv.invoke_id | py_string_literal }}
             ]
 {% endfor %}
 {% endif %}
@@ -389,17 +389,15 @@
         if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
 {% for inv in scxml_list %}
             # W3C SCXML 6.4.2: `_active_invokes` is keyed by the static
-            # element id; `_pending_invokes` carries the runtime
-            # `<state>.<instance>.<id>` id (defer_invokes_on_entry),
-            # so the pending prune matches by suffix.
+            # element id, and each `_pending_invokes` entry carries it as
+            # `document_id` beside its runtime `<state>.<instance>.<id>` id.
             _inv = engine._active_invokes.pop({{ inv.invoke_id | py_string_literal }}, None)
             if _inv is not None:
                 _inv.cancel()
             engine._done_invoke_emitted.pop({{ inv.invoke_id | py_string_literal }}, None)
-            _suffix = {{ ('.' + inv.invoke_id) | py_string_literal }}
             engine._pending_invokes = [
                 p for p in engine._pending_invokes
-                if not p.invoke_id.endswith(_suffix)
+                if p.document_id != {{ inv.invoke_id | py_string_literal }}
             ]
 {% endfor %}
 {% endif %}

@@ -539,7 +539,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 	p.pendingInvokes = p.pendingInvokes[:0]
 
 	for _, pending := range invokesToExecute {
-		if strings.Contains(pending.InvokeID, ".inv_absent") {
+		if pending.DocumentID == "inv_absent" {
 			// W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
 			{
 				p.ensureScriptEngine()
@@ -623,7 +623,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 			}
 			continue
 		}
-		if strings.Contains(pending.InvokeID, ".inv_empty") {
+		if pending.DocumentID == "inv_empty" {
 			// W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
 			{
 				p.ensureScriptEngine()
@@ -707,7 +707,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 			}
 			continue
 		}
-		if strings.Contains(pending.InvokeID, ".inv_unmatched") {
+		if pending.DocumentID == "inv_unmatched" {
 			// W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
 			{
 				p.ensureScriptEngine()
@@ -1225,8 +1225,9 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteEntryActions(state EmptyF
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.inv_absent", "absentPhase", sce.NextInvokeCounter())
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[EmptyFinalizeUpdatesTheLocationState]{
-				InvokeID: generatedInvokeID,
-				State:    EmptyFinalizeUpdatesTheLocationStateAbsentPhase,
+				InvokeID:   generatedInvokeID,
+				State:      EmptyFinalizeUpdatesTheLocationStateAbsentPhase,
+				DocumentID: "inv_absent",
 			})
 		}
 	case EmptyFinalizeUpdatesTheLocationStateEmptyPhase:
@@ -1254,8 +1255,9 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteEntryActions(state EmptyF
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.inv_empty", "emptyPhase", sce.NextInvokeCounter())
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[EmptyFinalizeUpdatesTheLocationState]{
-				InvokeID: generatedInvokeID,
-				State:    EmptyFinalizeUpdatesTheLocationStateEmptyPhase,
+				InvokeID:   generatedInvokeID,
+				State:      EmptyFinalizeUpdatesTheLocationStateEmptyPhase,
+				DocumentID: "inv_empty",
 			})
 		}
 	case EmptyFinalizeUpdatesTheLocationStateUnmatchedPhase:
@@ -1283,8 +1285,9 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteEntryActions(state EmptyF
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.inv_unmatched", "unmatchedPhase", sce.NextInvokeCounter())
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[EmptyFinalizeUpdatesTheLocationState]{
-				InvokeID: generatedInvokeID,
-				State:    EmptyFinalizeUpdatesTheLocationStateUnmatchedPhase,
+				InvokeID:   generatedInvokeID,
+				State:      EmptyFinalizeUpdatesTheLocationStateUnmatchedPhase,
+				DocumentID: "inv_unmatched",
 			})
 		}
 	default:

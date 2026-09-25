@@ -129,7 +129,7 @@
 {% for invoke_info in state.invokes | unsupported %}
                 std::string generatedInvokeId_{{ invoke_info.invoke_id }} = "{{ state_id }}." + std::to_string(reinterpret_cast<uintptr_t>(this)) + ".{{ invoke_info.invoke_id }}";
                 ::SCE::Core::InvokeHelper::deferInvoke(pendingInvokes_,
-                    PendingInvoke{generatedInvokeId_{{ invoke_info.invoke_id }}, State::{{ state_id | capitalize }}});
+                    PendingInvoke{generatedInvokeId_{{ invoke_info.invoke_id }}, State::{{ state_id | capitalize }}, "{{ invoke_info.invoke_id }}"});
                 AOT_DEBUG("Deferred {{ 'host-served' if invoke_info.host_served is defined and invoke_info.host_served else 'unsupported-type' }} invoke: {} in state {{ state_id }}", generatedInvokeId_{{ invoke_info.invoke_id }});
 {% endfor %}
 {% endif %}
@@ -156,7 +156,7 @@
 
                 // Defer invoke: {{ invoke_info.invoke_id }} ({{ invoke_info.src }})
                 ::SCE::Core::InvokeHelper::deferInvoke(pendingInvokes_,
-                    PendingInvoke{generatedInvokeId_{{ invoke_info.invoke_id }}, State::{{ state_id | capitalize }}});
+                    PendingInvoke{generatedInvokeId_{{ invoke_info.invoke_id }}, State::{{ state_id | capitalize }}, "{{ invoke_info.invoke_id }}"});
                 AOT_DEBUG("Deferred invoke: {} in state {{ state_id }}", generatedInvokeId_{{ invoke_info.invoke_id }});
 {% endfor %}
 {% endif %}
@@ -380,7 +380,7 @@
                 // Defer hybrid invoke: {{ invoke_info.invoke_id }} {% if invoke_info.srcexpr %}(srcexpr: {{ invoke_info.srcexpr }}){% elif invoke_info.contentexpr %}(contentexpr: {{ invoke_info.contentexpr }}){% endif %}
 
                 ::SCE::Core::InvokeHelper::deferInvoke(pendingInvokes_,
-                    PendingInvoke{generatedInvokeId_{{ invoke_info.invoke_id }}, State::{{ state_id | capitalize }}});
+                    PendingInvoke{generatedInvokeId_{{ invoke_info.invoke_id }}, State::{{ state_id | capitalize }}, "{{ invoke_info.invoke_id }}"});
                 AOT_DEBUG("Deferred hybrid invoke: {} in state {{ state_id }}", generatedInvokeId_{{ invoke_info.invoke_id }});
 {% endfor %}
 {% endif %}

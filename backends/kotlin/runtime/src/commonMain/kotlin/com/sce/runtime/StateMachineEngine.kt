@@ -725,8 +725,12 @@ abstract class StateMachineEngine<S : State, E : Event>(
         val doneData = response?.doneData
         if (doneData != null) {
             // §scxml-6.4: a completion the host reported NOW, under the id the
-            // AUTHOR wrote a transition for.
-            sendByNameWithData("done.invoke.${request.invokeId}", doneData)
+            // AUTHOR wrote a transition for. §scxml-5.10.1: it is an event of
+            // the invocation, so `_event.invokeid` is that same id.
+            sendEventByName(
+                "done.invoke.${request.invokeId}",
+                EventMetadata(type = "external", data = doneData, invokeId = request.invokeId),
+            )
         }
         return true
     }

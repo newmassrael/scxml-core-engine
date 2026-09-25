@@ -96,8 +96,13 @@ func TestARegisteredInvokerIsStartedWithWhatTheDocumentWrote(t *testing.T) {
 	s.engine.Initialize()
 	s.engine.Step()
 
+	// The fixture counts a completion only when its `_event.invokeid` names the
+	// invocation (§scxml-5.10.1), so each counter is that assertion too.
 	if got := s.counter(t, "started"); got != 1 {
-		t.Fatalf("done.invoke never reached the document: started = %d", got)
+		t.Fatalf("done.invoke.probe never reached the document, or arrived without its invokeid: started = %d", got)
+	}
+	if got := s.counter(t, "started2"); got != 1 {
+		t.Fatalf("done.invoke.probe2 never reached the document, or arrived without its invokeid: started2 = %d", got)
 	}
 	if got := s.counter(t, "refused"); got != 0 {
 		t.Fatalf("a started invocation also raised error.execution: refused = %d", got)
@@ -109,15 +114,21 @@ func TestARegisteredInvokerIsStartedWithWhatTheDocumentWrote(t *testing.T) {
 		t.Fatalf("the entry chain stopped running: entered = %d", got)
 	}
 
-	if len(log) != 1 {
+	if len(log) != 2 {
 		t.Fatalf("invoker calls: %v", log)
 	}
 	// `src` and `<param>` are how §scxml-6.4.1 lets the document say WHAT to
 	// invoke and with what. A request carrying neither would let a document
-	// name an invocation it cannot describe.
+	// name an invocation it cannot describe. Each invocation is started as
+	// itself: `probe2` begins with `probe`, and a dispatch that matched by
+	// substring started `probe` twice.
 	want := fmt.Sprintf("START id=probe type=%s src=pane://turn within=[2500]", declaredType)
 	if log[0] != want {
 		t.Fatalf("the start request lost part of what the document wrote:\n got %q\nwant %q", log[0], want)
+	}
+	want2 := fmt.Sprintf("START id=probe2 type=%s src=pane://other within=[]", declaredType)
+	if log[1] != want2 {
+		t.Fatalf("the second invocation was not started as itself:\n got %q\nwant %q", log[1], want2)
 	}
 }
 
@@ -135,8 +146,17 @@ func TestLeavingTheStateCancelsTheInvocation(t *testing.T) {
 	if got := s.counter(t, "ended"); got != 1 {
 		t.Fatalf("the machine never left the invoking state: ended = %d", got)
 	}
-	if len(log) == 0 || log[len(log)-1] != "CANCEL id=probe" {
-		t.Fatalf("no cancel reached the invoker: %v", log)
+	// Both invocations end with the state, each told once.
+	for _, id := range []string{"probe", "probe2"} {
+		cancels := 0
+		for _, e := range log {
+			if e == "CANCEL id="+id {
+				cancels++
+			}
+		}
+		if cancels != 1 {
+			t.Fatalf("cancel for %s reached the invoker %d times: %v", id, cancels, log)
+		}
 	}
 }
 
@@ -197,7 +217,8 @@ func TestADeclaredTypeWithNoInvokerStillRaisesErrorExecution(t *testing.T) {
 	s.engine.Initialize()
 	s.engine.Step()
 
-	if got := s.counter(t, "refused"); got != 1 {
+	// One error.execution per invocation nobody ran.
+	if got := s.counter(t, "refused"); got != 2 {
 		t.Fatalf("an unregistered invoker was silently treated as started: refused = %d", got)
 	}
 	if got := s.counter(t, "started"); got != 0 {
@@ -218,7 +239,7 @@ func TestAnInvokerRegisteredForAnotherTypeDoesNotRunThisOne(t *testing.T) {
 	if got := s.counter(t, "started"); got != 0 {
 		t.Fatalf("an invoker for a different type ran this one: started = %d", got)
 	}
-	if got := s.counter(t, "refused"); got != 1 {
+	if got := s.counter(t, "refused"); got != 2 {
 		t.Fatalf("the unregistered type was not reported: refused = %d", got)
 	}
 	if len(log) != 0 {

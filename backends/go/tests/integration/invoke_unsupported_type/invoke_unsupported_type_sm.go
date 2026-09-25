@@ -204,7 +204,7 @@ func (p *InvokeUnsupportedTypePolicy) ExecutePendingInvokes(engine *sce.Engine[I
 	p.pendingInvokes = p.pendingInvokes[:0]
 
 	for _, pending := range invokesToExecute {
-		if strings.Contains(pending.InvokeID, "._invoke_0") {
+		if pending.DocumentID == "_invoke_0" {
 			// W3C SCXML 6.4.1: unsupported `type` — place error.execution on
 			// the internal queue and start nothing.
 			engine.Raise(sce.NewPlatformError(InvokeUnsupportedTypeEventErrorExecution, "<invoke type='urn:example:no-such-processor'> names an external service this platform does not support"))
@@ -420,8 +420,9 @@ func (p *InvokeUnsupportedTypePolicy) ExecuteEntryActions(state InvokeUnsupporte
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d._invoke_0", "probe", sce.NextInvokeCounter())
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[InvokeUnsupportedTypeState]{
-				InvokeID: generatedInvokeID,
-				State:    InvokeUnsupportedTypeStateProbe,
+				InvokeID:   generatedInvokeID,
+				State:      InvokeUnsupportedTypeStateProbe,
+				DocumentID: "_invoke_0",
 			})
 		}
 	default:

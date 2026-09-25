@@ -208,8 +208,9 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.{{ invoke_info.invoke_id }}", "{{ state_id }}", sce.NextInvokeCounter())
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[{{ machine_name }}State]{
-				InvokeID: generatedInvokeID,
-				State:    {{ machine_name }}State{{ state_id | to_state_variant }},
+				InvokeID:   generatedInvokeID,
+				State:      {{ machine_name }}State{{ state_id | to_state_variant }},
+				DocumentID: "{{ invoke_info.invoke_id }}",
 			})
 		}
 {% endfor %}
@@ -228,8 +229,9 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 			}
 {% endif %}
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[{{ machine_name }}State]{
-				InvokeID: generatedInvokeID,
-				State:    {{ machine_name }}State{{ state_id | to_state_variant }},
+				InvokeID:   generatedInvokeID,
+				State:      {{ machine_name }}State{{ state_id | to_state_variant }},
+				DocumentID: "{{ invoke_info.invoke_id }}",
 			})
 		}
 {% endfor %}
@@ -244,8 +246,9 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 			}
 {% endif %}
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[{{ machine_name }}State]{
-				InvokeID: generatedInvokeID,
-				State:    {{ machine_name }}State{{ state_id | to_state_variant }},
+				InvokeID:   generatedInvokeID,
+				State:      {{ machine_name }}State{{ state_id | to_state_variant }},
+				DocumentID: "{{ invoke_info.invoke_id }}",
 			})
 		}
 {% endfor %}

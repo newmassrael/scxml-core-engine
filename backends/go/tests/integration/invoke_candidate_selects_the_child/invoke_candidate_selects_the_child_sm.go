@@ -427,7 +427,7 @@ func (p *InvokeCandidateSelectsTheChildPolicy) ExecutePendingInvokes(engine *sce
 	p.pendingInvokes = p.pendingInvokes[:0]
 
 	for _, pending := range invokesToExecute {
-		if strings.Contains(pending.InvokeID, "._invoke_0") {
+		if pending.DocumentID == "_invoke_0" {
 			// Which candidate the evaluated value names (§2.13: matched on the
 			// document stem, so `file:x.scxml` and `./x.scxml` are one child).
 			__sceSelected := ""
@@ -839,8 +839,9 @@ func (p *InvokeCandidateSelectsTheChildPolicy) ExecuteEntryActions(state InvokeC
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d._invoke_0", "probe", sce.NextInvokeCounter())
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[InvokeCandidateSelectsTheChildState]{
-				InvokeID: generatedInvokeID,
-				State:    InvokeCandidateSelectsTheChildStateProbe,
+				InvokeID:   generatedInvokeID,
+				State:      InvokeCandidateSelectsTheChildStateProbe,
+				DocumentID: "_invoke_0",
 			})
 		}
 	default:

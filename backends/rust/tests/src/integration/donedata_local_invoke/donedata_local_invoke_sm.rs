@@ -439,7 +439,7 @@ impl DonedataLocalInvokePolicy {
         let invokes_to_execute = std::mem::take(&mut self.pending_invokes);
 
         for pending in &invokes_to_execute {
-            if pending.invoke_id.contains(".inv_content") {
+            if pending.document_id == "inv_content" {
                 // W3C SCXML 6.5: Generate child session ID for finalize origin matching
                 let child_session_id = format!(
                     "{}.{}",
@@ -534,7 +534,7 @@ impl DonedataLocalInvokePolicy {
                 }
                 continue;
             }
-            if pending.invoke_id.contains(".inv_param") {
+            if pending.document_id == "inv_param" {
                 // W3C SCXML 6.5: Generate child session ID for finalize origin matching
                 let child_session_id = format!(
                     "{}.{}",
@@ -1007,6 +1007,7 @@ impl StatePolicy for DonedataLocalInvokePolicy {
                         sce_rust_runtime::invoke::PendingInvoke {
                             invoke_id: generated_invoke_id,
                             state: DonedataLocalInvokeState::PhaseContent,
+                            document_id: "inv_content",
                         },
                     );
                 }
@@ -1022,6 +1023,7 @@ impl StatePolicy for DonedataLocalInvokePolicy {
                         sce_rust_runtime::invoke::PendingInvoke {
                             invoke_id: generated_invoke_id,
                             state: DonedataLocalInvokeState::PhaseParam,
+                            document_id: "inv_param",
                         },
                     );
                 }

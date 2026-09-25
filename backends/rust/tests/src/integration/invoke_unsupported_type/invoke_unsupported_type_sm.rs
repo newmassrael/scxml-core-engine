@@ -181,7 +181,7 @@ impl InvokeUnsupportedTypePolicy {
         let invokes_to_execute = std::mem::take(&mut self.pending_invokes);
 
         for pending in &invokes_to_execute {
-            if pending.invoke_id.contains("._invoke_0") {
+            if pending.document_id == "_invoke_0" {
                 // W3C SCXML 6.4.1: unsupported `type` — place error.execution
                 // on the internal queue and start nothing. No child session,
                 // so no done.invoke follows and nothing is left to cancel.
@@ -408,6 +408,7 @@ impl StatePolicy for InvokeUnsupportedTypePolicy {
                         sce_rust_runtime::invoke::PendingInvoke {
                             invoke_id: generated_invoke_id,
                             state: InvokeUnsupportedTypeState::Probe,
+                            document_id: "_invoke_0",
                         },
                     );
                 }

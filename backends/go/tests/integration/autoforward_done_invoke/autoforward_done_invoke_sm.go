@@ -234,7 +234,7 @@ func (p *AutoforwardDoneInvokePolicy) ExecutePendingInvokes(engine *sce.Engine[A
 	p.pendingInvokes = p.pendingInvokes[:0]
 
 	for _, pending := range invokesToExecute {
-		if strings.Contains(pending.InvokeID, ".inv_watch") {
+		if pending.DocumentID == "inv_watch" {
 
 			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
@@ -295,7 +295,7 @@ func (p *AutoforwardDoneInvokePolicy) ExecutePendingInvokes(engine *sce.Engine[A
 			}
 			continue
 		}
-		if strings.Contains(pending.InvokeID, ".inv_short") {
+		if pending.DocumentID == "inv_short" {
 
 			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
@@ -673,15 +673,17 @@ func (p *AutoforwardDoneInvokePolicy) ExecuteEntryActions(state AutoforwardDoneI
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.inv_watch", "phase", sce.NextInvokeCounter())
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[AutoforwardDoneInvokeState]{
-				InvokeID: generatedInvokeID,
-				State:    AutoforwardDoneInvokeStatePhase,
+				InvokeID:   generatedInvokeID,
+				State:      AutoforwardDoneInvokeStatePhase,
+				DocumentID: "inv_watch",
 			})
 		}
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.inv_short", "phase", sce.NextInvokeCounter())
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[AutoforwardDoneInvokeState]{
-				InvokeID: generatedInvokeID,
-				State:    AutoforwardDoneInvokeStatePhase,
+				InvokeID:   generatedInvokeID,
+				State:      AutoforwardDoneInvokeStatePhase,
+				DocumentID: "inv_short",
 			})
 		}
 	default:

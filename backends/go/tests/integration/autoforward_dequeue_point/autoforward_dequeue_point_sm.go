@@ -237,7 +237,7 @@ func (p *AutoforwardDequeuePointPolicy) ExecutePendingInvokes(engine *sce.Engine
 	p.pendingInvokes = p.pendingInvokes[:0]
 
 	for _, pending := range invokesToExecute {
-		if strings.Contains(pending.InvokeID, ".inv_probe") {
+		if pending.DocumentID == "inv_probe" {
 
 			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
@@ -589,8 +589,9 @@ func (p *AutoforwardDequeuePointPolicy) ExecuteEntryActions(state AutoforwardDeq
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.inv_probe", "phase", sce.NextInvokeCounter())
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[AutoforwardDequeuePointState]{
-				InvokeID: generatedInvokeID,
-				State:    AutoforwardDequeuePointStatePhase,
+				InvokeID:   generatedInvokeID,
+				State:      AutoforwardDequeuePointStatePhase,
+				DocumentID: "inv_probe",
 			})
 		}
 	default:

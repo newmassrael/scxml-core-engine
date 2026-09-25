@@ -37,6 +37,11 @@ class PendingInvoke:
 
     invoke_id: str
     owner_state_name: str
+    # The `<invoke>` this entry defers, as the document names it — what the
+    # execute step and the exit prune match on, compared whole. Reading it
+    # back out of `invoke_id` by the `.<id>` suffix matched `probe` against
+    # an invoke named `a.probe`, since an id may itself hold a dot.
+    document_id: str
 
 
 @dataclass

@@ -84,5 +84,28 @@ for src in "$DELAYED_TMP"/*Sm.kt; do
     cp "$src" "$DELAYED_DIR/"
 done
 
+# The invoke half of the host seam (W3C SCXML 6.4.1): the same `x-sce-host`
+# string, declared through `--host-invoker` rather than `--host-processor`,
+# because a host that can deliver an event is not thereby able to run a process
+# with a lifetime. Its own package, as the delayed document above has.
+INVOKER_FIXTURE="sce-build/tests/fixtures/host_processor/statechart_host_invoker.scxml"
+INVOKER_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/statechart_host_invoker"
+INVOKER_TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP" "$DELAYED_TMP" "$INVOKER_TMP"' EXIT
+
+"$CODEGEN" generate "$INVOKER_FIXTURE" -l kotlin -o "$INVOKER_TMP/" \
+    --input-root "$INPUT_ROOT" \
+    --kotlin-package-prefix "$PACKAGE_PREFIX" \
+    --host-invoker "$HOST_PROCESSOR"
+
+mkdir -p "$INVOKER_DIR"
+find "$INVOKER_DIR" -maxdepth 1 -name '*Sm.kt' -delete
+for src in "$INVOKER_TMP"/*Sm.kt; do
+    [[ -f "$src" ]] || continue
+    sed -i "s|// Source: ${INVOKER_TMP}/|// Source: ${INPUT_ROOT}/|g" "$src"
+    cp "$src" "$INVOKER_DIR/"
+done
+
 echo "Regenerated: $GENERATED_DIR/ from $FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "Regenerated: $DELAYED_DIR/ from $DELAYED_FIXTURE (--host-processor $HOST_PROCESSOR)"
+echo "Regenerated: $INVOKER_DIR/ from $INVOKER_FIXTURE (--host-invoker $HOST_PROCESSOR)"

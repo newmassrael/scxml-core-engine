@@ -251,7 +251,7 @@ func (p *HostEventReachesTheChildPolicy) ExecutePendingInvokes(engine *sce.Engin
 	p.pendingInvokes = p.pendingInvokes[:0]
 
 	for _, pending := range invokesToExecute {
-		if strings.Contains(pending.InvokeID, ".inv_probe") {
+		if pending.DocumentID == "inv_probe" {
 
 			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
@@ -609,8 +609,9 @@ func (p *HostEventReachesTheChildPolicy) ExecuteEntryActions(state HostEventReac
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.inv_probe", "phase", sce.NextInvokeCounter())
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[HostEventReachesTheChildState]{
-				InvokeID: generatedInvokeID,
-				State:    HostEventReachesTheChildStatePhase,
+				InvokeID:   generatedInvokeID,
+				State:      HostEventReachesTheChildStatePhase,
+				DocumentID: "inv_probe",
 			})
 		}
 	default:

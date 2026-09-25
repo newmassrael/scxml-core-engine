@@ -540,7 +540,7 @@ func (p *SendParamPayloadPolicy) ExecutePendingInvokes(engine *sce.Engine[SendPa
 	p.pendingInvokes = p.pendingInvokes[:0]
 
 	for _, pending := range invokesToExecute {
-		if strings.Contains(pending.InvokeID, ".inv_emitter") {
+		if pending.DocumentID == "inv_emitter" {
 
 			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
@@ -921,8 +921,9 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.inv_emitter", "awaitChild", sce.NextInvokeCounter())
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[SendParamPayloadState]{
-				InvokeID: generatedInvokeID,
-				State:    SendParamPayloadStateAwaitChild,
+				InvokeID:   generatedInvokeID,
+				State:      SendParamPayloadStateAwaitChild,
+				DocumentID: "inv_emitter",
 			})
 		}
 	case SendParamPayloadStateInternalPhase:

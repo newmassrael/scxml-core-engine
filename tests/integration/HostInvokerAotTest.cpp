@@ -111,7 +111,12 @@ TEST_F(HostInvokerAotTest, ARegisteredInvokerIsStartedWithWhatTheDocumentWrote) 
     registerRecordingInvoker(sm);
     boot(sm);
 
-    EXPECT_EQ(sm.getPolicy().started(), std::optional<int64_t>(1)) << "done.invoke never reached the document";
+    // The fixture counts a completion only when its `_event.invokeid` names the
+    // invocation (§scxml-5.10.1), so each counter is also that assertion.
+    EXPECT_EQ(sm.getPolicy().started(), std::optional<int64_t>(1))
+        << "done.invoke.probe never reached the document, or arrived without its invokeid";
+    EXPECT_EQ(sm.getPolicy().started2(), std::optional<int64_t>(1))
+        << "done.invoke.probe2 never reached the document, or arrived without its invokeid";
     EXPECT_EQ(sm.getPolicy().refused(), std::optional<int64_t>(0))
         << "a started invocation also raised error.execution";
     // The false-positive guard: ordinary entry content must still run. Without
@@ -119,12 +124,16 @@ TEST_F(HostInvokerAotTest, ARegisteredInvokerIsStartedWithWhatTheDocumentWrote) 
     // working would read as a pass.
     EXPECT_EQ(sm.getPolicy().entered(), std::optional<int64_t>(1)) << "the entry chain stopped running";
 
-    ASSERT_EQ(log.size(), 1u) << "invoker calls: " << log.size();
+    ASSERT_EQ(log.size(), 2u) << "invoker calls: " << log.size();
     // `src` and `<param>` are how §scxml-6.4.1 lets the document say WHAT to
     // invoke and with what. A request carrying neither would let a document
-    // name an invocation it cannot describe.
+    // name an invocation it cannot describe. Each invocation is started as
+    // itself: `probe2` begins with `probe`, and a dispatch that matched by
+    // substring started `probe` twice.
     EXPECT_EQ(log[0], std::string("START id=probe type=") + DECLARED_TYPE + " src=pane://turn within=2500")
         << "the start request lost part of what the document wrote";
+    EXPECT_EQ(log[1], std::string("START id=probe2 type=") + DECLARED_TYPE + " src=pane://other within=absent")
+        << "the second invocation was not started as itself";
 }
 
 // The invocation ends with the state that started it. Without this the host is
@@ -137,8 +146,15 @@ TEST_F(HostInvokerAotTest, LeavingTheStateCancelsTheInvocation) {
     sm.processEvent(Event::Leave);
 
     EXPECT_EQ(sm.getPolicy().ended(), std::optional<int64_t>(1)) << "the machine never left the invoking state";
-    ASSERT_FALSE(log.empty());
-    EXPECT_EQ(log.back(), "CANCEL id=probe") << "no cancel reached the invoker";
+    // Both invocations end with the state, each told once.
+    int probeCancels = 0;
+    int probe2Cancels = 0;
+    for (const auto &entry : log) {
+        probeCancels += entry == "CANCEL id=probe" ? 1 : 0;
+        probe2Cancels += entry == "CANCEL id=probe2" ? 1 : 0;
+    }
+    EXPECT_EQ(probeCancels, 1) << "cancel for probe reached the invoker " << probeCancels << " times";
+    EXPECT_EQ(probe2Cancels, 1) << "cancel for probe2 reached the invoker " << probe2Cancels << " times";
 }
 
 // A cancel is delivered once, and only for an invocation that started.
@@ -187,7 +203,8 @@ TEST_F(HostInvokerAotTest, ADeclaredTypeWithNoInvokerStillRaisesErrorExecution) 
     Machine sm;
     boot(sm);
 
-    EXPECT_EQ(sm.getPolicy().refused(), std::optional<int64_t>(1))
+    // One error.execution per invocation nobody ran.
+    EXPECT_EQ(sm.getPolicy().refused(), std::optional<int64_t>(2))
         << "an unregistered invoker was silently treated as started";
     EXPECT_EQ(sm.getPolicy().started(), std::optional<int64_t>(0))
         << "done.invoke arrived for an invocation nobody ran";
@@ -205,7 +222,7 @@ TEST_F(HostInvokerAotTest, AnInvokerRegisteredForAnotherTypeDoesNotRunThisOne) {
     boot(sm);
 
     EXPECT_EQ(sm.getPolicy().started(), std::optional<int64_t>(0)) << "an invoker for a different type ran this one";
-    EXPECT_EQ(sm.getPolicy().refused(), std::optional<int64_t>(1)) << "the unregistered type was not reported";
+    EXPECT_EQ(sm.getPolicy().refused(), std::optional<int64_t>(2)) << "the unregistered type was not reported";
     EXPECT_TRUE(log.empty()) << "the other type's invoker was called";
 }
 

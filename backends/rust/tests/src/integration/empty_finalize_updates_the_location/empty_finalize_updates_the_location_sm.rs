@@ -531,7 +531,7 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
         let invokes_to_execute = std::mem::take(&mut self.pending_invokes);
 
         for pending in &invokes_to_execute {
-            if pending.invoke_id.contains(".inv_absent") {
+            if pending.document_id == "inv_absent" {
                 // W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
                 // 1:1 port of C++ NamelistHelper::evaluateNamelist — validate in parent scope
                 {
@@ -666,7 +666,7 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                 }
                 continue;
             }
-            if pending.invoke_id.contains(".inv_empty") {
+            if pending.document_id == "inv_empty" {
                 // W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
                 // 1:1 port of C++ NamelistHelper::evaluateNamelist — validate in parent scope
                 {
@@ -800,7 +800,7 @@ impl EmptyFinalizeUpdatesTheLocationPolicy {
                 }
                 continue;
             }
-            if pending.invoke_id.contains(".inv_unmatched") {
+            if pending.document_id == "inv_unmatched" {
                 // W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
                 // 1:1 port of C++ NamelistHelper::evaluateNamelist — validate in parent scope
                 {
@@ -1481,6 +1481,7 @@ impl StatePolicy for EmptyFinalizeUpdatesTheLocationPolicy {
                         sce_rust_runtime::invoke::PendingInvoke {
                             invoke_id: generated_invoke_id,
                             state: EmptyFinalizeUpdatesTheLocationState::AbsentPhase,
+                            document_id: "inv_absent",
                         },
                     );
                 }
@@ -1516,6 +1517,7 @@ impl StatePolicy for EmptyFinalizeUpdatesTheLocationPolicy {
                         sce_rust_runtime::invoke::PendingInvoke {
                             invoke_id: generated_invoke_id,
                             state: EmptyFinalizeUpdatesTheLocationState::EmptyPhase,
+                            document_id: "inv_empty",
                         },
                     );
                 }
@@ -1553,6 +1555,7 @@ impl StatePolicy for EmptyFinalizeUpdatesTheLocationPolicy {
                         sce_rust_runtime::invoke::PendingInvoke {
                             invoke_id: generated_invoke_id,
                             state: EmptyFinalizeUpdatesTheLocationState::UnmatchedPhase,
+                            document_id: "inv_unmatched",
                         },
                     );
                 }

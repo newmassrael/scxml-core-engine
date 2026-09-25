@@ -457,7 +457,7 @@ impl Test240Policy {
         let invokes_to_execute = std::mem::take(&mut self.pending_invokes);
 
         for pending in &invokes_to_execute {
-            if pending.invoke_id.contains("._invoke_0") {
+            if pending.document_id == "_invoke_0" {
                 // W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
                 // 1:1 port of C++ NamelistHelper::evaluateNamelist — validate in parent scope
                 {
@@ -592,7 +592,7 @@ impl Test240Policy {
                 }
                 continue;
             }
-            if pending.invoke_id.contains("._invoke_1") {
+            if pending.document_id == "_invoke_1" {
                 // W3C SCXML 6.5: Generate child session ID for finalize origin matching
                 let child_session_id = format!(
                     "{}.{}",
@@ -1135,6 +1135,7 @@ impl StatePolicy for Test240Policy {
                         sce_rust_runtime::invoke::PendingInvoke {
                             invoke_id: generated_invoke_id,
                             state: Test240State::S01,
+                            document_id: "_invoke_0",
                         },
                     );
                 }
@@ -1150,6 +1151,7 @@ impl StatePolicy for Test240Policy {
                         sce_rust_runtime::invoke::PendingInvoke {
                             invoke_id: generated_invoke_id,
                             state: Test240State::S02,
+                            document_id: "_invoke_1",
                         },
                     );
                 }

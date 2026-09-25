@@ -102,6 +102,7 @@
                         sce_rust_runtime::invoke::PendingInvoke {
                             invoke_id: generated_invoke_id,
                             state: {{ machine_name }}State::{{ state_id | to_state_variant }},
+                            document_id: "{{ invoke_info.invoke_id }}",
                         },
                     );
                 }
@@ -123,6 +124,7 @@
                         sce_rust_runtime::invoke::PendingInvoke {
                             invoke_id: generated_invoke_id,
                             state: {{ machine_name }}State::{{ state_id | to_state_variant }},
+                            document_id: "{{ invoke_info.invoke_id }}",
                         },
                     );
                 }
@@ -151,6 +153,7 @@
                         sce_rust_runtime::invoke::PendingInvoke {
                             invoke_id: generated_invoke_id,
                             state: {{ machine_name }}State::{{ state_id | to_state_variant }},
+                            document_id: "{{ invoke_info.invoke_id }}",
                         },
                     );
                 }
@@ -175,6 +178,7 @@
                         sce_rust_runtime::invoke::PendingInvoke {
                             invoke_id: generated_invoke_id,
                             state: {{ machine_name }}State::{{ state_id | to_state_variant }},
+                            document_id: "{{ invoke_info.invoke_id }}",
                         },
                     );
                 }

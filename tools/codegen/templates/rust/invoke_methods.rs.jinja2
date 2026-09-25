@@ -128,7 +128,7 @@
 {% for state_id, state in model.states | dictsort %}
 {% if state.invokes | scxml %}
 {% for invoke_info in state.invokes | scxml %}
-            if pending.invoke_id.contains(".{{ invoke_info.invoke_id }}") {
+            if pending.document_id == "{{ invoke_info.invoke_id }}" {
 {% if invoke_info.namelist %}
                 // W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
                 // 1:1 port of C++ NamelistHelper::evaluateNamelist — validate in parent scope
@@ -345,7 +345,7 @@
 {% for state_id, state in model.states | dictsort %}
 {% if state.invokes | hybrid %}
 {% for invoke_info in state.invokes | hybrid %}
-            if pending.invoke_id.contains(".{{ invoke_info.invoke_id }}") {
+            if pending.document_id == "{{ invoke_info.invoke_id }}" {
                 // W3C SCXML 6.4: Hybrid invoke — evaluate expression at runtime, create pre-generated child
 {% if invoke_info.candidates %}
                 // Which candidate the evaluated value names. Declared here
@@ -446,7 +446,7 @@
 {% endif %}
 {% if state.invokes | unsupported_refused %}
 {% for invoke_info in state.invokes | unsupported_refused %}
-            if pending.invoke_id.contains(".{{ invoke_info.invoke_id }}") {
+            if pending.document_id == "{{ invoke_info.invoke_id }}" {
                 // W3C SCXML 6.4.1: unsupported `type` — place error.execution
                 // on the internal queue and start nothing. No child session,
                 // so no done.invoke follows and nothing is left to cancel.
@@ -457,7 +457,7 @@
 {% endif %}
 {% if state.invokes | host_invoker %}
 {% for invoke_info in state.invokes | host_invoker %}
-            if pending.invoke_id.contains(".{{ invoke_info.invoke_id }}") {
+            if pending.document_id == "{{ invoke_info.invoke_id }}" {
                 // §scxml-6.4.1: the host declared this `type`, so start the
                 // invocation rather than refusing it. The id handed over is
                 // the DOCUMENT's, not the per-instance one the defer queue

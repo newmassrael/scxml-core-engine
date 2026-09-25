@@ -535,6 +535,10 @@ struct {{ model.name }}Policy {
     struct PendingInvoke {
         std::string invokeId;  // W3C SCXML 6.4.1: Unique invoke identifier
         State state;           // State containing the invoke element
+        // The `<invoke>` this entry defers, as the document names it — what
+        // the execute step dispatches on, compared whole. Reading it back out
+        // of `invokeId` by substring matched `probe` against `probe2`.
+        std::string documentId;
     };
 
     {% endif %}

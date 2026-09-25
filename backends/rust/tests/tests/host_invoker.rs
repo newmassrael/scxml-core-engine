@@ -86,10 +86,17 @@ fn a_registered_invoker_is_started_with_what_the_document_wrote() {
     engine.initialize();
     engine.step();
 
+    // The fixture counts a completion only when its `_event.invokeid` names
+    // the invocation (§scxml-5.10.1), so each counter is that assertion too.
     assert_eq!(
         counter(&engine, &script_engine, "started"),
         1,
-        "done.invoke never reached the document",
+        "done.invoke.probe never reached the document, or arrived without its invokeid",
+    );
+    assert_eq!(
+        counter(&engine, &script_engine, "started2"),
+        1,
+        "done.invoke.probe2 never reached the document, or arrived without its invokeid",
     );
     assert_eq!(counter(&engine, &script_engine, "refused"), 0);
     // The false-positive guard: ordinary entry content must still run.
@@ -100,14 +107,21 @@ fn a_registered_invoker_is_started_with_what_the_document_wrote() {
     );
 
     let seen = log.lock().expect("invoker log");
-    assert_eq!(seen.len(), 1, "invoker calls: {seen:?}");
+    assert_eq!(seen.len(), 2, "invoker calls: {seen:?}");
     // `src` and `<param>` are how §scxml-6.4.1 lets the document say WHAT
     // to invoke and with what. A request carrying neither would let a
-    // document name an invocation it cannot describe.
+    // document name an invocation it cannot describe. Each invocation is
+    // started as itself: `probe2` begins with `probe`, and a dispatch that
+    // matched by substring started `probe` twice.
     assert_eq!(
         seen[0],
         format!("START id=probe type={DECLARED_TYPE} src=pane://turn within=Some([\"2500\"])"),
         "the start request lost part of what the document wrote",
+    );
+    assert_eq!(
+        seen[1],
+        format!("START id=probe2 type={DECLARED_TYPE} src=pane://other within=None"),
+        "the second invocation was not started as itself",
     );
 }
 
@@ -129,12 +143,16 @@ fn leaving_the_state_cancels_the_invocation() {
         1,
         "the machine never left the invoking state",
     );
+    // Both invocations end with the state, each told once.
     let seen = log.lock().expect("invoker log");
-    assert_eq!(
-        seen.last().map(String::as_str),
-        Some("CANCEL id=probe"),
-        "no cancel reached the invoker: {seen:?}",
-    );
+    for id in ["probe", "probe2"] {
+        let cancel = format!("CANCEL id={id}");
+        assert_eq!(
+            seen.iter().filter(|e| **e == cancel).count(),
+            1,
+            "cancel for {id} did not reach the invoker exactly once: {seen:?}",
+        );
+    }
 }
 
 /// A cancel is delivered once, and only for an invocation that started.
@@ -194,9 +212,10 @@ fn a_declared_type_with_no_invoker_still_raises_error_execution() {
     engine.initialize();
     engine.step();
 
+    // One error.execution per invocation nobody ran.
     assert_eq!(
         counter(&engine, &script_engine, "refused"),
-        1,
+        2,
         "an unregistered invoker was silently treated as started",
     );
     assert_eq!(counter(&engine, &script_engine, "started"), 0);
@@ -219,7 +238,7 @@ fn neither_another_type_nor_a_send_processor_serves_this_invoke() {
         0,
         "an invoke was served by the wrong registration",
     );
-    assert_eq!(counter(&engine, &script_engine, "refused"), 1);
+    assert_eq!(counter(&engine, &script_engine, "refused"), 2);
 }
 
 /// A host that has nothing to report yet returns `None`, and SCE must not

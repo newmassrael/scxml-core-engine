@@ -423,7 +423,7 @@ impl InvokeExpressionFailureIsReportedPolicy {
         let invokes_to_execute = std::mem::take(&mut self.pending_invokes);
 
         for pending in &invokes_to_execute {
-            if pending.invoke_id.contains("._invoke_0") {
+            if pending.document_id == "_invoke_0" {
                 // W3C SCXML 6.4: Hybrid invoke — evaluate expression at runtime, create pre-generated child
                 // W3C SCXML 6.4.3: Evaluate srcexpr at runtime
                 self.ensure_script_engine();
@@ -809,6 +809,7 @@ impl StatePolicy for InvokeExpressionFailureIsReportedPolicy {
                         sce_rust_runtime::invoke::PendingInvoke {
                             invoke_id: generated_invoke_id,
                             state: InvokeExpressionFailureIsReportedState::Probe,
+                            document_id: "_invoke_0",
                         },
                     );
                 }

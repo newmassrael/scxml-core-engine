@@ -555,7 +555,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 	p.pendingInvokes = p.pendingInvokes[:0]
 
 	for _, pending := range invokesToExecute {
-		if strings.Contains(pending.InvokeID, ".inv_infinite") {
+		if pending.DocumentID == "inv_infinite" {
 
 			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
@@ -640,7 +640,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 			}
 			continue
 		}
-		if strings.Contains(pending.InvokeID, ".inv_namelist") {
+		if pending.DocumentID == "inv_namelist" {
 			// W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
 			{
 				p.ensureScriptEngine()
@@ -724,7 +724,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 			}
 			continue
 		}
-		if strings.Contains(pending.InvokeID, ".inv_shadow") {
+		if pending.DocumentID == "inv_shadow" {
 
 			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
@@ -809,7 +809,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 			}
 			continue
 		}
-		if strings.Contains(pending.InvokeID, ".inv_sole") {
+		if pending.DocumentID == "inv_sole" {
 
 			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
@@ -894,7 +894,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecutePendingInvokes(engine *
 			}
 			continue
 		}
-		if strings.Contains(pending.InvokeID, ".inv_unmatched") {
+		if pending.DocumentID == "inv_unmatched" {
 
 			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
@@ -1441,8 +1441,9 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteEntryActions(state Invo
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.inv_infinite", "infinite", sce.NextInvokeCounter())
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[InvokeParamSeedsDeclaredChildDataState]{
-				InvokeID: generatedInvokeID,
-				State:    InvokeParamSeedsDeclaredChildDataStateInfinite,
+				InvokeID:   generatedInvokeID,
+				State:      InvokeParamSeedsDeclaredChildDataStateInfinite,
+				DocumentID: "inv_infinite",
 			})
 		}
 	case InvokeParamSeedsDeclaredChildDataStateNamelistPhase:
@@ -1451,8 +1452,9 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteEntryActions(state Invo
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.inv_namelist", "namelistPhase", sce.NextInvokeCounter())
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[InvokeParamSeedsDeclaredChildDataState]{
-				InvokeID: generatedInvokeID,
-				State:    InvokeParamSeedsDeclaredChildDataStateNamelistPhase,
+				InvokeID:   generatedInvokeID,
+				State:      InvokeParamSeedsDeclaredChildDataStateNamelistPhase,
+				DocumentID: "inv_namelist",
 			})
 		}
 	case InvokeParamSeedsDeclaredChildDataStateShadowed:
@@ -1461,8 +1463,9 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteEntryActions(state Invo
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.inv_shadow", "shadowed", sce.NextInvokeCounter())
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[InvokeParamSeedsDeclaredChildDataState]{
-				InvokeID: generatedInvokeID,
-				State:    InvokeParamSeedsDeclaredChildDataStateShadowed,
+				InvokeID:   generatedInvokeID,
+				State:      InvokeParamSeedsDeclaredChildDataStateShadowed,
+				DocumentID: "inv_shadow",
 			})
 		}
 	case InvokeParamSeedsDeclaredChildDataStateSoleName:
@@ -1471,8 +1474,9 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteEntryActions(state Invo
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.inv_sole", "soleName", sce.NextInvokeCounter())
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[InvokeParamSeedsDeclaredChildDataState]{
-				InvokeID: generatedInvokeID,
-				State:    InvokeParamSeedsDeclaredChildDataStateSoleName,
+				InvokeID:   generatedInvokeID,
+				State:      InvokeParamSeedsDeclaredChildDataStateSoleName,
+				DocumentID: "inv_sole",
 			})
 		}
 	case InvokeParamSeedsDeclaredChildDataStateUnmatched:
@@ -1481,8 +1485,9 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteEntryActions(state Invo
 		{
 			generatedInvokeID := fmt.Sprintf("%s.%d.inv_unmatched", "unmatched", sce.NextInvokeCounter())
 			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[InvokeParamSeedsDeclaredChildDataState]{
-				InvokeID: generatedInvokeID,
-				State:    InvokeParamSeedsDeclaredChildDataStateUnmatched,
+				InvokeID:   generatedInvokeID,
+				State:      InvokeParamSeedsDeclaredChildDataStateUnmatched,
+				DocumentID: "inv_unmatched",
 			})
 		}
 	default:

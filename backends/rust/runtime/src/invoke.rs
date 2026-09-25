@@ -28,6 +28,10 @@ pub struct PendingInvoke<S: Copy + PartialEq + Debug> {
     pub invoke_id: String,
     /// State containing the invoke element
     pub state: S,
+    /// The `<invoke>` this entry defers, as the document names it — what the
+    /// execute step dispatches on, compared whole. Reading it back out of
+    /// `invoke_id` by substring matched `probe` against `probe2`.
+    pub document_id: &'static str,
 }
 
 /// §scxml-6.4: Active child session tracking.

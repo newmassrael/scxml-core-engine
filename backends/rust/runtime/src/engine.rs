@@ -2326,6 +2326,10 @@ impl<P: StatePolicy> Engine<P> {
                 let mut meta = EventWithMetadata::new(evt);
                 meta.metadata = EventMetadata::external(SceString::new(), SceString::new());
                 meta.metadata.data = done_data;
+                // §scxml-5.10.1: the completion is an event of the
+                // invocation, so `_event.invokeid` is the invocation's id —
+                // the one `done.invoke.<id>` names and the host was handed.
+                meta.metadata.invoke_id = crate::sce_string_from_str(&invoke_id);
                 self.external_queue.raise(meta);
             }
         }

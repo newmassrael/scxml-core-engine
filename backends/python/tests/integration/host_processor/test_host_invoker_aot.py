@@ -101,20 +101,31 @@ def _started(with_invoker: bool = True):
 def test_a_registered_invoker_is_started_with_what_the_document_wrote() -> None:
     engine, log = _started()
 
-    assert _counter(engine, "started") == 1, "done.invoke never reached the document"
+    # The fixture counts a completion only when its `_event.invokeid` names the
+    # invocation (W3C SCXML 5.10.1), so each counter is that assertion too.
+    assert _counter(engine, "started") == 1, (
+        "done.invoke.probe never reached the document, or arrived without its invokeid"
+    )
+    assert _counter(engine, "started2") == 1, (
+        "done.invoke.probe2 never reached the document, or arrived without its invokeid"
+    )
     assert _counter(engine, "refused") == 0, "a started invocation also raised error.execution"
     # The false-positive guard: ordinary entry content must still run. Without
     # it a change that broke the entry chain while leaving the invoke arm
     # working would read as a pass.
     assert _counter(engine, "entered") == 1, "the entry chain stopped running"
 
-    assert len(log) == 1, f"invoker calls: {log}"
+    assert len(log) == 2, f"invoker calls: {log}"
     # `src` and `<param>` are how W3C SCXML 6.4.1 lets the document say WHAT to
     # invoke and with what. A request carrying neither would let a document
-    # name an invocation it cannot describe.
+    # name an invocation it cannot describe. Each invocation is started as
+    # itself: `probe2` begins with `probe`.
     assert log[0] == (
         f"START id=probe type={DECLARED_TYPE} src=pane://turn within=2500"
     ), f"the start request lost part of what the document wrote: {log[0]}"
+    assert log[1] == (
+        f"START id=probe2 type={DECLARED_TYPE} src=pane://other within=absent"
+    ), f"the second invocation was not started as itself: {log[1]}"
 
 
 def test_leaving_the_state_cancels_the_invocation() -> None:
@@ -129,7 +140,10 @@ def test_leaving_the_state_cancels_the_invocation() -> None:
     engine.advance_time(0)
 
     assert _counter(engine, "ended") == 1, "the machine never left the invoking state"
-    assert log and log[-1] == "CANCEL id=probe", f"no cancel reached the invoker: {log}"
+    # Both invocations end with the state, each told once.
+    for invoke_id in ("probe", "probe2"):
+        cancels = log.count(f"CANCEL id={invoke_id}")
+        assert cancels == 1, f"cancel for {invoke_id} reached the invoker {cancels} times: {log}"
 
 
 def test_cancel_is_not_delivered_for_an_invocation_that_never_started() -> None:
@@ -177,7 +191,8 @@ def test_a_declared_type_with_no_invoker_still_raises_error_execution() -> None:
     running."""
     engine, _log = _started(with_invoker=False)
 
-    assert _counter(engine, "refused") == 1, "an unregistered invoker was silently treated as started"
+    # One error.execution per invocation nobody ran.
+    assert _counter(engine, "refused") == 2, "an unregistered invoker was silently treated as started"
     assert _counter(engine, "started") == 0, "done.invoke arrived for an invocation nobody ran"
 
 
@@ -191,5 +206,5 @@ def test_an_invoker_registered_for_another_type_does_not_run_this_one() -> None:
     engine.initialize()
 
     assert _counter(engine, "started") == 0, "an invoker for a different type ran this one"
-    assert _counter(engine, "refused") == 1, "the unregistered type was not reported"
+    assert _counter(engine, "refused") == 2, "the unregistered type was not reported"
     assert log == [], f"the other type's invoker was called: {log}"

@@ -324,6 +324,10 @@ func (e *Engine[S, E]) PerformHostInvoke(request HostInvokeRequest) bool {
 			meta := NewEventWithMetadata(evt)
 			meta.Metadata = ExternalMetadata("", "")
 			meta.Metadata.Data = *response.DoneData
+			// §scxml-5.10.1: the completion is an event of the invocation, so
+			// `_event.invokeid` is the invocation's id — the one
+			// `done.invoke.<id>` names and the host was handed.
+			meta.Metadata.InvokeID = request.InvokeID
 			e.externalQueue.Raise(meta)
 		}
 	}

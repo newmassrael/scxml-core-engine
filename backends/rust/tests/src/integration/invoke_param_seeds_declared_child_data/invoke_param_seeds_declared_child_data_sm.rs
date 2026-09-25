@@ -526,7 +526,7 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
         let invokes_to_execute = std::mem::take(&mut self.pending_invokes);
 
         for pending in &invokes_to_execute {
-            if pending.invoke_id.contains(".inv_infinite") {
+            if pending.document_id == "inv_infinite" {
                 // W3C SCXML 6.5: Generate child session ID for finalize origin matching
                 let child_session_id = format!(
                     "{}.{}",
@@ -662,7 +662,7 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                 }
                 continue;
             }
-            if pending.invoke_id.contains(".inv_namelist") {
+            if pending.document_id == "inv_namelist" {
                 // W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
                 // 1:1 port of C++ NamelistHelper::evaluateNamelist — validate in parent scope
                 {
@@ -797,7 +797,7 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                 }
                 continue;
             }
-            if pending.invoke_id.contains(".inv_shadow") {
+            if pending.document_id == "inv_shadow" {
                 // W3C SCXML 6.5: Generate child session ID for finalize origin matching
                 let child_session_id = format!(
                     "{}.{}",
@@ -933,7 +933,7 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                 }
                 continue;
             }
-            if pending.invoke_id.contains(".inv_sole") {
+            if pending.document_id == "inv_sole" {
                 // W3C SCXML 6.5: Generate child session ID for finalize origin matching
                 let child_session_id = format!(
                     "{}.{}",
@@ -1067,7 +1067,7 @@ impl InvokeParamSeedsDeclaredChildDataPolicy {
                 }
                 continue;
             }
-            if pending.invoke_id.contains(".inv_unmatched") {
+            if pending.document_id == "inv_unmatched" {
                 // W3C SCXML 6.5: Generate child session ID for finalize origin matching
                 let child_session_id = format!(
                     "{}.{}",
@@ -1804,6 +1804,7 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
                         sce_rust_runtime::invoke::PendingInvoke {
                             invoke_id: generated_invoke_id,
                             state: InvokeParamSeedsDeclaredChildDataState::Infinite,
+                            document_id: "inv_infinite",
                         },
                     );
                 }
@@ -1821,6 +1822,7 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
                         sce_rust_runtime::invoke::PendingInvoke {
                             invoke_id: generated_invoke_id,
                             state: InvokeParamSeedsDeclaredChildDataState::NamelistPhase,
+                            document_id: "inv_namelist",
                         },
                     );
                 }
@@ -1836,6 +1838,7 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
                         sce_rust_runtime::invoke::PendingInvoke {
                             invoke_id: generated_invoke_id,
                             state: InvokeParamSeedsDeclaredChildDataState::Shadowed,
+                            document_id: "inv_shadow",
                         },
                     );
                 }
@@ -1851,6 +1854,7 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
                         sce_rust_runtime::invoke::PendingInvoke {
                             invoke_id: generated_invoke_id,
                             state: InvokeParamSeedsDeclaredChildDataState::SoleName,
+                            document_id: "inv_sole",
                         },
                     );
                 }
@@ -1868,6 +1872,7 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
                         sce_rust_runtime::invoke::PendingInvoke {
                             invoke_id: generated_invoke_id,
                             state: InvokeParamSeedsDeclaredChildDataState::Unmatched,
+                            document_id: "inv_unmatched",
                         },
                     );
                 }

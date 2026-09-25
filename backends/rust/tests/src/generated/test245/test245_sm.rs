@@ -440,7 +440,7 @@ impl Test245Policy {
         let invokes_to_execute = std::mem::take(&mut self.pending_invokes);
 
         for pending in &invokes_to_execute {
-            if pending.invoke_id.contains("._invoke_0") {
+            if pending.document_id == "_invoke_0" {
                 // W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
                 // 1:1 port of C++ NamelistHelper::evaluateNamelist — validate in parent scope
                 {
@@ -918,6 +918,7 @@ impl StatePolicy for Test245Policy {
                         sce_rust_runtime::invoke::PendingInvoke {
                             invoke_id: generated_invoke_id,
                             state: Test245State::S0,
+                            document_id: "_invoke_0",
                         },
                     );
                 }

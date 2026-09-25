@@ -18,6 +18,11 @@ type PendingInvoke[S comparable] struct {
 
 	// State is the state containing the invoke element.
 	State S
+
+	// DocumentID is the <invoke> this entry defers, as the document names it —
+	// what the execute step dispatches on, compared whole. Reading it back out
+	// of InvokeID by substring matched `probe` against `probe2`.
+	DocumentID string
 }
 
 // ChildSession represents a §scxml-6.4 active child session.
