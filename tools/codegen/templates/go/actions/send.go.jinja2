@@ -8,9 +8,15 @@
 	// W3C SCXML 6.2: send id="{{ send_id }}"
 {% endif %}
 {% if action.idlocation and model.needs_script_engine %}
-	{
-		sendIDStr := "{{ send_id | escape_go }}"
-		p.assignVariable(`{{ action.idlocation | to_lua_location }}`, `"` + sendIDStr + `"`)
+	// W3C SCXML 6.2.4: the send id goes to `idlocation`, through the
+	// assignment `<assign>` makes. A location that cannot take it is an
+	// argument that cannot be evaluated, so the message is discarded and
+	// error.execution raised (W3C SCXML 6.2, 5.9.2).
+	if err := p.storeIDInLocation(`{{ action.idlocation | to_lua_location }}`, "{{ send_id | escape_go }}"); err != nil {
+{% if 'error.execution' in model.events %}
+		engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send idlocation='{{ action.idlocation | escape_go }}'> could not take the send id"))
+{% endif %}
+	} else {
 {% endif %}
 {# ── Build event data from <param>, namelist, or <content> ── #}
 {% set has_params = action.params and action.params | length > 0 %}

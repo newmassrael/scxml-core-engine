@@ -25,6 +25,34 @@
 {% from 'datamodel_macros.rs.jinja2' import initialize_variable, initialize_state_datamodel %}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {%- import '_macros/sce_annotation_marker.jinja2' as annot %}
+{# W3C SCXML 6.4.1: an invoke's generated id goes to its `idlocation` when the
+   element is evaluated (test 224 checks the stored form), and binds
+   `id_stored` for the caller. The write is the assignment `<assign>` makes —
+   the location is lowered, so a member path lands, and one that cannot take
+   the id raises error.execution and the invocation does not start, as any
+   argument of the element that cannot be evaluated does. `model` and
+   `machine_name` are parameters because a macro body does not see the render
+   context. #}
+{% macro store_invoke_idlocation(invoke_info, model, machine_name) %}
+{% if invoke_info.idlocation %}
+                    self.ensure_script_engine();
+                    let id_stored = {
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = self.script_engine.clone();
+                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                        ::sce_rust_runtime::helpers::idlocation::store_id_in_location(
+                            se, &sid, "{{ invoke_info.idlocation | to_lua_location | escape_rust }}", &generated_invoke_id,
+                        )
+                    };
+                    if !id_stored {
+{% if 'error.execution' in model.events %}
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke idlocation='{{ invoke_info.idlocation | escape_rust }}'> could not take the invoke id"));
+{% endif %}
+                    }
+{% else %}
+                    let id_stored = true;
+{% endif %}
+{% endmacro %}
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
     {# SCE Protocol-Synthesis RFC §synth-5-O — function-scope SCE-MAP marker
@@ -136,26 +164,17 @@
                 {  {{- annot.annotation_comment(invoke_info, "rust", "                    ") }}
                     let generated_invoke_id = format!("{}.{}.{{ invoke_info.invoke_id }}",
                         "{{ state_id }}", self as *const _ as usize);
-{% if invoke_info.idlocation %}
-                    // W3C SCXML 6.4.1: Store generated invokeId in datamodel via idlocation
-                    // W3C SCXML: Full runtime ID stored (test 224 checks format)
-                    self.ensure_script_engine();
-                    {
-                        let sid = self.session_id.as_ref().unwrap().clone();
-                        let se = self.script_engine.clone();
-                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                        let _ = se.set_variable(&sid, "{{ invoke_info.idlocation }}",
-                            sce_rust_runtime::ScriptValue::String(generated_invoke_id.clone()));
+{{ store_invoke_idlocation(invoke_info, model, machine_name) -}}
+                    if id_stored {
+                        sce_rust_runtime::invoke::defer_invoke(
+                            &mut self.pending_invokes,
+                            sce_rust_runtime::invoke::PendingInvoke {
+                                invoke_id: generated_invoke_id,
+                                state: {{ machine_name }}State::{{ state_id | to_state_variant }},
+                                document_id: "{{ invoke_info.invoke_id }}",
+                            },
+                        );
                     }
-{% endif %}
-                    sce_rust_runtime::invoke::defer_invoke(
-                        &mut self.pending_invokes,
-                        sce_rust_runtime::invoke::PendingInvoke {
-                            invoke_id: generated_invoke_id,
-                            state: {{ machine_name }}State::{{ state_id | to_state_variant }},
-                            document_id: "{{ invoke_info.invoke_id }}",
-                        },
-                    );
                 }
 {% endfor %}
 {% for invoke_info in state.invokes | hybrid %}
@@ -163,24 +182,17 @@
                 {  {{- annot.annotation_comment(invoke_info, "rust", "                    ") }}
                     let generated_invoke_id = format!("{}.{}.{{ invoke_info.invoke_id }}",
                         "{{ state_id }}", self as *const _ as usize);
-{% if invoke_info.idlocation %}
-                    self.ensure_script_engine();
-                    {
-                        let sid = self.session_id.as_ref().unwrap().clone();
-                        let se = self.script_engine.clone();
-                        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                        let _ = se.set_variable(&sid, "{{ invoke_info.idlocation }}",
-                            sce_rust_runtime::ScriptValue::String(generated_invoke_id.clone()));
+{{ store_invoke_idlocation(invoke_info, model, machine_name) -}}
+                    if id_stored {
+                        sce_rust_runtime::invoke::defer_invoke(
+                            &mut self.pending_invokes,
+                            sce_rust_runtime::invoke::PendingInvoke {
+                                invoke_id: generated_invoke_id,
+                                state: {{ machine_name }}State::{{ state_id | to_state_variant }},
+                                document_id: "{{ invoke_info.invoke_id }}",
+                            },
+                        );
                     }
-{% endif %}
-                    sce_rust_runtime::invoke::defer_invoke(
-                        &mut self.pending_invokes,
-                        sce_rust_runtime::invoke::PendingInvoke {
-                            invoke_id: generated_invoke_id,
-                            state: {{ machine_name }}State::{{ state_id | to_state_variant }},
-                            document_id: "{{ invoke_info.invoke_id }}",
-                        },
-                    );
                 }
 {% endfor %}
 {% endif %}

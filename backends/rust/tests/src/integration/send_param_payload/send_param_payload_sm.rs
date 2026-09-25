@@ -963,14 +963,17 @@ impl StatePolicy for SendParamPayloadPolicy {
                 {
                     let generated_invoke_id =
                         format!("{}.{}.inv_emitter", "awaitChild", self as *const _ as usize);
-                    sce_rust_runtime::invoke::defer_invoke(
-                        &mut self.pending_invokes,
-                        sce_rust_runtime::invoke::PendingInvoke {
-                            invoke_id: generated_invoke_id,
-                            state: SendParamPayloadState::AwaitChild,
-                            document_id: "inv_emitter",
-                        },
-                    );
+                    let id_stored = true;
+                    if id_stored {
+                        sce_rust_runtime::invoke::defer_invoke(
+                            &mut self.pending_invokes,
+                            sce_rust_runtime::invoke::PendingInvoke {
+                                invoke_id: generated_invoke_id,
+                                state: SendParamPayloadState::AwaitChild,
+                                document_id: "inv_emitter",
+                            },
+                        );
+                    }
                 }
             }
             SendParamPayloadState::InternalPhase => {

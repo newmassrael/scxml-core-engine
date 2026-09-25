@@ -690,17 +690,18 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             sendId = generateUniqueSendId();
         }
 
-        // §scxml-6.2.3: Store sendid in idlocation variable if specified
-        // This happens BEFORE validation so the variable is set even if send fails
+        // §scxml-6.2.4: Store sendid in idlocation variable if specified
+        // This happens BEFORE validation so the variable is set even if send fails.
+        // It is the assignment <assign> makes, so a member path lands; a location
+        // that cannot take the id has raised error.execution, and the message is
+        // discarded (§scxml-5.9.2). The id is quoted by the helper generated
+        // machines use, so the two engines store the same literal.
         if (!action.getIdLocation().empty()) {
-            try {
-                assignVariable(action.getIdLocation(), "'" + sendId + "'");
-                SCE_LOG_DEBUG("ActionExecutorImpl: Stored sendid '{}' in variable '{}'", sendId,
-                              action.getIdLocation());
-            } catch (const std::exception &e) {
-                SCE_LOG_ERROR("ActionExecutorImpl: Failed to store sendid in idlocation '{}': {}",
-                              action.getIdLocation(), e.what());
+            if (!assignVariable(action.getIdLocation(),
+                                ScriptSource::stringLiteral(sendId, ScriptLanguage::ECMAScript).text())) {
+                return false;
             }
+            SCE_LOG_DEBUG("ActionExecutorImpl: Stored sendid '{}' in variable '{}'", sendId, action.getIdLocation());
         }
 
         // §scxml-6.2 (test 174): Evaluate type or typeexpr for send action

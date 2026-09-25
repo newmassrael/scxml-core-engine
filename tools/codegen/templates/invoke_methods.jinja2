@@ -478,7 +478,17 @@
                         // to `idlocation` when the element is evaluated. It is
                         // the id the host is handed and `done.invoke.<id>`
                         // names, so the document can match on what it stored.
-                        hostScript.setVariable(sessionId_.value(), "{{ invoke_info.idlocation | escape_cpp }}", std::string("{{ invoke_info.invoke_id | escape_cpp }}")).get();
+                        // It is an assignment to a location expression, and a
+                        // location that cannot take it starts nothing
+                        // (W3C SCXML 5.9.2).
+                        if (!::SCE::AssignmentExecutionHelper::storeIdInLocation(
+                                hostScript, sessionId_.value(), {{ invoke_info.idlocation | to_script_source_location }},
+                                "{{ invoke_info.invoke_id | escape_cpp }}",
+                                [&engine](const std::string &error) {
+                                    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, error));
+                                })) {
+                            return;
+                        }
 {% endif %}
 {% if invoke_info.srcexpr %}
                         {

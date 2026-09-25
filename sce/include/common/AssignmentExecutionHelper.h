@@ -163,6 +163,23 @@ public:
             return true;
         }
     }
+
+    /**
+     * @brief §scxml-6.2.4 / §scxml-6.4.1: write a generated id to an
+     *        `idlocation`
+     *
+     * The location is a location expression, so this is the assignment
+     * executeAssignment() makes: a member path lands, and one that cannot take
+     * the id reports through `errorCallback` and answers false, for the caller
+     * to raise error.execution and abandon the element (§scxml-5.9.2). The id
+     * is quoted here, in the location's own language, because an invoke's is
+     * a run-time value.
+     */
+    static bool storeIdInLocation(IScriptEngine &jsEngine, const std::string &sessionId, const ScriptSource &location,
+                                  const std::string &id, std::function<void(const std::string &)> errorCallback) {
+        return executeAssignment(jsEngine, sessionId, location, ScriptSource::stringLiteral(id, location.language()),
+                                 std::move(errorCallback));
+    }
 };
 
 }  // namespace SCE

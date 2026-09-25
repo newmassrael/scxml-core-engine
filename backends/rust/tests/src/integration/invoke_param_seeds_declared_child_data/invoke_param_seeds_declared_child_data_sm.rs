@@ -1799,14 +1799,17 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
                 {
                     let generated_invoke_id =
                         format!("{}.{}.inv_infinite", "infinite", self as *const _ as usize);
-                    sce_rust_runtime::invoke::defer_invoke(
-                        &mut self.pending_invokes,
-                        sce_rust_runtime::invoke::PendingInvoke {
-                            invoke_id: generated_invoke_id,
-                            state: InvokeParamSeedsDeclaredChildDataState::Infinite,
-                            document_id: "inv_infinite",
-                        },
-                    );
+                    let id_stored = true;
+                    if id_stored {
+                        sce_rust_runtime::invoke::defer_invoke(
+                            &mut self.pending_invokes,
+                            sce_rust_runtime::invoke::PendingInvoke {
+                                invoke_id: generated_invoke_id,
+                                state: InvokeParamSeedsDeclaredChildDataState::Infinite,
+                                document_id: "inv_infinite",
+                            },
+                        );
+                    }
                 }
             }
             InvokeParamSeedsDeclaredChildDataState::NamelistPhase => {
@@ -1817,14 +1820,17 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
                         "{}.{}.inv_namelist",
                         "namelistPhase", self as *const _ as usize
                     );
-                    sce_rust_runtime::invoke::defer_invoke(
-                        &mut self.pending_invokes,
-                        sce_rust_runtime::invoke::PendingInvoke {
-                            invoke_id: generated_invoke_id,
-                            state: InvokeParamSeedsDeclaredChildDataState::NamelistPhase,
-                            document_id: "inv_namelist",
-                        },
-                    );
+                    let id_stored = true;
+                    if id_stored {
+                        sce_rust_runtime::invoke::defer_invoke(
+                            &mut self.pending_invokes,
+                            sce_rust_runtime::invoke::PendingInvoke {
+                                invoke_id: generated_invoke_id,
+                                state: InvokeParamSeedsDeclaredChildDataState::NamelistPhase,
+                                document_id: "inv_namelist",
+                            },
+                        );
+                    }
                 }
             }
             InvokeParamSeedsDeclaredChildDataState::Shadowed => {
@@ -1833,14 +1839,17 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
                 {
                     let generated_invoke_id =
                         format!("{}.{}.inv_shadow", "shadowed", self as *const _ as usize);
-                    sce_rust_runtime::invoke::defer_invoke(
-                        &mut self.pending_invokes,
-                        sce_rust_runtime::invoke::PendingInvoke {
-                            invoke_id: generated_invoke_id,
-                            state: InvokeParamSeedsDeclaredChildDataState::Shadowed,
-                            document_id: "inv_shadow",
-                        },
-                    );
+                    let id_stored = true;
+                    if id_stored {
+                        sce_rust_runtime::invoke::defer_invoke(
+                            &mut self.pending_invokes,
+                            sce_rust_runtime::invoke::PendingInvoke {
+                                invoke_id: generated_invoke_id,
+                                state: InvokeParamSeedsDeclaredChildDataState::Shadowed,
+                                document_id: "inv_shadow",
+                            },
+                        );
+                    }
                 }
             }
             InvokeParamSeedsDeclaredChildDataState::SoleName => {
@@ -1849,14 +1858,17 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
                 {
                     let generated_invoke_id =
                         format!("{}.{}.inv_sole", "soleName", self as *const _ as usize);
-                    sce_rust_runtime::invoke::defer_invoke(
-                        &mut self.pending_invokes,
-                        sce_rust_runtime::invoke::PendingInvoke {
-                            invoke_id: generated_invoke_id,
-                            state: InvokeParamSeedsDeclaredChildDataState::SoleName,
-                            document_id: "inv_sole",
-                        },
-                    );
+                    let id_stored = true;
+                    if id_stored {
+                        sce_rust_runtime::invoke::defer_invoke(
+                            &mut self.pending_invokes,
+                            sce_rust_runtime::invoke::PendingInvoke {
+                                invoke_id: generated_invoke_id,
+                                state: InvokeParamSeedsDeclaredChildDataState::SoleName,
+                                document_id: "inv_sole",
+                            },
+                        );
+                    }
                 }
             }
             InvokeParamSeedsDeclaredChildDataState::Unmatched => {
@@ -1867,14 +1879,17 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
                         "{}.{}.inv_unmatched",
                         "unmatched", self as *const _ as usize
                     );
-                    sce_rust_runtime::invoke::defer_invoke(
-                        &mut self.pending_invokes,
-                        sce_rust_runtime::invoke::PendingInvoke {
-                            invoke_id: generated_invoke_id,
-                            state: InvokeParamSeedsDeclaredChildDataState::Unmatched,
-                            document_id: "inv_unmatched",
-                        },
-                    );
+                    let id_stored = true;
+                    if id_stored {
+                        sce_rust_runtime::invoke::defer_invoke(
+                            &mut self.pending_invokes,
+                            sce_rust_runtime::invoke::PendingInvoke {
+                                invoke_id: generated_invoke_id,
+                                state: InvokeParamSeedsDeclaredChildDataState::Unmatched,
+                                document_id: "inv_unmatched",
+                            },
+                        );
+                    }
                 }
             }
             _ => {}

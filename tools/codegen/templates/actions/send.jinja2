@@ -23,7 +23,11 @@
 {{ indent }}    Event::Error_execution,
 {{ indent }}    "<send> <param name='{{ param.name | escape_cpp }}'> expr failed to evaluate"));
 {% endmacro %}
-{
+{# W3C SCXML 6.2: a send whose `idlocation` cannot take the id is discarded, so
+   its body is a block the store can leave; `break` is the one exit, and this
+   template writes no loop of its own for it to be confused with. #}
+{% set idloc_guard = action.idlocation and (model.needs_script_engine or model.needs_event_origin) %}
+{% if idloc_guard %}do {{ '{' }}{% else %}{{ '{' }}{% endif %}
 {% if action.id %}
 std::string sendId = "{{ action.id }}";
 {% else %}
@@ -56,9 +60,17 @@ ensureSessionId();
 {% if action.idlocation %}
 // W3C SCXML 6.2.4: Store sendid in idlocation (test183, test332)
 {% if model.needs_script_engine or model.needs_event_origin %}
+// The store is the assignment `<assign>` makes — a member path lands — and a
+// location that cannot take the id discards the message (W3C SCXML 6.2, 5.9.2).
 this->ensureScriptEngine();
 auto& scriptEngine = getScriptEngine();
-::SCE::SendHelper::storeInIdLocation(scriptEngine, sessionId_.value(), "{{ action.idlocation | escape_cpp }}", sendId);
+if (!::SCE::AssignmentExecutionHelper::storeIdInLocation(
+        scriptEngine, sessionId_.value(), {{ action.idlocation | to_script_source_location }}, sendId,
+        [&engine](const std::string &error) {
+            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, error));
+        })) {
+    break;
+}
 {% else %}
 #error "SCE codegen drift: `<send idlocation=>` is a dynamic attribute, yet this machine emits no script engine. script_engine_analyzer::send_has_dynamic_attr must raise SendDynamicAttr for it."
 {% endif %}
@@ -1002,4 +1014,4 @@ if (::SCE::SendHelper::isInternalTarget("{{ action.target }}")) {
 {% endif %}
 {% endif %}
 {% endif %}
-}
+{{ '}' }}{% if idloc_guard %} while (false);{% endif %}

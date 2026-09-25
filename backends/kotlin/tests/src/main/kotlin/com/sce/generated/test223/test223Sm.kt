@@ -275,6 +275,26 @@ class Test223StateMachine(
         }
     }
 
+    // W3C SCXML 6.2.4 / 6.4.1: write a generated id to an `idlocation`.
+    //
+    // The location is a location expression, so this is the assignment
+    // `executeAssign` makes: lowered, so a member path lands, and one that
+    // cannot take the id raises error.execution (W3C SCXML 5.9.2) and answers
+    // false for the caller to abandon the element. The id is quoted here, in
+    // the location's own language, because an invoke's is a run-time value.
+    private fun storeIdInLocation(location: com.sce.runtime.ScriptSource, id: String, element: String): Boolean {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        return try {
+            engine.assign(sid, location, com.sce.runtime.ScriptSource.stringLiteral(id, location.language))
+            true
+        } catch (e: Exception) {
+            raisePlatformError(Test223Event.Error.Execution, "$element idlocation could not take the id")
+            false
+        }
+    }
+
     // W3C SCXML 5.8: Script block execution
     private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
         ensureScriptEngine()
@@ -396,13 +416,11 @@ class Test223StateMachine(
                 run {
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
                     val generatedInvokeId = "s0.${System.identityHashCode(this)}._invoke_0"
-                    // W3C SCXML 6.4.1: Store generated invokeId in parent datamodel via idlocation
-                    ensureScriptEngine()
-                    scriptEngine?.let { eng ->
-                        scriptSessionId?.let { sid ->
-                            eng.setVariable(sid, "Var1", generatedInvokeId)
-                        }
-                    }
+                    // W3C SCXML 6.4.1: Store generated invokeId in parent datamodel via
+                    // idlocation, through the assignment `<assign>` makes — a member
+                    // path lands, and a location that cannot take the id raises
+                    // error.execution and the invocation is never deferred.
+                    if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), generatedInvokeId, "<invoke>")) return@run
                     deferInvoke(state, generatedInvokeId) {
                         val childSM = Test223SceSynthInvokeInvoke0StateMachine()
                         // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events

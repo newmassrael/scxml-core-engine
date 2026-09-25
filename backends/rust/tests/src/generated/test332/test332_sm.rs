@@ -613,26 +613,39 @@ impl StatePolicy for Test332Policy {
                     {
                         let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
 
+                        let mut _send_aborted = false;
                         // W3C SCXML 6.2.4: Store sendid in idlocation
                         {
                             self.ensure_script_engine();
                             let sid = self.session_id.as_ref().unwrap().clone();
                             let se = self.script_engine.clone();
                             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let _ = se.execute_script(&sid, &format!("{} = {:?}", "Var1", send_id));
+                            if !::sce_rust_runtime::helpers::idlocation::store_id_in_location(
+                                se,
+                                &sid,
+                                "Var1",
+                                send_id.as_str(),
+                            ) {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                    Test332Event::ErrorExecution,
+                                    "<send idlocation='Var1'> could not take the send id",
+                                ));
+                                _send_aborted = true;
+                            }
                         }
 
                         let event_data: &str = "";
 
-                        // W3C SCXML 6.2: Invalid target "!invalid" raises error.execution
-                        {
-                            // W3C SCXML 6.2.4/5.10: test 332 — the error event MUST carry the sendid
-                            let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test332Event::ErrorExecution, "<send target='!invalid'> is not a target this processor can address");
-                            err_meta.metadata.send_id = send_id.clone();
-                            engine.raise(err_meta);
-                        }
-                        break 'action_block;
-
+                        if !_send_aborted {
+                            // W3C SCXML 6.2: Invalid target "!invalid" raises error.execution
+                            {
+                                // W3C SCXML 6.2.4/5.10: test 332 — the error event MUST carry the sendid
+                                let mut err_meta = sce_rust_runtime::EventWithMetadata::platform_error(Test332Event::ErrorExecution, "<send target='!invalid'> is not a target this processor can address");
+                                err_meta.metadata.send_id = send_id.clone();
+                                engine.raise(err_meta);
+                            }
+                            break 'action_block;
+                        } // end of !_send_aborted guard (W3C SCXML 6.2: abort send on an argument error)
                         let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
                     }

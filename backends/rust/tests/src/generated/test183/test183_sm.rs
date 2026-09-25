@@ -600,30 +600,43 @@ impl StatePolicy for Test183Policy {
                     {
                         let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
 
+                        let mut _send_aborted = false;
                         // W3C SCXML 6.2.4: Store sendid in idlocation
                         {
                             self.ensure_script_engine();
                             let sid = self.session_id.as_ref().unwrap().clone();
                             let se = self.script_engine.clone();
                             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                            let _ = se.execute_script(&sid, &format!("{} = {:?}", "Var1", send_id));
+                            if !::sce_rust_runtime::helpers::idlocation::store_id_in_location(
+                                se,
+                                &sid,
+                                "Var1",
+                                send_id.as_str(),
+                            ) {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                    Test183Event::ErrorExecution,
+                                    "<send idlocation='Var1'> could not take the send id",
+                                ));
+                                _send_aborted = true;
+                            }
                         }
 
                         let event_data: &str = "";
 
-                        // W3C SCXML 6.2: Default send (no target = external event)
-                        {
-                            let mut meta =
-                                sce_rust_runtime::EventWithMetadata::new(Test183Event::Event1);
-                            // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
-                            meta.metadata = sce_rust_runtime::EventMetadata::external(
-                                send_id.clone(),
-                                ::sce_rust_runtime::SceString::new(),
-                            );
-                            meta.set_event_data(event_data);
-                            engine.raise_external_with_meta(meta);
-                        }
-
+                        if !_send_aborted {
+                            // W3C SCXML 6.2: Default send (no target = external event)
+                            {
+                                let mut meta =
+                                    sce_rust_runtime::EventWithMetadata::new(Test183Event::Event1);
+                                // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
+                                meta.metadata = sce_rust_runtime::EventMetadata::external(
+                                    send_id.clone(),
+                                    ::sce_rust_runtime::SceString::new(),
+                                );
+                                meta.set_event_data(event_data);
+                                engine.raise_external_with_meta(meta);
+                            }
+                        } // end of !_send_aborted guard (W3C SCXML 6.2: abort send on an argument error)
                         let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
                     }

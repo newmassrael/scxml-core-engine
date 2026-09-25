@@ -30,6 +30,9 @@ import com.sce.integration.statechart_host_invoker.StatechartHostInvokerStateMac
 import com.sce.runtime.EventMetadata
 import com.sce.runtime.StateMachineEngine
 import com.sce.w3c.W3CTestBase
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -64,6 +67,10 @@ class HostInvokerTest {
             "entered" -> sm.entered()
             "dropped" -> sm.dropped()
             "matched" -> sm.matched()
+            "slotted" -> sm.slotted()
+            "pinged" -> sm.pinged()
+            "leaked" -> sm.leaked()
+            "lost" -> sm.lost()
             else -> error("the fixture declares no counter named `$name`")
         }
         assertNotNull(value, "the fixture declares `$name` and the machine could not read it")
@@ -372,6 +379,40 @@ class HostInvokerTest {
             deliver(sm, StatechartHostInvokerEvent.Leave)
             assertTrue(log.any { it.startsWith("START id=done._invoke_0 ") }, "the host was not handed the generated id: $log")
             assertEquals(1L, counter(sm, "matched"), "the completion did not arrive, or its invokeid is not what idlocation holds")
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    /**
+     * W3C SCXML 6.2.4 / 6.4.1: an `idlocation` is a location expression, so
+     * the id is written the way `<assign>` writes (5.4): `slot.id` and
+     * `slot.sid` are member paths, and land. `n.nope.deeper` cannot take a
+     * value, so each element raises error.execution and is abandoned (5.9.2) —
+     * the host is never asked to start that invoke, and that message is never
+     * sent.
+     */
+    @Test
+    fun anIdlocationIsAssignedLikeALocation() {
+        val sm = machine()
+        val log = mutableListOf<String>()
+        sm.registerInvoker(declaredType, recordingInvoker(log))
+        sm.initialize()
+        try {
+            deliver(sm, StatechartHostInvokerEvent.Locate)
+            assertTrue(log.any { it.startsWith("START id=locating._invoke_1 ") }, "the member-path invoke was not started: $log")
+            assertFalse(log.any { "locating._invoke_2" in it }, "an invoke whose idlocation could not take the id was started: $log")
+
+            val raw = sm.slot()
+            assertNotNull(raw, "the fixture declares `slot` as an object")
+            val slot = Json.parseToJsonElement(raw!!).jsonObject
+            assertEquals("locating._invoke_1", slot["id"]?.jsonPrimitive?.content, "slot.id: $slot")
+            assertTrue(!slot["sid"]?.jsonPrimitive?.content.isNullOrEmpty(), "slot.sid did not receive the send id: $slot")
+
+            assertEquals(1L, counter(sm, "slotted"))
+            assertEquals(1L, counter(sm, "pinged"))
+            assertEquals(0L, counter(sm, "leaked"), "a send whose idlocation could not take the id was still sent")
+            assertEquals(2L, counter(sm, "lost"))
         } finally {
             sm.cleanup()
         }

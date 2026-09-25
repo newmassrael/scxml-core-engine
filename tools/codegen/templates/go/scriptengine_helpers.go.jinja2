@@ -296,6 +296,18 @@ func (p *{{ machine_name }}Policy) assignVariable(location, expr string) error {
 	script := location + " = " + expr
 	return engine.ExecuteScript(p.SessionID, script)
 }
+{% if model.needs_idlocation_store %}
+
+// storeIDInLocation writes a generated id to an `idlocation` (W3C SCXML
+// 6.2.4, 6.4.1). The location is a location expression, so this is the
+// assignment `<assign>` makes: luaLocation is already lowered, so a member
+// path lands, and the error is the caller's to report as error.execution
+// (W3C SCXML 5.9.2). The id is quoted here because an invoke's is a run-time
+// value.
+func (p *{{ machine_name }}Policy) storeIDInLocation(luaLocation, id string) error {
+	return p.assignVariable(luaLocation, sce.QuoteLuaString(id))
+}
+{% endif %}
 
 // getVariable reads a datamodel variable from the script engine.
 func (p *{{ machine_name }}Policy) getVariable(name string) interface{} {

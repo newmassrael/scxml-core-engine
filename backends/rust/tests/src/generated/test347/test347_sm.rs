@@ -632,14 +632,17 @@ impl StatePolicy for Test347Policy {
                 {
                     let generated_invoke_id =
                         format!("{}.{}.child", "s0", self as *const _ as usize);
-                    sce_rust_runtime::invoke::defer_invoke(
-                        &mut self.pending_invokes,
-                        sce_rust_runtime::invoke::PendingInvoke {
-                            invoke_id: generated_invoke_id,
-                            state: Test347State::S0,
-                            document_id: "child",
-                        },
-                    );
+                    let id_stored = true;
+                    if id_stored {
+                        sce_rust_runtime::invoke::defer_invoke(
+                            &mut self.pending_invokes,
+                            sce_rust_runtime::invoke::PendingInvoke {
+                                invoke_id: generated_invoke_id,
+                                state: Test347State::S0,
+                                document_id: "child",
+                            },
+                        );
+                    }
                 }
             }
             Test347State::S02 => {

@@ -684,14 +684,17 @@ impl StatePolicy for InvokePrecedesDequeueMidrunPolicy {
                 {
                     let generated_invoke_id =
                         format!("{}.{}.inv_watch", "phase", self as *const _ as usize);
-                    sce_rust_runtime::invoke::defer_invoke(
-                        &mut self.pending_invokes,
-                        sce_rust_runtime::invoke::PendingInvoke {
-                            invoke_id: generated_invoke_id,
-                            state: InvokePrecedesDequeueMidrunState::Phase,
-                            document_id: "inv_watch",
-                        },
-                    );
+                    let id_stored = true;
+                    if id_stored {
+                        sce_rust_runtime::invoke::defer_invoke(
+                            &mut self.pending_invokes,
+                            sce_rust_runtime::invoke::PendingInvoke {
+                                invoke_id: generated_invoke_id,
+                                state: InvokePrecedesDequeueMidrunState::Phase,
+                                document_id: "inv_watch",
+                            },
+                        );
+                    }
                 }
             }
             _ => {}

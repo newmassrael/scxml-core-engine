@@ -840,14 +840,17 @@ impl StatePolicy for Test228Policy {
                 // W3C SCXML 6.4: Defer invoke execution until macrostep end
                 {
                     let generated_invoke_id = format!("{}.{}.foo", "s0", self as *const _ as usize);
-                    sce_rust_runtime::invoke::defer_invoke(
-                        &mut self.pending_invokes,
-                        sce_rust_runtime::invoke::PendingInvoke {
-                            invoke_id: generated_invoke_id,
-                            state: Test228State::S0,
-                            document_id: "foo",
-                        },
-                    );
+                    let id_stored = true;
+                    if id_stored {
+                        sce_rust_runtime::invoke::defer_invoke(
+                            &mut self.pending_invokes,
+                            sce_rust_runtime::invoke::PendingInvoke {
+                                invoke_id: generated_invoke_id,
+                                state: Test228State::S0,
+                                document_id: "foo",
+                            },
+                        );
+                    }
                 }
             }
             _ => {}

@@ -842,14 +842,17 @@ impl StatePolicy for EventOriginIsALocationPolicy {
                 {
                     let generated_invoke_id =
                         format!("{}.{}.inv_peer", "phase", self as *const _ as usize);
-                    sce_rust_runtime::invoke::defer_invoke(
-                        &mut self.pending_invokes,
-                        sce_rust_runtime::invoke::PendingInvoke {
-                            invoke_id: generated_invoke_id,
-                            state: EventOriginIsALocationState::Phase,
-                            document_id: "inv_peer",
-                        },
-                    );
+                    let id_stored = true;
+                    if id_stored {
+                        sce_rust_runtime::invoke::defer_invoke(
+                            &mut self.pending_invokes,
+                            sce_rust_runtime::invoke::PendingInvoke {
+                                invoke_id: generated_invoke_id,
+                                state: EventOriginIsALocationState::Phase,
+                                document_id: "inv_peer",
+                            },
+                        );
+                    }
                 }
             }
             _ => {}

@@ -297,6 +297,8 @@ fn the_invoke_half_is_reported_and_then_claimed() {
             // No `id` and an `idlocation`: the generated `stateid.platformid`
             // form (§scxml-6.4.1), decided at parse time.
             ("invoke-type", "done._invoke_0"),
+            ("invoke-type", "locating._invoke_1"),
+            ("invoke-type", "locating._invoke_2"),
         ],
         "{causes:?}"
     );

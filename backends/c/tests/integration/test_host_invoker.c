@@ -94,6 +94,14 @@ static int64_t counter(const statechart_host_invoker_t *sm, const char *name) {
         ok = statechart_host_invoker_dropped(sm, &value);
     } else if (strcmp(name, "matched") == 0) {
         ok = statechart_host_invoker_matched(sm, &value);
+    } else if (strcmp(name, "slotted") == 0) {
+        ok = statechart_host_invoker_slotted(sm, &value);
+    } else if (strcmp(name, "pinged") == 0) {
+        ok = statechart_host_invoker_pinged(sm, &value);
+    } else if (strcmp(name, "leaked") == 0) {
+        ok = statechart_host_invoker_leaked(sm, &value);
+    } else if (strcmp(name, "lost") == 0) {
+        ok = statechart_host_invoker_lost(sm, &value);
     }
     if (!ok) {
         (void)fprintf(stderr, "host_invoker: FAIL - the fixture declares `%s` and the machine could not read it\n",
@@ -416,6 +424,47 @@ static int an_idlocation_holds_the_id_the_host_is_handed(void) {
     return bad;
 }
 
+// W3C SCXML 6.2.4 / 6.4.1: an `idlocation` is a location expression, so the id
+// is written the way `<assign>` writes (W3C SCXML 5.4): `slot.id` and
+// `slot.sid` are member paths, and land. `n.nope.deeper` cannot take a value,
+// so each element raises error.execution and is abandoned (W3C SCXML 5.9.2) —
+// the host is never asked to start that invoke, and that message is never
+// sent. `slot` is read back as the JSON text the session's own serializer
+// produces, whose key order is the document's.
+static int an_idlocation_is_assigned_like_a_location(void) {
+    recorder_t rec;
+    memset(&rec, 0, sizeof(rec));
+    statechart_host_invoker_t sm;
+    boot(&sm, &rec, DECLARED_TYPE);
+    deliver(&sm, STATECHART_HOST_INVOKER_EVENT_LOCATE);
+
+    bool handed = false;
+    bool leaked_start = false;
+    for (int i = 0; i < rec.calls && i < (int)(sizeof(rec.log) / sizeof(rec.log[0])); i++) {
+        handed =
+            handed || strncmp(rec.log[i], "START id=locating._invoke_1 ", strlen("START id=locating._invoke_1 ")) == 0;
+        leaked_start = leaked_start || strstr(rec.log[i], "locating._invoke_2") != NULL;
+    }
+    int bad = 0;
+    bad |= expect("locate", "the member-path invoke was not started", handed);
+    bad |= expect("locate", "an invoke whose idlocation could not take the id was started", !leaked_start);
+
+    char slot[256];
+    const bool read = statechart_host_invoker_slot(&sm, slot, sizeof(slot), NULL);
+    bad |= expect("locate", "the fixture declares `slot` as an object", read);
+    bad |= expect("locate", "slot.id is not the generated invoke id",
+                  read && strstr(slot, "\"id\":\"locating._invoke_1\"") != NULL);
+    bad |= expect("locate", "slot.sid did not receive the send id",
+                  read && strstr(slot, "\"sid\":\"") != NULL && strstr(slot, "\"sid\":\"\"") == NULL);
+
+    bad |= check("locate", "slotted", counter(&sm, "slotted"), 1);
+    bad |= check("locate", "pinged", counter(&sm, "pinged"), 1);
+    bad |= check("locate", "leaked", counter(&sm, "leaked"), 0);
+    bad |= check("locate", "lost", counter(&sm, "lost"), 2);
+    statechart_host_invoker_destroy(&sm);
+    return bad;
+}
+
 // The generic `done.invoke` is a host completion too when its invokeid names a
 // host-run invoke, so raised around `_complete_host_invoke` it is refused like
 // the specific name is.
@@ -541,6 +590,7 @@ int main(void) {
     bad |= a_restarted_invoke_refuses_the_first_runs_reply();
     bad |= a_done_invoke_raised_the_old_way_is_refused_and_counted();
     bad |= an_idlocation_holds_the_id_the_host_is_handed();
+    bad |= an_idlocation_is_assigned_like_a_location();
     bad |= a_generic_done_invoke_raised_the_old_way_is_refused();
     bad |= a_declared_type_with_no_invoker_still_raises_error_execution();
     bad |= an_invoker_registered_for_another_type_does_not_run_this_one();

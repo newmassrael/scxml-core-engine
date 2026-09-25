@@ -473,14 +473,23 @@
                 // §scxml-6.4.1: the invocation's generated id goes to
                 // `idlocation` when the element is evaluated. It is the id the
                 // host is handed and `done.invoke.<id>` names, so the document
-                // can match on what it stored.
+                // can match on what it stored. The write is the assignment
+                // `<assign>` makes, so a location that cannot take the id
+                // starts nothing (§scxml-5.9.2), like any argument that cannot
+                // be evaluated.
                 {
                     self.ensure_script_engine();
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                    let _ = se.set_variable(&sid, "{{ invoke_info.idlocation }}",
-                        sce_rust_runtime::ScriptValue::String("{{ invoke_info.invoke_id }}".to_string()));
+                    if !::sce_rust_runtime::helpers::idlocation::store_id_in_location(
+                        se, &sid, "{{ invoke_info.idlocation | to_lua_location | escape_rust }}", "{{ invoke_info.invoke_id | escape_rust }}",
+                    ) {
+{% if 'error.execution' in model.events %}
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke idlocation='{{ invoke_info.idlocation | escape_rust }}'> could not take the invoke id"));
+{% endif %}
+                        continue;
+                    }
                 }
 {% endif %}
                 #[allow(unused_mut)]

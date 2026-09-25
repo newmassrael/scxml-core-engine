@@ -1332,14 +1332,17 @@ impl StatePolicy for Test241Policy {
                 {
                     let generated_invoke_id =
                         format!("{}.{}._invoke_0", "s01", self as *const _ as usize);
-                    sce_rust_runtime::invoke::defer_invoke(
-                        &mut self.pending_invokes,
-                        sce_rust_runtime::invoke::PendingInvoke {
-                            invoke_id: generated_invoke_id,
-                            state: Test241State::S01,
-                            document_id: "_invoke_0",
-                        },
-                    );
+                    let id_stored = true;
+                    if id_stored {
+                        sce_rust_runtime::invoke::defer_invoke(
+                            &mut self.pending_invokes,
+                            sce_rust_runtime::invoke::PendingInvoke {
+                                invoke_id: generated_invoke_id,
+                                state: Test241State::S01,
+                                document_id: "_invoke_0",
+                            },
+                        );
+                    }
                 }
             }
             Test241State::S02 => {
@@ -1348,14 +1351,17 @@ impl StatePolicy for Test241Policy {
                 {
                     let generated_invoke_id =
                         format!("{}.{}._invoke_1", "s02", self as *const _ as usize);
-                    sce_rust_runtime::invoke::defer_invoke(
-                        &mut self.pending_invokes,
-                        sce_rust_runtime::invoke::PendingInvoke {
-                            invoke_id: generated_invoke_id,
-                            state: Test241State::S02,
-                            document_id: "_invoke_1",
-                        },
-                    );
+                    let id_stored = true;
+                    if id_stored {
+                        sce_rust_runtime::invoke::defer_invoke(
+                            &mut self.pending_invokes,
+                            sce_rust_runtime::invoke::PendingInvoke {
+                                invoke_id: generated_invoke_id,
+                                state: Test241State::S02,
+                                document_id: "_invoke_1",
+                            },
+                        );
+                    }
                 }
             }
             Test241State::S03 => {
@@ -1364,14 +1370,17 @@ impl StatePolicy for Test241Policy {
                 {
                     let generated_invoke_id =
                         format!("{}.{}._invoke_2", "s03", self as *const _ as usize);
-                    sce_rust_runtime::invoke::defer_invoke(
-                        &mut self.pending_invokes,
-                        sce_rust_runtime::invoke::PendingInvoke {
-                            invoke_id: generated_invoke_id,
-                            state: Test241State::S03,
-                            document_id: "_invoke_2",
-                        },
-                    );
+                    let id_stored = true;
+                    if id_stored {
+                        sce_rust_runtime::invoke::defer_invoke(
+                            &mut self.pending_invokes,
+                            sce_rust_runtime::invoke::PendingInvoke {
+                                invoke_id: generated_invoke_id,
+                                state: Test241State::S03,
+                                document_id: "_invoke_2",
+                            },
+                        );
+                    }
                 }
             }
             _ => {}

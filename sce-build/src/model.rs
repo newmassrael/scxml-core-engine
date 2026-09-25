@@ -2907,6 +2907,13 @@ pub struct SCXMLModel {
     /// two must not be conflated into one flag.
     #[serde(default)]
     pub needs_tick_driving: bool,
+    /// §scxml-6.2.4 / §scxml-6.4.1: some `<send>` or `<invoke>` names an
+    /// `idlocation`, so the machine writes a generated id through the
+    /// `<assign>` path at run time. Gates the per-policy store helper the
+    /// backends without a shared runtime function emit (Go, Python, Kotlin),
+    /// so a machine that stores no id does not carry one.
+    #[serde(default)]
+    pub needs_idlocation_store: bool,
     /// §scxml-B-2: any reachable `<data>` content / `<data src=...>`
     /// loaded payload / `<send><content>` literal whose first non-WS
     /// character is `<` triggers the host-side XML DOM helper (C11

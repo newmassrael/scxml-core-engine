@@ -1476,14 +1476,17 @@ impl StatePolicy for EmptyFinalizeUpdatesTheLocationPolicy {
                 {
                     let generated_invoke_id =
                         format!("{}.{}.inv_absent", "absentPhase", self as *const _ as usize);
-                    sce_rust_runtime::invoke::defer_invoke(
-                        &mut self.pending_invokes,
-                        sce_rust_runtime::invoke::PendingInvoke {
-                            invoke_id: generated_invoke_id,
-                            state: EmptyFinalizeUpdatesTheLocationState::AbsentPhase,
-                            document_id: "inv_absent",
-                        },
-                    );
+                    let id_stored = true;
+                    if id_stored {
+                        sce_rust_runtime::invoke::defer_invoke(
+                            &mut self.pending_invokes,
+                            sce_rust_runtime::invoke::PendingInvoke {
+                                invoke_id: generated_invoke_id,
+                                state: EmptyFinalizeUpdatesTheLocationState::AbsentPhase,
+                                document_id: "inv_absent",
+                            },
+                        );
+                    }
                 }
             }
             EmptyFinalizeUpdatesTheLocationState::EmptyPhase => {
@@ -1512,14 +1515,17 @@ impl StatePolicy for EmptyFinalizeUpdatesTheLocationPolicy {
                 {
                     let generated_invoke_id =
                         format!("{}.{}.inv_empty", "emptyPhase", self as *const _ as usize);
-                    sce_rust_runtime::invoke::defer_invoke(
-                        &mut self.pending_invokes,
-                        sce_rust_runtime::invoke::PendingInvoke {
-                            invoke_id: generated_invoke_id,
-                            state: EmptyFinalizeUpdatesTheLocationState::EmptyPhase,
-                            document_id: "inv_empty",
-                        },
-                    );
+                    let id_stored = true;
+                    if id_stored {
+                        sce_rust_runtime::invoke::defer_invoke(
+                            &mut self.pending_invokes,
+                            sce_rust_runtime::invoke::PendingInvoke {
+                                invoke_id: generated_invoke_id,
+                                state: EmptyFinalizeUpdatesTheLocationState::EmptyPhase,
+                                document_id: "inv_empty",
+                            },
+                        );
+                    }
                 }
             }
             EmptyFinalizeUpdatesTheLocationState::UnmatchedPhase => {
@@ -1550,14 +1556,17 @@ impl StatePolicy for EmptyFinalizeUpdatesTheLocationPolicy {
                         "{}.{}.inv_unmatched",
                         "unmatchedPhase", self as *const _ as usize
                     );
-                    sce_rust_runtime::invoke::defer_invoke(
-                        &mut self.pending_invokes,
-                        sce_rust_runtime::invoke::PendingInvoke {
-                            invoke_id: generated_invoke_id,
-                            state: EmptyFinalizeUpdatesTheLocationState::UnmatchedPhase,
-                            document_id: "inv_unmatched",
-                        },
-                    );
+                    let id_stored = true;
+                    if id_stored {
+                        sce_rust_runtime::invoke::defer_invoke(
+                            &mut self.pending_invokes,
+                            sce_rust_runtime::invoke::PendingInvoke {
+                                invoke_id: generated_invoke_id,
+                                state: EmptyFinalizeUpdatesTheLocationState::UnmatchedPhase,
+                                document_id: "inv_unmatched",
+                            },
+                        );
+                    }
                 }
             }
             _ => {}

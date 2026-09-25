@@ -618,6 +618,7 @@ impl StatePolicy for Test553Policy {
                         let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
 
                         let mut _send_aborted = false;
+
                         // W3C SCXML 6.2 / test178: a name may repeat and every value must be
                         // delivered, so each name carries a vector. The typed value is kept
                         // rather than its text — a receiver reading `_event.data.value === 42`
@@ -690,7 +691,7 @@ impl StatePolicy for Test553Policy {
                                 meta.set_event_data(event_data);
                                 engine.raise_external_with_meta(meta);
                             }
-                        } // end of !_send_aborted guard (W3C SCXML 6.2: abort send on namelist error)
+                        } // end of !_send_aborted guard (W3C SCXML 6.2: abort send on an argument error)
                         let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
                     }

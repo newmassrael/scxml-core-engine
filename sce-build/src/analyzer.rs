@@ -37,6 +37,17 @@ pub fn analyze(model: &mut SCXMLModel, scxml_path: &str) {
     // manifest reads the method, and both come from the same three terms.
     model.needs_tick_driving = model.needs_event_scheduler_driving();
 
+    // §scxml-6.4.1: an invoke's generated id is written to `idlocation` the
+    // same way a sendid is; the `<send>` half is set in `analyze_action`.
+    if model.states.values().any(|state| {
+        state
+            .invokes
+            .iter()
+            .any(|invoke| !invoke.base().idlocation.is_empty())
+    }) {
+        model.needs_idlocation_store = true;
+    }
+
     // Named Context: set needs_nonstatic_method
     model.needs_nonstatic_method = model.needs_script_engine
         || model.has_scxml_invoke()
@@ -611,6 +622,11 @@ fn analyze_action(action: &Action, model: &mut SCXMLModel) {
         "send" => {
             model.needs_send_helper = Some(true);
             model.events.insert("error.execution".to_string());
+            // §scxml-6.2.4: the generated sendid is written to `idlocation`
+            // through the `<assign>` path.
+            if !action.idlocation.is_empty() {
+                model.needs_idlocation_store = true;
+            }
             if !action.params.is_empty() {
                 model.needs_event_data_helper = Some(true);
             }

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 0dd8bb94b477df7253580da4e9a7c96a6dc5fe3de689531800bfe218ecdf5aea
+// source-hash: 787a9105d95e061c8817f6d59cb2907d5bb12acf7e54887949738cf456466835
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -71,8 +71,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: statechart_host_invoker.scxml:63 :: _machine"]
-// SCE-MAP: statechart_host_invoker.scxml:63 :: _machine
+#![doc = "SCE-MAP: statechart_host_invoker.scxml:75 :: _machine"]
+// SCE-MAP: statechart_host_invoker.scxml:75 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -88,6 +88,7 @@ pub enum StatechartHostInvokerState {
     // W3C SCXML 3.2: `<scxml initial>` state — the machine's `Default`.
     #[default]
     Invoking,
+    Locating,
 }
 
 // ======================================================================
@@ -102,7 +103,10 @@ pub enum StatechartHostInvokerEvent {
     DoneInvokeProbe2,
     ErrorExecution,
     Evaluate,
+    Leak,
     Leave,
+    Locate,
+    Ping,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
 }
@@ -126,7 +130,10 @@ impl StatechartHostInvokerEvent {
     pub const EXTERNALLY_DRIVABLE_EVENTS: &'static [StatechartHostInvokerEvent] = &[
         StatechartHostInvokerEvent::Again,
         StatechartHostInvokerEvent::Evaluate,
+        StatechartHostInvokerEvent::Leak,
         StatechartHostInvokerEvent::Leave,
+        StatechartHostInvokerEvent::Locate,
+        StatechartHostInvokerEvent::Ping,
     ];
 }
 
@@ -344,6 +351,84 @@ impl StatechartHostInvokerPolicy {
         )
     }
 
+    /// §scxml-5.3: what the `slot` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `slot` was
+    /// assigned a value of another type, or the engine refused.
+    ///
+    /// The value as JSON text, serialized by the engine's own
+    /// `JSON.stringify` (§scxml-B-2) so the key order is the document's.
+    pub fn slot(&self) -> Option<String> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_json(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "slot",
+        )
+    }
+
+    /// §scxml-5.3: what the `slotted` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `slotted` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn slotted(&self) -> Option<i64> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_int(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "slotted",
+        )
+    }
+
+    /// §scxml-5.3: what the `pinged` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `pinged` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn pinged(&self) -> Option<i64> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_int(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "pinged",
+        )
+    }
+
+    /// §scxml-5.3: what the `leaked` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `leaked` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn leaked(&self) -> Option<i64> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_int(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "leaked",
+        )
+    }
+
+    /// §scxml-5.3: what the `lost` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `lost` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn lost(&self) -> Option<i64> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_int(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "lost",
+        )
+    }
+
     /// §scxml-C-2-3: declare the inbound BasicHTTP endpoint serving this
     /// machine, published as the processor's 'location' in `_ioprocessors`.
     /// Must be called before `initialize()`, since the entries are populated
@@ -475,6 +560,44 @@ impl StatechartHostInvokerPolicy {
         // W3C SCXML 5.2/5.3: Initialize 'matched' from expr (global)
         if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
             se, &sid, "matched", "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'slot' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "slot",
+            "{[\"id\"] = \"\", [\"sid\"] = \"\"}",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'slotted' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "slotted", "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'pinged' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "pinged", "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'leaked' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "leaked", "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'lost' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "lost", "0",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
@@ -617,6 +740,64 @@ impl StatechartHostInvokerPolicy {
             ));
         }
 
+        // W3C SCXML 5.2/5.3: Initialize 'slot' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "slot",
+            "{[\"id\"] = \"\", [\"sid\"] = \"\"}",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                StatechartHostInvokerEvent::ErrorExecution,
+                "<data id='slot'> expr failed to evaluate",
+            ));
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'slotted' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "slotted", "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                StatechartHostInvokerEvent::ErrorExecution,
+                "<data id='slotted'> expr failed to evaluate",
+            ));
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'pinged' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "pinged", "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                StatechartHostInvokerEvent::ErrorExecution,
+                "<data id='pinged'> expr failed to evaluate",
+            ));
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'leaked' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "leaked", "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                StatechartHostInvokerEvent::ErrorExecution,
+                "<data id='leaked'> expr failed to evaluate",
+            ));
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'lost' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "lost", "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                StatechartHostInvokerEvent::ErrorExecution,
+                "<data id='lost'> expr failed to evaluate",
+            ));
+        }
+
         self.script_engine_initialized = true;
     }
 
@@ -751,17 +932,27 @@ impl StatechartHostInvokerPolicy {
                 // §scxml-6.4.1: the invocation's generated id goes to
                 // `idlocation` when the element is evaluated. It is the id the
                 // host is handed and `done.invoke.<id>` names, so the document
-                // can match on what it stored.
+                // can match on what it stored. The write is the assignment
+                // `<assign>` makes, so a location that cannot take the id
+                // starts nothing (§scxml-5.9.2), like any argument that cannot
+                // be evaluated.
                 {
                     self.ensure_script_engine();
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                    let _ = se.set_variable(
+                    if !::sce_rust_runtime::helpers::idlocation::store_id_in_location(
+                        se,
                         &sid,
                         "doneId",
-                        sce_rust_runtime::ScriptValue::String("done._invoke_0".to_string()),
-                    );
+                        "done._invoke_0",
+                    ) {
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                            StatechartHostInvokerEvent::ErrorExecution,
+                            "<invoke idlocation='doneId'> could not take the invoke id",
+                        ));
+                        continue;
+                    }
                 }
                 #[allow(unused_mut)]
                 let mut host_invoke_src = "".to_string();
@@ -1143,6 +1334,136 @@ impl StatechartHostInvokerPolicy {
                 }
                 continue;
             }
+            if pending.document_id == "locating._invoke_1" {
+                // §scxml-6.4.1: the host declared this `type`, so start the
+                // invocation rather than refusing it. The id handed over is
+                // the DOCUMENT's, not the per-instance one the defer queue
+                // carries: `done.invoke.<id>` is the name the author wrote a
+                // transition for, so it is the name the host must answer on.
+                // §scxml-6.4.1: what the request says is evaluated now, when
+                // the invocation starts, by the rules the other invoke kinds
+                // follow: an attribute that cannot be evaluated starts
+                // nothing, and a `<param>` that cannot is reported and left
+                // out (§scxml-5.7.1).
+                // §scxml-6.4.1: the invocation's generated id goes to
+                // `idlocation` when the element is evaluated. It is the id the
+                // host is handed and `done.invoke.<id>` names, so the document
+                // can match on what it stored. The write is the assignment
+                // `<assign>` makes, so a location that cannot take the id
+                // starts nothing (§scxml-5.9.2), like any argument that cannot
+                // be evaluated.
+                {
+                    self.ensure_script_engine();
+                    let sid = self.session_id.as_ref().unwrap().clone();
+                    let se = self.script_engine.clone();
+                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                    if !::sce_rust_runtime::helpers::idlocation::store_id_in_location(
+                        se,
+                        &sid,
+                        "slot.id",
+                        "locating._invoke_1",
+                    ) {
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                            StatechartHostInvokerEvent::ErrorExecution,
+                            "<invoke idlocation='slot.id'> could not take the invoke id",
+                        ));
+                        continue;
+                    }
+                }
+                #[allow(unused_mut)]
+                let mut host_invoke_src = "".to_string();
+                #[allow(unused_mut)]
+                let mut host_invoke_content = "".to_string();
+                let mut host_invoke_params =
+                    std::collections::HashMap::<String, Vec<String>>::new();
+
+                let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
+                    processor_type: "x-sce-host".to_string(),
+                    invoke_id: "locating._invoke_1".to_string(),
+                    src: host_invoke_src,
+                    params: host_invoke_params,
+                    content: host_invoke_content,
+                    // §scxml-6.4: which start this is belongs to the engine,
+                    // which assigns it when the invocation starts.
+                    token: 0,
+                });
+                if !started {
+                    // §scxml-6.4.1: declared but no invoker registered. The
+                    // document asked for a process to be run and none was,
+                    // which is the same fact as an unsupported type — so the
+                    // same event, rather than a silence that reads as started.
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                        StatechartHostInvokerEvent::ErrorExecution,
+                        "<invoke> names an invoker the host declared but never registered",
+                    ));
+                }
+                continue;
+            }
+            if pending.document_id == "locating._invoke_2" {
+                // §scxml-6.4.1: the host declared this `type`, so start the
+                // invocation rather than refusing it. The id handed over is
+                // the DOCUMENT's, not the per-instance one the defer queue
+                // carries: `done.invoke.<id>` is the name the author wrote a
+                // transition for, so it is the name the host must answer on.
+                // §scxml-6.4.1: what the request says is evaluated now, when
+                // the invocation starts, by the rules the other invoke kinds
+                // follow: an attribute that cannot be evaluated starts
+                // nothing, and a `<param>` that cannot is reported and left
+                // out (§scxml-5.7.1).
+                // §scxml-6.4.1: the invocation's generated id goes to
+                // `idlocation` when the element is evaluated. It is the id the
+                // host is handed and `done.invoke.<id>` names, so the document
+                // can match on what it stored. The write is the assignment
+                // `<assign>` makes, so a location that cannot take the id
+                // starts nothing (§scxml-5.9.2), like any argument that cannot
+                // be evaluated.
+                {
+                    self.ensure_script_engine();
+                    let sid = self.session_id.as_ref().unwrap().clone();
+                    let se = self.script_engine.clone();
+                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                    if !::sce_rust_runtime::helpers::idlocation::store_id_in_location(
+                        se,
+                        &sid,
+                        "n.nope.deeper",
+                        "locating._invoke_2",
+                    ) {
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                            StatechartHostInvokerEvent::ErrorExecution,
+                            "<invoke idlocation='n.nope.deeper'> could not take the invoke id",
+                        ));
+                        continue;
+                    }
+                }
+                #[allow(unused_mut)]
+                let mut host_invoke_src = "".to_string();
+                #[allow(unused_mut)]
+                let mut host_invoke_content = "".to_string();
+                let mut host_invoke_params =
+                    std::collections::HashMap::<String, Vec<String>>::new();
+
+                let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
+                    processor_type: "x-sce-host".to_string(),
+                    invoke_id: "locating._invoke_2".to_string(),
+                    src: host_invoke_src,
+                    params: host_invoke_params,
+                    content: host_invoke_content,
+                    // §scxml-6.4: which start this is belongs to the engine,
+                    // which assigns it when the invocation starts.
+                    token: 0,
+                });
+                if !started {
+                    // §scxml-6.4.1: declared but no invoker registered. The
+                    // document asked for a process to be run and none was,
+                    // which is the same fact as an unsupported type — so the
+                    // same event, rather than a silence that reads as started.
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                        StatechartHostInvokerEvent::ErrorExecution,
+                        "<invoke> names an invoker the host declared but never registered",
+                    ));
+                }
+                continue;
+            }
         }
     }
 
@@ -1277,6 +1598,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
             StatechartHostInvokerState::Done => 2,
             StatechartHostInvokerState::Evaluating => 1,
             StatechartHostInvokerState::Invoking => 0,
+            StatechartHostInvokerState::Locating => 3,
         }
     }
 
@@ -1288,7 +1610,10 @@ impl StatePolicy for StatechartHostInvokerPolicy {
             StatechartHostInvokerEvent::DoneInvokeProbe2 => "done.invoke.probe2",
             StatechartHostInvokerEvent::ErrorExecution => "error.execution",
             StatechartHostInvokerEvent::Evaluate => "evaluate",
+            StatechartHostInvokerEvent::Leak => "leak",
             StatechartHostInvokerEvent::Leave => "leave",
+            StatechartHostInvokerEvent::Locate => "locate",
+            StatechartHostInvokerEvent::Ping => "ping",
             StatechartHostInvokerEvent::Null => "",
         }
     }
@@ -1301,21 +1626,33 @@ impl StatePolicy for StatechartHostInvokerPolicy {
             "done.invoke.probe2" => Some(StatechartHostInvokerEvent::DoneInvokeProbe2),
             "error.execution" => Some(StatechartHostInvokerEvent::ErrorExecution),
             "evaluate" => Some(StatechartHostInvokerEvent::Evaluate),
+            "leak" => Some(StatechartHostInvokerEvent::Leak),
             "leave" => Some(StatechartHostInvokerEvent::Leave),
+            "locate" => Some(StatechartHostInvokerEvent::Locate),
+            "ping" => Some(StatechartHostInvokerEvent::Ping),
             _ => None,
         }
     }
 
     // §scxml-6.4: these invokes are run by the host, so their `done.invoke`
     // is accepted only through `Engine::complete_host_invoke`.
-    const HOST_INVOKE_IDS: &'static [&'static str] =
-        &["probe", "probe2", "req", "req2", "req3", "done._invoke_0"];
+    const HOST_INVOKE_IDS: &'static [&'static str] = &[
+        "probe",
+        "probe2",
+        "req",
+        "req2",
+        "req3",
+        "done._invoke_0",
+        "locating._invoke_1",
+        "locating._invoke_2",
+    ];
 
     fn get_state_name(state: Self::State) -> &'static str {
         match state {
             StatechartHostInvokerState::Done => "done",
             StatechartHostInvokerState::Evaluating => "evaluating",
             StatechartHostInvokerState::Invoking => "invoking",
+            StatechartHostInvokerState::Locating => "locating",
         }
     }
 
@@ -1327,6 +1664,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
             "done" => Some(StatechartHostInvokerState::Done),
             "evaluating" => Some(StatechartHostInvokerState::Evaluating),
             "invoking" => Some(StatechartHostInvokerState::Invoking),
+            "locating" => Some(StatechartHostInvokerState::Locating),
             _ => None,
         }
     }
@@ -1378,8 +1716,8 @@ impl StatePolicy for StatechartHostInvokerPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: statechart_host_invoker.scxml:63 :: _machine"]
-    // SCE-MAP: statechart_host_invoker.scxml:63 :: _machine
+    #[doc = "SCE-MAP: statechart_host_invoker.scxml:75 :: _machine"]
+    // SCE-MAP: statechart_host_invoker.scxml:75 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -1388,7 +1726,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
     ) {
         match state {
             StatechartHostInvokerState::Done => {
-                // SCE-MAP: statechart_host_invoker.scxml:120 :: done :: _state_body
+                // SCE-MAP: statechart_host_invoker.scxml:138 :: done :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1435,7 +1773,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                 }
             }
             StatechartHostInvokerState::Evaluating => {
-                // SCE-MAP: statechart_host_invoker.scxml:104 :: evaluating :: _state_body
+                // SCE-MAP: statechart_host_invoker.scxml:122 :: evaluating :: _state_body
                 // §scxml-6.4.1: `type` names an invoker the HOST declared to
                 // this build. Deferred exactly like the refused arm above and
                 // for the same reason — §scxml-6.4 orders invokes after the
@@ -1480,7 +1818,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                 }
             }
             StatechartHostInvokerState::Invoking => {
-                // SCE-MAP: statechart_host_invoker.scxml:79 :: invoking :: _state_body
+                // SCE-MAP: statechart_host_invoker.scxml:96 :: invoking :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -1541,6 +1879,136 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                     );
                 }
             }
+            StatechartHostInvokerState::Locating => {
+                // SCE-MAP: statechart_host_invoker.scxml:149 :: locating :: _state_body
+                // W3C SCXML 3.8: onentry block 1/1
+                // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
+                'action_block: {
+                    {
+                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
+
+                        let mut _send_aborted = false;
+                        // W3C SCXML 6.2.4: Store sendid in idlocation
+                        {
+                            self.ensure_script_engine();
+                            let sid = self.session_id.as_ref().unwrap().clone();
+                            let se = self.script_engine.clone();
+                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                            if !::sce_rust_runtime::helpers::idlocation::store_id_in_location(
+                                se,
+                                &sid,
+                                "slot.sid",
+                                send_id.as_str(),
+                            ) {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                    StatechartHostInvokerEvent::ErrorExecution,
+                                    "<send idlocation='slot.sid'> could not take the send id",
+                                ));
+                                _send_aborted = true;
+                            }
+                        }
+
+                        let event_data: &str = "";
+
+                        if !_send_aborted {
+                            // W3C SCXML 6.2: Default send (no target = external event)
+                            {
+                                let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                    StatechartHostInvokerEvent::Ping,
+                                );
+                                // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
+                                meta.metadata = sce_rust_runtime::EventMetadata::external(
+                                    send_id.clone(),
+                                    ::sce_rust_runtime::SceString::new(),
+                                );
+                                meta.set_event_data(event_data);
+                                engine.raise_external_with_meta(meta);
+                            }
+                        } // end of !_send_aborted guard (W3C SCXML 6.2: abort send on an argument error)
+                        let _ = send_id; // suppress unused warning when no send operation
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                    }
+
+                    {
+                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_1");
+
+                        let mut _send_aborted = false;
+                        // W3C SCXML 6.2.4: Store sendid in idlocation
+                        {
+                            self.ensure_script_engine();
+                            let sid = self.session_id.as_ref().unwrap().clone();
+                            let se = self.script_engine.clone();
+                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                            if !::sce_rust_runtime::helpers::idlocation::store_id_in_location(
+                                se,
+                                &sid,
+                                "n.nope.deeper",
+                                send_id.as_str(),
+                            ) {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                    StatechartHostInvokerEvent::ErrorExecution,
+                                    "<send idlocation='n.nope.deeper'> could not take the send id",
+                                ));
+                                _send_aborted = true;
+                            }
+                        }
+
+                        let event_data: &str = "";
+
+                        if !_send_aborted {
+                            // W3C SCXML 6.2: Default send (no target = external event)
+                            {
+                                let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                    StatechartHostInvokerEvent::Leak,
+                                );
+                                // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
+                                meta.metadata = sce_rust_runtime::EventMetadata::external(
+                                    send_id.clone(),
+                                    ::sce_rust_runtime::SceString::new(),
+                                );
+                                meta.set_event_data(event_data);
+                                engine.raise_external_with_meta(meta);
+                            }
+                        } // end of !_send_aborted guard (W3C SCXML 6.2: abort send on an argument error)
+                        let _ = send_id; // suppress unused warning when no send operation
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                    }
+                }
+                // §scxml-6.4.1: `type` names an invoker the HOST declared to
+                // this build. Deferred exactly like the refused arm above and
+                // for the same reason — §scxml-6.4 orders invokes after the
+                // macrostep settles, and a state that exits first must never
+                // have started anything. Only the execute step differs: a
+                // dispatch into the host's invoker instead of a raise.
+                {
+                    let generated_invoke_id = format!(
+                        "{}.{}.locating._invoke_1",
+                        "locating", self as *const _ as usize
+                    );
+                    sce_rust_runtime::invoke::defer_invoke(
+                        &mut self.pending_invokes,
+                        sce_rust_runtime::invoke::PendingInvoke {
+                            invoke_id: generated_invoke_id,
+                            state: StatechartHostInvokerState::Locating,
+                            document_id: "locating._invoke_1",
+                        },
+                    );
+                }
+                {
+                    let generated_invoke_id = format!(
+                        "{}.{}.locating._invoke_2",
+                        "locating", self as *const _ as usize
+                    );
+                    sce_rust_runtime::invoke::defer_invoke(
+                        &mut self.pending_invokes,
+                        sce_rust_runtime::invoke::PendingInvoke {
+                            invoke_id: generated_invoke_id,
+                            state: StatechartHostInvokerState::Locating,
+                            document_id: "locating._invoke_2",
+                        },
+                    );
+                }
+            }
             _ => {}
         }
     }
@@ -1552,8 +2020,8 @@ impl StatePolicy for StatechartHostInvokerPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: statechart_host_invoker.scxml:63 :: _machine"]
-    // SCE-MAP: statechart_host_invoker.scxml:63 :: _machine
+    #[doc = "SCE-MAP: statechart_host_invoker.scxml:75 :: _machine"]
+    // SCE-MAP: statechart_host_invoker.scxml:75 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -1619,6 +2087,25 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                 // the emitted chain does not need its own bookkeeping.
                 engine.cancel_host_invoke("x-sce-host", "probe2");
             }
+            StatechartHostInvokerState::Locating => {
+                // W3C SCXML 6.4: Cancel pending invokes for exited state.
+                // Covers §scxml-6.4.1 entries: an invoke whose state exits
+                // before the macrostep ends never runs, so it raises nothing.
+                sce_rust_runtime::invoke::cancel_invokes_for_state(
+                    &mut self.pending_invokes,
+                    StatechartHostInvokerState::Locating,
+                );
+                // §scxml-6.4: the host's invocation ends with the state that
+                // started it. Unconditional here: the engine knows whether
+                // this one ever started and stays silent when it did not, so
+                // the emitted chain does not need its own bookkeeping.
+                engine.cancel_host_invoke("x-sce-host", "locating._invoke_1");
+                // §scxml-6.4: the host's invocation ends with the state that
+                // started it. Unconditional here: the engine knows whether
+                // this one ever started and stays silent when it did not, so
+                // the emitted chain does not need its own bookkeeping.
+                engine.cancel_host_invoke("x-sce-host", "locating._invoke_2");
+            }
             _ => {}
         }
         match state {
@@ -1629,8 +2116,8 @@ impl StatePolicy for StatechartHostInvokerPolicy {
     // §scxml-5.10: the event whose transitions are about to be selected is the
     // `_event` their guards read — bound before the first guard runs, and not
     // for an eventless selection, which has no event of its own.
-    #[doc = "SCE-MAP: statechart_host_invoker.scxml:63 :: _machine"]
-    // SCE-MAP: statechart_host_invoker.scxml:63 :: _machine
+    #[doc = "SCE-MAP: statechart_host_invoker.scxml:75 :: _machine"]
+    // SCE-MAP: statechart_host_invoker.scxml:75 :: _machine
     fn bind_current_event(
         &mut self,
         event: Self::Event,
@@ -1678,8 +2165,8 @@ impl StatePolicy for StatechartHostInvokerPolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: statechart_host_invoker.scxml:63 :: _machine"]
-    // SCE-MAP: statechart_host_invoker.scxml:63 :: _machine
+    #[doc = "SCE-MAP: statechart_host_invoker.scxml:75 :: _machine"]
+    // SCE-MAP: statechart_host_invoker.scxml:75 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -1791,6 +2278,69 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                         });
                     }
                 }
+                if event == StatechartHostInvokerEvent::Locate {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(
+                                StatechartHostInvokerState::Locating,
+                            )],
+                            transition_index: 5,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
+                }
+                None
+            }
+            StatechartHostInvokerState::Locating => {
+                if event == StatechartHostInvokerEvent::DoneInvoke
+                    || event == StatechartHostInvokerEvent::DoneInvokeProbe
+                    || event == StatechartHostInvokerEvent::DoneInvokeProbe2
+                {
+                    if self.safe_evaluate_guard("(_event.invokeid == slot.id)", engine) {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 0,
+                            has_actions: true,
+                            is_internal: false,
+                        });
+                    }
+                }
+                if event == StatechartHostInvokerEvent::Ping {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 1,
+                            has_actions: true,
+                            is_internal: false,
+                        });
+                    }
+                }
+                if event == StatechartHostInvokerEvent::Leak {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 2,
+                            has_actions: true,
+                            is_internal: false,
+                        });
+                    }
+                }
+                if event == StatechartHostInvokerEvent::ErrorExecution {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 3,
+                            has_actions: true,
+                            is_internal: false,
+                        });
+                    }
+                }
                 None
             }
             _ => None,
@@ -1799,8 +2349,8 @@ impl StatePolicy for StatechartHostInvokerPolicy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: statechart_host_invoker.scxml:63 :: _machine"]
-    // SCE-MAP: statechart_host_invoker.scxml:63 :: _machine
+    #[doc = "SCE-MAP: statechart_host_invoker.scxml:75 :: _machine"]
+    // SCE-MAP: statechart_host_invoker.scxml:75 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,
@@ -1811,7 +2361,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
             StatechartHostInvokerState::Done => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:125 :: done :: _transition_0
+                        // SCE-MAP: statechart_host_invoker.scxml:143 :: done :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -1844,7 +2394,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
             StatechartHostInvokerState::Evaluating => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:115 :: evaluating :: _transition_0
+                        // SCE-MAP: statechart_host_invoker.scxml:133 :: evaluating :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -1877,7 +2427,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
             StatechartHostInvokerState::Invoking => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:89 :: invoking :: _transition_0
+                        // SCE-MAP: statechart_host_invoker.scxml:106 :: invoking :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -1905,7 +2455,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:92 :: invoking :: _transition_1
+                        // SCE-MAP: statechart_host_invoker.scxml:109 :: invoking :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
 
                         {
@@ -1933,7 +2483,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:95 :: invoking :: _transition_2
+                        // SCE-MAP: statechart_host_invoker.scxml:112 :: invoking :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
 
                         {
@@ -1956,6 +2506,123 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                                 engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                                     StatechartHostInvokerEvent::ErrorExecution,
                                     "<assign> to 'refused' failed",
+                                ));
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            StatechartHostInvokerState::Locating => {
+                match transition_index {
+                    0 => {
+                        // SCE-MAP: statechart_host_invoker.scxml:157 :: locating :: _transition_0
+                        // W3C SCXML 3.13: Transition 0 actions
+
+                        {
+                            // W3C SCXML 5.3: <assign location="slotted">
+                            self.ensure_script_engine();
+                            let sid = self.session_id.as_ref().unwrap().clone();
+                            let se = self.script_engine.clone();
+                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                            let expr = "_scxml_add(slotted, 1)";
+                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                            // through evaluate_expression + set_variable would round-trip through ScriptValue
+                            // and create a fresh table, breaking reference equality.
+                            let assign_script = format!("{} = {}", "slotted", expr);
+                            if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                ::sce_rust_runtime::sce_log_error!(
+                                    "Assign failed for 'slotted': {}",
+                                    e
+                                );
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                    StatechartHostInvokerEvent::ErrorExecution,
+                                    "<assign> to 'slotted' failed",
+                                ));
+                            }
+                        }
+                    }
+                    1 => {
+                        // SCE-MAP: statechart_host_invoker.scxml:160 :: locating :: _transition_1
+                        // W3C SCXML 3.13: Transition 1 actions
+
+                        {
+                            // W3C SCXML 5.3: <assign location="pinged">
+                            self.ensure_script_engine();
+                            let sid = self.session_id.as_ref().unwrap().clone();
+                            let se = self.script_engine.clone();
+                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                            let expr = "_scxml_add(pinged, 1)";
+                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                            // through evaluate_expression + set_variable would round-trip through ScriptValue
+                            // and create a fresh table, breaking reference equality.
+                            let assign_script = format!("{} = {}", "pinged", expr);
+                            if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                ::sce_rust_runtime::sce_log_error!(
+                                    "Assign failed for 'pinged': {}",
+                                    e
+                                );
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                    StatechartHostInvokerEvent::ErrorExecution,
+                                    "<assign> to 'pinged' failed",
+                                ));
+                            }
+                        }
+                    }
+                    2 => {
+                        // SCE-MAP: statechart_host_invoker.scxml:163 :: locating :: _transition_2
+                        // W3C SCXML 3.13: Transition 2 actions
+
+                        {
+                            // W3C SCXML 5.3: <assign location="leaked">
+                            self.ensure_script_engine();
+                            let sid = self.session_id.as_ref().unwrap().clone();
+                            let se = self.script_engine.clone();
+                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                            let expr = "_scxml_add(leaked, 1)";
+                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                            // through evaluate_expression + set_variable would round-trip through ScriptValue
+                            // and create a fresh table, breaking reference equality.
+                            let assign_script = format!("{} = {}", "leaked", expr);
+                            if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                ::sce_rust_runtime::sce_log_error!(
+                                    "Assign failed for 'leaked': {}",
+                                    e
+                                );
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                    StatechartHostInvokerEvent::ErrorExecution,
+                                    "<assign> to 'leaked' failed",
+                                ));
+                            }
+                        }
+                    }
+                    3 => {
+                        // SCE-MAP: statechart_host_invoker.scxml:166 :: locating :: _transition_3
+                        // W3C SCXML 3.13: Transition 3 actions
+
+                        {
+                            // W3C SCXML 5.3: <assign location="lost">
+                            self.ensure_script_engine();
+                            let sid = self.session_id.as_ref().unwrap().clone();
+                            let se = self.script_engine.clone();
+                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                            let expr = "_scxml_add(lost, 1)";
+                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                            // through evaluate_expression + set_variable would round-trip through ScriptValue
+                            // and create a fresh table, breaking reference equality.
+                            let assign_script = format!("{} = {}", "lost", expr);
+                            if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                ::sce_rust_runtime::sce_log_error!(
+                                    "Assign failed for 'lost': {}",
+                                    e
+                                );
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                    StatechartHostInvokerEvent::ErrorExecution,
+                                    "<assign> to 'lost' failed",
                                 ));
                             }
                         }

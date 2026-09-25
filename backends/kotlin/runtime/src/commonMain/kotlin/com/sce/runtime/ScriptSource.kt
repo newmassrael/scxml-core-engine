@@ -81,6 +81,36 @@ class ScriptSource private constructor(
          */
         fun lua(lowered: String, source: String): ScriptSource =
             ScriptSource(ScriptLanguage.Lua, lowered, source)
+
+        /**
+         * A string known only at run time — a generated id, say — as the
+         * right-hand side of an assignment in [language].
+         *
+         * §scxml-6.4.1: an `idlocation` receives an invoke's id, which exists
+         * only once the invocation does, so the literal cannot be written by
+         * the generator. One escaping serves both halves: a double-quoted
+         * literal escaping backslash, quote, newline and carriage return reads
+         * the same in Lua and in ECMAScript.
+         */
+        fun stringLiteral(value: String, language: ScriptLanguage): ScriptSource {
+            val quoted = buildString(value.length + 2) {
+                append('"')
+                for (c in value) {
+                    when (c) {
+                        '\\' -> append("\\\\")
+                        '"' -> append("\\\"")
+                        '\n' -> append("\\n")
+                        '\r' -> append("\\r")
+                        else -> append(c)
+                    }
+                }
+                append('"')
+            }
+            return when (language) {
+                ScriptLanguage.Lua -> lua(quoted, quoted)
+                ScriptLanguage.ECMAScript -> ecmascript(quoted)
+            }
+        }
     }
 
     override fun toString(): String = "ScriptSource(${language.wireName}, ${text})"

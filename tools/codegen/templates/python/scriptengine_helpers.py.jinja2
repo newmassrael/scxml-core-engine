@@ -577,17 +577,44 @@
         therefore be a member path (`obj.slot`, `arr[1]`), which
         `set_variable` cannot express — it binds a global under whatever
         string it is handed. Rust, Go and C11 all assign through a chunk
-        for the same reason."""
+        for the same reason.
+
+        A location that cannot take the id is an argument that cannot be
+        evaluated (W3C SCXML 6.2, 5.9.2): `error.execution` is raised and
+        the message discarded, through the block abort every other
+        `<send>` argument error takes. Swallowing it, as this did, sent the
+        message and left the location empty with nothing said."""
         sid = explicit_id if explicit_id else engine._next_auto_sendid()
-        if idlocation:
-            try:
-                engine._script_engine.execute_script(
-                    self._session_id,
-                    f"{idlocation} = {self._lua_string_literal(sid)}",
-                )
-            except _ScriptError:
-                pass
+{% if model.needs_idlocation_store %}
+        if idlocation and not self._store_id_in_location(
+            engine, idlocation, sid, "<send>"
+        ):
+            raise _ActionAbort
+{% endif %}
         return sid
+{% if model.needs_idlocation_store %}
+
+    def _store_id_in_location(
+        self, engine, location: str, id_value: str, element: str
+    ) -> bool:
+        """W3C SCXML 6.2.4 / 6.4.1 — write a generated id to an
+        `idlocation`. The location is a location expression, already
+        lowered, so this is the assignment `<assign>` makes: a member path
+        lands, and one that cannot take the id raises `error.execution`
+        (W3C SCXML 5.9.2) and answers False for the caller to abandon the
+        element. The id is quoted here because an invoke's is a run-time
+        value."""
+        try:
+            engine._script_engine.execute_script(
+                self._session_id,
+                f"{location} = {self._lua_string_literal(id_value)}",
+            )
+            return True
+        except _ScriptError:
+            self._raise_error_execution(
+                engine, f"{element} idlocation '{location}' could not take the id"
+            )
+            return False
 
     @staticmethod
     def _lua_string_literal(text: str) -> str:
@@ -599,6 +626,7 @@
             .replace("\r", "\\r")
         )
         return f'"{escaped}"'
+{% endif %}
 
     @staticmethod
     def _event_name_matches(descriptor: str, name: str) -> bool:

@@ -51,18 +51,27 @@
 {% if inv.idlocation %}
             # W3C SCXML 6.4.1: Store the generated id in the datamodel
             # so author expressions (`<assign>` from `_event.invokeid`,
-            # transition `cond="Var1==Var2"`) can match against it.
-            engine._script_engine.set_variable(
-                self._session_id,
-                {{ inv.idlocation | py_string_literal }},
-                _ScriptValue.of(_runtime_invoke_id),
-            )
-{% endif %}
+            # transition `cond="Var1==Var2"`) can match against it. The
+            # write is the assignment `<assign>` makes, so a member path
+            # lands and a location that cannot take the id starts nothing.
+            if self._store_id_in_location(
+                engine,
+                {{ inv.idlocation | to_lua_location | py_string_literal }},
+                _runtime_invoke_id,
+                "<invoke>",
+            ):
+                engine._pending_invokes.append(PendingInvoke(
+                    invoke_id=_runtime_invoke_id,
+                    owner_state_name={{ state_id | py_string_literal }},
+                    document_id={{ inv.invoke_id | py_string_literal }},
+                ))
+{% else %}
             engine._pending_invokes.append(PendingInvoke(
                 invoke_id=_runtime_invoke_id,
                 owner_state_name={{ state_id | py_string_literal }},
                 document_id={{ inv.invoke_id | py_string_literal }},
             ))
+{% endif %}
 {% endfor %}
 {% endif %}
 {% set unsup_list = state.invokes | unsupported | list %}
@@ -333,12 +342,16 @@
                 # W3C SCXML 6.4.1: the invocation's generated id goes to
                 # `idlocation` when the element is evaluated. It is the id the
                 # host is handed and `done.invoke.<id>` names, so the document
-                # can match on what it stored.
-                engine._script_engine.set_variable(
-                    self._session_id,
-                    {{ inv.idlocation | py_string_literal }},
-                    _ScriptValue.of({{ inv.invoke_id | py_string_literal }}),
-                )
+                # can match on what it stored. The write is the assignment
+                # `<assign>` makes, so a location that cannot take the id
+                # starts nothing (W3C SCXML 5.9.2).
+                if not self._store_id_in_location(
+                    engine,
+                    {{ inv.idlocation | to_lua_location | py_string_literal }},
+                    {{ inv.invoke_id | py_string_literal }},
+                    "<invoke>",
+                ):
+                    continue
 {% endif %}
                 _host_src = {{ inv.src | default('', true) | py_string_literal }}
                 _host_content = {{ inv.content | default('', true) | py_string_literal }}

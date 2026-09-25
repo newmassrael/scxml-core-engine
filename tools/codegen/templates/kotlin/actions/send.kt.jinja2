@@ -25,14 +25,16 @@
 {{ indent }}    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> <param name='{{ param.name | escape_kotlin }}'> expr failed to evaluate")
 {{ indent }}}
 {% endmacro %}
-{% if action.idlocation and model.needs_script_engine %}
-            // W3C SCXML 6.2.4: Store sendid in idlocation (test183, test332)
-            run {
-                ensureScriptEngine()
-                val eng = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                try { eng.setVariable(sid, "{{ action.idlocation }}", "{{ action.auto_send_id }}") } catch (_: Exception) {}
-            }
+{% set idloc_guard = action.idlocation and model.needs_script_engine %}
+{% if idloc_guard %}
+            // W3C SCXML 6.2.4: Store sendid in idlocation (test183, test332),
+            // through the assignment `<assign>` makes — the location is lowered,
+            // so a member path lands. A location that cannot take the id is an
+            // argument that cannot be evaluated, so the message is discarded
+            // (W3C SCXML 6.2, 5.9.2); the whole send is the labelled block
+            // returned from.
+            run send@{
+            if (!storeIdInLocation({{ action.idlocation | to_script_source_location }}, "{{ action.auto_send_id | escape_kotlin }}", "<send>")) return@send
 {% endif %}
 {# W3C SCXML 6.2: Target resolution — resolve once, use everywhere (C++ pattern).
    Evaluates targetexpr once, validates (invalid/unreachable), stores in nullable var.
@@ -518,4 +520,7 @@
 {% endif %}
 {% if action.targetexpr and model.needs_script_engine %}
             } // end of _resolvedTarget?.let
+{% endif %}
+{% if idloc_guard %}
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
 {% endif %}

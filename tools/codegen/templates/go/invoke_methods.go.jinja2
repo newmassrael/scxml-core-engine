@@ -277,8 +277,15 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			// W3C SCXML 6.4.1: the invocation's generated id goes to
 			// `idlocation` when the element is evaluated. It is the id the host
 			// is handed and `done.invoke.<id>` names, so the document can match
-			// on what it stored.
-			_ = p.ScriptEngine.SetVariable(p.SessionID, "{{ invoke_info.idlocation }}", "{{ invoke_info.invoke_id }}")
+			// on what it stored. The write is the assignment `<assign>` makes, so
+			// a location that cannot take the id starts nothing (W3C SCXML
+			// 5.9.2), like any argument that cannot be evaluated.
+			if err := p.storeIDInLocation(`{{ invoke_info.idlocation | to_lua_location }}`, "{{ invoke_info.invoke_id | escape_go }}"); err != nil {
+{% if 'error.execution' in model.events %}
+				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke idlocation='{{ invoke_info.idlocation | escape_go }}'> could not take the invoke id"))
+{% endif %}
+				continue
+			}
 {% endif %}
 {% for attr, var, expr in [('src', 'hostInvokeSrc', invoke_info.srcexpr), ('content', 'hostInvokeContent', invoke_info.contentexpr)] %}
 {% if expr %}

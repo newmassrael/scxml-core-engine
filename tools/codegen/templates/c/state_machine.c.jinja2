@@ -817,14 +817,22 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                attached to the event metadata so the receiving handler can
                correlate the failure (`_event.sendid` reads the same value
                that was captured in the idlocation slot). Mirrors cpp
-               `actions/send.jinja2` lines 26-35 (idlocation store via
-               `SendHelper::storeInIdLocation`) + lines 88-95 (invalid
-               target raise with `Engine::EventWithMetadata(Error_execution,
-               "", "", sendId)`). Auto-generated sendids are always
-               `__send_N` (parser.rs:1158) so the lua chunk's single-quoted
-               literal is safe without escape handling. */
-            (void)luaL_dostring(sm->L,
-                "{{ action.idlocation | to_lua_location | escape_c }} = '{{ action.auto_send_id | escape_c }}'");
+               `actions/send.jinja2` (idlocation store via
+               `AssignmentExecutionHelper::storeIdInLocation`, then the
+               invalid-target raise with `Engine::EventWithMetadata(
+               Error_execution, "", "", sendId)`). The store is the
+               assignment `<assign>` makes; a location that cannot take the
+               id is itself the argument error, reported once. */
+            {
+                bool _idloc_ok = false;
+{{ se.lua_store_id_in_location(action.idlocation, '"' ~ (action.auto_send_id | escape_c) ~ '"', '_idloc_ok') }}
+                if (!_idloc_ok) {
+                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        "<send idlocation='{{ action.idlocation | escape_c }}'> could not take the send id");
+                    return;
+                }
+            }
             {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
                 sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
                 "<send target='{{ action.target | escape_c }}'> is not a target this processor can address",
@@ -840,14 +848,27 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                cpp `actions/send.jinja2` lines 26-35 (idlocation store) +
                780-812 (bare-external raise paths) — cpp passes sendId
                through `EventWithMetadata`'s constructor; C11 strncpy's it
-               into the meta struct's send_id field directly (jinja2-inline). */
-            (void)luaL_dostring(sm->L,
-                "{{ action.idlocation | to_lua_location | escape_c }} = '{{ action.auto_send_id | escape_c }}'");
-            {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
-            memset(&_send_evt, 0, sizeof(_send_evt));
-            _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
-            sce_copy_bounded_id(_send_evt.send_id, "{{ action.auto_send_id | escape_c }}");
-            {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_send_evt);
+               into the meta struct's send_id field directly (jinja2-inline).
+               The store is the assignment `<assign>` makes; a location that
+               cannot take the id discards the message and raises
+               error.execution (W3C SCXML 6.2, 5.9.2). */
+            {
+                bool _idloc_ok = false;
+{{ se.lua_store_id_in_location(action.idlocation, '"' ~ (action.auto_send_id | escape_c) ~ '"', '_idloc_ok') }}
+                if (!_idloc_ok) {
+{% if 'error.execution' in model.events %}
+                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        "<send idlocation='{{ action.idlocation | escape_c }}'> could not take the send id");
+{% endif %}
+                } else {
+                    {{ csym_prefix }}{{ model.name }}_event_with_meta_t _send_evt;
+                    memset(&_send_evt, 0, sizeof(_send_evt));
+                    _send_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ action.event | upper | replace('.', '_') | replace('-', '_') }};
+                    sce_copy_bounded_id(_send_evt.send_id, "{{ action.auto_send_id | escape_c }}");
+                    {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_send_evt);
+                }
+            }
 {% elif (not in_foreach) and action.event and action.target and action.target.startswith('!') and not action.eventexpr and not action.delay and not action.delayexpr and not action.params and not action.namelist and not action.content and not action.contentexpr and (not action.send_type or action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor') and not action.typeexpr and not action.targetexpr and not action.idlocation %}
             /* W3C SCXML 6.2 (test159): static-event + invalid target whose
                literal value starts with `!` per `SendHelper::isInvalidTarget`
@@ -1581,9 +1602,20 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
                    surrounding SCXML can later read it (e.g. for a
                    pre-emptive `<cancel>`). Mirrors the existing
                    SCXMLEventProcessor idlocation arms above and cpp
-                   `actions/send.jinja2:26-35`. */
-                (void)luaL_dostring(sm->L,
-                    "{{ action.idlocation | to_lua_location | escape_c }} = '{{ action.auto_send_id | escape_c }}'");
+                   `actions/send.jinja2:26-35`. A location that cannot take
+                   the id discards the message (W3C SCXML 6.2, 5.9.2). */
+                {
+                    bool _idloc_ok = false;
+{{ se.lua_store_id_in_location(action.idlocation, '"' ~ (action.auto_send_id | escape_c) ~ '"', '_idloc_ok') }}
+                    if (!_idloc_ok) {
+{% if 'error.execution' in model.events %}
+                        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                            "<send idlocation='{{ action.idlocation | escape_c }}'> could not take the send id");
+{% endif %}
+                        return;
+                    }
+                }
 {% endif %}
 {% if action.typeexpr %}
                 /* W3C SCXML 6.2: runtime typeexpr evaluation. The static
@@ -2495,18 +2527,13 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
             sce_invoke_format_id(_invoke_id_buf, sizeof(_invoke_id_buf),
                                  "{{ state_id }}", (const void *)sm, {{ loop.index0 }});
             {% endif %}
-            sce_invoke_pending_push(&sm->pending_invokes,
-                                    (int){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }},
-                                    {{ loop.index0 }},
-                                    _invoke_id_buf);
             {% if invoke_info.idlocation and model.needs_script_engine %}
             /* W3C SCXML 6.4.1 (test223/224/225/338): expose the spawned
                invoke's id to the parent datamodel via the `idlocation`
-               variable. cpp `entry_exit_actions.jinja2:107` does this
-               with `scriptEngine.setVariable(...)`; the C11 mirror is
-               the idiomatic Lua API pair (no `luaL_dostring` / string
-               escaping needed since the value is a literal C string
-               and the variable name is fixed at codegen time). The
+               variable, through the assignment `<assign>` makes — the
+               location is lowered, so a member path lands, and one that
+               cannot take the id raises error.execution and the invocation
+               is never queued (W3C SCXML 5.9.2). The
                assignment runs at defer time so a sibling read in the
                same macrostep — e.g. test225's `Var1 === Var2` cond on
                two adjacent invokes — sees the just-written id before
@@ -2515,9 +2542,18 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
                when the model's invoke list is non-empty AND the test
                carries a datamodel (idlocation requires `Var*` slots,
                which already gates `model.needs_script_engine`). */
-            lua_pushstring(sm->L, _invoke_id_buf);
-            lua_setglobal(sm->L, "{{ invoke_info.idlocation }}");
+            bool _idloc_ok = false;
+{{ se.lua_store_id_in_location(invoke_info.idlocation, '_invoke_id_buf', '_idloc_ok') }}
+            if (!_idloc_ok) {
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<invoke idlocation='{{ invoke_info.idlocation | escape_c }}'> could not take the invoke id");
+            } else
             {% endif %}
+            sce_invoke_pending_push(&sm->pending_invokes,
+                                    (int){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }},
+                                    {{ loop.index0 }},
+                                    _invoke_id_buf);
         }
         {% endfor %}
         {% endif %}
@@ -2538,16 +2574,21 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
             sce_invoke_format_id(_invoke_id_buf, sizeof(_invoke_id_buf),
                                  "{{ state_id }}", (const void *)sm,
                                  {{ (state.invokes | scxml | length) + loop.index0 }});
+            {% if invoke_info.idlocation and model.needs_script_engine %}
+            /* W3C SCXML 6.4.1: idlocation propagation — same shape as the
+               static-scxml branch, stored before the invocation is queued. */
+            bool _idloc_ok = false;
+{{ se.lua_store_id_in_location(invoke_info.idlocation, '_invoke_id_buf', '_idloc_ok') }}
+            if (!_idloc_ok) {
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<invoke idlocation='{{ invoke_info.idlocation | escape_c }}'> could not take the invoke id");
+            } else
+            {% endif %}
             sce_invoke_pending_push(&sm->pending_invokes,
                                     (int){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }},
                                     {{ (state.invokes | scxml | length) + loop.index0 }},
                                     _invoke_id_buf);
-            {% if invoke_info.idlocation and model.needs_script_engine %}
-            /* W3C SCXML 6.4.1: idlocation propagation — same shape as the
-               static-scxml branch. */
-            lua_pushstring(sm->L, _invoke_id_buf);
-            lua_setglobal(sm->L, "{{ invoke_info.idlocation }}");
-            {% endif %}
         }
         {% endfor %}
         {% endif %}

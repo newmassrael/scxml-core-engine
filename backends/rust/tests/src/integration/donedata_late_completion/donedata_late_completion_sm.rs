@@ -817,14 +817,17 @@ impl StatePolicy for DonedataLateCompletionPolicy {
                 {
                     let generated_invoke_id =
                         format!("{}.{}.inv_late", "phase", self as *const _ as usize);
-                    sce_rust_runtime::invoke::defer_invoke(
-                        &mut self.pending_invokes,
-                        sce_rust_runtime::invoke::PendingInvoke {
-                            invoke_id: generated_invoke_id,
-                            state: DonedataLateCompletionState::Phase,
-                            document_id: "inv_late",
-                        },
-                    );
+                    let id_stored = true;
+                    if id_stored {
+                        sce_rust_runtime::invoke::defer_invoke(
+                            &mut self.pending_invokes,
+                            sce_rust_runtime::invoke::PendingInvoke {
+                                invoke_id: generated_invoke_id,
+                                state: DonedataLateCompletionState::Phase,
+                                document_id: "inv_late",
+                            },
+                        );
+                    }
                 }
             }
             _ => {}

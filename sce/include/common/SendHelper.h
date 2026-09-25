@@ -523,29 +523,6 @@ public:
         return false;
     }
 
-    /**
-     * @brief Store sendid in idlocation variable (Single Source of Truth)
-     *
-     * §scxml-6.2.3 (test 183): The idlocation attribute specifies a variable
-     * where the generated sendid should be stored for later reference.
-     *
-     * This method encapsulates the idlocation storage logic shared between:
-     * - Interpreter engine (ActionExecutorImpl::executeSendAction)
-     * - AOT engine (StaticCodeGenerator::generateActionCode for SEND)
-     *
-     * @param jsEngine JSEngine instance for variable operations
-     * @param sessionId Session identifier
-     * @param idLocation Variable name to store sendid (empty = no storage)
-     * @param sendId Generated sendid value to store
-     */
-    template <typename JSEngineType>
-    static void storeInIdLocation(JSEngineType &jsEngine, const std::string &sessionId, const std::string &idLocation,
-                                  const std::string &sendId) {
-        if (!idLocation.empty()) {
-            jsEngine.setVariable(sessionId, idLocation, sendId);
-        }
-    }
-
 #ifdef SCE_ENABLE_HTTP
     /**
      * @brief Build HTTP POST body with §scxml-C-2 compliance

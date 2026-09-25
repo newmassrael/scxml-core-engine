@@ -1002,14 +1002,17 @@ impl StatePolicy for DonedataLocalInvokePolicy {
                         "{}.{}.inv_content",
                         "phase_content", self as *const _ as usize
                     );
-                    sce_rust_runtime::invoke::defer_invoke(
-                        &mut self.pending_invokes,
-                        sce_rust_runtime::invoke::PendingInvoke {
-                            invoke_id: generated_invoke_id,
-                            state: DonedataLocalInvokeState::PhaseContent,
-                            document_id: "inv_content",
-                        },
-                    );
+                    let id_stored = true;
+                    if id_stored {
+                        sce_rust_runtime::invoke::defer_invoke(
+                            &mut self.pending_invokes,
+                            sce_rust_runtime::invoke::PendingInvoke {
+                                invoke_id: generated_invoke_id,
+                                state: DonedataLocalInvokeState::PhaseContent,
+                                document_id: "inv_content",
+                            },
+                        );
+                    }
                 }
             }
             DonedataLocalInvokeState::PhaseParam => {
@@ -1018,14 +1021,17 @@ impl StatePolicy for DonedataLocalInvokePolicy {
                 {
                     let generated_invoke_id =
                         format!("{}.{}.inv_param", "phase_param", self as *const _ as usize);
-                    sce_rust_runtime::invoke::defer_invoke(
-                        &mut self.pending_invokes,
-                        sce_rust_runtime::invoke::PendingInvoke {
-                            invoke_id: generated_invoke_id,
-                            state: DonedataLocalInvokeState::PhaseParam,
-                            document_id: "inv_param",
-                        },
-                    );
+                    let id_stored = true;
+                    if id_stored {
+                        sce_rust_runtime::invoke::defer_invoke(
+                            &mut self.pending_invokes,
+                            sce_rust_runtime::invoke::PendingInvoke {
+                                invoke_id: generated_invoke_id,
+                                state: DonedataLocalInvokeState::PhaseParam,
+                                document_id: "inv_param",
+                            },
+                        );
+                    }
                 }
             }
             _ => {}

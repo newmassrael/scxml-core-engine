@@ -51,6 +51,24 @@
 #}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {%- import '_macros/sce_annotation_marker.jinja2' as annot %}
+{#- W3C SCXML 6.4.1: an invoke's generated id goes to `idlocation` when the
+    element is evaluated, as an assignment to a location expression — the one
+    `<assign>` makes, so a member path lands. A location that cannot take it
+    raises error.execution and the invocation is not started (W3C SCXML
+    5.9.2); `flag` names the bool the caller guards the start with. #}
+{%- macro store_invoke_idlocation(invoke_info, id_expr, flag, indent) %}
+{{ indent }}bool {{ flag }} = true;
+{%- if invoke_info.idlocation %}
+{{ indent }}{
+{{ indent }}    ensureScriptEngine();
+{{ indent }}    {{ flag }} = ::SCE::AssignmentExecutionHelper::storeIdInLocation(
+{{ indent }}        getScriptEngine(), sessionId_.value(), {{ invoke_info.idlocation | to_script_source_location }}, {{ id_expr }},
+{{ indent }}        [&engine](const std::string &error) {
+{{ indent }}            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, error));
+{{ indent }}        });
+{{ indent }}}
+{%- endif %}
+{%- endmacro %}
 
 {# SCE Protocol-Synthesis RFC §synth-5-O — function-scope SCE-MAP marker
    above `executeEntryActions`. `#line N "file"` inside a function
@@ -146,21 +164,14 @@
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
                 // Include invoke index to ensure uniqueness for multiple invokes in same state
                 std::string generatedInvokeId_{{ invoke_info.invoke_id }} = "{{ state_id }}." + std::to_string(reinterpret_cast<uintptr_t>(this)) + ".{{ invoke_info.invoke_id }}";
-
-                {% if invoke_info.idlocation %}
-                // W3C SCXML 6.4.1: Store generated invokeId in parent datamodel via idlocation (at defer time)
-                {
-                    ensureScriptEngine();
-                    auto& scriptEngine = getScriptEngine();
-                    scriptEngine.setVariable(sessionId_.value(), "{{ invoke_info.idlocation | escape_cpp }}", generatedInvokeId_{{ invoke_info.invoke_id }}).get();
-                    AOT_DEBUG("Set idlocation {{ invoke_info.idlocation | escape_cpp_format }} = {}", generatedInvokeId_{{ invoke_info.invoke_id }});
-                }
-                {% endif %}
+{{ store_invoke_idlocation(invoke_info, "generatedInvokeId_" ~ invoke_info.invoke_id, "scxmlIdStored_" ~ loop.index0, "                ") }}
 
                 // Defer invoke: {{ invoke_info.invoke_id }} ({{ invoke_info.src }})
-                ::SCE::Core::InvokeHelper::deferInvoke(pendingInvokes_,
-                    PendingInvoke{generatedInvokeId_{{ invoke_info.invoke_id }}, State::{{ state_id | capitalize }}, "{{ invoke_info.invoke_id }}"});
-                AOT_DEBUG("Deferred invoke: {} in state {{ state_id }}", generatedInvokeId_{{ invoke_info.invoke_id }});
+                if (scxmlIdStored_{{ loop.index0 }}) {
+                    ::SCE::Core::InvokeHelper::deferInvoke(pendingInvokes_,
+                        PendingInvoke{generatedInvokeId_{{ invoke_info.invoke_id }}, State::{{ state_id | capitalize }}, "{{ invoke_info.invoke_id }}"});
+                    AOT_DEBUG("Deferred invoke: {} in state {{ state_id }}", generatedInvokeId_{{ invoke_info.invoke_id }});
+                }
 {% endfor %}
 {% endif %}
 {% if state.invokes | scxml_remote %}
@@ -181,21 +192,18 @@
                 // ============================================================
 {% for invoke_info in state.invokes | scxml_remote %}
                 {
-                    {% if invoke_info.idlocation %}
                     // W3C SCXML 6.4.1: idlocation — expose the static invoke
                     // id to the parent datamodel so transitions can match on it.
-                    {
-                        ensureScriptEngine();
-                        auto& scriptEngine = getScriptEngine();
-                        scriptEngine.setVariable(sessionId_.value(), "{{ invoke_info.idlocation | escape_cpp }}", std::string("{{ invoke_info.invoke_id }}")).get();
-                    }
-                    {% endif %}
+{{ store_invoke_idlocation(invoke_info, '"' ~ invoke_info.invoke_id ~ '"', "remoteIdStored_" ~ loop.index0, "                    ") }}
                     // SCE_MESH.md §9.6.2 inner payload. Currently empty —
                     // `<param>` / `<content>` / `<namelist>` serialization
                     // into a CBOR map is a parallel landing shared with the
                     // local-invoke path once a consumer lands.
                     std::string _scxml_remote_data_{{ invoke_info.invoke_id }};
-                    if (engine.performScxmlInvokeStart(
+                    if (!remoteIdStored_{{ loop.index0 }}) {
+                        // error.execution was raised by the store; the
+                        // invocation is not started (W3C SCXML 5.9.2).
+                    } else if (engine.performScxmlInvokeStart(
                             "{{ invoke_info.remote_mesh_target }}",
                             "{{ invoke_info.invoke_id }}",
                             _scxml_remote_data_{{ invoke_info.invoke_id }})) {
@@ -243,15 +251,12 @@
                     std::string _mesh_invoke_id_{{ invoke_info.invoke_id }} =
                         "{{ state_id }}." + std::to_string(reinterpret_cast<uintptr_t>(this)) + ".{{ invoke_info.invoke_id }}";
 
-                    {% if invoke_info.idlocation %}
                     // W3C SCXML 6.4.1: idlocation — store generated invoke id
                     // into the parent datamodel so transitions can match on it.
-                    {
-                        ensureScriptEngine();
-                        auto& scriptEngine = getScriptEngine();
-                        scriptEngine.setVariable(sessionId_.value(), "{{ invoke_info.idlocation | escape_cpp }}", _mesh_invoke_id_{{ invoke_info.invoke_id }}).get();
-                    }
-                    {% endif %}
+{{ store_invoke_idlocation(invoke_info, "_mesh_invoke_id_" ~ invoke_info.invoke_id, "meshIdStored_" ~ loop.index0, "                    ") }}
+                    // A location that could not take the id has raised
+                    // error.execution, and the request is not sent.
+                    if (meshIdStored_{{ loop.index0 }}) {
 
 {% if invoke_info.params %}
                     // SCE_MESH.md §9.5 wire mapping: `data` = JSON payload of
@@ -356,6 +361,15 @@
                             "mesh-rpc invoke '{{ invoke_info.invoke_id }}' to '{{ invoke_info.src }}' failed: setup fault (INVOKE_SRC_NOT_FOUND per SCE_MESH.md §9.5/§10.7.1 — no transport wired, pool instance out-of-set, or key-substitution miss)"));
                     }
 {% endif %}
+{% if invoke_info.srcexpr %}
+                    } else {
+                        // Nothing was sent, so the paired <cancel> at exit
+                        // has no correlation entry to name.
+                        this->_mesh_resolved_src_{{ invoke_info.field_suffix }}_.clear();
+                    }
+{% else %}
+                    }  // meshIdStored_{{ loop.index0 }}
+{% endif %}
                 }
 {% endfor %}
 {% endif %}
@@ -369,22 +383,15 @@
                 // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
                 // Include invoke index to ensure uniqueness for multiple invokes in same state
                 std::string generatedInvokeId_{{ invoke_info.invoke_id }} = "{{ state_id }}." + std::to_string(reinterpret_cast<uintptr_t>(this)) + ".{{ invoke_info.invoke_id }}";
-
-                {% if invoke_info.idlocation %}
-                // W3C SCXML 6.4.1: Store generated invokeId in parent datamodel via idlocation (at defer time)
-                {
-                    ensureScriptEngine();
-                    auto& scriptEngine = getScriptEngine();
-                    scriptEngine.setVariable(sessionId_.value(), "{{ invoke_info.idlocation | escape_cpp }}", generatedInvokeId_{{ invoke_info.invoke_id }}).get();
-                    AOT_DEBUG("Set idlocation {{ invoke_info.idlocation | escape_cpp_format }} = {}", generatedInvokeId_{{ invoke_info.invoke_id }});
-                }
-                {% endif %}
+{{ store_invoke_idlocation(invoke_info, "generatedInvokeId_" ~ invoke_info.invoke_id, "hybridIdStored_" ~ loop.index0, "                ") }}
 
                 // Defer hybrid invoke: {{ invoke_info.invoke_id }} {% if invoke_info.srcexpr %}(srcexpr: {{ invoke_info.srcexpr }}){% elif invoke_info.contentexpr %}(contentexpr: {{ invoke_info.contentexpr }}){% endif %}
 
-                ::SCE::Core::InvokeHelper::deferInvoke(pendingInvokes_,
-                    PendingInvoke{generatedInvokeId_{{ invoke_info.invoke_id }}, State::{{ state_id | capitalize }}, "{{ invoke_info.invoke_id }}"});
-                AOT_DEBUG("Deferred hybrid invoke: {} in state {{ state_id }}", generatedInvokeId_{{ invoke_info.invoke_id }});
+                if (hybridIdStored_{{ loop.index0 }}) {
+                    ::SCE::Core::InvokeHelper::deferInvoke(pendingInvokes_,
+                        PendingInvoke{generatedInvokeId_{{ invoke_info.invoke_id }}, State::{{ state_id | capitalize }}, "{{ invoke_info.invoke_id }}"});
+                    AOT_DEBUG("Deferred hybrid invoke: {} in state {{ state_id }}", generatedInvokeId_{{ invoke_info.invoke_id }});
+                }
 {% endfor %}
 {% endif %}
 {% if state.on_entry_blocks %}

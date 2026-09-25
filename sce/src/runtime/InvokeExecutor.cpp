@@ -3,6 +3,7 @@
 
 #include "runtime/InvokeExecutor.h"
 #include "SCXMLTypes.h"
+#include "common/AssignmentExecutionHelper.h"
 #include "common/DatamodelValidationHelper.h"
 #include "common/SCXMLConstants.h"
 #include "common/UniqueIdGenerator.h"
@@ -225,6 +226,20 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
         return "";
     }
 
+    // §scxml-6.4.1: the invoke id goes to `idlocation` as an assignment to a
+    // location expression — the one generated machines make, through the same
+    // helper — so a member path lands. A location that cannot take it raises
+    // error.execution and the invocation is not started (§scxml-5.9.2), which
+    // is why this runs before the child session exists.
+    if (!invoke->getIdLocation().empty()) {
+        if (!AssignmentExecutionHelper::storeIdInLocation(scriptEngine_, parentSessionId, invoke->getIdLocation(),
+                                                          invokeid, raiseExecutionError)) {
+            return "";
+        }
+        SCE_LOG_DEBUG("SCXMLInvokeHandler: Set idlocation '{}' = '{}' in parent session '{}'", invoke->getIdLocation(),
+                      invokeid, parentSessionId);
+    }
+
     // Create session if it doesn't exist
     if (!sessionAlreadyExists) {
         bool sessionCreated = scriptEngine_.createSession(childSessionId, parentSessionId);
@@ -232,13 +247,6 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
             SCE_LOG_ERROR("SCXMLInvokeHandler: Failed to create child session: {}", childSessionId);
             return "";
         }
-    }
-
-    // §scxml-6.4: Handle idlocation attribute - store invoke ID in parent session
-    if (!invoke->getIdLocation().empty()) {
-        scriptEngine_.setVariable(parentSessionId, invoke->getIdLocation(), ScriptValue{invokeid});
-        SCE_LOG_DEBUG("SCXMLInvokeHandler: Set idlocation '{}' = '{}' in parent session '{}'", invoke->getIdLocation(),
-                      invokeid, parentSessionId);
     }
 
     // Set special variables in child session

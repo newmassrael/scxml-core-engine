@@ -33,6 +33,7 @@
 package statechart_host_invoker
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -456,6 +457,58 @@ func TestAnIdlocationHoldsTheIDTheHostIsHanded(t *testing.T) {
 	}
 	if got := s.counter(t, "matched"); got != 1 {
 		t.Fatalf("the completion did not arrive, or its invokeid is not what idlocation holds: matched = %d", got)
+	}
+}
+
+// §scxml-6.2.4 / §scxml-6.4.1: an `idlocation` is a location expression, so the
+// id is written the way `<assign>` writes (§scxml-5.4): `slot.id` and
+// `slot.sid` are member paths, and land. `n.nope.deeper` cannot take a value,
+// so each element raises error.execution and is abandoned (§scxml-5.9.2) — the
+// host is never asked to start that invoke, and that message is never sent.
+func TestAnIdlocationIsAssignedLikeALocation(t *testing.T) {
+	var log []string
+	s := newStarted()
+	s.engine.RegisterInvoker(declaredType, recordingInvoker(&log))
+	s.engine.Initialize()
+	s.engine.Step()
+	s.engine.ProcessEvent(StatechartHostInvokerEventLocate)
+	s.engine.Step()
+
+	handed := false
+	for _, e := range log {
+		if strings.HasPrefix(e, "START id=locating._invoke_1 ") {
+			handed = true
+		}
+		if strings.Contains(e, "locating._invoke_2") {
+			t.Fatalf("an invoke whose idlocation could not take the id was started: %v", log)
+		}
+	}
+	if !handed {
+		t.Fatalf("the member-path invoke was not started: %v", log)
+	}
+
+	raw, ok := s.policy.Slot()
+	if !ok {
+		t.Fatalf("the fixture declares `slot` as an object and the machine could not read it")
+	}
+	var slot struct {
+		ID  string `json:"id"`
+		Sid string `json:"sid"`
+	}
+	if err := json.Unmarshal([]byte(raw), &slot); err != nil {
+		t.Fatalf("`slot` does not read back as JSON: %v (%s)", err, raw)
+	}
+	if slot.ID != "locating._invoke_1" {
+		t.Fatalf("slot.id = %q, want the generated invoke id", slot.ID)
+	}
+	if slot.Sid == "" {
+		t.Fatalf("slot.sid did not receive the send id: %s", raw)
+	}
+
+	for name, want := range map[string]int64{"slotted": 1, "pinged": 1, "leaked": 0, "lost": 2} {
+		if got := s.counter(t, name); got != want {
+			t.Fatalf("%s = %d, want %d", name, got, want)
+		}
 	}
 }
 

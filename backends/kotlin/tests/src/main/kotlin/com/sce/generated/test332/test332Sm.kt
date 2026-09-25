@@ -282,6 +282,26 @@ class Test332StateMachine(
         }
     }
 
+    // W3C SCXML 6.2.4 / 6.4.1: write a generated id to an `idlocation`.
+    //
+    // The location is a location expression, so this is the assignment
+    // `executeAssign` makes: lowered, so a member path lands, and one that
+    // cannot take the id raises error.execution (W3C SCXML 5.9.2) and answers
+    // false for the caller to abandon the element. The id is quoted here, in
+    // the location's own language, because an invoke's is a run-time value.
+    private fun storeIdInLocation(location: com.sce.runtime.ScriptSource, id: String, element: String): Boolean {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        return try {
+            engine.assign(sid, location, com.sce.runtime.ScriptSource.stringLiteral(id, location.language))
+            true
+        } catch (e: Exception) {
+            raisePlatformError(Test332Event.Error.Execution, "$element idlocation could not take the id")
+            false
+        }
+    }
+
     // W3C SCXML 5.8: Script block execution
     private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {
         ensureScriptEngine()
@@ -399,16 +419,18 @@ class Test332StateMachine(
                 // SCE-MAP: test332.scxml:12 :: s0 :: _state_body
 
 
-            // W3C SCXML 6.2.4: Store sendid in idlocation (test183, test332)
-            run {
-                ensureScriptEngine()
-                val eng = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
-                val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
-                try { eng.setVariable(sid, "Var1", "__send_0") } catch (_: Exception) {}
-            }
+            // W3C SCXML 6.2.4: Store sendid in idlocation (test183, test332),
+            // through the assignment `<assign>` makes — the location is lowered,
+            // so a member path lands. A location that cannot take the id is an
+            // argument that cannot be evaluated, so the message is discarded
+            // (W3C SCXML 6.2, 5.9.2); the whole send is the labelled block
+            // returned from.
+            run send@{
+            if (!storeIdInLocation(com.sce.runtime.ScriptSource.lua("Var1", "Var1"), "__send_0", "<send>")) return@send
             // W3C SCXML 6.2 (test194): Invalid target raises error.execution
             raisePlatformError(Test332Event.Error.Execution, "<send target='!invalid'> is not a target this processor can address", "__send_0")
             return  // W3C SCXML 5.10: Stop subsequent executable content
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
             }
             is Test332State.S1 -> {
                 // SCE-MAP: test332.scxml:24 :: s1 :: _state_body

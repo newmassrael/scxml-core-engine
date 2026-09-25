@@ -857,27 +857,34 @@ impl StatePolicy for Test338Policy {
                 {
                     let generated_invoke_id =
                         format!("{}.{}._invoke_0", "s0", self as *const _ as usize);
-                    // W3C SCXML 6.4.1: Store generated invokeId in datamodel via idlocation
-                    // W3C SCXML: Full runtime ID stored (test 224 checks format)
                     self.ensure_script_engine();
-                    {
+                    let id_stored = {
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
                         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-                        let _ = se.set_variable(
+                        ::sce_rust_runtime::helpers::idlocation::store_id_in_location(
+                            se,
                             &sid,
                             "Var1",
-                            sce_rust_runtime::ScriptValue::String(generated_invoke_id.clone()),
+                            &generated_invoke_id,
+                        )
+                    };
+                    if !id_stored {
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                            Test338Event::ErrorExecution,
+                            "<invoke idlocation='Var1'> could not take the invoke id",
+                        ));
+                    }
+                    if id_stored {
+                        sce_rust_runtime::invoke::defer_invoke(
+                            &mut self.pending_invokes,
+                            sce_rust_runtime::invoke::PendingInvoke {
+                                invoke_id: generated_invoke_id,
+                                state: Test338State::S0,
+                                document_id: "_invoke_0",
+                            },
                         );
                     }
-                    sce_rust_runtime::invoke::defer_invoke(
-                        &mut self.pending_invokes,
-                        sce_rust_runtime::invoke::PendingInvoke {
-                            invoke_id: generated_invoke_id,
-                            state: Test338State::S0,
-                            document_id: "_invoke_0",
-                        },
-                    );
                 }
             }
             _ => {}

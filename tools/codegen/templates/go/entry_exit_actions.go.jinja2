@@ -24,6 +24,34 @@
 #}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {%- import '_macros/sce_annotation_marker.jinja2' as annot %}
+{# W3C SCXML 6.4.1: an invoke's generated id goes to its `idlocation` when the
+   element is evaluated, then the invoke is deferred. The write is the
+   assignment `<assign>` makes — the location is lowered, so a member path
+   lands, and one that cannot take the id raises error.execution and the
+   invocation does not start, as any argument of the element that cannot be
+   evaluated does. `model`, `machine_name` and `state_id` are parameters
+   because a macro body does not see the render context. #}
+{% macro defer_with_idlocation(invoke_info, model, machine_name, state_id) %}
+{% if invoke_info.idlocation %}
+			if err := p.storeIDInLocation(`{{ invoke_info.idlocation | to_lua_location }}`, generatedInvokeID); err != nil {
+{% if 'error.execution' in model.events %}
+				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke idlocation='{{ invoke_info.idlocation | escape_go }}'> could not take the invoke id"))
+{% endif %}
+			} else {
+				sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[{{ machine_name }}State]{
+					InvokeID:   generatedInvokeID,
+					State:      {{ machine_name }}State{{ state_id | to_state_variant }},
+					DocumentID: "{{ invoke_info.invoke_id }}",
+				})
+			}
+{%- else %}
+			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[{{ machine_name }}State]{
+				InvokeID:   generatedInvokeID,
+				State:      {{ machine_name }}State{{ state_id | to_state_variant }},
+				DocumentID: "{{ invoke_info.invoke_id }}",
+			})
+{%- endif %}
+{%- endmacro %}
 
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
@@ -220,36 +248,13 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 {% for invoke_info in state.invokes | scxml %}
 		{  {{- annot.annotation_comment(invoke_info, "go", "			") }}
 			generatedInvokeID := fmt.Sprintf("%s.%d.{{ invoke_info.invoke_id }}", "{{ state_id }}", sce.NextInvokeCounter())
-{% if invoke_info.idlocation %}
-			// W3C SCXML 6.4.1: Store generated invokeId in datamodel via idlocation
-			p.ensureScriptEngine()
-			se := p.ScriptEngine
-			if se != nil {
-				_ = se.SetVariable(p.SessionID, "{{ invoke_info.idlocation }}", generatedInvokeID)
-			}
-{% endif %}
-			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[{{ machine_name }}State]{
-				InvokeID:   generatedInvokeID,
-				State:      {{ machine_name }}State{{ state_id | to_state_variant }},
-				DocumentID: "{{ invoke_info.invoke_id }}",
-			})
+{{ defer_with_idlocation(invoke_info, model, machine_name, state_id) }}
 		}
 {% endfor %}
 {% for invoke_info in state.invokes | hybrid %}
 		{  {{- annot.annotation_comment(invoke_info, "go", "			") }}
 			generatedInvokeID := fmt.Sprintf("%s.%d.{{ invoke_info.invoke_id }}", "{{ state_id }}", sce.NextInvokeCounter())
-{% if invoke_info.idlocation %}
-			p.ensureScriptEngine()
-			se := p.ScriptEngine
-			if se != nil {
-				_ = se.SetVariable(p.SessionID, "{{ invoke_info.idlocation }}", generatedInvokeID)
-			}
-{% endif %}
-			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[{{ machine_name }}State]{
-				InvokeID:   generatedInvokeID,
-				State:      {{ machine_name }}State{{ state_id | to_state_variant }},
-				DocumentID: "{{ invoke_info.invoke_id }}",
-			})
+{{ defer_with_idlocation(invoke_info, model, machine_name, state_id) }}
 		}
 {% endfor %}
 {% endif %}

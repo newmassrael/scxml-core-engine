@@ -76,6 +76,11 @@ pub mod event_matching;
 pub mod event_queue;
 pub mod foreach;
 pub mod hierarchy;
+// §scxml-6.2.4 / §scxml-6.4.1: the write of a generated id to an
+// `idlocation`. Gated because it assigns through a script engine, which no
+// no_std machine has.
+#[cfg(not(feature = "no_std"))]
+pub mod idlocation;
 // SCE Protocol-Synthesis RFC §synth-5-J-2: invoke processing is alloc-coupled (Arc/Mutex/Vec/
 // HashMap) and never reached under `--no-std` since the codegen-time validator
 // rejects `<invoke>` via `codegen/no-std-invoke-not-supported`.

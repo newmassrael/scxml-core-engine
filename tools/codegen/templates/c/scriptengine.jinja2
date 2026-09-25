@@ -883,6 +883,28 @@
    cap is per-call-site (64 for short event names / target tokens, 256
    for log payloads / typeexpr URIs); fixtures that exceed a cap raise
    it locally without affecting other consumers. #}
+{# W3C SCXML 6.2.4 / 6.4.1: write a generated id to an `idlocation`.
+
+   The location is a location expression, so this is the assignment `<assign>`
+   makes: lowered by `to_lua_location`, so a member path lands, and `out_ok`
+   false when it cannot take the id — the caller raises error.execution
+   (W3C SCXML 5.9.2) and abandons the element. The id travels as the chunk's
+   argument (`...`) rather than spliced into its text, so a run-time id needs
+   no quoting and cannot change what the chunk says. A failure's message is
+   popped, not left on the stack. #}
+{% macro lua_store_id_in_location(loc, id_expr, out_ok) %}
+    {{ out_ok }} = false;
+    if (luaL_loadstring(sm->L, "{{ loc | to_lua_location | escape_c }} = ...") == 0) {
+        lua_pushstring(sm->L, {{ id_expr }});
+        {{ out_ok }} = lua_pcall(sm->L, 1, 0, 0) == 0;
+        if (!{{ out_ok }}) {
+            lua_pop(sm->L, 1);
+        }
+    } else {
+        lua_pop(sm->L, 1);
+    }
+{% endmacro %}
+
 {% macro lua_eval_to_string(expr, out_buf, out_cap, out_ok) %}
     {{ out_ok }} = false;
     {{ out_buf }}[0] = '\0';

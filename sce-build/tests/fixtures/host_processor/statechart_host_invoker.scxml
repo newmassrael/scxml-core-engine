@@ -56,6 +56,18 @@
   `done.invoke`, and `matched` counts it only when its invokeid is what the
   document stored.
 
+  An `idlocation` is a location expression, so the write is an assignment
+  (W3C SCXML 6.2.4, 6.4.1, 5.4), which `locating` holds for both elements:
+
+    slot     — `slot.id` and `slot.sid` are member paths, and receive the
+               invoke's and the send's ids. `slotted` counts the completion
+               only when its invokeid is what `slot.id` holds, and `pinged`
+               counts the send that arrived.
+    lost     — `n.nope.deeper` cannot take an id, so each element raises
+               error.execution and is abandoned (W3C SCXML 5.9.2): the host
+               is never asked to start that invoke, and `leaked` stays 0
+               because that message is never sent. So `lost` is 2.
+
   The generated machine is compiled with the host-invoker declaration
   `x-sce-host` (scripts/regen_host_processor.sh names the flag; an XML
   comment cannot spell a double hyphen).
@@ -74,6 +86,11 @@
     <data id="dropped" expr="0"/>
     <data id="doneId" expr="''"/>
     <data id="matched" expr="0"/>
+    <data id="slot" expr="{ id: '', sid: '' }"/>
+    <data id="slotted" expr="0"/>
+    <data id="pinged" expr="0"/>
+    <data id="leaked" expr="0"/>
+    <data id="lost" expr="0"/>
   </datamodel>
 
   <state id="invoking">
@@ -99,6 +116,7 @@
          raised by the host so the test decides when the exit happens. -->
     <transition event="leave" target="done"/>
     <transition event="evaluate" target="evaluating"/>
+    <transition event="locate" target="locating"/>
   </state>
 
   <state id="evaluating">
@@ -126,5 +144,27 @@
       <assign location="matched" expr="matched + 1"/>
     </transition>
     <transition event="again" target="invoking"/>
+  </state>
+
+  <state id="locating">
+    <onentry>
+      <send event="ping" idlocation="slot.sid"/>
+      <send event="leak" idlocation="n.nope.deeper"/>
+    </onentry>
+    <invoke type="x-sce-host" idlocation="slot.id"/>
+    <invoke type="x-sce-host" idlocation="n.nope.deeper"/>
+
+    <transition event="done.invoke" cond="_event.invokeid === slot.id">
+      <assign location="slotted" expr="slotted + 1"/>
+    </transition>
+    <transition event="ping">
+      <assign location="pinged" expr="pinged + 1"/>
+    </transition>
+    <transition event="leak">
+      <assign location="leaked" expr="leaked + 1"/>
+    </transition>
+    <transition event="error.execution">
+      <assign location="lost" expr="lost + 1"/>
+    </transition>
   </state>
 </scxml>

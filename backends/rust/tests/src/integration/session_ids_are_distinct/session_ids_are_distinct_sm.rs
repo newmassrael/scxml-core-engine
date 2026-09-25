@@ -1048,26 +1048,32 @@ impl StatePolicy for SessionIdsAreDistinctPolicy {
                 {
                     let generated_invoke_id =
                         format!("{}.{}.inv_a", "phase", self as *const _ as usize);
-                    sce_rust_runtime::invoke::defer_invoke(
-                        &mut self.pending_invokes,
-                        sce_rust_runtime::invoke::PendingInvoke {
-                            invoke_id: generated_invoke_id,
-                            state: SessionIdsAreDistinctState::Phase,
-                            document_id: "inv_a",
-                        },
-                    );
+                    let id_stored = true;
+                    if id_stored {
+                        sce_rust_runtime::invoke::defer_invoke(
+                            &mut self.pending_invokes,
+                            sce_rust_runtime::invoke::PendingInvoke {
+                                invoke_id: generated_invoke_id,
+                                state: SessionIdsAreDistinctState::Phase,
+                                document_id: "inv_a",
+                            },
+                        );
+                    }
                 }
                 {
                     let generated_invoke_id =
                         format!("{}.{}.inv_b", "phase", self as *const _ as usize);
-                    sce_rust_runtime::invoke::defer_invoke(
-                        &mut self.pending_invokes,
-                        sce_rust_runtime::invoke::PendingInvoke {
-                            invoke_id: generated_invoke_id,
-                            state: SessionIdsAreDistinctState::Phase,
-                            document_id: "inv_b",
-                        },
-                    );
+                    let id_stored = true;
+                    if id_stored {
+                        sce_rust_runtime::invoke::defer_invoke(
+                            &mut self.pending_invokes,
+                            sce_rust_runtime::invoke::PendingInvoke {
+                                invoke_id: generated_invoke_id,
+                                state: SessionIdsAreDistinctState::Phase,
+                                document_id: "inv_b",
+                            },
+                        );
+                    }
                 }
             }
             _ => {}

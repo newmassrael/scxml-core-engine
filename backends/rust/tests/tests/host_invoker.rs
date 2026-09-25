@@ -467,6 +467,56 @@ fn an_idlocation_holds_the_id_the_host_is_handed() {
     );
 }
 
+/// §scxml-6.2.4 / §scxml-6.4.1: an `idlocation` is a location expression,
+/// so the id is written the way `<assign>` writes (§scxml-5.4): `slot.id`
+/// and `slot.sid` are member paths, and land. `n.nope.deeper` cannot take a
+/// value, so each element raises error.execution and is abandoned
+/// (§scxml-5.9.2) — the host is never asked to start that invoke, and that
+/// message is never sent.
+#[test]
+fn an_idlocation_is_assigned_like_a_location() {
+    let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let (mut engine, script_engine) = started();
+    engine.register_invoker(DECLARED_TYPE, recording_invoker(&log));
+    engine.initialize();
+    engine.step();
+    engine.process_event(Event::Locate);
+    engine.step();
+
+    let seen = log.lock().expect("invoker log").clone();
+    assert!(
+        seen.iter()
+            .any(|e| e.starts_with("START id=locating._invoke_1 ")),
+        "the member-path invoke was not started: {seen:?}",
+    );
+    assert!(
+        !seen.iter().any(|e| e.contains("locating._invoke_2")),
+        "an invoke whose idlocation could not take the id was started: {seen:?}",
+    );
+
+    let slot: serde_json::Value = serde_json::from_str(
+        &engine
+            .policy()
+            .slot()
+            .expect("the fixture declares `slot` as an object"),
+    )
+    .expect("`slot` reads back as JSON");
+    assert_eq!(slot["id"], "locating._invoke_1", "slot.id: {slot}");
+    assert!(
+        slot["sid"].as_str().is_some_and(|s| !s.is_empty()),
+        "slot.sid did not receive the send id: {slot}",
+    );
+
+    assert_eq!(counter(&engine, &script_engine, "slotted"), 1);
+    assert_eq!(counter(&engine, &script_engine, "pinged"), 1);
+    assert_eq!(
+        counter(&engine, &script_engine, "leaked"),
+        0,
+        "a send whose idlocation could not take the id was still sent",
+    );
+    assert_eq!(counter(&engine, &script_engine, "lost"), 2);
+}
+
 /// The generic `done.invoke` is a host completion too when its invokeid
 /// names a host-run invoke, so raised around `complete_host_invoke` it is
 /// refused like the specific name is.

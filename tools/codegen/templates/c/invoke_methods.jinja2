@@ -160,10 +160,21 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
             /* W3C SCXML 6.4.1: the invocation's generated id goes to
                `idlocation` when the element is evaluated. It is the id the
                host is handed and `done.invoke.<id>` names, so the document can
-               match on what it stored. Assigned through a chunk, as the
-               `<send idlocation>` arm does, so a member path lands too. */
-            (void)luaL_dostring(sm->L,
-                "{{ invoke_info.idlocation | to_lua_location | escape_c }} = '{{ invoke_info.invoke_id | escape_c }}'");
+               match on what it stored. The write is the assignment `<assign>`
+               makes, so a member path lands, and a location that cannot take
+               the id starts nothing (W3C SCXML 5.9.2). */
+            {
+                bool _idloc_ok = false;
+{{ se.lua_store_id_in_location(invoke_info.idlocation, '"' ~ (invoke_info.invoke_id | escape_c) ~ '"', '_idloc_ok') }}
+                if (!_idloc_ok) {
+{% if 'error.execution' in model.events %}
+                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        "<invoke idlocation='{{ invoke_info.idlocation | escape_c }}'> could not take the invoke id");
+{% endif %}
+                    continue;
+                }
+            }
 {% endif %}
             /* W3C SCXML 6.4.1: what the request says is evaluated now, when
                the invocation starts. An attribute that cannot be evaluated

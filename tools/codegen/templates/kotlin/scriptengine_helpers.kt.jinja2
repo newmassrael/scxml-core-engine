@@ -218,6 +218,28 @@
             raisePlatformError({{ machine_name }}Event.Error.Execution, "<assign> failed")
         }
     }
+{% if model.needs_idlocation_store %}
+
+    // W3C SCXML 6.2.4 / 6.4.1: write a generated id to an `idlocation`.
+    //
+    // The location is a location expression, so this is the assignment
+    // `executeAssign` makes: lowered, so a member path lands, and one that
+    // cannot take the id raises error.execution (W3C SCXML 5.9.2) and answers
+    // false for the caller to abandon the element. The id is quoted here, in
+    // the location's own language, because an invoke's is a run-time value.
+    private fun storeIdInLocation(location: com.sce.runtime.ScriptSource, id: String, element: String): Boolean {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        return try {
+            engine.assign(sid, location, com.sce.runtime.ScriptSource.stringLiteral(id, location.language))
+            true
+        } catch (e: Exception) {
+            raisePlatformError({{ machine_name }}Event.Error.Execution, "$element idlocation could not take the id")
+            false
+        }
+    }
+{% endif %}
 
     // W3C SCXML 5.8: Script block execution
     private fun executeScriptBlock(script: com.sce.runtime.ScriptSource) {

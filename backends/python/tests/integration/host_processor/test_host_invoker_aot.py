@@ -33,6 +33,7 @@ Regeneration (after fixture or template edit):
 """
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from typing import List, Optional
@@ -367,6 +368,39 @@ def test_an_idlocation_holds_the_id_the_host_is_handed() -> None:
     assert _counter(engine, "matched") == 1, (
         "the completion did not arrive, or its invokeid is not what idlocation holds"
     )
+
+
+def test_an_idlocation_is_assigned_like_a_location() -> None:
+    """W3C SCXML 6.2.4 / 6.4.1: an ``idlocation`` is a location expression, so
+    the id is written the way ``<assign>`` writes (5.4): ``slot.id`` and
+    ``slot.sid`` are member paths, and land. ``n.nope.deeper`` cannot take a
+    value, so each element raises error.execution and is abandoned (5.9.2) —
+    the host is never asked to start that invoke, and that message is never
+    sent."""
+    engine, log = _started()
+    _deliver(engine, Event.LOCATE)
+
+    assert any(e.startswith("START id=locating._invoke_1 ") for e in log), (
+        f"the member-path invoke was not started: {log}"
+    )
+    assert not any("locating._invoke_2" in e for e in log), (
+        f"an invoke whose idlocation could not take the id was started: {log}"
+    )
+
+    raw = engine.policy.slot()
+    assert raw is not None, "the fixture declares `slot` as an object"
+    slot = json.loads(raw)
+    assert slot["id"] == "locating._invoke_1", f"slot.id: {slot}"
+    assert isinstance(slot["sid"], str) and slot["sid"], (
+        f"slot.sid did not receive the send id: {slot}"
+    )
+
+    assert _counter(engine, "slotted") == 1
+    assert _counter(engine, "pinged") == 1
+    assert _counter(engine, "leaked") == 0, (
+        "a send whose idlocation could not take the id was still sent"
+    )
+    assert _counter(engine, "lost") == 2
 
 
 def test_a_generic_done_invoke_raised_the_old_way_is_refused() -> None:

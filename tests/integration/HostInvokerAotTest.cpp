@@ -35,6 +35,7 @@
 #include <gtest/gtest.h>
 #include <map>
 #include <memory>
+#include <nlohmann/json.hpp>
 #include <optional>
 #include <string>
 #include <vector>
@@ -387,6 +388,39 @@ TEST_F(HostInvokerAotTest, AnIdlocationHoldsTheIdTheHostIsHanded) {
     EXPECT_TRUE(handed) << "the host was not handed the generated id";
     EXPECT_EQ(sm.getPolicy().matched(), std::optional<int64_t>(1))
         << "the completion did not arrive, or its invokeid is not what idlocation holds";
+}
+
+// §scxml-6.2.4 / §scxml-6.4.1: an `idlocation` is a location expression, so the
+// id is written the way `<assign>` writes (§scxml-5.4): `slot.id` and
+// `slot.sid` are member paths, and land. `n.nope.deeper` cannot take a value,
+// so each element raises error.execution and is abandoned (§scxml-5.9.2) — the
+// host is never asked to start that invoke, and that message is never sent.
+TEST_F(HostInvokerAotTest, AnIdlocationIsAssignedLikeALocation) {
+    Machine sm;
+    registerRecordingInvoker(sm);
+    boot(sm);
+    sm.processEvent(Event::Locate);
+    sm.step();
+
+    bool handed = false;
+    for (const auto &entry : log) {
+        handed = handed || entry.rfind("START id=locating._invoke_1 ", 0) == 0;
+        EXPECT_EQ(entry.find("locating._invoke_2"), std::string::npos)
+            << "an invoke whose idlocation could not take the id was started: " << entry;
+    }
+    EXPECT_TRUE(handed) << "the member-path invoke was not started";
+
+    const auto raw = sm.getPolicy().slot();
+    ASSERT_TRUE(raw.has_value()) << "the fixture declares `slot` as an object";
+    const auto slot = nlohmann::json::parse(*raw);
+    EXPECT_EQ(slot.at("id").get<std::string>(), "locating._invoke_1") << *raw;
+    EXPECT_FALSE(slot.at("sid").get<std::string>().empty()) << "slot.sid did not receive the send id: " << *raw;
+
+    EXPECT_EQ(sm.getPolicy().slotted(), std::optional<int64_t>(1));
+    EXPECT_EQ(sm.getPolicy().pinged(), std::optional<int64_t>(1));
+    EXPECT_EQ(sm.getPolicy().leaked(), std::optional<int64_t>(0))
+        << "a send whose idlocation could not take the id was still sent";
+    EXPECT_EQ(sm.getPolicy().lost(), std::optional<int64_t>(2));
 }
 
 // The generic `done.invoke` is a host completion too when its invokeid names a

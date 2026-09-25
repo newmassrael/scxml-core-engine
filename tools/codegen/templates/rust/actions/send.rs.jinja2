@@ -21,6 +21,14 @@
     let send_id = ::sce_rust_runtime::SceString::new();
 {% endif %}
 
+{% set has_namelist = action.namelist and action.namelist | trim %}
+{# W3C SCXML 6.2: an argument that cannot be evaluated discards the message —
+   a namelist entry that cannot be read, or an `idlocation` that cannot take
+   the id. #}
+{% set can_abort = has_namelist or (action.idlocation and model.needs_script_engine) %}
+{% if can_abort %}
+    let mut _send_aborted = false;
+{% endif %}
 {% if action.idlocation %}
     // W3C SCXML 6.2.4: Store sendid in idlocation
 {% if model.needs_script_engine %}
@@ -29,12 +37,18 @@
         let sid = self.session_id.as_ref().unwrap().clone();
         let se = self.script_engine.clone();
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-        let _ = se.execute_script(
-            &sid,
-            {# W3C SCXML B.2: a write target is lowered by the frontend, so
-               the id lands where a read of the same text finds it. #}
-            &format!("{} = {:?}", "{{ action.idlocation | to_lua_location | escape_rust }}", send_id),
-        );
+        {# W3C SCXML B.2: a write target is lowered by the frontend, so the id
+           lands where a read of the same text finds it. The write is the
+           assignment `<assign>` makes, so a location it cannot take is
+           `error.execution` (W3C SCXML 5.9.2), not a silent miss. #}
+        if !::sce_rust_runtime::helpers::idlocation::store_id_in_location(
+            se, &sid, "{{ action.idlocation | to_lua_location | escape_rust }}", send_id.as_str(),
+        ) {
+{% if 'error.execution' in model.events %}
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<send idlocation='{{ action.idlocation | escape_rust }}'> could not take the send id"));
+{% endif %}
+            _send_aborted = true;
+        }
     }
 {% else %}
     self.{{ action.idlocation | to_snake_case }} = send_id.clone();
@@ -60,15 +74,11 @@
    engine still work (test 531) — which the JSON wire allows and the Lua one
    did not, since reading it back needed an interpreter. #}
 {% set has_params = action.params and action.params | length > 0 %}
-{% set has_namelist = action.namelist and action.namelist | trim %}
 {# Check if any param requires dynamic expression evaluation (test 567). #}
 {% if has_params %}
 {% set has_dynamic_params = action.params | rejectattr("is_static_literal") | list | length > 0 %}
 {% else %}
 {% set has_dynamic_params = false %}
-{% endif %}
-{% if has_namelist %}
-    let mut _send_aborted = false;
 {% endif %}
 {% if has_dynamic_params or has_namelist %}
     // W3C SCXML 6.2 / test178: a name may repeat and every value must be
@@ -261,8 +271,9 @@
     };
 {% endif %}
 
-{# W3C SCXML 6.2: Guard dispatch — skip if namelist aborted (test 553) or targetexpr failed #}
-{% if has_namelist %}
+{# W3C SCXML 6.2: Guard dispatch — skip if an argument aborted the send
+   (namelist, test 553; idlocation) or targetexpr failed #}
+{% if can_abort %}
     if !_send_aborted {
 {% endif %}
 {% if action.targetexpr and model.needs_script_engine %}
@@ -652,8 +663,8 @@
     } // end of if let Some(ref _rt) = _resolved_target
 {% endif %}
 
-{% if has_namelist %}
-    } // end of !_send_aborted guard (W3C SCXML 6.2: abort send on namelist error)
+{% if can_abort %}
+    } // end of !_send_aborted guard (W3C SCXML 6.2: abort send on an argument error)
 {% endif %}
     let _ = send_id;  // suppress unused warning when no send operation
     let _ = event_data;  // suppress unused warning in branches that skip dispatch
