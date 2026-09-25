@@ -5313,6 +5313,11 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "performHostInvoke",
           "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "perform_host_invoke",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
