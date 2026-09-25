@@ -108,7 +108,7 @@ class TheServerSpeaksTheProtocol(unittest.TestCase):
         names = {t["name"] for t in replies[1]["result"]["tools"]}
         self.assertEqual(
             {"brief", "questions", "review", "check", "coverage", "verify",
-             "pseudo"},
+             "pseudo", "scaffold"},
             names)
 
     def test_the_two_surfaces_offer_the_same_commands(self):

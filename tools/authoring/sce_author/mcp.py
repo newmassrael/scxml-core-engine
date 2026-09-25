@@ -47,6 +47,7 @@ from .verify import verify as run_verify
 from .prose import load_prose
 from .questions import ask
 from .review import review as run_review
+from .scaffold import write as write_scaffold
 
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "sce-author"
@@ -184,6 +185,40 @@ TOOLS = [
                         "on its first line, so a reviewer's approval can be "
                         "filed and read back later."
                     ),
+                },
+            },
+        },
+    },
+    {
+        "name": "scaffold",
+        "description": (
+            "Write a binding skeleton from the interface model, as a file that "
+            "does not exist yet: `version`, `document`, and one rule per "
+            "position the model declares -- each output with its address, its "
+            "field and a map keyed by the platform's numbers, each input with "
+            "its address. Nothing that is a reading of the specification is "
+            "written, and `activation` only if you give it. Start the binding "
+            "from this, rename rules to your document's identifiers, delete "
+            "what the document does not use, and run `check`: it names every "
+            "rule that still does not fit."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["pack", "document", "binding"],
+            "properties": {
+                "pack": _PACK_ARG,
+                "document": {
+                    "type": "string",
+                    "description": "The document the binding will name, as the binding writes it.",
+                },
+                "binding": {
+                    "type": "string",
+                    "description": "The binding file to create. Refused if it exists.",
+                },
+                "activation": {
+                    "type": "string",
+                    "enum": ["on-change", "periodic"],
+                    "description": "When the host runs the document, if you know it.",
                 },
             },
         },
@@ -495,6 +530,18 @@ def call_tool(name: str, args: dict) -> dict:
             if not findings:
                 return _text("no refusals: every address, field and symbol exists.")
             return _failure("\n".join(str(f) for f in findings))
+
+        if name == "scaffold":
+            pack = load_pack(_pack_arg(args))
+            document, binding = args.get("document"), args.get("binding")
+            for key, value in (("document", document), ("binding", binding)):
+                if not value or not isinstance(value, str):
+                    raise ToolArgumentError(f"{key!r} is required, as a string")
+            activation = args.get("activation")
+            if activation is not None and not isinstance(activation, str):
+                raise ToolArgumentError("'activation' has to be a string")
+            text = write_scaffold(pack, document, pathlib.Path(binding), activation)
+            return _text(f"wrote {binding}:\n\n{text}")
 
         if name == "coverage":
             pack = load_pack(_pack_arg(args))

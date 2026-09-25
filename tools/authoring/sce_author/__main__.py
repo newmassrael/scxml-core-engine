@@ -22,6 +22,7 @@ from .prose import load_prose
 from .pseudo import render as render_pseudo
 from .questions import ask
 from .review import review as run_review
+from .scaffold import write as write_scaffold
 from .verify import verify as run_verify
 
 
@@ -260,6 +261,17 @@ def cmd_coverage(args) -> int:
     return 1 if got.alarms() else 0
 
 
+def cmd_scaffold(args) -> int:
+    """Write the half of a binding the interface model already decides."""
+    pack = _pack(args)
+    out = pathlib.Path(args.out)
+    write_scaffold(pack, args.document, out, args.activation)
+    print(f"wrote {out}: {sum(len(e.fields) for e in pack.model.outputs())} output "
+          f"position(s) and {sum(len(e.fields) for e in pack.model.entries if e.role != 'output')} "
+          f"input position(s) from the model; run `check` next")
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="sce_author", description=__doc__)
     sub = ap.add_subparsers(dest="command", required=True)
@@ -329,6 +341,18 @@ def main(argv=None) -> int:
     o.add_argument("--binding", required=True, nargs="+",
                    help="every binding in the subject matter")
     o.set_defaults(fn=cmd_coverage)
+
+    f = with_pack(sub.add_parser(
+        "scaffold", help="write a binding skeleton from the interface model"))
+    f.add_argument("--document", required=True,
+                   help="the document the binding will name, as the binding writes it")
+    f.add_argument("--out", required=True,
+                   help="the binding file to create; refused if it exists")
+    # ⚠ No default. When the host runs the document is a fact about the
+    # deployment, and a default here would be a guess made on its behalf.
+    f.add_argument("--activation", choices=("on-change", "periodic"),
+                   help="when the host runs the document, if it is known")
+    f.set_defaults(fn=cmd_scaffold)
 
     args = ap.parse_args(argv)
     # ⚠ ONE catch, and it is the base type rather than a list. Catching

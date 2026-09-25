@@ -102,6 +102,10 @@ cannot be right is owning NOTHING, which is a pack listing no spelling its
 prose uses; this tree's own second subject matter did exactly that, and the
 figures above come from the instrument that found it.
 
+**scaffold** writes the half of a binding the interface model already decides
+-- every position's address, field and value space -- and nothing that reads
+the specification; see "Starting a binding from the model" below.
+
 **check** judges a written document against the same model: every input it
 declares must exist, every output it writes must be a real field, and every
 literal it compares against must be in that field's value space.
@@ -683,6 +687,34 @@ files -- and the component that binding serves reaches a full pass without the
 shape when its binding is written in this vocabulary instead. So what grouping
 buys is brevity in one file, and what it costs is a dictionary that decides
 things. Grouping is what the DOCUMENT is for.
+
+#### Starting a binding from the model
+
+Half of a binding is not a decision: which positions exist, their fields and
+their value spaces are the interface model's, and copying them by hand is the
+one part of the job a machine can do without being wrong. `scaffold` writes
+that half, to a file that does not exist yet:
+
+    python3 -m sce_author scaffold --pack <pack> --document controller.scxml \
+        --out controller.binding.yaml --activation on-change
+
+It writes `version` and `document`, one output rule per position the model
+declares -- its `address`, its `field`, and a `map` keyed by the platform's own
+numbers (`passthrough` for a field with no value space) -- and one input rule
+per address, with the value space as a comment. For the crossing fixture the
+output half is exactly the half of `controller.binding.yaml` above that is not a
+decision. `activation` is written only when it is given: it is a fact about the
+deployment.
+
+It writes nothing that reads the specification -- no comparison, no event, no
+`when`, no `also` -- and a test holds that line: a tool that decided which
+condition gives which value would be the translator this core refuses to be.
+What is left is renaming each rule to the document's identifier, deleting what
+the document does not use, and writing the decisions; the skeleton is always a
+binding `check` can read, so each gap comes back as a refusal naming its rule.
+⚠ Measured 2026-09-25: of four models set to write a document and its binding,
+the ones that failed failed on the copied half -- a missing `version`, an
+output rule with no `field` -- and never reached the half that reads the prose.
 
 #### A statechart is driven, and answers by sending
 
