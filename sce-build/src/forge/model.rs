@@ -3493,6 +3493,13 @@ pub struct AlgorithmSignature {
     /// [`ProcedureHelper::returns_max_size`]. `None` ⇒ non-bytes return.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub returns_max_size: Option<u32>,
+    /// `<sce:return may-fail="true">`: the algorithm's integer arithmetic can
+    /// fail — an overflow, a division by zero, a signed `MIN / -1` — and its
+    /// callers receive the failure (SCE_FORGE.md §3.4.1, the integer
+    /// arithmetic contract). `false` for an algorithm whose every such
+    /// operation is proven safe ([`crate::forge::int_ranges`]).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub may_fail: bool,
 }
 
 /// Type carried by an `<sce:const>` declaration. Scalar form is the

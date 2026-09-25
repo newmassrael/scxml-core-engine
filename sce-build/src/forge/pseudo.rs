@@ -179,7 +179,7 @@
 //!       namelist <n> / content <c> / content-expr <e>
 //!       <param>
 //!
-//!   algorithm <name>(<param>: <type>, ...) [-> <type> [returns-max <n>]]
+//!   algorithm <name>(<param>: <type>, ...) [-> <type> [returns-max <n>] [may-fail]]
 //!     const <name>: <type> = <expr>
 //!     const <name>: array<<type>, <n>> = fold <var> in <a>..<b> -> <type>:
 //!       <stmt>...
@@ -844,6 +844,9 @@ fn render_algorithm(m: &AlgorithmModel) -> Vec<Node> {
         if let Some(max) = m.signature.returns_max_size {
             head.push(Part::Word(Word::ReturnsMax));
             head.push(Part::Text(max.to_string()));
+        }
+        if m.signature.may_fail {
+            head.push(Part::Word(Word::MayFail));
         }
     }
     out.line_of(head);

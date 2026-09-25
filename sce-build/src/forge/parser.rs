@@ -6948,6 +6948,7 @@ fn parse_algorithm_signature(
     let mut params = Vec::new();
     let mut return_type: Option<AlgorithmValueType> = None;
     let mut returns_max_size: Option<u32> = None;
+    let mut may_fail = false;
     let mut seen_return = false;
 
     let signature: &'static [&'static str] = &["param", "return"];
@@ -7032,6 +7033,28 @@ fn parse_algorithm_signature(
                     )?;
                     return_type = Some(sce_type);
                 }
+                // The integer arithmetic contract (SCE_FORGE.md §3.4.1): the
+                // declaration a caller reads to know the algorithm can fail.
+                // The schema types it `xs:boolean`, whose two spellings of
+                // each value are all admitted; anything else is refused
+                // rather than read as `false`, so a build without the
+                // schema cannot drop the declaration.
+                may_fail = match child.attribute("may-fail").map(str::trim) {
+                    None | Some("false" | "0") => false,
+                    Some("true" | "1") => true,
+                    Some(_) => {
+                        return Err(located(
+                            &child,
+                            doc_name,
+                            ValidationError::InvalidAttribute {
+                                element: "<sce:return>".into(),
+                                attr: "may-fail".into(),
+                                value: child.attribute("may-fail").unwrap_or_default().into(),
+                                allowed: vec!["true".into(), "false".into()],
+                            },
+                        ));
+                    }
+                };
                 // Cap on a buffer return's output buffer — `bytes` or
                 // `list<T>` (the no-alloc profile's fixed capacity). Mirrors
                 // the `<sce:helper returns-max-size>` attribute. A buffer
@@ -7091,6 +7114,7 @@ fn parse_algorithm_signature(
         params,
         return_type,
         returns_max_size,
+        may_fail,
     })
 }
 
@@ -7744,6 +7768,22 @@ fn parse_algorithm_stmt(
             })
         }
         "return" => {
+            // Whether the algorithm can fail is its signature's to declare;
+            // on a body's return it would be a second, disagreeing answer.
+            if let Some(value) = node.attribute("may-fail") {
+                return Err(located(
+                    node,
+                    doc_name,
+                    ValidationError::AttributeRuleViolated {
+                        element: "<sce:return> in <sce:body>".into(),
+                        attr: "may-fail".into(),
+                        value: value.into(),
+                        rule:
+                            "omitted — may-fail is declared on the <sce:signature>'s <sce:return>"
+                                .into(),
+                    },
+                ));
+            }
             let expr = node.attribute("expr").map(|s| s.to_string());
             Ok(AlgorithmStmt::Return {
                 expr,

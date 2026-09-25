@@ -374,7 +374,22 @@ In integer context `a === (a / b) * b + a % b` holds for every non-zero `b` on e
 
 This is what C99, C++11, Rust, Go and Kotlin compute natively for integers, so their emitters write `/` and `%`. Python's `/` is true division and its `//` and `%` round toward −∞, so the Python emitter lowers integer-context `/` and `%` explicitly; `//` alone would agree only while the operands share a sign. In float context the C family divides in floating point only when an operand is already floating, so C and C++ widen the left operand when both are integral. Conformance: `transform_int_div`, `transform_int_rem` (negative and mixed-sign cases) in `tests/forge/conformance/`.
 
-**Not yet specified**: `%` on floating operands (Go's `%` does not accept them and C/C++ need `fmod`), the result of an integer `/` or `%` by zero, and signed or 64-bit overflow of `+`, `-`, `*`, `<<`. The backends do not agree on either today (C/C++ leave both undefined, Rust panics in debug builds, Go and Kotlin wrap or throw, Python's integers do not overflow), and a document whose inputs can reach them has no cross-language guarantee.
+**Not yet specified**: `%` on floating operands (Go's `%` does not accept them and C/C++ need `fmod`).
+
+**The integer arithmetic contract.** The result of an integer `/` or `%` by zero, a signed `MIN / -1`, and an overflow of `+`, `-`, `*` or unary `-` past the declared width are not values: the backends do not agree on them (C/C++ leave them undefined, Rust panics in debug builds, Go and Kotlin wrap or throw, Python's integers do not overflow), so no backend may produce one. An algorithm either proves that none of its integer operations can reach them, or says that it can fail:
+
+```xml
+<sce:signature>
+  <sce:param name="prev" type="uint32"/>
+  <sce:return type="uint32" may-fail="true"/>
+</sce:signature>
+```
+
+`may-fail` is an `xs:boolean` on the signature's `<sce:return>`, refused on a body's `<sce:return>` (the signature is the one place a caller reads). The page renders it as a trailing clause: `algorithm tick(prev: uint32) -> uint32 may-fail`. A `may-fail` algorithm checks every integer operation and hands a failure to its caller in place of a value, through the target's own failure channel.
+
+The proof is an interval analysis over the body: each integer value's range, narrowed by the conditions that guard it, with loops widened to their declared type and re-narrowed by their conditions. A divisor excluded from zero by a `!== 0` guard is known non-zero. One fact is contractual rather than derived — **the length contract**: `len(x)` is at most `2^32 − 1` on every backend, so an index held below a length by `i < len(a)` steps safely in `uint32`.
+
+A backend lowers `may-fail` in the commit that teaches it the checked lowering; until then it refuses the algorithm (`generate/unsupported-feature`), because an unchecked body behind a signature that promises a failure is the silent disagreement this contract exists to remove. Today no backend lowers it, and an algorithm that does not declare `may-fail` is not yet refused when the analysis finds an operation it cannot prove safe.
 
 #### Transpiler Architecture
 

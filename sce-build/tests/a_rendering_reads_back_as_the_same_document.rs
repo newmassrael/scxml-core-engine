@@ -320,6 +320,7 @@ fn a_local_reads_back_with_exactly_the_initializer_its_type_allows() {
             }],
             return_type: Some(AlgorithmValueType::Scalar(SceType::Bytes)),
             returns_max_size: Some(4),
+            may_fail: false,
         },
         consts: Vec::new(),
         body: vec![

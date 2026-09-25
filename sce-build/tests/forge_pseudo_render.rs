@@ -69,6 +69,7 @@ fn an_algorithm_renders_every_form_it_can_carry() {
             ],
             return_type: Some(AlgorithmValueType::Scalar(SceType::Bytes)),
             returns_max_size: Some(64),
+            may_fail: false,
         },
         consts: vec![
             AlgorithmConst {
@@ -327,6 +328,7 @@ fn a_newline_in_an_expression_does_not_become_a_line() {
             params: Vec::new(),
             return_type: None,
             returns_max_size: None,
+            may_fail: false,
         },
         consts: Vec::new(),
         body: vec![AlgorithmStmt::Assign {
@@ -625,6 +627,7 @@ fn two_renderings_of_one_model_agree() {
             }],
             return_type: Some(AlgorithmValueType::Scalar(SceType::Uint8)),
             returns_max_size: None,
+            may_fail: false,
         },
         consts: Vec::new(),
         body: vec![AlgorithmStmt::Return {

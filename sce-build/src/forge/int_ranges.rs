@@ -508,6 +508,20 @@ impl Analysis<'_, '_> {
                     _ => Some(own),
                 }
             }
+            ExprKind::Call { callee, args, .. } if matches!(&callee.kind, ExprKind::Ident(n) | ExprKind::Raw(n) if n == "len") =>
+            {
+                for arg in args {
+                    self.eval(arg, expr, spelling, env);
+                }
+                // The length contract (SCE_FORGE.md §3.4.1): no sequence an
+                // algorithm reads holds more than `u32::MAX` elements, on
+                // every backend, whatever width its own length type has.
+                let contract = Interval {
+                    lo: 0,
+                    hi: i128::from(u32::MAX),
+                };
+                Some(own.map_or(contract, |own| contract.clamp(own)))
+            }
             _ => {
                 for child in node.children() {
                     self.eval(child, expr, spelling, env);
@@ -804,6 +818,25 @@ mod tests {
         assert_eq!(
             analyse(&[("prev", SceType::Uint32)], &[], &body),
             vec![("prev + 1".to_string(), HazardKind::Overflow)]
+        );
+    }
+
+    #[test]
+    fn an_index_bounded_by_a_length_follows_the_length_contract() {
+        // `i < len(a)` holds `i` below `u32::MAX` under the length contract,
+        // so a uint32 index steps safely; a uint8 index still passes 255.
+        let scan = |ty: SceType| {
+            let body = [
+                var("i", AlgorithmValueType::Scalar(ty.clone()), "0"),
+                while_("i < len(a)", 64, vec![assign("i", "i + 1")]),
+                ret("i"),
+            ];
+            analyse(&[("a", SceType::Bytes)], &[("i", ty)], &body)
+        };
+        assert!(scan(SceType::Uint32).is_empty());
+        assert_eq!(
+            scan(SceType::Uint8),
+            vec![("i + 1".to_string(), HazardKind::Overflow)]
         );
     }
 

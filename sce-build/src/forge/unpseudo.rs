@@ -1249,7 +1249,7 @@ fn parse_observer(head: &Line<'_>, body: &[&Line<'_>]) -> Result<ObserverModel, 
     Ok(m)
 }
 
-/// `algorithm <name>(<p>: <t>, …) [-> <t> [returns-max <n>]]`.
+/// `algorithm <name>(<p>: <t>, …) [-> <t> [returns-max <n>] [may-fail]]`.
 ///
 /// The first kind whose body nests arbitrarily deep, so [`group`] is
 /// applied recursively rather than once.
@@ -1286,25 +1286,34 @@ fn parse_algorithm(head: &Line<'_>, body: &[&Line<'_>]) -> Result<AlgorithmModel
     }
 
     let tail: Vec<&str> = tail.split_whitespace().collect();
-    let (return_type, returns_max_size) = match tail.first().copied() {
-        None => (None, None),
+    let (return_type, returns_max_size, may_fail) = match tail.first().copied() {
+        None => (None, None, false),
         Some("->") => {
             let t = tail.get(1).copied().unwrap_or("");
             let rt = AlgorithmValueType::from_attr(t).ok_or_else(|| ParseError {
                 line: head.number,
                 why: format!("`{t}` is not an sce:type"),
             })?;
-            let max = match tail.get(2).copied() {
-                Some("returns-max") => tail.get(3).and_then(|v| v.parse().ok()),
-                None => None,
-                Some(other) => {
-                    return Err(ParseError {
-                        line: head.number,
-                        why: format!("`{other}` is not a signature clause"),
-                    })
-                }
-            };
-            (Some(rt), max)
+            // Clause order is the renderer's: `returns-max <n>`, then
+            // `may-fail`.
+            let mut rest = &tail[2.min(tail.len())..];
+            let mut max = None;
+            if rest.first().copied() == Some("returns-max") {
+                max = rest.get(1).and_then(|v| v.parse().ok());
+                rest = &rest[2.min(rest.len())..];
+            }
+            let mut may_fail = false;
+            if rest.first().copied() == Some("may-fail") {
+                may_fail = true;
+                rest = &rest[1..];
+            }
+            if let Some(other) = rest.first() {
+                return Err(ParseError {
+                    line: head.number,
+                    why: format!("`{other}` is not a signature clause"),
+                });
+            }
+            (Some(rt), max, may_fail)
         }
         Some(other) => {
             return Err(ParseError {
@@ -1320,6 +1329,7 @@ fn parse_algorithm(head: &Line<'_>, body: &[&Line<'_>]) -> Result<AlgorithmModel
             params,
             return_type,
             returns_max_size,
+            may_fail,
         },
         consts: Vec::new(),
         body: Vec::new(),

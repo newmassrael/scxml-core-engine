@@ -621,6 +621,7 @@ mod tests {
                         SceType::Uint8,
                     )),
                     returns_max_size: None,
+                    may_fail: false,
                 },
                 consts: Vec::new(),
                 body: Vec::new(),

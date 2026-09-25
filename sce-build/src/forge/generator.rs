@@ -23105,6 +23105,41 @@ pub(crate) fn forge_interpolation_symbol(language: crate::generator::Language) -
     }
 }
 
+/// The backends that lower `<sce:return may-fail="true">`: every integer
+/// operation checked, and a failure returned through the target's failure
+/// channel instead of a value (SCE_FORGE.md §3.4.1).
+///
+/// A backend joins this list in the commit that teaches it the checked
+/// lowering. Until then the algorithm is refused for it, because the
+/// alternative is an unchecked body behind a signature that promises the
+/// caller a failure it will never see.
+const MAY_FAIL_BACKENDS: &[crate::generator::Language] = &[];
+
+fn reject_may_fail_in_unsupported_lang(
+    m: &AlgorithmModel,
+    lang: crate::generator::Language,
+) -> Result<(), ForgeError> {
+    if !m.signature.may_fail || MAY_FAIL_BACKENDS.contains(&lang) {
+        return Ok(());
+    }
+    let served: Vec<&'static str> = MAY_FAIL_BACKENDS
+        .iter()
+        .map(|candidate| candidate.canonical_name())
+        .collect();
+    Err(GenerateError::unsupported(format!(
+        "algorithm '{}' declares <sce:return may-fail=\"true\"> and has no {:?} \
+         codegen path (lowered for: {})",
+        m.name,
+        lang,
+        if served.is_empty() {
+            "no backend".to_string()
+        } else {
+            served.join(", ")
+        },
+    ))
+    .into())
+}
+
 fn render_algorithm(
     env: &minijinja::Environment,
     m: &AlgorithmModel,
@@ -23118,6 +23153,7 @@ fn render_algorithm(
     // backend (Rust + C11 + Kotlin + Cpp + Go + Python) now ships
     // the sidecar emitter. The previously-required `render_algorithm`
     // gate was deleted in the final (Python) closure.
+    reject_may_fail_in_unsupported_lang(m, lang)?;
     let l = LangCtx::new(lang, imports);
     let mut ctx = l.base_context(&m.name);
 
