@@ -1,4 +1,4 @@
-# SCE-MAP: algorithm_cobs_encode:32 :: _forge_body
+# SCE-MAP: algorithm_cobs_encode:39 :: _forge_body
 
 # SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
 # Runtime: none
@@ -19,9 +19,10 @@ def algorithm_cobs_encode(data: bytes) -> bytes:
     done: bool = False
     while done == False:
         q: int = p
-        while q < n and (q - p) & 0xFFFF < 254 and data[q] != 0:
+        run: int = 0
+        while q < n and run < 254 and data[q] != 0:
             q = (q + 1) & 0xFFFF
-        run: int = (q - p) & 0xFFFF
+            run = (run + 1) & 0xFFFF
         code: int = ((run + 1) & 0xFFFF) & 0xFF
         out.append(code)
         k: int = p

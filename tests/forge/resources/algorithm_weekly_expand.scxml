@@ -9,6 +9,12 @@
   declared with a capacity, filled forward-only by <sce:append>, and
   returned by name. The oracle's cases stay within the capacity, where
   every backend agrees; past it Rust/C11 fail and the heap backends grow.
+
+  It declares may-fail (SCE_FORGE.md §3.4.1): `week % interval` divides by
+  zero when `interval` is 0, and the int64 day arithmetic can overflow at
+  the edges of its range. Neither is a value any backend may return, so the
+  failure reaches the caller instead — the oracle's `interval` 0 case pins
+  it on every backend.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -22,7 +28,7 @@
     <sce:param name="interval" type="int64"/>
     <sce:param name="window_start" type="int64"/>
     <sce:param name="window_end" type="int64"/>
-    <sce:return type="list&lt;int64&gt;" returns-max-size="366"/>
+    <sce:return type="list&lt;int64&gt;" returns-max-size="366" may-fail="true"/>
   </sce:signature>
   <sce:body>
     <sce:var name="out" type="list&lt;int64&gt;" capacity="366"/>

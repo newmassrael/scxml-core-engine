@@ -1509,6 +1509,11 @@
       "formula": "days d in [max(window_start, dtstart), window_end) with bit ((d + 3) % 7) of mask set (bit 0 = Monday, day 0 = 1970-01-01, a Thursday) and ((d - dtstart) / 7) % interval == 0, ascending",
       "cases": [
         {
+          "args": [19723, 21, 0, 19723, 19737],
+          "fails": "divide-by-zero",
+          "note": "interval 0: the first selected day asks for week % 0, which no backend may answer (SCE_FORGE.md §3.4.1)"
+        },
+        {
           "args": [19723, 21, 1, 19723, 19737],
           "expected": [19723, 19725, 19727, 19730, 19732, 19734],
           "note": "2024-01-01 (Monday), Mon/Wed/Fri every week, two weeks"
@@ -1591,6 +1596,11 @@
           "args": [{ "wallTime": 0, "counter": 4294967294, "nodeId": 9 }, 0, 9],
           "expected": { "wallTime": 0, "counter": 4294967295, "nodeId": 9 },
           "note": "counter one below uint32 max advances to the max"
+        },
+        {
+          "args": [{ "wallTime": 0, "counter": 4294967295, "nodeId": 9 }, 0, 9],
+          "fails": "overflow",
+          "note": "a counter at uint32 max cannot advance; wrapping to 0 would run the clock backwards (SCE_FORGE.md §3.4.1)"
         }
       ]
     }

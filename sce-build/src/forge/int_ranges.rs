@@ -31,7 +31,9 @@ use std::collections::BTreeMap;
 use std::ops::Range;
 
 use crate::attribute_spelling::AttributeSpelling;
-use crate::forge::expr::{infer_types, resolve, BinOp, ExprKind, TypedExpr, UnaryOp};
+use crate::forge::expr::{
+    infer_types, judge_into, resolve, BinOp, Expected, ExprKind, TypedExpr, UnaryOp,
+};
 use crate::forge::model::{AlgorithmStmt, AlgorithmValueType};
 use crate::forge::types::{InferredType, TypeCtx};
 
@@ -64,15 +66,22 @@ pub struct IntHazard {
 
 /// Every operation of `body` that can fail, given `params` (name and type)
 /// and `ctx`, the scope the algorithm's expressions are typed in.
+///
+/// `None` when an expression of `body` is one the typed pipeline refuses: the
+/// body is then not judged. That expression has a refusal of its own, raised
+/// where it is lowered, and a guard the analysis cannot read would otherwise
+/// have it report an operation the guard bounds — naming the wrong failure
+/// (a misspelt bound read as an overflow).
 pub fn hazards(
     params: &[(String, AlgorithmValueType)],
     body: &[AlgorithmStmt],
     ctx: &TypeCtx<'_>,
-) -> Vec<IntHazard> {
+) -> Option<Vec<IntHazard>> {
     let mut analysis = Analysis {
         ctx,
         found: Vec::new(),
         recording: true,
+        untyped: std::cell::Cell::new(false),
     };
     let mut env = Env::default();
     for (name, ty) in params {
@@ -81,7 +90,7 @@ pub fn hazards(
         }
     }
     analysis.block(body, &mut env);
-    analysis.found
+    (!analysis.untyped.get()).then_some(analysis.found)
 }
 
 /// A closed integer range. Every width SCE declares fits in `i128` with room
@@ -195,10 +204,18 @@ struct Analysis<'c, 'a> {
     /// rounds see narrower ranges than the loop really reaches; on for the
     /// one pass over the stable ranges, which is the one that reports.
     recording: bool,
+    /// Whether an expression the typed pipeline refuses was met — the body is
+    /// then not judged ([`hazards`]).
+    untyped: std::cell::Cell<bool>,
 }
 
 /// Rounds a loop is iterated before its still-growing ranges are widened.
 const ROUNDS_BEFORE_WIDENING: usize = 3;
+
+/// Rounds a widened loop head is narrowed by, from its post-fixpoint. One
+/// recovers a bound its body's guard imposes; a second lets that bound reach
+/// a value computed from the first.
+const ROUNDS_OF_NARROWING: usize = 2;
 
 impl Analysis<'_, '_> {
     fn block(&mut self, stmts: &[AlgorithmStmt], env: &mut Env) {
@@ -350,6 +367,20 @@ impl Analysis<'_, '_> {
                 self.widened(&head, &next)
             };
         }
+        // Narrowing: a widened head holds every value the loop can reach but
+        // usually more — a counter guarded by `run < 254` was widened to its
+        // whole type, and read AFTER the loop it would still be. `head` is a
+        // post-fixpoint (one more round from it stays inside it), so a round
+        // from it joined with the entry is inside it too and still holds
+        // every reachable value; keeping it while it shrinks is sound. The
+        // guard in the body is what brings the counter back to 0..254.
+        for _ in 0..ROUNDS_OF_NARROWING {
+            let refined = entry.join(&round(self, &head));
+            if refined == head || head.join(&refined) != head {
+                break;
+            }
+            head = refined;
+        }
         self.recording = recording;
         head
     }
@@ -396,8 +427,19 @@ impl Analysis<'_, '_> {
 
     /// `expr` as the typed tree the emitters lower, or `None` for one the
     /// typed pipeline refuses — that refusal is reported where it is lowered.
+    ///
+    /// Refused is what the validator path refuses before any backend lowers
+    /// it ([`judge_into`]): a name nothing declares, and a literal the type it
+    /// takes cannot hold. Either is a refusal of its own, and read as a value
+    /// it would make the analysis report an operation it only failed to read
+    /// (`reading + 300` is a literal out of `uint8`'s range, not an
+    /// overflow).
     fn typed(&self, expr: &str) -> Option<TypedExpr> {
-        let mut tree = resolve(expr, self.ctx).ok()?;
+        let judged = judge_into(expr, self.ctx, Expected::Hint(InferredType::Unknown));
+        let (Ok(_), Ok(mut tree)) = (judged, resolve(expr, self.ctx)) else {
+            self.untyped.set(true);
+            return None;
+        };
         infer_types(&mut tree, self.ctx);
         Some(tree)
     }
@@ -723,6 +765,75 @@ fn restrict(env: &mut Env, key: &str, op: BinOp, bound: Interval) {
     }
 }
 
+impl HazardKind {
+    /// What the operation can do, as the refusal says it.
+    fn described(self) -> &'static str {
+        match self {
+            HazardKind::Overflow => "overflow",
+            HazardKind::DivideByZero => "divide by zero",
+            HazardKind::MinDividedByMinusOne => "divide the minimum by -1",
+        }
+    }
+}
+
+/// The integer arithmetic contract, enforced (SCE_FORGE.md §3.4.1): an
+/// algorithm that does not declare `may-fail` is refused at the first
+/// operation the analysis cannot prove safe.
+///
+/// Judged once, before any backend renders, against the scope the renderer
+/// lowers the body in ([`AlgorithmTypes`](crate::forge::generator::AlgorithmTypes)),
+/// so every backend and `check` refuse the same documents. A `may-fail`
+/// algorithm is not judged: every operation of its body is checked when it
+/// runs, whatever the analysis could prove.
+pub(crate) fn check(
+    m: &crate::forge::model::AlgorithmModel,
+    imports: &[crate::forge::generator::ImportContext],
+    options: &crate::ForgeCompileOptions,
+) -> Result<(), crate::forge::error::ForgeError> {
+    use crate::forge::error::ValidationError;
+    use crate::forge::expression_site::ExpressionSite;
+    if m.signature.may_fail {
+        return Ok(());
+    }
+    let types = crate::forge::generator::AlgorithmTypes::collect(m, imports, options)?;
+    let ctx = types.type_ctx(m, imports);
+    let params: Vec<(String, AlgorithmValueType)> = m
+        .signature
+        .params
+        .iter()
+        .map(|p| (p.name.clone(), p.sce_type.clone()))
+        .collect();
+    // A body the typed pipeline refuses somewhere is not judged here: its
+    // refusal is raised where that expression is lowered.
+    let Some(first) = hazards(&params, &m.body, &ctx).and_then(|found| found.into_iter().next())
+    else {
+        return Ok(());
+    };
+    let at = ExpressionSite::new(&first.expr, first.spelling.as_ref()).locate(first.span.clone());
+    // The operation as written; the parsed text of it when the attribute
+    // cannot say (text over several rows), and the whole expression when
+    // the parser recorded no range.
+    let trimmed = first.expr.trim();
+    let operation = at.observed().unwrap_or_else(|| {
+        first
+            .span
+            .clone()
+            .and_then(|span| trimmed.get(span))
+            .unwrap_or(trimmed)
+            .to_string()
+    });
+    let refusal: crate::forge::error::ForgeError =
+        ValidationError::AlgorithmUndeclaredIntegerFailure {
+            algorithm: m.name.clone(),
+            operation,
+            hazard: first.kind.described().to_string(),
+            ty: first.ty.describe(),
+            observed: at.observed(),
+        }
+        .into();
+    Err(at.place(refusal))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -793,6 +904,7 @@ mod tests {
             .map(|(n, t)| (n.to_string(), AlgorithmValueType::Scalar(t.clone())))
             .collect();
         hazards(&params, body, &ctx)
+            .expect("every expression of a unit-test body types")
             .into_iter()
             .map(|h| (h.expr, h.kind))
             .collect()
@@ -818,6 +930,46 @@ mod tests {
         assert_eq!(
             analyse(&[("prev", SceType::Uint32)], &[], &body),
             vec![("prev + 1".to_string(), HazardKind::Overflow)]
+        );
+    }
+
+    #[test]
+    fn a_body_with_an_expression_that_does_not_type_is_not_judged() {
+        // `limt` is misspelt: the guard cannot be read, so `i + 1` would look
+        // unbounded. The misspelling has its own refusal where the guard is
+        // lowered; the analysis declines rather than name an overflow.
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("i", InferredType::from_sce_type(&SceType::Uint16));
+        ctx.reject_unknown_identifiers = true;
+        let body = [
+            var("i", AlgorithmValueType::Scalar(SceType::Uint16), "0"),
+            while_("i < limt", 8, vec![assign("i", "i + 1")]),
+            ret("i"),
+        ];
+        assert!(hazards(&[], &body, &ctx).is_none());
+    }
+
+    #[test]
+    fn a_counter_read_after_its_loop_keeps_the_bound_its_guard_imposes() {
+        // Widening takes `i` to all of uint8; narrowing brings it back to
+        // 0..200, the most the guarded increment reaches, so `i + 50` after
+        // the loop is at most 250 — safe. Without narrowing it would be
+        // reported, the COBS encoder's `run + 1` being the case that showed it.
+        let body = [
+            var("i", u8t(), "0"),
+            while_("i < 200", 256, vec![assign("i", "i + 1")]),
+            ret("i + 50"),
+        ];
+        assert!(analyse(&[], &[("i", SceType::Uint8)], &body).is_empty());
+        // A bound the guard does not impose is still not assumed.
+        let body = [
+            var("i", u8t(), "0"),
+            while_("i < 200", 256, vec![assign("i", "i + 1")]),
+            ret("i + 56"),
+        ];
+        assert_eq!(
+            analyse(&[], &[("i", SceType::Uint8)], &body),
+            vec![("i + 56".to_string(), HazardKind::Overflow)]
         );
     }
 

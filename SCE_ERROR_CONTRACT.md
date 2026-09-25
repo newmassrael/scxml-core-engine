@@ -732,6 +732,7 @@ references against a real document and drift silently.
 | `algorithm/lvalue-unsupported` | `validation` | no | SCE Protocol-Synthesis RFC §5.A |
 | `algorithm/return-missing` | `validation` | no | SCE Protocol-Synthesis RFC §5.A |
 | `algorithm/test-vector-unsupported-kind` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
+| `algorithm/undeclared-integer-failure` | `validation` | no | SCE Forge §3.4.1 |
 | `codec/dma-alignment-unsatisfiable` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
 | `codec/flag-bind-carrier-after-embed` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
 | `codec/flag-bind-duplicate-input` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |

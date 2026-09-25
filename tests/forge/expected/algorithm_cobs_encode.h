@@ -1,4 +1,4 @@
-// SCE-MAP: algorithm_cobs_encode:32 :: _forge_body
+// SCE-MAP: algorithm_cobs_encode:39 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
 // Runtime: none
@@ -26,10 +26,11 @@ inline std::vector<std::uint8_t> algorithm_cobs_encode(std::span<const std::uint
     bool done = false;
     while (done == false) {
         uint16_t q = p;
-        while (q < n && q - p < 254 && data[q] != 0) {
+        uint16_t run = 0;
+        while (q < n && run < 254 && data[q] != 0) {
             q = q + 1;
+            run = run + 1;
         }
-        uint16_t run = q - p;
         uint8_t code = run + 1;
         out.push_back(static_cast<std::uint8_t>(code));
         uint16_t k = p;

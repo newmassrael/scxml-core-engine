@@ -2728,6 +2728,16 @@ pub fn compile_forge_from_parsed(
     // prompted both halves.
     forge::transform_dep_check::check(parsed, label.diagnostic_label)?;
 
+    // The integer arithmetic contract (SCE_FORGE.md §3.4.1): an algorithm
+    // whose integer operation the range analysis cannot prove safe must
+    // declare `may-fail`. Judged here, once, before any language is rendered,
+    // for the reason the transform check above gives: the verdict must not
+    // depend on which backend was asked for.
+    if let forge::model::ForgeDocument::Algorithm(m) = &parsed.document {
+        forge::int_ranges::check(m, &import_ctx, options)
+            .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
+    }
+
     // `previous(x)` reads x from the activation before this one: x must be
     // a field of this document and must say what it was before the first
     // one (`sce:initial`). Refused here, before any language, for the same

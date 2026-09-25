@@ -6,6 +6,12 @@
 
   Exercises a record local built whole with <sce:set>, a field updated by
   <sce:assign>, and a record return (SCE_FORGE.md §4.12).
+
+  It declares may-fail (SCE_FORGE.md §3.4.1): a counter already at its
+  uint32 maximum cannot advance. Wrapping it to 0 would issue a stamp that
+  sorts before the one it follows — the clock running backwards, which is
+  the one thing an HLC exists to prevent — so the failure reaches the caller
+  instead. The oracle's maximum-counter case pins it on every backend.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -18,7 +24,7 @@
     <sce:param name="prev" type="record:Hlc"/>
     <sce:param name="now" type="int64"/>
     <sce:param name="node" type="uint64"/>
-    <sce:return type="record:Hlc"/>
+    <sce:return type="record:Hlc" may-fail="true"/>
   </sce:signature>
   <sce:body>
     <sce:var name="next" type="record:Hlc">

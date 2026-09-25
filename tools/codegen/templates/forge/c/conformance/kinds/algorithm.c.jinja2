@@ -32,7 +32,8 @@
 {% if f.output.list_of is defined %}
 {% set ns = namespace(width=1) %}
 {% for c in f.cases %}
-{% if c.expected | length > ns.width %}
+{# A case that names a failure has no `expected` to size the array by. #}
+{% if c.expected is defined and c.expected | length > ns.width %}
 {% set ns.width = c.expected | length %}
 {% endif %}
 {% endfor %}

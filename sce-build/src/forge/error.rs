@@ -1158,6 +1158,31 @@ pub enum ValidationError {
         observed: Option<String>,
     },
 
+    /// SCE_FORGE.md §3.4.1, the integer arithmetic contract: an integer
+    /// operation the range analysis ([`crate::forge::int_ranges`]) cannot
+    /// prove safe — it can overflow its width, divide by zero, or divide a
+    /// signed MIN by -1 — in an algorithm that does not declare
+    /// `<sce:return may-fail="true">`. The backends disagree on such a result,
+    /// so without the declaration there is nothing any of them may return.
+    ///
+    /// No `fix`: two repairs are right and the record cannot choose — declare
+    /// `may-fail` so the failure reaches the caller, or guard the operation so
+    /// the analysis proves it safe. `observed` is the operation as written.
+    #[error(
+        "algorithm '{algorithm}': `{operation}` can {hazard} ({ty}), and the algorithm does not \
+         declare <sce:return may-fail=\"true\"> — declare it, or guard the operation so it cannot"
+    )]
+    AlgorithmUndeclaredIntegerFailure {
+        algorithm: String,
+        operation: String,
+        /// What the operation can do: `overflow`, `divide by zero`, or
+        /// `divide the minimum by -1`.
+        hazard: String,
+        /// The integer type the operation computes in.
+        ty: String,
+        observed: Option<String>,
+    },
+
     /// RFC §synth-5-B variant primitive: the variant's enumerated
     /// arms don't cover the tag field's value domain AND no
     /// `<sce:default>` arm catches the unenumerated values. At least

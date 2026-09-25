@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: algorithm_cobs_encode:32 :: _forge_body"]
-// SCE-MAP: algorithm_cobs_encode:32 :: _forge_body
+#![doc = "SCE-MAP: algorithm_cobs_encode:39 :: _forge_body"]
+// SCE-MAP: algorithm_cobs_encode:39 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
 // Runtime: none
@@ -20,10 +20,11 @@ pub fn algorithm_cobs_encode(data: &[u8]) -> Result<SceBytes<32>, CapacityExceed
     let mut done: bool = false;
     while done == false {
         let mut q: u16 = p;
-        while q < n && q - p < 254 && data[(q) as usize] != 0 {
+        let mut run: u16 = 0;
+        while q < n && run < 254 && data[(q) as usize] != 0 {
             q = q + 1;
+            run = run + 1;
         }
-        let run: u16 = q - p;
         let code: u8 = (run + 1) as u8;
         out.push(code)?;
         let mut k: u16 = p;

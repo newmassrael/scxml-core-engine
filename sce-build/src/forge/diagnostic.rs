@@ -790,6 +790,11 @@ pub enum DiagnosticCode {
     AlgorithmAppendTargetNotBuffer,
     #[serde(rename = "algorithm/append-type-mismatch")]
     AlgorithmAppendTypeMismatch,
+    // ── The integer arithmetic contract (SCE_FORGE.md §3.4.1): an operation
+    //    the range analysis cannot prove safe, in an algorithm that does not
+    //    declare `may-fail`. ───────────────────────────────────────────────
+    #[serde(rename = "algorithm/undeclared-integer-failure")]
+    AlgorithmUndeclaredIntegerFailure,
 
     // ── SCXML semantic-validation (§wire-W5). Three of the four
     //    SCXML semantic failures fold into existing `validation/*`
@@ -3162,6 +3167,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // Byte-buffer-build (SCE_FORGE.md §4.12)
         AlgorithmAppendTargetNotBuffer,
         AlgorithmAppendTypeMismatch,
+        // Integer arithmetic contract (SCE_FORGE.md §3.4.1)
+        AlgorithmUndeclaredIntegerFailure,
         // SCXML semantic (§wire-W5)
         ScxmlTopLevelScriptUnloaded,
         // §scxml-3.2 datamodel attribute + §scxml-B-1 Null data model
@@ -3837,6 +3844,9 @@ impl DiagnosticCode {
                 Some("SCE Forge §4.12")
             }
 
+            // ── The integer arithmetic contract (SCE_FORGE.md §3.4.1) ──
+            AlgorithmUndeclaredIntegerFailure => Some("SCE Forge §3.4.1"),
+
             // ── Algorithm §synth-5-F build-time const-fold ─────────────
             AlgorithmConstNotFoldable
             | AlgorithmConstFoldBudgetExceeded
@@ -4501,6 +4511,7 @@ impl DiagnosticCode {
             AlgorithmCallArgCountMismatch => "algorithm/call-arg-count-mismatch",
             AlgorithmAppendTargetNotBuffer => "algorithm/append-target-not-buffer",
             AlgorithmAppendTypeMismatch => "algorithm/append-type-mismatch",
+            AlgorithmUndeclaredIntegerFailure => "algorithm/undeclared-integer-failure",
             ScxmlTopLevelScriptUnloaded => "scxml/top-level-script-unloaded",
             ScxmlUnsupportedDatamodel => "scxml/unsupported-datamodel",
             ScxmlNullDatamodelForbidsConstruct => "scxml/null-datamodel-forbids-construct",
@@ -6405,6 +6416,24 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: observed.clone(),
             fix: None,
             key_fragments: vec![target.clone(), got.clone()],
+        },
+        ValidationError::AlgorithmUndeclaredIntegerFailure {
+            algorithm,
+            operation,
+            hazard,
+            ty,
+            observed,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::AlgorithmUndeclaredIntegerFailure,
+            stage: Stage::Validation,
+            expected: None,
+            // The operation as written is what the author guards or declares
+            // for; its type and hazard are the message's, and the key's.
+            actual: observed.clone(),
+            // Two repairs are right — declare `may-fail`, or guard the
+            // operation — so the record names neither.
+            fix: None,
+            key_fragments: vec![algorithm.clone(), operation.clone(), hazard.clone(), ty.clone()],
         },
         ValidationError::CodecVariantArmUnreachable {
             codec,
@@ -12050,6 +12079,19 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:e63c3542ddb12c1f","code":"algorithm/append-type-mismatch","stage":"validation","spec":"SCE Forge §4.12","message":"algorithm: <sce:append target=\"out\">: expr must be uint8 or bytes, got uint16","expected":["uint8","bytes"],"actual":"wide"}"#,
             ),
+            // ── The integer arithmetic contract (SCE_FORGE.md §3.4.1) ─
+            (
+                "forge/algorithm-undeclared-integer-failure",
+                ValidationError::AlgorithmUndeclaredIntegerFailure {
+                    algorithm: "tick".into(),
+                    operation: "prev + 1".into(),
+                    hazard: "overflow".into(),
+                    ty: "uint32".into(),
+                    observed: Some("prev + 1".into()),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:1ae55df0f9123e20","code":"algorithm/undeclared-integer-failure","stage":"validation","spec":"SCE Forge §3.4.1","message":"algorithm 'tick': `prev + 1` can overflow (uint32), and the algorithm does not declare <sce:return may-fail=\"true\"> — declare it, or guard the operation so it cannot","actual":"prev + 1"}"#,
+            ),
             // ── §synth-5-F build-time const-fold (SCE Protocol-Synthesis RFC §synth-5-F) ─
             (
                 "forge/algorithm-const-not-foldable",
@@ -15057,6 +15099,7 @@ mod tests {
 
             // ── Deterministic fix or no fix; expected=None ────
             XmlParse
+            | AlgorithmUndeclaredIntegerFailure
             | XmlSchemaValidation
             | XmlFileNotFound
             | XmlXIncludeMissingHref
@@ -15955,6 +15998,7 @@ mod tests {
                 | AlgorithmCallArgCountMismatch
                 | AlgorithmAppendTargetNotBuffer
                 | AlgorithmAppendTypeMismatch
+                | AlgorithmUndeclaredIntegerFailure
                 | ScxmlTopLevelScriptUnloaded
                 | ScxmlUnsupportedDatamodel
                 | ScxmlNullDatamodelForbidsConstruct
@@ -16256,7 +16300,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            390,
+            391,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
              expected 390 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
@@ -16906,6 +16950,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | AlgorithmCallArgCountMismatch
             | AlgorithmAppendTargetNotBuffer
             | AlgorithmAppendTypeMismatch
+            | AlgorithmUndeclaredIntegerFailure
             | ScxmlUnsupportedDatamodel
             | ScxmlNullDatamodelForbidsConstruct
             | ScxmlStaticDatamodelRule

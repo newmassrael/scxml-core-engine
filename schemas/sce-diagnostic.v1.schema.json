@@ -105,6 +105,7 @@
         "algorithm/call-arg-count-mismatch",
         "algorithm/append-target-not-buffer",
         "algorithm/append-type-mismatch",
+        "algorithm/undeclared-integer-failure",
         "scxml/top-level-script-unloaded",
         "scxml/unsupported-datamodel",
         "scxml/null-datamodel-forbids-construct",

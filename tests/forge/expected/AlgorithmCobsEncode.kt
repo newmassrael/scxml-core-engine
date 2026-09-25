@@ -1,4 +1,4 @@
-// SCE-MAP: algorithm_cobs_encode:32 :: _forge_body
+// SCE-MAP: algorithm_cobs_encode:39 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
 // Runtime: none
@@ -23,10 +23,11 @@ fun algorithmCobsEncode(data: ByteArray): ByteArray {
     var done: Boolean = false
     while (done == false) {
         var q: UShort = p
-        while (q < n && (q.toUInt() - p.toUInt()).toUShort() < 254.toUShort() && data[(q).toInt()].toUByte() != 0.toUByte()) {
+        var run: UShort = 0.toUShort()
+        while (q < n && run < 254.toUShort() && data[(q).toInt()].toUByte() != 0.toUByte()) {
             q = (q.toUInt() + 1.toUInt()).toUShort()
+            run = (run.toUInt() + 1.toUInt()).toUShort()
         }
-        var run: UShort = (q.toUInt() - p.toUInt()).toUShort()
         var code: UByte = (run.toUInt() + 1.toUInt()).toUByte()
         out.add((code).toByte())
         var k: UShort = p

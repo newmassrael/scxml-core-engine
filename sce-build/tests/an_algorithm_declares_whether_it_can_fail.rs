@@ -161,16 +161,50 @@ fn only_a_backend_with_the_checked_lowering_accepts_the_algorithm() {
             ),
         }
     }
+}
+
+/// The same increment, guarded so the range analysis proves it cannot pass
+/// `uint32`'s maximum: an algorithm that needs no declaration.
+fn guarded_document() -> String {
+    document("").replace(
+        r#"<sce:return expr="prev + 1"/>"#,
+        r#"<sce:if cond="prev &lt; 4294967295">
+      <sce:return expr="prev + 1"/>
+    </sce:if>
+    <sce:return expr="prev"/>"#,
+    )
+}
+
+/// The contract, enforced (SCE_FORGE.md §3.4.1): an operation the analysis
+/// cannot prove safe, in an algorithm that does not declare `may-fail`, is
+/// refused — on every backend alike, at the operation as written — and the
+/// same operation behind a guard that bounds it is accepted.
+#[test]
+fn an_undeclared_operation_that_can_fail_is_refused_where_it_is_written() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("probe_may_fail.scxml");
-    // The same algorithm without the declaration is accepted: the refusal
-    // is of the declaration, not of the document.
     std::fs::write(&path, document("")).expect("write document");
+    for &lang in Language::ALL {
+        let err = sce_build::compile_forge_file(&path, lang, &[], &ForgeCompileOptions::default())
+            .err()
+            .unwrap_or_else(|| panic!("{lang:?} accepted `prev + 1` without may-fail"));
+        let text = err.to_string();
+        assert!(
+            text.contains("`prev + 1` can overflow (uint32)") && text.contains("may-fail"),
+            "{lang:?}: {text}"
+        );
+        assert_eq!(
+            err.location.line,
+            Some(8),
+            "{lang:?}: placed at the body's <sce:return>: {text}"
+        );
+    }
+    std::fs::write(&path, guarded_document()).expect("write document");
     for &lang in Language::ALL {
         if let Err(err) =
             sce_build::compile_forge_file(&path, lang, &[], &ForgeCompileOptions::default())
         {
-            panic!("{lang:?} refused the undeclared algorithm: {err}");
+            panic!("{lang:?} refused the guarded increment the analysis proves: {err}");
         }
     }
 }
@@ -194,8 +228,8 @@ fn rust_checks_each_operation_and_returns_through_a_result() {
     ] {
         assert!(checked.contains(needle), "missing `{needle}`:\n{checked}");
     }
-    let plain = generate("probe_may_fail", &document(""), &[], Language::Rust)
-        .expect("an undeclared algorithm generates");
+    let plain = generate("probe_may_fail", &guarded_document(), &[], Language::Rust)
+        .expect("a proven algorithm generates without the declaration");
     assert!(
         !plain.contains("sce_forge_runtime") && plain.contains("prev + 1"),
         "an undeclared algorithm is emitted as before:\n{plain}"

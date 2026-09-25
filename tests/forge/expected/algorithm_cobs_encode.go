@@ -1,4 +1,4 @@
-// SCE-MAP: algorithm_cobs_encode:32 :: _forge_body
+// SCE-MAP: algorithm_cobs_encode:39 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
 // Runtime: none
@@ -17,10 +17,11 @@ func AlgorithmCobsEncode(data []byte) []byte {
     var done bool = false
     for done == false {
         var q uint16 = p
-        for q < n && q - p < 254 && data[q] != 0 {
+        var run uint16 = 0
+        for q < n && run < 254 && data[q] != 0 {
             q = q + 1;
+            run = run + 1;
         }
-        var run uint16 = q - p
         var code uint8 = uint8(run + 1)
         out = append(out, byte(code))
         var k uint16 = p
