@@ -11,6 +11,7 @@
 
 {% include 'license_header.jinja2' %}
 {%- import 'c/scriptengine.jinja2' as se %}
+{%- import 'c/param_macros.jinja2' as param_macros %}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {%- import '_macros/sce_annotation_marker.jinja2' as annot %}
 
@@ -683,33 +684,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csy
 {% if action.params %}
                 sce_host_send_param_t _host_params[{{ action.params | length }}];
                 int _host_param_count = 0;
-{% for param in action.params %}
-{% if param.is_static_literal %}
-                static const char _host_param_value_{{ loop.index0 }}[] = "{{ param.static_value | escape_c }}";
-                _host_params[_host_param_count].name = "{{ param.name | escape_c }}";
-                _host_params[_host_param_count].value = _host_param_value_{{ loop.index0 }};
-                _host_param_count++;
-{% else %}
-                char _host_param_value_{{ loop.index0 }}[SCE_MAX_DATA_LEN];
-                bool _host_param_ok_{{ loop.index0 }} = false;
-{{ se.lua_eval_to_wire_string(param.expr, '_host_param_value_' ~ loop.index0, 'sizeof(_host_param_value_' ~ loop.index0 ~ ')', '_host_param_ok_' ~ loop.index0) }}
-                if (_host_param_ok_{{ loop.index0 }}) {
-                    _host_params[_host_param_count].name = "{{ param.name | escape_c }}";
-                    _host_params[_host_param_count].value = _host_param_value_{{ loop.index0 }};
-                    _host_param_count++;
-                } else {
-                    /* W3C SCXML 5.7.1: report the failure and omit the name
-                       and value — the act still happens, without a field the
-                       document could not produce. Same rule the cpp arm's
-                       `param_eval_failed` applies. */
-{% if 'error.execution' in model.events %}
-                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                        "<send> <param name='{{ param.name | escape_c }}'> expr failed to evaluate");
-{% endif %}
-                }
-{% endif %}
-{% endfor %}
+{{ param_macros.collect_host_params_into(action.params, model, csym_prefix, '_host_params', '_host_param_count', '_host_param', '<send>', '                ') -}}
 {% endif %}
                 sce_host_send_request_t _host_req;
                 _host_req.processor_type = "{{ action.send_type | escape_c }}";

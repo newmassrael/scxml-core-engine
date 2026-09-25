@@ -41,14 +41,10 @@ PY
 # thing a document with no host behind it cannot afford.
 mutation_case "the scope is left open" <<'PY'
 edit("sce-build/src/forge/type_ctx.rs",
-     """            host_only: None,
-        },
-    );
+     """    );
     ctx.insert_record("_event", RecordShape::Open);
     close_the_scope(&mut ctx);""",
-     """            host_only: None,
-        },
-    );
+     """    );
     ctx.insert_record("_event", RecordShape::Open);""")
 PY
 

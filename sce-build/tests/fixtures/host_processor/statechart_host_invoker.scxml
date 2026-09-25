@@ -29,6 +29,20 @@
                started `probe` for it, so `started2` stays 0 and the host
                sees `probe` twice.
 
+  And what the request says is evaluated when the invocation starts, which
+  `evaluating` holds apart from the literal case above (W3C SCXML 6.4.1):
+
+    req      — `srcexpr` and `namelist` read the data model; a repeated
+               `<param>` name keeps both values; a `<param>` that cannot be
+               evaluated is reported and dropped (W3C SCXML 5.7.1) while the
+               invocation still starts.
+    req2     — `<content expr>` crosses as the text of its value.
+    req3     — a `srcexpr` that cannot be evaluated starts nothing and
+               reports it.
+
+    dropped  — the error.execution events `evaluating` saw: one for the bad
+               `<param>` and one for req3, so 2.
+
   The generated machine is compiled with the host-invoker declaration
   `x-sce-host` (scripts/regen_host_processor.sh names the flag; an XML
   comment cannot spell a double hyphen).
@@ -42,6 +56,9 @@
     <data id="refused" expr="0"/>
     <data id="ended" expr="0"/>
     <data id="entered" expr="0"/>
+    <data id="destination" expr="'pane://dyn'"/>
+    <data id="n" expr="7"/>
+    <data id="dropped" expr="0"/>
   </datamodel>
 
   <state id="invoking">
@@ -66,6 +83,23 @@
     <!-- Leaving the state is what cancels the invocation. `leave` is
          raised by the host so the test decides when the exit happens. -->
     <transition event="leave" target="done"/>
+    <transition event="evaluate" target="evaluating"/>
+  </state>
+
+  <state id="evaluating">
+    <invoke id="req" type="x-sce-host" srcexpr="destination" namelist="n">
+      <param name="twice" expr="'a'"/>
+      <param name="twice" expr="n + 1"/>
+      <param name="bad" expr="n.nope.deeper"/>
+    </invoke>
+    <invoke id="req2" type="x-sce-host">
+      <content expr="'body:' + n"/>
+    </invoke>
+    <invoke id="req3" type="x-sce-host" srcexpr="n.nope.deeper"/>
+
+    <transition event="error.execution">
+      <assign location="dropped" expr="dropped + 1"/>
+    </transition>
   </state>
 
   <state id="done">

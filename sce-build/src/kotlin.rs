@@ -331,8 +331,9 @@ pub fn compute_invoke_entries(model: &SCXMLModel) -> BTreeMap<String, Vec<serde_
     }
 
     // §scxml-6.4.1: `<invoke>` naming a processor this platform does not
-    // implement. It carries no child class, no done event and no params —
-    // the deferred closure raises `error.execution` and returns. Kotlin's
+    // implement. Unless the host declared the type, it carries no child
+    // class and no done event — the deferred closure raises
+    // `error.execution` and returns. Kotlin's
     // runtime-closure invoke shape means the "execute" step is the closure
     // body, so no separate execute-site arm is needed.
     for (state_id, state) in &model.states {
@@ -356,8 +357,16 @@ pub fn compute_invoke_entries(model: &SCXMLModel) -> BTreeMap<String, Vec<serde_
                     "host_served": ui.host_served,
                     "invoke_type": ui.invoke_type.as_str(),
                     // Only meaningful for a host-served entry: what the
-                    // document said to invoke, and with what.
+                    // document said to invoke, and with what. The `*expr`
+                    // fields and `namelist` are evaluated when the invocation
+                    // starts (§scxml-6.4.1); a list of fields spelled here
+                    // rather than the whole struct serialized, so each one
+                    // the template reads was chosen to reach it.
                     "src": ui.src.as_str(),
+                    "srcexpr": ui.srcexpr.as_str(),
+                    "namelist": ui.namelist.as_str(),
+                    "content": ui.content.as_str(),
+                    "contentexpr": ui.contentexpr.as_str(),
                     "params": serde_json::to_value(&ui.base.params).unwrap_or_default(),
                 }));
             }

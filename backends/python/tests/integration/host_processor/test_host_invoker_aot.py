@@ -128,6 +128,38 @@ def test_a_registered_invoker_is_started_with_what_the_document_wrote() -> None:
     ), f"the second invocation was not started as itself: {log[1]}"
 
 
+def test_what_the_request_says_is_evaluated_when_the_invocation_starts() -> None:
+    """W3C SCXML 6.4.1: ``srcexpr``, ``namelist``, ``<param expr>`` and
+    ``<content expr>`` are read from the data model when the invocation
+    starts. The request used to carry the literal params alone, so a document
+    that computed what to invoke handed the host an empty description."""
+    engine = _sm.create_engine()
+    starts = []
+
+    def handler(ev: HostInvokeEvent) -> Optional[HostInvokeResponse]:
+        if ev.start is not None:
+            starts.append(ev.start)
+        return None
+
+    engine.register_invoker(DECLARED_TYPE, handler)
+    engine.initialize()
+    starts.clear()  # `probe` / `probe2`, which the case above already reads
+    engine.send_external(Event.EVALUATE)
+    engine.advance_time(0)
+
+    by_id = {s.invoke_id: s for s in starts}
+    # `req3`'s srcexpr cannot be evaluated, so it is never started.
+    assert set(by_id) == {"req", "req2"}, f"started: {sorted(by_id)}"
+    req = by_id["req"]
+    assert req.src == "pane://dyn", f"srcexpr was not evaluated: {req.src!r}"
+    # A repeated name keeps both values in document order; the `<param>` that
+    # failed is absent (W3C SCXML 5.7.1) while the invocation still started.
+    assert req.params == {"n": ["7"], "twice": ["a", "8"]}, f"params: {req.params}"
+    assert by_id["req2"].content == "body:7", f"content: {by_id['req2'].content!r}"
+    # One error.execution for the dropped `<param>`, one for `req3`.
+    assert _counter(engine, "dropped") == 2, "a failed evaluation was not reported"
+
+
 def test_leaving_the_state_cancels_the_invocation() -> None:
     """The invocation ends with the state that started it. Without this the
     host is told to begin work and never told to stop — which no configuration

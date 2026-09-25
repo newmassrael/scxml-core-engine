@@ -331,7 +331,7 @@
             return _parse_delay_text(value)
         return 0
 
-    def _build_http_params(self, engine, params_specs, namelist: str):
+    def _build_http_params(self, engine, params_specs, namelist: str, element: str):
         """W3C SCXML C.2 — the form-encoded multi-map handed to
         `engine.perform_http_send`, RENDERED from the one evaluation
         `_eval_send_payload` performs.
@@ -350,9 +350,14 @@
         absolute URL. An arm that already called `_eval_send_payload`,
         because it also needs the data for a non-HTTP target, renders its
         result with `_wire_params_from_payload` instead, so neither path
-        evaluates twice."""
+        evaluates twice.
+
+        An `<invoke>` the host runs (W3C SCXML 6.4.1) hands its `<param>`
+        and namelist values over the same way, as text under a name that
+        may repeat, so it is the other caller. `element` is how a refusal
+        names the element it is about."""
         return self._wire_params_from_payload(
-            self._eval_send_payload(engine, params_specs, "", "", namelist)
+            self._eval_send_payload(engine, params_specs, "", "", namelist, element)
         )
 
     def _wire_params_from_payload(self, marshalled):
@@ -385,8 +390,11 @@
         content: str,
         lua_content_expr: str,
         namelist: str,
+        element: str,
     ):
         """W3C SCXML 5.10 — marshal `<send>` payload into `_event.data`.
+        `element` is how a refusal names the element (`<send>`, or the
+        `<invoke>` `_build_http_params` renders for).
 
         Precedence per W3C 6.2: `<content expr>` > `<content>` literal >
         `<param>` + namelist hybrid. When all three are absent, returns
@@ -422,7 +430,7 @@
                 ).to_python()
             except _ScriptError:
                 self._raise_error_execution(
-                    engine, "<send> contentexpr failed to evaluate"
+                    engine, f"{element} contentexpr failed to evaluate"
                 )
                 raise _ActionAbort
         if content:
@@ -446,7 +454,7 @@
                 ).to_python()
             except _ScriptError:
                 self._raise_error_execution(
-                    engine, "<send> <content> failed to evaluate"
+                    engine, f"{element} <content> failed to evaluate"
                 )
                 raise _ActionAbort
         if not params and not namelist:
@@ -459,7 +467,7 @@
                 ):
                     self._raise_error_execution(
                         engine,
-                        f"<send> namelist names '{var}', which is not declared",
+                        f"{element} namelist names '{var}', which is not declared",
                     )
                     raise _ActionAbort
                 try:
@@ -468,7 +476,7 @@
                     ).to_python()
                 except _ScriptError:
                     self._raise_error_execution(
-                        engine, f"<send> namelist entry '{var}' failed to evaluate"
+                        engine, f"{element} namelist entry '{var}' failed to evaluate"
                     )
                     raise _ActionAbort
         # W3C SCXML 6.2: a `<param>` name may repeat, and test178 in the IRP
@@ -497,7 +505,7 @@
                 # nothing at all, so a document that miscomputed one param
                 # lost the whole message and stalled with no event to act on.
                 self._raise_error_execution(
-                    engine, f"<send> <param name='{name}'> expr failed to evaluate"
+                    engine, f"{element} <param name='{name}'> expr failed to evaluate"
                 )
                 continue
         return marshalled

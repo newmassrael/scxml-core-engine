@@ -913,6 +913,11 @@ const INERT_DESTINATIONS: &[&str] = &[
     // the children ARE the value, travelling out of the machine as text.
     "scheduleHttpSend",
     "HostSendRequest",
+    // The literal `src` / `<content>` of an `<invoke>` the host runs: fields
+    // of the request handed to the host's invoker, travelling out of the
+    // machine as text exactly as `HostSendRequest`'s do. The `srcexpr` /
+    // `contentexpr` arms beside them go through `to_script_source_expr`.
+    "HostInvokeRequest",
     // An event's PAYLOAD. §scxml-B-2's first reading — content that opens with
     // `<` is an XML document — is a value the receiver's binding turns into a
     // DOM, so the source text is what has to arrive; the evaluated arm beside

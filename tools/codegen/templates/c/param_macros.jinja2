@@ -1,0 +1,51 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+{%- import 'c/scriptengine.jinja2' as se %}
+{# W3C SCXML 5.7: collect `<param>` values into an already-declared
+   `sce_host_send_param_t` array `arr`, counted by the `int` named `count`,
+   as text.
+
+   A `<send>` whose type the host serves (W3C 6.2.5) and an `<invoke>` the
+   host runs (W3C 6.4.1) hand their params over as the same pairs, and they
+   differ only in the array they fill and the element a refusal names.
+   Written once so a `<param>` shape handled for one is handled for the
+   other; the host invoke had received the literal ones alone.
+
+   A failed evaluation drops the pair AND reports it: W3C SCXML 5.7.1 puts
+   both halves on one clause and names no processor, so the transport cannot
+   change the answer. A repeated name is a second pair, so every value
+   crosses.
+
+   `prefix` names the locals each pair needs, so two callers in one function
+   cannot collide. `element` is how a refusal names the element (`<send>`,
+   `<invoke>`). `model` and `csym_prefix` are parameters because a macro body
+   does not see the render context. #}
+{% macro collect_host_params_into(params, model, csym_prefix, arr, count, prefix, element, indent) %}
+{% for param in params %}
+{% if param.is_static_literal %}
+{{ indent }}static const char {{ prefix }}_value_{{ loop.index0 }}[] = "{{ param.static_value | escape_c }}";
+{{ indent }}{{ arr }}[{{ count }}].name = "{{ param.name | escape_c }}";
+{{ indent }}{{ arr }}[{{ count }}].value = {{ prefix }}_value_{{ loop.index0 }};
+{{ indent }}{{ count }}++;
+{% else %}
+{{ indent }}char {{ prefix }}_value_{{ loop.index0 }}[SCE_MAX_DATA_LEN];
+{{ indent }}bool {{ prefix }}_ok_{{ loop.index0 }} = false;
+{{ se.lua_eval_to_wire_string(param.expr or param.location, prefix ~ '_value_' ~ loop.index0, 'sizeof(' ~ prefix ~ '_value_' ~ loop.index0 ~ ')', prefix ~ '_ok_' ~ loop.index0) }}
+{{ indent }}if ({{ prefix }}_ok_{{ loop.index0 }}) {
+{{ indent }}    {{ arr }}[{{ count }}].name = "{{ param.name | escape_c }}";
+{{ indent }}    {{ arr }}[{{ count }}].value = {{ prefix }}_value_{{ loop.index0 }};
+{{ indent }}    {{ count }}++;
+{{ indent }}} else {
+{{ indent }}    /* W3C SCXML 5.7.1: report the failure and omit the name
+{{ indent }}       and value — the act still happens, without a field the
+{{ indent }}       document could not produce. Same rule the cpp arm's
+{{ indent }}       `param_eval_failed` applies. */
+{% if 'error.execution' in model.events %}
+{{ indent }}    {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+{{ indent }}        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+{{ indent }}        "{{ element }} <param name='{{ param.name | escape_c }}'> {% if param.expr %}expr failed to evaluate{% else %}location could not be read{% endif %}");
+{% endif %}
+{{ indent }}}
+{% endif %}
+{% endfor %}
+{% endmacro %}

@@ -94,6 +94,12 @@ pub enum ScriptEngineCauseKind {
     /// SCE Mesh §9.5 — `<invoke type="sce:mesh-rpc">` with `srcexpr`
     /// target; the generated entry block calls `evaluateExpression`.
     MeshRpcSrcExpr { invoke_id: String },
+    /// §scxml-6.4.1 — an `<invoke>` the HOST runs whose request carries
+    /// something evaluated when it starts: `srcexpr`, `namelist`,
+    /// `<content expr>`, or a `<param>` that is not a static literal. Only a
+    /// host-served invoke evaluates them; one nobody declared raises
+    /// `error.execution` and reads nothing.
+    HostInvokeExpr { invoke_id: String },
     /// §scxml-5.7 — `<donedata>` carries at least one `<param>` whose
     /// value must be evaluated when the final state is entered.
     DonedataParam { state_id: String },
@@ -157,6 +163,7 @@ impl ScriptEngineCauseKind {
             | C::HybridInvoke { .. }
             | C::StaticInvokeNamelist { .. }
             | C::MeshRpcSrcExpr { .. }
+            | C::HostInvokeExpr { .. }
             | C::DonedataContent { .. }
             | C::ChildInvokeNeedsScriptEngine { .. } => false,
         }
@@ -308,6 +315,9 @@ impl ScriptEngineCauseKind {
             }
             C::MeshRpcSrcExpr { invoke_id } => {
                 ScriptEngineCauseRecord::at_invoke("mesh-rpc-srcexpr", invoke_id)
+            }
+            C::HostInvokeExpr { invoke_id } => {
+                ScriptEngineCauseRecord::at_invoke("host-invoke-expr", invoke_id)
             }
             C::DonedataParam { state_id } => {
                 ScriptEngineCauseRecord::at_state("donedata-param", state_id)
@@ -645,11 +655,60 @@ fn collect_invoke_causes(invoke: &Invoke, out: &mut Vec<NeedsScriptEngineCause>)
                 ));
             }
         }
-        // §scxml-6.4.1: the whole lowering is one `error.execution` raise
-        // with a compile-time-constant message. Nothing is evaluated, so
-        // an unsupported invoke never pulls in a script engine.
-        Invoke::Unsupported(_) => {}
+        // §scxml-6.4.1: an invoke nobody declared lowers to one
+        // `error.execution` raise and evaluates nothing. One the host runs
+        // evaluates its request when it starts.
+        Invoke::Unsupported(info) => {
+            if let Some(cause) = host_invoke_cause(info) {
+                out.push(cause);
+            }
+        }
     }
+}
+
+/// The cause a host-served `info` costs, if its request carries anything
+/// evaluated when it starts (§scxml-6.4.1).
+fn host_invoke_cause(info: &crate::model::UnsupportedInvokeInfo) -> Option<NeedsScriptEngineCause> {
+    let evaluates = !info.srcexpr.is_empty()
+        || !info.namelist.is_empty()
+        || !info.contentexpr.is_empty()
+        || info.base.params.iter().any(|p| !p.is_static_literal);
+    (info.host_served && evaluates).then(|| {
+        NeedsScriptEngineCause::new(
+            ScriptEngineCauseKind::HostInvokeExpr {
+                invoke_id: info.base.invoke_id.clone(),
+            },
+            info.base.source_location.as_ref(),
+        )
+    })
+}
+
+/// Record the causes of the invokes a host declaration has just made
+/// host-served (§scxml-6.4.1).
+///
+/// The declaration is applied after analysis, on every path that takes one
+/// (`host_processor_analyzer::declare_host_surfaces`), so analysis saw these
+/// invokes before it knew anyone would run them. Recorded here rather than
+/// by re-running the whole analysis, which would re-derive every other cause
+/// the model already carries.
+pub fn record_host_invoke_causes(model: &mut SCXMLModel) {
+    let mut found = Vec::new();
+    for state in model.states.values() {
+        for invoke in &state.invokes {
+            if let Invoke::Unsupported(info) = invoke {
+                if let Some(cause) = host_invoke_cause(info) {
+                    found.push(cause);
+                }
+            }
+        }
+    }
+    for cause in found {
+        if !model.script_engine_causes.contains(&cause) {
+            model.script_engine_causes.push(cause);
+        }
+    }
+    // The invariant `needs_script_engine == !script_engine_causes.is_empty()`.
+    model.needs_script_engine = !model.script_engine_causes.is_empty();
 }
 
 fn push_child_invoke_cause(common: &InvokeSessionCommon, out: &mut Vec<NeedsScriptEngineCause>) {

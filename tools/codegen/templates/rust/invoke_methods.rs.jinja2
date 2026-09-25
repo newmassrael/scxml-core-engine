@@ -1,5 +1,6 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+{% from 'param_macros.rs.jinja2' import collect_params_into %}
 
 {% macro hybrid_child_tick(invoke_info, slot) %}
         if !self.pending_done_invoke_{{ invoke_info.field_suffix }} {
@@ -463,18 +464,70 @@
                 // the DOCUMENT's, not the per-instance one the defer queue
                 // carries: `done.invoke.<id>` is the name the author wrote a
                 // transition for, so it is the name the host must answer on.
-                let mut host_invoke_params = std::collections::HashMap::<String, Vec<String>>::new();
-{% for param in invoke_info.params %}
-{% if param.is_static_literal %}
-                host_invoke_params.entry("{{ param.name | escape_rust }}".to_string()).or_default().push("{{ param.static_value | escape_rust }}".to_string());
+                // §scxml-6.4.1: what the request says is evaluated now, when
+                // the invocation starts, by the rules the other invoke kinds
+                // follow: an attribute that cannot be evaluated starts
+                // nothing, and a `<param>` that cannot is reported and left
+                // out (§scxml-5.7.1).
+                #[allow(unused_mut)]
+                let mut host_invoke_src = "{{ invoke_info.src | default('', true) | escape_rust }}".to_string();
+                #[allow(unused_mut)]
+                let mut host_invoke_content = "{{ invoke_info.content | default('', true) | escape_rust }}".to_string();
+{% for attr, expr in [('src', invoke_info.srcexpr), ('content', invoke_info.contentexpr)] %}
+{% if expr %}
+                {
+                    self.ensure_script_engine();
+                    let sid = self.session_id.as_ref().unwrap().clone();
+                    let se = self.script_engine.clone();
+                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                    match se.evaluate_expression(&sid, "{{ expr | to_lua_expr | escape_rust }}") {
+                        Ok(val) => host_invoke_{{ attr }} = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val),
+                        Err(_) => {
+{% if 'error.execution' in model.events %}
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke {{ attr }}expr='{{ expr | escape_rust }}'> could not be evaluated"));
+{% endif %}
+                            continue;
+                        }
+                    }
+                }
 {% endif %}
 {% endfor %}
+                let mut host_invoke_params = std::collections::HashMap::<String, Vec<String>>::new();
+{% if invoke_info.namelist %}
+                {
+                    // §scxml-6.4.1: a namelist location that is not declared,
+                    // or does not evaluate, starts nothing — the rule the
+                    // scxml invoke reads its namelist by.
+                    self.ensure_script_engine();
+                    let sid = self.session_id.as_ref().unwrap().clone();
+                    let se = self.script_engine.clone();
+                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                    let mut namelist_failed = false;
+{% for name in invoke_info.namelist | split %}
+                    if !namelist_failed {
+                        match (se.has_variable(&sid, "{{ name }}"), se.evaluate_expression(&sid, "{{ name }}")) {
+                            (true, Ok(val)) => host_invoke_params.entry("{{ name }}".to_string()).or_default().push(::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val)),
+                            _ => {
+{% if 'error.execution' in model.events %}
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "<invoke> namelist names '{{ name }}', which could not be read"));
+{% endif %}
+                                namelist_failed = true;
+                            }
+                        }
+                    }
+{% endfor %}
+                    if namelist_failed {
+                        continue;
+                    }
+                }
+{% endif %}
+{{ collect_params_into(invoke_info.params, model, 'host_invoke_params', machine_name, '<invoke>', 'invoke') }}
                 let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
                     processor_type: "{{ invoke_info.invoke_type | escape_rust }}".to_string(),
                     invoke_id: "{{ invoke_info.invoke_id }}".to_string(),
-                    src: "{{ invoke_info.src | default('', true) | escape_rust }}".to_string(),
+                    src: host_invoke_src,
                     params: host_invoke_params,
-                    content: "{{ invoke_info.content | default('', true) | escape_rust }}".to_string(),
+                    content: host_invoke_content,
                 });
                 if !started {
                     // §scxml-6.4.1: declared but no invoker registered. The

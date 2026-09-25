@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 0e4810627dfdd86a6e46a26ed703f8821d03ff03c037ab7267b127e02a3a3d8e
+// source-hash: 5a23c8ada2ea5d406d65687cb2a17b08679d5cf3d6429f3e63eef5a8866c8941
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/host_processor/statechart_host_processor.scxml
@@ -425,7 +425,8 @@ class StatechartHostProcessorStateMachine(
             // locally and the document would see the act twice.
             run {
                 val hostParams = mutableMapOf<String, List<String>>()
-                hostParams["within"] = listOf("2500")
+                hostParams["within"] =
+                    (hostParams["within"] ?: emptyList()) + "2500"
                 val hostEventName = "watch.turn"
                 val hostRequest = HostSendRequest(
                     processorType = "x-sce-host",

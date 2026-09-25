@@ -60,7 +60,9 @@ class HostInvokerTest {
             "started2" -> sm.started2()
             "refused" -> sm.refused()
             "ended" -> sm.ended()
-            else -> sm.entered()
+            "entered" -> sm.entered()
+            "dropped" -> sm.dropped()
+            else -> error("the fixture declares no counter named `$name`")
         }
         assertNotNull(value, "the fixture declares `$name` and the machine could not read it")
         return value!!
@@ -119,6 +121,42 @@ class HostInvokerTest {
     /// The invocation ends with the state that started it. Without this the
     /// host is told to begin work and never told to stop — which no
     /// configuration assertion can detect.
+    /**
+     * W3C SCXML 6.4.1: `srcexpr`, `namelist`, `<param expr>` and
+     * `<content expr>` are read from the data model when the invocation
+     * starts. The request used to carry the literal params alone, so a
+     * document that computed what to invoke handed the host an empty
+     * description.
+     */
+    @Test
+    fun whatTheRequestSaysIsEvaluatedWhenTheInvocationStarts() {
+        val sm = machine()
+        val starts = mutableListOf<StateMachineEngine.HostInvokeRequest>()
+        sm.registerInvoker(declaredType) { ev ->
+            ev.start?.let { starts.add(it) }
+            null
+        }
+        sm.initialize()
+        try {
+            starts.clear() // `probe` / `probe2`, which the case above already reads
+            sm.send(StatechartHostInvokerEvent.Evaluate)
+            sm.tick()
+
+            // `req3`'s srcexpr cannot be evaluated, so it is never started.
+            assertEquals(listOf("req", "req2"), starts.map { it.invokeId }, "started")
+            assertEquals("pane://dyn", starts[0].src, "srcexpr was not evaluated")
+            // A repeated name keeps both values in document order; the
+            // `<param>` that failed is absent (W3C SCXML 5.7.1) while the
+            // invocation still started.
+            assertEquals(mapOf("n" to listOf("7"), "twice" to listOf("a", "8")), starts[0].params, "params")
+            assertEquals("body:7", starts[1].content, "content")
+            // One error.execution for the dropped `<param>`, one for `req3`.
+            assertEquals(2L, counter(sm, "dropped"), "a failed evaluation was not reported")
+        } finally {
+            sm.cleanup()
+        }
+    }
+
     @Test
     fun leavingTheStateCancelsTheInvocation() {
         val sm = machine()

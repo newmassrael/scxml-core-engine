@@ -329,18 +329,54 @@
                 # DOCUMENT's, not the per-instance one the pending queue
                 # carries: `done.invoke.<id>` is the name the author wrote a
                 # transition for, so it is the name the host must answer on.
+                _host_src = {{ inv.src | default('', true) | py_string_literal }}
+                _host_content = {{ inv.content | default('', true) | py_string_literal }}
+{% set host_evaluates = inv.srcexpr or inv.namelist or inv.contentexpr or (inv.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0) %}
+{% if host_evaluates %}
+                # W3C SCXML 6.4.1: what the request says is evaluated now, when
+                # the invocation starts. An attribute that cannot be evaluated
+                # raises error.execution and starts nothing; a `<param>` that
+                # cannot is reported and dropped (W3C SCXML 5.7.1) while the
+                # invocation still starts.
+                _host_failed = False
+{% for attr, var, expr in [('src', '_host_src', inv.srcexpr), ('content', '_host_content', inv.contentexpr)] %}
+{% if expr %}
+                if not _host_failed:
+                    try:
+                        {{ var }} = engine._script_engine.evaluate_expression(
+                            self._session_id, {{ expr | to_lua_expr | py_string_literal }}
+                        ).to_wire_string()
+                    except _ScriptError:
+                        self._raise_error_execution(
+                            engine, "<invoke> {{ attr }}expr failed to evaluate"
+                        )
+                        _host_failed = True
+{% endif %}
+{% endfor %}
+                if _host_failed:
+                    continue
+                try:
+                    # The same collection a `<send>` over BasicHTTP makes: text
+                    # under a name that may repeat, namelist entries first.
+                    _host_params = self._build_http_params(engine, [
+{%- for param in inv.params -%}
+({{ param.name | py_string_literal }}, {% if param.expr %}{{ param.expr | to_lua_expr | py_string_literal }}{% else %}{{ param.location | py_string_literal }}{% endif %}),
+{%- endfor -%}
+], {{ inv.namelist | default('', true) | py_string_literal }}, "<invoke>")
+                except _ActionAbort:
+                    continue
+{% else %}
+                _host_params: dict = {}
+{% for param in inv.params %}
+                _host_params.setdefault({{ param.name | py_string_literal }}, []).append({{ param.static_value | py_string_literal }})
+{% endfor %}
+{% endif %}
                 if not engine.perform_host_invoke(_HostInvokeRequest(
                     processor_type={{ inv.invoke_type | py_string_literal }},
                     invoke_id={{ inv.invoke_id | py_string_literal }},
-                    src={{ inv.src | default('', true) | py_string_literal }},
-                    params={
-{% for param in inv.params %}
-{% if param.is_static_literal %}
-                        {{ param.name | py_string_literal }}: [{{ param.static_value | py_string_literal }}],
-{% endif %}
-{% endfor %}
-                    },
-                    content={{ inv.content | default('', true) | py_string_literal }},
+                    src=_host_src,
+                    params=_host_params,
+                    content=_host_content,
                 )):
                     # W3C SCXML 6.4.1: declared but no invoker registered. The
                     # document asked for a process to be run and none was,

@@ -125,6 +125,51 @@ fn a_registered_invoker_is_started_with_what_the_document_wrote() {
     );
 }
 
+/// §scxml-6.4.1: `srcexpr`, `namelist`, `<param expr>` and `<content expr>`
+/// are read from the data model when the invocation starts. The request used
+/// to carry the literal params alone, so a document that computed what to
+/// invoke handed the host an empty description.
+#[test]
+fn what_the_request_says_is_evaluated_when_the_invocation_starts() {
+    let starts: Arc<Mutex<Vec<sce_rust_runtime::HostInvokeRequest>>> =
+        Arc::new(Mutex::new(Vec::new()));
+    let (mut engine, script_engine) = started();
+    let sink = Arc::clone(&starts);
+    engine.register_invoker(DECLARED_TYPE, move |ev: HostInvokeEvent| {
+        if let HostInvokeEvent::Start(req) = ev {
+            sink.lock().expect("invoker log").push(req);
+        }
+        None
+    });
+    engine.initialize();
+    engine.step();
+    // `probe` / `probe2`, which the case above already reads.
+    starts.lock().expect("invoker log").clear();
+    engine.process_event(Event::Evaluate);
+
+    let seen = starts.lock().expect("invoker log");
+    let ids: Vec<&str> = seen.iter().map(|r| r.invoke_id.as_str()).collect();
+    // `req3`'s srcexpr cannot be evaluated, so it is never started.
+    assert_eq!(ids, ["req", "req2"], "started: {ids:?}");
+    assert_eq!(seen[0].src, "pane://dyn", "srcexpr was not evaluated");
+    // A repeated name keeps both values in document order; the `<param>`
+    // that failed is absent (§scxml-5.7.1) while the invocation still started.
+    let expected: std::collections::HashMap<String, Vec<String>> = [
+        ("n".to_string(), vec!["7".to_string()]),
+        ("twice".to_string(), vec!["a".to_string(), "8".to_string()]),
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(seen[0].params, expected, "params");
+    assert_eq!(seen[1].content, "body:7", "content");
+    // One error.execution for the dropped `<param>`, one for `req3`.
+    assert_eq!(
+        counter(&engine, &script_engine, "dropped"),
+        2,
+        "a failed evaluation was not reported",
+    );
+}
+
 /// The invocation ends with the state that started it. Without this the
 /// host is told to begin work and never told to stop — which no
 /// configuration assertion can detect, because the machine looks correct

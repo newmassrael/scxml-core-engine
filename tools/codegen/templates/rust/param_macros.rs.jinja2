@@ -1,0 +1,77 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+{# W3C SCXML 5.7: collect `<param>` values into an already-declared
+   HashMap<String, Vec<String>> named `map`.
+
+   Three consumers need the same collection — a `<send>` to BasicHTTP
+   (W3C C.2), a `<send>` to a host-served type (W3C 6.2.5), and an `<invoke>`
+   the host runs (W3C 6.4.1) — and they differ only in the variable they fill
+   and the element a refusal names. Written once so a `<param>` shape handled
+   for one is handled for all; the earlier spelling existed only in the
+   BasicHTTP arm, so a host processor would have silently received fewer
+   parameter kinds than an HTTP one from the same document, and a host invoke
+   received the literal ones alone.
+
+   A repeated name keeps every value: W3C SCXML 5.7 permits repetition, and
+   `or_default().push(...)` is what makes the map's Vec meaningful.
+
+   A failed evaluation drops the pair and says so. W3C SCXML 5.7.1 puts both
+   halves on the same clause — `error.execution` on the internal queue AND the
+   name and value ignored — and says nothing about which processor the message
+   is bound for, so the wire cannot change the answer.
+
+   `params` is the element's `<param>` list; `element` is how a refusal names
+   the element (`<send>`, `<invoke>`) and `label` how the log line does
+   (`send`, `invoke`). `machine_name` is a parameter rather than a global
+   because a macro body does not see the render context. #}
+{% macro collect_params_into(params, model, map, machine_name, element, label) %}
+{% for param in params %}
+{% if param.is_static_literal %}
+        {{ map }}.entry("{{ param.name | escape_rust }}".to_string()).or_default().push("{{ param.static_value | escape_rust }}".to_string());
+{% elif param.expr and model.needs_script_engine %}
+        {
+            self.ensure_script_engine();
+            let sid = self.session_id.as_ref().unwrap().clone();
+            let se = self.script_engine.clone();
+            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+            match se.evaluate_expression(&sid, "{{ param.expr | to_lua_expr | escape_rust }}") {
+                Ok(val) => {
+                    // W3C SCXML C.2: the param crosses as text, so the value is
+                    // rendered by the neutral helper — an engine literal would
+                    // put this sender's language on the wire.
+                    let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
+                    {{ map }}.entry("{{ param.name | escape_rust }}".to_string()).or_default().push(s);
+                }
+                Err(e) => {
+                    // W3C SCXML 5.7.1: report the failure and omit the pair.
+                    ::sce_rust_runtime::sce_log_error!("{{ label }} param '{{ param.name | escape_rust }}' eval failed: {}", e);
+{% if 'error.execution' in model.events %}
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "{{ element }} <param name='{{ param.name | escape_rust }}'> expr failed to evaluate"));
+{% endif %}
+                }
+            }
+        }
+{% elif param.location and model.needs_script_engine %}
+        {
+            self.ensure_script_engine();
+            let sid = self.session_id.as_ref().unwrap().clone();
+            let se = self.script_engine.clone();
+            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+            match se.evaluate_expression(&sid, "{{ param.location }}") {
+                Ok(val) => {
+                    let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
+                    {{ map }}.entry("{{ param.name | escape_rust }}".to_string()).or_default().push(s);
+                }
+                Err(e) => {
+                    // W3C SCXML 5.7.1: a location naming nothing is the same
+                    // failure as an expression that will not evaluate.
+                    ::sce_rust_runtime::sce_log_error!("{{ label }} param '{{ param.name | escape_rust }}' location read failed: {}", e);
+{% if 'error.execution' in model.events %}
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}, "{{ element }} <param name='{{ param.name | escape_rust }}'> location could not be read"));
+{% endif %}
+                }
+            }
+        }
+{% endif %}
+{% endfor %}
+{% endmacro %}

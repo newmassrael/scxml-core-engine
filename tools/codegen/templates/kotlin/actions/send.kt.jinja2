@@ -5,6 +5,7 @@
    Expects `action` and `machine_name` variables in scope.
    Uses action.auto_send_id for unique delayed send identification (C++ UniqueIdGenerator pattern).
    Target resolution follows C++ "resolve once, use everywhere" pattern. #}
+{% import 'param_macros.kt.jinja2' as param_macros %}
 {# W3C SCXML 5.7.1: one `<param expr>` arm for the four maps this template
    fills (internal, parent, typed/external, engine-served), written once so
    they cannot drift apart.
@@ -79,23 +80,7 @@
                 val hostSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
 {% endif %}
                 val hostParams = mutableMapOf<String, List<String>>()
-{% for param in action.params %}
-{% if param.is_static_literal %}
-                hostParams["{{ param.name | escape_kotlin }}"] = listOf("{{ param.static_value | escape_kotlin }}")
-{% elif param.expr %}
-                try {
-                    val v = hostEngine.evaluateExpr(hostSid, {{ param.expr | to_script_source_expr }})
-                    // The param crosses as text, and `toString()` is the
-                    // platform's spelling of the value; this is the document's.
-                    hostParams["{{ param.name | escape_kotlin }}"] = listOf(valueToWireString(v))
-                } catch (_: Exception) {
-                    // W3C SCXML 5.7.1: report the failure and omit the name and
-                    // the value — the act still happens, without a field the
-                    // document could not produce.
-                    raisePlatformError({{ machine_name }}Event.Error.Execution, "<send> <param name='{{ param.name | escape_kotlin }}'> expr failed to evaluate")
-                }
-{% endif %}
-{% endfor %}
+{{ param_macros.collect_wire_params_into(action.params, model, 'hostParams', 'hostEngine', 'hostSid', machine_name, '<send>', '                ') -}}
 {% if action.eventexpr and model.needs_script_engine %}
                 val hostEventName = try {
                     hostEngine.evaluateExpr(hostSid, {{ action.eventexpr | to_script_source_expr }})?.toString() ?: ""

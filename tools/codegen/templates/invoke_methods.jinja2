@@ -463,9 +463,70 @@
                         hostInvoke.invokeId = "{{ invoke_info.invoke_id }}";
                         hostInvoke.src = "{{ invoke_info.src | default('', true) | escape_cpp }}";
                         hostInvoke.content = "{{ invoke_info.content | default('', true) | escape_cpp }}";
+{% set host_evaluates = invoke_info.srcexpr or invoke_info.namelist or invoke_info.contentexpr or (invoke_info.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0) %}
+{% if host_evaluates %}
+                        // W3C SCXML 6.4.1: what the request says is evaluated
+                        // now, when the invocation starts, by the rules the
+                        // other invoke kinds follow: an attribute that cannot
+                        // be evaluated starts nothing, and a `<param>` that
+                        // cannot is reported and left out (W3C SCXML 5.7.1).
+                        ensureScriptEngine();
+                        auto& hostScript = getScriptEngine();
+{% endif %}
+{% if invoke_info.srcexpr %}
+                        {
+                            auto srcResult = hostScript.evaluateExpression(sessionId_.value(), {{ invoke_info.srcexpr | to_script_source_expr }}).get();
+                            if (!::SCE::ScriptResultUtils::isSuccess(srcResult)) {
+                                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke srcexpr='{{ invoke_info.srcexpr | escape_cpp }}'> could not be evaluated"));
+                                return;
+                            }
+                            hostInvoke.src = ::SCE::ScriptResultUtils::resultToString(srcResult);
+                        }
+{% endif %}
+{% if invoke_info.contentexpr %}
+                        {
+                            auto contentResult = hostScript.evaluateExpression(sessionId_.value(), {{ invoke_info.contentexpr | to_script_source_expr }}).get();
+                            if (!::SCE::ScriptResultUtils::isSuccess(contentResult)) {
+                                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke contentexpr='{{ invoke_info.contentexpr | escape_cpp }}'> could not be evaluated"));
+                                return;
+                            }
+                            hostInvoke.content = ::SCE::ScriptResultUtils::resultToString(contentResult);
+                        }
+{% endif %}
+{% if invoke_info.namelist %}
+                        {
+                            // The helper the scxml invoke reads its namelist
+                            // through, so a location that is not declared fails
+                            // here as it fails there.
+                            std::map<std::string, std::vector<std::string>> namelistValues;
+                            const bool namelistValid = ::SCE::NamelistHelper::evaluateNamelist(
+                                hostScript, sessionId_.value(), "{{ invoke_info.namelist | escape_cpp }}", namelistValues,
+                                [&engine](const std::string& errorMsg) {
+                                    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));
+                                });
+                            if (!namelistValid) {
+                                return;
+                            }
+                            for (auto& [name, values] : namelistValues) {
+                                auto& slot = hostInvoke.params[name];
+                                slot.insert(slot.end(), values.begin(), values.end());
+                            }
+                        }
+{% endif %}
                         {% for param in invoke_info.params %}
                         {% if param.is_static_literal %}
                         hostInvoke.params["{{ param.name | escape_cpp }}"].push_back("{{ param.static_value | escape_cpp }}");
+                        {% else %}
+                        {
+                            auto paramResult = hostScript.evaluateExpression(sessionId_.value(), {{ param.expr | to_script_source_expr }}).get();
+                            if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
+                                hostInvoke.params["{{ param.name | escape_cpp }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
+                            } else {
+                                engine.raise(typename Engine::EventWithMetadata(
+                                    Event::Error_execution,
+                                    "<invoke> <param name='{{ param.name | escape_cpp }}'> expr failed to evaluate"));
+                            }
+                        }
                         {% endif %}
                         {% endfor %}
                         if (!engine.performHostInvoke(hostInvoke)) {

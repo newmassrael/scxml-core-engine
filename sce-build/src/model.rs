@@ -3178,6 +3178,9 @@ impl SCXMLModel {
         self.states.values().any(|s| {
             s.invokes.iter().any(|i| match i {
                 Invoke::Scxml(si) => !si.namelist.is_empty(),
+                // Read when a host that runs the type starts it; asked before
+                // the host's declaration is applied, so every one counts.
+                Invoke::Unsupported(ui) => !ui.namelist.is_empty(),
                 _ => false,
             })
         })

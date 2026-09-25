@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 0e4810627dfdd86a6e46a26ed703f8821d03ff03c037ab7267b127e02a3a3d8e
+// source-hash: 5a23c8ada2ea5d406d65687cb2a17b08679d5cf3d6429f3e63eef5a8866c8941
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/host_processor/statechart_host_invoker.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: statechart_host_invoker.scxml:36 :: _machine
+// SCE-MAP: statechart_host_invoker.scxml:50 :: _machine
 
 package com.sce.integration.statechart_host_invoker
 
@@ -15,6 +15,7 @@ import com.sce.runtime.*
 
 sealed interface StatechartHostInvokerState : State {
     data object Done : StatechartHostInvokerState
+    data object Evaluating : StatechartHostInvokerState
     data object Invoking : StatechartHostInvokerState
 }
 
@@ -30,6 +31,7 @@ sealed interface StatechartHostInvokerEvent : Event {
     sealed interface Error : StatechartHostInvokerEvent {
         data object Execution : Error
     }
+    data object Evaluate : StatechartHostInvokerEvent
     data object Leave : StatechartHostInvokerEvent
 }
 // --- State Machine (W3C SCXML) ---
@@ -100,6 +102,42 @@ class StatechartHostInvokerStateMachine(
     fun entered(): Long? =
         com.sce.runtime.DatamodelRead.readInt(scriptEngine, scriptSessionId, "entered")
 
+    /**
+     * §scxml-5.3: what the `destination` datamodel variable is holding now.
+     *
+     * The live value, not the authored one: `<assign>` writes into the
+     * session, so a reader frozen at generation time would answer the
+     * document's literal for the whole run. `null` means the machine cannot
+     * answer — no script engine is set, the session is not initialised yet,
+     * `destination` was assigned a value of another type, or the engine refused.
+     */
+    fun destination(): String? =
+        com.sce.runtime.DatamodelRead.readString(scriptEngine, scriptSessionId, "destination")
+
+    /**
+     * §scxml-5.3: what the `n` datamodel variable is holding now.
+     *
+     * The live value, not the authored one: `<assign>` writes into the
+     * session, so a reader frozen at generation time would answer the
+     * document's literal for the whole run. `null` means the machine cannot
+     * answer — no script engine is set, the session is not initialised yet,
+     * `n` was assigned a value of another type, or the engine refused.
+     */
+    fun n(): Long? =
+        com.sce.runtime.DatamodelRead.readInt(scriptEngine, scriptSessionId, "n")
+
+    /**
+     * §scxml-5.3: what the `dropped` datamodel variable is holding now.
+     *
+     * The live value, not the authored one: `<assign>` writes into the
+     * session, so a reader frozen at generation time would answer the
+     * document's literal for the whole run. `null` means the machine cannot
+     * answer — no script engine is set, the session is not initialised yet,
+     * `dropped` was assigned a value of another type, or the engine refused.
+     */
+    fun dropped(): Long? =
+        com.sce.runtime.DatamodelRead.readInt(scriptEngine, scriptSessionId, "dropped")
+
     override val initialState: StatechartHostInvokerState = StatechartHostInvokerState.Invoking
 
     // W3C SCXML 6.2: which entry point a host must drive this machine with in
@@ -128,6 +166,15 @@ class StatechartHostInvokerStateMachine(
     private companion object {
         val documentInitialTargetList: List<EntryTarget<StatechartHostInvokerState, HistoryId>> =
             listOf(StateTarget(StatechartHostInvokerState.Invoking))
+
+        // W3C SCXML 3.13: evaluating's transition 0, as the microstep reads it.
+        val transitionEvaluatingAt0 = EnabledTransition<StatechartHostInvokerState, HistoryId>(
+            StatechartHostInvokerState.Evaluating,
+            emptyList(),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
 
         // W3C SCXML 3.13: invoking's transition 0, as the microstep reads it.
         val transitionInvokingAt0 = EnabledTransition<StatechartHostInvokerState, HistoryId>(
@@ -164,11 +211,21 @@ class StatechartHostInvokerStateMachine(
             hasActions = false,
             isInternal = false,
         )
+
+        // W3C SCXML 3.13: invoking's transition 4, as the microstep reads it.
+        val transitionInvokingAt4 = EnabledTransition<StatechartHostInvokerState, HistoryId>(
+            StatechartHostInvokerState.Invoking,
+            listOf(StateTarget(StatechartHostInvokerState.Evaluating)),
+            4,
+            hasActions = false,
+            isInternal = false,
+        )
     }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StatechartHostInvokerState? = when (stateId) {
         "done" -> StatechartHostInvokerState.Done
+        "evaluating" -> StatechartHostInvokerState.Evaluating
         "invoking" -> StatechartHostInvokerState.Invoking
         else -> null
     }
@@ -176,12 +233,14 @@ class StatechartHostInvokerStateMachine(
     // W3C SCXML: Get state ID string from State object
     override fun stateIdOf(state: StatechartHostInvokerState): String = when (state) {
         is StatechartHostInvokerState.Done -> "done"
+        is StatechartHostInvokerState.Evaluating -> "evaluating"
         is StatechartHostInvokerState.Invoking -> "invoking"
     }
 
     // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StatechartHostInvokerState): Int = when (state) {
-        is StatechartHostInvokerState.Done -> 1
+        is StatechartHostInvokerState.Done -> 2
+        is StatechartHostInvokerState.Evaluating -> 1
         is StatechartHostInvokerState.Invoking -> 0
     }
 
@@ -190,6 +249,7 @@ class StatechartHostInvokerStateMachine(
         "done.invoke.probe" -> StatechartHostInvokerEvent.Done.Invoke.Probe
         "done.invoke.probe2" -> StatechartHostInvokerEvent.Done.Invoke.Probe2
         "error.execution" -> StatechartHostInvokerEvent.Error.Execution
+        "evaluate" -> StatechartHostInvokerEvent.Evaluate
         "leave" -> StatechartHostInvokerEvent.Leave
         else -> null
     }
@@ -199,6 +259,7 @@ class StatechartHostInvokerStateMachine(
         is StatechartHostInvokerEvent.Done.Invoke.Probe -> "done.invoke.probe"
         is StatechartHostInvokerEvent.Done.Invoke.Probe2 -> "done.invoke.probe2"
         is StatechartHostInvokerEvent.Error.Execution -> "error.execution"
+        is StatechartHostInvokerEvent.Evaluate -> "evaluate"
         is StatechartHostInvokerEvent.Leave -> "leave"
     }
 
@@ -264,6 +325,27 @@ class StatechartHostInvokerStateMachine(
             engine.setVariable(sid, "entered", initResult_entered)
         } catch (e: Exception) {
             raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='entered'> expr failed to evaluate")
+        }
+        // W3C SCXML 5.3: Initialize variable 'destination' with expr
+        try {
+            val initResult_destination = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("\"pane://dyn\"", "'pane://dyn'"))
+            engine.setVariable(sid, "destination", initResult_destination)
+        } catch (e: Exception) {
+            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='destination'> expr failed to evaluate")
+        }
+        // W3C SCXML 5.3: Initialize variable 'n' with expr
+        try {
+            val initResult_n = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("7", "7"))
+            engine.setVariable(sid, "n", initResult_n)
+        } catch (e: Exception) {
+            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='n'> expr failed to evaluate")
+        }
+        // W3C SCXML 5.3: Initialize variable 'dropped' with expr
+        try {
+            val initResult_dropped = engine.evaluateExpr(sid, com.sce.runtime.ScriptSource.lua("0", "0"))
+            engine.setVariable(sid, "dropped", initResult_dropped)
+        } catch (e: Exception) {
+            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<data id='dropped'> expr failed to evaluate")
         }
 
 
@@ -447,11 +529,16 @@ class StatechartHostInvokerStateMachine(
         state: StatechartHostInvokerState,
         event: StatechartHostInvokerEvent?
     ): EnabledTransition<StatechartHostInvokerState, HistoryId>? = when (state) {
+        is StatechartHostInvokerState.Evaluating -> when {
+            event is StatechartHostInvokerEvent.Error.Execution -> transitionEvaluatingAt0
+            else -> null
+        }
         is StatechartHostInvokerState.Invoking -> when {
             event is StatechartHostInvokerEvent.Done.Invoke.Probe && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.invokeid == \"probe\")", "_event.invokeid === 'probe'")) -> transitionInvokingAt0
             event is StatechartHostInvokerEvent.Done.Invoke.Probe2 && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_event.invokeid == \"probe2\")", "_event.invokeid === 'probe2'")) -> transitionInvokingAt1
             event is StatechartHostInvokerEvent.Error.Execution -> transitionInvokingAt2
             event is StatechartHostInvokerEvent.Leave -> transitionInvokingAt3
+            event is StatechartHostInvokerEvent.Evaluate -> transitionInvokingAt4
             else -> null
         }
         else -> null
@@ -459,17 +546,195 @@ class StatechartHostInvokerStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: statechart_host_invoker.scxml:36 :: _machine
+    // SCE-MAP: statechart_host_invoker.scxml:50 :: _machine
     override fun onEntry(state: StatechartHostInvokerState, isDefaultEntry: Boolean) {
         when (state) {
             is StatechartHostInvokerState.Done -> {
-                // SCE-MAP: statechart_host_invoker.scxml:71 :: done :: _state_body
+                // SCE-MAP: statechart_host_invoker.scxml:105 :: done :: _state_body
 
 
             executeAssign(com.sce.runtime.ScriptSource.lua("ended", "ended"), com.sce.runtime.ScriptSource.lua("_scxml_add(ended, 1)", "ended + 1"))
             }
+            is StatechartHostInvokerState.Evaluating -> {
+                // SCE-MAP: statechart_host_invoker.scxml:89 :: evaluating :: _state_body
+                // W3C SCXML 6.4.1: the host declared this `type`, so the
+                // deferred closure STARTS the invocation rather than refusing
+                // it. Deferred like its sibling so §scxml-6.4 ordering holds —
+                // an invoke runs at macrostep end — and so a state that exits
+                // first never starts it at all.
+                //
+                // The id handed to the host is the DOCUMENT's, not the
+                // per-instance one the pending queue carries:
+                // `done.invoke.<id>` is the name the author wrote a transition
+                // for, so it is the name the host must answer on.
+                run {
+                    val generatedInvokeId = "evaluating.${System.identityHashCode(this)}.req"
+                    deferInvoke(state, generatedInvokeId) {
+                        // W3C SCXML 6.4.1: what the request says is evaluated
+                        // now, when the invocation starts. An attribute that
+                        // cannot be evaluated raises error.execution and starts
+                        // nothing; a `<param>` that cannot is reported and
+                        // dropped (W3C SCXML 5.7.1) while the invocation starts.
+                        ensureScriptEngine()
+                        val hostEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                        val hostSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+                        val hostInvokeSrc = try {
+                            valueToWireString(hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("destination", "destination")))
+                        } catch (_: Exception) {
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> srcexpr failed to evaluate")
+                            return@deferInvoke
+                        }
+                        val hostInvokeParams = mutableMapOf<String, List<String>>()
+                        if (!hostEngine.hasVariable(hostSid, "n")) {
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> namelist names 'n', which is not declared")
+                            return@deferInvoke
+                        }
+                        try {
+                            hostInvokeParams["n"] =
+                                (hostInvokeParams["n"] ?: emptyList()) + valueToWireString(hostEngine.getVariable(hostSid, "n"))
+                        } catch (_: Exception) {
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> namelist entry 'n' failed to evaluate")
+                            return@deferInvoke
+                        }
+                        hostInvokeParams["twice"] =
+                            (hostInvokeParams["twice"] ?: emptyList()) + "a"
+                        try {
+                            // The param crosses as text, and `toString()` is the platform's
+                            // spelling of the value; this is the document's.
+                            val v = hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("_scxml_add(n, 1)", "n + 1"))
+                            hostInvokeParams["twice"] =
+                                (hostInvokeParams["twice"] ?: emptyList()) + valueToWireString(v)
+                        } catch (_: Exception) {
+                            // W3C SCXML 5.7.1: report the failure and omit the name and the
+                            // value — the act still happens, without a field the document
+                            // could not produce.
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> <param name='twice'> expr failed to evaluate")
+                        }
+                        try {
+                            // The param crosses as text, and `toString()` is the platform's
+                            // spelling of the value; this is the document's.
+                            val v = hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("n.nope.deeper", "n.nope.deeper"))
+                            hostInvokeParams["bad"] =
+                                (hostInvokeParams["bad"] ?: emptyList()) + valueToWireString(v)
+                        } catch (_: Exception) {
+                            // W3C SCXML 5.7.1: report the failure and omit the name and the
+                            // value — the act still happens, without a field the document
+                            // could not produce.
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> <param name='bad'> expr failed to evaluate")
+                        }
+val started = performHostInvoke(
+                            HostInvokeRequest(
+                                processorType = "x-sce-host",
+                                invokeId = "req",
+                                src = hostInvokeSrc,
+                                params = hostInvokeParams,
+                                content = ""                            )
+                        )
+                        if (!started) {
+                            // W3C SCXML 6.4.1: declared but no invoker
+                            // registered. The document asked for a process to
+                            // be run and none was, which is the same fact as
+                            // an unsupported type — so the same event, rather
+                            // than a silence that reads as started.
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                        }
+                    }
+                }
+                // W3C SCXML 6.4.1: the host declared this `type`, so the
+                // deferred closure STARTS the invocation rather than refusing
+                // it. Deferred like its sibling so §scxml-6.4 ordering holds —
+                // an invoke runs at macrostep end — and so a state that exits
+                // first never starts it at all.
+                //
+                // The id handed to the host is the DOCUMENT's, not the
+                // per-instance one the pending queue carries:
+                // `done.invoke.<id>` is the name the author wrote a transition
+                // for, so it is the name the host must answer on.
+                run {
+                    val generatedInvokeId = "evaluating.${System.identityHashCode(this)}.req2"
+                    deferInvoke(state, generatedInvokeId) {
+                        // W3C SCXML 6.4.1: what the request says is evaluated
+                        // now, when the invocation starts. An attribute that
+                        // cannot be evaluated raises error.execution and starts
+                        // nothing; a `<param>` that cannot is reported and
+                        // dropped (W3C SCXML 5.7.1) while the invocation starts.
+                        ensureScriptEngine()
+                        val hostEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                        val hostSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+                        val hostInvokeContent = try {
+                            valueToWireString(hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("(\"body:\" .. _scxml_tostring(n))", "'body:' + n")))
+                        } catch (_: Exception) {
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> contentexpr failed to evaluate")
+                            return@deferInvoke
+                        }
+                        val hostInvokeParams = mutableMapOf<String, List<String>>()
+val started = performHostInvoke(
+                            HostInvokeRequest(
+                                processorType = "x-sce-host",
+                                invokeId = "req2",
+                                src = "",
+                                params = hostInvokeParams,
+                                content = hostInvokeContent                            )
+                        )
+                        if (!started) {
+                            // W3C SCXML 6.4.1: declared but no invoker
+                            // registered. The document asked for a process to
+                            // be run and none was, which is the same fact as
+                            // an unsupported type — so the same event, rather
+                            // than a silence that reads as started.
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                        }
+                    }
+                }
+                // W3C SCXML 6.4.1: the host declared this `type`, so the
+                // deferred closure STARTS the invocation rather than refusing
+                // it. Deferred like its sibling so §scxml-6.4 ordering holds —
+                // an invoke runs at macrostep end — and so a state that exits
+                // first never starts it at all.
+                //
+                // The id handed to the host is the DOCUMENT's, not the
+                // per-instance one the pending queue carries:
+                // `done.invoke.<id>` is the name the author wrote a transition
+                // for, so it is the name the host must answer on.
+                run {
+                    val generatedInvokeId = "evaluating.${System.identityHashCode(this)}.req3"
+                    deferInvoke(state, generatedInvokeId) {
+                        // W3C SCXML 6.4.1: what the request says is evaluated
+                        // now, when the invocation starts. An attribute that
+                        // cannot be evaluated raises error.execution and starts
+                        // nothing; a `<param>` that cannot is reported and
+                        // dropped (W3C SCXML 5.7.1) while the invocation starts.
+                        ensureScriptEngine()
+                        val hostEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                        val hostSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+                        val hostInvokeSrc = try {
+                            valueToWireString(hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("n.nope.deeper", "n.nope.deeper")))
+                        } catch (_: Exception) {
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> srcexpr failed to evaluate")
+                            return@deferInvoke
+                        }
+                        val hostInvokeParams = mutableMapOf<String, List<String>>()
+val started = performHostInvoke(
+                            HostInvokeRequest(
+                                processorType = "x-sce-host",
+                                invokeId = "req3",
+                                src = hostInvokeSrc,
+                                params = hostInvokeParams,
+                                content = ""                            )
+                        )
+                        if (!started) {
+                            // W3C SCXML 6.4.1: declared but no invoker
+                            // registered. The document asked for a process to
+                            // be run and none was, which is the same fact as
+                            // an unsupported type — so the same event, rather
+                            // than a silence that reads as started.
+                            raisePlatformError(StatechartHostInvokerEvent.Error.Execution, "<invoke> names an invoker the host declared but never registered")
+                        }
+                    }
+                }
+            }
             is StatechartHostInvokerState.Invoking -> {
-                // SCE-MAP: statechart_host_invoker.scxml:47 :: invoking :: _state_body
+                // SCE-MAP: statechart_host_invoker.scxml:64 :: invoking :: _state_body
 
 
             executeAssign(com.sce.runtime.ScriptSource.lua("entered", "entered"), com.sce.runtime.ScriptSource.lua("_scxml_add(entered, 1)", "entered + 1"))
@@ -489,13 +754,13 @@ class StatechartHostInvokerStateMachine(
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
                         hostInvokeParams["within"] =
                             (hostInvokeParams["within"] ?: emptyList()) + "2500"
-                        val started = performHostInvoke(
+val started = performHostInvoke(
                             HostInvokeRequest(
                                 processorType = "x-sce-host",
                                 invokeId = "probe",
                                 src = "pane://turn",
-                                params = hostInvokeParams
-                            )
+                                params = hostInvokeParams,
+                                content = ""                            )
                         )
                         if (!started) {
                             // W3C SCXML 6.4.1: declared but no invoker
@@ -521,13 +786,13 @@ class StatechartHostInvokerStateMachine(
                     val generatedInvokeId = "invoking.${System.identityHashCode(this)}.probe2"
                     deferInvoke(state, generatedInvokeId) {
                         val hostInvokeParams = mutableMapOf<String, List<String>>()
-                        val started = performHostInvoke(
+val started = performHostInvoke(
                             HostInvokeRequest(
                                 processorType = "x-sce-host",
                                 invokeId = "probe2",
                                 src = "pane://other",
-                                params = hostInvokeParams
-                            )
+                                params = hostInvokeParams,
+                                content = ""                            )
                         )
                         if (!started) {
                             // W3C SCXML 6.4.1: declared but no invoker
@@ -544,14 +809,34 @@ class StatechartHostInvokerStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: statechart_host_invoker.scxml:36 :: _machine
+    // SCE-MAP: statechart_host_invoker.scxml:50 :: _machine
     override fun onExit(state: StatechartHostInvokerState) {
         when (state) {
             is StatechartHostInvokerState.Done -> {
-                // SCE-MAP: statechart_host_invoker.scxml:71 :: done :: _state_body
+                // SCE-MAP: statechart_host_invoker.scxml:105 :: done :: _state_body
+            }
+            is StatechartHostInvokerState.Evaluating -> {
+                // SCE-MAP: statechart_host_invoker.scxml:89 :: evaluating :: _state_body
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(state)
+                // W3C SCXML 6.4: the host's invocation ends with the state
+                // that started it. Unconditional here: the engine knows
+                // whether this one ever started and stays silent when it did
+                // not, so the emitted chain needs no bookkeeping of its own.
+                cancelHostInvoke("x-sce-host", "req")
+                // W3C SCXML 6.4: the host's invocation ends with the state
+                // that started it. Unconditional here: the engine knows
+                // whether this one ever started and stays silent when it did
+                // not, so the emitted chain needs no bookkeeping of its own.
+                cancelHostInvoke("x-sce-host", "req2")
+                // W3C SCXML 6.4: the host's invocation ends with the state
+                // that started it. Unconditional here: the engine knows
+                // whether this one ever started and stays silent when it did
+                // not, so the emitted chain needs no bookkeeping of its own.
+                cancelHostInvoke("x-sce-host", "req3")
             }
             is StatechartHostInvokerState.Invoking -> {
-                // SCE-MAP: statechart_host_invoker.scxml:47 :: invoking :: _state_body
+                // SCE-MAP: statechart_host_invoker.scxml:64 :: invoking :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: the host's invocation ends with the state
@@ -570,24 +855,33 @@ class StatechartHostInvokerStateMachine(
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: statechart_host_invoker.scxml:36 :: _machine
+    // SCE-MAP: statechart_host_invoker.scxml:50 :: _machine
     override fun executeTransitionContent(source: StatechartHostInvokerState, transitionIndex: Int) {
         when (source) {
+        is StatechartHostInvokerState.Evaluating -> when (transitionIndex) {
+            0 -> {
+                // SCE-MAP: statechart_host_invoker.scxml:100 :: evaluating :: _transition_0
+
+
+            executeAssign(com.sce.runtime.ScriptSource.lua("dropped", "dropped"), com.sce.runtime.ScriptSource.lua("_scxml_add(dropped, 1)", "dropped + 1"))
+            }
+            else -> {}
+        }
         is StatechartHostInvokerState.Invoking -> when (transitionIndex) {
             0 -> {
-                // SCE-MAP: statechart_host_invoker.scxml:57 :: invoking :: _transition_0
+                // SCE-MAP: statechart_host_invoker.scxml:74 :: invoking :: _transition_0
 
 
             executeAssign(com.sce.runtime.ScriptSource.lua("started", "started"), com.sce.runtime.ScriptSource.lua("_scxml_add(started, 1)", "started + 1"))
             }
             1 -> {
-                // SCE-MAP: statechart_host_invoker.scxml:60 :: invoking :: _transition_1
+                // SCE-MAP: statechart_host_invoker.scxml:77 :: invoking :: _transition_1
 
 
             executeAssign(com.sce.runtime.ScriptSource.lua("started2", "started2"), com.sce.runtime.ScriptSource.lua("_scxml_add(started2, 1)", "started2 + 1"))
             }
             2 -> {
-                // SCE-MAP: statechart_host_invoker.scxml:63 :: invoking :: _transition_2
+                // SCE-MAP: statechart_host_invoker.scxml:80 :: invoking :: _transition_2
 
 
             executeAssign(com.sce.runtime.ScriptSource.lua("refused", "refused"), com.sce.runtime.ScriptSource.lua("_scxml_add(refused, 1)", "refused + 1"))

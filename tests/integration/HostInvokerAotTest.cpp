@@ -33,6 +33,7 @@
 #include "statechart_host_invoker_sm.h"
 
 #include <gtest/gtest.h>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -139,6 +140,37 @@ TEST_F(HostInvokerAotTest, ARegisteredInvokerIsStartedWithWhatTheDocumentWrote) 
 // The invocation ends with the state that started it. Without this the host is
 // told to begin work and never told to stop — which no configuration assertion
 // can detect, because the machine looks correct either way.
+// W3C SCXML 6.4.1: `srcexpr`, `namelist`, `<param expr>` and `<content expr>`
+// are read from the data model when the invocation starts. The request used
+// to carry the literal params alone, so a document that computed what to
+// invoke handed the host an empty description.
+TEST_F(HostInvokerAotTest, WhatTheRequestSaysIsEvaluatedWhenTheInvocationStarts) {
+    Machine sm;
+    std::vector<SCE::HostInvokeRequest> starts;
+    sm.registerInvoker(DECLARED_TYPE, [&starts](const SCE::HostInvokeEvent &ev) {
+        if (ev.start.has_value()) {
+            starts.push_back(*ev.start);
+        }
+        return std::optional<SCE::HostInvokeResponse>();
+    });
+    boot(sm);
+    starts.clear();  // `probe` / `probe2`, which the case above already reads
+    sm.processEvent(Event::Evaluate);
+
+    // `req3`'s srcexpr cannot be evaluated, so it is never started.
+    ASSERT_EQ(starts.size(), 2u) << "started " << starts.size() << " invocations";
+    EXPECT_EQ(starts[0].invokeId, "req");
+    EXPECT_EQ(starts[1].invokeId, "req2");
+    EXPECT_EQ(starts[0].src, "pane://dyn") << "srcexpr was not evaluated";
+    // A repeated name keeps both values in document order; the `<param>` that
+    // failed is absent (W3C SCXML 5.7.1) while the invocation still started.
+    const std::map<std::string, std::vector<std::string>> expected{{"n", {"7"}}, {"twice", {"a", "8"}}};
+    EXPECT_EQ(starts[0].params, expected) << "params";
+    EXPECT_EQ(starts[1].content, "body:7") << "content";
+    // One error.execution for the dropped `<param>`, one for `req3`.
+    EXPECT_EQ(sm.getPolicy().dropped(), std::optional<int64_t>(2)) << "a failed evaluation was not reported";
+}
+
 TEST_F(HostInvokerAotTest, LeavingTheStateCancelsTheInvocation) {
     Machine sm;
     registerRecordingInvoker(sm);

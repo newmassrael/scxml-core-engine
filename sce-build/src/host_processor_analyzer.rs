@@ -271,6 +271,9 @@ pub fn declare_host_surfaces(
             }
         }
         model.refresh_invokes_view();
+        // A host-served invoke evaluates its request when it starts, which
+        // analysis — run before this declaration — could not know it would.
+        crate::script_engine_analyzer::record_host_invoke_causes(model);
     }
     if send_types.is_empty() && invoke_types.is_empty() {
         return;

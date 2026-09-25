@@ -11,6 +11,7 @@
    Per-SM logic is emitted into `_sm.c`. Cross-SM types
    (`sce_invoke_pending_queue_t`) live in `backends/c/runtime/include/sce/invoke.h`
    as static inline helpers — no .c source.                             #}
+{%- import 'c/param_macros.jinja2' as param_macros %}
 
 {% set _ns = namespace(any_child_parent_send=false) %}
 {% for invoke_info in model.invokes | scxml %}
@@ -149,18 +150,51 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                positional — it counts this state's invokes in order, and a
                second loop would restart the index and address the wrong
                entry. The two arms are told apart by the per-entry flag. */
-{% if invoke_info.params %}
-            sce_host_send_param_t _host_inv_params[{{ invoke_info.params | length }}];
+{% set host_namelist = (invoke_info.namelist | split) if invoke_info.namelist else [] %}
+{% set host_param_cap = (invoke_info.params | length) + (host_namelist | length) %}
+{% if host_param_cap > 0 %}
+            sce_host_send_param_t _host_inv_params[{{ host_param_cap }}];
             int _host_inv_param_count = 0;
-{% for param in invoke_info.params %}
-{% if param.is_static_literal %}
-            static const char _host_inv_param_value_{{ loop.index0 }}[] = "{{ param.static_value | escape_c }}";
-            _host_inv_params[_host_inv_param_count].name = "{{ param.name | escape_c }}";
-            _host_inv_params[_host_inv_param_count].value = _host_inv_param_value_{{ loop.index0 }};
-            _host_inv_param_count++;
+{% endif %}
+            /* W3C SCXML 6.4.1: what the request says is evaluated now, when
+               the invocation starts. An attribute that cannot be evaluated
+               raises error.execution and starts nothing; a `<param>` that
+               cannot is reported and dropped (W3C SCXML 5.7.1) while the
+               invocation still starts. */
+{% for attr, buf, cap, expr in [('src', '_host_inv_src', 'SCE_MAX_URI_LEN', invoke_info.srcexpr), ('content', '_host_inv_content', 'SCE_MAX_DATA_LEN', invoke_info.contentexpr)] %}
+{% if expr %}
+            char {{ buf }}[{{ cap }}];
+            bool {{ buf }}_ok = false;
+{{ se.lua_eval_to_wire_string(expr, buf, 'sizeof(' ~ buf ~ ')', buf ~ '_ok') }}
+            if (!{{ buf }}_ok) {
+{% if 'error.execution' in model.events %}
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<invoke> {{ attr }}expr failed to evaluate");
+{% endif %}
+                continue;
+            }
 {% endif %}
 {% endfor %}
+{% for var_name in host_namelist %}
+            char _host_inv_nl_value_{{ loop.index0 }}[SCE_MAX_DATA_LEN];
+            bool _host_inv_nl_ok_{{ loop.index0 }} = false;
+{{ se.lua_namelist_var_to_wire_string(var_name, '_host_inv_nl_value_' ~ loop.index0, 'sizeof(_host_inv_nl_value_' ~ loop.index0 ~ ')', '_host_inv_nl_ok_' ~ loop.index0) }}
+            if (!_host_inv_nl_ok_{{ loop.index0 }}) {
+                /* W3C SCXML 5.9.2: a namelist item that names no readable
+                   location is an error, and the invocation does not start. */
+{% if 'error.execution' in model.events %}
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<invoke> namelist names '{{ var_name | escape_c }}', which could not be read");
 {% endif %}
+                continue;
+            }
+            _host_inv_params[_host_inv_param_count].name = "{{ var_name | escape_c }}";
+            _host_inv_params[_host_inv_param_count].value = _host_inv_nl_value_{{ loop.index0 }};
+            _host_inv_param_count++;
+{% endfor %}
+{{ param_macros.collect_host_params_into(invoke_info.params, model, csym_prefix, '_host_inv_params', '_host_inv_param_count', '_host_inv_param', '<invoke>', '            ') -}}
             {
                 sce_host_invoke_event_t _host_inv;
                 sce_host_invoke_response_t _host_inv_out;
@@ -171,9 +205,9 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                 _host_inv.phase = SCE_HOST_INVOKE_START;
                 _host_inv.processor_type = "{{ invoke_info.invoke_type | escape_c }}";
                 _host_inv.invoke_id = "{{ invoke_info.invoke_id | escape_c }}";
-                _host_inv.src = "{{ invoke_info.src | default('', true) | escape_c }}";
-                _host_inv.content = "{{ invoke_info.content | default('', true) | escape_c }}";
-{% if invoke_info.params %}
+                _host_inv.src = {% if invoke_info.srcexpr %}_host_inv_src{% else %}"{{ invoke_info.src | default('', true) | escape_c }}"{% endif %};
+                _host_inv.content = {% if invoke_info.contentexpr %}_host_inv_content{% else %}"{{ invoke_info.content | default('', true) | escape_c }}"{% endif %};
+{% if host_param_cap > 0 %}
                 _host_inv.params = _host_inv_param_count > 0 ? _host_inv_params : NULL;
                 _host_inv.param_count = _host_inv_param_count;
 {% else %}

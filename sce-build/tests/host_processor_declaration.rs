@@ -274,9 +274,29 @@ fn the_invoke_half_is_reported_and_then_claimed() {
     let causes = m["host_processor_causes"]
         .as_array()
         .unwrap_or_else(|| panic!("no host_processor_causes: {m}"));
-    assert_eq!(causes.len(), 1, "{causes:?}");
-    assert_eq!(causes[0]["kind"], "invoke-type");
-    assert_eq!(causes[0]["invoke"], "probe");
+    // Every host-typed `<invoke>` the fixture holds is named, and nothing
+    // else: the set, not a count, so a site that went unnamed while another
+    // was named twice cannot read as a pass.
+    let named: Vec<(&str, &str)> = causes
+        .iter()
+        .map(|c| {
+            (
+                c["kind"].as_str().unwrap_or(""),
+                c["invoke"].as_str().unwrap_or(""),
+            )
+        })
+        .collect();
+    assert_eq!(
+        named,
+        [
+            ("invoke-type", "probe"),
+            ("invoke-type", "probe2"),
+            ("invoke-type", "req"),
+            ("invoke-type", "req2"),
+            ("invoke-type", "req3"),
+        ],
+        "{causes:?}"
+    );
 
     let declared = out_dir("invoke-declared");
     let r = run(&[
@@ -816,9 +836,10 @@ fn a_declared_type_emits_a_dispatch_for_kotlin() {
     );
     // The request has to carry what the author wrote, or the document can
     // name an act but not parameterise it. The fixture's `<param>` is the
-    // one field that proves the crossing rather than the call.
+    // one field that proves the crossing rather than the call. It is
+    // APPENDED, because a repeated `<param>` name keeps every value.
     assert!(
-        emitted.contains(r#"hostParams["within"] = listOf("2500")"#),
+        emitted.contains(r#"(hostParams["within"] ?: emptyList()) + "2500""#),
         "the emitted dispatch dropped the <param> the fixture declares",
     );
 }

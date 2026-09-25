@@ -1,0 +1,43 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+{# W3C SCXML 5.7: collect `<param>` values into an already-declared
+   `MutableMap<String, List<String>>` named `map`, as text.
+
+   Two consumers hand their params to the host the same way — a `<send>` whose
+   type the host serves (W3C 6.2.5) and an `<invoke>` the host runs (W3C
+   6.4.1) — and they differ only in the variable they fill and the element a
+   refusal names. Written once so a `<param>` shape handled for one is handled
+   for the other; the host invoke had received the literal ones alone, and the
+   host send kept only the last value of a repeated name.
+
+   A repeated name keeps every value (W3C SCXML 5.7 permits repetition), and a
+   failed evaluation drops the pair AND reports it: W3C SCXML 5.7.1 puts both
+   halves on one clause and names no processor, so the transport cannot change
+   the answer.
+
+   `eng` / `sid` name the script engine and session already bound by the
+   caller; they are only read for a param that is not a literal. `element` is
+   how a refusal names the element (`<send>`, `<invoke>`). `machine_name` is a
+   parameter rather than a global because a macro body does not see the render
+   context. #}
+{% macro collect_wire_params_into(params, model, map, eng, sid, machine_name, element, indent) %}
+{% for param in params %}
+{% if param.is_static_literal %}
+{{ indent }}{{ map }}["{{ param.name | escape_kotlin }}"] =
+{{ indent }}    ({{ map }}["{{ param.name | escape_kotlin }}"] ?: emptyList()) + "{{ param.static_value | escape_kotlin }}"
+{% elif (param.expr or param.location) and model.needs_script_engine %}
+{{ indent }}try {
+{{ indent }}    // The param crosses as text, and `toString()` is the platform's
+{{ indent }}    // spelling of the value; this is the document's.
+{{ indent }}    val v = {{ eng }}.evaluateExpr({{ sid }}, {% if param.expr %}{{ param.expr | to_script_source_expr }}{% else %}{{ param.location | to_script_source_expr }}{% endif %})
+{{ indent }}    {{ map }}["{{ param.name | escape_kotlin }}"] =
+{{ indent }}        ({{ map }}["{{ param.name | escape_kotlin }}"] ?: emptyList()) + valueToWireString(v)
+{{ indent }}} catch (_: Exception) {
+{{ indent }}    // W3C SCXML 5.7.1: report the failure and omit the name and the
+{{ indent }}    // value — the act still happens, without a field the document
+{{ indent }}    // could not produce.
+{{ indent }}    raisePlatformError({{ machine_name }}Event.Error.Execution, "{{ element }} <param name='{{ param.name | escape_kotlin }}'> {% if param.expr %}expr failed to evaluate{% else %}location could not be read{% endif %}")
+{{ indent }}}
+{% endif %}
+{% endfor %}
+{% endmacro %}

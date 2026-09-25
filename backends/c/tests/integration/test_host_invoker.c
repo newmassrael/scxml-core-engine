@@ -87,8 +87,10 @@ static int64_t counter(const statechart_host_invoker_t *sm, const char *name) {
         ok = statechart_host_invoker_refused(sm, &value);
     } else if (strcmp(name, "ended") == 0) {
         ok = statechart_host_invoker_ended(sm, &value);
-    } else {
+    } else if (strcmp(name, "entered") == 0) {
         ok = statechart_host_invoker_entered(sm, &value);
+    } else if (strcmp(name, "dropped") == 0) {
+        ok = statechart_host_invoker_dropped(sm, &value);
     }
     if (!ok) {
         (void)fprintf(stderr, "host_invoker: FAIL - the fixture declares `%s` and the machine could not read it\n",
@@ -155,6 +157,57 @@ static int a_registered_invoker_is_started_with_what_the_document_wrote(void) {
     // Each invocation is started as itself: `probe2` begins with `probe`.
     bad |= check_line("started", &rec, 0, "START id=probe type=" DECLARED_TYPE " src=pane://turn within=2500");
     bad |= check_line("started", &rec, 1, "START id=probe2 type=" DECLARED_TYPE " src=pane://other within=absent");
+    statechart_host_invoker_destroy(&sm);
+    return bad;
+}
+
+// A request-recording invoker: one line per start, carrying every field the
+// request holds and every param pair in the order the array gives them.
+static void request_invoker(void *user_data, const sce_host_invoke_event_t *event, sce_host_invoke_response_t *out) {
+    (void)out;
+    recorder_t *rec = (recorder_t *)user_data;
+    if (event->phase != SCE_HOST_INVOKE_START) {
+        return;
+    }
+    char line[128];
+    int used = snprintf(line, sizeof(line), "START id=%s src=%s content=%s params=", event->invoke_id, event->src,
+                        event->content);
+    for (int i = 0; i < event->param_count && used > 0 && (size_t)used < sizeof(line); i++) {
+        used += snprintf(line + used, sizeof(line) - (size_t)used, "%s%s=%s", i > 0 ? "," : "", event->params[i].name,
+                         event->params[i].value);
+    }
+    record(rec, line);
+}
+
+// W3C SCXML 6.4.1: `srcexpr`, `namelist`, `<param expr>` and `<content expr>`
+// are read from the data model when the invocation starts. The request used
+// to carry the literal params alone, so a document that computed what to
+// invoke handed the host an empty description.
+static int what_the_request_says_is_evaluated_when_the_invocation_starts(void) {
+    recorder_t rec;
+    memset(&rec, 0, sizeof(rec));
+    statechart_host_invoker_t sm;
+    sce_host_invoker_registry_t wiring;
+    memset(&wiring, 0, sizeof(wiring));
+    (void)sce_host_invoker_register(&wiring, DECLARED_TYPE, request_invoker, &rec);
+    statechart_host_invoker_init_with_host_invokers(&sm, &wiring);
+    memset(&rec, 0, sizeof(rec));  // `probe` / `probe2`, which the case above already reads
+    statechart_host_invoker_event_with_meta_t evaluate;
+    memset(&evaluate, 0, sizeof(evaluate));
+    evaluate.event = STATECHART_HOST_INVOKER_EVENT_EVALUATE;
+    statechart_host_invoker_raise_external(&sm, &evaluate);
+    statechart_host_invoker_step(&sm);
+
+    int bad = 0;
+    // `req3`'s srcexpr cannot be evaluated, so it is never started.
+    bad |= check("evaluate", "invoker calls", rec.calls, 2);
+    // Namelist entries first, then each `<param>` in document order: a
+    // repeated name is a second pair, and the one that failed is absent
+    // (W3C SCXML 5.7.1) while the invocation still started.
+    bad |= check_line("evaluate", &rec, 0, "START id=req src=pane://dyn content= params=n=7,twice=a,twice=8");
+    bad |= check_line("evaluate", &rec, 1, "START id=req2 src= content=body:7 params=");
+    // One error.execution for the dropped `<param>`, one for `req3`.
+    bad |= check("evaluate", "dropped", counter(&sm, "dropped"), 2);
     statechart_host_invoker_destroy(&sm);
     return bad;
 }
@@ -255,6 +308,7 @@ static int an_invoker_registered_for_another_type_does_not_run_this_one(void) {
 int main(void) {
     int bad = 0;
     bad |= a_registered_invoker_is_started_with_what_the_document_wrote();
+    bad |= what_the_request_says_is_evaluated_when_the_invocation_starts();
     bad |= leaving_the_state_cancels_the_invocation();
     bad |= cancel_is_not_delivered_for_an_invocation_that_never_started();
     bad |= a_declared_type_with_no_invoker_still_raises_error_execution();

@@ -19,6 +19,7 @@
 #}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {%- import '_macros/sce_annotation_marker.jinja2' as annot %}
+{%- import 'param_macros.kt.jinja2' as param_macros %}
 
     // Entry Actions (W3C SCXML 3.8)
     {# SCE Protocol-Synthesis RFC §synth-5-O — function-scope SCE-MAP marker
@@ -113,19 +114,53 @@
                 run {
                     val generatedInvokeId = "{{ inv.state_id }}.${System.identityHashCode(this)}.{{ inv.invoke_id }}"
                     deferInvoke(state, generatedInvokeId) {
-                        val hostInvokeParams = mutableMapOf<String, List<String>>()
-{% for param in inv.params %}
-{% if param.is_static_literal %}
-                        hostInvokeParams["{{ param.name | escape_kotlin }}"] =
-                            (hostInvokeParams["{{ param.name | escape_kotlin }}"] ?: emptyList()) + "{{ param.static_value | escape_kotlin }}"
+{% set host_evaluates = inv.srcexpr or inv.namelist or inv.contentexpr or (inv.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0) %}
+{% if host_evaluates and model.needs_script_engine %}
+                        // W3C SCXML 6.4.1: what the request says is evaluated
+                        // now, when the invocation starts. An attribute that
+                        // cannot be evaluated raises error.execution and starts
+                        // nothing; a `<param>` that cannot is reported and
+                        // dropped (W3C SCXML 5.7.1) while the invocation starts.
+                        ensureScriptEngine()
+                        val hostEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                        val hostSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+{% endif %}
+{% if model.needs_script_engine %}
+{% for attr, var, expr in [('src', 'hostInvokeSrc', inv.srcexpr), ('content', 'hostInvokeContent', inv.contentexpr)] %}
+{% if expr %}
+                        val {{ var }} = try {
+                            valueToWireString(hostEngine.evaluateExpr(hostSid, {{ expr | to_script_source_expr }}))
+                        } catch (_: Exception) {
+                            raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> {{ attr }}expr failed to evaluate")
+                            return@deferInvoke
+                        }
 {% endif %}
 {% endfor %}
+{% endif %}
+                        val hostInvokeParams = mutableMapOf<String, List<String>>()
+{% if inv.namelist and model.needs_script_engine %}
+{% for var_name in inv.namelist.split() %}
+                        if (!hostEngine.hasVariable(hostSid, "{{ var_name }}")) {
+                            raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> namelist names '{{ var_name }}', which is not declared")
+                            return@deferInvoke
+                        }
+                        try {
+                            hostInvokeParams["{{ var_name }}"] =
+                                (hostInvokeParams["{{ var_name }}"] ?: emptyList()) + valueToWireString(hostEngine.getVariable(hostSid, "{{ var_name }}"))
+                        } catch (_: Exception) {
+                            raisePlatformError({{ machine_name }}Event.Error.Execution, "<invoke> namelist entry '{{ var_name }}' failed to evaluate")
+                            return@deferInvoke
+                        }
+{% endfor %}
+{% endif %}
+{{ param_macros.collect_wire_params_into(inv.params, model, 'hostInvokeParams', 'hostEngine', 'hostSid', machine_name, '<invoke>', '                        ') -}}
                         val started = performHostInvoke(
                             HostInvokeRequest(
                                 processorType = "{{ inv.invoke_type | escape_kotlin }}",
                                 invokeId = "{{ inv.invoke_id | escape_kotlin }}",
-                                src = "{{ inv.src | default('', true) | escape_kotlin }}",
-                                params = hostInvokeParams
+                                src = {% if inv.srcexpr %}hostInvokeSrc{% else %}"{{ inv.src | default('', true) | escape_kotlin }}"{% endif %},
+                                params = hostInvokeParams,
+                                content = {% if inv.contentexpr %}hostInvokeContent{% else %}"{{ inv.content | default('', true) | escape_kotlin }}"{% endif %}
                             )
                         )
                         if (!started) {

@@ -1300,14 +1300,15 @@ class AiLoopStateMachine(
                 val hostSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val hostParams = mutableMapOf<String, List<String>>()
                 try {
+                    // The param crosses as text, and `toString()` is the platform's
+                    // spelling of the value; this is the document's.
                     val v = hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("end_prompt", "end_prompt"))
-                    // The param crosses as text, and `toString()` is the
-                    // platform's spelling of the value; this is the document's.
-                    hostParams["text"] = listOf(valueToWireString(v))
+                    hostParams["text"] =
+                        (hostParams["text"] ?: emptyList()) + valueToWireString(v)
                 } catch (_: Exception) {
-                    // W3C SCXML 5.7.1: report the failure and omit the name and
-                    // the value — the act still happens, without a field the
-                    // document could not produce.
+                    // W3C SCXML 5.7.1: report the failure and omit the name and the
+                    // value — the act still happens, without a field the document
+                    // could not produce.
                     raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='text'> expr failed to evaluate")
                 }
                 val hostEventName = "prompt.end"
@@ -1363,14 +1364,15 @@ class AiLoopStateMachine(
                 val hostSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val hostParams = mutableMapOf<String, List<String>>()
                 try {
+                    // The param crosses as text, and `toString()` is the platform's
+                    // spelling of the value; this is the document's.
                     val v = hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("done_marker", "done_marker"))
-                    // The param crosses as text, and `toString()` is the
-                    // platform's spelling of the value; this is the document's.
-                    hostParams["marker"] = listOf(valueToWireString(v))
+                    hostParams["marker"] =
+                        (hostParams["marker"] ?: emptyList()) + valueToWireString(v)
                 } catch (_: Exception) {
-                    // W3C SCXML 5.7.1: report the failure and omit the name and
-                    // the value — the act still happens, without a field the
-                    // document could not produce.
+                    // W3C SCXML 5.7.1: report the failure and omit the name and the
+                    // value — the act still happens, without a field the document
+                    // could not produce.
                     raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='marker'> expr failed to evaluate")
                 }
                 val hostEventName = "judge.begin"
@@ -1439,14 +1441,15 @@ class AiLoopStateMachine(
                 val hostSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val hostParams = mutableMapOf<String, List<String>>()
                 try {
+                    // The param crosses as text, and `toString()` is the platform's
+                    // spelling of the value; this is the document's.
                     val v = hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("start_prompt", "start_prompt"))
-                    // The param crosses as text, and `toString()` is the
-                    // platform's spelling of the value; this is the document's.
-                    hostParams["text"] = listOf(valueToWireString(v))
+                    hostParams["text"] =
+                        (hostParams["text"] ?: emptyList()) + valueToWireString(v)
                 } catch (_: Exception) {
-                    // W3C SCXML 5.7.1: report the failure and omit the name and
-                    // the value — the act still happens, without a field the
-                    // document could not produce.
+                    // W3C SCXML 5.7.1: report the failure and omit the name and the
+                    // value — the act still happens, without a field the document
+                    // could not produce.
                     raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='text'> expr failed to evaluate")
                 }
                 val hostEventName = "prompt.start"
@@ -1714,14 +1717,15 @@ class AiLoopStateMachine(
                 val hostSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val hostParams = mutableMapOf<String, List<String>>()
                 try {
+                    // The param crosses as text, and `toString()` is the platform's
+                    // spelling of the value; this is the document's.
                     val v = hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("turn_prompt", "turn_prompt"))
-                    // The param crosses as text, and `toString()` is the
-                    // platform's spelling of the value; this is the document's.
-                    hostParams["text"] = listOf(valueToWireString(v))
+                    hostParams["text"] =
+                        (hostParams["text"] ?: emptyList()) + valueToWireString(v)
                 } catch (_: Exception) {
-                    // W3C SCXML 5.7.1: report the failure and omit the name and
-                    // the value — the act still happens, without a field the
-                    // document could not produce.
+                    // W3C SCXML 5.7.1: report the failure and omit the name and the
+                    // value — the act still happens, without a field the document
+                    // could not produce.
                     raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='text'> expr failed to evaluate")
                 }
                 val hostEventName = "prompt.turn"
@@ -1783,14 +1787,15 @@ class AiLoopStateMachine(
                 val hostSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
                 val hostParams = mutableMapOf<String, List<String>>()
                 try {
+                    // The param crosses as text, and `toString()` is the platform's
+                    // spelling of the value; this is the document's.
                     val v = hostEngine.evaluateExpr(hostSid, com.sce.runtime.ScriptSource.lua("turn_prompt", "turn_prompt"))
-                    // The param crosses as text, and `toString()` is the
-                    // platform's spelling of the value; this is the document's.
-                    hostParams["text"] = listOf(valueToWireString(v))
+                    hostParams["text"] =
+                        (hostParams["text"] ?: emptyList()) + valueToWireString(v)
                 } catch (_: Exception) {
-                    // W3C SCXML 5.7.1: report the failure and omit the name and
-                    // the value — the act still happens, without a field the
-                    // document could not produce.
+                    // W3C SCXML 5.7.1: report the failure and omit the name and the
+                    // value — the act still happens, without a field the document
+                    // could not produce.
                     raisePlatformError(AiLoopEvent.Error.Execution, "<send> <param name='text'> expr failed to evaluate")
                 }
                 val hostEventName = "prompt.turn"

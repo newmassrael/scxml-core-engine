@@ -1,0 +1,47 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+{# W3C SCXML 5.7: collect `<param>` values into an already-declared
+   `map[string][]string` named `map`, as text.
+
+   Two consumers need the same collection — a `<send>` over BasicHTTP (W3C
+   C.2) and an `<invoke>` the host runs (W3C 6.4.1) — and they differ only in
+   the variable they fill and the element a refusal names. Written once so a
+   `<param>` shape handled for one is handled for the other; the host invoke
+   had received the literal ones alone.
+
+   A repeated name keeps every value (W3C SCXML 5.7 permits repetition), and a
+   failed evaluation drops the pair AND reports it: W3C SCXML 5.7.1 puts both
+   halves on one clause and names no processor, so the transport cannot change
+   the answer.
+
+   `element` is how a refusal names the element (`<send>`, `<invoke>`).
+   `machine_name` is a parameter rather than a global because a macro body does
+   not see the render context. #}
+{% macro collect_params_into(params, model, map, machine_name, element) %}
+{% for param in params %}
+{% if param.is_static_literal %}
+			{{ map }}["{{ param.name | escape_go }}"] = append({{ map }}["{{ param.name | escape_go }}"], "{{ param.static_value | escape_go }}")
+{% elif param.expr and model.needs_script_engine %}
+			if paramVal, paramErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ param.expr | to_lua_expr }}`); paramErr == nil {
+				// W3C SCXML C.2: the value crosses as text, rendered by the
+				// neutral helper — an engine literal would put this machine's
+				// language on the wire.
+				{{ map }}["{{ param.name | escape_go }}"] = append({{ map }}["{{ param.name | escape_go }}"], sce.ToWireString(paramVal))
+			} else {
+				// W3C SCXML 5.7.1: the pair is dropped AND the failure is
+				// reported.
+{% if 'error.execution' in model.events %}
+				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "{{ element }} <param name='{{ param.name | escape_go }}'> expr failed to evaluate"))
+{% endif %}
+			}
+{% elif param.location and model.needs_script_engine %}
+			if paramVal, paramErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ param.location }}`); paramErr == nil {
+				{{ map }}["{{ param.name | escape_go }}"] = append({{ map }}["{{ param.name | escape_go }}"], sce.ToWireString(paramVal))
+			} else {
+{% if 'error.execution' in model.events %}
+				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "{{ element }} <param name='{{ param.name | escape_go }}'> location could not be read"))
+{% endif %}
+			}
+{% endif %}
+{% endfor %}
+{% endmacro %}

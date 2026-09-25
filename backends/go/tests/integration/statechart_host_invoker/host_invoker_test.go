@@ -132,6 +132,45 @@ func TestARegisteredInvokerIsStartedWithWhatTheDocumentWrote(t *testing.T) {
 	}
 }
 
+// §scxml-6.4.1: `srcexpr`, `namelist`, `<param expr>` and `<content expr>` are
+// read from the data model when the invocation starts. The request used to
+// carry the literal params alone, so a document that computed what to invoke
+// handed the host an empty description.
+func TestWhatTheRequestSaysIsEvaluatedWhenTheInvocationStarts(t *testing.T) {
+	var starts []sce.HostInvokeRequest
+	s := newStarted()
+	s.engine.RegisterInvoker(declaredType, func(ev sce.HostInvokeEvent) *sce.HostInvokeResponse {
+		if ev.Start != nil {
+			starts = append(starts, *ev.Start)
+		}
+		return nil
+	})
+	s.engine.Initialize()
+	s.engine.Step()
+	starts = nil // `probe` / `probe2`, which the case above already reads
+	s.engine.ProcessEvent(StatechartHostInvokerEventEvaluate)
+
+	// `req3`'s srcexpr cannot be evaluated, so it is never started.
+	if len(starts) != 2 || starts[0].InvokeID != "req" || starts[1].InvokeID != "req2" {
+		t.Fatalf("started: %+v", starts)
+	}
+	if got := starts[0].Src; got != "pane://dyn" {
+		t.Fatalf("srcexpr was not evaluated: %q", got)
+	}
+	// A repeated name keeps both values in document order; the `<param>` that
+	// failed is absent (§scxml-5.7.1) while the invocation still started.
+	if got := fmt.Sprint(starts[0].Params); got != "map[n:[7] twice:[a 8]]" {
+		t.Fatalf("params: %s", got)
+	}
+	if got := starts[1].Content; got != "body:7" {
+		t.Fatalf("content: %q", got)
+	}
+	// One error.execution for the dropped `<param>`, one for `req3`.
+	if got := s.counter(t, "dropped"); got != 2 {
+		t.Fatalf("a failed evaluation was not reported: dropped = %d", got)
+	}
+}
+
 // The invocation ends with the state that started it. Without this the host is
 // told to begin work and never told to stop — which no configuration assertion
 // can detect, because the machine looks correct either way.

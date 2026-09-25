@@ -2,6 +2,7 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
 {# W3C SCXML 6.2: Send event (internal, external, delayed, HTTP) #}
+{% import 'param_macros.go.jinja2' as param_macros %}
 {% set send_id = action.id if action.id else action.auto_send_id %}
 {% if send_id %}
 	// W3C SCXML 6.2: send id="{{ send_id }}"
@@ -285,34 +286,7 @@
 {% elif has_params %}
 			// W3C SCXML C.2: Build HTTP params map from <param> elements
 			httpParams := make(map[string][]string)
-{% for param in action.params %}
-{% if param.is_static_literal %}
-			httpParams["{{ param.name | escape_go }}"] = append(httpParams["{{ param.name | escape_go }}"], "{{ param.static_value | escape_go }}")
-{% elif param.expr and model.needs_script_engine %}
-			if httpParamVal, httpParamErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ param.expr | to_lua_expr }}`); httpParamErr == nil {
-				// W3C SCXML C.2: the param crosses as text, so the value is
-				// rendered by the neutral helper — an engine literal would put
-				// this sender's language on the wire.
-				httpParams["{{ param.name | escape_go }}"] = append(httpParams["{{ param.name | escape_go }}"], sce.ToWireString(httpParamVal))
-			} else {
-				// W3C SCXML 5.7.1: the pair is dropped AND the failure is
-				// reported. The clause names no processor, so the same
-				// document must not go quiet just because this send crosses
-				// HTTP instead of reaching an SCXML session.
-{% if 'error.execution' in model.events %}
-				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send> <param name='{{ param.name | escape_go }}'> expr failed to evaluate"))
-{% endif %}
-			}
-{% elif param.location and model.needs_script_engine %}
-			if httpParamVal, httpParamErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ param.location }}`); httpParamErr == nil {
-				httpParams["{{ param.name | escape_go }}"] = append(httpParams["{{ param.name | escape_go }}"], sce.ToWireString(httpParamVal))
-			} else {
-{% if 'error.execution' in model.events %}
-				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<send> <param name='{{ param.name | escape_go }}'> location could not be read"))
-{% endif %}
-			}
-{% endif %}
-{% endfor %}
+{{ param_macros.collect_params_into(action.params, model, 'httpParams', machine_name, '<send>') -}}
 {% else %}
 			// No arguments to map: a nil form leaves the body to `<content>`.
 			var httpParams map[string][]string

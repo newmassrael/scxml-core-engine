@@ -103,12 +103,12 @@ def test_a_static_http_target_reports_and_discards_a_broken_namelist(setup_http)
     policy = engine._policy
 
     # The declared name renders; W3C SCXML C.2 asks for the name AND value.
-    assert policy._build_http_params(engine, [], "Var1") == {"Var1": ["2"]}
+    assert policy._build_http_params(engine, [], "Var1", "<send>") == {"Var1": ["2"]}
 
     # The undeclared one abandons the message (W3C SCXML 6.2.3) after
     # reporting it (W3C SCXML 5.9.2) — never a quiet partial form.
     try:
-        policy._build_http_params(engine, [], "__sce_not_declared__")
+        policy._build_http_params(engine, [], "__sce_not_declared__", "<send>")
     except Exception as exc:  # noqa: BLE001 — the sentinel type is generated
         assert type(exc).__name__ == "_ActionAbort", (
             f"a broken namelist item raised {type(exc).__name__}, not the "

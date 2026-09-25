@@ -1,5 +1,6 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+{% import 'param_macros.go.jinja2' as param_macros %}
 {% macro hybrid_child_start(invoke_info, child_stem, wrapper_type) %}
 			// W3C SCXML 6.5: Generate child session ID
 			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
@@ -263,18 +264,58 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			// DOCUMENT's, not the per-instance one the pending queue carries:
 			// `done.invoke.<id>` is the name the author wrote a transition
 			// for, so it is the name the host must answer on.
-			hostInvokeParams := map[string][]string{}
-{% for param in invoke_info.params %}
-{% if param.is_static_literal %}
-			hostInvokeParams["{{ param.name | escape_go }}"] = append(hostInvokeParams["{{ param.name | escape_go }}"], "{{ param.static_value | escape_go }}")
+			// W3C SCXML 6.4.1: what the request says is evaluated now, when the
+			// invocation starts, by the rules the other invoke kinds follow: an
+			// attribute that cannot be evaluated starts nothing, and a `<param>`
+			// that cannot is reported and left out (W3C SCXML 5.7.1).
+			hostInvokeSrc := "{{ invoke_info.src | default('', true) | escape_go }}"
+			hostInvokeContent := "{{ invoke_info.content | default('', true) | escape_go }}"
+{% if invoke_info.srcexpr or invoke_info.contentexpr or invoke_info.namelist %}
+			p.ensureScriptEngine()
+{% endif %}
+{% for attr, var, expr in [('src', 'hostInvokeSrc', invoke_info.srcexpr), ('content', 'hostInvokeContent', invoke_info.contentexpr)] %}
+{% if expr %}
+			if val, err := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ expr | to_lua_expr }}`); err == nil {
+				{{ var }} = sce.ToWireString(val)
+			} else {
+{% if 'error.execution' in model.events %}
+				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke {{ attr }}expr='{{ expr | escape_go }}'> could not be evaluated"))
+{% endif %}
+				continue
+			}
 {% endif %}
 {% endfor %}
+			hostInvokeParams := map[string][]string{}
+{% if invoke_info.namelist %}
+			// W3C SCXML 6.4.1: a namelist location that is not declared, or
+			// does not evaluate, starts nothing — the rule the scxml invoke
+			// reads its namelist by.
+			namelistFailed := false
+{% for name in invoke_info.namelist | split %}
+			if !namelistFailed {
+				if !p.ScriptEngine.HasVariable(p.SessionID, "{{ name }}") {
+					namelistFailed = true
+				} else if val, err := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ name }}`); err == nil {
+					hostInvokeParams["{{ name }}"] = append(hostInvokeParams["{{ name }}"], sce.ToWireString(val))
+				} else {
+					namelistFailed = true
+				}
+			}
+{% endfor %}
+			if namelistFailed {
+{% if 'error.execution' in model.events %}
+				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, "<invoke> namelist names a location that could not be read"))
+{% endif %}
+				continue
+			}
+{% endif %}
+{{ param_macros.collect_params_into(invoke_info.params, model, 'hostInvokeParams', machine_name, '<invoke>') -}}
 			if !engine.PerformHostInvoke(sce.HostInvokeRequest{
 				ProcessorType: "{{ invoke_info.invoke_type | escape_go }}",
 				InvokeID:      "{{ invoke_info.invoke_id }}",
-				Src:           "{{ invoke_info.src | default('', true) | escape_go }}",
+				Src:           hostInvokeSrc,
 				Params:        hostInvokeParams,
-				Content:       "{{ invoke_info.content | default('', true) | escape_go }}",
+				Content:       hostInvokeContent,
 			}) {
 				// W3C SCXML 6.4.1: declared but no invoker registered. The
 				// document asked for a process to be run and none was, which

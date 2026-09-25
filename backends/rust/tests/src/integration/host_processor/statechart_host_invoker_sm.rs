@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 0e4810627dfdd86a6e46a26ed703f8821d03ff03c037ab7267b127e02a3a3d8e
+// source-hash: 5a23c8ada2ea5d406d65687cb2a17b08679d5cf3d6429f3e63eef5a8866c8941
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -71,8 +71,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: statechart_host_invoker.scxml:36 :: _machine"]
-// SCE-MAP: statechart_host_invoker.scxml:36 :: _machine
+#![doc = "SCE-MAP: statechart_host_invoker.scxml:50 :: _machine"]
+// SCE-MAP: statechart_host_invoker.scxml:50 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -84,6 +84,7 @@ use sce_rust_runtime::{Engine, StatePolicy};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum StatechartHostInvokerState {
     Done,
+    Evaluating,
     // W3C SCXML 3.2: `<scxml initial>` state — the machine's `Default`.
     #[default]
     Invoking,
@@ -98,6 +99,7 @@ pub enum StatechartHostInvokerEvent {
     DoneInvokeProbe,
     DoneInvokeProbe2,
     ErrorExecution,
+    Evaluate,
     Leave,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
@@ -119,8 +121,10 @@ impl StatechartHostInvokerEvent {
     /// agnostic; inert when unused. Associated (not a free `const`) so
     /// several machines glob-re-exported into one module never collide
     /// on the name.
-    pub const EXTERNALLY_DRIVABLE_EVENTS: &'static [StatechartHostInvokerEvent] =
-        &[StatechartHostInvokerEvent::Leave];
+    pub const EXTERNALLY_DRIVABLE_EVENTS: &'static [StatechartHostInvokerEvent] = &[
+        StatechartHostInvokerEvent::Evaluate,
+        StatechartHostInvokerEvent::Leave,
+    ];
 }
 
 // ======================================================================
@@ -262,6 +266,51 @@ impl StatechartHostInvokerPolicy {
         )
     }
 
+    /// §scxml-5.3: what the `destination` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `destination` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn destination(&self) -> Option<String> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_string(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "destination",
+        )
+    }
+
+    /// §scxml-5.3: what the `n` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `n` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn n(&self) -> Option<i64> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_int(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "n",
+        )
+    }
+
+    /// §scxml-5.3: what the `dropped` datamodel variable is holding now.
+    ///
+    /// The live value, not the authored one: `<assign>` writes into the
+    /// session, so a reader frozen at generation time would answer the
+    /// document's literal for the whole run. `None` means the machine cannot
+    /// answer — the session is not initialized yet, `dropped` was
+    /// assigned a value of another type, or the engine refused.
+    pub fn dropped(&self) -> Option<i64> {
+        ::sce_rust_runtime::helpers::datamodel_read::read_int(
+            self.script_engine.as_ref(),
+            self.session_id.as_deref(),
+            "dropped",
+        )
+    }
+
     /// §scxml-C-2-3: declare the inbound BasicHTTP endpoint serving this
     /// machine, published as the processor's 'location' in `_ioprocessors`.
     /// Must be called before `initialize()`, since the entries are populated
@@ -359,6 +408,30 @@ impl StatechartHostInvokerPolicy {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
 
+        // W3C SCXML 5.2/5.3: Initialize 'destination' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "destination",
+            "\"pane://dyn\"",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'n' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "n", "7",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'dropped' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "dropped", "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+        }
+
         self.script_engine_initialized = true;
     }
 
@@ -436,6 +509,42 @@ impl StatechartHostInvokerPolicy {
             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
                 StatechartHostInvokerEvent::ErrorExecution,
                 "<data id='entered'> expr failed to evaluate",
+            ));
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'destination' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se,
+            &sid,
+            "destination",
+            "\"pane://dyn\"",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                StatechartHostInvokerEvent::ErrorExecution,
+                "<data id='destination'> expr failed to evaluate",
+            ));
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'n' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "n", "7",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                StatechartHostInvokerEvent::ErrorExecution,
+                "<data id='n'> expr failed to evaluate",
+            ));
+        }
+
+        // W3C SCXML 5.2/5.3: Initialize 'dropped' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "dropped", "0",
+        ) {
+            ::sce_rust_runtime::sce_log_error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                StatechartHostInvokerEvent::ErrorExecution,
+                "<data id='dropped'> expr failed to evaluate",
             ));
         }
 
@@ -559,24 +668,292 @@ impl StatechartHostInvokerPolicy {
         let invokes_to_execute = std::mem::take(&mut self.pending_invokes);
 
         for pending in &invokes_to_execute {
+            if pending.document_id == "req" {
+                // §scxml-6.4.1: the host declared this `type`, so start the
+                // invocation rather than refusing it. The id handed over is
+                // the DOCUMENT's, not the per-instance one the defer queue
+                // carries: `done.invoke.<id>` is the name the author wrote a
+                // transition for, so it is the name the host must answer on.
+                // §scxml-6.4.1: what the request says is evaluated now, when
+                // the invocation starts, by the rules the other invoke kinds
+                // follow: an attribute that cannot be evaluated starts
+                // nothing, and a `<param>` that cannot is reported and left
+                // out (§scxml-5.7.1).
+                #[allow(unused_mut)]
+                let mut host_invoke_src = "".to_string();
+                #[allow(unused_mut)]
+                let mut host_invoke_content = "".to_string();
+                {
+                    self.ensure_script_engine();
+                    let sid = self.session_id.as_ref().unwrap().clone();
+                    let se = self.script_engine.clone();
+                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                    match se.evaluate_expression(&sid, "destination") {
+                        Ok(val) => {
+                            host_invoke_src =
+                                ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(
+                                    &val,
+                                )
+                        }
+                        Err(_) => {
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                StatechartHostInvokerEvent::ErrorExecution,
+                                "<invoke srcexpr='destination'> could not be evaluated",
+                            ));
+                            continue;
+                        }
+                    }
+                }
+                let mut host_invoke_params =
+                    std::collections::HashMap::<String, Vec<String>>::new();
+                {
+                    // §scxml-6.4.1: a namelist location that is not declared,
+                    // or does not evaluate, starts nothing — the rule the
+                    // scxml invoke reads its namelist by.
+                    self.ensure_script_engine();
+                    let sid = self.session_id.as_ref().unwrap().clone();
+                    let se = self.script_engine.clone();
+                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                    let mut namelist_failed = false;
+                    if !namelist_failed {
+                        match (se.has_variable(&sid, "n"), se.evaluate_expression(&sid, "n")) {
+                            (true, Ok(val)) => host_invoke_params.entry("n".to_string()).or_default().push(::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val)),
+                            _ => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StatechartHostInvokerEvent::ErrorExecution, "<invoke> namelist names 'n', which could not be read"));
+                                namelist_failed = true;
+                            }
+                        }
+                    }
+                    if namelist_failed {
+                        continue;
+                    }
+                }
+                host_invoke_params
+                    .entry("twice".to_string())
+                    .or_default()
+                    .push("a".to_string());
+                {
+                    self.ensure_script_engine();
+                    let sid = self.session_id.as_ref().unwrap().clone();
+                    let se = self.script_engine.clone();
+                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                    match se.evaluate_expression(&sid, "_scxml_add(n, 1)") {
+                        Ok(val) => {
+                            // W3C SCXML C.2: the param crosses as text, so the value is
+                            // rendered by the neutral helper — an engine literal would
+                            // put this sender's language on the wire.
+                            let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
+                            host_invoke_params
+                                .entry("twice".to_string())
+                                .or_default()
+                                .push(s);
+                        }
+                        Err(e) => {
+                            // W3C SCXML 5.7.1: report the failure and omit the pair.
+                            ::sce_rust_runtime::sce_log_error!(
+                                "invoke param 'twice' eval failed: {}",
+                                e
+                            );
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                StatechartHostInvokerEvent::ErrorExecution,
+                                "<invoke> <param name='twice'> expr failed to evaluate",
+                            ));
+                        }
+                    }
+                }
+                {
+                    self.ensure_script_engine();
+                    let sid = self.session_id.as_ref().unwrap().clone();
+                    let se = self.script_engine.clone();
+                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                    match se.evaluate_expression(&sid, "n.nope.deeper") {
+                        Ok(val) => {
+                            // W3C SCXML C.2: the param crosses as text, so the value is
+                            // rendered by the neutral helper — an engine literal would
+                            // put this sender's language on the wire.
+                            let s = ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(&val);
+                            host_invoke_params
+                                .entry("bad".to_string())
+                                .or_default()
+                                .push(s);
+                        }
+                        Err(e) => {
+                            // W3C SCXML 5.7.1: report the failure and omit the pair.
+                            ::sce_rust_runtime::sce_log_error!(
+                                "invoke param 'bad' eval failed: {}",
+                                e
+                            );
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                StatechartHostInvokerEvent::ErrorExecution,
+                                "<invoke> <param name='bad'> expr failed to evaluate",
+                            ));
+                        }
+                    }
+                }
+
+                let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
+                    processor_type: "x-sce-host".to_string(),
+                    invoke_id: "req".to_string(),
+                    src: host_invoke_src,
+                    params: host_invoke_params,
+                    content: host_invoke_content,
+                });
+                if !started {
+                    // §scxml-6.4.1: declared but no invoker registered. The
+                    // document asked for a process to be run and none was,
+                    // which is the same fact as an unsupported type — so the
+                    // same event, rather than a silence that reads as started.
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                        StatechartHostInvokerEvent::ErrorExecution,
+                        "<invoke> names an invoker the host declared but never registered",
+                    ));
+                }
+                continue;
+            }
+            if pending.document_id == "req2" {
+                // §scxml-6.4.1: the host declared this `type`, so start the
+                // invocation rather than refusing it. The id handed over is
+                // the DOCUMENT's, not the per-instance one the defer queue
+                // carries: `done.invoke.<id>` is the name the author wrote a
+                // transition for, so it is the name the host must answer on.
+                // §scxml-6.4.1: what the request says is evaluated now, when
+                // the invocation starts, by the rules the other invoke kinds
+                // follow: an attribute that cannot be evaluated starts
+                // nothing, and a `<param>` that cannot is reported and left
+                // out (§scxml-5.7.1).
+                #[allow(unused_mut)]
+                let mut host_invoke_src = "".to_string();
+                #[allow(unused_mut)]
+                let mut host_invoke_content = "".to_string();
+                {
+                    self.ensure_script_engine();
+                    let sid = self.session_id.as_ref().unwrap().clone();
+                    let se = self.script_engine.clone();
+                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                    match se.evaluate_expression(&sid, "(\"body:\" .. _scxml_tostring(n))") {
+                        Ok(val) => {
+                            host_invoke_content =
+                                ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(
+                                    &val,
+                                )
+                        }
+                        Err(_) => {
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                StatechartHostInvokerEvent::ErrorExecution,
+                                "<invoke contentexpr=''body:' + n'> could not be evaluated",
+                            ));
+                            continue;
+                        }
+                    }
+                }
+                let mut host_invoke_params =
+                    std::collections::HashMap::<String, Vec<String>>::new();
+
+                let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
+                    processor_type: "x-sce-host".to_string(),
+                    invoke_id: "req2".to_string(),
+                    src: host_invoke_src,
+                    params: host_invoke_params,
+                    content: host_invoke_content,
+                });
+                if !started {
+                    // §scxml-6.4.1: declared but no invoker registered. The
+                    // document asked for a process to be run and none was,
+                    // which is the same fact as an unsupported type — so the
+                    // same event, rather than a silence that reads as started.
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                        StatechartHostInvokerEvent::ErrorExecution,
+                        "<invoke> names an invoker the host declared but never registered",
+                    ));
+                }
+                continue;
+            }
+            if pending.document_id == "req3" {
+                // §scxml-6.4.1: the host declared this `type`, so start the
+                // invocation rather than refusing it. The id handed over is
+                // the DOCUMENT's, not the per-instance one the defer queue
+                // carries: `done.invoke.<id>` is the name the author wrote a
+                // transition for, so it is the name the host must answer on.
+                // §scxml-6.4.1: what the request says is evaluated now, when
+                // the invocation starts, by the rules the other invoke kinds
+                // follow: an attribute that cannot be evaluated starts
+                // nothing, and a `<param>` that cannot is reported and left
+                // out (§scxml-5.7.1).
+                #[allow(unused_mut)]
+                let mut host_invoke_src = "".to_string();
+                #[allow(unused_mut)]
+                let mut host_invoke_content = "".to_string();
+                {
+                    self.ensure_script_engine();
+                    let sid = self.session_id.as_ref().unwrap().clone();
+                    let se = self.script_engine.clone();
+                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                    match se.evaluate_expression(&sid, "n.nope.deeper") {
+                        Ok(val) => {
+                            host_invoke_src =
+                                ::sce_rust_runtime::helpers::event_data::script_value_to_wire_string(
+                                    &val,
+                                )
+                        }
+                        Err(_) => {
+                            engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                StatechartHostInvokerEvent::ErrorExecution,
+                                "<invoke srcexpr='n.nope.deeper'> could not be evaluated",
+                            ));
+                            continue;
+                        }
+                    }
+                }
+                let mut host_invoke_params =
+                    std::collections::HashMap::<String, Vec<String>>::new();
+
+                let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
+                    processor_type: "x-sce-host".to_string(),
+                    invoke_id: "req3".to_string(),
+                    src: host_invoke_src,
+                    params: host_invoke_params,
+                    content: host_invoke_content,
+                });
+                if !started {
+                    // §scxml-6.4.1: declared but no invoker registered. The
+                    // document asked for a process to be run and none was,
+                    // which is the same fact as an unsupported type — so the
+                    // same event, rather than a silence that reads as started.
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                        StatechartHostInvokerEvent::ErrorExecution,
+                        "<invoke> names an invoker the host declared but never registered",
+                    ));
+                }
+                continue;
+            }
             if pending.document_id == "probe" {
                 // §scxml-6.4.1: the host declared this `type`, so start the
                 // invocation rather than refusing it. The id handed over is
                 // the DOCUMENT's, not the per-instance one the defer queue
                 // carries: `done.invoke.<id>` is the name the author wrote a
                 // transition for, so it is the name the host must answer on.
+                // §scxml-6.4.1: what the request says is evaluated now, when
+                // the invocation starts, by the rules the other invoke kinds
+                // follow: an attribute that cannot be evaluated starts
+                // nothing, and a `<param>` that cannot is reported and left
+                // out (§scxml-5.7.1).
+                #[allow(unused_mut)]
+                let mut host_invoke_src = "pane://turn".to_string();
+                #[allow(unused_mut)]
+                let mut host_invoke_content = "".to_string();
                 let mut host_invoke_params =
                     std::collections::HashMap::<String, Vec<String>>::new();
                 host_invoke_params
                     .entry("within".to_string())
                     .or_default()
                     .push("2500".to_string());
+
                 let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
                     processor_type: "x-sce-host".to_string(),
                     invoke_id: "probe".to_string(),
-                    src: "pane://turn".to_string(),
+                    src: host_invoke_src,
                     params: host_invoke_params,
-                    content: "".to_string(),
+                    content: host_invoke_content,
                 });
                 if !started {
                     // §scxml-6.4.1: declared but no invoker registered. The
@@ -596,14 +973,24 @@ impl StatechartHostInvokerPolicy {
                 // the DOCUMENT's, not the per-instance one the defer queue
                 // carries: `done.invoke.<id>` is the name the author wrote a
                 // transition for, so it is the name the host must answer on.
+                // §scxml-6.4.1: what the request says is evaluated now, when
+                // the invocation starts, by the rules the other invoke kinds
+                // follow: an attribute that cannot be evaluated starts
+                // nothing, and a `<param>` that cannot is reported and left
+                // out (§scxml-5.7.1).
+                #[allow(unused_mut)]
+                let mut host_invoke_src = "pane://other".to_string();
+                #[allow(unused_mut)]
+                let mut host_invoke_content = "".to_string();
                 let mut host_invoke_params =
                     std::collections::HashMap::<String, Vec<String>>::new();
+
                 let started = engine.perform_host_invoke(sce_rust_runtime::HostInvokeRequest {
                     processor_type: "x-sce-host".to_string(),
                     invoke_id: "probe2".to_string(),
-                    src: "pane://other".to_string(),
+                    src: host_invoke_src,
                     params: host_invoke_params,
-                    content: "".to_string(),
+                    content: host_invoke_content,
                 });
                 if !started {
                     // §scxml-6.4.1: declared but no invoker registered. The
@@ -748,7 +1135,8 @@ impl StatePolicy for StatechartHostInvokerPolicy {
 
     fn get_document_order(state: Self::State) -> u32 {
         match state {
-            StatechartHostInvokerState::Done => 1,
+            StatechartHostInvokerState::Done => 2,
+            StatechartHostInvokerState::Evaluating => 1,
             StatechartHostInvokerState::Invoking => 0,
         }
     }
@@ -758,6 +1146,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
             StatechartHostInvokerEvent::DoneInvokeProbe => "done.invoke.probe",
             StatechartHostInvokerEvent::DoneInvokeProbe2 => "done.invoke.probe2",
             StatechartHostInvokerEvent::ErrorExecution => "error.execution",
+            StatechartHostInvokerEvent::Evaluate => "evaluate",
             StatechartHostInvokerEvent::Leave => "leave",
             StatechartHostInvokerEvent::Null => "",
         }
@@ -768,6 +1157,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
             "done.invoke.probe" => Some(StatechartHostInvokerEvent::DoneInvokeProbe),
             "done.invoke.probe2" => Some(StatechartHostInvokerEvent::DoneInvokeProbe2),
             "error.execution" => Some(StatechartHostInvokerEvent::ErrorExecution),
+            "evaluate" => Some(StatechartHostInvokerEvent::Evaluate),
             "leave" => Some(StatechartHostInvokerEvent::Leave),
             _ => None,
         }
@@ -776,6 +1166,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
     fn get_state_name(state: Self::State) -> &'static str {
         match state {
             StatechartHostInvokerState::Done => "done",
+            StatechartHostInvokerState::Evaluating => "evaluating",
             StatechartHostInvokerState::Invoking => "invoking",
         }
     }
@@ -786,6 +1177,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
     fn get_state_from_name(name: &str) -> Option<Self::State> {
         match name {
             "done" => Some(StatechartHostInvokerState::Done),
+            "evaluating" => Some(StatechartHostInvokerState::Evaluating),
             "invoking" => Some(StatechartHostInvokerState::Invoking),
             _ => None,
         }
@@ -838,8 +1230,8 @@ impl StatePolicy for StatechartHostInvokerPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: statechart_host_invoker.scxml:36 :: _machine"]
-    // SCE-MAP: statechart_host_invoker.scxml:36 :: _machine
+    #[doc = "SCE-MAP: statechart_host_invoker.scxml:50 :: _machine"]
+    // SCE-MAP: statechart_host_invoker.scxml:50 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -848,7 +1240,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
     ) {
         match state {
             StatechartHostInvokerState::Done => {
-                // SCE-MAP: statechart_host_invoker.scxml:71 :: done :: _state_body
+                // SCE-MAP: statechart_host_invoker.scxml:105 :: done :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -876,8 +1268,53 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                     }
                 }
             }
+            StatechartHostInvokerState::Evaluating => {
+                // SCE-MAP: statechart_host_invoker.scxml:89 :: evaluating :: _state_body
+                // §scxml-6.4.1: `type` names an invoker the HOST declared to
+                // this build. Deferred exactly like the refused arm above and
+                // for the same reason — §scxml-6.4 orders invokes after the
+                // macrostep settles, and a state that exits first must never
+                // have started anything. Only the execute step differs: a
+                // dispatch into the host's invoker instead of a raise.
+                {
+                    let generated_invoke_id =
+                        format!("{}.{}.req", "evaluating", self as *const _ as usize);
+                    sce_rust_runtime::invoke::defer_invoke(
+                        &mut self.pending_invokes,
+                        sce_rust_runtime::invoke::PendingInvoke {
+                            invoke_id: generated_invoke_id,
+                            state: StatechartHostInvokerState::Evaluating,
+                            document_id: "req",
+                        },
+                    );
+                }
+                {
+                    let generated_invoke_id =
+                        format!("{}.{}.req2", "evaluating", self as *const _ as usize);
+                    sce_rust_runtime::invoke::defer_invoke(
+                        &mut self.pending_invokes,
+                        sce_rust_runtime::invoke::PendingInvoke {
+                            invoke_id: generated_invoke_id,
+                            state: StatechartHostInvokerState::Evaluating,
+                            document_id: "req2",
+                        },
+                    );
+                }
+                {
+                    let generated_invoke_id =
+                        format!("{}.{}.req3", "evaluating", self as *const _ as usize);
+                    sce_rust_runtime::invoke::defer_invoke(
+                        &mut self.pending_invokes,
+                        sce_rust_runtime::invoke::PendingInvoke {
+                            invoke_id: generated_invoke_id,
+                            state: StatechartHostInvokerState::Evaluating,
+                            document_id: "req3",
+                        },
+                    );
+                }
+            }
             StatechartHostInvokerState::Invoking => {
-                // SCE-MAP: statechart_host_invoker.scxml:47 :: invoking :: _state_body
+                // SCE-MAP: statechart_host_invoker.scxml:64 :: invoking :: _state_body
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
@@ -949,8 +1386,8 @@ impl StatePolicy for StatechartHostInvokerPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: statechart_host_invoker.scxml:36 :: _machine"]
-    // SCE-MAP: statechart_host_invoker.scxml:36 :: _machine
+    #[doc = "SCE-MAP: statechart_host_invoker.scxml:50 :: _machine"]
+    // SCE-MAP: statechart_host_invoker.scxml:50 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -959,6 +1396,30 @@ impl StatePolicy for StatechartHostInvokerPolicy {
     ) {
         // W3C SCXML 6.4: Cancel pending invokes and cleanup active children on state exit
         match state {
+            StatechartHostInvokerState::Evaluating => {
+                // W3C SCXML 6.4: Cancel pending invokes for exited state.
+                // Covers §scxml-6.4.1 entries: an invoke whose state exits
+                // before the macrostep ends never runs, so it raises nothing.
+                sce_rust_runtime::invoke::cancel_invokes_for_state(
+                    &mut self.pending_invokes,
+                    StatechartHostInvokerState::Evaluating,
+                );
+                // §scxml-6.4: the host's invocation ends with the state that
+                // started it. Unconditional here: the engine knows whether
+                // this one ever started and stays silent when it did not, so
+                // the emitted chain does not need its own bookkeeping.
+                engine.cancel_host_invoke("x-sce-host", "req");
+                // §scxml-6.4: the host's invocation ends with the state that
+                // started it. Unconditional here: the engine knows whether
+                // this one ever started and stays silent when it did not, so
+                // the emitted chain does not need its own bookkeeping.
+                engine.cancel_host_invoke("x-sce-host", "req2");
+                // §scxml-6.4: the host's invocation ends with the state that
+                // started it. Unconditional here: the engine knows whether
+                // this one ever started and stays silent when it did not, so
+                // the emitted chain does not need its own bookkeeping.
+                engine.cancel_host_invoke("x-sce-host", "req3");
+            }
             StatechartHostInvokerState::Invoking => {
                 // W3C SCXML 6.4: Cancel pending invokes for exited state.
                 // Covers §scxml-6.4.1 entries: an invoke whose state exits
@@ -988,8 +1449,8 @@ impl StatePolicy for StatechartHostInvokerPolicy {
     // §scxml-5.10: the event whose transitions are about to be selected is the
     // `_event` their guards read — bound before the first guard runs, and not
     // for an eventless selection, which has no event of its own.
-    #[doc = "SCE-MAP: statechart_host_invoker.scxml:36 :: _machine"]
-    // SCE-MAP: statechart_host_invoker.scxml:36 :: _machine
+    #[doc = "SCE-MAP: statechart_host_invoker.scxml:50 :: _machine"]
+    // SCE-MAP: statechart_host_invoker.scxml:50 :: _machine
     fn bind_current_event(
         &mut self,
         event: Self::Event,
@@ -1037,8 +1498,8 @@ impl StatePolicy for StatechartHostInvokerPolicy {
     // the first of `state`'s own transitions, in document order, that `event`
     // enables. The engine walks the atomic states and their ancestors and
     // keeps the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: statechart_host_invoker.scxml:36 :: _machine"]
-    // SCE-MAP: statechart_host_invoker.scxml:36 :: _machine
+    #[doc = "SCE-MAP: statechart_host_invoker.scxml:50 :: _machine"]
+    // SCE-MAP: statechart_host_invoker.scxml:50 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -1046,6 +1507,20 @@ impl StatePolicy for StatechartHostInvokerPolicy {
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) -> Option<::sce_rust_runtime::EnabledTransition<Self::State, Self::History>> {
         match state {
+            StatechartHostInvokerState::Evaluating => {
+                if event == StatechartHostInvokerEvent::ErrorExecution {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[],
+                            transition_index: 0,
+                            has_actions: true,
+                            is_internal: false,
+                        });
+                    }
+                }
+                None
+            }
             StatechartHostInvokerState::Invoking => {
                 if event == StatechartHostInvokerEvent::DoneInvokeProbe {
                     if self.safe_evaluate_guard("(_event.invokeid == \"probe\")", engine) {
@@ -1093,6 +1568,19 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                         });
                     }
                 }
+                if event == StatechartHostInvokerEvent::Evaluate {
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(
+                                StatechartHostInvokerState::Evaluating,
+                            )],
+                            transition_index: 4,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
+                }
                 None
             }
             _ => None,
@@ -1101,8 +1589,8 @@ impl StatePolicy for StatechartHostInvokerPolicy {
 
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries.
-    #[doc = "SCE-MAP: statechart_host_invoker.scxml:36 :: _machine"]
-    // SCE-MAP: statechart_host_invoker.scxml:36 :: _machine
+    #[doc = "SCE-MAP: statechart_host_invoker.scxml:50 :: _machine"]
+    // SCE-MAP: statechart_host_invoker.scxml:50 :: _machine
     fn execute_transition_content(
         &mut self,
         source: Self::State,
@@ -1110,10 +1598,43 @@ impl StatePolicy for StatechartHostInvokerPolicy {
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
         match source {
+            StatechartHostInvokerState::Evaluating => {
+                match transition_index {
+                    0 => {
+                        // SCE-MAP: statechart_host_invoker.scxml:100 :: evaluating :: _transition_0
+                        // W3C SCXML 3.13: Transition 0 actions
+
+                        {
+                            // W3C SCXML 5.3: <assign location="dropped">
+                            self.ensure_script_engine();
+                            let sid = self.session_id.as_ref().unwrap().clone();
+                            let se = self.script_engine.clone();
+                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                            let expr = "_scxml_add(dropped, 1)";
+                            // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+                            // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+                            // through evaluate_expression + set_variable would round-trip through ScriptValue
+                            // and create a fresh table, breaking reference equality.
+                            let assign_script = format!("{} = {}", "dropped", expr);
+                            if let Err(e) = se.execute_script(&sid, &assign_script) {
+                                ::sce_rust_runtime::sce_log_error!(
+                                    "Assign failed for 'dropped': {}",
+                                    e
+                                );
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                                    StatechartHostInvokerEvent::ErrorExecution,
+                                    "<assign> to 'dropped' failed",
+                                ));
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
             StatechartHostInvokerState::Invoking => {
                 match transition_index {
                     0 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:57 :: invoking :: _transition_0
+                        // SCE-MAP: statechart_host_invoker.scxml:74 :: invoking :: _transition_0
                         // W3C SCXML 3.13: Transition 0 actions
 
                         {
@@ -1141,7 +1662,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                         }
                     }
                     1 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:60 :: invoking :: _transition_1
+                        // SCE-MAP: statechart_host_invoker.scxml:77 :: invoking :: _transition_1
                         // W3C SCXML 3.13: Transition 1 actions
 
                         {
@@ -1169,7 +1690,7 @@ impl StatePolicy for StatechartHostInvokerPolicy {
                         }
                     }
                     2 => {
-                        // SCE-MAP: statechart_host_invoker.scxml:63 :: invoking :: _transition_2
+                        // SCE-MAP: statechart_host_invoker.scxml:80 :: invoking :: _transition_2
                         // W3C SCXML 3.13: Transition 2 actions
 
                         {
