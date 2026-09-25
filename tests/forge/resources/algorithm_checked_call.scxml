@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE_FORGE.md §3.4.1 — a may-fail algorithm calling another one passes its
+  failure on, from each place a call is written:
+
+    <sce:call>        arith(a, b, op) as a statement, its value discarded
+    an initializer    s = arith(a, b, 0), which is a + b
+    a condition       arith(s, s, 2) > 100, which is s * s, computed before
+                      the branch it decides
+
+  `algorithm_checked_arith` is the callee, and a conformance fixture of its
+  own, so the harness builds both and each backend runs the call across the
+  document boundary. The value and the failure the caller hands on are the
+  callee's, unrenamed.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="algorithm"
+       version="1.0">
+  <sce:import kind="algorithm" src="algorithm_checked_arith.scxml" as="arith"/>
+  <sce:signature>
+    <sce:param name="a" type="int32"/>
+    <sce:param name="b" type="int32"/>
+    <sce:param name="op" type="uint8"/>
+    <sce:return type="int32" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:call target="arith" args="a, b, op"/>
+    <sce:var name="s" type="int32" init="arith(a, b, 0)"/>
+    <sce:if cond="arith(s, s, 2) &gt; 100">
+      <sce:return expr="0"/>
+    </sce:if>
+    <sce:return expr="s + 1"/>
+  </sce:body>
+</scxml>

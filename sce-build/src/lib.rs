@@ -4565,6 +4565,7 @@ fn validate_and_enrich_imports(
                 ctx.param_types = sig.params;
                 ctx.ret_type = sig.ret;
                 ctx.host_only = sig.host_only;
+                ctx.may_fail = sig.may_fail;
             } else {
                 // Qualify every discovered field key with the import's alias
                 // so the typed expression pipeline can look it up via the
@@ -5589,10 +5590,13 @@ fn validate_worker_inbox_ordering_placement(
 pub(crate) struct StatelessSignature {
     pub(crate) params: Vec<forge::model::SceType>,
     pub(crate) ret: Option<forge::model::SceType>,
-    /// Why only a host may call the import — a `list<T>` or record slot, or
-    /// a `may-fail` declaration its callers cannot yet receive; when set,
-    /// `params`/`ret` are empty and say nothing.
+    /// Why only a host may call the import — a `list<T>` or record slot;
+    /// when set, `params`/`ret` are empty and say nothing.
     pub(crate) host_only: Option<String>,
+    /// The import declares `may-fail` (SCE_FORGE.md §3.4.1): its call hands
+    /// a failure in place of a value, received only in a `may-fail`
+    /// algorithm's body.
+    pub(crate) may_fail: bool,
 }
 
 /// Extract parameter and return types for a stateless imported kind.
@@ -5610,9 +5614,9 @@ pub(crate) struct StatelessSignature {
 /// returns no signature at all (`None` return), which leaves its calls
 /// unjudged rather than judged against a list nobody declared.
 ///
-/// * Algorithm → parameters and return are the `<sce:signature>`; one with a
-///   `list<T>` or record slot, or a `may-fail` declaration, carries no
-///   signature and names why in `host_only`.
+/// * Algorithm → parameters and return are the `<sce:signature>`, and
+///   `may_fail` its declaration; one with a `list<T>` or record slot carries
+///   no signature and names why in `host_only`.
 pub(crate) fn discover_stateless_signature(
     doc: &forge::model::ForgeDocument,
 ) -> StatelessSignature {
@@ -5620,7 +5624,7 @@ pub(crate) fn discover_stateless_signature(
     let known = |params: Vec<SceType>, ret: Option<SceType>| StatelessSignature {
         params,
         ret,
-        host_only: None,
+        ..StatelessSignature::default()
     };
     match doc {
         ForgeDocument::Transform(m) => {
@@ -5664,9 +5668,9 @@ pub(crate) fn discover_stateless_signature(
         // an emptied parameter list or an `Unknown` return (SCE_FORGE.md
         // §4.12 — in v1 only a host calls a list-signature algorithm).
         //
-        // A `may-fail` algorithm is withheld the same way (SCE_FORGE.md
-        // §3.4.1): its failure reaches a host through the target's failure
-        // channel, and no caller statement yet receives it.
+        // A `may-fail` algorithm keeps its signature and says it may fail
+        // (SCE_FORGE.md §3.4.1): a `may-fail` caller passes the failure on,
+        // and every other caller is refused where it calls.
         ForgeDocument::Algorithm(m) => {
             let host_only = m
                 .signature
@@ -5680,11 +5684,6 @@ pub(crate) fn discover_stateless_signature(
                         .as_ref()
                         .filter(|t| t.scalar().is_none())
                         .map(|t| format!("returns {}", t.as_attr()))
-                })
-                .or_else(|| {
-                    m.signature
-                        .may_fail
-                        .then(|| "declares may-fail".to_string())
                 });
             if let Some(reason) = host_only {
                 return StatelessSignature {
@@ -5705,6 +5704,7 @@ pub(crate) fn discover_stateless_signature(
                     .as_ref()
                     .and_then(|t| t.scalar().cloned()),
                 host_only: None,
+                may_fail: m.signature.may_fail,
             }
         }
         _ => StatelessSignature::default(),

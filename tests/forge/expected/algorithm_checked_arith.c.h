@@ -21,6 +21,14 @@ typedef struct {
     sce_forge_algorithm_error_t why;
 } algorithm_checked_arith_result_t;
 
+static inline int32_t algorithm_checked_arith_take(sce_forge_algorithm_failure_t *failure, algorithm_checked_arith_result_t result) {
+    if (!result.ok) {
+        sce_forge_algorithm_fail(failure, result.why);
+        return (int32_t){0};
+    }
+    return result.value;
+}
+
 static inline algorithm_checked_arith_result_t algorithm_checked_arith(int32_t a, int32_t b, uint8_t op) {
     /* SCE_FORGE.md §3.4.1: each checked operation records a failure here,
      * and the statement around it returns it before the next statement runs. */

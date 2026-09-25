@@ -267,10 +267,12 @@ fn a_division_in_float_context_stays_real_division() {
     );
 }
 
-/// No caller statement receives a failure yet, so another algorithm may not
-/// call a `may-fail` one — the same host-only rule a list slot follows.
+/// An algorithm that does not declare `may-fail` has nowhere to pass a
+/// callee's failure on, and no guard of its own can bound what another
+/// algorithm does — so its call to a `may-fail` one is refused where it is
+/// written.
 #[test]
-fn another_algorithm_cannot_call_a_may_fail_algorithm() {
+fn an_undeclared_algorithm_cannot_call_a_may_fail_algorithm() {
     let caller = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_caller" version="1.0">
   <sce:import kind="algorithm" src="probe_may_fail.scxml" as="tick"/>
@@ -292,7 +294,65 @@ fn another_algorithm_cannot_call_a_may_fail_algorithm() {
     )
     .expect_err("a call to a may-fail algorithm is refused");
     assert!(
-        err.contains("declares may-fail") && err.contains("only a host"),
+        err.contains("declares may-fail") && err.contains("cannot be received"),
         "{err}"
     );
+    // The statement form is refused the same way.
+    let statement = caller.replace(
+        r#"<sce:return expr="tick(n)"/>"#,
+        r#"<sce:call target="tick" args="n"/>
+    <sce:return expr="n"/>"#,
+    );
+    let err = generate(
+        "probe_caller",
+        &statement,
+        &[("probe_may_fail.scxml", &callee)],
+        Language::Rust,
+    )
+    .expect_err("a <sce:call> of a may-fail algorithm is refused");
+    assert!(
+        err.contains("declares may-fail") && err.contains("cannot be received"),
+        "{err}"
+    );
+}
+
+/// A `may-fail` algorithm passes a callee's failure on from every place a
+/// call is written — a `<sce:call>` statement, an initializer, a condition —
+/// in each backend's own failure channel (SCE_FORGE.md §3.4.1). Conformance
+/// (`algorithm_checked_call`) runs what this spells.
+#[test]
+fn a_may_fail_caller_passes_the_failure_on_from_every_call() {
+    let resources =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/forge/resources");
+    let path = resources.join("algorithm_checked_call.scxml");
+    let options = ForgeCompileOptions {
+        go_module_prefix: Some("github.com/acme/project/generated".into()),
+        ..ForgeCompileOptions::default()
+    };
+    for &lang in Language::ALL {
+        let out = sce_build::compile_forge_file(&path, lang, &[], &options)
+            .unwrap_or_else(|e| panic!("{lang:?}: {e}"));
+        let code = &out.files[0].1;
+        let passed_on = match lang {
+            Language::Rust => "algorithm_checked_arith::algorithm_checked_arith(",
+            Language::Kotlin => "com.sce.forge.runtime.SceChecked.take(algorithmCheckedArith(",
+            Language::Cpp => "SCE::Forge::Checked::take(sce_failure_,",
+            Language::C11 => "algorithm_checked_arith_take(&sce_failure_, algorithm_checked_arith(",
+            Language::Go => "scealgorithm.Take[int32](&sceFailure)(",
+            // Python's exception passes itself on.
+            Language::Python => "algorithm_checked_arith.algorithm_checked_arith(",
+        };
+        assert_eq!(
+            code.matches(passed_on).count(),
+            3,
+            "{lang:?}: the three calls pass the failure on:\n{code}"
+        );
+        if lang == Language::Rust {
+            assert_eq!(
+                code.matches(")?").count(),
+                4,
+                "three calls and `s + 1`:\n{code}"
+            );
+        }
+    }
 }

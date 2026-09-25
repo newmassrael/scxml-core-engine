@@ -1331,6 +1331,19 @@
         { "args": [0, 0, 7], "expected": 0, "note": "no operation runs" }
       ]
     },
+    "algorithm_checked_call": {
+      "fixture": "algorithm_checked_call",
+      "signature": "(a: i32, b: i32, op: u8) -> i32 may-fail",
+      "formula": "arith(a, b, op) is called and its value discarded; s = a + b; if s * s > 100 the result is 0, else s + 1 — every operation algorithm_checked_arith's, and any failure of one, from any of the three calls, is the caller's too (SCE_FORGE.md §3.4.1)",
+      "cases": [
+        { "args": [1, 2, 7], "expected": 4, "note": "no call fails; 3 * 3 is not above 100" },
+        { "args": [-3, 0, 7], "expected": -2 },
+        { "args": [11, 0, 7], "expected": 0, "note": "121 is above 100" },
+        { "args": [1, 0, 3], "fails": "divide-by-zero", "note": "the <sce:call> statement's failure" },
+        { "args": [2147483647, 1, 7], "fails": "overflow", "note": "the initializer's failure" },
+        { "args": [46341, 0, 7], "fails": "overflow", "note": "the condition's failure, before its branch" }
+      ]
+    },
     "algorithm_crc16": {
       "fixture": "algorithm_crc16",
       "signature": "(data: bytes) -> u16",

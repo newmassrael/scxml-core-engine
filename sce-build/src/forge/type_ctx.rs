@@ -83,6 +83,7 @@ fn insert_stateless_imports<'a>(ctx: &mut TypeCtx<'a>, imports: &'a [ImportConte
             &imp.param_types,
             imp.ret_type.as_ref(),
             imp.host_only.as_deref(),
+            imp.may_fail,
         ) {
             ctx.insert_func(imp.alias.as_str(), sig);
         }
@@ -98,18 +99,25 @@ fn insert_stateless_imports<'a>(ctx: &mut TypeCtx<'a>, imports: &'a [ImportConte
 /// registered as callable only by a host, which is what refuses the call.
 /// A callee with no return is not registered — it is no value an expression
 /// can take, and the closed scope refuses a call to it by name.
+///
+/// A `may-fail` callee is registered as one; the call is refused where the
+/// failure cannot be received, which is everywhere but a `may-fail`
+/// algorithm's body ([`TypeCtx::receives_failures`]).
 pub(crate) fn imported_callee_sig(
     params: &[SceType],
     ret: Option<&SceType>,
     host_only: Option<&str>,
+    may_fail: bool,
 ) -> Option<FuncSig> {
     if let Some(slot) = host_only {
         return Some(FuncSig::host_only(slot));
     }
     Some(FuncSig {
-        params: params.iter().map(InferredType::from_sce_type).collect(),
-        ret: InferredType::from_sce_type(ret?),
-        host_only: None,
+        may_fail,
+        ..FuncSig::new(
+            params.iter().map(InferredType::from_sce_type).collect(),
+            InferredType::from_sce_type(ret?),
+        )
     })
 }
 
@@ -127,6 +135,9 @@ pub struct StaticCallee {
     pub ret: Option<SceType>,
     /// Why only a host may call it (a list or record slot), if so.
     pub host_only: Option<String>,
+    /// It declares `may-fail` (SCE_FORGE.md §3.4.1); a statechart does not
+    /// receive a failure, so its expressions may not call it.
+    pub may_fail: bool,
     /// The `<sce:import>` element's row, for a refusal of the import itself.
     pub line: Option<u32>,
 }
@@ -169,11 +180,7 @@ fn insert_stateful_imports<'a>(ctx: &mut TypeCtx<'a>, imports: &'a [ImportContex
             let params = param_tys.iter().map(InferredType::from_sce_type).collect();
             ctx.insert_func(
                 qualified_key.as_str(),
-                FuncSig {
-                    params,
-                    ret: InferredType::from_sce_type(ret_ty),
-                    host_only: None,
-                },
+                FuncSig::new(params, InferredType::from_sce_type(ret_ty)),
             );
         }
     }
@@ -345,14 +352,7 @@ fn insert_procedure_helpers<'a>(ctx: &mut TypeCtx<'a>, helpers: &'a [ProcedureHe
     for h in helpers {
         let params: Vec<InferredType> = h.args.iter().map(InferredType::from_sce_type).collect();
         let ret = InferredType::from_sce_type(&h.returns);
-        ctx.insert_func(
-            h.name.as_str(),
-            FuncSig {
-                params,
-                ret,
-                host_only: None,
-            },
-        );
+        ctx.insert_func(h.name.as_str(), FuncSig::new(params, ret));
     }
 }
 
@@ -552,6 +552,7 @@ impl StaticScope {
                 &callee.params,
                 callee.ret.as_ref(),
                 callee.host_only.as_deref(),
+                callee.may_fail,
             ) {
                 ctx.insert_func(callee.alias.as_str(), sig);
             }
@@ -624,11 +625,7 @@ fn static_statechart<'a>(
     // is each backend's.
     ctx.insert_func(
         "In",
-        FuncSig {
-            params: vec![InferredType::Str],
-            ret: InferredType::Bool,
-            host_only: None,
-        },
+        FuncSig::new(vec![InferredType::Str], InferredType::Bool),
     );
     ctx.insert_record("_event", RecordShape::Open);
     close_the_scope(&mut ctx);

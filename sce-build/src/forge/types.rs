@@ -744,15 +744,31 @@ pub struct FuncSig {
     /// signature nobody declared, and never from an `Unknown` that reads as
     /// "not judged".
     pub host_only: Option<String>,
+    /// The function declares `may-fail` (SCE_FORGE.md §3.4.1): a call hands
+    /// its caller a failure in place of a value. Only a `may-fail`
+    /// algorithm's body receives one ([`TypeCtx::receives_failures`]); a
+    /// call anywhere else is refused, since nothing there could pass the
+    /// failure on.
+    pub may_fail: bool,
 }
 
 impl FuncSig {
+    /// The signature of a function any expression may call, that returns a
+    /// value rather than a failure.
+    pub fn new(params: Vec<InferredType>, ret: InferredType) -> Self {
+        Self {
+            params,
+            ret,
+            host_only: None,
+            may_fail: false,
+        }
+    }
+
     /// The signature of a function only a host may call, and why.
     pub fn host_only(reason: impl Into<String>) -> Self {
         Self {
-            params: Vec::new(),
-            ret: InferredType::Unknown,
             host_only: Some(reason.into()),
+            ..Self::new(Vec::new(), InferredType::Unknown)
         }
     }
 }
@@ -794,13 +810,15 @@ pub struct TypeCtx<'a> {
     /// [`ExprKind::BytesView`]: crate::forge::expr::ExprKind::BytesView
     /// [`infer_types`]: crate::forge::expr::infer_types
     pub project_str_args_as_bytes_view: bool,
-    /// Whether every integer `+ - * / %` and unary `-` is emitted checked
-    /// (an [`ExprKind::Checked`] node): set by the algorithm renderer for an
-    /// algorithm that declares `may-fail` (SCE_FORGE.md §3.4.1), and
-    /// nowhere else.
+    /// Whether the expression sits where a failure can be handed on — the
+    /// body of an algorithm that declares `may-fail` (SCE_FORGE.md §3.4.1),
+    /// set by the algorithm renderer and nowhere else. There every integer
+    /// `+ - * / %` and unary `-` is emitted checked (an
+    /// [`ExprKind::Checked`] node), and a call to a `may-fail` function
+    /// passes its failure on; everywhere else such a call is refused.
     ///
     /// [`ExprKind::Checked`]: crate::forge::expr::ExprKind::Checked
-    pub checked_arithmetic: bool,
+    pub receives_failures: bool,
     /// Whether a call to a name this context does not carry is an ERROR.
     ///
     /// ⚠ OFF by default, and the default is the interesting half. A statechart
@@ -897,7 +915,7 @@ impl<'a> TypeCtx<'a> {
             funcs: HashMap::new(),
             array_elems: HashMap::new(),
             project_str_args_as_bytes_view: false,
-            checked_arithmetic: false,
+            receives_failures: false,
             reject_unknown_callees: false,
             reject_unknown_identifiers: false,
             enums: HashMap::new(),
@@ -1327,14 +1345,7 @@ mod tests {
     #[test]
     fn ctx_func_lookup() {
         let mut ctx = TypeCtx::new();
-        ctx.insert_func(
-            "temp_xform",
-            FuncSig {
-                params: vec![int(false, 16)],
-                ret: float(64),
-                host_only: None,
-            },
-        );
+        ctx.insert_func("temp_xform", FuncSig::new(vec![int(false, 16)], float(64)));
         assert!(ctx.lookup_func("temp_xform").is_some());
         assert!(ctx.lookup_func("missing").is_none());
     }

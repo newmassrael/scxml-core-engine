@@ -57,6 +57,17 @@ public class AlgorithmFailure(public val error: AlgorithmError) : RuntimeExcepti
 public object SceChecked {
     private fun fail(error: AlgorithmError): Nothing = throw AlgorithmFailure(error)
 
+    /**
+     * The value of a call to another `may-fail` algorithm, or its failure
+     * passed on to the calling algorithm's own boundary (SCE_FORGE.md
+     * Section 3.4.1).
+     */
+    public fun <T> take(result: AlgorithmResult<T>): T =
+        when (result) {
+            is AlgorithmResult.Ok -> result.value
+            is AlgorithmResult.Failed -> fail(result.error)
+        }
+
     /** `v` when it lies in `[lo, hi]`; an overflow otherwise. */
     private fun fit(v: Long, lo: Long, hi: Long): Long =
         if (v < lo || v > hi) fail(AlgorithmError.Overflow) else v

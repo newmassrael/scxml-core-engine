@@ -88,6 +88,7 @@ pub(crate) fn resolve(
             params: signature.params,
             ret: signature.ret,
             host_only: signature.host_only,
+            may_fail: signature.may_fail,
             line: import.line,
         });
     }

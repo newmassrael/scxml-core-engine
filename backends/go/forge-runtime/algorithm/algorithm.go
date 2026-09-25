@@ -76,6 +76,29 @@ func (f *Failure) Err() error {
 	return f.err
 }
 
+// Take passes a call to another may-fail algorithm through the calling
+// body's f: `Take[uint32](&sceFailure)(tick(n))` is the call's value, or 0
+// with its failure recorded in f, which the statement around it returns.
+// The value's type is spelled because Go infers none from f alone, and the
+// call's two results reach the returned function as its two arguments.
+//
+// A generated algorithm's error is always an Error (its Failure.Err), so
+// any other is a broken invariant, not a failure with a name to pass on.
+func Take[T any](f *Failure) func(T, error) T {
+	return func(value T, err error) T {
+		if err == nil {
+			return value
+		}
+		e, ok := err.(Error)
+		if !ok {
+			panic("scealgorithm.Take: a may-fail algorithm returned an error that is not an algorithm.Error: " + err.Error())
+		}
+		f.Fail(e)
+		var zero T
+		return zero
+	}
+}
+
 type narrow interface {
 	~int8 | ~int16 | ~int32 | ~uint8 | ~uint16 | ~uint32
 }

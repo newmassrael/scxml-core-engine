@@ -45,6 +45,26 @@ func TestEachFailureIsNamedAndEveryValuePasses(t *testing.T) {
 	}
 }
 
+// A call to another may-fail algorithm is its value, or its failure recorded
+// in the caller's Failure under the callee's own name.
+func TestTakePassesACalleeFailureOn(t *testing.T) {
+	callee := func(fail bool) (uint32, error) {
+		var f Failure
+		if fail {
+			f.Fail(DivideByZero)
+			return 0, f.Err()
+		}
+		return 7, f.Err()
+	}
+	var f Failure
+	if got := Take[uint32](&f)(callee(false)); got != 7 || f.Failed() {
+		t.Errorf("got %d (err %v), want 7", got, f.Err())
+	}
+	if got := Take[uint32](&f)(callee(true)); got != 0 || f.Err() == nil || f.Err().Error() != "divide-by-zero" {
+		t.Errorf("got %d (err %v), want the callee's divide-by-zero", got, f.Err())
+	}
+}
+
 // The first failure is the one the caller learns of.
 func TestTheFirstFailureIsKept(t *testing.T) {
 	var f Failure

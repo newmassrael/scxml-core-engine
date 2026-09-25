@@ -126,6 +126,17 @@ template <typename T> constexpr bool kSigned = std::is_signed_v<T>;
 
 }  // namespace Detail
 
+/// The value of a call to another `may-fail` algorithm; or its failure
+/// recorded in the calling body's `f`, and a `T{}` the statement around it
+/// never uses — it returns the failure first (SCE_FORGE.md §3.4.1).
+template <typename T> T take(AlgorithmFailure &f, const AlgorithmResult<T> &result) noexcept {
+    if (!result.ok()) {
+        f.fail(result.error());
+        return T{};
+    }
+    return result.value();
+}
+
 template <typename T> constexpr T add(AlgorithmFailure &f, T a, T b) noexcept {
     static_assert(std::is_integral_v<T>, "checked arithmetic is integer arithmetic");
     if constexpr (Detail::kNarrow<T>) {

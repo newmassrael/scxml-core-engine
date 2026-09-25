@@ -275,7 +275,7 @@ fn transpile_at(
     // `Raw` arm of `infer_types` already documents).
     resolve_then_rename(&mut ast, ctx, renames, target, &[], expr)?;
     judge_value(&ast, slot, expr)?;
-    if ctx.checked_arithmetic {
+    if ctx.receives_failures {
         check_integer_arithmetic(&mut ast, expected);
     }
 
@@ -393,7 +393,7 @@ pub(crate) fn transpile_typed_with_import_lowering(
     let mut ast = parse_to_ast(expr)?;
     resolve_then_rename(&mut ast, ctx, renames, ExprTarget::C, lowerings, expr)?;
     judge_value(&ast, expected, expr)?;
-    if ctx.checked_arithmetic {
+    if ctx.receives_failures {
         check_integer_arithmetic(&mut ast, expected.ty());
     }
     Ok(emit_c(&ast, expected.ty())?)
@@ -512,6 +512,23 @@ pub(crate) fn host_only_call(target: &str, slot: &str, observed: Option<String>)
         construct: format!(
             "a call to algorithm `{target}`, which {slot} \
              (v1: only a host calls such an algorithm)"
+        ),
+        observed,
+    }
+}
+
+/// The refusal of a call to an imported algorithm that declares `may-fail`
+/// from a place that cannot receive its failure — anywhere but a `may-fail`
+/// algorithm's body (SCE_FORGE.md §3.4.1) — under either form, an
+/// expression's `tick(n)` or a `<sce:call target="tick">`. The failure has
+/// nowhere to go there: a guard cannot bound what another algorithm does,
+/// so no proof would admit the call either.
+pub(crate) fn unreceived_failure_call(target: &str, observed: Option<String>) -> ExprError {
+    ExprError::UnsupportedConstruct {
+        construct: format!(
+            "a call to algorithm `{target}`, which declares may-fail, where its failure \
+             cannot be received (only a host, or an algorithm that declares may-fail itself, \
+             receives one)"
         ),
         observed,
     }
@@ -796,13 +813,18 @@ fn reject_call_argument_mismatches(
         if let Some((name, signature)) = registered {
             // Before arity: a host-only signature declares no parameters, and
             // "expects 0 arguments" would name a rule nobody wrote.
-            if let Some(slot) = &signature.host_only {
-                let observed = callee
+            let observed = || {
+                callee
                     .span
                     .clone()
                     .and_then(|span| source.get(span))
-                    .map(str::to_string);
-                return Err(host_only_call(&name, slot, observed).at(callee.span.clone()));
+                    .map(str::to_string)
+            };
+            if let Some(slot) = &signature.host_only {
+                return Err(host_only_call(&name, slot, observed()).at(callee.span.clone()));
+            }
+            if signature.may_fail && !ctx.receives_failures {
+                return Err(unreceived_failure_call(&name, observed()).at(callee.span.clone()));
             }
             judge_arguments(&name, &signature.params, callee, args, source)?;
         } else if is_bytes_eq_builtin(callee, ctx) {
@@ -905,6 +927,7 @@ fn lower_stateful_import_calls(ast: &mut TypedExpr, lowerings: &[ImportLowering]
             callee,
             args,
             params,
+            ..
         } => {
             // Try the lowering match first so a successful rewrite does not
             // double-walk the (now-replaced) callee through the recursive
@@ -936,6 +959,8 @@ fn lower_stateful_import_calls(ast: &mut TypedExpr, lowerings: &[ImportLowering]
                                 callee: new_callee,
                                 args: new_args,
                                 params: new_params,
+                                // A stateful import's method returns a value.
+                                fails: false,
                             };
                             return;
                         }
@@ -1425,6 +1450,12 @@ pub(crate) enum ExprKind {
         /// registers (a builtin, a symbol this pipeline lowered a call to),
         /// whose arguments are emitted as they are.
         params: Vec<InferredType>,
+        /// The function the call resolved to declares `may-fail`
+        /// (SCE_FORGE.md §3.4.1), so the call hands a failure in place of a
+        /// value, which each backend passes on ([`pass_failure_on`]).
+        /// Written by [`infer_types`] with `params`; a call it is `true` for
+        /// is refused anywhere but a `may-fail` algorithm's body.
+        fails: bool,
     },
     /// A borrowed `bytes`-view projection of a `Str`-typed source. Not
     /// produced by the parser — [`infer_types`] wraps a call argument in
@@ -2742,6 +2773,7 @@ impl<'a> Parser<'a> {
                             callee: Box::new(expr),
                             args,
                             params: Vec::new(),
+                            fails: false,
                         },
                     );
                 }
@@ -3161,6 +3193,7 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
             callee,
             args,
             params: call_params,
+            fails: call_fails,
         } => {
             infer_types(callee, ctx);
             for a in args.iter_mut() {
@@ -3170,26 +3203,27 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
             // stateless import (cross-algorithm dispatch, transform,
             // condition, lookup); a `obj.method` member call names a
             // stateful import method (registered as `"{obj}.{method}"` by
-            // `insert_stateful_imports`). Capture `(ret, params)` by value
-            // so the argument-projection pass below can borrow `args`
-            // mutably after the immutable `ctx` lookup ends.
-            let resolved: Option<(InferredType, Vec<InferredType>)> = match &callee.kind {
+            // `insert_stateful_imports`). Capture `(ret, params, may_fail)`
+            // by value so the argument-projection pass below can borrow
+            // `args` mutably after the immutable `ctx` lookup ends.
+            let resolved: Option<(InferredType, Vec<InferredType>, bool)> = match &callee.kind {
                 ExprKind::Ident(name) => ctx
                     .lookup_func(name.as_str())
-                    .map(|s| (s.ret, s.params.clone())),
+                    .map(|s| (s.ret, s.params.clone(), s.may_fail)),
                 ExprKind::Member { object, property } => {
                     if let ExprKind::Ident(obj_name) = &object.kind {
                         let qualified = format!("{}.{}", obj_name, property);
                         ctx.lookup_func(&qualified)
-                            .map(|s| (s.ret, s.params.clone()))
+                            .map(|s| (s.ret, s.params.clone(), s.may_fail))
                     } else {
                         None
                     }
                 }
                 _ => None,
             };
+            *call_fails = resolved.as_ref().is_some_and(|(_, _, may_fail)| *may_fail);
             match resolved {
-                Some((ret, params)) => {
+                Some((ret, params, _)) => {
                     // Wildcard-keyexpr Str-argument projection: a `Str`
                     // argument flowing into a `bytes` parameter is a
                     // bounded-string field used as bytes — project it to a
@@ -4152,6 +4186,7 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             callee,
             args,
             params,
+            fails,
         } => {
             if is_len_builtin(callee, args) {
                 return Ok(format!(
@@ -4177,11 +4212,13 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             for (i, arg) in args.iter().enumerate() {
                 a.push(emit_cpp(arg, argument_type(params, i))?);
             }
-            format!(
-                "{}({})",
-                wrap_postfix(callee, emit_cpp(callee, InferredType::Unknown)?),
-                a.join(", "),
-            )
+            let symbol = wrap_postfix(callee, emit_cpp(callee, InferredType::Unknown)?);
+            let call = format!("{symbol}({})", a.join(", "));
+            if *fails {
+                pass_failure_on(ExprTarget::Cpp, &symbol, &call, expr.ty)?
+            } else {
+                call
+            }
         }
         ExprKind::BytesView { source, .. } => {
             // RFC c7-wildcard W-project: a bounded-string field projected to
@@ -4638,6 +4675,7 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             callee,
             args,
             params,
+            fails,
         } => {
             if is_len_builtin(callee, args) {
                 return Ok(format!(
@@ -4672,11 +4710,13 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             for (i, arg) in args.iter().enumerate() {
                 a.push(emit_kotlin(arg, argument_type(params, i))?);
             }
-            format!(
-                "{}({})",
-                wrap_postfix(callee, emit_kotlin(callee, InferredType::Unknown)?),
-                a.join(", "),
-            )
+            let symbol = wrap_postfix(callee, emit_kotlin(callee, InferredType::Unknown)?);
+            let call = format!("{symbol}({})", a.join(", "));
+            if *fails {
+                pass_failure_on(ExprTarget::Kotlin, &symbol, &call, expr.ty)?
+            } else {
+                call
+            }
         }
         ExprKind::BytesView { source, .. } => {
             // RFC c7-wildcard W-project: bounded-string field → `ByteArray`
@@ -5147,6 +5187,7 @@ fn rust_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
             callee,
             args,
             params,
+            fails,
         } => {
             if is_len_builtin(callee, args) {
                 return Ok(format!(
@@ -5168,11 +5209,14 @@ fn rust_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
             for (i, a) in args.iter().enumerate() {
                 emitted_args.push(emit_rust(a, argument_type(params, i))?);
             }
-            format!(
-                "{}({})",
-                wrap_postfix(callee, emit_rust(callee, InferredType::Unknown)?),
-                emitted_args.join(", "),
-            )
+            let symbol = wrap_postfix(callee, emit_rust(callee, InferredType::Unknown)?);
+            let call = format!("{symbol}({})", emitted_args.join(", "));
+            if *fails {
+                pass_failure_on(ExprTarget::Rust, &symbol, &call, expr.ty)
+                    .map_err(|e| e.at(expr.span.clone()))?
+            } else {
+                call
+            }
         }
         ExprKind::BytesView { source, .. } => {
             // RFC c7-wildcard W-project: bounded-string field (`&str`) → the
@@ -5503,6 +5547,7 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
             callee,
             args,
             params,
+            fails,
         } => {
             if is_len_builtin(callee, args) {
                 return Ok(format!(
@@ -5524,11 +5569,14 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
             for (i, arg) in args.iter().enumerate() {
                 a.push(emit_go(arg, argument_type(params, i))?);
             }
-            format!(
-                "{}({})",
-                wrap_postfix(callee, emit_go(callee, InferredType::Unknown)?),
-                a.join(", "),
-            )
+            let symbol = wrap_postfix(callee, emit_go(callee, InferredType::Unknown)?);
+            let call = format!("{symbol}({})", a.join(", "));
+            if *fails {
+                pass_failure_on(ExprTarget::Go, &symbol, &call, expr.ty)
+                    .map_err(|e| e.at(expr.span.clone()))?
+            } else {
+                call
+            }
         }
         ExprKind::BytesView { source, .. } => {
             // RFC c7-wildcard W-project: bounded-string field (`string`) →
@@ -5679,6 +5727,41 @@ fn go_conditional(
         emit_go(consequent, result)?,
         emit_go(alternate, result)?,
     ))
+}
+
+/// `call` — a call to a `may-fail` algorithm, spelled `symbol(args)` in
+/// `target` — as the calling `may-fail` body passes its failure on and keeps
+/// its value of type `ty` (SCE_FORGE.md §3.4.1). ONE spelling for the
+/// expression form and the `<sce:call>` statement.
+///
+/// The body's failure channel is the one its own checked arithmetic writes:
+/// Rust's `?`, C++'s and C11's recorded `sce_failure_` (the statement after
+/// returns it, and a condition is computed before its branch), Go's
+/// `sceFailure`, Kotlin's `AlgorithmFailure` thrown to the body's own
+/// boundary, and Python's exception, which passes itself on.
+pub(crate) fn pass_failure_on(
+    target: ExprTarget,
+    symbol: &str,
+    call: &str,
+    ty: InferredType,
+) -> Result<String, ExprError> {
+    Ok(match target {
+        ExprTarget::Rust => format!("{call}?"),
+        ExprTarget::Kotlin => format!("com.sce.forge.runtime.SceChecked.take({call})"),
+        ExprTarget::Cpp => format!("SCE::Forge::Checked::take(sce_failure_, {call})"),
+        // The callee's header declares the unwrapping of its own result type.
+        ExprTarget::C => format!("{symbol}_take(&sce_failure_, {call})"),
+        ExprTarget::Go => {
+            let Some(value) = go_nameable_type(ty.strip_quantity()) else {
+                return Err(ExprError::UnsupportedConstruct {
+                    construct: format!("a may-fail call returning {}", ty.describe()),
+                    observed: None,
+                });
+            };
+            format!("scealgorithm.Take[{value}](&sceFailure)({call})")
+        }
+        ExprTarget::Python => call.to_string(),
+    })
 }
 
 /// The Go spelling of a type a function literal can return, or `None` for a
@@ -5876,6 +5959,7 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             callee,
             args,
             params,
+            fails,
         } => {
             if is_len_builtin(callee, args) {
                 return Ok(format!(
@@ -5904,11 +5988,13 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             for (i, arg) in args.iter().enumerate() {
                 a.push(emit_python(arg, argument_type(params, i))?);
             }
-            format!(
-                "{}({})",
-                wrap_postfix(callee, emit_python(callee, InferredType::Unknown)?),
-                a.join(", "),
-            )
+            let symbol = wrap_postfix(callee, emit_python(callee, InferredType::Unknown)?);
+            let call = format!("{symbol}({})", a.join(", "));
+            if *fails {
+                pass_failure_on(ExprTarget::Python, &symbol, &call, expr.ty)?
+            } else {
+                call
+            }
         }
         ExprKind::BytesView { source, .. } => {
             // RFC c7-wildcard W-project: bounded-string field (`str`) → the
@@ -6252,6 +6338,7 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             callee,
             args,
             params,
+            fails,
         } => {
             if is_len_builtin(callee, args) {
                 return Ok(format!(
@@ -6273,11 +6360,13 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             for (i, arg) in args.iter().enumerate() {
                 a.push(emit_c(arg, argument_type(params, i))?);
             }
-            format!(
-                "{}({})",
-                wrap_postfix(callee, emit_c(callee, InferredType::Unknown)?),
-                a.join(", "),
-            )
+            let symbol = wrap_postfix(callee, emit_c(callee, InferredType::Unknown)?);
+            let call = format!("{symbol}({})", a.join(", "));
+            if *fails {
+                pass_failure_on(ExprTarget::C, &symbol, &call, expr.ty)?
+            } else {
+                call
+            }
         }
         ExprKind::BytesView { source, len } => {
             // RFC c7-wildcard W-project: a bounded-string field projects to
@@ -6558,11 +6647,10 @@ mod tests {
         ctx.project_str_args_as_bytes_view = true;
         ctx.insert_func(
             "eq",
-            FuncSig {
-                params: vec![InferredType::Bytes, InferredType::Bytes],
-                ret: InferredType::Bool,
-                host_only: None,
-            },
+            FuncSig::new(
+                vec![InferredType::Bytes, InferredType::Bytes],
+                InferredType::Bool,
+            ),
         );
         ctx.insert_var("entry.pattern", InferredType::Str);
         ctx.insert_var("target", InferredType::Bytes);
@@ -6779,11 +6867,7 @@ mod tests {
         ctx.insert_var("m", int(true, 32));
         ctx.insert_func(
             "eq",
-            FuncSig {
-                params: vec![int(true, 32), int(true, 32)],
-                ret: InferredType::Bool,
-                host_only: None,
-            },
+            FuncSig::new(vec![int(true, 32), int(true, 32)], InferredType::Bool),
         );
         assert_eq!(tp_with("eq(n, m)", ExprTarget::Rust, &ctx), "eq(n, m)");
     }
@@ -7519,14 +7603,7 @@ mod tests {
     fn rust_call_with_known_float_return_propagates_type() {
         let mut ctx = TypeCtx::new();
         ctx.insert_var("raw", int(false, 16));
-        ctx.insert_func(
-            "temp_xform",
-            FuncSig {
-                params: vec![int(false, 16)],
-                ret: float(64),
-                host_only: None,
-            },
-        );
+        ctx.insert_func("temp_xform", FuncSig::new(vec![int(false, 16)], float(64)));
         let out = transpile_typed(
             "temp_xform(raw) * 2 + 1",
             ExprTarget::Rust,
@@ -7542,14 +7619,7 @@ mod tests {
     fn member_call_return_type_propagates_bytes() {
         let mut ctx = TypeCtx::new();
         ctx.insert_var("frame", InferredType::Unknown);
-        ctx.insert_func(
-            "frame.encode",
-            FuncSig {
-                params: vec![],
-                ret: InferredType::Bytes,
-                host_only: None,
-            },
-        );
+        ctx.insert_func("frame.encode", FuncSig::new(vec![], InferredType::Bytes));
         // frame.encode()[0] should infer Index on Bytes → u8
         let mut ast = parse_to_ast("frame.encode()[0]").unwrap();
         infer_types(&mut ast, &ctx);
@@ -7824,11 +7894,7 @@ mod tests {
         ctx.insert_var("frame.msg_id", int(false, 32));
         ctx.insert_func(
             "frame.encode",
-            FuncSig {
-                params: Vec::new(),
-                ret: InferredType::Bytes,
-                host_only: None,
-            },
+            FuncSig::new(Vec::new(), InferredType::Bytes),
         );
         ctx.insert_record("_event", RecordShape::Open);
         ctx.reject_unknown_identifiers = true;

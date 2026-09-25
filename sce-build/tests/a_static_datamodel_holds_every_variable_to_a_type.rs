@@ -1001,6 +1001,35 @@ fn a_list_returning_algorithm_is_refused_where_it_is_called() {
     );
 }
 
+/// A statechart receives no failure (SCE_FORGE.md §3.4.1): a `may-fail`
+/// algorithm is refused where the machine calls it, not lowered as if it
+/// returned a value.
+#[test]
+fn a_may_fail_algorithm_is_refused_where_a_statechart_calls_it() {
+    let may_fail_clamp = ALGORITHM_CLAMP.replace(
+        r#"<sce:return type="uint32"/>"#,
+        r#"<sce:return type="uint32" may-fail="true"/>"#,
+    );
+    let (ok, out) = run_beside(
+        &["check"],
+        &calling_doc(
+            "sce-static",
+            r#"<state id="s"><transition event="tick" type="internal"><assign location="count" expr="Clamp(count, 5)"/></transition></state>"#,
+        )
+        .replace(
+            r#"  <sce:import kind="algorithm" src="algorithm_upto.scxml" as="Upto"/>
+"#,
+            "",
+        ),
+        &[("algorithm_clamp.scxml", may_fail_clamp.as_str())],
+    );
+    assert!(!ok, "a statechart cannot receive Clamp's failure:\n{out}");
+    assert!(
+        out.contains("declares may-fail") && out.contains("cannot be received"),
+        "the refusal says why:\n{out}"
+    );
+}
+
 #[test]
 fn an_algorithm_import_whose_file_is_missing_is_refused_at_its_import() {
     let (ok, out) = run_beside(

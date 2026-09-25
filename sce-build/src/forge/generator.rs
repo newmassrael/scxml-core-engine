@@ -94,6 +94,13 @@ pub struct ImportContext {
     #[serde(skip)]
     pub host_only: Option<String>,
 
+    /// For an imported algorithm that declares `may-fail` (SCE_FORGE.md
+    /// §3.4.1): its call hands a failure in place of a value, which only a
+    /// `may-fail` algorithm's body receives and passes on. `false` for
+    /// every other import.
+    #[serde(skip)]
+    pub may_fail: bool,
+
     /// For stateful kinds: member fields exposed to user expressions as
     /// `alias_.field_name` (or equivalent member access syntax). Each entry
     /// maps a field name (as seen in the user's SCXML expression) to its
@@ -660,6 +667,7 @@ fn resolve_single_import(
         param_types: Vec::new(),
         ret_type: None,
         host_only: None,
+        may_fail: false,
         member_field_types: Vec::new(),
         member_method_sigs: Vec::new(),
         go_init_expr,
@@ -22685,6 +22693,7 @@ fn lower_algorithm_stmt(
                 target,
                 &ExpressionSite::new(target, target_spelling.as_ref()),
                 imports,
+                type_ctx.receives_failures,
             )?;
             if args.len() != callee.arity() {
                 let refusal: ForgeError =
@@ -22721,7 +22730,25 @@ fn lower_algorithm_stmt(
                 // cannot spell one algorithm two ways (`qualified_call` is
                 // the cross-document symbol SSOT, `forge_qualified_call`).
                 CallTarget::Algorithm(imp) => {
-                    format!("{}({})", imp.qualified_call, lowered_args.join(", "))
+                    let call = format!("{}({})", imp.qualified_call, lowered_args.join(", "));
+                    // Reached only from a body that receives failures
+                    // (`algorithm_call_target`), which passes this one on as
+                    // the expression form does.
+                    if imp.may_fail {
+                        let ty = imp
+                            .ret_type
+                            .as_ref()
+                            .map_or(InferredType::Unknown, InferredType::from_sce_type);
+                        expr::pass_failure_on(l.expr_target(), &imp.qualified_call, &call, ty)
+                            .map_err(|e| {
+                                crate::forge::expression_site::WrittenAt::attribute(
+                                    target_spelling.as_ref(),
+                                )
+                                .place(e.into())
+                            })?
+                    } else {
+                        call
+                    }
                 }
                 CallTarget::CollectionMethod { imp, method, .. } => {
                     collection_method_call(lang, imp, method, &lowered_args)
@@ -22793,11 +22820,13 @@ const COLLECTION_MUTATING_METHODS: &[&str] = &["insert", "remove"];
 
 /// What `target` names, or its refusal placed at the part that names
 /// nothing: the whole of a bare target, the alias or the method of
-/// `alias.method`.
+/// `alias.method`. `receives_failures` is whether the calling body may call
+/// a `may-fail` algorithm ([`TypeCtx::receives_failures`]).
 fn resolve_call_target<'a>(
     target: &'a str,
     site: &ExpressionSite<'_>,
     imports: &'a [ImportContext],
+    receives_failures: bool,
 ) -> Result<CallTarget<'a>, ForgeError> {
     use crate::forge::error::{CallReach, ValidationError};
     // Ranges index the target trimmed — the frame `ExpressionSite` places in.
@@ -22807,7 +22836,7 @@ fn resolve_call_target<'a>(
             .iter()
             .find(|i| i.alias == trimmed && i.is_callable_algorithm())
         {
-            return algorithm_call_target(imp, trimmed, site);
+            return algorithm_call_target(imp, trimmed, site, receives_failures);
         }
         let mut candidates: Vec<String> = imports
             .iter()
@@ -22874,7 +22903,7 @@ fn resolve_call_target<'a>(
         }
         // An imported algorithm defines one callable, its own declared name.
         "algorithm" if imp.is_callable_algorithm() && method == imp.document_name => {
-            algorithm_call_target(imp, trimmed, site)
+            algorithm_call_target(imp, trimmed, site, receives_failures)
         }
         "algorithm" => Err(method_unknown(vec![imp.document_name.clone()])),
         // No other kind defines a callable an algorithm body may reach.
@@ -22886,18 +22915,24 @@ fn resolve_call_target<'a>(
 /// (`eq` or `eq.bytes_equal`) — refused when its signature has a `list<T>`
 /// slot. SCE_FORGE.md §4.12: in v1 a list crosses only the host boundary,
 /// so an algorithm that takes or returns one is called by a host and never
-/// by another algorithm. The refusal is placed at the whole target as
+/// by another algorithm. Refused too when it declares `may-fail` and the
+/// calling body does not (SCE_FORGE.md §3.4.1), which would have nowhere to
+/// pass the failure on. The refusal is placed at the whole target as
 /// written.
 fn algorithm_call_target<'a>(
     imp: &'a ImportContext,
     trimmed: &str,
     site: &ExpressionSite<'_>,
+    receives_failures: bool,
 ) -> Result<CallTarget<'a>, ForgeError> {
-    let Some(slot) = &imp.host_only else {
+    let at = site.locate(Some(0..trimmed.len()));
+    let refusal: ForgeError = if let Some(slot) = &imp.host_only {
+        expr::host_only_call(trimmed, slot, at.observed()).into()
+    } else if imp.may_fail && !receives_failures {
+        expr::unreceived_failure_call(trimmed, at.observed()).into()
+    } else {
         return Ok(CallTarget::Algorithm(imp));
     };
-    let at = site.locate(Some(0..trimmed.len()));
-    let refusal: ForgeError = expr::host_only_call(trimmed, slot, at.observed()).into();
     Err(at.place(refusal))
 }
 
@@ -23182,6 +23217,24 @@ fn c11_result_struct(members: &str, primary_symbol: &str, may_fail: bool) -> Str
         ""
     };
     format!("typedef struct {{\n{members}    bool ok;\n{why}}} {primary_symbol}_result_t;\n\n")
+}
+
+/// C11's `<symbol>_take`: a `may-fail` caller's view of a call to this
+/// algorithm (SCE_FORGE.md §3.4.1) — the value, or the failure recorded in
+/// the caller's `sce_failure_` and a zero the statement around it never
+/// uses, since it returns the failure first. Declared beside the result
+/// struct it reads, so every caller that includes this header has it.
+fn c11_take(value_type: &str, primary_symbol: &str) -> String {
+    format!(
+        "static inline {value_type} {primary_symbol}_take(\
+         sce_forge_algorithm_failure_t *failure, {primary_symbol}_result_t result) {{\n\
+         \x20   if (!result.ok) {{\n\
+         \x20       sce_forge_algorithm_fail(failure, result.why);\n\
+         \x20       return ({value_type}){{0}};\n\
+         \x20   }}\n\
+         \x20   return result.value;\n\
+         }}\n\n"
+    )
 }
 
 /// The error a Rust algorithm's `Result` carries. A buffer append past its
@@ -23638,7 +23691,7 @@ impl<'a> AlgorithmTypes<'a> {
         type_ctx.project_str_args_as_bytes_view = true;
         // SCE_FORGE.md §3.4.1: a `may-fail` algorithm checks every integer
         // operation it emits, not only the ones the range analysis flags.
-        type_ctx.checked_arithmetic = m.signature.may_fail;
+        type_ctx.receives_failures = m.signature.may_fail;
         crate::forge::type_ctx::insert_enum_imports(&mut type_ctx, imports);
         type_ctx.reject_unknown_identifiers = true;
         // RFC §synth-5-F `<sce:const name="X" type="array<elem, N>">` registers
@@ -23676,9 +23729,11 @@ impl<'a> AlgorithmTypes<'a> {
         // callee spelling — not its type.
         for imp in imports {
             if imp.kind == "algorithm" {
-                // A `list<T>` slot, a record slot or a `may-fail` declaration
-                // has no signature to register: the alias is registered as
-                // callable only by a host (SCE_FORGE.md §4.12, §3.4.1).
+                // A `list<T>` slot or a record slot has no signature to
+                // register: the alias is registered as callable only by a
+                // host (SCE_FORGE.md §4.12). A `may-fail` callee registers as
+                // one, and its call is judged by whether this body receives
+                // failures (§3.4.1).
                 if let Some(slot) = &imp.host_only {
                     type_ctx.insert_func(imp.alias.as_str(), FuncSig::host_only(slot.as_str()));
                     continue;
@@ -23695,9 +23750,8 @@ impl<'a> AlgorithmTypes<'a> {
                 type_ctx.insert_func(
                     imp.alias.as_str(),
                     FuncSig {
-                        params,
-                        ret,
-                        host_only: None,
+                        may_fail: imp.may_fail,
+                        ..FuncSig::new(params, ret)
                     },
                 );
             }
@@ -24006,10 +24060,14 @@ fn render_algorithm(
             )
         }
         // SCE_FORGE.md §3.4.1: a `may-fail` scalar or record return rides in
-        // a result struct of its own, as a buffer's does.
-        (_, Language::C11) if may_fail => {
-            c11_result_struct(&format!("    {value_type} value;\n"), &primary_symbol, true)
-        }
+        // a result struct of its own, as a buffer's does — with the one
+        // unwrapping of it a `may-fail` caller passes the failure on through
+        // (`expr::pass_failure_on`).
+        (_, Language::C11) if may_fail => format!(
+            "{}{}",
+            c11_result_struct(&format!("    {value_type} value;\n"), &primary_symbol, true),
+            c11_take(&value_type, &primary_symbol)
+        ),
         _ => String::new(),
     };
     let consts_prelude = format!("{buffer_build_preamble}{consts_prelude}");
@@ -25349,6 +25407,7 @@ mod tests {
             param_types: Vec::new(),
             ret_type: None,
             host_only: None,
+            may_fail: false,
             member_field_types: Vec::new(),
             member_method_sigs: Vec::new(),
             go_init_expr: String::new(),
@@ -25980,6 +26039,7 @@ mod tests {
                 param_types: Vec::new(),
                 ret_type: None,
                 host_only: None,
+                may_fail: false,
                 member_field_types: Vec::new(),
                 member_method_sigs: Vec::new(),
                 go_init_expr: String::new(),
@@ -26019,6 +26079,7 @@ mod tests {
                 param_types: Vec::new(),
                 ret_type: None,
                 host_only: None,
+                may_fail: false,
                 member_field_types: Vec::new(),
                 member_method_sigs: Vec::new(),
                 go_init_expr: String::new(),
