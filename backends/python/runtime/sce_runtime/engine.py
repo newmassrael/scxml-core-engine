@@ -178,7 +178,7 @@ class Engine(Generic[S, E]):
         # atomic ones and every ancestor of theirs — in the order the microstep
         # entered them. A `<state>` or `<parallel>` is in it from the moment
         # §scxml-D-enterStates adds it, before its `<onentry>` runs, so `In()`
-        # answers for it there (W3C SCXML 5.9.2, test411).
+        # answers for it there (§scxml-5.9.2, test411).
         self._configuration: List[S] = []
         # Appendix D's procedures read and drive the engine through this
         # adapter (`microstep.Document` / `microstep.Run`), so the engine's
@@ -1723,7 +1723,7 @@ class _MicrostepHost(Generic[S, E]):
         # §scxml-D-enterStates: into the configuration first, so the state's
         # own `<onentry>` already finds it there.
         engine._configuration.append(state)
-        # §scxml-D-enterStates, W3C SCXML 5.3: late binding initialises a
+        # §scxml-D-enterStates, §scxml-5.3: late binding initialises a
         # state's `<datamodel>` on its first entry.
         if policy.is_late_binding() and state not in engine._initialized_states_data:
             policy.init_state_datamodel(state, engine)

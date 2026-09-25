@@ -5835,6 +5835,11 @@
           "file": "sce-build/src/parser.rs",
           "symbol": "read_data",
           "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "enter_state",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -7116,6 +7121,11 @@
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "initialize",
           "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "__init__",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
