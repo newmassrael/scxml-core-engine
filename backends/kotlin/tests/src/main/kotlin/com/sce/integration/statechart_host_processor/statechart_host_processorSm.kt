@@ -90,7 +90,49 @@ class StatechartHostProcessorStateMachine(
         super.enterInitialConfiguration()
     }
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
 
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<StatechartHostProcessorState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<StatechartHostProcessorState, HistoryId>> =
+            listOf(StateTarget(StatechartHostProcessorState.Dispatching))
+
+        // W3C SCXML 3.13: dispatching's transition 0, as the microstep reads it.
+        val transitionDispatchingAt0 = EnabledTransition<StatechartHostProcessorState, HistoryId>(
+            StatechartHostProcessorState.Dispatching,
+            emptyList(),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: dispatching's transition 1, as the microstep reads it.
+        val transitionDispatchingAt1 = EnabledTransition<StatechartHostProcessorState, HistoryId>(
+            StatechartHostProcessorState.Dispatching,
+            emptyList(),
+            1,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: dispatching's transition 2, as the microstep reads it.
+        val transitionDispatchingAt2 = EnabledTransition<StatechartHostProcessorState, HistoryId>(
+            StatechartHostProcessorState.Dispatching,
+            emptyList(),
+            2,
+            hasActions = true,
+            isInternal = false,
+        )
+    }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StatechartHostProcessorState? = when (stateId) {
@@ -103,13 +145,7 @@ class StatechartHostProcessorStateMachine(
         is StatechartHostProcessorState.Dispatching -> "dispatching"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: StatechartHostProcessorState): Boolean = when (state) {
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StatechartHostProcessorState): Int = when (state) {
         is StatechartHostProcessorState.Dispatching -> 0
     }
@@ -345,43 +381,38 @@ class StatechartHostProcessorStateMachine(
     }
 
 
-    // W3C SCXML 3.12: Event processing with script engine condition evaluation
-    override fun processEvent(
-        state: StatechartHostProcessorState,
-        event: StatechartHostProcessorEvent
-    ): TransitionResult<StatechartHostProcessorState> {
-        // W3C SCXML 5.10: Set _event before guard evaluation
+
+    // W3C SCXML 5.10: bind the event as the `_event` its transitions' guards
+    // read — once, before the first guard runs, and not for an eventless
+    // selection, which has no event of its own.
+    override fun bindCurrentEvent(event: StatechartHostProcessorEvent) {
         setCurrentEventInScriptEngine(event)
-        return when (state) {
-        is StatechartHostProcessorState.Dispatching -> processDispatching(event)
-    }
     }
 
-
-    // --- Per-State Event Handlers ---
-
-    private fun processDispatching(
-        event: StatechartHostProcessorEvent
-    ): TransitionResult<StatechartHostProcessorState> = when {
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is StatechartHostProcessorEvent.Plain.Arrived -> TransitionResult.Internal(0)
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is StatechartHostProcessorEvent.Turn.Done -> TransitionResult.Internal(1)
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is StatechartHostProcessorEvent.Error.Execution -> TransitionResult.Internal(2)
-        else -> TransitionResult.Ignored
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
+        state: StatechartHostProcessorState,
+        event: StatechartHostProcessorEvent?
+    ): EnabledTransition<StatechartHostProcessorState, HistoryId>? = when (state) {
+        is StatechartHostProcessorState.Dispatching -> when {
+            event is StatechartHostProcessorEvent.Plain.Arrived -> transitionDispatchingAt0
+            event is StatechartHostProcessorEvent.Turn.Done -> transitionDispatchingAt1
+            event is StatechartHostProcessorEvent.Error.Execution -> transitionDispatchingAt2
+            else -> null
+        }
     }
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: statechart_host_processor.scxml:27 :: _machine
-    override fun onEntry(state: StatechartHostProcessorState, pathChild: StatechartHostProcessorState?) {
+    override fun onEntry(state: StatechartHostProcessorState, isDefaultEntry: Boolean) {
         when (state) {
             is StatechartHostProcessorState.Dispatching -> {
                 // SCE-MAP: statechart_host_processor.scxml:36 :: dispatching :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("dispatching")) return
 
 
             send(StatechartHostProcessorEvent.Plain.Arrived, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
@@ -424,19 +455,14 @@ class StatechartHostProcessorStateMachine(
         when (state) {
             is StatechartHostProcessorState.Dispatching -> {
                 // SCE-MAP: statechart_host_processor.scxml:36 :: dispatching :: _state_body
-                activeStateIds.remove("dispatching")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: statechart_host_processor.scxml:27 :: _machine
-    override fun executeTransitionActions(
-        source: StatechartHostProcessorState,
-        event: StatechartHostProcessorEvent?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: StatechartHostProcessorState, transitionIndex: Int) {
         when (source) {
         is StatechartHostProcessorState.Dispatching -> when (transitionIndex) {
             0 -> {

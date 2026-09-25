@@ -56,7 +56,64 @@ class DonedataLateCompletionStateMachine(
         super.enterInitialConfiguration()
     }
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
 
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: DonedataLateCompletionState): Boolean = when (state) {
+        is DonedataLateCompletionState.Fail, is DonedataLateCompletionState.Pass -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<DonedataLateCompletionState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<DonedataLateCompletionState, HistoryId>> =
+            listOf(StateTarget(DonedataLateCompletionState.Phase))
+
+        // W3C SCXML 3.13: phase's transition 0, as the microstep reads it.
+        val transitionPhaseAt0 = EnabledTransition<DonedataLateCompletionState, HistoryId>(
+            DonedataLateCompletionState.Phase,
+            emptyList(),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: phase's transition 1, as the microstep reads it.
+        val transitionPhaseAt1 = EnabledTransition<DonedataLateCompletionState, HistoryId>(
+            DonedataLateCompletionState.Phase,
+            listOf(StateTarget(DonedataLateCompletionState.Pass)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: phase's transition 2, as the microstep reads it.
+        val transitionPhaseAt2 = EnabledTransition<DonedataLateCompletionState, HistoryId>(
+            DonedataLateCompletionState.Phase,
+            listOf(StateTarget(DonedataLateCompletionState.Fail)),
+            2,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: phase's transition 3, as the microstep reads it.
+        val transitionPhaseAt3 = EnabledTransition<DonedataLateCompletionState, HistoryId>(
+            DonedataLateCompletionState.Phase,
+            listOf(StateTarget(DonedataLateCompletionState.Fail)),
+            3,
+            hasActions = false,
+            isInternal = false,
+        )
+    }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): DonedataLateCompletionState? = when (stateId) {
@@ -73,13 +130,7 @@ class DonedataLateCompletionStateMachine(
         is DonedataLateCompletionState.Phase -> "phase"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: DonedataLateCompletionState): Boolean = when (state) {
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: DonedataLateCompletionState): Int = when (state) {
         is DonedataLateCompletionState.Fail -> 2
         is DonedataLateCompletionState.Pass -> 1
@@ -300,60 +351,50 @@ class DonedataLateCompletionStateMachine(
     }
 
 
-    // W3C SCXML 3.12: Event processing with script engine condition evaluation
-    override fun processEvent(
-        state: DonedataLateCompletionState,
-        event: DonedataLateCompletionEvent
-    ): TransitionResult<DonedataLateCompletionState> {
-        // W3C SCXML 5.10: Set _event before guard evaluation
+
+    // W3C SCXML 5.10: bind the event as the `_event` its transitions' guards
+    // read — once, before the first guard runs, and not for an eventless
+    // selection, which has no event of its own.
+    override fun bindCurrentEvent(event: DonedataLateCompletionEvent) {
         setCurrentEventInScriptEngine(event)
-        return when (state) {
-        is DonedataLateCompletionState.Phase -> processPhase(event)
-        else -> TransitionResult.Ignored
-    }
     }
 
-
-    // --- Per-State Event Handlers ---
-
-    private fun processPhase(
-        event: DonedataLateCompletionEvent
-    ): TransitionResult<DonedataLateCompletionState> = when {
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is DonedataLateCompletionEvent.Ready -> TransitionResult.Internal(0)
-        event is DonedataLateCompletionEvent.Done.Invoke.InvLate && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_scxml_truthy(_event.data) and (_event.data.result == 42))", "_event.data && _event.data.result === 42")) -> TransitionResult.External(DonedataLateCompletionState.Pass, DonedataLateCompletionState.Phase, 1)
-
-        event is DonedataLateCompletionEvent.Done.Invoke.InvLate -> TransitionResult.External(DonedataLateCompletionState.Fail, DonedataLateCompletionState.Phase, 2)
-
-        event is DonedataLateCompletionEvent.Error.Execution -> TransitionResult.External(DonedataLateCompletionState.Fail, DonedataLateCompletionState.Phase, 3)
-
-        else -> TransitionResult.Ignored
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
+        state: DonedataLateCompletionState,
+        event: DonedataLateCompletionEvent?
+    ): EnabledTransition<DonedataLateCompletionState, HistoryId>? = when (state) {
+        is DonedataLateCompletionState.Phase -> when {
+            event is DonedataLateCompletionEvent.Ready -> transitionPhaseAt0
+            event is DonedataLateCompletionEvent.Done.Invoke.InvLate && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_scxml_truthy(_event.data) and (_event.data.result == 42))", "_event.data && _event.data.result === 42")) -> transitionPhaseAt1
+            event is DonedataLateCompletionEvent.Done.Invoke.InvLate -> transitionPhaseAt2
+            event is DonedataLateCompletionEvent.Error.Execution -> transitionPhaseAt3
+            else -> null
+        }
+        else -> null
     }
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: donedata_late_completion.scxml:45 :: _machine
-    override fun onEntry(state: DonedataLateCompletionState, pathChild: DonedataLateCompletionState?) {
+    override fun onEntry(state: DonedataLateCompletionState, isDefaultEntry: Boolean) {
         when (state) {
             is DonedataLateCompletionState.Fail -> {
                 // SCE-MAP: donedata_late_completion.scxml:77 :: fail :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is DonedataLateCompletionState.Pass -> {
                 // SCE-MAP: donedata_late_completion.scxml:76 :: pass :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is DonedataLateCompletionState.Phase -> {
                 // SCE-MAP: donedata_late_completion.scxml:48 :: phase :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("phase")) return
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
@@ -374,11 +415,9 @@ class DonedataLateCompletionStateMachine(
         when (state) {
             is DonedataLateCompletionState.Fail -> {
                 // SCE-MAP: donedata_late_completion.scxml:77 :: fail :: _state_body
-                activeStateIds.remove("fail")
             }
             is DonedataLateCompletionState.Pass -> {
                 // SCE-MAP: donedata_late_completion.scxml:76 :: pass :: _state_body
-                activeStateIds.remove("pass")
             }
             is DonedataLateCompletionState.Phase -> {
                 // SCE-MAP: donedata_late_completion.scxml:48 :: phase :: _state_body
@@ -386,19 +425,14 @@ class DonedataLateCompletionStateMachine(
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("inv_late")
-                activeStateIds.remove("phase")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: donedata_late_completion.scxml:45 :: _machine
-    override fun executeTransitionActions(
-        source: DonedataLateCompletionState,
-        event: DonedataLateCompletionEvent?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: DonedataLateCompletionState, transitionIndex: Int) {
         when (source) {
         is DonedataLateCompletionState.Phase -> when (transitionIndex) {
             0 -> {

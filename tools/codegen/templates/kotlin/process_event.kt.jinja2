@@ -2,21 +2,33 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
 {#
-    Kotlin Process Event Template
+    Kotlin Transition Selection Template
 
-    W3C SCXML 3.12: Event processing — pure function mapping (State, Event) -> TransitionResult.
+    What the generated machine knows and the runtime does not: which of a
+    state's OWN transitions an event enables. Everything else Appendix D does
+    with a transition — the walk from each atomic state up through its
+    ancestors, the ordered set, conflict removal, the exit set, the entry set —
+    is written once, in the runtime's Microstep.kt, over the structure
+    state_machine.kt.jinja2 emits.
+
+    It used to be written here as well: a per-state `processEvent` that routed
+    an event through the state's ancestors itself and answered with ONE
+    target, a history already dereferenced to a leaf at selection time. The
+    runtime then could not see a target set, the domain of an internal
+    transition, or that a history's default content was owed.
 
     Generates:
-    - processEvent() dispatching to per-state handlers
-    - processNullEvent() for eventless transitions (W3C SCXML Appendix D)
-    - Per-state handler functions with exhaustive when expressions
-    - W3C SCXML 3.13: Ancestor transition routing (child -> parent -> grandparent)
-    - Three-way condition pattern: In() predicate | safeEvaluateGuard() | static Kotlin
-    - History state target resolution (W3C SCXML 3.11)
-    - Multi-descriptor event matching (W3C SCXML 3.12.1)
+    - bindCurrentEvent(event)               §scxml-5.10 `_event` for the guards
+    - firstEnabledTransition(state, event)  the per-state half of selection
+
+    The transitions it answers with are the ones state_machine.kt.jinja2 builds
+    once in the companion object. The Kotlin twin of
+    go/process_transition.go.jinja2.
 #}
-{# --- Macro for rendering a condition expression (three-way pattern) --- #}
-{# Returns a Kotlin boolean expression string for use in when {} branches #}
+{# --- The guard a transition is taken under (three-way pattern) ---
+   An In() predicate or a native Kotlin condition as written, a natively
+   lowered typed-payload comparison, the script engine, or a value decided at
+   build time (W3C SCXML 5.9). #}
 {% macro render_cond(trans) -%}
 {% if trans.is_pure_in_predicate -%}
 {{ trans.cond_kt }}
@@ -30,386 +42,123 @@ safeEvaluateGuard({{ trans.cond | to_script_source_guard }})
 {{ 'true' if trans.cond_constant else 'false' }}
 {%- endif -%}
 {%- endmacro %}
-{# --- The machine-wide id of a transition owned by `state_id` --------------
-
-   ⚠ THE NUMBER IS READ, NEVER COUNTED. `machine_transition_ids` is assigned
-   once by `kotlin::assign_machine_transition_ids` and is the SAME source
-   `transition_actions.kt.jinja2` dispatches on (injected there as
-   `machine_transition_index`). A `loop.index0` here would be a second
-   enumeration of a different population — this template walks a state's OWN
-   transitions, that one walks its EFFECTIVE transitions, self plus every
-   ancestor's — and the two would silently disagree for any state that
-   inherits one.
-
-   `trans.transition_index` is the transition's position in its owner's list,
-   which is exactly how the id table is keyed. #}
-{% macro transition_id(trans, state_id) -%}
-{{ machine_transition_ids[state_id][trans.transition_index] }}
-{%- endmacro %}
-{# --- Macro for rendering transition result (External/InternalToTarget/Internal) --- #}
-{# Handles: true internal with target (InternalToTarget), external with ancestor source, targetless internal #}
-{% macro render_result(trans, target_expr, state_id) -%}
-{% if trans.is_true_internal is defined and trans.is_true_internal -%}
-TransitionResult.InternalToTarget({{ target_expr }}, {{ machine_name }}State.{{ trans.internal_source | to_state_class_name }}, {{ transition_id(trans, state_id) }})
-{%- elif trans.type == 'internal' and not trans.target -%}
-TransitionResult.Internal({{ transition_id(trans, state_id) }})
-{%- else -%}
-TransitionResult.External({{ target_expr }}, {{ machine_name }}State.{{ state_id | to_state_class_name }}, {{ transition_id(trans, state_id) }})
+{# --- Whether `trans` answers `event` ---
+   An eventless transition answers only the eventless selection (`null`), a
+   transition with an event descriptor only a named event: §scxml-3.13 selects
+   the two kinds in separate passes. A descriptor that matches every event
+   (`*`, and the other spellings analyzer.rs::stamp_wildcard_descriptors
+   recognises) answers any named one; otherwise the events the descriptor
+   matches by prefix (W3C SCXML 3.12.1), precomputed. #}
+{% macro event_match(trans) -%}
+{%- if not trans.event -%}event == null
+{%- elif trans.matches_any_event -%}event != null
+{%- elif trans.prefix_matching_events is defined and trans.prefix_matching_events | length > 1 -%}({% for matched_event in trans.prefix_matching_events | sort %}event is {{ machine_name }}Event.{{ matched_event | to_event_class_name }}{{ " || " if not loop.last }}{% endfor %})
+{%- elif trans.prefix_matching_events is defined and trans.prefix_matching_events | length == 1 -%}event is {{ machine_name }}Event.{{ trans.prefix_matching_events[0] | to_event_class_name }}
+{%- else -%}event is {{ machine_name }}Event.{{ trans.event | to_event_class_name }}
 {%- endif -%}
 {%- endmacro %}
+{% set ns_selecting = namespace(states=0) %}
+{% for state_id, state in model.states | dictsort %}
+{% if state.transitions %}
+{% set ns_selecting.states = ns_selecting.states + 1 %}
+{% endif %}
+{% endfor %}
 {% if model.needs_script_engine %}
-    // W3C SCXML 3.12: Event processing with script engine condition evaluation
-    override fun processEvent(
-        state: {{ machine_name }}State,
-        event: {{ machine_name }}Event
-    ): TransitionResult<{{ machine_name }}State> {
-        // W3C SCXML 5.10: Set _event before guard evaluation
+
+    // W3C SCXML 5.10: bind the event as the `_event` its transitions' guards
+    // read — once, before the first guard runs, and not for an eventless
+    // selection, which has no event of its own.
+    override fun bindCurrentEvent(event: {{ machine_name }}Event) {
         setCurrentEventInScriptEngine(event)
-        return when (state) {
-{% else %}
-    // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
-    override fun processEvent(
+    }
+{% endif %}
+
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+{# Document order (W3C SCXML 3.13): transitions are emitted in the order the
+   author wrote them, and `when` takes the first branch that holds, so the two
+   orders agree by construction rather than by a sort. A wildcard written first
+   is taken before a literal written second
+   (`integration_resources/event_descriptor_spellings_agree/`), and an
+   unguarded one still leaves the eventless transitions after it reachable,
+   because it answers only a named event. #}
+{# What each arm may say is bounded by what the arms before it already
+   settled, because Kotlin's flow analysis reads the `when` as the author's
+   document order does and rejects, under -Werror, a condition it can prove:
+   past an unguarded `event == null` the event is known to be present, past an
+   unguarded `event != null` it is known to be absent. So `arm.known` carries
+   that fact ('' / 'absent' / 'present') down the list:
+
+   - an arm the fact rules out can never be taken, and is not written;
+   - an arm the fact decides is written without the test that is now certain —
+     as the state's last word (`else`) when nothing guards it, since every arm
+     after it is unreachable (W3C SCXML 3.13: the first enabled transition in
+     document order wins);
+   - a guard the frontend decided at build time (`cond_constant`, W3C SCXML
+     5.9) is no guard when it holds, and when it does not the transition is
+     never enabled and has no arm.
+
+   The old per-state handlers kept the same rule as "first unconditional
+   transition wins". #}
+    override fun firstEnabledTransition(
         state: {{ machine_name }}State,
-        event: {{ machine_name }}Event
-    ): TransitionResult<{{ machine_name }}State> = when (state) {
-{% endif %}
-{% for state_id in model.states | sort %}
-{% set state = model.states[state_id] %}
-{% if not state.is_parallel %}
-{% set ancestors = ancestor_chains[state_id] %}
-{# Check if state has any event-based or wildcard transitions (excluding eventless) #}
-{% set ns_self = namespace(has_event_trans=false) %}
+        event: {{ machine_name }}Event?
+    ): EnabledTransition<{{ machine_name }}State, HistoryId>? = when (state) {
+{% for state_id, state in model.states | dictsort %}
+{% if state.transitions %}
+        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> when {
+{% set arm = namespace(known='', closed=false, kind='', guard='', decided='') %}
 {% for trans in state.transitions %}
-{% if trans.event %}
-{% set ns_self.has_event_trans = true %}
-{% endif %}
-{% endfor %}
-{# Ancestor IDs with event-based transitions (pre-computed in Python) #}
-{% set ns_anc = namespace(ids=ancestors_with_event_transitions[state_id]) %}
-{% if ns_self.has_event_trans and ns_anc.ids | length > 0 %}
-        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {
-            val result = process{{ state_id | to_state_class_name }}(event)
-            // W3C SCXML 3.13: Ancestor transition routing
-            if (result !is TransitionResult.Ignored) result
-{% for anc_id in ns_anc.ids %}
-            else {
-                val anc{{ loop.index }} = process{{ anc_id | to_state_class_name }}(event)
-                if (anc{{ loop.index }} !is TransitionResult.Ignored) anc{{ loop.index }}
-{% endfor %}
-            else TransitionResult.Ignored
-{% for anc_id in ns_anc.ids %}
-            }
-{% endfor %}
-        }
-{% elif ns_self.has_event_trans %}
-        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> process{{ state_id | to_state_class_name }}(event)
-{% elif ns_anc.ids | length > 0 %}
-        // W3C SCXML 3.13: Ancestor-only routing ({{ state_id }} has no own event transitions)
-        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {
-{% for anc_id in ns_anc.ids %}
-{% if loop.first %}
-            val anc{{ loop.index }} = process{{ anc_id | to_state_class_name }}(event)
-            if (anc{{ loop.index }} !is TransitionResult.Ignored) anc{{ loop.index }}
+{% if not arm.closed %}
+{% set arm.kind = 'eventless' if not trans.event else ('any' if trans.matches_any_event else 'named') %}
+{% if not trans.cond %}
+{% set arm.guard = 'none' %}
+{% elif trans.is_pure_in_predicate or trans.is_kt_condition or trans.native_payload_guard or trans.is_cpp_condition or model.needs_script_engine %}
+{% set arm.guard = 'runtime' %}
+{% elif trans.cond_constant %}
+{% set arm.guard = 'none' %}
 {% else %}
-            else {
-                val anc{{ loop.index }} = process{{ anc_id | to_state_class_name }}(event)
-                if (anc{{ loop.index }} !is TransitionResult.Ignored) anc{{ loop.index }}
+{% set arm.guard = 'never' %}
+{% endif %}
+{% if arm.known == 'absent' %}
+{% set arm.decided = 'true' if arm.kind == 'eventless' else 'false' %}
+{% elif arm.known == 'present' %}
+{% set arm.decided = 'false' if arm.kind == 'eventless' else ('true' if arm.kind == 'any' else '') %}
+{% else %}
+{% set arm.decided = '' %}
+{% endif %}
+{% if arm.decided == 'false' or arm.guard == 'never' %}
+{% elif arm.decided == 'true' and arm.guard == 'none' %}
+            else -> transition{{ state_id | to_state_class_name }}At{{ trans.transition_index }}
+{% set arm.closed = true %}
+{% elif arm.decided == 'true' %}
+            {{ render_cond(trans) }} -> transition{{ state_id | to_state_class_name }}At{{ trans.transition_index }}
+{% elif arm.guard == 'none' %}
+            {{ event_match(trans) }} -> transition{{ state_id | to_state_class_name }}At{{ trans.transition_index }}
+{% if arm.kind == 'eventless' %}
+{% set arm.known = 'present' %}
+{% elif arm.kind == 'any' %}
+{% set arm.known = 'absent' %}
+{% endif %}
+{% else %}
+            {{ event_match(trans) }} && {{ render_cond(trans) }} -> transition{{ state_id | to_state_class_name }}At{{ trans.transition_index }}
+{% endif %}
 {% endif %}
 {% endfor %}
-            else TransitionResult.Ignored
-{% for anc_id in ns_anc.ids %}
-{% if not loop.first %}
-            }
+{% if not arm.closed %}
+            else -> null
 {% endif %}
-{% endfor %}
         }
 {% endif %}
-{# else: no event transitions anywhere -> falls to else -> Ignored #}
-{% endif %}
 {% endfor %}
-{# The `else` arm exists for the states the loop above emitted no branch for:
-   a `<parallel>` (skipped by `not state.is_parallel`) and a state with neither
-   its own event transitions nor an ancestor's. A document where every state
-   gets a branch leaves the `when` exhaustive over the sealed state hierarchy,
-   and Kotlin rejects a redundant `else` under -Werror — which is how a fixture
-   with no `<final>` and a transition on every state failed to compile. #}
-{% if process_event_needs_else %}
-        else -> TransitionResult.Ignored
+{# The `else` arm exists for the states the loop above emitted no branch for —
+   the ones with no transition of their own. A document where every state has
+   one leaves the `when` exhaustive over the sealed state hierarchy, and Kotlin
+   rejects a redundant `else` under -Werror. #}
+{% if ns_selecting.states < model.states | length %}
+        else -> null
 {% endif %}
     }
-{% if model.needs_script_engine %}
-    }
-{% endif %}
-
-{# W3C SCXML 3.13: a transition with no `event` is eventless whether or not it
-   names a target. A targetless one exits and enters nothing and runs its
-   content in place, which is still a microstep, so it belongs in
-   processNullEvent alongside the ones that move the machine. Requiring a target
-   here dropped it from selection entirely while `executeTransitionActions`
-   still carried its content — actions the machine could never reach. #}
-{% set ns_has_eventless = namespace(value=false) %}
-{% for state_id in model.states | sort %}
-{% set state = model.states[state_id] %}
-{% for trans in state.transitions %}
-{% if not trans.event %}
-{% set ns_has_eventless.value = true %}
-{% endif %}
-{% endfor %}
-{% endfor %}
-{% if ns_has_eventless.value %}
-    // W3C SCXML Appendix D: Eventless (null) transition check
-    override fun processNullEvent(
-        state: {{ machine_name }}State
-    ): TransitionResult<{{ machine_name }}State> = when (state) {
-{% for state_id in model.states | sort %}
-{% set state = model.states[state_id] %}
-{% if not state.is_parallel %}
-{# Check if this state has eventless transitions (self or ancestors) #}
-{% set ns_null_self = namespace(has=false) %}
-{% for trans in state.transitions %}
-{% if not trans.event %}
-{% set ns_null_self.has = true %}
-{% endif %}
-{% endfor %}
-{# Ancestor IDs with eventless transitions (pre-computed in Python) #}
-{% set ns_null_anc = namespace(ids=ancestors_with_null_transitions[state_id]) %}
-{# Collect all null sources: self first, then ancestors #}
-{% set ns_null_sources = namespace(ids=[]) %}
-{% if ns_null_self.has %}
-{% set ns_null_sources.ids = ns_null_sources.ids + [state_id] %}
-{% endif %}
-{% for anc_id in ns_null_anc.ids %}
-{% set ns_null_sources.ids = ns_null_sources.ids + [anc_id] %}
-{% endfor %}
-{% if ns_null_sources.ids | length == 1 %}
-        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> processNull{{ ns_null_sources.ids[0] | to_state_class_name }}()
-{% elif ns_null_sources.ids | length > 1 %}
-        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {
-{% for src_id in ns_null_sources.ids %}
-{% if loop.first %}
-            val null{{ loop.index }} = processNull{{ src_id | to_state_class_name }}()
-            if (null{{ loop.index }} !is TransitionResult.Ignored) null{{ loop.index }}
-{% else %}
-            else {
-                val null{{ loop.index }} = processNull{{ src_id | to_state_class_name }}()
-                if (null{{ loop.index }} !is TransitionResult.Ignored) null{{ loop.index }}
-{% endif %}
-{% endfor %}
-            else TransitionResult.Ignored
-{% for src_id in ns_null_sources.ids %}
-{% if not loop.first %}
-            }
-{% endif %}
-{% endfor %}
-        }
-{% endif %}
-{% endif %}
-{% endfor %}
-{# Kotlin rejects a redundant `else` on an exhaustive `when` under -Werror, and
-   the arms above cover every non-<parallel> state with an eventless transition
-   of its own or an ancestor's. `process_null_event_needs_else` is the negation
-   of that condition, computed from the same inputs. #}
-{% if process_null_event_needs_else %}
-        else -> TransitionResult.Ignored
-{% endif %}
-    }
-
-    // --- Per-State Null (Eventless) Handlers ---
-{% for state_id in model.states | sort %}
-{% set state = model.states[state_id] %}
-{% set ns_null = namespace(has=false) %}
-{% for trans in state.transitions %}
-{% if not trans.event %}
-{% set ns_null.has = true %}
-{% endif %}
-{% endfor %}
-{% if ns_null.has %}
-
-    private fun processNull{{ state_id | to_state_class_name }}(
-    ): TransitionResult<{{ machine_name }}State> = when {
-{% set ns_rendered_else = namespace(done=false) %}
-{% for trans in state.transitions %}
-{% if not trans.event and not ns_rendered_else.done %}
-{# --- Determine target expression (C++ selection-time history resolution) --- #}
-{% if trans.history_target is defined %}
-{# W3C SCXML 3.11: Resolve history target at selection time (C++ resolvedHistoryTarget pattern) #}
-{% set default_hist_target = machine_name ~ "State." ~ (trans.history_leaf_target | to_state_class_name) %}
-{% set target_expr = "(historyStore[\"" ~ trans.history_target ~ "\"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: " ~ default_hist_target ~ ")" %}
-{% elif trans.target %}
-{% set target_expr = machine_name ~ "State." ~ (trans.target | to_state_class_name) %}
-{% endif %}
-{# W3C SCXML 3.13: a targetless transition exits and enters nothing and runs
-   its content in place, which is what TransitionResult.Internal means here —
-   the same result the event-driven arms above already produce for one. #}
-{% if trans.target or trans.history_target is defined %}
-{% set result_expr = "TransitionResult.External(" ~ target_expr ~ ", " ~ machine_name ~ "State." ~ (state_id | to_state_class_name) ~ ", " ~ machine_transition_ids[state_id][trans.transition_index] ~ ")" %}
-{% else %}
-{% set result_expr = "TransitionResult.Internal(" ~ machine_transition_ids[state_id][trans.transition_index] ~ ")" %}
-{% endif %}
-{% if trans.cond %}
-        {{ render_cond(trans) }} -> {{ result_expr }}
-{% else %}
-        // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> {{ result_expr }}
-{% set ns_rendered_else.done = true %}
-{% endif %}
-{% endif %}
-{% endfor %}
-{% if not ns_rendered_else.done %}
-        else -> TransitionResult.Ignored
-{% endif %}
-    }
-{% endif %}
-{% endfor %}
-{% endif %}
-
-    // --- Per-State Event Handlers ---
-{% for state_id in model.states | sort %}
-{% set state = model.states[state_id] %}
-{# Only generate handler if state has event-based transitions #}
-{% set ns_event = namespace(has=false) %}
-{% for trans in state.transitions %}
-{% if trans.event %}
-{% set ns_event.has = true %}
-{% endif %}
-{% endfor %}
-{% if ns_event.has %}
-{# --- Document order (W3C SCXML 3.13) ------------------------------------
-
-   Transitions are emitted in the order the author wrote them, and `when`
-   takes the first branch that matches, so the two orders agree by
-   construction rather than by a sort.
-
-   ⚠ A bare wildcard used to be pre-scanned OUT of this loop and emitted as
-   the `else` branch wherever it sat, which placed it after transitions
-   written after it. Measured 2026-09-13 by
-   `integration_resources/event_descriptor_spellings_agree/`: a state whose
-   `.*` was written first took the literal transition written second.
-
-   An UNGUARDED wildcard still becomes `else`. It matches every event this
-   function can be called with — eventless transitions are dispatched by
-   `processNullEvent` and never reach here — so nothing written after it is
-   reachable, and `ns.sealed` both stops the loop and drops those dead
-   branches. A GUARDED wildcard is a branch like any other: when its guard is
-   false the transitions after it ARE reachable, so it is emitted in place
-   with its own condition instead of being hoisted to the end. #}
-{% set ns = namespace(sealed=false, seal_trans=none) %}
-
-    private fun process{{ state_id | to_state_class_name }}(
-        event: {{ machine_name }}Event
-    ): TransitionResult<{{ machine_name }}State> = when {
-{# --- Event-based transitions --- #}
-{% for trans in state.transitions %}
-{% if ns.sealed %}
-{# Unreachable: an unguarded wildcard above matches every event a call can
-   carry, so no transition written after it can ever be selected. #}
-{% elif trans.matches_any_event %}
-{# --- Bare wildcard, in document order (W3C SCXML 3.13) --- #}
-{# W3C SCXML 3.12.1: which spellings match every event is decided by
-   analyzer.rs::stamp_wildcard_descriptors from event_descriptor.rs, not
-   here. This branch listed its own — `*` and `.*` — and the C11 template
-   listed a different one, which is what a question a template cannot ask
-   the crate costs: two lists, and C11's had grown a third spelling that
-   event_descriptor.rs refuses. #}
-{% if trans.history_target is defined %}
-{% set default_hist_target = machine_name ~ "State." ~ (trans.history_leaf_target | to_state_class_name) %}
-{% set target_expr = "(historyStore[\"" ~ trans.history_target ~ "\"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: " ~ default_hist_target ~ ")" %}
-{% elif trans.target %}
-{% set target_expr = machine_name ~ "State." ~ (trans.target | to_state_class_name) %}
-{% else %}
-{% set target_expr = "" %}
-{% endif %}
-{% if trans.cond %}
-{% if trans.target or trans.history_target is defined %}
-        // W3C SCXML 3.12.1: guarded wildcard, in the place it was written
-        {{ render_cond(trans) }} -> {{ render_result(trans, target_expr, state_id) }}
-
-{% else %}
-        // W3C SCXML 3.12.1: guarded targetless wildcard, in the place it was written
-        {{ render_cond(trans) }} -> TransitionResult.Internal({{ transition_id(trans, state_id) }})
-
-{% endif %}
-{% else %}
-{% set ns.sealed = true %}
-{% set ns.seal_trans = trans %}
-{% endif %}
-{% elif trans.event and trans.target %}
-{# --- Determine target expression (history resolution) --- #}
-{# W3C SCXML 3.11: Resolve history target at selection time (C++ resolvedHistoryTarget pattern) #}
-{% if trans.history_target is defined %}
-{% set default_hist_target = machine_name ~ "State." ~ (trans.history_leaf_target | to_state_class_name) %}
-{% set target_expr = "(historyStore[\"" ~ trans.history_target ~ "\"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: " ~ default_hist_target ~ ")" %}
-{% else %}
-{% set target_expr = machine_name ~ "State." ~ (trans.target | to_state_class_name) %}
-{% endif %}
-{# --- Resolve effective event name(s) via prefix matching --- #}
-{% if trans.prefix_matching_events is defined and trans.prefix_matching_events | length > 1 %}
-        // W3C SCXML 3.12.1: Prefix match for "{{ trans.event }}"
-        ({% for matched_event in trans.prefix_matching_events | sort %}event is {{ machine_name }}Event.{{ matched_event | to_event_class_name }}{% if not loop.last %} || {% endif %}{% endfor %})
-{%- if trans.cond %} && {{ render_cond(trans) }}{% endif %} -> {{ render_result(trans, target_expr, state_id) }}
-
-{% else %}
-{# --- Resolve single event --- #}
-{% if trans.prefix_matching_events is defined and trans.prefix_matching_events | length == 1 %}
-{% set resolved_event = trans.prefix_matching_events[0] %}
-{% else %}
-{% set resolved_event = trans.event %}
-{% endif %}
-{% if trans.cond %}
-        event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} && {{ render_cond(trans) }} -> {{ render_result(trans, target_expr, state_id) }}
-
-{% else %}
-        event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} -> {{ render_result(trans, target_expr, state_id) }}
-
-{% endif %}
-{% endif %}
-{% elif trans.event and not trans.target %}
-{# --- Targetless transitions --- #}
-{% if trans.prefix_matching_events is defined and trans.prefix_matching_events | length > 1 %}
-        // W3C SCXML 3.12.1: Multi-descriptor targetless "{{ trans.event }}"
-        ({% for matched_event in trans.prefix_matching_events | sort %}event is {{ machine_name }}Event.{{ matched_event | to_event_class_name }}{% if not loop.last %} || {% endif %}{% endfor %})
-{%- if trans.cond %} && {{ render_cond(trans) }}{% endif %} -> TransitionResult.Internal({{ transition_id(trans, state_id) }})
-{% else %}
-{% if trans.prefix_matching_events is defined and trans.prefix_matching_events | length == 1 %}
-{% set resolved_event = trans.prefix_matching_events[0] %}
-{% else %}
-{% set resolved_event = trans.event %}
-{% endif %}
-{% if trans.cond %}
-        event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} && {{ render_cond(trans) }} -> TransitionResult.Internal({{ transition_id(trans, state_id) }})
-{% else %}
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} -> TransitionResult.Internal({{ transition_id(trans, state_id) }})
-{% endif %}
-{% endif %}
-{% endif %}
-{% endfor %}
-{# --- The sealing wildcard, as `else` --- #}
-{% if ns.sealed %}
-{% set trans = ns.seal_trans %}
-{# W3C SCXML 3.11: Resolve history target at selection time (C++ resolvedHistoryTarget pattern) #}
-{% if trans.history_target is defined %}
-{% set default_hist_target = machine_name ~ "State." ~ (trans.history_leaf_target | to_state_class_name) %}
-{% set target_expr = "(historyStore[\"" ~ trans.history_target ~ "\"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: " ~ default_hist_target ~ ")" %}
-{% elif trans.target %}
-{% set target_expr = machine_name ~ "State." ~ (trans.target | to_state_class_name) %}
-{% else %}
-{% set target_expr = "" %}
-{% endif %}
-{% if trans.target or trans.history_target is defined %}
-        // W3C SCXML 3.12.1: Wildcard transition
-        else -> {{ render_result(trans, target_expr, state_id) }}
-{% else %}
-{# A targetless transition runs its actions and stays put, whatever its
-   `type` says — `render_result` returns Internal only for type="internal",
-   so a targetless EXTERNAL wildcard would take the External arm and render
-   an empty target. W3C 403c is exactly that document. #}
-        // W3C SCXML 3.12.1: Wildcard targetless transition
-        else -> TransitionResult.Internal({{ transition_id(trans, state_id) }})
-{% endif %}
-{% else %}
-        else -> TransitionResult.Ignored
-{% endif %}
-    }
-{% endif %}
-{% endfor %}

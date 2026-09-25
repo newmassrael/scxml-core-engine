@@ -4,14 +4,16 @@
 {#
     Kotlin Entry/Exit Actions Template
 
-    W3C SCXML 3.8/3.9: Entry and exit action rendering.
-    Actions are separated from transitions — the engine controls W3C ordering.
+    W3C SCXML 3.8/3.9: Entry and exit action rendering, one state at a time.
+    Which states a microstep enters and exits, and in which order, is the
+    runtime's Appendix D (com.sce.runtime.Microstep): it adds a state to the
+    configuration and calls onEntry, records a state's histories and removes it
+    before calling onExit. Nothing here enters or exits another state.
 
     W3C SCXML 3.7: Final state done.state event emission.
     W3C SCXML 3.7.1: Parallel state completion detection.
-    W3C SCXML 3.4: Parallel state recursive child region entry.
-    W3C SCXML 3.3: Compound state initial child entry.
-    W3C SCXML 3.4/3.13: Parallel state recursive descendant exit.
+    W3C SCXML 3.3: `<initial>` transition content, on default entry only.
+    W3C SCXML 3.10.2: `<history>` default transition content.
 
     Uses actions/_render.kt.jinja2 for action dispatch (shared with transition_actions).
 #}
@@ -23,16 +25,12 @@
        above the `onEntry` / `onExit` overrides. Kotlin's macro form is
        a plain `// SCE-MAP:` comment — non-syntactic, no compile cost. #}
     {{ sce_map.source_marker(model.source_location, "kotlin", symbol_artifact=sce_artifact.machine) }}
-    override fun onEntry(state: {{ machine_name }}State, pathChild: {{ machine_name }}State?) {
+    override fun onEntry(state: {{ machine_name }}State, isDefaultEntry: Boolean) {
         when (state) {
 {% for state_id in model.states | sort %}
 {% set state = model.states[state_id] %}
 {% set has_done_event = state.is_final and state.parent %}
 {% set is_top_final = state.is_final and not state.parent %}
-{% set has_parallel_children = state.is_parallel and state_id in model.parallel_regions %}
-{% set has_deep_initial = state_id in deep_initial_entries %}
-{% set has_initial_history = state.initial_history_id is defined and state.initial_history_id %}
-{% set has_initial_child = not state.is_final and not state.is_parallel and state.initial and state.initial != state_id and not has_deep_initial %}
 {% set has_invokes = state_id in invoke_entries %}
 {% set has_late_datamodel = model.needs_script_engine and model.binding == 'late' and state.datamodel %}
 {# W3C SCXML 3.7.1: Check if this final state's grandparent is parallel #}
@@ -48,8 +46,6 @@
 {% if state.source_location %}
                 {{ sce_map.source_marker(state.source_location, "kotlin", stmt_level=true, symbol_state=state_id, symbol_artifact=sce_artifact.state_body) | trim }}
 {% endif %}
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("{{ state_id }}")) return
 {% if has_late_datamodel %}
                 // W3C SCXML 5.3: Late binding — initialize state-level datamodel on entry
                 run {
@@ -410,92 +406,57 @@
                 markFinalStateReached()
 {% endif %}
 {% if grandparent_is_parallel %}
-                // W3C SCXML 3.7.1: Check if all regions of parallel grandparent are complete
-                if ({{ parallel_grandparent_id | to_parallel_complete_check }}) {
+                // W3C SCXML 3.7.1: this <final> may have completed the
+                // <parallel> grandparent — Appendix D's isInFinalState, which
+                // counts a region that is itself a <parallel> only once all
+                // of ITS regions are final.
+                if (isStateInFinalState({{ machine_name }}State.{{ parallel_grandparent_id | to_state_class_name }})) {
                     raiseInternal({{ machine_name }}Event.{{ ("done.state." ~ parallel_grandparent_id) | to_event_ref }})
                 }
 {% endif %}
-{# §scxml-D: `pathChild` tells addDescendantStatesToEnter (null — this state is
-   the entry TARGET and takes its defaults) from addAncestorStatesToEnter (the
-   child the entry set already holds, so this state takes none). See the
-   runtime's `StateMachineEngine.onEntry`. #}
-{% if has_parallel_children %}
-                // W3C SCXML 3.4 + §scxml-D-addDescendantStatesToEnter: a
-                // `<parallel>` hands out defaults even when it is only an
-                // ancestor — Appendix D's one exception to the ancestor rule.
-                // The exception has its own exception: not the region the entry
-                // set is already descending into, which `pathChild` names and
-                // which the caller enters with the target's own path.
-{% for region_id in model.parallel_regions[state_id] %}
-                if (pathChild != {{ machine_name }}State.{{ region_id | to_state_class_name }}) {
-                    onEntry({{ machine_name }}State.{{ region_id | to_state_class_name }})
-                }
-{% endfor %}
-{% elif has_initial_history %}
-                if (pathChild == null) {
 {% if state.initial_transition_actions %}
-                    // W3C SCXML 3.3.2: Execute initial transition content (always, even with stored history)
+                // W3C SCXML 3.3: the <initial> transition's content runs when,
+                // and only when, this state's initial state is entered by
+                // default — not when the state is entered only as the ancestor
+                // of a deeper target.
+                if (isDefaultEntry) {
 {% for action in state.initial_transition_actions %}
     {% include 'actions/_render.kt.jinja2' with context %}
-{% endfor %}
-{% endif %}
-{% if state.initial_history_default_actions %}
-                    // W3C SCXML 3.11: Execute history default transition content only if no stored history
-                    if (!historyStore.containsKey("{{ state.initial_history_id }}") || historyStore["{{ state.initial_history_id }}"].isNullOrEmpty()) {
-{% for action in state.initial_history_default_actions %}
-    {% include 'actions/_render.kt.jinja2' with context %}
-{% endfor %}
-                    }
-{% endif %}
-                    // W3C SCXML 3.11: Enter history-restored state or default target
-                    run {
-                        val stored = historyStore["{{ state.initial_history_id }}"]
-                        if (stored != null && stored.isNotEmpty()) {
-                            val histTarget = resolveState(stored[0])
-                            if (histTarget != null) {
-                                onEntry(histTarget)
-                            } else {
-                                onEntry({{ machine_name }}State.{{ state.initial | to_state_class_name }})
-                            }
-                        } else {
-                            onEntry({{ machine_name }}State.{{ state.initial | to_state_class_name }})
-                        }
-                    }
-                }
-{% elif model.parallel_regions and has_deep_initial %}
-                if (pathChild == null) {
-{% if state.initial_transition_actions %}
-                    // W3C SCXML 3.3.2: Execute initial transition content
-{% for action in state.initial_transition_actions %}
-    {% include 'actions/_render.kt.jinja2' with context %}
-{% endfor %}
-{% endif %}
-                    // W3C SCXML 3.6: Enter deep initial targets (C++ enterDeepInitialTargets pattern)
-{% for entry in deep_initial_entries[state_id] %}
-                    onEntry({{ machine_name }}State.{{ entry.id | to_state_class_name }})
 {% endfor %}
                 }
-{% elif model.parallel_regions and has_initial_child %}
-                if (pathChild == null) {
-{% if state.initial_transition_actions %}
-                    // W3C SCXML 3.3.2: Execute initial transition content
-{% for action in state.initial_transition_actions %}
-    {% include 'actions/_render.kt.jinja2' with context %}
-{% endfor %}
-{% endif %}
-                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                    onEntry({{ machine_name }}State.{{ state.initial | to_state_class_name }})
-                }
-{% elif state.initial_transition_actions %}
-                // W3C SCXML 3.3.2: Execute initial transition content
-{% for action in state.initial_transition_actions %}
-    {% include 'actions/_render.kt.jinja2' with context %}
-{% endfor %}
 {% endif %}
             }
 {% endfor %}
         }
     }
+{% set ns_history_content = namespace(any=false) %}
+{% for history_id, history_info in model.history_states | dictsort %}
+{% if history_info.default_actions %}
+{% set ns_history_content.any = true %}
+{% endif %}
+{% endfor %}
+{% if ns_history_content.any %}
+
+    // W3C SCXML 3.10.2: a <history>'s default transition content, run after its
+    // parent's onentry (and the parent's own <initial> content) when the
+    // history was taken with nothing recorded. A history that restored what it
+    // recorded runs nothing.
+    {{ sce_map.source_marker(model.source_location, "kotlin", symbol_artifact=sce_artifact.machine) }}
+    override fun executeHistoryDefaultContent(history: HistoryId) {
+        when (history) {
+{% for history_id, history_info in model.history_states | dictsort %}
+{% if history_info.default_actions %}
+            history{{ history_id | to_state_class_name }} -> {
+{% set in_run_block = false %}
+{% for action in history_info.default_actions %}
+    {% include 'actions/_render.kt.jinja2' with context %}
+{% endfor %}
+            }
+{% endif %}
+{% endfor %}
+        }
+    }
+{% endif %}
 
     // Exit Actions (W3C SCXML 3.9)
     {{ sce_map.source_marker(model.source_location, "kotlin", symbol_artifact=sce_artifact.machine) }}
@@ -503,9 +464,7 @@
         when (state) {
 {% for state_id in model.states | sort %}
 {% set state = model.states[state_id] %}
-{% set is_parallel = state.is_parallel and state_id in model.parallel_regions %}
 {% set exit_has_invokes = state_id in invoke_entries %}
-{% set has_history_children = model.history_states.values() | selectattr('parent', 'equalto', state_id) | list %}
             is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {  {{- annot.annotation_comment(state, "kotlin", "                ") }}
 {% if state.source_location %}
                 {{ sce_map.source_marker(state.source_location, "kotlin", stmt_level=true, symbol_state=state_id, symbol_artifact=sce_artifact.state_body) | trim }}
@@ -526,42 +485,6 @@
 {% endif %}
 {% endfor %}
 {% endif %}
-{% if is_parallel %}
-                // W3C SCXML 3.4/3.13: Exit active descendants of parallel state
-                // in reverse document order (deepest states exit first).
-                // Defensive: when called from exitHierarchy, descendants are already
-                // exited and removed from activeStateIds — the contains() checks below
-                // prevent double-exit. This code is needed for direct onExit() calls.
-                val toExit = mutableListOf<Pair<{{ machine_name }}State, Int>>()
-{% for desc_id in parallel_descendants[state_id] %}
-                if (activeStateIds.contains("{{ desc_id }}")) {
-                    toExit.add({{ machine_name }}State.{{ desc_id | to_state_class_name }} to {{ model.states[desc_id].document_order }})
-                }
-{% endfor %}
-                toExit.sortByDescending { it.second }
-                for ((desc, _) in toExit) {
-                    onExit(desc)
-                }
-{% endif %}
-{% for history_id, history_info in model.history_states | dictsort %}
-{% if history_info.parent == state_id %}
-{% if history_info.type == 'shallow' %}
-                // W3C SCXML 3.11: Record shallow history for {{ history_id }}
-                // Uses preTransitionActiveStates (captured before exits, C++ pattern)
-                historyStore["{{ history_id }}"] = preTransitionActiveStates.filter { stateId ->
-                    val st = resolveState(stateId) ?: return@filter false
-                    parentOf(st)?.let { stateIdOf(it) } == "{{ state_id }}"
-                }.toList()
-{% else %}
-                // W3C SCXML 3.11: Record deep history for {{ history_id }}
-                historyStore["{{ history_id }}"] = preTransitionActiveStates.filter { stateId ->
-                    val st = resolveState(stateId) ?: return@filter false
-                    isDescendantOf(st, {{ machine_name }}State.{{ state_id | to_state_class_name }}) && isAtomicState(st)
-                }.toList()
-{% endif %}
-{% endif %}
-{% endfor %}
-                activeStateIds.remove("{{ state_id }}")
 {% if state.on_exit_blocks | length > 1 %}
 {% for block in state.on_exit_blocks %}
                 // W3C SCXML 3.9: Onexit block {{ loop.index }}/{{ state.on_exit_blocks | length }}

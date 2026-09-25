@@ -26,10 +26,11 @@
 
 package com.sce.ecmascript
 
+import com.sce.runtime.EnabledTransition
 import com.sce.runtime.Event
+import com.sce.runtime.HistoryId
 import com.sce.runtime.State
 import com.sce.runtime.StateMachineEngine
-import com.sce.runtime.TransitionResult
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -41,14 +42,14 @@ private object ProbeEvent : Event
 private class WireProbe : StateMachineEngine<ProbeState, ProbeEvent>() {
     override val initialState: ProbeState = ProbeState
 
-    override fun processEvent(state: ProbeState, event: ProbeEvent): TransitionResult<ProbeState> =
-        TransitionResult.Ignored
+    override fun firstEnabledTransition(state: ProbeState, event: ProbeEvent?): EnabledTransition<ProbeState, HistoryId>? =
+        null
 
-    override fun onEntry(state: ProbeState, pathChild: ProbeState?) {}
+    override fun onEntry(state: ProbeState, isDefaultEntry: Boolean) {}
 
     override fun onExit(state: ProbeState) {}
 
-    override fun executeTransitionActions(source: ProbeState, event: ProbeEvent?, transitionIndex: Int) {}
+    override fun executeTransitionContent(source: ProbeState, transitionIndex: Int) {}
 
     fun wire(value: Any?): String = valueToWireString(value)
 

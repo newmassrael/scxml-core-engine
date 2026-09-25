@@ -864,6 +864,8 @@ backends/kotlin/android-app         Android real-device benchmark (Compose UI)
 
 **Kotlin code generator**: `sce-codegen generate -l kotlin` — generates sealed interface hierarchies + coroutine-based state machines from the same SCXML sources.
 
+- **The microstep**: `backends/kotlin/runtime/.../Microstep.kt` is the runtime's one transcription of W3C SCXML Appendix D — selection, conflict removal, exit and entry sets with their `<history>` and `<initial>` defaults, `isInFinalState` — function for function with the Go runtime's `microstep.go` and held to the same hand-worked answers (`backends/kotlin/tests/.../runtime/MicrostepTest.kt`). `StateMachineEngine<S, E>` drives it through a `Run` over its own configuration and history store — generated code touches neither — and runs `mainEventLoop` in the same shape as the other engines, in both the synchronous and the coroutine mode. The generated machine supplies its document's tables — child states, initial and history targets as written, document order, each transition as the microstep reads it, built once in a companion object — and one-state hooks (`firstEnabledTransition`, `onEntry(state, isDefaultEntry)`, `onExit`, `executeTransitionContent`, `executeHistoryDefaultContent`), for a machine with a `<parallel>` and one without alike. A `<history>` is named by a `HistoryId` rather than by a third type parameter, as in Go.
+
 ### Go Backend
 
 Go backend generates native Go state machines with Go 1.22+ generics:

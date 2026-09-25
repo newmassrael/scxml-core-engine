@@ -43,7 +43,27 @@ class DonedataLocalInvokeSceSynthInvokeInvContentStateMachine(
         super.enterInitialConfiguration()
     }
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
 
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: DonedataLocalInvokeSceSynthInvokeInvContentState): Boolean = when (state) {
+        is DonedataLocalInvokeSceSynthInvokeInvContentState.Done -> true
+    }
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<DonedataLocalInvokeSceSynthInvokeInvContentState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<DonedataLocalInvokeSceSynthInvokeInvContentState, HistoryId>> =
+            listOf(StateTarget(DonedataLocalInvokeSceSynthInvokeInvContentState.Done))
+    }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): DonedataLocalInvokeSceSynthInvokeInvContentState? = when (stateId) {
@@ -56,13 +76,7 @@ class DonedataLocalInvokeSceSynthInvokeInvContentStateMachine(
         is DonedataLocalInvokeSceSynthInvokeInvContentState.Done -> "done"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: DonedataLocalInvokeSceSynthInvokeInvContentState): Boolean = when (state) {
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: DonedataLocalInvokeSceSynthInvokeInvContentState): Int = when (state) {
         is DonedataLocalInvokeSceSynthInvokeInvContentState.Done -> 0
     }
@@ -271,31 +285,33 @@ class DonedataLocalInvokeSceSynthInvokeInvContentStateMachine(
     }
 
 
-    // W3C SCXML 3.12: Event processing with script engine condition evaluation
-    override fun processEvent(
-        state: DonedataLocalInvokeSceSynthInvokeInvContentState,
-        event: DonedataLocalInvokeSceSynthInvokeInvContentEvent
-    ): TransitionResult<DonedataLocalInvokeSceSynthInvokeInvContentState> {
-        // W3C SCXML 5.10: Set _event before guard evaluation
+
+    // W3C SCXML 5.10: bind the event as the `_event` its transitions' guards
+    // read — once, before the first guard runs, and not for an eventless
+    // selection, which has no event of its own.
+    override fun bindCurrentEvent(event: DonedataLocalInvokeSceSynthInvokeInvContentEvent) {
         setCurrentEventInScriptEngine(event)
-        return when (state) {
-        else -> TransitionResult.Ignored
-    }
     }
 
-
-    // --- Per-State Event Handlers ---
-
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
+        state: DonedataLocalInvokeSceSynthInvokeInvContentState,
+        event: DonedataLocalInvokeSceSynthInvokeInvContentEvent?
+    ): EnabledTransition<DonedataLocalInvokeSceSynthInvokeInvContentState, HistoryId>? = when (state) {
+        else -> null
+    }
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:3 :: _machine
-    override fun onEntry(state: DonedataLocalInvokeSceSynthInvokeInvContentState, pathChild: DonedataLocalInvokeSceSynthInvokeInvContentState?) {
+    override fun onEntry(state: DonedataLocalInvokeSceSynthInvokeInvContentState, isDefaultEntry: Boolean) {
         when (state) {
             is DonedataLocalInvokeSceSynthInvokeInvContentState.Done -> {
                 // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:5 :: done :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("done")) return
                 // W3C SCXML 5.5: Evaluate donedata for final state
                 run {
                     ensureScriptEngine()
@@ -327,19 +343,14 @@ class DonedataLocalInvokeSceSynthInvokeInvContentStateMachine(
         when (state) {
             is DonedataLocalInvokeSceSynthInvokeInvContentState.Done -> {
                 // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:5 :: done :: _state_body
-                activeStateIds.remove("done")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: donedata_local_invoke__sce_synth_invoke__inv_content.scxml:3 :: _machine
-    override fun executeTransitionActions(
-        source: DonedataLocalInvokeSceSynthInvokeInvContentState,
-        event: DonedataLocalInvokeSceSynthInvokeInvContentEvent?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: DonedataLocalInvokeSceSynthInvokeInvContentState, transitionIndex: Int) {
         when (source) {
         else -> {}
         }

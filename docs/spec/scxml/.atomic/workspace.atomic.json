@@ -150,11 +150,6 @@
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "processOneEvent",
-          "kind": "references"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "discardedExternalEventCount",
           "kind": "references"
         },
@@ -221,6 +216,11 @@
         {
           "file": "sce/include/runtime/IEventRaiser.h",
           "symbol": "processNextQueuedEvent",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "takeEvent",
           "kind": "references"
         }
       ],
@@ -431,6 +431,31 @@
           "file": "backends/go/runtime/policy.go",
           "symbol": "StatePolicy",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
+          "symbol": "addDescendantStatesToEnter",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "historyValues",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "historyParentOf",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "historiesOf",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "stop",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -521,6 +546,16 @@
           "file": "backends/go/runtime/policy.go",
           "symbol": "StatePolicy",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "executeHistoryDefaultContent",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "historyDefaultTargetsOf",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -579,26 +614,6 @@
         {
           "file": "backends/go/runtime/engine.go",
           "symbol": "GetActiveStates",
-          "kind": "references"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "applySimultaneousTransitions",
-          "kind": "references"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "applyTransitionFrom",
-          "kind": "references"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "historyStore",
-          "kind": "references"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "preTransitionActiveStates",
           "kind": "references"
         },
         {
@@ -746,21 +761,6 @@
         {
           "file": "backends/go/runtime/policy.go",
           "symbol": "StatePolicy",
-          "kind": "references"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "applyTransitionFrom",
-          "kind": "references"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "processEvent",
-          "kind": "references"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/TransitionResult.kt",
-          "symbol": "Ignored",
           "kind": "references"
         },
         {
@@ -1517,10 +1517,6 @@
           "kind": "references"
         },
         {
-          "file": "sce-build/src/kotlin.rs",
-          "kind": "references"
-        },
-        {
           "file": "sce-build/src/model.rs",
           "kind": "references"
         },
@@ -1668,71 +1664,6 @@
         {
           "file": "backends/go/runtime/policy.go",
           "symbol": "StatePolicy",
-          "kind": "references"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "StateMachineEngine",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "activeLeafStatesInDocumentOrder",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "applyTransitionFrom",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "computeLCCA",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "documentOrderOf",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "executeTransitionActions",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "exitHierarchy",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "processOneEvent",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "removeConflictingTransitions",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/TransitionResult.kt",
-          "symbol": "External",
-          "kind": "references"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/TransitionResult.kt",
-          "symbol": "Internal",
-          "kind": "references"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/TransitionResult.kt",
-          "symbol": "InternalToTarget",
-          "kind": "references"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/TransitionResult.kt",
-          "symbol": "TransitionResult",
           "kind": "references"
         },
         {
@@ -1933,6 +1864,11 @@
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "execute_transition_content",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "executeTransitionContent",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -2057,11 +1993,6 @@
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "enterInitialConfiguration",
-          "kind": "references"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "initialState",
           "kind": "references"
         },
@@ -2138,6 +2069,11 @@
         {
           "file": "backends/go/runtime/policy.go",
           "symbol": "StatePolicy",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "documentInitialTargets",
           "kind": "references"
         }
       ],
@@ -2326,27 +2262,12 @@
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "StateMachineEngine",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "applyTransitionFrom",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "initialize",
           "kind": "implements"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "parentOf",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "reenterParallelRegions",
           "kind": "implements"
         },
         {
@@ -2411,6 +2332,26 @@
         {
           "file": "backends/go/runtime/microstep.go",
           "symbol": "AddDescendantStatesToEnter",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
+          "symbol": "addDescendantStatesToEnter",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "onEntry",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "isCompoundState",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "initialTargetsOf",
           "kind": "references"
         }
       ],
@@ -2535,10 +2476,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce-build/src/analyzer.rs",
-          "kind": "references"
-        },
-        {
           "file": "sce-build/src/model.rs",
           "kind": "references"
         },
@@ -2558,47 +2495,12 @@
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "StateMachineEngine",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "applySimultaneousTransitions",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "applyTransitionFrom",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "drainEventlessAndInternal",
           "kind": "implements"
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "enterInitialConfiguration",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "getParallelRegions",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "isDescendantOf",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "isParallelState",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "reenterParallelRegions",
           "kind": "implements"
         },
         {
@@ -2687,6 +2589,11 @@
         {
           "file": "backends/go/runtime/microstep_test.go",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
+          "symbol": "addRegionDefaults",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -2865,10 +2772,6 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "sce-build/src/kotlin.rs",
-          "kind": "references"
-        },
-        {
           "file": "sce-build/src/parser.rs",
           "kind": "references"
         },
@@ -2899,6 +2802,11 @@
         {
           "file": "backends/go/runtime/microstep.go",
           "symbol": "AddDescendantStatesToEnter",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
+          "symbol": "addDescendantStatesToEnter",
           "kind": "references"
         }
       ],
@@ -3030,11 +2938,6 @@
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "applyTransitionFrom",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "flushPendingFinalState",
           "kind": "implements"
         },
@@ -3056,6 +2959,26 @@
         {
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "is_final_state",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "isStateInFinalState",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "onEntry",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "isFinalState",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "microstep",
           "kind": "references"
         }
       ],
@@ -3080,10 +3003,6 @@
       "parent_section": "scxml-3.7",
       "decision_status": "active",
       "bindings": [
-        {
-          "file": "sce-build/src/kotlin.rs",
-          "kind": "references"
-        },
         {
           "file": "sce/src/parsing/StateNodeParser.cpp",
           "symbol": "SCE::StateNodeParser::parseStateNode",
@@ -5089,6 +5008,11 @@
           "file": "backends/go/runtime/engine.go",
           "symbol": "selectTransitions",
           "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "bindCurrentEvent",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -7173,22 +7097,7 @@
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "TransitionWithDomain",
-          "kind": "references"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "activeStateIds",
-          "kind": "references"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "isStateActive",
-          "kind": "references"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "removeConflictingTransitions",
           "kind": "references"
         },
         {
@@ -9847,6 +9756,16 @@
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
           "symbol": "SCXMLInvokeHandler::captureChildState",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "onEntry",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "onExit",
           "kind": "references"
         }
       ],
@@ -13538,21 +13457,6 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "applyTransitionFrom",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "applySimultaneousTransitions",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "enterInitialConfiguration",
-          "kind": "references"
-        },
-        {
           "file": "sce/include/core/EntrySetHelper.h",
           "symbol": "addAncestorStatesToEnter",
           "kind": "implements"
@@ -13570,6 +13474,11 @@
         {
           "file": "backends/go/runtime/microstep.go",
           "symbol": "AddAncestorStatesToEnter",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
+          "symbol": "addAncestorStatesToEnter",
           "kind": "implements"
         }
       ],
@@ -13596,11 +13505,6 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "reenterParallelRegions",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/core/EntrySetHelper.h",
           "symbol": "addDescendantStatesToEnter",
           "kind": "implements"
@@ -13618,6 +13522,11 @@
         {
           "file": "backends/go/runtime/microstep.go",
           "symbol": "AddDescendantStatesToEnter",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
+          "symbol": "addDescendantStatesToEnter",
           "kind": "implements"
         }
       ],
@@ -13667,6 +13576,11 @@
           "file": "backends/go/runtime/microstep.go",
           "symbol": "ComputeEntrySet",
           "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
+          "symbol": "computeEntrySet",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -13699,11 +13613,6 @@
         {
           "file": "sce/include/core/ParallelTransitionHelper.h",
           "symbol": "computeStatesToExit",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "applySimultaneousTransitions",
           "kind": "implements"
         },
         {
@@ -13755,6 +13664,21 @@
           "file": "backends/go/runtime/microstep.go",
           "symbol": "IsTargetless",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
+          "symbol": "isTargetless",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
+          "symbol": "computeExitSet",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
+          "symbol": "computeStatesToExit",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -13863,6 +13787,21 @@
           "file": "backends/go/runtime/engine.go",
           "symbol": "completeMacrostep",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
+          "symbol": "enterStates",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
+          "symbol": "computeEntrySet",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "documentOrderOf",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -13914,6 +13853,11 @@
         {
           "file": "backends/go/runtime/microstep_test.go",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
+          "symbol": "executeTransitionContent",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14045,6 +13989,26 @@
           "file": "backends/go/runtime/microstep.go",
           "symbol": "RecordedHistory",
           "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
+          "symbol": "computeStatesToExit",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
+          "symbol": "exitStates",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
+          "symbol": "recordedHistory",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "exitState",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14107,6 +14071,11 @@
         {
           "file": "backends/go/runtime/microstep_test.go",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
+          "symbol": "findLCCA",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14165,6 +14134,16 @@
           "file": "backends/go/runtime/microstep.go",
           "symbol": "Document",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
+          "symbol": "childStates",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "childStatesOf",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14213,6 +14192,11 @@
           "file": "backends/go/runtime/microstep.go",
           "symbol": "addEffectiveTargetStates",
           "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
+          "symbol": "addEffectiveTargetStates",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14256,6 +14240,11 @@
           "file": "backends/go/runtime/microstep.go",
           "symbol": "properAncestors",
           "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
+          "symbol": "properAncestors",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14291,23 +14280,8 @@
           "kind": "implements"
         },
         {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "externalTransitionDomain",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "applySimultaneousTransitions",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/core/ParallelTransitionHelper.h",
           "symbol": "getTransitionDomain",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "BatchedTransition",
           "kind": "implements"
         },
         {
@@ -14328,6 +14302,11 @@
         {
           "file": "backends/go/runtime/microstep.go",
           "symbol": "TransitionDomain",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
+          "symbol": "transitionDomain",
           "kind": "implements"
         }
       ],
@@ -14401,6 +14380,16 @@
         {
           "file": "backends/go/runtime/engine.go",
           "symbol": "enterStates",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
+          "symbol": "enterStates",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "enterInitialConfiguration",
           "kind": "implements"
         }
       ],
@@ -14624,16 +14613,6 @@
           "kind": "references"
         },
         {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "applySimultaneousTransitions",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "BatchedTransition",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/core/MicrostepAlgorithms.h",
           "symbol": "microstep",
           "kind": "implements"
@@ -14657,6 +14636,16 @@
           "file": "backends/go/runtime/microstep.go",
           "symbol": "Microstep",
           "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
+          "symbol": "microstep",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "microstep",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14712,16 +14701,6 @@
           "kind": "references"
         },
         {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "processOneEvent",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "removeConflictingTransitions",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/core/MicrostepAlgorithms.h",
           "symbol": "removeConflictingTransitions",
           "kind": "implements"
@@ -14744,6 +14723,11 @@
         {
           "file": "backends/go/runtime/microstep.go",
           "symbol": "RemoveConflictingTransitions",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
+          "symbol": "removeConflictingTransitions",
           "kind": "implements"
         }
       ],
@@ -14793,6 +14777,16 @@
           "file": "backends/go/runtime/microstep.go",
           "symbol": "SelectTransitions",
           "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
+          "symbol": "selectTransitions",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "drainEventlessAndInternal",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14822,11 +14816,6 @@
           "kind": "references"
         },
         {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "processOneEvent",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/core/ConflictResolutionHelper.h",
           "symbol": "removeConflictingTransitions",
           "kind": "references"
@@ -14854,6 +14843,11 @@
         {
           "file": "backends/go/runtime/microstep.go",
           "symbol": "SelectTransitions",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/Microstep.kt",
+          "symbol": "selectTransitions",
           "kind": "implements"
         }
       ],
@@ -18384,6 +18378,324 @@
       "target_kind": "section",
       "target_id": "scxml-D-mainEventLoop",
       "reason": "The method is gone: the Interpreter takes internal events through takeQueuedEvent since its move onto Appendix D's main event loop, nothing called it, and it shared processNextQueuedEvent's answer of a transition result where a step result was promised"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-getTransitionDomain",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-microstepProcedure",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.9.2",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.9.2",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.11",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-addAncestorStatesToEnter",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-computeExitSet",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-getTransitionDomain",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-microstepProcedure",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.11",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.7",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-addAncestorStatesToEnter",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-getTransitionDomain",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.11",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.11",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.1.2",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-removeConflictingTransitions",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-selectTransitions",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-addDescendantStatesToEnter",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.9.2",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-removeConflictingTransitions",
+      "reason": "The Kotlin engine's hand-written transition algorithm was replaced by com.sce.runtime.Microstep, a transcription of W3C SCXML Appendix D; this symbol no longer exists"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "TransitionResult.kt was deleted: nothing constructed its variants once the engine selected transitions through Appendix D's selectTransitions"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.12",
+      "reason": "TransitionResult.kt was deleted: nothing constructed its variants once the engine selected transitions through Appendix D's selectTransitions"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "TransitionResult.kt was deleted: nothing constructed its variants once the engine selected transitions through Appendix D's selectTransitions"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "TransitionResult.kt was deleted: nothing constructed its variants once the engine selected transitions through Appendix D's selectTransitions"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "TransitionResult.kt was deleted: nothing constructed its variants once the engine selected transitions through Appendix D's selectTransitions"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "The class-level claim was backed by the free-standing 'State Hierarchy (3.3 / 3.4)' section header, which went with the hand-written hierarchy code; the members that answer the hierarchy now carry their own bindings (parentOf, isCompoundState, initialTargetsOf)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "The class-level claim was backed by the 'State Hierarchy' and 'Hierarchical Exit' section headers, both deleted with the hand-written algorithm; parallel semantics now live in Microstep.addRegionDefaults and the engine's isParallelState hook"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "The class-level claim was backed by the 'Hierarchical Exit (3.4 / 3.13)' section header over exitHierarchy, deleted with it; selection and execution are now Microstep.kt's Appendix D procedures, which the engine drives"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.2",
+      "reason": "enterInitialConfiguration now hands the document's initial transition to Microstep.enterStates and cites Appendix D's interpret, which it is bound to; its old 3.2 comment went with the hand-written descent"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "enterInitialConfiguration no longer enters parallel regions itself; Microstep's entry set does, so the 3.4 comment and claim went with the hand-written descent"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-addAncestorStatesToEnter",
+      "reason": "Ancestor entry is now Microstep.addAncestorStatesToEnter, bound there; nothing in the engine cites it any more"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "documentOrderOf is now the Document hook Appendix D's entryOrder and exitOrder read, cited as enterStates and bound there; the 3.13 exit-sort comment went with the hand-written exit"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.13",
+      "reason": "Every 3.13 cite in kotlin.rs sat on the Kotlin ancestor-routing helpers (compute_ancestors_with_transitions, compute_effective_transitions), deleted when the Kotlin backend moved onto the runtime's Appendix D microstep"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.6",
+      "reason": "The only 3.6 cite in kotlin.rs sat on compute_deep_initial_entries, deleted with the Kotlin backend's own initial-entry descent; the runtime's addDescendantStatesToEnter enters a multi-state initial now"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.7.1",
+      "reason": "The only 3.7.1 cite in kotlin.rs sat on the to_parallel_complete_check filter, deleted when generated machines began asking the runtime's isInFinalState instead"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "Every 3.4 cite in analyzer.rs sat on the Kotlin-only leaf-map, initial-entry-root and parallel-descendant precomputations, deleted when the Kotlin backend moved onto the runtime's Appendix D microstep"
     }
   ],
   "frames": {},

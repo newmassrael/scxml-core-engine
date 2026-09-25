@@ -75,7 +75,64 @@ class DiscardedEventIsObservableStateMachine(
         super.enterInitialConfiguration()
     }
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
 
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: DiscardedEventIsObservableState): Boolean = when (state) {
+        is DiscardedEventIsObservableState.Done -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<DiscardedEventIsObservableState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<DiscardedEventIsObservableState, HistoryId>> =
+            listOf(StateTarget(DiscardedEventIsObservableState.Idle))
+
+        // W3C SCXML 3.13: busy's transition 0, as the microstep reads it.
+        val transitionBusyAt0 = EnabledTransition<DiscardedEventIsObservableState, HistoryId>(
+            DiscardedEventIsObservableState.Busy,
+            listOf(StateTarget(DiscardedEventIsObservableState.Done)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: idle's transition 0, as the microstep reads it.
+        val transitionIdleAt0 = EnabledTransition<DiscardedEventIsObservableState, HistoryId>(
+            DiscardedEventIsObservableState.Idle,
+            listOf(StateTarget(DiscardedEventIsObservableState.Idle)),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: idle's transition 1, as the microstep reads it.
+        val transitionIdleAt1 = EnabledTransition<DiscardedEventIsObservableState, HistoryId>(
+            DiscardedEventIsObservableState.Idle,
+            emptyList(),
+            1,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: idle's transition 2, as the microstep reads it.
+        val transitionIdleAt2 = EnabledTransition<DiscardedEventIsObservableState, HistoryId>(
+            DiscardedEventIsObservableState.Idle,
+            listOf(StateTarget(DiscardedEventIsObservableState.Busy)),
+            2,
+            hasActions = false,
+            isInternal = false,
+        )
+    }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): DiscardedEventIsObservableState? = when (stateId) {
@@ -92,13 +149,7 @@ class DiscardedEventIsObservableStateMachine(
         is DiscardedEventIsObservableState.Idle -> "idle"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: DiscardedEventIsObservableState): Boolean = when (state) {
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: DiscardedEventIsObservableState): Int = when (state) {
         is DiscardedEventIsObservableState.Busy -> 1
         is DiscardedEventIsObservableState.Done -> 2
@@ -331,65 +382,51 @@ class DiscardedEventIsObservableStateMachine(
     }
 
 
-    // W3C SCXML 3.12: Event processing with script engine condition evaluation
-    override fun processEvent(
-        state: DiscardedEventIsObservableState,
-        event: DiscardedEventIsObservableEvent
-    ): TransitionResult<DiscardedEventIsObservableState> {
-        // W3C SCXML 5.10: Set _event before guard evaluation
+
+    // W3C SCXML 5.10: bind the event as the `_event` its transitions' guards
+    // read — once, before the first guard runs, and not for an eventless
+    // selection, which has no event of its own.
+    override fun bindCurrentEvent(event: DiscardedEventIsObservableEvent) {
         setCurrentEventInScriptEngine(event)
-        return when (state) {
-        is DiscardedEventIsObservableState.Busy -> processBusy(event)
-        is DiscardedEventIsObservableState.Idle -> processIdle(event)
-        else -> TransitionResult.Ignored
-    }
     }
 
-
-    // --- Per-State Event Handlers ---
-
-    private fun processBusy(
-        event: DiscardedEventIsObservableEvent
-    ): TransitionResult<DiscardedEventIsObservableState> = when {
-        event is DiscardedEventIsObservableEvent.Settle -> TransitionResult.External(DiscardedEventIsObservableState.Done, DiscardedEventIsObservableState.Busy, 0)
-
-        else -> TransitionResult.Ignored
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
+        state: DiscardedEventIsObservableState,
+        event: DiscardedEventIsObservableEvent?
+    ): EnabledTransition<DiscardedEventIsObservableState, HistoryId>? = when (state) {
+        is DiscardedEventIsObservableState.Busy -> when {
+            event is DiscardedEventIsObservableEvent.Settle -> transitionBusyAt0
+            else -> null
+        }
+        is DiscardedEventIsObservableState.Idle -> when {
+            event is DiscardedEventIsObservableEvent.Poke -> transitionIdleAt0
+            event is DiscardedEventIsObservableEvent.Nudge -> transitionIdleAt1
+            event is DiscardedEventIsObservableEvent.Go -> transitionIdleAt2
+            else -> null
+        }
+        else -> null
     }
-
-    private fun processIdle(
-        event: DiscardedEventIsObservableEvent
-    ): TransitionResult<DiscardedEventIsObservableState> = when {
-        event is DiscardedEventIsObservableEvent.Poke -> TransitionResult.External(DiscardedEventIsObservableState.Idle, DiscardedEventIsObservableState.Idle, 1)
-
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is DiscardedEventIsObservableEvent.Nudge -> TransitionResult.Internal(2)
-        event is DiscardedEventIsObservableEvent.Go -> TransitionResult.External(DiscardedEventIsObservableState.Busy, DiscardedEventIsObservableState.Idle, 3)
-
-        else -> TransitionResult.Ignored
-    }
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: discarded_event_is_observable.scxml:30 :: _machine
-    override fun onEntry(state: DiscardedEventIsObservableState, pathChild: DiscardedEventIsObservableState?) {
+    override fun onEntry(state: DiscardedEventIsObservableState, isDefaultEntry: Boolean) {
         when (state) {
             is DiscardedEventIsObservableState.Busy -> {
                 // SCE-MAP: discarded_event_is_observable.scxml:46 :: busy :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("busy")) return
             }
             is DiscardedEventIsObservableState.Done -> {
                 // SCE-MAP: discarded_event_is_observable.scxml:49 :: done :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("done")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is DiscardedEventIsObservableState.Idle -> {
                 // SCE-MAP: discarded_event_is_observable.scxml:37 :: idle :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("idle")) return
             }
         }
     }
@@ -400,36 +437,29 @@ class DiscardedEventIsObservableStateMachine(
         when (state) {
             is DiscardedEventIsObservableState.Busy -> {
                 // SCE-MAP: discarded_event_is_observable.scxml:46 :: busy :: _state_body
-                activeStateIds.remove("busy")
             }
             is DiscardedEventIsObservableState.Done -> {
                 // SCE-MAP: discarded_event_is_observable.scxml:49 :: done :: _state_body
-                activeStateIds.remove("done")
             }
             is DiscardedEventIsObservableState.Idle -> {
                 // SCE-MAP: discarded_event_is_observable.scxml:37 :: idle :: _state_body
-                activeStateIds.remove("idle")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: discarded_event_is_observable.scxml:30 :: _machine
-    override fun executeTransitionActions(
-        source: DiscardedEventIsObservableState,
-        event: DiscardedEventIsObservableEvent?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: DiscardedEventIsObservableState, transitionIndex: Int) {
         when (source) {
         is DiscardedEventIsObservableState.Idle -> when (transitionIndex) {
-            1 -> {
+            0 -> {
                 // SCE-MAP: discarded_event_is_observable.scxml:38 :: idle :: _transition_0
 
 
             executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))
             }
-            2 -> {
+            1 -> {
                 // SCE-MAP: discarded_event_is_observable.scxml:41 :: idle :: _transition_1
 
 

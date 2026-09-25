@@ -2,76 +2,63 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
 {#
-    Kotlin Transition Actions Template
+    Kotlin Transition Content Template
 
-    W3C SCXML 3.13: Executable content within <transition> elements.
-    Called between onExit(source) and onEntry(target) by the engine.
+    W3C SCXML 3.13: Executable content within <transition> elements, run by the
+    runtime's Appendix D microstep (com.sce.runtime.Microstep) between its
+    exits and its entries, in the order the transitions were selected.
 
-    Handles both event-based transitions (event != null) and
-    eventless transitions (event == null).
+    Keyed on (source, transitionIndex): the state that OWNS the transition and
+    the transition's position among that state's own transitions — exactly the
+    pair `first_enabled_transition` hands the runtime. A transition an ancestor
+    owns is selected, and so dispatched, under the ancestor.
 
-    Uses effective_transitions (self + ancestor transitions) for ancestor routing.
     Uses actions/_render.kt.jinja2 for action dispatch (shared with entry_exit_actions).
-    Three-way condition pattern: In() predicate | safeEvaluateGuard() | static Kotlin.
 #}
 {#
     ⚠⚠ THIS FILE USED TO RE-EVALUATE THE GUARD, and that was the defect.
-
     Every arm below was once keyed on the transition's `cond` and its event
-    pattern — the same `cond` the SELECTION in `process_event.kt.jinja2` had
-    already evaluated to choose the transition. For a pure guard that is only
-    wasteful. For a guard with a SIDE EFFECT it is wrong, and measured wrong:
-    on 2026-08-30 `cond="++v == 2"` was evaluated by the selection (`++v` -> 2,
-    the guard holds, the transition is taken) and then evaluated AGAIN here
-    (`++v` -> 3, the guard does not hold), so the machine took its transition
-    and ran the OTHER arm's content. `ecma262-lowered-kotlin` found it; no W3C
-    fixture guards on a side effect, and no engine-level test compiles a
-    machine, so nothing else could.
+    pattern — the same `cond` the SELECTION had already evaluated to choose the
+    transition. For a pure guard that is only wasteful. For a guard with a SIDE
+    EFFECT it is wrong, and measured wrong: on 2026-08-30 `cond="++v == 2"` was
+    evaluated by the selection (`++v` -> 2, the guard holds, the transition is
+    taken) and then evaluated AGAIN here (`++v` -> 3, the guard does not hold),
+    so the machine took its transition and ran the OTHER arm's content.
+    `ecma262-lowered-kotlin` found it; no W3C fixture guards on a side effect,
+    and no engine-level test compiles a machine, so nothing else could.
 
-    The arms are now keyed on `transitionIndex` — the selection's own answer,
-    carried on the `TransitionResult` and handed back by the engine. C++, Rust,
-    Go and Python have all dispatched this way from the start; Kotlin was the
-    backend that did not.
+    The arms are keyed on `transitionIndex` — the selection's own answer,
+    carried on the EnabledTransition and handed back by the runtime.
 
-    ⚠ The number is READ from `machine_transition_index`, injected by
-    `kotlin::compute_effective_transitions` from the single assignment in
-    `kotlin::assign_machine_transition_ids`. Not counted here: this template
-    walks a state's EFFECTIVE transitions (its own, then every ancestor's) and
-    the selection walks a state's OWN transitions, so two local counters would
-    be two enumerations of two different populations.
+    ⚠ The arms used to be a state's EFFECTIVE transitions — its own followed by
+    every ancestor's — under a machine-wide numbering, because the selection
+    reported an ancestor's transition under the atomic state it was found from.
+    It no longer does, so a transition's content appears once, under its own
+    source, and the per-state index the other five backends dispatch on is
+    enough.
 #}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {%- import '_macros/sce_annotation_marker.jinja2' as annot %}
-
-    // Transition Actions (W3C SCXML 3.13)
-    {# SCE Protocol-Synthesis RFC §synth-5-O — function-scope SCE-MAP marker
-       above `executeTransitionActions`. Kotlin comment-form is the only
-       safe surface inside a class body. #}
-    {{ sce_map.source_marker(model.source_location, "kotlin", symbol_artifact=sce_artifact.machine) }}
-    override fun executeTransitionActions(
-        source: {{ machine_name }}State,
-        event: {{ machine_name }}Event?,
-        transitionIndex: Int
-    ) {
-        when (source) {
-{% for state_id in model.states | sort %}
-{% set eff_transitions = effective_transitions[state_id] %}
-{% set ns = namespace(has_transition_actions=false) %}
-{% for trans in eff_transitions %}
-{% if trans.actions %}
-{% set ns.has_transition_actions = true %}
+{% set ns_content = namespace(states=0) %}
+{% for state_id, state in model.states | dictsort %}
+{% if state.transitions | selectattr('actions') | list %}
+{% set ns_content.states = ns_content.states + 1 %}
 {% endif %}
 {% endfor %}
-{% if ns.has_transition_actions %}
-{# ONE loop where there used to be two. The event-based and eventless arms
-   were separate only because each had to restate its own selection criteria —
-   an event pattern here, `event == null` there, and the `cond` in both. Keyed
-   on the transition the selection actually chose, a transition's content is a
-   transition's content and the distinction disappears. #}
+
+    // Transition Content (W3C SCXML 3.13)
+    {# SCE Protocol-Synthesis RFC §synth-5-O — function-scope SCE-MAP marker
+       above `executeTransitionContent`. Kotlin comment-form is the only
+       safe surface inside a class body. #}
+    {{ sce_map.source_marker(model.source_location, "kotlin", symbol_artifact=sce_artifact.machine) }}
+    override fun executeTransitionContent(source: {{ machine_name }}State, transitionIndex: Int) {
+        when (source) {
+{% for state_id, state in model.states | dictsort %}
+{% if state.transitions | selectattr('actions') | list %}
         is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> when (transitionIndex) {
-{% for trans in eff_transitions %}
+{% for trans in state.transitions %}
 {% if trans.actions %}
-            {{ trans.machine_transition_index }} -> {  {{- annot.annotation_comment(trans, "kotlin", "                ") }}
+            {{ trans.transition_index }} -> {  {{- annot.annotation_comment(trans, "kotlin", "                ") }}
 {% if trans.source_location %}
                 {{ sce_map.source_marker(trans.source_location, "kotlin", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
 {% endif %}
@@ -97,19 +84,18 @@
             }
 {% endif %}
 {% endfor %}
-{# `TransitionResult.NO_TRANSITION` lands here, and so does any state whose
-   selected transition carries no content. Both are "nothing to run", which is
-   what an empty arm says. #}
+{# A transition without content is never dispatched here — the microstep asks
+   only for transitions that carry some — so the remaining indices are
+   unreachable, which is what an empty arm says. #}
             else -> {}
         }
 {% endif %}
 {% endfor %}
 {# The `else` arm answers for the states the loop above emitted no branch for —
-   the ones whose effective transitions all carry no actions. A document where
-   every state has at least one action-bearing transition leaves this `when`
-   exhaustive over the sealed state hierarchy, and Kotlin rejects a redundant
-   `else` under -Werror. Twin of `process_event_needs_else`. #}
-{% if transition_actions_needs_else %}
+   the ones none of whose own transitions carry content. A document where
+   every state has one leaves this `when` exhaustive over the sealed state
+   hierarchy, and Kotlin rejects a redundant `else` under -Werror. #}
+{% if ns_content.states < model.states | length %}
         else -> {}
 {% endif %}
         }

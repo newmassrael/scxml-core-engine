@@ -102,7 +102,109 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
         super.enterInitialConfiguration()
     }
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
 
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: EmptyFinalizeUpdatesTheLocationState): Boolean = when (state) {
+        is EmptyFinalizeUpdatesTheLocationState.FailAbsentChildSilent, is EmptyFinalizeUpdatesTheLocationState.FailEmptyChildSilent, is EmptyFinalizeUpdatesTheLocationState.FailNotUpdated, is EmptyFinalizeUpdatesTheLocationState.FailUnmatchedChildSilent, is EmptyFinalizeUpdatesTheLocationState.FailUnmatchedNameWrote, is EmptyFinalizeUpdatesTheLocationState.FailUpdatedWithoutFinalize, is EmptyFinalizeUpdatesTheLocationState.Pass -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<EmptyFinalizeUpdatesTheLocationState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<EmptyFinalizeUpdatesTheLocationState, HistoryId>> =
+            listOf(StateTarget(EmptyFinalizeUpdatesTheLocationState.EmptyPhase))
+
+        // W3C SCXML 3.13: absentPhase's transition 0, as the microstep reads it.
+        val transitionAbsentPhaseAt0 = EnabledTransition<EmptyFinalizeUpdatesTheLocationState, HistoryId>(
+            EmptyFinalizeUpdatesTheLocationState.AbsentPhase,
+            listOf(StateTarget(EmptyFinalizeUpdatesTheLocationState.FailUpdatedWithoutFinalize)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: absentPhase's transition 1, as the microstep reads it.
+        val transitionAbsentPhaseAt1 = EnabledTransition<EmptyFinalizeUpdatesTheLocationState, HistoryId>(
+            EmptyFinalizeUpdatesTheLocationState.AbsentPhase,
+            listOf(StateTarget(EmptyFinalizeUpdatesTheLocationState.UnmatchedPhase)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: absentPhase's transition 2, as the microstep reads it.
+        val transitionAbsentPhaseAt2 = EnabledTransition<EmptyFinalizeUpdatesTheLocationState, HistoryId>(
+            EmptyFinalizeUpdatesTheLocationState.AbsentPhase,
+            listOf(StateTarget(EmptyFinalizeUpdatesTheLocationState.FailAbsentChildSilent)),
+            2,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: emptyPhase's transition 0, as the microstep reads it.
+        val transitionEmptyPhaseAt0 = EnabledTransition<EmptyFinalizeUpdatesTheLocationState, HistoryId>(
+            EmptyFinalizeUpdatesTheLocationState.EmptyPhase,
+            listOf(StateTarget(EmptyFinalizeUpdatesTheLocationState.AbsentPhase)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: emptyPhase's transition 1, as the microstep reads it.
+        val transitionEmptyPhaseAt1 = EnabledTransition<EmptyFinalizeUpdatesTheLocationState, HistoryId>(
+            EmptyFinalizeUpdatesTheLocationState.EmptyPhase,
+            listOf(StateTarget(EmptyFinalizeUpdatesTheLocationState.FailNotUpdated)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: emptyPhase's transition 2, as the microstep reads it.
+        val transitionEmptyPhaseAt2 = EnabledTransition<EmptyFinalizeUpdatesTheLocationState, HistoryId>(
+            EmptyFinalizeUpdatesTheLocationState.EmptyPhase,
+            listOf(StateTarget(EmptyFinalizeUpdatesTheLocationState.FailEmptyChildSilent)),
+            2,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: unmatchedPhase's transition 0, as the microstep reads it.
+        val transitionUnmatchedPhaseAt0 = EnabledTransition<EmptyFinalizeUpdatesTheLocationState, HistoryId>(
+            EmptyFinalizeUpdatesTheLocationState.UnmatchedPhase,
+            listOf(StateTarget(EmptyFinalizeUpdatesTheLocationState.FailUnmatchedNameWrote)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: unmatchedPhase's transition 1, as the microstep reads it.
+        val transitionUnmatchedPhaseAt1 = EnabledTransition<EmptyFinalizeUpdatesTheLocationState, HistoryId>(
+            EmptyFinalizeUpdatesTheLocationState.UnmatchedPhase,
+            listOf(StateTarget(EmptyFinalizeUpdatesTheLocationState.Pass)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: unmatchedPhase's transition 2, as the microstep reads it.
+        val transitionUnmatchedPhaseAt2 = EnabledTransition<EmptyFinalizeUpdatesTheLocationState, HistoryId>(
+            EmptyFinalizeUpdatesTheLocationState.UnmatchedPhase,
+            listOf(StateTarget(EmptyFinalizeUpdatesTheLocationState.FailUnmatchedChildSilent)),
+            2,
+            hasActions = false,
+            isInternal = false,
+        )
+    }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): EmptyFinalizeUpdatesTheLocationState? = when (stateId) {
@@ -133,13 +235,7 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
         is EmptyFinalizeUpdatesTheLocationState.UnmatchedPhase -> "unmatchedPhase"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: EmptyFinalizeUpdatesTheLocationState): Boolean = when (state) {
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: EmptyFinalizeUpdatesTheLocationState): Int = when (state) {
         is EmptyFinalizeUpdatesTheLocationState.AbsentPhase -> 1
         is EmptyFinalizeUpdatesTheLocationState.EmptyPhase -> 0
@@ -394,70 +490,51 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
     }
 
 
-    // W3C SCXML 3.12: Event processing with script engine condition evaluation
-    override fun processEvent(
-        state: EmptyFinalizeUpdatesTheLocationState,
-        event: EmptyFinalizeUpdatesTheLocationEvent
-    ): TransitionResult<EmptyFinalizeUpdatesTheLocationState> {
-        // W3C SCXML 5.10: Set _event before guard evaluation
+
+    // W3C SCXML 5.10: bind the event as the `_event` its transitions' guards
+    // read — once, before the first guard runs, and not for an eventless
+    // selection, which has no event of its own.
+    override fun bindCurrentEvent(event: EmptyFinalizeUpdatesTheLocationEvent) {
         setCurrentEventInScriptEngine(event)
-        return when (state) {
-        is EmptyFinalizeUpdatesTheLocationState.AbsentPhase -> processAbsentPhase(event)
-        is EmptyFinalizeUpdatesTheLocationState.EmptyPhase -> processEmptyPhase(event)
-        is EmptyFinalizeUpdatesTheLocationState.UnmatchedPhase -> processUnmatchedPhase(event)
-        else -> TransitionResult.Ignored
-    }
     }
 
-
-    // --- Per-State Event Handlers ---
-
-    private fun processAbsentPhase(
-        event: EmptyFinalizeUpdatesTheLocationEvent
-    ): TransitionResult<EmptyFinalizeUpdatesTheLocationState> = when {
-        event is EmptyFinalizeUpdatesTheLocationEvent.FromAbsentChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(guard ~= 1)", "guard !== 1")) -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.FailUpdatedWithoutFinalize, EmptyFinalizeUpdatesTheLocationState.AbsentPhase, 0)
-
-        event is EmptyFinalizeUpdatesTheLocationEvent.FromAbsentChild -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.UnmatchedPhase, EmptyFinalizeUpdatesTheLocationState.AbsentPhase, 1)
-
-        event is EmptyFinalizeUpdatesTheLocationEvent.TimeoutAbsent -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.FailAbsentChildSilent, EmptyFinalizeUpdatesTheLocationState.AbsentPhase, 2)
-
-        else -> TransitionResult.Ignored
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
+        state: EmptyFinalizeUpdatesTheLocationState,
+        event: EmptyFinalizeUpdatesTheLocationEvent?
+    ): EnabledTransition<EmptyFinalizeUpdatesTheLocationState, HistoryId>? = when (state) {
+        is EmptyFinalizeUpdatesTheLocationState.AbsentPhase -> when {
+            event is EmptyFinalizeUpdatesTheLocationEvent.FromAbsentChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(guard ~= 1)", "guard !== 1")) -> transitionAbsentPhaseAt0
+            event is EmptyFinalizeUpdatesTheLocationEvent.FromAbsentChild -> transitionAbsentPhaseAt1
+            event is EmptyFinalizeUpdatesTheLocationEvent.TimeoutAbsent -> transitionAbsentPhaseAt2
+            else -> null
+        }
+        is EmptyFinalizeUpdatesTheLocationState.EmptyPhase -> when {
+            event is EmptyFinalizeUpdatesTheLocationEvent.FromEmptyChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(tally == 7)", "tally === 7")) -> transitionEmptyPhaseAt0
+            event is EmptyFinalizeUpdatesTheLocationEvent.FromEmptyChild -> transitionEmptyPhaseAt1
+            event is EmptyFinalizeUpdatesTheLocationEvent.TimeoutEmpty -> transitionEmptyPhaseAt2
+            else -> null
+        }
+        is EmptyFinalizeUpdatesTheLocationState.UnmatchedPhase -> when {
+            event is EmptyFinalizeUpdatesTheLocationEvent.FromUnmatchedChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(keeper ~= 3)", "keeper !== 3")) -> transitionUnmatchedPhaseAt0
+            event is EmptyFinalizeUpdatesTheLocationEvent.FromUnmatchedChild -> transitionUnmatchedPhaseAt1
+            event is EmptyFinalizeUpdatesTheLocationEvent.TimeoutUnmatched -> transitionUnmatchedPhaseAt2
+            else -> null
+        }
+        else -> null
     }
-
-    private fun processEmptyPhase(
-        event: EmptyFinalizeUpdatesTheLocationEvent
-    ): TransitionResult<EmptyFinalizeUpdatesTheLocationState> = when {
-        event is EmptyFinalizeUpdatesTheLocationEvent.FromEmptyChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(tally == 7)", "tally === 7")) -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.AbsentPhase, EmptyFinalizeUpdatesTheLocationState.EmptyPhase, 3)
-
-        event is EmptyFinalizeUpdatesTheLocationEvent.FromEmptyChild -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.FailNotUpdated, EmptyFinalizeUpdatesTheLocationState.EmptyPhase, 4)
-
-        event is EmptyFinalizeUpdatesTheLocationEvent.TimeoutEmpty -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.FailEmptyChildSilent, EmptyFinalizeUpdatesTheLocationState.EmptyPhase, 5)
-
-        else -> TransitionResult.Ignored
-    }
-
-    private fun processUnmatchedPhase(
-        event: EmptyFinalizeUpdatesTheLocationEvent
-    ): TransitionResult<EmptyFinalizeUpdatesTheLocationState> = when {
-        event is EmptyFinalizeUpdatesTheLocationEvent.FromUnmatchedChild && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(keeper ~= 3)", "keeper !== 3")) -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.FailUnmatchedNameWrote, EmptyFinalizeUpdatesTheLocationState.UnmatchedPhase, 6)
-
-        event is EmptyFinalizeUpdatesTheLocationEvent.FromUnmatchedChild -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.Pass, EmptyFinalizeUpdatesTheLocationState.UnmatchedPhase, 7)
-
-        event is EmptyFinalizeUpdatesTheLocationEvent.TimeoutUnmatched -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationState.FailUnmatchedChildSilent, EmptyFinalizeUpdatesTheLocationState.UnmatchedPhase, 8)
-
-        else -> TransitionResult.Ignored
-    }
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: empty_finalize_updates_the_location.scxml:52 :: _machine
-    override fun onEntry(state: EmptyFinalizeUpdatesTheLocationState, pathChild: EmptyFinalizeUpdatesTheLocationState?) {
+    override fun onEntry(state: EmptyFinalizeUpdatesTheLocationState, isDefaultEntry: Boolean) {
         when (state) {
             is EmptyFinalizeUpdatesTheLocationState.AbsentPhase -> {
                 // SCE-MAP: empty_finalize_updates_the_location.scxml:105 :: absentPhase :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("absentPhase")) return
 
 
             scheduleSend("__send_1", 3000L, EmptyFinalizeUpdatesTheLocationEvent.TimeoutAbsent)
@@ -486,8 +563,6 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
             }
             is EmptyFinalizeUpdatesTheLocationState.EmptyPhase -> {
                 // SCE-MAP: empty_finalize_updates_the_location.scxml:71 :: emptyPhase :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("emptyPhase")) return
 
 
             scheduleSend("__send_0", 3000L, EmptyFinalizeUpdatesTheLocationEvent.TimeoutEmpty)
@@ -516,57 +591,41 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
             }
             is EmptyFinalizeUpdatesTheLocationState.FailAbsentChildSilent -> {
                 // SCE-MAP: empty_finalize_updates_the_location.scxml:183 :: failAbsentChildSilent :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("failAbsentChildSilent")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is EmptyFinalizeUpdatesTheLocationState.FailEmptyChildSilent -> {
                 // SCE-MAP: empty_finalize_updates_the_location.scxml:182 :: failEmptyChildSilent :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("failEmptyChildSilent")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is EmptyFinalizeUpdatesTheLocationState.FailNotUpdated -> {
                 // SCE-MAP: empty_finalize_updates_the_location.scxml:179 :: failNotUpdated :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("failNotUpdated")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is EmptyFinalizeUpdatesTheLocationState.FailUnmatchedChildSilent -> {
                 // SCE-MAP: empty_finalize_updates_the_location.scxml:184 :: failUnmatchedChildSilent :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("failUnmatchedChildSilent")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is EmptyFinalizeUpdatesTheLocationState.FailUnmatchedNameWrote -> {
                 // SCE-MAP: empty_finalize_updates_the_location.scxml:181 :: failUnmatchedNameWrote :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("failUnmatchedNameWrote")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is EmptyFinalizeUpdatesTheLocationState.FailUpdatedWithoutFinalize -> {
                 // SCE-MAP: empty_finalize_updates_the_location.scxml:180 :: failUpdatedWithoutFinalize :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("failUpdatedWithoutFinalize")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is EmptyFinalizeUpdatesTheLocationState.Pass -> {
                 // SCE-MAP: empty_finalize_updates_the_location.scxml:178 :: pass :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is EmptyFinalizeUpdatesTheLocationState.UnmatchedPhase -> {
                 // SCE-MAP: empty_finalize_updates_the_location.scxml:144 :: unmatchedPhase :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("unmatchedPhase")) return
 
 
             scheduleSend("__send_2", 3000L, EmptyFinalizeUpdatesTheLocationEvent.TimeoutUnmatched)
@@ -606,7 +665,6 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("inv_absent")
-                activeStateIds.remove("absentPhase")
             }
             is EmptyFinalizeUpdatesTheLocationState.EmptyPhase -> {
                 // SCE-MAP: empty_finalize_updates_the_location.scxml:71 :: emptyPhase :: _state_body
@@ -614,35 +672,27 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("inv_empty")
-                activeStateIds.remove("emptyPhase")
             }
             is EmptyFinalizeUpdatesTheLocationState.FailAbsentChildSilent -> {
                 // SCE-MAP: empty_finalize_updates_the_location.scxml:183 :: failAbsentChildSilent :: _state_body
-                activeStateIds.remove("failAbsentChildSilent")
             }
             is EmptyFinalizeUpdatesTheLocationState.FailEmptyChildSilent -> {
                 // SCE-MAP: empty_finalize_updates_the_location.scxml:182 :: failEmptyChildSilent :: _state_body
-                activeStateIds.remove("failEmptyChildSilent")
             }
             is EmptyFinalizeUpdatesTheLocationState.FailNotUpdated -> {
                 // SCE-MAP: empty_finalize_updates_the_location.scxml:179 :: failNotUpdated :: _state_body
-                activeStateIds.remove("failNotUpdated")
             }
             is EmptyFinalizeUpdatesTheLocationState.FailUnmatchedChildSilent -> {
                 // SCE-MAP: empty_finalize_updates_the_location.scxml:184 :: failUnmatchedChildSilent :: _state_body
-                activeStateIds.remove("failUnmatchedChildSilent")
             }
             is EmptyFinalizeUpdatesTheLocationState.FailUnmatchedNameWrote -> {
                 // SCE-MAP: empty_finalize_updates_the_location.scxml:181 :: failUnmatchedNameWrote :: _state_body
-                activeStateIds.remove("failUnmatchedNameWrote")
             }
             is EmptyFinalizeUpdatesTheLocationState.FailUpdatedWithoutFinalize -> {
                 // SCE-MAP: empty_finalize_updates_the_location.scxml:180 :: failUpdatedWithoutFinalize :: _state_body
-                activeStateIds.remove("failUpdatedWithoutFinalize")
             }
             is EmptyFinalizeUpdatesTheLocationState.Pass -> {
                 // SCE-MAP: empty_finalize_updates_the_location.scxml:178 :: pass :: _state_body
-                activeStateIds.remove("pass")
             }
             is EmptyFinalizeUpdatesTheLocationState.UnmatchedPhase -> {
                 // SCE-MAP: empty_finalize_updates_the_location.scxml:144 :: unmatchedPhase :: _state_body
@@ -650,19 +700,14 @@ class EmptyFinalizeUpdatesTheLocationStateMachine(
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("inv_unmatched")
-                activeStateIds.remove("unmatchedPhase")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: empty_finalize_updates_the_location.scxml:52 :: _machine
-    override fun executeTransitionActions(
-        source: EmptyFinalizeUpdatesTheLocationState,
-        event: EmptyFinalizeUpdatesTheLocationEvent?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: EmptyFinalizeUpdatesTheLocationState, transitionIndex: Int) {
         when (source) {
         else -> {}
         }

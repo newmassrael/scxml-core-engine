@@ -49,7 +49,82 @@ class XmlDataIsADomTreeStateMachine(
         super.enterInitialConfiguration()
     }
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
 
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: XmlDataIsADomTreeState): Boolean = when (state) {
+        is XmlDataIsADomTreeState.NotADocument, is XmlDataIsADomTreeState.NoText, is XmlDataIsADomTreeState.Settled, is XmlDataIsADomTreeState.WrongTree -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<XmlDataIsADomTreeState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<XmlDataIsADomTreeState, HistoryId>> =
+            listOf(StateTarget(XmlDataIsADomTreeState.Reading))
+
+        // W3C SCXML 3.13: reading's transition 0, as the microstep reads it.
+        val transitionReadingAt0 = EnabledTransition<XmlDataIsADomTreeState, HistoryId>(
+            XmlDataIsADomTreeState.Reading,
+            listOf(StateTarget(XmlDataIsADomTreeState.Traversing)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: reading's transition 1, as the microstep reads it.
+        val transitionReadingAt1 = EnabledTransition<XmlDataIsADomTreeState, HistoryId>(
+            XmlDataIsADomTreeState.Reading,
+            listOf(StateTarget(XmlDataIsADomTreeState.NotADocument)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: readingText's transition 0, as the microstep reads it.
+        val transitionReadingTextAt0 = EnabledTransition<XmlDataIsADomTreeState, HistoryId>(
+            XmlDataIsADomTreeState.ReadingText,
+            listOf(StateTarget(XmlDataIsADomTreeState.Settled)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: readingText's transition 1, as the microstep reads it.
+        val transitionReadingTextAt1 = EnabledTransition<XmlDataIsADomTreeState, HistoryId>(
+            XmlDataIsADomTreeState.ReadingText,
+            listOf(StateTarget(XmlDataIsADomTreeState.NoText)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: traversing's transition 0, as the microstep reads it.
+        val transitionTraversingAt0 = EnabledTransition<XmlDataIsADomTreeState, HistoryId>(
+            XmlDataIsADomTreeState.Traversing,
+            listOf(StateTarget(XmlDataIsADomTreeState.ReadingText)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: traversing's transition 1, as the microstep reads it.
+        val transitionTraversingAt1 = EnabledTransition<XmlDataIsADomTreeState, HistoryId>(
+            XmlDataIsADomTreeState.Traversing,
+            listOf(StateTarget(XmlDataIsADomTreeState.WrongTree)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+    }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): XmlDataIsADomTreeState? = when (stateId) {
@@ -74,13 +149,7 @@ class XmlDataIsADomTreeStateMachine(
         is XmlDataIsADomTreeState.WrongTree -> "wrongTree"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: XmlDataIsADomTreeState): Boolean = when (state) {
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: XmlDataIsADomTreeState): Int = when (state) {
         is XmlDataIsADomTreeState.NotADocument -> 4
         is XmlDataIsADomTreeState.NoText -> 6
@@ -302,99 +371,72 @@ class XmlDataIsADomTreeStateMachine(
     }
 
 
-    // W3C SCXML 3.12: Event processing with script engine condition evaluation
-    override fun processEvent(
-        state: XmlDataIsADomTreeState,
-        event: XmlDataIsADomTreeEvent
-    ): TransitionResult<XmlDataIsADomTreeState> {
-        // W3C SCXML 5.10: Set _event before guard evaluation
+
+    // W3C SCXML 5.10: bind the event as the `_event` its transitions' guards
+    // read — once, before the first guard runs, and not for an eventless
+    // selection, which has no event of its own.
+    override fun bindCurrentEvent(event: XmlDataIsADomTreeEvent) {
         setCurrentEventInScriptEngine(event)
-        return when (state) {
-        else -> TransitionResult.Ignored
-    }
     }
 
-    // W3C SCXML Appendix D: Eventless (null) transition check
-    override fun processNullEvent(
-        state: XmlDataIsADomTreeState
-    ): TransitionResult<XmlDataIsADomTreeState> = when (state) {
-        is XmlDataIsADomTreeState.Reading -> processNullReading()
-        is XmlDataIsADomTreeState.ReadingText -> processNullReadingText()
-        is XmlDataIsADomTreeState.Traversing -> processNullTraversing()
-        else -> TransitionResult.Ignored
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
+        state: XmlDataIsADomTreeState,
+        event: XmlDataIsADomTreeEvent?
+    ): EnabledTransition<XmlDataIsADomTreeState, HistoryId>? = when (state) {
+        is XmlDataIsADomTreeState.Reading -> when {
+            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("((((doc.nodeType == 9) and (doc.nodeName == \"#document\")) and (doc.documentElement.tagName == \"books\")) and _scxml_truthy(doc:hasAttribute(\"count\")))", "doc.nodeType === 9 && doc.nodeName === '#document' && doc.documentElement.tagName === 'books' && doc.hasAttribute('count')")) -> transitionReadingAt0
+            event == null -> transitionReadingAt1
+            else -> null
+        }
+        is XmlDataIsADomTreeState.ReadingText -> when {
+            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("((((doc.documentElement.firstChild.firstChild.nodeType == 3) and (doc.documentElement.firstChild.firstChild.nodeValue == \"first\")) and (doc.documentElement.textContent == \"first\")) and (doc.documentElement.lastChild:hasChildNodes() == false))", "doc.documentElement.firstChild.firstChild.nodeType === 3 && doc.documentElement.firstChild.firstChild.nodeValue === 'first' && doc.documentElement.textContent === 'first' && doc.documentElement.lastChild.hasChildNodes() === false")) -> transitionReadingTextAt0
+            event == null -> transitionReadingTextAt1
+            else -> null
+        }
+        is XmlDataIsADomTreeState.Traversing -> when {
+            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(((((#doc.documentElement.childNodes == 2) and (doc.documentElement.firstChild:getAttribute(\"title\") == \"t1\")) and (doc.documentElement.lastChild:getAttribute(\"title\") == \"t2\")) and (doc.documentElement.lastChild.previousSibling:getAttribute(\"title\") == \"t1\")) and (doc.documentElement.firstChild.parentNode.tagName == \"books\"))", "doc.documentElement.childNodes.length === 2 && doc.documentElement.firstChild.getAttribute('title') === 't1' && doc.documentElement.lastChild.getAttribute('title') === 't2' && doc.documentElement.lastChild.previousSibling.getAttribute('title') === 't1' && doc.documentElement.firstChild.parentNode.tagName === 'books'")) -> transitionTraversingAt0
+            event == null -> transitionTraversingAt1
+            else -> null
+        }
+        else -> null
     }
-
-    // --- Per-State Null (Eventless) Handlers ---
-
-    private fun processNullReading(
-    ): TransitionResult<XmlDataIsADomTreeState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("((((doc.nodeType == 9) and (doc.nodeName == \"#document\")) and (doc.documentElement.tagName == \"books\")) and _scxml_truthy(doc:hasAttribute(\"count\")))", "doc.nodeType === 9 && doc.nodeName === '#document' && doc.documentElement.tagName === 'books' && doc.hasAttribute('count')")) -> TransitionResult.External(XmlDataIsADomTreeState.Traversing, XmlDataIsADomTreeState.Reading, 0)
-        // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(XmlDataIsADomTreeState.NotADocument, XmlDataIsADomTreeState.Reading, 1)
-    }
-
-    private fun processNullReadingText(
-    ): TransitionResult<XmlDataIsADomTreeState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("((((doc.documentElement.firstChild.firstChild.nodeType == 3) and (doc.documentElement.firstChild.firstChild.nodeValue == \"first\")) and (doc.documentElement.textContent == \"first\")) and (doc.documentElement.lastChild:hasChildNodes() == false))", "doc.documentElement.firstChild.firstChild.nodeType === 3 && doc.documentElement.firstChild.firstChild.nodeValue === 'first' && doc.documentElement.textContent === 'first' && doc.documentElement.lastChild.hasChildNodes() === false")) -> TransitionResult.External(XmlDataIsADomTreeState.Settled, XmlDataIsADomTreeState.ReadingText, 2)
-        // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(XmlDataIsADomTreeState.NoText, XmlDataIsADomTreeState.ReadingText, 3)
-    }
-
-    private fun processNullTraversing(
-    ): TransitionResult<XmlDataIsADomTreeState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(((((#doc.documentElement.childNodes == 2) and (doc.documentElement.firstChild:getAttribute(\"title\") == \"t1\")) and (doc.documentElement.lastChild:getAttribute(\"title\") == \"t2\")) and (doc.documentElement.lastChild.previousSibling:getAttribute(\"title\") == \"t1\")) and (doc.documentElement.firstChild.parentNode.tagName == \"books\"))", "doc.documentElement.childNodes.length === 2 && doc.documentElement.firstChild.getAttribute('title') === 't1' && doc.documentElement.lastChild.getAttribute('title') === 't2' && doc.documentElement.lastChild.previousSibling.getAttribute('title') === 't1' && doc.documentElement.firstChild.parentNode.tagName === 'books'")) -> TransitionResult.External(XmlDataIsADomTreeState.ReadingText, XmlDataIsADomTreeState.Traversing, 4)
-        // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(XmlDataIsADomTreeState.WrongTree, XmlDataIsADomTreeState.Traversing, 5)
-    }
-
-    // --- Per-State Event Handlers ---
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: xml_data_is_a_dom_tree.scxml:44 :: _machine
-    override fun onEntry(state: XmlDataIsADomTreeState, pathChild: XmlDataIsADomTreeState?) {
+    override fun onEntry(state: XmlDataIsADomTreeState, isDefaultEntry: Boolean) {
         when (state) {
             is XmlDataIsADomTreeState.NotADocument -> {
                 // SCE-MAP: xml_data_is_a_dom_tree.scxml:86 :: notADocument :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("notADocument")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is XmlDataIsADomTreeState.NoText -> {
                 // SCE-MAP: xml_data_is_a_dom_tree.scxml:88 :: noText :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("noText")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is XmlDataIsADomTreeState.Reading -> {
                 // SCE-MAP: xml_data_is_a_dom_tree.scxml:63 :: reading :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("reading")) return
             }
             is XmlDataIsADomTreeState.ReadingText -> {
                 // SCE-MAP: xml_data_is_a_dom_tree.scxml:79 :: readingText :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("readingText")) return
             }
             is XmlDataIsADomTreeState.Settled -> {
                 // SCE-MAP: xml_data_is_a_dom_tree.scxml:85 :: settled :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("settled")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is XmlDataIsADomTreeState.Traversing -> {
                 // SCE-MAP: xml_data_is_a_dom_tree.scxml:71 :: traversing :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("traversing")) return
             }
             is XmlDataIsADomTreeState.WrongTree -> {
                 // SCE-MAP: xml_data_is_a_dom_tree.scxml:87 :: wrongTree :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("wrongTree")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
@@ -407,43 +449,32 @@ class XmlDataIsADomTreeStateMachine(
         when (state) {
             is XmlDataIsADomTreeState.NotADocument -> {
                 // SCE-MAP: xml_data_is_a_dom_tree.scxml:86 :: notADocument :: _state_body
-                activeStateIds.remove("notADocument")
             }
             is XmlDataIsADomTreeState.NoText -> {
                 // SCE-MAP: xml_data_is_a_dom_tree.scxml:88 :: noText :: _state_body
-                activeStateIds.remove("noText")
             }
             is XmlDataIsADomTreeState.Reading -> {
                 // SCE-MAP: xml_data_is_a_dom_tree.scxml:63 :: reading :: _state_body
-                activeStateIds.remove("reading")
             }
             is XmlDataIsADomTreeState.ReadingText -> {
                 // SCE-MAP: xml_data_is_a_dom_tree.scxml:79 :: readingText :: _state_body
-                activeStateIds.remove("readingText")
             }
             is XmlDataIsADomTreeState.Settled -> {
                 // SCE-MAP: xml_data_is_a_dom_tree.scxml:85 :: settled :: _state_body
-                activeStateIds.remove("settled")
             }
             is XmlDataIsADomTreeState.Traversing -> {
                 // SCE-MAP: xml_data_is_a_dom_tree.scxml:71 :: traversing :: _state_body
-                activeStateIds.remove("traversing")
             }
             is XmlDataIsADomTreeState.WrongTree -> {
                 // SCE-MAP: xml_data_is_a_dom_tree.scxml:87 :: wrongTree :: _state_body
-                activeStateIds.remove("wrongTree")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: xml_data_is_a_dom_tree.scxml:44 :: _machine
-    override fun executeTransitionActions(
-        source: XmlDataIsADomTreeState,
-        event: XmlDataIsADomTreeEvent?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: XmlDataIsADomTreeState, transitionIndex: Int) {
         when (source) {
         else -> {}
         }

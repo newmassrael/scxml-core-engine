@@ -409,9 +409,11 @@ fn generated_markers_name_a_symbol_the_sidecar_contains() {
 }
 
 /// A child whose parent owns a transition with actions. The Kotlin
-/// backend renders that parent transition a second time under the
-/// child's dispatch arm (`compute_effective_transitions` = self +
-/// ancestors), which is the one case where the render site is not the
+/// backend used to render that parent transition a second time under the
+/// child's dispatch arm (its "effective" transitions were self +
+/// ancestors), which was the one case where the render site was not the
+/// owner. The runtime now selects an ancestor's transition under the
+/// ancestor, so the fixture pins the other half: rendered once, under its
 /// owner.
 const INHERITED_TRANSITION_FIXTURE: &str = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
@@ -430,15 +432,17 @@ const INHERITED_TRANSITION_FIXTURE: &str = r#"<?xml version="1.0"?>
 </scxml>
 "#;
 
-/// The marker on an inherited transition must name the state that OWNS
-/// it, not the arm it renders under.
+/// The marker on an ancestor's transition names the state that OWNS it,
+/// and it is found only under that state's arm.
 ///
-/// This is the assertion that forbids rebuilding the attribution from
-/// the render site. Deriving it there yields `inner :: _transition_0`,
-/// which is not a dangling reference — it resolves to a real symbol,
-/// the child's own `go` transition at a different line. A gate that
-/// only asked "does the symbol exist" would pass that; only the line
-/// join catches it, and only this fixture produces it.
+/// When the parent's transition was also rendered under the child, the
+/// assertion here was that the copy's marker still named the parent —
+/// deriving it from the render site yields `inner :: _transition_0`,
+/// which is not a dangling reference but the child's own `go` transition
+/// at a different line, so only the line join could catch it. The copy
+/// is gone: no marker attributed to `outer` appears inside `inner`'s
+/// arms, and exactly one transition marker attributed to `outer` appears
+/// inside `outer`'s — the content of its own `abort`.
 #[test]
 fn inherited_transition_marker_names_the_owning_state() {
     let tmp = std::env::temp_dir().join(format!(
@@ -474,37 +478,44 @@ fn inherited_transition_marker_names_the_owning_state() {
         .collect();
     assert!(!sources.is_empty(), "kotlin backend emitted no .kt file");
 
-    let mut in_child_arm = false;
-    let mut inherited_markers = 0usize;
+    // Which state's arm each line sits in: an `is <State> ->` line opens
+    // one, and the next opens another.
+    let mut arm: Option<&str> = None;
+    let mut outer_markers_under_inner = 0usize;
+    let mut outer_transition_markers_under_outer = 0usize;
     for path in &sources {
         let text = std::fs::read_to_string(path).expect("source readable");
         for line in text.lines() {
-            // The child's dispatch arm opens here and the next arm
-            // closes it; every marker between the two belongs to a
-            // transition rendered under the child.
             if line.contains("is InheritedProbeState.Inner ->") {
-                in_child_arm = true;
+                arm = Some("inner");
             } else if line.contains("is InheritedProbeState.Outer ->") {
-                in_child_arm = false;
+                arm = Some("outer");
+            } else if line.contains("is InheritedProbeState.Done ->") {
+                arm = Some("done");
             }
-            if !in_child_arm || !line.contains("SCE-MAP:") {
+            if !line.contains("SCE-MAP:") || !line.contains(":: outer :: ") {
                 continue;
             }
-            if line.contains("'ancestor abort'") {
-                continue;
-            }
-            // Inside the child's arm, the inherited transition is the
-            // one attributed to the parent.
-            if line.contains(":: outer :: ") {
-                inherited_markers += 1;
+            match arm {
+                Some("inner") => outer_markers_under_inner += 1,
+                Some("outer") if line.contains(":: _transition_") => {
+                    outer_transition_markers_under_outer += 1
+                }
+                _ => {}
             }
         }
     }
     assert_eq!(
-        inherited_markers, 1,
-        "expected exactly one marker inside the child arm attributed to the \
-         owning parent state; found {inherited_markers}. A marker rebuilt from \
-         the render site would read `:: inner ::` here."
+        outer_markers_under_inner, 0,
+        "a marker attributed to `outer` sits inside `inner`'s arm: the \
+         parent's transition is rendered under the child again, which the \
+         runtime no longer asks for."
+    );
+    assert_eq!(
+        outer_transition_markers_under_outer, 1,
+        "expected exactly one transition marker attributed to `outer` inside \
+         its own arm — the content of its `abort` — and found \
+         {outer_transition_markers_under_outer}."
     );
 
     // The generic join must also hold for this shape.

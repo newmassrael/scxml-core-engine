@@ -110,6 +110,13 @@ class AncestorEntryIsNotDefaultEntryStateMachine(
         super.enterInitialConfiguration()
     }
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
+
     // W3C SCXML 3.3: State hierarchy parent mapping
     override fun parentOf(state: AncestorEntryIsNotDefaultEntryState): AncestorEntryIsNotDefaultEntryState? = when (state) {
         is AncestorEntryIsNotDefaultEntryState.ByDefault -> AncestorEntryIsNotDefaultEntryState.Outer
@@ -122,13 +129,127 @@ class AncestorEntryIsNotDefaultEntryStateMachine(
         else -> null
     }
 
-    // W3C SCXML 3.3/3.4: Resolve compound/parallel state to initial leaf state
-    override fun resolveLeafState(state: AncestorEntryIsNotDefaultEntryState): AncestorEntryIsNotDefaultEntryState = when (state) {
-        is AncestorEntryIsNotDefaultEntryState.Drive -> AncestorEntryIsNotDefaultEntryState.Lobby
-        is AncestorEntryIsNotDefaultEntryState.Outer -> AncestorEntryIsNotDefaultEntryState.ByDefault
-        is AncestorEntryIsNotDefaultEntryState.Run -> AncestorEntryIsNotDefaultEntryState.Lobby
-        is AncestorEntryIsNotDefaultEntryState.Watch -> AncestorEntryIsNotDefaultEntryState.Idle
-        else -> state
+    // W3C SCXML 3.3: a <state> with child states — exactly the states that
+    // have an initial transition. A <parallel> is not compound.
+    override fun isCompoundState(state: AncestorEntryIsNotDefaultEntryState): Boolean = when (state) {
+        is AncestorEntryIsNotDefaultEntryState.Drive, is AncestorEntryIsNotDefaultEntryState.Outer, is AncestorEntryIsNotDefaultEntryState.Watch -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.4: Check if state is a parallel state
+    override fun isParallelState(state: AncestorEntryIsNotDefaultEntryState): Boolean = when (state) {
+        is AncestorEntryIsNotDefaultEntryState.Run -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: AncestorEntryIsNotDefaultEntryState): Boolean = when (state) {
+        is AncestorEntryIsNotDefaultEntryState.FailDefaulted, is AncestorEntryIsNotDefaultEntryState.FailIdled, is AncestorEntryIsNotDefaultEntryState.FailLobbied, is AncestorEntryIsNotDefaultEntryState.FailTargeted, is AncestorEntryIsNotDefaultEntryState.Settled -> true
+        else -> false
+    }
+
+    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+    // children, in document order — for a <parallel>, its regions.
+    override fun childStatesOf(state: AncestorEntryIsNotDefaultEntryState): List<AncestorEntryIsNotDefaultEntryState> =
+        childStates[state] ?: emptyList()
+
+    // W3C SCXML 3.3: a compound state's initial transition target, as written.
+    override fun initialTargetsOf(state: AncestorEntryIsNotDefaultEntryState): List<EntryTarget<AncestorEntryIsNotDefaultEntryState, HistoryId>> =
+        initialTargets[state] ?: emptyList()
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<AncestorEntryIsNotDefaultEntryState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val childStates: Map<AncestorEntryIsNotDefaultEntryState, List<AncestorEntryIsNotDefaultEntryState>> = mapOf(
+            AncestorEntryIsNotDefaultEntryState.Drive to listOf(AncestorEntryIsNotDefaultEntryState.Lobby, AncestorEntryIsNotDefaultEntryState.Outer),
+            AncestorEntryIsNotDefaultEntryState.Outer to listOf(AncestorEntryIsNotDefaultEntryState.ByDefault, AncestorEntryIsNotDefaultEntryState.Chosen),
+            AncestorEntryIsNotDefaultEntryState.Run to listOf(AncestorEntryIsNotDefaultEntryState.Drive, AncestorEntryIsNotDefaultEntryState.Watch),
+            AncestorEntryIsNotDefaultEntryState.Watch to listOf(AncestorEntryIsNotDefaultEntryState.Idle),
+        )
+
+        val initialTargets: Map<AncestorEntryIsNotDefaultEntryState, List<EntryTarget<AncestorEntryIsNotDefaultEntryState, HistoryId>>> = mapOf(
+            AncestorEntryIsNotDefaultEntryState.Drive to listOf(StateTarget(AncestorEntryIsNotDefaultEntryState.Lobby)),
+            AncestorEntryIsNotDefaultEntryState.Outer to listOf(StateTarget(AncestorEntryIsNotDefaultEntryState.ByDefault)),
+            AncestorEntryIsNotDefaultEntryState.Watch to listOf(StateTarget(AncestorEntryIsNotDefaultEntryState.Idle)),
+        )
+
+        val documentInitialTargetList: List<EntryTarget<AncestorEntryIsNotDefaultEntryState, HistoryId>> =
+            listOf(StateTarget(AncestorEntryIsNotDefaultEntryState.Away))
+
+        // W3C SCXML 3.13: away's transition 0, as the microstep reads it.
+        val transitionAwayAt0 = EnabledTransition<AncestorEntryIsNotDefaultEntryState, HistoryId>(
+            AncestorEntryIsNotDefaultEntryState.Away,
+            listOf(StateTarget(AncestorEntryIsNotDefaultEntryState.Chosen)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: chosen's transition 0, as the microstep reads it.
+        val transitionChosenAt0 = EnabledTransition<AncestorEntryIsNotDefaultEntryState, HistoryId>(
+            AncestorEntryIsNotDefaultEntryState.Chosen,
+            listOf(StateTarget(AncestorEntryIsNotDefaultEntryState.Lobby)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: chosen's transition 1, as the microstep reads it.
+        val transitionChosenAt1 = EnabledTransition<AncestorEntryIsNotDefaultEntryState, HistoryId>(
+            AncestorEntryIsNotDefaultEntryState.Chosen,
+            listOf(StateTarget(AncestorEntryIsNotDefaultEntryState.FailDefaulted)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: chosen's transition 2, as the microstep reads it.
+        val transitionChosenAt2 = EnabledTransition<AncestorEntryIsNotDefaultEntryState, HistoryId>(
+            AncestorEntryIsNotDefaultEntryState.Chosen,
+            listOf(StateTarget(AncestorEntryIsNotDefaultEntryState.FailLobbied)),
+            2,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: chosen's transition 3, as the microstep reads it.
+        val transitionChosenAt3 = EnabledTransition<AncestorEntryIsNotDefaultEntryState, HistoryId>(
+            AncestorEntryIsNotDefaultEntryState.Chosen,
+            listOf(StateTarget(AncestorEntryIsNotDefaultEntryState.FailIdled)),
+            3,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: chosen's transition 4, as the microstep reads it.
+        val transitionChosenAt4 = EnabledTransition<AncestorEntryIsNotDefaultEntryState, HistoryId>(
+            AncestorEntryIsNotDefaultEntryState.Chosen,
+            listOf(StateTarget(AncestorEntryIsNotDefaultEntryState.FailTargeted)),
+            4,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: chosen's transition 5, as the microstep reads it.
+        val transitionChosenAt5 = EnabledTransition<AncestorEntryIsNotDefaultEntryState, HistoryId>(
+            AncestorEntryIsNotDefaultEntryState.Chosen,
+            listOf(StateTarget(AncestorEntryIsNotDefaultEntryState.Settled)),
+            5,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: lobby's transition 0, as the microstep reads it.
+        val transitionLobbyAt0 = EnabledTransition<AncestorEntryIsNotDefaultEntryState, HistoryId>(
+            AncestorEntryIsNotDefaultEntryState.Lobby,
+            listOf(StateTarget(AncestorEntryIsNotDefaultEntryState.Chosen)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
     }
 
     // W3C SCXML: Resolve state ID string to State object
@@ -168,28 +289,7 @@ class AncestorEntryIsNotDefaultEntryStateMachine(
         is AncestorEntryIsNotDefaultEntryState.Watch -> "watch"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: AncestorEntryIsNotDefaultEntryState): Boolean = when (state) {
-        is AncestorEntryIsNotDefaultEntryState.Drive -> false
-        is AncestorEntryIsNotDefaultEntryState.Outer -> false
-        is AncestorEntryIsNotDefaultEntryState.Run -> false
-        is AncestorEntryIsNotDefaultEntryState.Watch -> false
-        else -> true
-    }
-
-    // W3C SCXML 3.4: Check if state is a parallel state
-    override fun isParallelState(state: AncestorEntryIsNotDefaultEntryState): Boolean = when (state) {
-        is AncestorEntryIsNotDefaultEntryState.Run -> true
-        else -> false
-    }
-
-    // W3C SCXML 3.4: Get child regions of a parallel state (C++ getParallelRegions pattern)
-    override fun getParallelRegions(state: AncestorEntryIsNotDefaultEntryState): List<AncestorEntryIsNotDefaultEntryState> = when (state) {
-        is AncestorEntryIsNotDefaultEntryState.Run -> listOf(AncestorEntryIsNotDefaultEntryState.Drive, AncestorEntryIsNotDefaultEntryState.Watch)
-        else -> emptyList()
-    }
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: AncestorEntryIsNotDefaultEntryState): Int = when (state) {
         is AncestorEntryIsNotDefaultEntryState.Away -> 0
         is AncestorEntryIsNotDefaultEntryState.ByDefault -> 5
@@ -449,179 +549,111 @@ class AncestorEntryIsNotDefaultEntryStateMachine(
     }
 
 
-    // W3C SCXML 3.12: Event processing with script engine condition evaluation
-    override fun processEvent(
-        state: AncestorEntryIsNotDefaultEntryState,
-        event: AncestorEntryIsNotDefaultEntryEvent
-    ): TransitionResult<AncestorEntryIsNotDefaultEntryState> {
-        // W3C SCXML 5.10: Set _event before guard evaluation
+
+    // W3C SCXML 5.10: bind the event as the `_event` its transitions' guards
+    // read — once, before the first guard runs, and not for an eventless
+    // selection, which has no event of its own.
+    override fun bindCurrentEvent(event: AncestorEntryIsNotDefaultEntryEvent) {
         setCurrentEventInScriptEngine(event)
-        return when (state) {
-        is AncestorEntryIsNotDefaultEntryState.Away -> processAway(event)
-        is AncestorEntryIsNotDefaultEntryState.Chosen -> processChosen(event)
-        is AncestorEntryIsNotDefaultEntryState.Lobby -> processLobby(event)
-        else -> TransitionResult.Ignored
-    }
     }
 
-
-    // --- Per-State Event Handlers ---
-
-    private fun processAway(
-        event: AncestorEntryIsNotDefaultEntryEvent
-    ): TransitionResult<AncestorEntryIsNotDefaultEntryState> = when {
-        event is AncestorEntryIsNotDefaultEntryEvent.Cross -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.Chosen, AncestorEntryIsNotDefaultEntryState.Away, 0)
-
-        else -> TransitionResult.Ignored
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
+        state: AncestorEntryIsNotDefaultEntryState,
+        event: AncestorEntryIsNotDefaultEntryEvent?
+    ): EnabledTransition<AncestorEntryIsNotDefaultEntryState, HistoryId>? = when (state) {
+        is AncestorEntryIsNotDefaultEntryState.Away -> when {
+            event is AncestorEntryIsNotDefaultEntryEvent.Cross -> transitionAwayAt0
+            else -> null
+        }
+        is AncestorEntryIsNotDefaultEntryState.Chosen -> when {
+            event is AncestorEntryIsNotDefaultEntryEvent.Back -> transitionChosenAt0
+            event is AncestorEntryIsNotDefaultEntryEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(not _scxml_eq(defaulted, 0))", "defaulted != 0")) -> transitionChosenAt1
+            event is AncestorEntryIsNotDefaultEntryEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(not _scxml_eq(lobbied, 1))", "lobbied != 1")) -> transitionChosenAt2
+            event is AncestorEntryIsNotDefaultEntryEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(not _scxml_eq(idled, 1))", "idled != 1")) -> transitionChosenAt3
+            event is AncestorEntryIsNotDefaultEntryEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(not _scxml_eq(targeted, 2))", "targeted != 2")) -> transitionChosenAt4
+            event is AncestorEntryIsNotDefaultEntryEvent.Check -> transitionChosenAt5
+            else -> null
+        }
+        is AncestorEntryIsNotDefaultEntryState.Lobby -> when {
+            event is AncestorEntryIsNotDefaultEntryEvent.Again -> transitionLobbyAt0
+            else -> null
+        }
+        else -> null
     }
-
-    private fun processChosen(
-        event: AncestorEntryIsNotDefaultEntryEvent
-    ): TransitionResult<AncestorEntryIsNotDefaultEntryState> = when {
-        event is AncestorEntryIsNotDefaultEntryEvent.Back -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.Lobby, AncestorEntryIsNotDefaultEntryState.Chosen, 1)
-
-        event is AncestorEntryIsNotDefaultEntryEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(not _scxml_eq(defaulted, 0))", "defaulted != 0")) -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.FailDefaulted, AncestorEntryIsNotDefaultEntryState.Chosen, 2)
-
-        event is AncestorEntryIsNotDefaultEntryEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(not _scxml_eq(lobbied, 1))", "lobbied != 1")) -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.FailLobbied, AncestorEntryIsNotDefaultEntryState.Chosen, 3)
-
-        event is AncestorEntryIsNotDefaultEntryEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(not _scxml_eq(idled, 1))", "idled != 1")) -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.FailIdled, AncestorEntryIsNotDefaultEntryState.Chosen, 4)
-
-        event is AncestorEntryIsNotDefaultEntryEvent.Check && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(not _scxml_eq(targeted, 2))", "targeted != 2")) -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.FailTargeted, AncestorEntryIsNotDefaultEntryState.Chosen, 5)
-
-        event is AncestorEntryIsNotDefaultEntryEvent.Check -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.Settled, AncestorEntryIsNotDefaultEntryState.Chosen, 6)
-
-        else -> TransitionResult.Ignored
-    }
-
-    private fun processLobby(
-        event: AncestorEntryIsNotDefaultEntryEvent
-    ): TransitionResult<AncestorEntryIsNotDefaultEntryState> = when {
-        event is AncestorEntryIsNotDefaultEntryEvent.Again -> TransitionResult.External(AncestorEntryIsNotDefaultEntryState.Chosen, AncestorEntryIsNotDefaultEntryState.Lobby, 7)
-
-        else -> TransitionResult.Ignored
-    }
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:69 :: _machine
-    override fun onEntry(state: AncestorEntryIsNotDefaultEntryState, pathChild: AncestorEntryIsNotDefaultEntryState?) {
+    override fun onEntry(state: AncestorEntryIsNotDefaultEntryState, isDefaultEntry: Boolean) {
         when (state) {
             is AncestorEntryIsNotDefaultEntryState.Away -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:89 :: away :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("away")) return
             }
             is AncestorEntryIsNotDefaultEntryState.ByDefault -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:116 :: by_default :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("by_default")) return
 
 
             executeAssign(com.sce.runtime.ScriptSource.lua("defaulted", "defaulted"), com.sce.runtime.ScriptSource.lua("_scxml_add(defaulted, 1)", "defaulted + 1"))
             }
             is AncestorEntryIsNotDefaultEntryState.Chosen -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:127 :: chosen :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("chosen")) return
 
 
             executeAssign(com.sce.runtime.ScriptSource.lua("targeted", "targeted"), com.sce.runtime.ScriptSource.lua("_scxml_add(targeted, 1)", "targeted + 1"))
             }
             is AncestorEntryIsNotDefaultEntryState.Drive -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:95 :: drive :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("drive")) return
-                if (pathChild == null) {
-                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                    onEntry(AncestorEntryIsNotDefaultEntryState.Lobby)
-                }
             }
             is AncestorEntryIsNotDefaultEntryState.FailDefaulted -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:160 :: failDefaulted :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("failDefaulted")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AncestorEntryIsNotDefaultEntryState.FailIdled -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:162 :: failIdled :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("failIdled")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AncestorEntryIsNotDefaultEntryState.FailLobbied -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:161 :: failLobbied :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("failLobbied")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AncestorEntryIsNotDefaultEntryState.FailTargeted -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:163 :: failTargeted :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("failTargeted")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AncestorEntryIsNotDefaultEntryState.Idle -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:150 :: idle :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("idle")) return
 
 
             executeAssign(com.sce.runtime.ScriptSource.lua("idled", "idled"), com.sce.runtime.ScriptSource.lua("_scxml_add(idled, 1)", "idled + 1"))
             }
             is AncestorEntryIsNotDefaultEntryState.Lobby -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:102 :: lobby :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("lobby")) return
 
 
             executeAssign(com.sce.runtime.ScriptSource.lua("lobbied", "lobbied"), com.sce.runtime.ScriptSource.lua("_scxml_add(lobbied, 1)", "lobbied + 1"))
             }
             is AncestorEntryIsNotDefaultEntryState.Outer -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:109 :: outer :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("outer")) return
-                if (pathChild == null) {
-                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                    onEntry(AncestorEntryIsNotDefaultEntryState.ByDefault)
-                }
             }
             is AncestorEntryIsNotDefaultEntryState.Run -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:93 :: run :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("run")) return
-                // W3C SCXML 3.4 + §scxml-D-addDescendantStatesToEnter: a
-                // `<parallel>` hands out defaults even when it is only an
-                // ancestor — Appendix D's one exception to the ancestor rule.
-                // The exception has its own exception: not the region the entry
-                // set is already descending into, which `pathChild` names and
-                // which the caller enters with the target's own path.
-                if (pathChild != AncestorEntryIsNotDefaultEntryState.Drive) {
-                    onEntry(AncestorEntryIsNotDefaultEntryState.Drive)
-                }
-                if (pathChild != AncestorEntryIsNotDefaultEntryState.Watch) {
-                    onEntry(AncestorEntryIsNotDefaultEntryState.Watch)
-                }
             }
             is AncestorEntryIsNotDefaultEntryState.Settled -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:159 :: settled :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("settled")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AncestorEntryIsNotDefaultEntryState.Watch -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:149 :: watch :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("watch")) return
-                if (pathChild == null) {
-                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                    onEntry(AncestorEntryIsNotDefaultEntryState.Idle)
-                }
             }
         }
     }
@@ -632,102 +664,53 @@ class AncestorEntryIsNotDefaultEntryStateMachine(
         when (state) {
             is AncestorEntryIsNotDefaultEntryState.Away -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:89 :: away :: _state_body
-                activeStateIds.remove("away")
             }
             is AncestorEntryIsNotDefaultEntryState.ByDefault -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:116 :: by_default :: _state_body
-                activeStateIds.remove("by_default")
             }
             is AncestorEntryIsNotDefaultEntryState.Chosen -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:127 :: chosen :: _state_body
-                activeStateIds.remove("chosen")
             }
             is AncestorEntryIsNotDefaultEntryState.Drive -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:95 :: drive :: _state_body
-                activeStateIds.remove("drive")
             }
             is AncestorEntryIsNotDefaultEntryState.FailDefaulted -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:160 :: failDefaulted :: _state_body
-                activeStateIds.remove("failDefaulted")
             }
             is AncestorEntryIsNotDefaultEntryState.FailIdled -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:162 :: failIdled :: _state_body
-                activeStateIds.remove("failIdled")
             }
             is AncestorEntryIsNotDefaultEntryState.FailLobbied -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:161 :: failLobbied :: _state_body
-                activeStateIds.remove("failLobbied")
             }
             is AncestorEntryIsNotDefaultEntryState.FailTargeted -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:163 :: failTargeted :: _state_body
-                activeStateIds.remove("failTargeted")
             }
             is AncestorEntryIsNotDefaultEntryState.Idle -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:150 :: idle :: _state_body
-                activeStateIds.remove("idle")
             }
             is AncestorEntryIsNotDefaultEntryState.Lobby -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:102 :: lobby :: _state_body
-                activeStateIds.remove("lobby")
             }
             is AncestorEntryIsNotDefaultEntryState.Outer -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:109 :: outer :: _state_body
-                activeStateIds.remove("outer")
             }
             is AncestorEntryIsNotDefaultEntryState.Run -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:93 :: run :: _state_body
-                // W3C SCXML 3.4/3.13: Exit active descendants of parallel state
-                // in reverse document order (deepest states exit first).
-                // Defensive: when called from exitHierarchy, descendants are already
-                // exited and removed from activeStateIds — the contains() checks below
-                // prevent double-exit. This code is needed for direct onExit() calls.
-                val toExit = mutableListOf<Pair<AncestorEntryIsNotDefaultEntryState, Int>>()
-                if (activeStateIds.contains("drive")) {
-                    toExit.add(AncestorEntryIsNotDefaultEntryState.Drive to 2)
-                }
-                if (activeStateIds.contains("lobby")) {
-                    toExit.add(AncestorEntryIsNotDefaultEntryState.Lobby to 3)
-                }
-                if (activeStateIds.contains("outer")) {
-                    toExit.add(AncestorEntryIsNotDefaultEntryState.Outer to 4)
-                }
-                if (activeStateIds.contains("by_default")) {
-                    toExit.add(AncestorEntryIsNotDefaultEntryState.ByDefault to 5)
-                }
-                if (activeStateIds.contains("chosen")) {
-                    toExit.add(AncestorEntryIsNotDefaultEntryState.Chosen to 6)
-                }
-                if (activeStateIds.contains("watch")) {
-                    toExit.add(AncestorEntryIsNotDefaultEntryState.Watch to 7)
-                }
-                if (activeStateIds.contains("idle")) {
-                    toExit.add(AncestorEntryIsNotDefaultEntryState.Idle to 8)
-                }
-                toExit.sortByDescending { it.second }
-                for ((desc, _) in toExit) {
-                    onExit(desc)
-                }
-                activeStateIds.remove("run")
             }
             is AncestorEntryIsNotDefaultEntryState.Settled -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:159 :: settled :: _state_body
-                activeStateIds.remove("settled")
             }
             is AncestorEntryIsNotDefaultEntryState.Watch -> {
                 // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:149 :: watch :: _state_body
-                activeStateIds.remove("watch")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: ancestor_entry_is_not_default_entry.scxml:69 :: _machine
-    override fun executeTransitionActions(
-        source: AncestorEntryIsNotDefaultEntryState,
-        event: AncestorEntryIsNotDefaultEntryEvent?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: AncestorEntryIsNotDefaultEntryState, transitionIndex: Int) {
         when (source) {
         else -> {}
         }

@@ -46,7 +46,46 @@ class AutoforwardDoneInvokeSceSynthInvokeInvWatchStateMachine(
     // as `needs_event_scheduler`.
     override val needsEventScheduler: Boolean = false
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
 
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: AutoforwardDoneInvokeSceSynthInvokeInvWatchState): Boolean = when (state) {
+        is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Missed, is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Saw -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<AutoforwardDoneInvokeSceSynthInvokeInvWatchState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<AutoforwardDoneInvokeSceSynthInvokeInvWatchState, HistoryId>> =
+            listOf(StateTarget(AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Watch))
+
+        // W3C SCXML 3.13: watch's transition 0, as the microstep reads it.
+        val transitionWatchAt0 = EnabledTransition<AutoforwardDoneInvokeSceSynthInvokeInvWatchState, HistoryId>(
+            AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Watch,
+            listOf(StateTarget(AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Saw)),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: watch's transition 1, as the microstep reads it.
+        val transitionWatchAt1 = EnabledTransition<AutoforwardDoneInvokeSceSynthInvokeInvWatchState, HistoryId>(
+            AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Watch,
+            listOf(StateTarget(AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Missed)),
+            1,
+            hasActions = true,
+            isInternal = false,
+        )
+    }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): AutoforwardDoneInvokeSceSynthInvokeInvWatchState? = when (stateId) {
@@ -63,13 +102,7 @@ class AutoforwardDoneInvokeSceSynthInvokeInvWatchStateMachine(
         is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Watch -> "watch"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: AutoforwardDoneInvokeSceSynthInvokeInvWatchState): Boolean = when (state) {
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: AutoforwardDoneInvokeSceSynthInvokeInvWatchState): Int = when (state) {
         is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Missed -> 2
         is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Saw -> 1
@@ -98,52 +131,41 @@ class AutoforwardDoneInvokeSceSynthInvokeInvWatchStateMachine(
 
 
 
-    // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
-    override fun processEvent(
+
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
         state: AutoforwardDoneInvokeSceSynthInvokeInvWatchState,
-        event: AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent
-    ): TransitionResult<AutoforwardDoneInvokeSceSynthInvokeInvWatchState> = when (state) {
-        is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Watch -> processWatch(event)
-        else -> TransitionResult.Ignored
+        event: AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent?
+    ): EnabledTransition<AutoforwardDoneInvokeSceSynthInvokeInvWatchState, HistoryId>? = when (state) {
+        is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Watch -> when {
+            event is AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent.Done.Invoke.InvShort -> transitionWatchAt0
+            event is AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent.Probe -> transitionWatchAt1
+            else -> null
+        }
+        else -> null
     }
-
-
-    // --- Per-State Event Handlers ---
-
-    private fun processWatch(
-        event: AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent
-    ): TransitionResult<AutoforwardDoneInvokeSceSynthInvokeInvWatchState> = when {
-        event is AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent.Done.Invoke.InvShort -> TransitionResult.External(AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Saw, AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Watch, 0)
-
-        event is AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent.Probe -> TransitionResult.External(AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Missed, AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Watch, 1)
-
-        else -> TransitionResult.Ignored
-    }
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:3 :: _machine
-    override fun onEntry(state: AutoforwardDoneInvokeSceSynthInvokeInvWatchState, pathChild: AutoforwardDoneInvokeSceSynthInvokeInvWatchState?) {
+    override fun onEntry(state: AutoforwardDoneInvokeSceSynthInvokeInvWatchState, isDefaultEntry: Boolean) {
         when (state) {
             is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Missed -> {
                 // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:14 :: missed :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("missed")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Saw -> {
                 // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:13 :: saw :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("saw")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Watch -> {
                 // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:5 :: watch :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("watch")) return
             }
         }
     }
@@ -154,27 +176,20 @@ class AutoforwardDoneInvokeSceSynthInvokeInvWatchStateMachine(
         when (state) {
             is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Missed -> {
                 // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:14 :: missed :: _state_body
-                activeStateIds.remove("missed")
             }
             is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Saw -> {
                 // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:13 :: saw :: _state_body
-                activeStateIds.remove("saw")
             }
             is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Watch -> {
                 // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:5 :: watch :: _state_body
-                activeStateIds.remove("watch")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: autoforward_done_invoke__sce_synth_invoke__inv_watch.scxml:3 :: _machine
-    override fun executeTransitionActions(
-        source: AutoforwardDoneInvokeSceSynthInvokeInvWatchState,
-        event: AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: AutoforwardDoneInvokeSceSynthInvokeInvWatchState, transitionIndex: Int) {
         when (source) {
         is AutoforwardDoneInvokeSceSynthInvokeInvWatchState.Watch -> when (transitionIndex) {
             0 -> {

@@ -2862,7 +2862,12 @@ pub fn generate_kotlin_with_templates(
     render_kotlin(&mut env, model, package_prefix)
 }
 
-/// Register model-dependent Kotlin filters (event refs, parallel checks).
+/// Register model-dependent Kotlin filters (event refs).
+///
+/// A `<parallel>`'s completion is no longer one of them: the generated
+/// machine asks the runtime's Appendix D `isInFinalState`, which is recursive
+/// over nested `<parallel>` regions where the expression this used to render
+/// was not.
 fn register_kotlin_dynamic_filters(env: &mut Environment, model: &SCXMLModel) {
     use crate::kotlin;
 
@@ -2875,19 +2880,9 @@ fn register_kotlin_dynamic_filters(env: &mut Environment, model: &SCXMLModel) {
     let event_tree = kotlin::build_event_tree(&kotlin_events);
     let branch_events = kotlin::collect_branch_events(&event_tree, "");
 
-    let branch_events_clone = branch_events.clone();
     env.add_filter("to_event_ref", move |name: String| -> String {
-        kotlin::to_event_ref(&name, &branch_events_clone)
+        kotlin::to_event_ref(&name, &branch_events)
     });
-
-    let parallel_regions = model.parallel_regions.clone();
-    let states_for_check = model.states.clone();
-    env.add_filter(
-        "to_parallel_complete_check",
-        move |parallel_id: String| -> String {
-            kotlin::to_parallel_complete_check(&parallel_id, &parallel_regions, &states_for_check)
-        },
-    );
 }
 
 fn render_kotlin(
@@ -2938,33 +2933,14 @@ fn render_kotlin(
 
     let machine_name = filters::to_pascal_case(model.name.clone());
 
-    // Shared analysis (language-agnostic, from analyzer)
-    let ancestor_chains = analyzer::compute_ancestor_chains(model);
+    // Shared analysis (language-agnostic, from analyzer). The structure the
+    // runtime's Appendix D procedures read — child states, initial targets,
+    // history defaults, each transition's targets as written — the templates
+    // take from the model itself; nothing here resolves a target to a leaf or
+    // routes a transition through its ancestors, because the runtime does both.
     let parent_map = analyzer::compute_parent_map(model);
-    let leaf_map = analyzer::compute_leaf_map(model);
-    let parallel_descendants = analyzer::compute_parallel_descendants(model);
-    let initial_entry_root = analyzer::compute_initial_entry_root(model);
 
     // Kotlin-specific analysis (serde_json output for template rendering)
-    //
-    // The transition numbering is assigned ONCE and read by both halves of the
-    // generator: the selection emits it onto the `TransitionResult`, the action
-    // dispatch switches on it. Neither counts for itself, because two counters
-    // over two different enumerations — own transitions for selection, self +
-    // ancestors for dispatch — is exactly how the dispatch would come to run
-    // another transition's content.
-    let machine_transition_ids = kotlin::assign_machine_transition_ids(model);
-    let effective_transitions =
-        kotlin::compute_effective_transitions(model, &ancestor_chains, &machine_transition_ids);
-    let (ancestors_with_event_transitions, ancestors_with_null_transitions) =
-        kotlin::compute_ancestors_with_transitions(model, &ancestor_chains);
-    let process_event_needs_else =
-        kotlin::process_event_needs_else(model, &ancestors_with_event_transitions);
-    let process_null_event_needs_else =
-        kotlin::process_null_event_needs_else(model, &ancestors_with_null_transitions);
-    let transition_actions_needs_else =
-        kotlin::transition_actions_needs_else(&effective_transitions);
-    let deep_initial_entries = kotlin::compute_deep_initial_entries(model);
     let invoke_entries = kotlin::compute_invoke_entries(model);
 
     // Event tree for sealed interface hierarchy
@@ -2993,20 +2969,8 @@ fn render_kotlin(
         leaf_events => minijinja::Value::from_serialize(&leaf_events),
         license_config => minijinja::Value::from_serialize(license_config()),
         kotlin_package_prefix => package_prefix.unwrap_or("com.sce.generated"),
-        initial_entry_root => initial_entry_root,
-        ancestor_chains => minijinja::Value::from_serialize(&ancestor_chains),
-        effective_transitions => minijinja::Value::from_serialize(&effective_transitions),
-        machine_transition_ids => minijinja::Value::from_serialize(&machine_transition_ids),
         parent_map => minijinja::Value::from_serialize(&parent_map),
-        leaf_map => minijinja::Value::from_serialize(&leaf_map),
-        parallel_descendants => minijinja::Value::from_serialize(&parallel_descendants),
-        deep_initial_entries => minijinja::Value::from_serialize(&deep_initial_entries),
         invoke_entries => minijinja::Value::from_serialize(&invoke_entries),
-        ancestors_with_event_transitions => minijinja::Value::from_serialize(&ancestors_with_event_transitions),
-        ancestors_with_null_transitions => minijinja::Value::from_serialize(&ancestors_with_null_transitions),
-        process_event_needs_else => process_event_needs_else,
-        process_null_event_needs_else => process_null_event_needs_else,
-        transition_actions_needs_else => transition_actions_needs_else,
         event_payload_active => payload.active,
         event_payload_defs => &payload.defs,
         event_payload_policy_fields => &payload.policy_fields,

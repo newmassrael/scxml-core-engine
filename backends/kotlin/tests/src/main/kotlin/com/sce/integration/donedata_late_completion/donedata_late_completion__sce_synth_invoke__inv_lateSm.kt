@@ -46,7 +46,37 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
         super.enterInitialConfiguration()
     }
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
 
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: DonedataLateCompletionSceSynthInvokeInvLateState): Boolean = when (state) {
+        is DonedataLateCompletionSceSynthInvokeInvLateState.Settled -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<DonedataLateCompletionSceSynthInvokeInvLateState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<DonedataLateCompletionSceSynthInvokeInvLateState, HistoryId>> =
+            listOf(StateTarget(DonedataLateCompletionSceSynthInvokeInvLateState.Waiting))
+
+        // W3C SCXML 3.13: waiting's transition 0, as the microstep reads it.
+        val transitionWaitingAt0 = EnabledTransition<DonedataLateCompletionSceSynthInvokeInvLateState, HistoryId>(
+            DonedataLateCompletionSceSynthInvokeInvLateState.Waiting,
+            listOf(StateTarget(DonedataLateCompletionSceSynthInvokeInvLateState.Settled)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+    }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): DonedataLateCompletionSceSynthInvokeInvLateState? = when (stateId) {
@@ -61,13 +91,7 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
         is DonedataLateCompletionSceSynthInvokeInvLateState.Waiting -> "waiting"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: DonedataLateCompletionSceSynthInvokeInvLateState): Boolean = when (state) {
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: DonedataLateCompletionSceSynthInvokeInvLateState): Int = when (state) {
         is DonedataLateCompletionSceSynthInvokeInvLateState.Settled -> 1
         is DonedataLateCompletionSceSynthInvokeInvLateState.Waiting -> 0
@@ -281,40 +305,37 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
     }
 
 
-    // W3C SCXML 3.12: Event processing with script engine condition evaluation
-    override fun processEvent(
-        state: DonedataLateCompletionSceSynthInvokeInvLateState,
-        event: DonedataLateCompletionSceSynthInvokeInvLateEvent
-    ): TransitionResult<DonedataLateCompletionSceSynthInvokeInvLateState> {
-        // W3C SCXML 5.10: Set _event before guard evaluation
+
+    // W3C SCXML 5.10: bind the event as the `_event` its transitions' guards
+    // read — once, before the first guard runs, and not for an eventless
+    // selection, which has no event of its own.
+    override fun bindCurrentEvent(event: DonedataLateCompletionSceSynthInvokeInvLateEvent) {
         setCurrentEventInScriptEngine(event)
-        return when (state) {
-        is DonedataLateCompletionSceSynthInvokeInvLateState.Waiting -> processWaiting(event)
-        else -> TransitionResult.Ignored
-    }
     }
 
-
-    // --- Per-State Event Handlers ---
-
-    private fun processWaiting(
-        event: DonedataLateCompletionSceSynthInvokeInvLateEvent
-    ): TransitionResult<DonedataLateCompletionSceSynthInvokeInvLateState> = when {
-        event is DonedataLateCompletionSceSynthInvokeInvLateEvent.Finish -> TransitionResult.External(DonedataLateCompletionSceSynthInvokeInvLateState.Settled, DonedataLateCompletionSceSynthInvokeInvLateState.Waiting, 0)
-
-        else -> TransitionResult.Ignored
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
+        state: DonedataLateCompletionSceSynthInvokeInvLateState,
+        event: DonedataLateCompletionSceSynthInvokeInvLateEvent?
+    ): EnabledTransition<DonedataLateCompletionSceSynthInvokeInvLateState, HistoryId>? = when (state) {
+        is DonedataLateCompletionSceSynthInvokeInvLateState.Waiting -> when {
+            event is DonedataLateCompletionSceSynthInvokeInvLateEvent.Finish -> transitionWaitingAt0
+            else -> null
+        }
+        else -> null
     }
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:3 :: _machine
-    override fun onEntry(state: DonedataLateCompletionSceSynthInvokeInvLateState, pathChild: DonedataLateCompletionSceSynthInvokeInvLateState?) {
+    override fun onEntry(state: DonedataLateCompletionSceSynthInvokeInvLateState, isDefaultEntry: Boolean) {
         when (state) {
             is DonedataLateCompletionSceSynthInvokeInvLateState.Settled -> {
                 // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:11 :: settled :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("settled")) return
                 // W3C SCXML 5.5: Evaluate donedata for final state
                 run {
                     ensureScriptEngine()
@@ -345,8 +366,6 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
             }
             is DonedataLateCompletionSceSynthInvokeInvLateState.Waiting -> {
                 // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:5 :: waiting :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("waiting")) return
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
@@ -361,23 +380,17 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
         when (state) {
             is DonedataLateCompletionSceSynthInvokeInvLateState.Settled -> {
                 // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:11 :: settled :: _state_body
-                activeStateIds.remove("settled")
             }
             is DonedataLateCompletionSceSynthInvokeInvLateState.Waiting -> {
                 // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:5 :: waiting :: _state_body
-                activeStateIds.remove("waiting")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: donedata_late_completion__sce_synth_invoke__inv_late.scxml:3 :: _machine
-    override fun executeTransitionActions(
-        source: DonedataLateCompletionSceSynthInvokeInvLateState,
-        event: DonedataLateCompletionSceSynthInvokeInvLateEvent?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: DonedataLateCompletionSceSynthInvokeInvLateState, transitionIndex: Int) {
         when (source) {
         else -> {}
         }

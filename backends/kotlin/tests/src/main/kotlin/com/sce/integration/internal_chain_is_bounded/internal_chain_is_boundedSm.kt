@@ -145,7 +145,202 @@ class InternalChainIsBoundedStateMachine(
         super.enterInitialConfiguration()
     }
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
 
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<InternalChainIsBoundedState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<InternalChainIsBoundedState, HistoryId>> =
+            listOf(StateTarget(InternalChainIsBoundedState.Idle))
+
+        // W3C SCXML 3.13: alt's transition 0, as the microstep reads it.
+        val transitionAltAt0 = EnabledTransition<InternalChainIsBoundedState, HistoryId>(
+            InternalChainIsBoundedState.Alt,
+            emptyList(),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: alt's transition 1, as the microstep reads it.
+        val transitionAltAt1 = EnabledTransition<InternalChainIsBoundedState, HistoryId>(
+            InternalChainIsBoundedState.Alt,
+            emptyList(),
+            1,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: alt's transition 2, as the microstep reads it.
+        val transitionAltAt2 = EnabledTransition<InternalChainIsBoundedState, HistoryId>(
+            InternalChainIsBoundedState.Alt,
+            emptyList(),
+            2,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: bounded's transition 0, as the microstep reads it.
+        val transitionBoundedAt0 = EnabledTransition<InternalChainIsBoundedState, HistoryId>(
+            InternalChainIsBoundedState.Bounded,
+            emptyList(),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: bounded's transition 1, as the microstep reads it.
+        val transitionBoundedAt1 = EnabledTransition<InternalChainIsBoundedState, HistoryId>(
+            InternalChainIsBoundedState.Bounded,
+            emptyList(),
+            1,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: bounded's transition 2, as the microstep reads it.
+        val transitionBoundedAt2 = EnabledTransition<InternalChainIsBoundedState, HistoryId>(
+            InternalChainIsBoundedState.Bounded,
+            emptyList(),
+            2,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: idle's transition 0, as the microstep reads it.
+        val transitionIdleAt0 = EnabledTransition<InternalChainIsBoundedState, HistoryId>(
+            InternalChainIsBoundedState.Idle,
+            listOf(StateTarget(InternalChainIsBoundedState.Idle)),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: idle's transition 1, as the microstep reads it.
+        val transitionIdleAt1 = EnabledTransition<InternalChainIsBoundedState, HistoryId>(
+            InternalChainIsBoundedState.Idle,
+            listOf(StateTarget(InternalChainIsBoundedState.Bounded)),
+            1,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: idle's transition 2, as the microstep reads it.
+        val transitionIdleAt2 = EnabledTransition<InternalChainIsBoundedState, HistoryId>(
+            InternalChainIsBoundedState.Idle,
+            listOf(StateTarget(InternalChainIsBoundedState.Spin)),
+            2,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: idle's transition 3, as the microstep reads it.
+        val transitionIdleAt3 = EnabledTransition<InternalChainIsBoundedState, HistoryId>(
+            InternalChainIsBoundedState.Idle,
+            listOf(StateTarget(InternalChainIsBoundedState.Resuming)),
+            3,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: idle's transition 4, as the microstep reads it.
+        val transitionIdleAt4 = EnabledTransition<InternalChainIsBoundedState, HistoryId>(
+            InternalChainIsBoundedState.Idle,
+            listOf(StateTarget(InternalChainIsBoundedState.Alt)),
+            4,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: idle's transition 5, as the microstep reads it.
+        val transitionIdleAt5 = EnabledTransition<InternalChainIsBoundedState, HistoryId>(
+            InternalChainIsBoundedState.Idle,
+            listOf(StateTarget(InternalChainIsBoundedState.Ignoring)),
+            5,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: ignoring's transition 0, as the microstep reads it.
+        val transitionIgnoringAt0 = EnabledTransition<InternalChainIsBoundedState, HistoryId>(
+            InternalChainIsBoundedState.Ignoring,
+            emptyList(),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: ignoring's transition 1, as the microstep reads it.
+        val transitionIgnoringAt1 = EnabledTransition<InternalChainIsBoundedState, HistoryId>(
+            InternalChainIsBoundedState.Ignoring,
+            emptyList(),
+            1,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: ignoring's transition 2, as the microstep reads it.
+        val transitionIgnoringAt2 = EnabledTransition<InternalChainIsBoundedState, HistoryId>(
+            InternalChainIsBoundedState.Ignoring,
+            emptyList(),
+            2,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: resuming's transition 0, as the microstep reads it.
+        val transitionResumingAt0 = EnabledTransition<InternalChainIsBoundedState, HistoryId>(
+            InternalChainIsBoundedState.Resuming,
+            emptyList(),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: resuming's transition 1, as the microstep reads it.
+        val transitionResumingAt1 = EnabledTransition<InternalChainIsBoundedState, HistoryId>(
+            InternalChainIsBoundedState.Resuming,
+            emptyList(),
+            1,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: resuming's transition 2, as the microstep reads it.
+        val transitionResumingAt2 = EnabledTransition<InternalChainIsBoundedState, HistoryId>(
+            InternalChainIsBoundedState.Resuming,
+            emptyList(),
+            2,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: spin's transition 0, as the microstep reads it.
+        val transitionSpinAt0 = EnabledTransition<InternalChainIsBoundedState, HistoryId>(
+            InternalChainIsBoundedState.Spin,
+            emptyList(),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: spin's transition 1, as the microstep reads it.
+        val transitionSpinAt1 = EnabledTransition<InternalChainIsBoundedState, HistoryId>(
+            InternalChainIsBoundedState.Spin,
+            emptyList(),
+            1,
+            hasActions = true,
+            isInternal = false,
+        )
+    }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): InternalChainIsBoundedState? = when (stateId) {
@@ -168,13 +363,7 @@ class InternalChainIsBoundedStateMachine(
         is InternalChainIsBoundedState.Spin -> "spin"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: InternalChainIsBoundedState): Boolean = when (state) {
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: InternalChainIsBoundedState): Int = when (state) {
         is InternalChainIsBoundedState.Alt -> 4
         is InternalChainIsBoundedState.Bounded -> 1
@@ -459,147 +648,85 @@ class InternalChainIsBoundedStateMachine(
     }
 
 
-    // W3C SCXML 3.12: Event processing with script engine condition evaluation
-    override fun processEvent(
-        state: InternalChainIsBoundedState,
-        event: InternalChainIsBoundedEvent
-    ): TransitionResult<InternalChainIsBoundedState> {
-        // W3C SCXML 5.10: Set _event before guard evaluation
+
+    // W3C SCXML 5.10: bind the event as the `_event` its transitions' guards
+    // read — once, before the first guard runs, and not for an eventless
+    // selection, which has no event of its own.
+    override fun bindCurrentEvent(event: InternalChainIsBoundedEvent) {
         setCurrentEventInScriptEngine(event)
-        return when (state) {
-        is InternalChainIsBoundedState.Alt -> processAlt(event)
-        is InternalChainIsBoundedState.Bounded -> processBounded(event)
-        is InternalChainIsBoundedState.Idle -> processIdle(event)
-        is InternalChainIsBoundedState.Ignoring -> processIgnoring(event)
-        is InternalChainIsBoundedState.Resuming -> processResuming(event)
-        is InternalChainIsBoundedState.Spin -> processSpin(event)
-    }
     }
 
-    // W3C SCXML Appendix D: Eventless (null) transition check
-    override fun processNullEvent(
-        state: InternalChainIsBoundedState
-    ): TransitionResult<InternalChainIsBoundedState> = when (state) {
-        is InternalChainIsBoundedState.Alt -> processNullAlt()
-        else -> TransitionResult.Ignored
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
+        state: InternalChainIsBoundedState,
+        event: InternalChainIsBoundedEvent?
+    ): EnabledTransition<InternalChainIsBoundedState, HistoryId>? = when (state) {
+        is InternalChainIsBoundedState.Alt -> when {
+            event is InternalChainIsBoundedEvent.Tick -> transitionAltAt0
+            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(pending, 1)", "pending == 1")) -> transitionAltAt1
+            event is InternalChainIsBoundedEvent.Poke -> transitionAltAt2
+            else -> null
+        }
+        is InternalChainIsBoundedState.Bounded -> when {
+            event is InternalChainIsBoundedEvent.Link && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(laps < 999)", "laps < 999")) -> transitionBoundedAt0
+            event is InternalChainIsBoundedEvent.Link -> transitionBoundedAt1
+            event is InternalChainIsBoundedEvent.Poke -> transitionBoundedAt2
+            else -> null
+        }
+        is InternalChainIsBoundedState.Idle -> when {
+            event is InternalChainIsBoundedEvent.Poke -> transitionIdleAt0
+            event is InternalChainIsBoundedEvent.Bounded -> transitionIdleAt1
+            event is InternalChainIsBoundedEvent.Spin -> transitionIdleAt2
+            event is InternalChainIsBoundedEvent.Resume -> transitionIdleAt3
+            event is InternalChainIsBoundedEvent.Alternate -> transitionIdleAt4
+            event is InternalChainIsBoundedEvent.Unanswered -> transitionIdleAt5
+            else -> null
+        }
+        is InternalChainIsBoundedState.Ignoring -> when {
+            event is InternalChainIsBoundedEvent.Beatless && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(ignores < 999)", "ignores < 999")) -> transitionIgnoringAt0
+            event is InternalChainIsBoundedEvent.Beatless -> transitionIgnoringAt1
+            event is InternalChainIsBoundedEvent.Poke -> transitionIgnoringAt2
+            else -> null
+        }
+        is InternalChainIsBoundedState.Resuming -> when {
+            event is InternalChainIsBoundedEvent.Beat && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(beats < 1499)", "beats < 1499")) -> transitionResumingAt0
+            event is InternalChainIsBoundedEvent.Beat -> transitionResumingAt1
+            event is InternalChainIsBoundedEvent.Poke -> transitionResumingAt2
+            else -> null
+        }
+        is InternalChainIsBoundedState.Spin -> when {
+            event is InternalChainIsBoundedEvent.Link -> transitionSpinAt0
+            event is InternalChainIsBoundedEvent.Poke -> transitionSpinAt1
+            else -> null
+        }
     }
-
-    // --- Per-State Null (Eventless) Handlers ---
-
-    private fun processNullAlt(
-    ): TransitionResult<InternalChainIsBoundedState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(pending, 1)", "pending == 1")) -> TransitionResult.Internal(1)
-        else -> TransitionResult.Ignored
-    }
-
-    // --- Per-State Event Handlers ---
-
-    private fun processAlt(
-        event: InternalChainIsBoundedEvent
-    ): TransitionResult<InternalChainIsBoundedState> = when {
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is InternalChainIsBoundedEvent.Tick -> TransitionResult.Internal(0)
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is InternalChainIsBoundedEvent.Poke -> TransitionResult.Internal(2)
-        else -> TransitionResult.Ignored
-    }
-
-    private fun processBounded(
-        event: InternalChainIsBoundedEvent
-    ): TransitionResult<InternalChainIsBoundedState> = when {
-        event is InternalChainIsBoundedEvent.Link && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(laps < 999)", "laps < 999")) -> TransitionResult.Internal(3)
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is InternalChainIsBoundedEvent.Link -> TransitionResult.Internal(4)
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is InternalChainIsBoundedEvent.Poke -> TransitionResult.Internal(5)
-        else -> TransitionResult.Ignored
-    }
-
-    private fun processIdle(
-        event: InternalChainIsBoundedEvent
-    ): TransitionResult<InternalChainIsBoundedState> = when {
-        event is InternalChainIsBoundedEvent.Poke -> TransitionResult.External(InternalChainIsBoundedState.Idle, InternalChainIsBoundedState.Idle, 6)
-
-        event is InternalChainIsBoundedEvent.Bounded -> TransitionResult.External(InternalChainIsBoundedState.Bounded, InternalChainIsBoundedState.Idle, 7)
-
-        event is InternalChainIsBoundedEvent.Spin -> TransitionResult.External(InternalChainIsBoundedState.Spin, InternalChainIsBoundedState.Idle, 8)
-
-        event is InternalChainIsBoundedEvent.Resume -> TransitionResult.External(InternalChainIsBoundedState.Resuming, InternalChainIsBoundedState.Idle, 9)
-
-        event is InternalChainIsBoundedEvent.Alternate -> TransitionResult.External(InternalChainIsBoundedState.Alt, InternalChainIsBoundedState.Idle, 10)
-
-        event is InternalChainIsBoundedEvent.Unanswered -> TransitionResult.External(InternalChainIsBoundedState.Ignoring, InternalChainIsBoundedState.Idle, 11)
-
-        else -> TransitionResult.Ignored
-    }
-
-    private fun processIgnoring(
-        event: InternalChainIsBoundedEvent
-    ): TransitionResult<InternalChainIsBoundedState> = when {
-        event is InternalChainIsBoundedEvent.Beatless && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(ignores < 999)", "ignores < 999")) -> TransitionResult.Internal(12)
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is InternalChainIsBoundedEvent.Beatless -> TransitionResult.Internal(13)
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is InternalChainIsBoundedEvent.Poke -> TransitionResult.Internal(14)
-        else -> TransitionResult.Ignored
-    }
-
-    private fun processResuming(
-        event: InternalChainIsBoundedEvent
-    ): TransitionResult<InternalChainIsBoundedState> = when {
-        event is InternalChainIsBoundedEvent.Beat && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(beats < 1499)", "beats < 1499")) -> TransitionResult.Internal(15)
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is InternalChainIsBoundedEvent.Beat -> TransitionResult.Internal(16)
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is InternalChainIsBoundedEvent.Poke -> TransitionResult.Internal(17)
-        else -> TransitionResult.Ignored
-    }
-
-    private fun processSpin(
-        event: InternalChainIsBoundedEvent
-    ): TransitionResult<InternalChainIsBoundedState> = when {
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is InternalChainIsBoundedEvent.Link -> TransitionResult.Internal(18)
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is InternalChainIsBoundedEvent.Poke -> TransitionResult.Internal(19)
-        else -> TransitionResult.Ignored
-    }
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: internal_chain_is_bounded.scxml:90 :: _machine
-    override fun onEntry(state: InternalChainIsBoundedState, pathChild: InternalChainIsBoundedState?) {
+    override fun onEntry(state: InternalChainIsBoundedState, isDefaultEntry: Boolean) {
         when (state) {
             is InternalChainIsBoundedState.Alt -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:211 :: alt :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("alt")) return
             }
             is InternalChainIsBoundedState.Bounded -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:153 :: bounded :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("bounded")) return
             }
             is InternalChainIsBoundedState.Idle -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:122 :: idle :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("idle")) return
             }
             is InternalChainIsBoundedState.Ignoring -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:244 :: ignoring :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("ignoring")) return
             }
             is InternalChainIsBoundedState.Resuming -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:192 :: resuming :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("resuming")) return
             }
             is InternalChainIsBoundedState.Spin -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:174 :: spin :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("spin")) return
             }
         }
     }
@@ -610,39 +737,29 @@ class InternalChainIsBoundedStateMachine(
         when (state) {
             is InternalChainIsBoundedState.Alt -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:211 :: alt :: _state_body
-                activeStateIds.remove("alt")
             }
             is InternalChainIsBoundedState.Bounded -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:153 :: bounded :: _state_body
-                activeStateIds.remove("bounded")
             }
             is InternalChainIsBoundedState.Idle -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:122 :: idle :: _state_body
-                activeStateIds.remove("idle")
             }
             is InternalChainIsBoundedState.Ignoring -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:244 :: ignoring :: _state_body
-                activeStateIds.remove("ignoring")
             }
             is InternalChainIsBoundedState.Resuming -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:192 :: resuming :: _state_body
-                activeStateIds.remove("resuming")
             }
             is InternalChainIsBoundedState.Spin -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:174 :: spin :: _state_body
-                activeStateIds.remove("spin")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: internal_chain_is_bounded.scxml:90 :: _machine
-    override fun executeTransitionActions(
-        source: InternalChainIsBoundedState,
-        event: InternalChainIsBoundedEvent?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: InternalChainIsBoundedState, transitionIndex: Int) {
         when (source) {
         is InternalChainIsBoundedState.Alt -> when (transitionIndex) {
             0 -> {
@@ -671,7 +788,7 @@ class InternalChainIsBoundedStateMachine(
             else -> {}
         }
         is InternalChainIsBoundedState.Bounded -> when (transitionIndex) {
-            3 -> {
+            0 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:154 :: bounded :: _transition_0
 
 
@@ -679,13 +796,13 @@ class InternalChainIsBoundedStateMachine(
 
             raiseInternal(InternalChainIsBoundedEvent.Link)
             }
-            4 -> {
+            1 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:158 :: bounded :: _transition_1
 
 
             executeAssign(com.sce.runtime.ScriptSource.lua("laps", "laps"), com.sce.runtime.ScriptSource.lua("_scxml_add(laps, 1)", "laps + 1"))
             }
-            5 -> {
+            2 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:163 :: bounded :: _transition_2
 
 
@@ -694,33 +811,33 @@ class InternalChainIsBoundedStateMachine(
             else -> {}
         }
         is InternalChainIsBoundedState.Idle -> when (transitionIndex) {
-            6 -> {
+            0 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:123 :: idle :: _transition_0
 
 
             executeAssign(com.sce.runtime.ScriptSource.lua("pokes", "pokes"), com.sce.runtime.ScriptSource.lua("_scxml_add(pokes, 1)", "pokes + 1"))
             }
-            7 -> {
+            1 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:126 :: idle :: _transition_1
 
             raiseInternal(InternalChainIsBoundedEvent.Link)
             }
-            8 -> {
+            2 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:129 :: idle :: _transition_2
 
             raiseInternal(InternalChainIsBoundedEvent.Link)
             }
-            9 -> {
+            3 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:132 :: idle :: _transition_3
 
             raiseInternal(InternalChainIsBoundedEvent.Beat)
             }
-            10 -> {
+            4 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:135 :: idle :: _transition_4
 
             raiseInternal(InternalChainIsBoundedEvent.Tick)
             }
-            11 -> {
+            5 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:138 :: idle :: _transition_5
 
             raiseInternal(InternalChainIsBoundedEvent.Beatless)
@@ -728,7 +845,7 @@ class InternalChainIsBoundedStateMachine(
             else -> {}
         }
         is InternalChainIsBoundedState.Ignoring -> when (transitionIndex) {
-            12 -> {
+            0 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:245 :: ignoring :: _transition_0
 
 
@@ -738,13 +855,13 @@ class InternalChainIsBoundedStateMachine(
 
             raiseInternal(InternalChainIsBoundedEvent.Beatless)
             }
-            13 -> {
+            1 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:250 :: ignoring :: _transition_1
 
 
             executeAssign(com.sce.runtime.ScriptSource.lua("ignores", "ignores"), com.sce.runtime.ScriptSource.lua("_scxml_add(ignores, 1)", "ignores + 1"))
             }
-            14 -> {
+            2 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:253 :: ignoring :: _transition_2
 
 
@@ -753,7 +870,7 @@ class InternalChainIsBoundedStateMachine(
             else -> {}
         }
         is InternalChainIsBoundedState.Resuming -> when (transitionIndex) {
-            15 -> {
+            0 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:193 :: resuming :: _transition_0
 
 
@@ -761,13 +878,13 @@ class InternalChainIsBoundedStateMachine(
 
             raiseInternal(InternalChainIsBoundedEvent.Beat)
             }
-            16 -> {
+            1 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:197 :: resuming :: _transition_1
 
 
             executeAssign(com.sce.runtime.ScriptSource.lua("beats", "beats"), com.sce.runtime.ScriptSource.lua("_scxml_add(beats, 1)", "beats + 1"))
             }
-            17 -> {
+            2 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:200 :: resuming :: _transition_2
 
 
@@ -776,7 +893,7 @@ class InternalChainIsBoundedStateMachine(
             else -> {}
         }
         is InternalChainIsBoundedState.Spin -> when (transitionIndex) {
-            18 -> {
+            0 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:175 :: spin :: _transition_0
 
 
@@ -784,7 +901,7 @@ class InternalChainIsBoundedStateMachine(
 
             raiseInternal(InternalChainIsBoundedEvent.Link)
             }
-            19 -> {
+            1 -> {
                 // SCE-MAP: internal_chain_is_bounded.scxml:179 :: spin :: _transition_1
 
 
