@@ -9,6 +9,10 @@
 #
 # Anchors are literal slices of the source; an edit that moves one is
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
+#
+# The first replacement names only the fields the old reader set and takes
+# the rest from `Variable::default()`: listing every field made it stop
+# compiling each time `Variable` grew one, which reads as INCONCLUSIVE.
 
 mutation_tests -p sce-build --features cli --test a_states_data_is_read_as_the_documents
 mutation_targets sce-build/src/parser.rs
@@ -24,8 +28,8 @@ edit("sce-build/src/parser.rs",
                         expr: data.attribute("expr").unwrap_or("").to_string(),
                         src: data.attribute("src").unwrap_or("").to_string(),
                         content,
-                        var_type: String::new(),
                         source_location: source_location_of(&data, source_name),
+                        ..Variable::default()
                     });''')
 PY
 
