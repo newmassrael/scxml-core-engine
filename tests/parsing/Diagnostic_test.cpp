@@ -1120,6 +1120,35 @@ TEST(SemanticErrorWire, NoStatesConformsToV1Schema) {
     EXPECT_FALSE(j.contains("fix"));
 }
 
+TEST(SemanticErrorWire, MissingAttributeConformsToV1Schema) {
+    // An `<assign>` with no `location` (W3C SCXML 5.4.1). The Rust arm of
+    // `validation/missing-attribute` carries the repair as `add_attribute`
+    // on the element that lacks it, and no `actual`; the C++ leaf mirrors it.
+    const SemanticMissingAttribute err(/*element=*/"<assign>", /*attr=*/"location");
+    const auto j = err.to_json();
+    semantic_conformance::assertSemanticBase(j, "validation/missing-attribute");
+    conformance::assertNoUnexpectedKeys(j);
+    EXPECT_EQ(j.at("message").get<std::string>(), "<assign> must have an 'location' attribute");
+    ASSERT_TRUE(j.contains("fix")) << j.dump();
+    EXPECT_EQ(j.at("fix").at("kind").get<std::string>(), "add_attribute");
+    EXPECT_EQ(j.at("fix").at("element").get<std::string>(), "<assign>");
+    EXPECT_EQ(j.at("fix").at("attr").get<std::string>(), "location");
+    EXPECT_FALSE(j.contains("actual"));
+}
+
+TEST(SemanticErrorWire, IncompatibleAttributesConformsToV1Schema) {
+    // An `<assign>` carrying `expr` beside children (W3C SCXML 5.4.1). The
+    // Rust arm of `validation/incompatible-attributes` proposes no repair —
+    // which of the two to drop is the author's call — and carries no `actual`.
+    const SemanticIncompatibleAttributes err(/*element=*/"<assign>", /*detail=*/"'expr' must not occur here");
+    const auto j = err.to_json();
+    semantic_conformance::assertSemanticBase(j, "validation/incompatible-attributes");
+    conformance::assertNoUnexpectedKeys(j);
+    EXPECT_EQ(j.at("message").get<std::string>(), "<assign>: 'expr' must not occur here");
+    EXPECT_FALSE(j.contains("fix"));
+    EXPECT_FALSE(j.contains("actual"));
+}
+
 TEST(SemanticErrorWire, TopLevelScriptUnloadedConformsToV1Schema) {
     // The 1 NEW wire code §wire-W5 D2 introduces. Carries `spec` field
     // ("W3C SCXML §5.8") because the code has a spec_anchor on the
