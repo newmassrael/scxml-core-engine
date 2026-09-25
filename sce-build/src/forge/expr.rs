@@ -5524,8 +5524,31 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
             // the algorithm `bytes` param type (`[]byte`).
             format!("[]byte({})", emit_go(source, InferredType::Unknown)?)
         }
-        ExprKind::Checked { .. } => {
-            return Err(checked_arithmetic_unlowered("Go").at(expr.span.clone()))
+        // SCE_FORGE.md §3.4.1: the runtime's helper for the operation's own
+        // width, which records a failure in the body's `sceFailure` and
+        // yields 0; the statement around it returns that failure. Go has no
+        // overloading, so the width is in the helper's name, and each operand
+        // is spelled at that width so the call type-checks.
+        ExprKind::Checked { op, left, right } => {
+            let InferredType::Int { signed, bits } = expr.ty else {
+                return Err(ExprError::UnsupportedConstruct {
+                    construct: format!("a checked operation of type {:?}", expr.ty),
+                    observed: None,
+                }
+                .at(expr.span.clone()));
+            };
+            let mut operands = vec!["&sceFailure".to_string(), emit_go(left, expr.ty)?];
+            if let Some(right) = right {
+                operands.push(emit_go(right, expr.ty)?);
+            }
+            let helper = op.helper();
+            format!(
+                "scealgorithm.{}{}{}{bits}({})",
+                helper[..1].to_ascii_uppercase(),
+                &helper[1..],
+                if signed { "Int" } else { "Uint" },
+                operands.join(", ")
+            )
         }
     })
 }

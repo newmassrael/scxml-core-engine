@@ -17,6 +17,11 @@
    struct whose tags are the schema's field ids, and the payload is filled
    from it field by field; `fields` carries each field's Go name, derived
    from the schema document when the harness renders. #}
+{# A `may-fail` algorithm (SCE_FORGE.md §3.4.1) returns `(value, error)`. A
+   case that names a failure (`"fails": "overflow"`) carries no `expected`;
+   it is judged by the error's contract name before anything reads
+   `expected`, and every other case reads the value. #}
+{% set call %}{{ f.name }}.{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %}){% endset %}
 	cases := ref.pureCases(t, "{{ f.ref_section }}", "{{ f.name }}")
 	for _, c := range cases {
 {% for arg_ty in f.args %}
@@ -45,6 +50,19 @@
 		unmarshalOrFatal(t, c.Args[{{ loop.index0 }}], &arg{{ loop.index0 }}, "{{ f.name }} arg{{ loop.index0 }}")
 {% endif %}
 {% endfor %}
+{% if f.may_fail %}
+		returned, err := {{ call }}
+		if c.Fails != nil {
+			if err == nil || err.Error() != *c.Fails {
+				t.Errorf("{{ f.name }}: expected failure %s, got value %v err %v", *c.Fails, returned, err)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("{{ f.name }}: expected a value, failed with %v", err)
+			continue
+		}
+{% endif %}
 {% if f.output.record is defined %}
 		var expected struct {
 {% for fld in f.output.fields %}
@@ -52,7 +70,8 @@
 {% endfor %}
 		}
 		unmarshalOrFatal(t, c.Expected, &expected, "{{ f.name }} expected")
-		actual := {{ f.name }}.{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+		actual := {% if f.may_fail %}returned{% else %}{{ call }}{% endif %}
+
 {% for fld in f.output.fields %}
 		if actual.{{ fld.ident }} != expected.{{ fld.ident }} {
 			t.Errorf("{{ f.name }}.{{ fld.name }}: actual=%v expected=%v", actual.{{ fld.ident }}, expected.{{ fld.ident }})
@@ -63,7 +82,8 @@
    then element by element. #}
 		var expected []{{ f.output.list_of | go_type }}
 		unmarshalOrFatal(t, c.Expected, &expected, "{{ f.name }} expected")
-		actual := {{ f.name }}.{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+		actual := {% if f.may_fail %}returned{% else %}{{ call }}{% endif %}
+
 		if len(actual) != len(expected) {
 			t.Errorf("{{ f.name }}: actual=%v expected=%v", actual, expected)
 			continue
@@ -80,7 +100,8 @@
 {% else %}
 		var expected {{ f.output.type | go_type }}
 		unmarshalOrFatal(t, c.Expected, &expected, "{{ f.name }} expected")
-		actual := {{ f.name }}.{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+		actual := {% if f.may_fail %}returned{% else %}{{ call }}{% endif %}
+
 {% if f.output.compare == "tolerance" %}
 		assertClose(t, float64(actual), float64(expected), ref.FloatTolerance, "{{ f.name }}")
 {% else %}

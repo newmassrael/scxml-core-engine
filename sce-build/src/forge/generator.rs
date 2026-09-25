@@ -22215,6 +22215,10 @@ fn lower_algorithm_stmt(
                         Language::C11 if c11_block => {
                             channel.c11_if_header(pad, &cond_lowered, indent)
                         }
+                        Language::Go if channel.checks_conditions() => (
+                            channel.go_if_header(pad, &cond_lowered, indent),
+                            String::new(),
+                        ),
                         _ => (format!("{pad}if ({cond_lowered}) {{\n"), String::new()),
                     };
                     out.push_str(&header_open);
@@ -22267,6 +22271,9 @@ fn lower_algorithm_stmt(
                     // wrap under `unused_parens`.
                     let header_open = match lang {
                         Language::Rust => format!("{pad}while {cond_lowered} {{\n"),
+                        Language::Go if channel.checks_conditions() => {
+                            channel.go_for_header(pad, &cond_lowered, indent)
+                        }
                         Language::Go => format!("{pad}for {cond_lowered} {{\n"),
                         Language::Cpp | Language::C11 if channel.checks_conditions() => {
                             channel.checked_while_header(pad, &cond_lowered, indent)
@@ -23224,7 +23231,7 @@ impl ReturnChannel<'_> {
     /// rather than leaving the expression that failed.
     fn records_failures(&self) -> bool {
         use crate::generator::Language;
-        self.may_fail && matches!(self.lang, Language::Cpp | Language::C11)
+        self.may_fail && matches!(self.lang, Language::Cpp | Language::C11 | Language::Go)
     }
 
     /// C11's statement returning the buffer `local` whose append ran past its
@@ -23280,6 +23287,17 @@ impl ReturnChannel<'_> {
                 check = self.check(&format!("{pad}    ")),
                 result = self.c11_result,
             ),
+            // Declared at the value type: a bare literal would otherwise be
+            // an `int` that the named result does not accept.
+            Language::Go if self.may_fail => format!(
+                "{pad}{{\n\
+                 {pad}    var sceReturned {ty} = {value}\n\
+                 {check}\
+                 {pad}    return sceReturned, nil\n\
+                 {pad}}}\n",
+                ty = self.value_type,
+                check = self.check(&format!("{pad}    ")),
+            ),
             Language::Python | Language::Kotlin | Language::Go => format!("{pad}return {value}\n"),
             Language::Rust | Language::Cpp | Language::C11 => format!("{pad}return {value};\n"),
         }
@@ -23299,8 +23317,39 @@ impl ReturnChannel<'_> {
                 "{pad}if (sce_failure_.failed) {{ return ({}){{ .ok = false, .why = sce_failure_.error }}; }}\n",
                 self.c11_result
             ),
+            // `sceValue` is the named result, still its zero value.
+            Language::Go if self.may_fail => format!(
+                "{pad}if sceFailure.Failed() {{\n\
+                 {pad}    return sceValue, sceFailure.Err()\n\
+                 {pad}}}\n"
+            ),
             _ => String::new(),
         }
+    }
+
+    /// The Go `if` header for `cond`, computed before the branch for the
+    /// reason [`Self::cpp_if_header`] gives — Go's `if` takes an initializer
+    /// as C++17's does.
+    fn go_if_header(&self, pad: &str, cond: &str, depth: usize) -> String {
+        format!(
+            "{pad}if sceCond{depth} := {cond}; sceFailure.Failed() {{\n\
+             {pad}    return sceValue, sceFailure.Err()\n\
+             {pad}}} else if sceCond{depth} {{\n"
+        )
+    }
+
+    /// The Go loop head for `cond`: Go's condition-only loop is `for`, so the
+    /// condition is computed at the top of an unconditional one.
+    fn go_for_header(&self, pad: &str, cond: &str, depth: usize) -> String {
+        format!(
+            "{pad}for {{\n\
+             {pad}    sceCond{depth} := {cond}\n\
+             {check}\
+             {pad}    if !sceCond{depth} {{\n\
+             {pad}        break\n\
+             {pad}    }}\n",
+            check = self.check(&format!("{pad}    ")),
+        )
     }
 
     /// The C11 `if` head for `cond` and the brace it leaves open: C has no
@@ -23364,6 +23413,7 @@ const MAY_FAIL_BACKENDS: &[crate::generator::Language] = &[
     crate::generator::Language::Kotlin,
     crate::generator::Language::Cpp,
     crate::generator::Language::C11,
+    crate::generator::Language::Go,
 ];
 
 /// Whether `lang` lowers a `may-fail` algorithm — the question the
@@ -23822,6 +23872,8 @@ fn render_algorithm(
         Language::Cpp if may_fail => channel.cpp_result(),
         // A buffer return is already its result struct (§4.12).
         Language::C11 if may_fail && !returns_buffer => c11_result_name.clone(),
+        // Named, so a failure returns the value's zero (`ReturnChannel::check`).
+        Language::Go if may_fail => format!("(sceValue {return_type}, sceErr error)"),
         _ => return_type,
     };
 

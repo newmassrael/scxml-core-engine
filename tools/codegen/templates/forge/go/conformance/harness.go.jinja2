@@ -87,6 +87,9 @@ type pureSpec struct {
 type pureCase struct {
 	Args     []json.RawMessage `json:"args"`
 	Expected json.RawMessage   `json:"expected"`
+	// Fails names the failure a may-fail algorithm's case expects in place
+	// of a value (SCE_FORGE.md §3.4.1); nil for every other case.
+	Fails *string `json:"fails,omitempty"`
 }
 
 // procedureSpec / procedureCase live under the same `pure_functions` section

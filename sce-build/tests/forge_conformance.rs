@@ -441,6 +441,15 @@ fn forge_cpp_algorithm_checked_arith() {
 }
 
 #[test]
+fn forge_go_algorithm_checked_arith() {
+    assert_standalone_forge_lang(
+        "algorithm_checked_arith",
+        "algorithm_checked_arith.go",
+        sce_build::generator::Language::Go,
+    );
+}
+
+#[test]
 fn forge_c11_algorithm_checked_arith() {
     assert_standalone_forge_lang(
         "algorithm_checked_arith",

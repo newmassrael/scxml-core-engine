@@ -13,9 +13,12 @@
 // parameters lower to `[]byte` (RFC §synth-5-J-5 emitter table).
 
 package {{ package }}
-{% if all_imports %}
+{% if all_imports or may_fail %}
 
 import (
+{% if may_fail %}
+	scealgorithm "github.com/newmassrael/sce-forge-runtime/algorithm"
+{% endif %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}
 {% endfor %}
@@ -23,5 +26,10 @@ import (
 {% endif %}
 
 {{ consts_prelude }}func {{ primary_symbol }}({{ params_str }}){% if has_return %} {{ return_type }}{% endif %} {
+{% if may_fail %}
+    // SCE_FORGE.md §3.4.1: each checked operation records a failure here, and
+    // the statement around it returns it before the next statement runs.
+    var sceFailure scealgorithm.Failure
+{% endif %}
 {{ body }}
 }
