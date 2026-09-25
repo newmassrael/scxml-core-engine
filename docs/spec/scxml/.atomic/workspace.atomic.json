@@ -6496,6 +6496,11 @@
           "file": "sce/src/parsing/ActionParser.cpp",
           "symbol": "SCE::ActionParser::parseActionNode",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "content_body",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",

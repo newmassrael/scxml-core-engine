@@ -2797,6 +2797,7 @@ fn parse_scxml_invoke(
     let mut mesh_event = String::new();
     let mut deadline_ms = None;
     let mut unsupported_src = String::new();
+    let mut unsupported_content = String::new();
     let mut host_served = false;
 
     for (k, sub) in group(kids) {
@@ -2823,6 +2824,9 @@ fn parse_scxml_invoke(
             "mesh-transport" => scxml.remote_mesh_transport = Some(undo(value, k.number)?),
             "srcexpr" => hybrid.srcexpr = undo(value, k.number)?,
             "contentexpr" => hybrid.contentexpr = undo(value, k.number)?,
+            // Only a host-run invoke prints an inline body as text; the
+            // scxml arm renders its inline child as a `child:` block.
+            "content" => unsupported_content = undo(value, k.number)?,
             "candidates" => {
                 let written = undo(value, k.number)?;
                 hybrid.candidates = Vec::new();
@@ -2910,6 +2914,11 @@ fn parse_scxml_invoke(
             base,
             invoke_type: other.to_string(),
             src: unsupported_src,
+            // The same clauses the other arms read, landing on this arm.
+            srcexpr: hybrid.srcexpr,
+            namelist: scxml.namelist,
+            content: unsupported_content,
+            contentexpr: hybrid.contentexpr,
             host_served,
         }),
     })

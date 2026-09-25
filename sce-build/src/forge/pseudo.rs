@@ -1944,6 +1944,21 @@ fn render_invoke(inv: &crate::model::Invoke, out: &mut Out<'_>) -> Result<(), Un
                 if !i.src.is_empty() {
                     out.line(&format!("src {}", text(&i.src)));
                 }
+                // The clauses the scxml and hybrid arms print for the same
+                // attributes, so one attribute reads one way on the page
+                // whichever kind of invoke carries it.
+                if !i.srcexpr.is_empty() {
+                    out.line(&format!("srcexpr {}", text(&i.srcexpr)));
+                }
+                if !i.namelist.is_empty() {
+                    out.line(&format!("namelist {}", text(&i.namelist)));
+                }
+                if !i.content.is_empty() {
+                    out.line(&format!("content {}", text(&i.content)));
+                }
+                if !i.contentexpr.is_empty() {
+                    out.line(&format!("contentexpr {}", text(&i.contentexpr)));
+                }
                 if i.host_served {
                     out.line("host-served");
                 }

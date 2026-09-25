@@ -456,6 +456,10 @@ fn each_invoke_shape_renders_once_and_whole() {
             base: base("i4"),
             invoke_type: "http".to_string(),
             src: "http://x".to_string(),
+            srcexpr: "where()".to_string(),
+            namelist: "a b".to_string(),
+            content: "<ask>now</ask>".to_string(),
+            contentexpr: "body()".to_string(),
             host_served: true,
         }),
     ];
@@ -504,6 +508,10 @@ machine m (datamodel: ecmascript, initial: s0)
       param p = 1
       type http
       src http://x
+      srcexpr where()
+      namelist a b
+      content <ask>now</ask>
+      contentexpr body()
       host-served
 ";
 

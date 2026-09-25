@@ -4290,6 +4290,14 @@
         {
           "description": "§scxml-6.4.1: an `<invoke>` whose `type` names no processor this platform implements.\n\nThe spec defines this case rather than leaving it undefined — the processor \"MUST place error.execution on the internal event queue\" — so a document carrying one is *valid SCXML with defined meaning*, not an author error the compiler may reject. That single raise at invoke time is the whole observable: no child session starts, no `done.invoke.<id>` ever fires, and there is nothing to cancel on state exit. The struct therefore carries only the W3C identity and the refused type string.\n\nThe variant exists so the case cannot be dropped silently. Before it, `parse_invoke` returned `Ok(None)` for an unsupported type and the `<invoke>` vanished from the model, leaving AOT with no observable at all where the Interpreter raised one.",
           "properties": {
+            "content": {
+              "description": "An inline `<content>` body, as the send parser reads one: the child markup serialized, or the element's text. Empty when there is none.",
+              "type": "string"
+            },
+            "contentexpr": {
+              "description": "`<content expr>` verbatim, evaluated when the invocation starts.",
+              "type": "string"
+            },
             "field_suffix": {
               "description": "Identifier suffix derived from [`Self::invoke_id`] by trimming the SCXML auto-id leading underscore. User-supplied ids round-trip unchanged. Used by Rust/C++ templates to compose field names like `child_{field_suffix}` without producing double underscores.",
               "type": "string"
@@ -4313,6 +4321,10 @@
               "enum": [
                 "Unsupported"
               ],
+              "type": "string"
+            },
+            "namelist": {
+              "description": "`<invoke namelist>` verbatim: the datamodel locations whose values a host that RUNS the type receives beside the `<param>`s (§scxml-6.4.1). Empty when the document wrote none.",
               "type": "string"
             },
             "params": {
@@ -4349,6 +4361,10 @@
             "src": {
               "default": "",
               "description": "`<invoke src=\"...\">` verbatim, empty when the document named none.\n\nInert for a refused invoke — nothing resolves it — but a host that RUNS the type needs it: `src` is how §scxml-6.4.1 lets the document say *what* to invoke, and dropping it would leave a host invoker able to receive the request and not the thing it names.",
+              "type": "string"
+            },
+            "srcexpr": {
+              "description": "`<invoke srcexpr>` verbatim, evaluated when the invocation starts (§scxml-6.4.1: \"evaluate it when the invocation is started and use the result as if it had been entered as the value of 'src'\"). Empty when the document wrote none.",
               "type": "string"
             },
             "state_name": {

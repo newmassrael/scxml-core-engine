@@ -1159,6 +1159,24 @@ pub struct UnsupportedInvokeInfo {
     /// able to receive the request and not the thing it names.
     #[serde(default)]
     pub src: String,
+    /// `<invoke srcexpr>` verbatim, evaluated when the invocation starts
+    /// (§scxml-6.4.1: "evaluate it when the invocation is started and use
+    /// the result as if it had been entered as the value of 'src'"). Empty
+    /// when the document wrote none.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub srcexpr: String,
+    /// `<invoke namelist>` verbatim: the datamodel locations whose values
+    /// a host that RUNS the type receives beside the `<param>`s
+    /// (§scxml-6.4.1). Empty when the document wrote none.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub namelist: String,
+    /// An inline `<content>` body, as the send parser reads one: the child
+    /// markup serialized, or the element's text. Empty when there is none.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub content: String,
+    /// `<content expr>` verbatim, evaluated when the invocation starts.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub contentexpr: String,
     /// `true` when the host has declared it serves
     /// [`Self::invoke_type`] (§scxml-6.4.1 leaves the set of invokable
     /// types to the platform, exactly as §scxml-6.2.5 does for `<send>`).

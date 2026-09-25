@@ -3267,15 +3267,7 @@ impl SCXMLParser {
         if let Some(content_elem) = scxml_child(elem, "content") {
             action.contentexpr = content_elem.attribute("expr").unwrap_or("").to_string();
             action.contentexpr_spelling = AttributeSpelling::of(&content_elem, None, "expr");
-            if content_elem.children().any(|c| c.is_element()) {
-                let mut xml = String::new();
-                for c in content_elem.children().filter(|c| c.is_element()) {
-                    xml.push_str(&serialize_node(&c));
-                }
-                action.content = xml.trim().to_string();
-            } else {
-                action.content = character_data(&content_elem).trim().to_string();
-            }
+            action.content = content_body(&content_elem);
         }
 
         // Dynamic expressions
@@ -3796,11 +3788,15 @@ impl SCXMLParser {
         let mut contentexpr = String::new();
         let mut contentexpr_spelling = None;
         let mut inline_document: Option<InlineDocument> = None;
+        // The body as a host that runs the type receives it; the scxml arm
+        // reads an inline `<scxml>` child instead.
+        let mut content_text = String::new();
 
         // Parse inline <content>
         if let Some(content_elem) = scxml_child(elem, "content") {
             contentexpr = content_elem.attribute("expr").unwrap_or("").to_string();
             contentexpr_spelling = AttributeSpelling::of(&content_elem, None, "expr");
+            content_text = content_body(&content_elem);
 
             // Check for inline <scxml> child element (static content)
             if let Some(scxml_child_elem) = scxml_child(&content_elem, "scxml") {
@@ -4097,9 +4093,9 @@ impl SCXMLParser {
                     invoke_id,
                     field_suffix,
                     state_name: state_id.to_string(),
-                    // Inert: no session starts, so no `<param>` is ever
-                    // delivered. Carried anyway so the AST export reports
-                    // what the author wrote rather than an empty invoke.
+                    // Delivered to a host that RUNS the type (§scxml-6.4.1);
+                    // inert for one nobody declared, where it is carried
+                    // so the AST export reports what the author wrote.
                     params: static_params,
                     idlocation,
                     req: invoke_req,
@@ -4112,6 +4108,14 @@ impl SCXMLParser {
                 // that RUNS the type is the one that reads it, and what a
                 // src means is that processor's business (§scxml-6.4.1).
                 src: elem.attribute("src").unwrap_or("").to_string(),
+                // The rest of what §scxml-6.4.1 lets the document say about
+                // the invocation, read as the other arms read them. Dropped
+                // here until 2026-09-25, so a host that ran the type got the
+                // `src` and the literal params and nothing else.
+                srcexpr,
+                namelist,
+                content: content_text,
+                contentexpr,
                 // Decided after the parse, by the build's `--host-invoker`
                 // declaration: the parser answers what the DOCUMENT says,
                 // and whether this platform can run the type is not in the
@@ -6094,6 +6098,22 @@ fn character_data(node: &roxmltree::Node) -> String {
         .filter(|child| child.is_text())
         .filter_map(|child| child.text())
         .collect()
+}
+
+/// The body of an inline `<content>` (§scxml-5.6.1): its child markup,
+/// serialized, when it holds elements, and its character data otherwise —
+/// trimmed either way. ONE reading for `<send>` and for the `<invoke>` a
+/// host runs, so the two hand a host the same text for the same element.
+fn content_body(content: &roxmltree::Node) -> String {
+    if content.children().any(|c| c.is_element()) {
+        let mut xml = String::new();
+        for c in content.children().filter(|c| c.is_element()) {
+            xml.push_str(&serialize_node(&c));
+        }
+        xml.trim().to_string()
+    } else {
+        character_data(content).trim().to_string()
+    }
 }
 
 /// [`serialize_node`], closing every element with an explicit end tag — the
