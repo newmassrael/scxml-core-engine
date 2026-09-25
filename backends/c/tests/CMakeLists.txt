@@ -755,6 +755,36 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML 5.3: typed readers of `<data>` ids that are keywords or no
+    # identifier in some backend. C11's readers are prefixed with the machine
+    # name, so no keyword reaches them; what this backend owns is `t`, whose
+    # reader would be `<machine>_t` — the machine's own typedef — and which
+    # therefore gets none.
+    sce_generate_static_integration_c_test(typed_reader_names "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_typed_reader_names
+        integration/test_typed_reader_names.c
+        ${INTEGRATION_C_TEST_typed_reader_names_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_typed_reader_names PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_typed_reader_names PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_typed_reader_names PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_typed_reader_names
+        COMMAND sce_c_integration_typed_reader_names
+    )
+    set_tests_properties(c11_integration_typed_reader_names PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML C.2 + 6.2.3: a `<send namelist>` that crosses BasicHTTP. The
     # IRP corpus states both claims and measures neither — test518's verdict is
     # `<transition event="test" target="pass"/>`, which passes on arrival

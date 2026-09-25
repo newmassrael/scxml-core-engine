@@ -70,7 +70,7 @@ pub fn w3c_session_name(declared: &str, generated: &str) -> String {
 }
 
 /// Rust 2021 edition reserved keywords — must be escaped with `r#` prefix
-const RUST_KEYWORDS: &[&str] = &[
+pub(crate) const RUST_KEYWORDS: &[&str] = &[
     "as", "break", "const", "continue", "crate", "else", "enum", "extern", "false", "fn", "for",
     "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub", "ref", "return",
     "self", "Self", "static", "struct", "super", "trait", "true", "type", "unsafe", "use", "where",
@@ -1884,12 +1884,11 @@ fn to_state_class_name(name: String) -> String {
 /// SCXML are normalised via `to_python_const`; script bodies are emitted
 /// as repr-quoted Python string literals via `py_string_literal` so the
 /// template never has to worry about embedded quotes / newlines / unicode.
-/// A `PYTHON_KEYWORDS` / `escape_python_keyword` pair is intentionally
-/// absent — every emitted identifier is UPPER_SNAKE_CASE (IntEnum
-/// member) so keyword collisions cannot occur at this layer, and
-/// datamodel variables live inside the `IScriptEngine` session behind
-/// string-keyed accessors, so SCXML author identifiers never reach a
-/// Python parser either.
+/// No keyword filter is registered here: state and event identifiers are
+/// UPPER_SNAKE_CASE (IntEnum members), which no keyword is. The one place an
+/// author's identifier does reach a Python parser — a typed datamodel
+/// reader's method name — is spelled by [`crate::reader_names`], which
+/// escapes a keyword and refuses a collision for every backend at once.
 pub fn register_python_filters(env: &mut minijinja::Environment, scope: &Arc<DocumentScope>) {
     env.add_filter("w3c_session_name", w3c_session_name);
     register_invoke_filters(env);

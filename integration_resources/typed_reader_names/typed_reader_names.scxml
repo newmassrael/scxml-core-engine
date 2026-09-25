@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  W3C SCXML 5.3: typed <data> declarations whose ids are legal in the
+  ECMAScript data model and not as a reader name in some backend. Each of
+  them generated code that did not compile — or, in Python, silently
+  replaced one method with another — before sce-build/src/reader_names.rs
+  decided the names once for every backend.
+
+    escaped, reader kept:
+      box           Rust keyword            r#box
+      object        Kotlin hard keyword     `object`
+      pass          Python keyword          pass_
+      screen-rules  not a C++ identifier    screen_rules
+
+    refused in every backend, with the reason in the manifest:
+      auto          C++ keyword, no escape                  keyword
+      self          Rust `self` cannot be raw               keyword
+      new           Rust policy constructor                 member-collision
+      start         Kotlin StateMachineEngine.start()       member-collision
+      t             C11 `<machine>_t` typedef               member-collision
+      a-b           folds to a_b, declared first            duplicate-spelling
+
+  `bump` adds 10 to box, object, pass and a_b, so a driver reading 11, 12,
+  13 and 20 after it — and 4 from screen-rules, which no ECMAScript
+  expression can name and `bump` therefore leaves alone — knows each
+  escaped reader reads the live value of its own variable rather than the
+  document's literal or a neighbour's.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       datamodel="ecmascript" name="typed_reader_names" initial="idle">
+
+  <datamodel>
+    <data id="box" expr="1"/>
+    <data id="object" expr="2"/>
+    <data id="pass" expr="3"/>
+    <data id="screen-rules" expr="4"/>
+    <data id="auto" expr="5"/>
+    <data id="self" expr="6"/>
+    <data id="new" expr="7"/>
+    <data id="start" expr="8"/>
+    <data id="t" expr="9"/>
+    <data id="a_b" expr="10"/>
+    <data id="a-b" expr="11"/>
+  </datamodel>
+
+  <state id="idle">
+    <transition event="bump">
+      <assign location="box" expr="box + 10"/>
+      <assign location="object" expr="object + 10"/>
+      <assign location="pass" expr="pass + 10"/>
+      <assign location="a_b" expr="a_b + 10"/>
+    </transition>
+    <transition event="finish" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>

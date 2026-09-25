@@ -711,6 +711,11 @@ path = "tests/host_processor_declaration.rs"
 required-features = ["cli"]
 
 [[test]]
+name = "reader_names"
+path = "tests/reader_names.rs"
+required-features = ["cli"]
+
+[[test]]
 name = "inline_content_has_one_reading"
 path = "tests/inline_content_has_one_reading.rs"
 required-features = ["cli"]

@@ -336,6 +336,20 @@ pub struct Manifest<'a> {
     /// its registrations has two lists to check.
     #[serde(skip_serializing_if = "<[_]>::is_empty")]
     pub host_invoker_types: &'a [String],
+    /// §scxml-5.3: the typed `<data>` declarations this run emitted no
+    /// reader for, and why. Omitted when every typed declaration got one.
+    ///
+    /// A host reaches a variable through its reader, and a reader that is
+    /// not there looks, from the host's side, exactly like one the generator
+    /// forgot — or like a name the host misspelled. Published so the absence
+    /// has a cause attached: the declarations disagree about the type, the
+    /// name cannot be written in an expression, or it cannot be spelled in
+    /// some backend without meeting a keyword, a member the generated type
+    /// already carries, or another variable's reader. Decided the same for
+    /// every backend (`reader_names`), so a `check` sweep and a single
+    /// `generate` report the same list.
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    pub unreadable_variables: &'a [crate::reader_names::UnreadableVariable],
     /// The object a transform keeps its `previous()` values in, by the
     /// names the target backend gave it. Present exactly when the run
     /// generated one; omitted otherwise, and omitted on a run spanning
@@ -552,6 +566,7 @@ mod tests {
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
+            unreadable_variables: &[],
             holder: None,
             rejected: None,
             deploy: None,
@@ -578,6 +593,7 @@ mod tests {
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
+            unreadable_variables: &[],
             holder: None,
             rejected: Some(RejectedInfo {
                 spec: "W3C SCXML 5.8",
@@ -610,6 +626,7 @@ mod tests {
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
+            unreadable_variables: &[],
             holder: None,
             rejected: None,
             deploy: None,
@@ -663,6 +680,7 @@ mod tests {
             host_processor_causes: &causes,
             host_processor_types: &[],
             host_invoker_types: &[],
+            unreadable_variables: &[],
             holder: None,
             rejected: None,
             deploy: None,
@@ -701,6 +719,7 @@ mod tests {
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
+            unreadable_variables: &[],
             holder: None,
             rejected: None,
             deploy: None,
@@ -747,6 +766,7 @@ mod tests {
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
+            unreadable_variables: &[],
             holder: None,
             rejected: None,
             deploy: None,
@@ -777,6 +797,7 @@ mod tests {
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
+            unreadable_variables: &[],
             holder: None,
             rejected: None,
             deploy: None,
@@ -817,6 +838,7 @@ mod tests {
             // together on a real build and a record carrying only one
             // would never exercise both fields on the wire at once.
             host_invoker_types: &declared,
+            unreadable_variables: &[],
             holder: None,
             rejected: None,
             deploy: None,
@@ -853,6 +875,7 @@ mod tests {
             host_processor_causes: &[],
             host_processor_types: &[],
             host_invoker_types: &[],
+            unreadable_variables: &[],
             holder: Some(crate::forge::generator::TransformHolderSymbols {
                 holder: "Counter".to_string(),
                 outputs: "CounterOutputs".to_string(),

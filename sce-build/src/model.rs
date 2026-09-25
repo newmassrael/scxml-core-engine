@@ -887,6 +887,12 @@ pub struct Variable {
     /// input/output declaration and the model does not carry it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub direction: Option<crate::forge::model::Direction>,
+    /// §scxml-5.3: each backend's name for this variable's typed reader.
+    /// Set only on the entries of [`SCXMLModel::readable_variables`], by
+    /// [`crate::reader_names::assign`]; templates spell the reader from
+    /// this and from nothing else.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reader: Option<crate::reader_names::ReaderNames>,
 }
 
 /// §scxml-3.11: History state information
@@ -2769,6 +2775,12 @@ pub struct SCXMLModel {
     /// generated code — the kind that is loud but far from its cause. Six
     /// backends read this list; none of them repeats the reconciliation.
     pub readable_variables: Vec<Variable>,
+    /// The typed `<data>` declarations that get no reader, and why — the
+    /// other half of [`Self::readable_variables`], published in the
+    /// manifest so a host can tell a refused reader from a missing one.
+    /// Computed beside it; not read by templates.
+    #[serde(skip)]
+    pub unreadable_variables: Vec<crate::reader_names::UnreadableVariable>,
     pub global_scripts: Vec<Action>,
     /// True iff a `<script src="...">` element appeared in the source
     /// document but could not be loaded because the parser had no

@@ -185,7 +185,7 @@ class {{ machine_name }}StateMachine(
      * (§scxml-B-2) so the key order is the document's.
 {% endif %}
      */
-    fun {{ var.id | to_camel_case }}(): {{ KT_READ_TYPE[var.type] }}? =
+    fun {{ var.reader.kotlin }}(): {{ KT_READ_TYPE[var.type] }}? =
         com.sce.runtime.DatamodelRead.read{{ KT_READ_FN[var.type] }}(scriptEngine, scriptSessionId, "{{ var.id }}")
 {% endfor %}
 {% endif %}

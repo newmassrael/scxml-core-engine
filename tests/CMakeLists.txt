@@ -995,6 +995,7 @@ add_executable(integration_tests
     integration/DoneInvokeOutlivesTheInvokingStateTest.cpp
     integration/UnseenEventIsReportedTest.cpp
     integration/UnseenEventIsReportedAotTest.cpp
+    integration/TypedReaderNamesAotTest.cpp
     integration/UnhandledErrorIsObservableTest.cpp
     integration/UnhandledErrorIsObservableAotTest.cpp
     integration/ErrorCascadeIsBoundedTest.cpp
@@ -1418,6 +1419,12 @@ sce_generate_static_integration_test(undecodable_payload_is_reported ${STATIC_IN
 # The refusal is the clause; the silence around it is what left a consumer
 # rewriting a guard four times for an event the engine never looked at.
 sce_generate_static_integration_test(unseen_event_is_reported ${STATIC_INTEGRATION_OUTPUT_DIR})
+
+# W3C SCXML 5.3: typed readers of `<data>` ids that are keywords or no
+# identifier in some backend. C++ has no escape for a keyword, so `auto` gets
+# no reader in any backend, and `screen-rules` — which used to be emitted as
+# the name `screen-rules()` — reads as `screen_rules()`.
+sce_generate_static_integration_test(typed_reader_names ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 3.12.2: the processor raises its own failures as `error.*` on the
 # internal queue, and the clause says they are ignored when nothing matches

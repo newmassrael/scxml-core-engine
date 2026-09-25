@@ -2501,6 +2501,8 @@ fn parse_variable(
         record_fields: Vec::new(),
         capacity: None,
         direction: None,
+        // Named by the analyzer, which a rendering has not been through.
+        reader: None,
     };
     for kid in kids {
         let (name, expr) = kid.text.split_once(" = ").ok_or_else(|| ParseError {

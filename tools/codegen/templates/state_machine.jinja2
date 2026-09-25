@@ -352,7 +352,7 @@ struct {{ model.name }}Policy {
      * (§scxml-B-2) so the key order is the document's.
 {% endif %}
      */
-    ::std::optional<{{ CPP_READ_TYPE[var.type] }}> {{ var.id }}() const {
+    ::std::optional<{{ CPP_READ_TYPE[var.type] }}> {{ var.reader.cpp }}() const {
         if (!scriptEngine_ || !sessionId_.has_value()) {
             return ::std::nullopt;
         }
@@ -851,8 +851,8 @@ public:
     {% for var in model.readable_variables %}
     /// §scxml-5.3: what `{{ var.id }}` is holding now — see the policy's accessor
     /// for what `nullopt` means.
-    ::std::optional<{{ CPP_READ_TYPE[var.type] }}> {{ var.id }}() const {
-        return this->policy_.{{ var.id }}();
+    ::std::optional<{{ CPP_READ_TYPE[var.type] }}> {{ var.reader.cpp }}() const {
+        return this->policy_.{{ var.reader.cpp }}();
     }
     {% endfor %}
 {% endif %}

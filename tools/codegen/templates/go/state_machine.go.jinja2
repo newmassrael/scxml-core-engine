@@ -375,7 +375,7 @@ func New{{ machine_name }}Policy() {{ machine_name }}Policy {
 // The value as JSON text, serialised by the engine's own JSON.stringify
 // (§scxml-B-2) so the key order is the document's.
 {% endif %}
-func (p *{{ machine_name }}Policy) {{ var.id | to_pascal_case }}() ({{ GO_READ_TYPE[var.type] }}, bool) {
+func (p *{{ machine_name }}Policy) {{ var.reader.go }}() ({{ GO_READ_TYPE[var.type] }}, bool) {
 	return sce.ReadDatamodel{{ GO_READ_FN[var.type] }}(p.ScriptEngine, p.SessionID, "{{ var.id }}")
 }
 {% endfor %}

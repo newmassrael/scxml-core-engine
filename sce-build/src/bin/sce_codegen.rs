@@ -909,6 +909,9 @@ struct GenerateReport {
     /// The `--host-invoker` declarations, echoed for the same reason as
     /// the line above: the build's half of a two-place contract.
     host_invoker_types: Vec<String>,
+    /// The typed `<data>` declarations that got no reader — see
+    /// `Manifest::unreadable_variables`.
+    unreadable_variables: Vec<sce_build::reader_names::UnreadableVariable>,
     /// The holder the generated transform keeps its `previous()` values
     /// in, when it has one — see `Manifest::holder`.
     holder: Option<sce_build::forge::generator::TransformHolderSymbols>,
@@ -997,6 +1000,7 @@ fn build_manifest<'a>(
         host_processor_causes: &report.host_processor_causes,
         host_processor_types: &report.host_processor_types,
         host_invoker_types: &report.host_invoker_types,
+        unreadable_variables: &report.unreadable_variables,
         // The TARGET's names, like the engine language above: a run that
         // spans backends has several and reports none.
         holder: target.and(report.holder.clone()),
@@ -3386,6 +3390,7 @@ fn scxml_host_requirement_facts(path: &str) -> Option<HostRequirements> {
         needs_event_scheduler: model.needs_event_scheduler_driving(),
         needs_host_processor: !model.host_processor_causes.is_empty(),
         host_processor_causes: model.host_processor_cause_records(),
+        unreadable_variables: model.unreadable_variables,
     })
 }
 
@@ -3401,6 +3406,7 @@ struct HostRequirements {
     needs_event_scheduler: bool,
     needs_host_processor: bool,
     host_processor_causes: Vec<sce_build::host_processor_analyzer::HostProcessorCauseRecord>,
+    unreadable_variables: Vec<sce_build::reader_names::UnreadableVariable>,
 }
 
 /// Fold every document's [`HostRequirements`] into `report`.
@@ -3437,6 +3443,11 @@ fn accumulate_host_requirements(report: &mut GenerateReport, paths: &[PathBuf]) 
                 report.host_processor_causes.push(cause);
             }
         }
+        // Per document, not unioned: each record carries its location, and
+        // one name refused in two documents is two refusals.
+        report
+            .unreadable_variables
+            .extend(facts.unreadable_variables);
     }
     report.needs_script_engine = Some(needs_script_engine);
     report.needs_event_scheduler = Some(needs_event_scheduler);
@@ -3831,6 +3842,9 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
             report.script_engine_causes = model.script_engine_cause_records();
             report.needs_host_processor = Some(!model.host_processor_causes.is_empty());
             report.host_processor_causes = model.host_processor_cause_records();
+            report
+                .unreadable_variables
+                .clone_from(&model.unreadable_variables);
             // Echoed for the same reason `generate` echoes them: the
             // declaration is the build's half of a two-place contract,
             // and a consumer diffing the two manifests to confirm its
@@ -4842,6 +4856,9 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         // `<send>` / `<invoke>` types this build has no path for.
         report.needs_host_processor = Some(!model.host_processor_causes.is_empty());
         report.host_processor_causes = model.host_processor_cause_records();
+        report
+            .unreadable_variables
+            .clone_from(&model.unreadable_variables);
         report
             .host_processor_types
             .clone_from(&model.host_processor_types);

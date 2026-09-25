@@ -77,6 +77,12 @@
       "minItems": 1,
       "items": { "type": "string", "minLength": 1 }
     },
+    "unreadable_variables": {
+      "description": "The typed <data> declarations this run emitted no typed reader for, and why (W3C SCXML 5.3). Omitted when every typed declaration got one. A reader that is not there looks, from the host's side, like one the generator forgot or a name the host misspelled, so the absence is published with its cause. Decided the same for every backend: a name that no backend's escape can give a reader gets none in any, so a check sweep and a single generate report the same list.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/unreadableVariable" }
+    },
     "holder": {
       "description": "The object a transform keeps its previous() values in, by the names the target backend gave it. Present exactly when the run generated one; omitted otherwise, and omitted on a run spanning several backends, whose names differ. A transform is pure functions unless an output reads a field through previous(), and then the host must drive it through the holder — construct one, call update once per activation, reset to start again — because only the holder keeps what the next activation reads. Which of the two a document is follows from its content, not its sce:kind.",
       "$ref": "#/definitions/holder"
@@ -161,6 +167,39 @@
         "invoke": {
           "description": "<invoke id=\"…\">, for the invoke-anchored cause.",
           "type": "string"
+        },
+        "location": { "$ref": "#/definitions/location" }
+      }
+    },
+    "unreadableVariable": {
+      "type": "object",
+      "required": ["var", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "var": {
+          "description": "The <data> id, as written.",
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "description": "Stable kebab-case discriminator: \"type-disagreement\" (the name's declarations disagree about its type), \"not-an-expression\" (a json reader must name the variable in an expression and this name cannot be one), \"keyword\" (a keyword of language that the language gives no way to escape), \"not-an-identifier\" (the spelling is not an identifier in language), \"member-collision\" (the spelling is a member the generated type already carries), \"duplicate-spelling\" (another variable, named in with, folds to the same spelling). Deliberately not an enum: consumers MUST tolerate values added by later revisions.",
+          "type": "string",
+          "minLength": 1
+        },
+        "language": {
+          "description": "The first backend whose spelling could not be used. Absent for the two reasons about the document rather than a language.",
+          "type": "string",
+          "enum": ["rust", "cpp", "kotlin", "go", "python", "c11"]
+        },
+        "spelling": {
+          "description": "The refused spelling in that backend.",
+          "type": "string",
+          "minLength": 1
+        },
+        "with": {
+          "description": "The other variable, for duplicate-spelling.",
+          "type": "string",
+          "minLength": 1
         },
         "location": { "$ref": "#/definitions/location" }
       }

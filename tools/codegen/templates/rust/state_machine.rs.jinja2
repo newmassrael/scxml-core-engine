@@ -351,7 +351,7 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
     /// The value as JSON text, serialized by the engine's own
     /// `JSON.stringify` (§scxml-B-2) so the key order is the document's.
 {% endif %}
-    pub fn {{ var.id | to_snake_case }}(&self) -> Option<{{ RUST_READ_TYPE[var.type] }}> {
+    pub fn {{ var.reader.rust }}(&self) -> Option<{{ RUST_READ_TYPE[var.type] }}> {
         ::sce_rust_runtime::helpers::datamodel_read::read_{{ var.type }}(
             self.script_engine.as_ref(),
             self.session_id.as_deref(),

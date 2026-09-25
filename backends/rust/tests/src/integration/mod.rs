@@ -68,6 +68,7 @@ pub mod send_namelist_over_http;
 pub mod send_param_payload;
 pub mod session_ids_are_distinct;
 pub mod targetless_transition_completes_macrostep;
+pub mod typed_reader_names;
 pub mod undecodable_payload_is_reported;
 pub mod unhandled_error_is_observable;
 pub mod unseen_event_is_reported;

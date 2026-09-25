@@ -2529,6 +2529,9 @@ impl SCXMLParser {
             record_fields,
             capacity,
             direction,
+            // The analyzer names readers, once it knows which variables
+            // have one (`reader_names::assign`).
+            reader: None,
         }))
     }
 

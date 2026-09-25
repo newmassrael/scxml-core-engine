@@ -134,7 +134,11 @@ fn classify_variables(model: &mut SCXMLModel) {
             var.var_type = declared_type(&var.expr).to_string();
         }
     }
-    model.readable_variables = readable_variables(model);
+    let mut unreadable = Vec::new();
+    let candidates = readable_variables(model, &mut unreadable);
+    model.readable_variables =
+        crate::reader_names::assign(candidates, &model.name, &mut unreadable);
+    model.unreadable_variables = unreadable;
 }
 
 /// §scxml-5.3: the `<data>` declarations a typed read accessor is emitted
@@ -156,10 +160,28 @@ fn classify_variables(model: &mut SCXMLModel) {
 /// A `json` declaration additionally needs a name the reader can pronounce —
 /// see [`reachable_as_an_expression`].
 ///
+/// Each name refused here is recorded in `unreadable`, with why: a typed
+/// declaration that yields no reader is otherwise indistinguishable, from the
+/// host's side, from one the generator forgot. What survives is a candidate;
+/// [`crate::reader_names::assign`] still has to give it a name in every
+/// backend.
+///
 /// Empty under `datamodel="sce-static"`: an accessor reads the value a script
 /// engine holds, and that model has no engine — its variables are fields of
 /// the generated machine, read directly (docs/SCE_ACCEPTED_SUBSET.md §2.15).
-fn readable_variables(model: &SCXMLModel) -> Vec<Variable> {
+fn readable_variables(
+    model: &SCXMLModel,
+    unreadable: &mut Vec<crate::reader_names::UnreadableVariable>,
+) -> Vec<Variable> {
+    use crate::reader_names::{UnreadableReason, UnreadableVariable};
+    let refuse = |var: &Variable, reason| UnreadableVariable {
+        var: var.id.clone(),
+        reason,
+        language: None,
+        spelling: None,
+        with: None,
+        location: var.source_location.clone(),
+    };
     const TYPED: [&str; 4] = ["int", "string", "bool", "json"];
 
     if model.datamodel == crate::model::Datamodel::SceStatic {
@@ -177,6 +199,7 @@ fn readable_variables(model: &SCXMLModel) -> Vec<Variable> {
     // with a hash seed would fail `regen-reproduces` on every second run.
     let mut order: Vec<&Variable> = Vec::new();
     let mut disagreed: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+    let mut unpronounceable: Vec<&Variable> = Vec::new();
 
     for var in declarations {
         if !TYPED.contains(&var.var_type.as_str()) {
@@ -186,6 +209,9 @@ fn readable_variables(model: &SCXMLModel) -> Vec<Variable> {
             continue;
         }
         if var.var_type == "json" && !reachable_as_an_expression(&var.id) {
+            if !unpronounceable.iter().any(|seen| seen.id == var.id) {
+                unpronounceable.push(var);
+            }
             continue;
         }
         match order.iter().find(|seen| seen.id == var.id) {
@@ -197,11 +223,21 @@ fn readable_variables(model: &SCXMLModel) -> Vec<Variable> {
         }
     }
 
-    order
-        .into_iter()
-        .filter(|var| !disagreed.contains(var.id.as_str()))
-        .cloned()
-        .collect()
+    // Refused only when no other declaration of the name made it readable.
+    for var in unpronounceable {
+        if !order.iter().any(|seen| seen.id == var.id) {
+            unreadable.push(refuse(var, UnreadableReason::NotAnExpression));
+        }
+    }
+    let mut candidates = Vec::new();
+    for var in order {
+        if disagreed.contains(var.id.as_str()) {
+            unreadable.push(refuse(var, UnreadableReason::TypeDisagreement));
+        } else {
+            candidates.push(var.clone());
+        }
+    }
+    candidates
 }
 
 /// Whether a `<data>` name can be written into an ECMAScript expression and

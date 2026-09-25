@@ -5217,7 +5217,7 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_last_truncated_macrostep_state(
 */
 {% endif %}
 {% if var.type == 'string' %}
-SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_{{ var.id | to_snake_case }}(const {{ csym_prefix }}{{ model.name }}_t *sm,
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_{{ var.reader.c11 }}(const {{ csym_prefix }}{{ model.name }}_t *sm,
                                                                               char *out, size_t cap, size_t *len) {
     if (sm == NULL || sm->L == NULL || out == NULL || cap == 0u) {
         return false;
@@ -5241,7 +5241,7 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_{{ var.id | to_snake_case }}(co
     return _ok;
 }
 {% elif var.type == 'int' %}
-SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_{{ var.id | to_snake_case }}(const {{ csym_prefix }}{{ model.name }}_t *sm, int64_t *out) {
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_{{ var.reader.c11 }}(const {{ csym_prefix }}{{ model.name }}_t *sm, int64_t *out) {
     if (sm == NULL || sm->L == NULL || out == NULL) {
         return false;
     }
@@ -5270,7 +5270,7 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_{{ var.id | to_snake_case }}(co
     return _ok;
 }
 {% elif var.type == 'json' %}
-SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_{{ var.id | to_snake_case }}(const {{ csym_prefix }}{{ model.name }}_t *sm,
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_{{ var.reader.c11 }}(const {{ csym_prefix }}{{ model.name }}_t *sm,
                                                                               char *out, size_t cap, size_t *len) {
     if (sm == NULL || sm->L == NULL || out == NULL || cap == 0u) {
         return false;
@@ -5322,7 +5322,7 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_{{ var.id | to_snake_case }}(co
     return _ok;
 }
 {% else %}
-SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_{{ var.id | to_snake_case }}(const {{ csym_prefix }}{{ model.name }}_t *sm, bool *out) {
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_{{ var.reader.c11 }}(const {{ csym_prefix }}{{ model.name }}_t *sm, bool *out) {
     if (sm == NULL || sm->L == NULL || out == NULL) {
         return false;
     }

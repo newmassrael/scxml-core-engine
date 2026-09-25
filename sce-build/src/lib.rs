@@ -169,6 +169,9 @@ pub mod position_map;
 /// report, unresolved-placeholder report, and provenance emit would
 /// fragment into incompatible representations if each grew its own.
 pub mod provenance;
+/// §scxml-5.3: the one place a `<data>` id becomes a target-language reader
+/// name, and the decision of which variables get readers at all.
+pub mod reader_names;
 /// The closed requirement set a document is measured against, and the
 /// set comparison it makes possible — Requirement-closure RFC ①.
 pub mod requirement_manifest;

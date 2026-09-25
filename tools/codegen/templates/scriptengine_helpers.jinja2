@@ -68,27 +68,25 @@
             SCE_LOG_ERROR("AOT ensureScriptEngine: Failed to setup system variables: {}", setupResult.getErrorMessage());
         }
 
+{# W3C SCXML 5.3: one block per declaration, so the local is not named after
+   the variable. A `<data id>` is an XML name — `screen-rules` is legal — and
+   was spelled into `initExpr_<id>` here, which is no C++ identifier; the id
+   reaches this code only as the string the engine keys the variable by. #}
 {% for var in model.variables %}
+{% if var.expr or var.content or var.type == 'runtime' %}
+        {
 {% if var.expr %}
-        auto initExpr_{{ var.id }} = scriptEngine.evaluateExpression(sessionId_.value(), {{ var.expr | to_script_source_expr }}).get();
-        if (!::SCE::ScriptResultUtils::isSuccess(initExpr_{{ var.id }})) {
-            SCE_LOG_ERROR("Failed to evaluate expression for variable: {{ var.id }}");
-        } else {
-            scriptEngine.setVariable(sessionId_.value(), "{{ var.id }}", initExpr_{{ var.id }}.getInternalValue());
-        }
+            auto initExpr = scriptEngine.evaluateExpression(sessionId_.value(), {{ var.expr | to_script_source_expr }}).get();
 {% elif var.content %}
-        auto initExpr_{{ var.id }} = scriptEngine.evaluateExpression(sessionId_.value(), {{ var.content | to_script_source_data_content }}).get();
-        if (!::SCE::ScriptResultUtils::isSuccess(initExpr_{{ var.id }})) {
-            SCE_LOG_ERROR("Failed to evaluate expression for variable: {{ var.id }}");
-        } else {
-            scriptEngine.setVariable(sessionId_.value(), "{{ var.id }}", initExpr_{{ var.id }}.getInternalValue());
-        }
-{% elif var.type == 'runtime' %}
-        auto initExpr_{{ var.id }} = scriptEngine.evaluateExpression(sessionId_.value(), "undefined").get();
-        if (!::SCE::ScriptResultUtils::isSuccess(initExpr_{{ var.id }})) {
-            SCE_LOG_ERROR("Failed to evaluate expression for variable: {{ var.id }}");
-        } else {
-            scriptEngine.setVariable(sessionId_.value(), "{{ var.id }}", initExpr_{{ var.id }}.getInternalValue());
+            auto initExpr = scriptEngine.evaluateExpression(sessionId_.value(), {{ var.content | to_script_source_data_content }}).get();
+{% else %}
+            auto initExpr = scriptEngine.evaluateExpression(sessionId_.value(), "undefined").get();
+{% endif %}
+            if (!::SCE::ScriptResultUtils::isSuccess(initExpr)) {
+                SCE_LOG_ERROR("Failed to evaluate expression for variable: {{ var.id | escape_cpp_format }}");
+            } else {
+                scriptEngine.setVariable(sessionId_.value(), "{{ var.id | escape_cpp }}", initExpr.getInternalValue());
+            }
         }
 {% endif %}
 {% endfor %}

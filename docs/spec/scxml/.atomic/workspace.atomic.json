@@ -5935,6 +5935,31 @@
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "enter_state",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/reader_names.rs",
+          "symbol": "assign",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/reader_names.rs",
+          "symbol": "spell",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "reader_names",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/manifest.rs",
+          "symbol": "Manifest",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "symbol": "Variable",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {

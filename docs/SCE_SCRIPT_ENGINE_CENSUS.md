@@ -98,15 +98,15 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 234
+engine-documents 235
 native-prefix-documents 2
-datamodel-variable-init 254
-transition-guard 212
-assign-action 209
+datamodel-variable-init 270
+transition-guard 213
+assign-action 217
 child-invoke-needs-script-engine 46
 log-expr 45
 send-param-expr 32
-send-dynamic-attr 30
+send-dynamic-attr 32
 foreach-action 15
 static-invoke-namelist 9
 donedata-param 9
@@ -146,7 +146,13 @@ never spelled correctly.
   that document off the engine: its five `<script>` calls to undeclared
   functions and its script guard became `<sce:action>`s and the native
   guard, which is what `engine-documents`, `transition-guard` and
-  `inline-script-action` fell by. A consumer pairing `cond="cpp:…"` with
+  `inline-script-action` fell by. ⚠ **2026-09-26, deliberately:** the host
+  invoker fixture's `locating` state (idlocation member paths: two sends, a
+  guard, four assigns, five counters) and the new
+  `integration_resources/typed_reader_names/` (one engine document: eleven
+  typed `<data>` and four assigns) raised `engine-documents`,
+  `datamodel-variable-init`, `transition-guard`, `assign-action` and
+  `send-dynamic-attr`. A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.
 - **49% of judged documents need an engine** (233 of 475). The remaining

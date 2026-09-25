@@ -299,7 +299,7 @@ class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_n
 {% set PY_READ_TYPE = {'int': 'int', 'string': 'str', 'bool': 'bool', 'json': 'str'} %}
 {% for var in model.readable_variables %}
 
-    def {{ var.id | to_snake_case }}(self) -> Optional[{{ PY_READ_TYPE[var.type] }}]:
+    def {{ var.reader.python }}(self) -> Optional[{{ PY_READ_TYPE[var.type] }}]:
         """§scxml-5.3 — what the `{{ var.id }}` datamodel variable is holding now.
 
         The live value, not the authored one: `<assign>` writes into the

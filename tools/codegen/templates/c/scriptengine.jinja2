@@ -34,6 +34,32 @@
    handling. Decision: jinja2-inline only —
    no helper class, no shared .c file. #}
 
+{# W3C SCXML 5.3: give the data model variable `name` the value of the lowered
+   expression `lua_value`. The value is evaluated as `return (<value>)` and
+   stored with `lua_setglobal`, keyed by the name as a string: a `<data id>`
+   is an XML name, and `screen-rules = (4)` — the chunk this used to run — is
+   a subtraction to Lua, so a legal declaration was never initialised. The
+   other Lua backends key the variable the same way.
+
+   `fallback`, when given, is the literal an inline `<data>` content that does
+   not evaluate becomes (W3C SCXML B.2); without it the failure is the
+   expression's, and raises error.execution. #}
+{% macro lua_set_data_global(name, lua_value, fallback=none) %}
+        if ((luaL_loadstring(sm->L, "return ({{ lua_value | escape_c }})") || lua_pcall(sm->L, 0, 1, 0)) != 0) {
+            lua_pop(sm->L, 1);
+{% if fallback is not none %}
+            lua_pushliteral(sm->L, "{{ fallback | escape_c }}");
+            lua_setglobal(sm->L, "{{ name | escape_c }}");
+{% else %}
+            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                "<data id='{{ name | escape_c }}'> expr failed to evaluate");
+{% endif %}
+        } else {
+            lua_setglobal(sm->L, "{{ name | escape_c }}");
+        }
+{% endmacro %}
+
 {% macro lua_init_engine() %}
     /* W3C SCXML 5.10: Open Lua state and register standard libraries. */
     sm->L = luaL_newstate();
@@ -290,14 +316,14 @@
             {%- set ns = namespace(first=true) -%}
             {%- for var in model.variables -%}
             {%- if not ns.first %}", "{% endif -%}
-            "{{ var.id }} = true"
+            "[\"{{ var.id | escape_c }}\"] = true"
             {%- set ns.first = false -%}
             {%- endfor -%}
             {%- for state_id, state in model.states | dictsort -%}
             {%- if state.datamodel -%}
             {%- for var in state.datamodel -%}
             {%- if not ns.first %}", "{% endif -%}
-            "{{ var.id }} = true"
+            "[\"{{ var.id | escape_c }}\"] = true"
             {%- set ns.first = false -%}
             {%- endfor -%}
             {%- endif -%}
@@ -311,13 +337,7 @@
            and error.execution is queued so the SM can react. memset on the
            SM struct in `_init` zero-initialised both queues before this
            loop runs, so direct enqueue is safe at this point. */
-        if (luaL_dostring(sm->L,
-            "{{ var.id }} = ({{ var.expr | to_lua_expr | escape_c }})") != 0) {
-            lua_pop(sm->L, 1);
-            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                "<data id='{{ var.id }}'> expr failed to evaluate");
-        }
+{{ lua_set_data_global(var.id, var.expr | to_lua_expr) }}
         {% elif var.content %}
         {% if (var.content | trim) is startingwith('<') %}
         /* W3C SCXML B.2: inline `<data>` content begins with `<` →
@@ -334,16 +354,10 @@
            content. cpp `DataModelInitHelper::initializeVariable`
            (sce/src/common/DataModelInitHelper.cpp:80-156) dispatch: try
            eval as expression; on Lua syntax/runtime failure, fall back
-           to a whitespace-normalized string. */
-        if (luaL_dostring(sm->L,
-            "{{ var.id }} = ({{ var.content | to_lua_data_content | escape_c }})") != 0) {
-            lua_pop(sm->L, 1);
-            /* W3C SCXML B.2: eval failure → whitespace-normalized literal.
-               cpp `DataModelInitHelper.cpp:142-155` (normalizeWhitespace +
-               setVariable). */
-            lua_pushliteral(sm->L, "{{ var.content | normalize_ws | escape_c }}");
-            lua_setglobal(sm->L, "{{ var.id }}");
-        }
+           to a whitespace-normalized string (cpp
+           `DataModelInitHelper.cpp:142-155`, normalizeWhitespace +
+           setVariable). */
+{{ lua_set_data_global(var.id, var.content | to_lua_data_content, var.content | normalize_ws) }}
         {% endif %}
         {% elif var.src %}
         /* W3C SCXML 5.2.2: <data id="{{ var.id }}" src="{{ var.src }}">.
@@ -363,12 +377,7 @@
         sce_lua_dom_push_object_or_nil(sm->L, "{{ _src_content | escape_c }}");
         lua_setglobal(sm->L, "{{ var.id }}");
         {% else %}
-        if (luaL_dostring(sm->L,
-            "{{ var.id }} = ({{ _src_content | to_lua_data_content | escape_c }})") != 0) {
-            lua_pop(sm->L, 1);
-            lua_pushliteral(sm->L, "{{ _src_content | normalize_ws | escape_c }}");
-            lua_setglobal(sm->L, "{{ var.id }}");
-        }
+{{ lua_set_data_global(var.id, _src_content | to_lua_data_content, _src_content | normalize_ws) }}
         {% endif %}
         {% endif %}
         {% endfor %}
@@ -396,13 +405,7 @@
         {% for var in state.datamodel %}
         {% if var.expr %}
         /* W3C SCXML 5.3 (early): state '{{ state_id }}' <data id="{{ var.id }}" expr="{{ var.expr }}"> */
-        if (luaL_dostring(sm->L,
-            "{{ var.id }} = ({{ var.expr | to_lua_expr | escape_c }})") != 0) {
-            lua_pop(sm->L, 1);
-            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                "<data id='{{ var.id }}'> expr failed to evaluate");
-        }
+{{ lua_set_data_global(var.id, var.expr | to_lua_expr) }}
         {% elif var.content %}
         {% if (var.content | trim) is startingwith('<') %}
         /* W3C SCXML B.2 (early): state '{{ state_id }}' <data id="{{ var.id }}"> inline XML content → DOM. */
@@ -410,12 +413,7 @@
         lua_setglobal(sm->L, "{{ var.id }}");
         {% else %}
         /* W3C SCXML 5.3/B.2 (early): state '{{ state_id }}' <data id="{{ var.id }}"> inline non-XML content. eval+whitespace-fallback per top-level branch above. */
-        if (luaL_dostring(sm->L,
-            "{{ var.id }} = ({{ var.content | to_lua_data_content | escape_c }})") != 0) {
-            lua_pop(sm->L, 1);
-            lua_pushliteral(sm->L, "{{ var.content | normalize_ws | escape_c }}");
-            lua_setglobal(sm->L, "{{ var.id }}");
-        }
+{{ lua_set_data_global(var.id, var.content | to_lua_data_content, var.content | normalize_ws) }}
         {% endif %}
         {% elif var.src %}
         /* W3C SCXML 5.2.2 (early): state '{{ state_id }}' <data id="{{ var.id }}" src="{{ var.src }}"> codegen-time file read. */
@@ -424,12 +422,7 @@
         sce_lua_dom_push_object_or_nil(sm->L, "{{ _src_content | escape_c }}");
         lua_setglobal(sm->L, "{{ var.id }}");
         {% else %}
-        if (luaL_dostring(sm->L,
-            "{{ var.id }} = ({{ _src_content | to_lua_data_content | escape_c }})") != 0) {
-            lua_pop(sm->L, 1);
-            lua_pushliteral(sm->L, "{{ _src_content | normalize_ws | escape_c }}");
-            lua_setglobal(sm->L, "{{ var.id }}");
-        }
+{{ lua_set_data_global(var.id, _src_content | to_lua_data_content, _src_content | normalize_ws) }}
         {% endif %}
         {% endif %}
         {% endfor %}
@@ -494,13 +487,7 @@
     {% for var in state.datamodel %}
     {% if var.expr %}
     /* W3C SCXML 5.3 (late): state '{{ state_id }}' <data id="{{ var.id }}" expr="{{ var.expr }}"> */
-    if (luaL_dostring(sm->L,
-        "{{ var.id }} = ({{ var.expr | to_lua_expr | escape_c }})") != 0) {
-        lua_pop(sm->L, 1);
-        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-            "<data id='{{ var.id }}'> expr failed to evaluate");
-    }
+{{ lua_set_data_global(var.id, var.expr | to_lua_expr) }}
     {% elif var.content %}
     {% if (var.content | trim) is startingwith('<') %}
     /* W3C SCXML B.2 (late): state '{{ state_id }}' <data id="{{ var.id }}"> inline XML content → DOM. */
@@ -508,12 +495,7 @@
     lua_setglobal(sm->L, "{{ var.id }}");
     {% else %}
     /* W3C SCXML 5.3/B.2 (late): state '{{ state_id }}' <data id="{{ var.id }}"> inline non-XML content. eval+whitespace-fallback per top-level branch in the early-binding macro above. */
-    if (luaL_dostring(sm->L,
-        "{{ var.id }} = ({{ var.content | to_lua_data_content | escape_c }})") != 0) {
-        lua_pop(sm->L, 1);
-        lua_pushliteral(sm->L, "{{ var.content | normalize_ws | escape_c }}");
-        lua_setglobal(sm->L, "{{ var.id }}");
-    }
+{{ lua_set_data_global(var.id, var.content | to_lua_data_content, var.content | normalize_ws) }}
     {% endif %}
     {% elif var.src %}
     /* W3C SCXML 5.2.2 (late): state '{{ state_id }}' <data id="{{ var.id }}" src="{{ var.src }}"> codegen-time file read. */
@@ -522,12 +504,7 @@
     sce_lua_dom_push_object_or_nil(sm->L, "{{ _src_content | escape_c }}");
     lua_setglobal(sm->L, "{{ var.id }}");
     {% else %}
-    if (luaL_dostring(sm->L,
-        "{{ var.id }} = ({{ _src_content | to_lua_data_content | escape_c }})") != 0) {
-        lua_pop(sm->L, 1);
-        lua_pushliteral(sm->L, "{{ _src_content | normalize_ws | escape_c }}");
-        lua_setglobal(sm->L, "{{ var.id }}");
-    }
+{{ lua_set_data_global(var.id, _src_content | to_lua_data_content, _src_content | normalize_ws) }}
     {% endif %}
     {% endif %}
     {% endfor %}

@@ -834,6 +834,38 @@ must be answered before the host gets control back).
 It owns only whether a targetless transition ends the macrostep: no `<send>`,
 no `<invoke>`, no `<parallel>`, no delay, and nothing that can fail.
 
+`typed_reader_names` covers W3C SCXML 5.3 at the point a declared variable
+becomes a host-language identifier: the typed reader each backend emits for it.
+`<data id>` is an XML name and the data model is ECMAScript's, so an author may
+write an id that is legal there and not as a method name somewhere — `box` in
+Rust, `object` in Kotlin, `pass` in Python, `auto` or `screen-rules` in C++ —
+or one that lands on a member the generated type already carries (`new` on a
+Rust policy, `start` on a Kotlin machine, `t` beside C11's `<machine>_t`), or
+two ids that one backend's case convention folds together (`a_b`, `a-b`). Each
+of those generated code that did not compile, and Python's silently replaced
+one method with another.
+
+The names are decided once, in `sce-build/src/reader_names.rs`: an idiomatic
+escape where the language has one (`r#box`, `` `object` ``, `pass_`), and
+otherwise no reader in **any** backend, published in the manifest's
+`unreadable_variables` with its reason — a reader's existence does not depend
+on the backend. Each driver reads the four escaped readers and `a_b`, before and
+after a `bump` that adds 10 to the four an expression can name, so a reader that
+read a neighbour or the document's literal fails; `screen-rules` stays 4
+because no ECMAScript expression can name it. That the drivers compile is the
+proof no refused name was emitted. Measuring C11 found a second defect behind
+the first: C11 initialised every variable with the chunk `<id> = (<expr>)`,
+which Lua reads as a subtraction for `screen-rules`, so the variable was never
+created; its data-model initialisation now evaluates the value and stores it
+with `lua_setglobal`, keyed by the name as the other Lua backends do. The C++
+initialiser likewise named a local after the id (`initExpr_<id>`) and now uses
+one block per declaration.
+
+`sce-build/tests/reader_names.rs` holds the other half: it renders documents
+in every backend and requires every member the output defines to be one
+`reader_names` reserves, so a member a template grows cannot become a reader's
+name unnoticed.
+
 The full uniformity roadmap (per-backend layout migration, AOT/Interpreter
 two-channel parity, SSoT canonical fixture path) lives in
 `claudedocs/rfc-donedata-5-backend-layout.md`. This document records the
