@@ -18,5 +18,5 @@ func AlgorithmCrc16Table(data []byte) uint16 {
         var idx uint16 = (crc >> 8 ^ uint16(b)) & 0xFF
         crc = crc << 8 ^ CRC16_TABLE[idx];
     }
-    return crc;
+    return crc
 }

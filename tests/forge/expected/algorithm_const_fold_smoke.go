@@ -13,5 +13,5 @@ package algorithm_const_fold_smoke
 var DOUBLED = [4]uint16{ 0, 2, 4, 6 }
 
 func AlgorithmConstFoldSmoke() uint16 {
-    return 0;
+    return 0
 }

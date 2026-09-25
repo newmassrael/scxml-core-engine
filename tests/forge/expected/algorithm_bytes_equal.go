@@ -12,14 +12,14 @@ package bytes_equal
 
 func BytesEqual(a []byte, b []byte) bool {
     if (len(a) != len(b)) {
-        return false;
+        return false
     }
     var i uint32 = 0
     for i < uint32(len(a)) {
         if (a[i] != b[i]) {
-            return false;
+            return false
         }
         i = i + 1;
     }
-    return true;
+    return true
 }

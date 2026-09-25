@@ -25,5 +25,5 @@ func AlgorithmCrc16(data []byte) uint16 {
             i = i + 1;
         }
     }
-    return crc;
+    return crc
 }

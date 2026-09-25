@@ -394,7 +394,8 @@ A `may-fail` algorithm checks **every** integer `+ - * / %` and unary `-` it com
 | Backend | Failure channel |
 |---|---|
 | Rust | `Result<T, sce_forge_runtime::algorithm::AlgorithmError>`; each operation is `sce_forge_runtime::algorithm::<op>::<width>(…)?` |
-| C11, C++, Go, Kotlin, Python | not lowered yet — refused |
+| Kotlin | `com.sce.forge.runtime.AlgorithmResult<T>` (`Ok(value)` / `Failed(error)`); each operation is a `SceChecked.<op>(…)` overload for its width, which throws `AlgorithmFailure`, caught at the function's own boundary so the caller only ever reads a value. Its buffers grow past their capacity (§4.12), so it never reports `capacity-exceeded` |
+| C11, C++, Go, Python | not lowered yet — refused |
 
 A backend lowers `may-fail` in the commit that teaches it the checked lowering; until then it refuses the algorithm (`generate/unsupported-feature`), because an unchecked body behind a signature that promises a failure is the silent disagreement this contract exists to remove. No caller statement receives a failure yet, so only a host calls a `may-fail` algorithm — another algorithm or kind that calls one is refused, as a call to a `list<T>` or record algorithm is (§4.12). An algorithm that does not declare `may-fail` is not yet refused when the analysis finds an operation it cannot prove safe. Conformance: `algorithm_checked_arith` in `tests/forge/conformance/`, whose cases may name a failure (`"fails"`) in place of a value.
 

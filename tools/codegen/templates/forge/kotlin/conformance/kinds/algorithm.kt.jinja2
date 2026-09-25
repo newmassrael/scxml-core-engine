@@ -11,7 +11,13 @@
    which produces `ByteArray`. The function-under-test takes the
    ByteArray directly. Numeric scalar args route through `kt_unmarshal`'s
    per-type narrow-cast (`.toUShort()` etc.) so the call boundary types
-   line up with the algorithm's signature. #}
+   line up with the algorithm's signature.
+
+   A `may-fail` algorithm (SCE_FORGE.md §3.4.1) returns an `AlgorithmResult`.
+   A case that names a failure (`"fails": "overflow"`) carries no `expected`;
+   it is judged by the error's contract name before anything reads
+   `expected`, and every other case unwraps the value. #}
+{% set call %}{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %}){% endset %}
         val cases = ref["{{ f.ref_section }}"]!!.jsonObject["{{ f.name }}"]!!.jsonObject["cases"]!!.jsonArray
         for (case in cases) {
             val args = case.jsonObject["args"]!!.jsonArray
@@ -31,8 +37,27 @@
             val arg{{ i }} = {{ ("args[" ~ i ~ "]") | kt_unmarshal(arg_ty) }}
 {% endif %}
 {% endfor %}
+{% if f.may_fail %}
+            val fails = case.jsonObject["fails"]?.jsonPrimitive?.content
+            val result = {{ call }}
+            if (fails != null) {
+                when (result) {
+                    is com.sce.forge.runtime.AlgorithmResult.Failed ->
+                        assertEquals(fails, result.error.contractName, "{{ f.name }}")
+                    is com.sce.forge.runtime.AlgorithmResult.Ok ->
+                        throw AssertionError("{{ f.name }}: the case expects a failure, got ${result.value}")
+                }
+                continue
+            }
+            val returned = when (result) {
+                is com.sce.forge.runtime.AlgorithmResult.Ok -> result.value
+                is com.sce.forge.runtime.AlgorithmResult.Failed ->
+                    throw AssertionError("{{ f.name }}: the case expects a value, failed with ${result.error.contractName}")
+            }
+{% endif %}
 {% if f.output.record is defined %}
-            val actual = {{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+            val actual = {% if f.may_fail %}returned{% else %}{{ call }}{% endif %}
+
             val expected = case.jsonObject["expected"]!!.jsonObject
 {% for fld in f.output.fields %}
             assertEquals({{ ("expected[\"" ~ fld.name ~ "\"]!!") | kt_unmarshal(fld.type) }}, actual.{{ fld.ident }}, "{{ f.name }}.{{ fld.name }}")
@@ -46,7 +71,7 @@
 {% if f.output.list_of in ["u8", "u16", "u32", "u64"] %}
             @OptIn(ExperimentalUnsignedTypes::class)
 {% endif %}
-            val actual = {{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %}).toList()
+            val actual = {% if f.may_fail %}returned{% else %}{{ call }}{% endif %}.toList()
 {% if f.output.compare == "tolerance" %}
             assertEquals(expected.size, actual.size, "{{ f.name }} length")
             for (i in expected.indices) {
@@ -57,7 +82,8 @@
 {% endif %}
 {% else %}
             val expected = {{ "case.jsonObject[\"expected\"]!!" | kt_unmarshal(f.output.type) }}
-            val actual = {{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+            val actual = {% if f.may_fail %}returned{% else %}{{ call }}{% endif %}
+
 {% if f.output.compare == "tolerance" %}
             assertClose(actual.toDouble(), expected.toDouble(), "{{ f.name }}")
 {% else %}

@@ -28,5 +28,15 @@ package com.sce.generated.{{ package }}
 {% endif %}
 
 {{ consts_prelude }}fun {{ primary_symbol }}({{ params_str }}){% if has_return %}: {{ return_type }}{% endif %} {
+{% if may_fail %}
+    // SCE_FORGE.md §3.4.1: a checked operation throws its failure, and this
+    // boundary hands it to the caller as a value — never as an exception.
+    try {
 {{ body }}
+    } catch (failure: com.sce.forge.runtime.AlgorithmFailure) {
+        return com.sce.forge.runtime.AlgorithmResult.Failed(failure.error)
+    }
+{% else %}
+{{ body }}
+{% endif %}
 }

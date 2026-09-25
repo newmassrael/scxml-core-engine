@@ -4653,7 +4653,22 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 emit_kotlin(source, InferredType::Unknown)?
             )
         }
-        ExprKind::Checked { .. } => return Err(checked_arithmetic_unlowered("Kotlin")),
+        // SCE_FORGE.md §3.4.1: the runtime's overload for the operation's own
+        // width, each operand spelled at that width so the overload resolves
+        // (Kotlin gives a bare literal no unsigned or narrow type). A failure
+        // is thrown and turned into `AlgorithmResult.Failed` at the
+        // algorithm's boundary.
+        ExprKind::Checked { op, left, right } => {
+            let mut operands = vec![emit_kotlin(left, expr.ty)?];
+            if let Some(right) = right {
+                operands.push(emit_kotlin(right, expr.ty)?);
+            }
+            format!(
+                "com.sce.forge.runtime.SceChecked.{}({})",
+                op.helper(),
+                operands.join(", ")
+            )
+        }
     })
 }
 

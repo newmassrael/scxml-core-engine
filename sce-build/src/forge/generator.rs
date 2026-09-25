@@ -21458,13 +21458,16 @@ impl<'a> ListSpelling<'a> {
     }
 
     /// Return the finished buffer in the function's declared return shape.
-    fn return_stmt(&self, pad: &str, local: &str) -> String {
+    /// The value a list buffer `local` is returned as — Kotlin converts its
+    /// working buffer to the declared array; every other backend returns the
+    /// buffer itself. [`algorithm_return`] spells the statement.
+    fn return_value(&self, local: &str) -> String {
         use crate::generator::Language;
         match self.lang {
-            Language::Rust => format!("{pad}return Ok({local});\n"),
-            Language::Cpp | Language::C11 => format!("{pad}return {local};\n"),
-            Language::Go | Language::Python => format!("{pad}return {local}\n"),
-            Language::Kotlin => format!("{pad}return {local}.{}()\n", self.kotlin_to_array()),
+            Language::Kotlin => format!("{local}.{}()", self.kotlin_to_array()),
+            Language::Rust | Language::Cpp | Language::C11 | Language::Go | Language::Python => {
+                local.to_string()
+            }
         }
     }
 
@@ -22532,7 +22535,8 @@ fn lower_algorithm_stmt(
                             .into();
                         return Err(at.place(refusal));
                     }
-                    ListSpelling::new(l, elem).return_stmt(pad, &l.local_id(name))
+                    let value = ListSpelling::new(l, elem).return_value(&l.local_id(name));
+                    algorithm_return(lang, pad, &value, may_fail || lang == Language::Rust)
                 }
                 // A record return (SCE_FORGE.md §4.12): the returned value is
                 // a record parameter or local of the same schema, by name —
@@ -22556,16 +22560,7 @@ fn lower_algorithm_stmt(
                             .into();
                         return Err(at.place(refusal));
                     }
-                    let local = l.local_id(name);
-                    match lang {
-                        Language::Python | Language::Kotlin | Language::Go => {
-                            format!("{pad}return {local}\n")
-                        }
-                        Language::Rust if may_fail => format!("{pad}return Ok({local});\n"),
-                        Language::Rust | Language::Cpp | Language::C11 => {
-                            format!("{pad}return {local};\n")
-                        }
-                    }
+                    algorithm_return(lang, pad, &l.local_id(name), may_fail)
                 }
                 Some(rhs) => {
                     // Coerce to the function's declared return type so
@@ -22580,30 +22575,22 @@ fn lower_algorithm_stmt(
                         expr::transpile_into(rhs, l.expr_target(), type_ctx, renames, return_ty)
                             .map_err(|refusal| site.place(refusal))?;
                     if matches!(return_ty, InferredType::Bytes) {
-                        // SCE byte-buffer-build (§4.12): wrap the finished
-                        // buffer into the backend's return shape — Rust the
-                        // fallible `Ok(..)`; C11 the by-value result struct
-                        // (returned verbatim, its `ok` flag already set);
-                        // Python/Kotlin a conversion from the working buffer to
-                        // the immutable byte type; Cpp/Go the buffer directly.
-                        match lang {
-                            Language::Rust => format!("{pad}return Ok({lowered});\n"),
-                            Language::Python => format!("{pad}return bytes({lowered})\n"),
-                            Language::Kotlin => {
-                                format!("{pad}return {lowered}.toByteArray()\n")
+                        // SCE byte-buffer-build (§4.12): the finished buffer in
+                        // the backend's return shape — Rust the fallible
+                        // `Ok(..)`; C11 the by-value result struct (returned
+                        // verbatim, its `ok` flag already set); Python/Kotlin a
+                        // conversion from the working buffer to the immutable
+                        // byte type; Cpp/Go the buffer directly.
+                        let value = match lang {
+                            Language::Python => format!("bytes({lowered})"),
+                            Language::Kotlin => format!("{lowered}.toByteArray()"),
+                            Language::Rust | Language::Cpp | Language::C11 | Language::Go => {
+                                lowered
                             }
-                            Language::Cpp | Language::C11 => {
-                                format!("{pad}return {lowered};\n")
-                            }
-                            Language::Go => format!("{pad}return {lowered}\n"),
-                        }
+                        };
+                        algorithm_return(lang, pad, &value, may_fail || lang == Language::Rust)
                     } else {
-                        match lang {
-                            Language::Python => format!("{pad}return {lowered}\n"),
-                            Language::Kotlin => format!("{pad}return {lowered}\n"),
-                            Language::Rust if may_fail => format!("{pad}return Ok({lowered});\n"),
-                            _ => format!("{pad}return {lowered};\n"),
-                        }
+                        algorithm_return(lang, pad, &lowered, may_fail)
                     }
                 }
                 None => match lang {
@@ -23130,6 +23117,32 @@ fn rust_algorithm_failure(may_fail: bool) -> &'static str {
     }
 }
 
+/// The statement that returns `value` from an algorithm body.
+///
+/// `fallible` says the function hands its value back through a failure
+/// channel: every `may-fail` algorithm (SCE_FORGE.md §3.4.1), and on Rust a
+/// buffer return too, whose append can exceed its capacity (§4.12). The
+/// value then rides in that channel's success case. A backend that has no
+/// failure channel never reaches here fallible:
+/// `reject_may_fail_in_unsupported_lang` refuses a `may-fail` algorithm for
+/// it first.
+fn algorithm_return(
+    lang: crate::generator::Language,
+    pad: &str,
+    value: &str,
+    fallible: bool,
+) -> String {
+    use crate::generator::Language;
+    match lang {
+        Language::Rust if fallible => format!("{pad}return Ok({value});\n"),
+        Language::Kotlin if fallible => {
+            format!("{pad}return com.sce.forge.runtime.AlgorithmResult.Ok({value})\n")
+        }
+        Language::Python | Language::Kotlin | Language::Go => format!("{pad}return {value}\n"),
+        Language::Rust | Language::Cpp | Language::C11 => format!("{pad}return {value};\n"),
+    }
+}
+
 /// The backends that lower `<sce:return may-fail="true">`: every integer
 /// operation checked, and a failure returned through the target's failure
 /// channel instead of a value (SCE_FORGE.md §3.4.1).
@@ -23138,7 +23151,10 @@ fn rust_algorithm_failure(may_fail: bool) -> &'static str {
 /// lowering. Until then the algorithm is refused for it, because the
 /// alternative is an unchecked body behind a signature that promises the
 /// caller a failure it will never see.
-const MAY_FAIL_BACKENDS: &[crate::generator::Language] = &[crate::generator::Language::Rust];
+const MAY_FAIL_BACKENDS: &[crate::generator::Language] = &[
+    crate::generator::Language::Rust,
+    crate::generator::Language::Kotlin,
+];
 
 /// Whether `lang` lowers a `may-fail` algorithm — the question the
 /// conformance harness asks before scheduling one, answered from the list
@@ -23576,10 +23592,16 @@ fn render_algorithm(
     // above; a scalar or record return is wrapped here. `may-fail` sits on
     // the signature's `<sce:return>`, so there is always a value to wrap.
     let returns_buffer = declared_return.is_some_and(|t| t.is_append_buffer());
-    let return_type = if may_fail && lang == Language::Rust && !returns_buffer {
-        format!("Result<{return_type}, {}>", rust_algorithm_failure(true))
-    } else {
-        return_type
+    // Kotlin wraps every return, a buffer's included — its buffers grow and
+    // have no failure of their own (§4.12).
+    let return_type = match lang {
+        Language::Rust if may_fail && !returns_buffer => {
+            format!("Result<{return_type}, {}>", rust_algorithm_failure(true))
+        }
+        Language::Kotlin if may_fail => {
+            format!("com.sce.forge.runtime.AlgorithmResult<{return_type}>")
+        }
+        _ => return_type,
     };
 
     // SCE byte-buffer-build (§4.12): per-buffer capacity table (for the C11
@@ -23707,7 +23729,13 @@ fn render_algorithm(
             records: &records,
             may_fail,
         },
-        1,
+        // A `may-fail` Kotlin body sits inside the `try` that turns a failure
+        // into `AlgorithmResult.Failed` (`algorithm.kt.jinja2`).
+        if may_fail && lang == Language::Kotlin {
+            2
+        } else {
+            1
+        },
     )?;
 
     let needs_span = m
@@ -23748,6 +23776,7 @@ fn render_algorithm(
         m.signature.return_type.is_some().into(),
     );
     ctx.insert("body".into(), body.into());
+    ctx.insert("may_fail".into(), may_fail.into());
     ctx.insert("needs_span".into(), needs_span.into());
     // RFC §synth-5-A: Rust `#![no_std]`-clean when no `bytes` parameter
     // *and* no array-form consts (the latter pull in
