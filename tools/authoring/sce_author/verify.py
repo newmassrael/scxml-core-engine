@@ -27,6 +27,7 @@ clean run for a document it never executed.
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
 import itertools
 import json
@@ -1711,10 +1712,51 @@ def verify_statechart(pack: Pack, binding: dict, module, build: Build,
     return verification
 
 
+@contextlib.contextmanager
+def _scratch():
+    """One directory for everything a run writes, gone when the run ends.
+
+    ⚠ A run writes the document's generated lowering and, for a document
+    with open values, a copy of the document itself -- and both used to be
+    left in the system temp directory, one pair per run. A document is often
+    somebody's specification in executable form: measured 2026-09-25, 3,313
+    such directories had piled up on one machine from a day of runs. So the
+    run owns its scratch, and nothing it wrote outlives it.
+
+    ⚠⚠ The interpreter is put back as well. Loading the lowering adds the
+    scratch to `sys.path` and registers its package in `sys.modules`; a
+    long-lived caller -- the MCP server answers every request in one process
+    -- otherwise kept one import root and one package per run it had ever
+    made, each pointing at a directory that no longer exists.
+    """
+    with tempfile.TemporaryDirectory(prefix="sce_verify_") as name:
+        root = pathlib.Path(name)
+        path_before = list(sys.path)
+        try:
+            yield root
+        finally:
+            sys.path[:] = [p for p in sys.path if p in path_before or not _under(p, root)]
+            for key in [k for k, m in sys.modules.items() if _under(getattr(m, "__file__", None), root)]:
+                del sys.modules[key]
+
+
+def _under(path, root: pathlib.Path) -> bool:
+    if not path:
+        return False
+    candidate = pathlib.Path(path)
+    return candidate == root or root in candidate.parents
+
+
 def verify(pack: Pack, binding_path: pathlib.Path,
            codegen: pathlib.Path | None = None,
            backend: str = "python") -> Verification:
     """Run every example case against the bound document."""
+    with _scratch() as root:
+        return _verify(pack, binding_path, codegen, backend, root)
+
+
+def _verify(pack: Pack, binding_path: pathlib.Path, codegen: pathlib.Path | None,
+            backend: str, root: pathlib.Path) -> Verification:
     from .check import read_document  # local: only verification needs it
 
     if backend not in DRIVEN_BACKENDS:
@@ -1764,13 +1806,18 @@ def verify(pack: Pack, binding_path: pathlib.Path,
             "the document cannot be driven by them."))
 
     codegen = pathlib.Path(codegen) if codegen else _default_codegen()
-    into = pathlib.Path(tempfile.mkdtemp(prefix="sce_verify_"))
+    # The lowering is imported as a package named after its directory, so the
+    # name is the scratch's own -- unique per run, an identifier by
+    # construction.
+    into = root / root.name
+    into.mkdir()
+    source_dir = root / "source"
+    source_dir.mkdir()
     # A statechart's open decisions sit on states and transitions, which a
     # placeholder cannot stand in for; it is built as written and refused by
     # the product in its own words, as before.
     source = (document if declared.kind in STATECHART_KINDS else
-              verification_source(document, declared,
-                                  pathlib.Path(tempfile.mkdtemp(prefix="sce_verify_src_"))))
+              verification_source(document, declared, source_dir))
     withheld = withheld_outputs(declared) if source != document else {}
     build = generate(source, codegen, into, backend)
     if build.refusal:
