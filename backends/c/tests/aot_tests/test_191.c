@@ -20,7 +20,7 @@
 //   </state>
 //
 // W3C 6.4 onentry-stamp ordering: the child's `<onentry>` runs during
-// `enter_state_recursive` inside `_init_with_parent`. With parent_dispatch
+// `enter_initial_configuration` inside `_init_with_parent`. With parent_dispatch
 // stamped BEFORE the entry walk, the send routes to the parent's external
 // queue and parent's `childToParent` transition fires → s0 → pass. Without
 // the stamp the send drops under a NULL guard, child reaches subFinal,

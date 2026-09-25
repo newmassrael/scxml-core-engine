@@ -8,8 +8,8 @@
 // attribute, multi-target), then `<initial><transition target="s21p112
 // s21p122"/></initial>` (initial element), then `<state id="s3">` with
 // no initial attribute (default to first child). Each leg requires the
-// chain loop to enter every parallel sibling (s11p11+s11p12 via
-// enter_parallel_regions, then the same for s2p1's regions). Reaching
+// entry set to hold every parallel sibling (s11p11+s11p12, then the same
+// for s2p1's regions — §scxml-D-computeEntrySet). Reaching
 // pass via the s3 → s31 → s311 → s3111 default-initial cascade proves
 // every default-initial form along the way activated the full
 // configuration; any single-leaf entry on the multi-target legs would

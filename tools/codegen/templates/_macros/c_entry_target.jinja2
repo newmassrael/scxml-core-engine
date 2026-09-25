@@ -1,0 +1,30 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+{#
+   One token of a target list — a transition's `target`, a state's initial
+   transition, a `<history>`'s default — as the C11 machine spells it.
+
+   A `<history>` is not a state and has no state enumerator: it is named by
+   the machine's `_HIST_<ID>` enumerator, and the entry procedures dereference
+   it to what it recorded or to its default. The C11 profile has no sum type
+   to carry that distinction without a tag word per token, so a token is one
+   byte and the two ranges are disjoint: below `_STATE_COUNT` it is a state,
+   at or above it it is `_STATE_COUNT` plus the history's enumerator. The
+   generated machine asserts at compile time that every token fits. The C11
+   twin of `rust_entry_target.jinja2`.
+
+   `history_states` and `prefix` (the machine's upper-case symbol prefix) are
+   passed in rather than read from the caller's context because an imported
+   macro does not see it.
+#}
+{% macro entry_target(token, history_states, prefix) -%}
+{%- if token in history_states -%}(uint8_t)((uint32_t){{ prefix }}_STATE_COUNT + (uint32_t){{ prefix }}_HIST_{{ token | upper | replace('-', '_') | replace('.', '_') }})
+{%- else -%}(uint8_t){{ prefix }}_STATE_{{ token | upper | replace('-', '_') | replace('.', '_') }}
+{%- endif -%}
+{%- endmacro %}
+
+{# A whole target list, as the initialiser of a `static const uint8_t` array.
+   The caller emits no array for an empty list: C has no empty initialiser. #}
+{% macro entry_targets(tokens, history_states, prefix) -%}
+{ {% for t in tokens %}{{ entry_target(t, history_states, prefix) }}{{ ", " if not loop.last }}{% endfor %} }
+{%- endmacro %}

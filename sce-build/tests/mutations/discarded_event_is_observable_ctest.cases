@@ -96,13 +96,11 @@ PY
 
 mutation_case "the c11 machine counts the events it did handle" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     """        if (process_transition(sm, evt.event, enabled, &count)) {
-            count = remove_conflicting_transitions(enabled, count);
-            handle_microstep(sm, enabled, count);
+     """        if (select_transitions(sm, evt.event, enabled, &count)) {
+            microstep(sm, enabled, count);
         } else {""",
-     """        if (process_transition(sm, evt.event, enabled, &count)) {
-            count = remove_conflicting_transitions(enabled, count);
-            handle_microstep(sm, enabled, count);
+     """        if (select_transitions(sm, evt.event, enabled, &count)) {
+            microstep(sm, enabled, count);
             sm->discarded_external_events++;
             sm->last_discarded_event = evt.event;
             sm->has_discarded_event = true;

@@ -3,14 +3,13 @@
 //
 // W3C SCXML test403b — C11 AOT runner.
 //
-// Adversarial fixture for remove_conflicting_transitions: two active
-// region leaves (p0s1, p0s2) under <parallel id="p0"> both bubble into
-// the same parent transition `<transition event="event1">`, which gets
-// pushed onto the enabled list twice. Conflict resolution must dedup
-// via exit-set intersection so the body (`Var1 = Var1 + 1`) fires
+// Adversarial fixture for select_transitions: two active region leaves
+// (p0s1, p0s2) under <parallel id="p0"> both reach the same parent
+// transition `<transition event="event1">`. The enabled set is a set, so
+// it holds that transition once and the body (`Var1 = Var1 + 1`) fires
 // exactly once — pass cond is `Var1 == 1`, fire-twice would route to
-// fail. Pins the W3C App.D.2 "optimal enabled set is a set" semantics
-// that handle_microstep relies on (multi-leaf bubble dedup).
+// fail. Pins the §scxml-D-selectTransitions "optimal enabled set is a set"
+// semantics the microstep relies on.
 
 #include <stdio.h>
 

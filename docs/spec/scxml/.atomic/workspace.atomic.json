@@ -14711,10 +14711,6 @@
           "kind": "implements"
         },
         {
-          "file": "backends/c/runtime/include/sce/types.h",
-          "kind": "references"
-        },
-        {
           "file": "sce/include/core/MicrostepAlgorithms.h",
           "symbol": "microstep",
           "kind": "implements"
@@ -18809,6 +18805,12 @@
       "target_kind": "section",
       "target_id": "scxml-3.12",
       "reason": "Its only 3.12 cite sat on the policy's ancestor check used for the LCA, which the Go backend's move onto runtime/microstep.go deleted; the LCA is now microstep.go's findLCCA, bound to scxml-D-findLCCA"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-microstepProcedure",
+      "reason": "Its only cite sat on SCE_MAX_ENABLED_TRANSITIONS, the fixed cap on the optimal enabled transition set; the C11 Appendix D transcription (tools/codegen/templates/c/microstep.jinja2) sizes that set by the document's atomic state count instead, so the knob and its cite are gone"
     }
   ],
   "frames": {},

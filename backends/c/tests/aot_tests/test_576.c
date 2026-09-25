@@ -13,8 +13,8 @@
 // default first child, never enter s11p12, and the safety-net 1s
 // `<send event="timeout"/>` would route to fail.
 //
-// Spec-mirror parity (test413 sibling — same enter_state_recursive
-// chain expansion through the parallel chain element).
+// Spec-mirror parity (test413 sibling — the same entry set computed
+// from a multi-target initial transition).
 
 #include <stdio.h>
 

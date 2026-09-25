@@ -105,7 +105,7 @@ PY
 
 # ⚠ Dropping the copy outright leaves `host_processors` an unread parameter,
 # and `-Werror=unused-parameter` refuses that. `(void)` is the idiom this very
-# template already uses for the same reason (`enter_parallel_regions`), and it
+# template already uses for the same reason (`first_enabled_transition`), and it
 # is also the honest shape of the defect: the argument arrived and was thrown
 # away.
 mutation_case "the wiring does not survive init" <<'PY'

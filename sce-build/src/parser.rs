@@ -4445,7 +4445,7 @@ impl SCXMLParser {
         // listed descendant simultaneously. Walk up from each target
         // through all ancestors up to (but not crossing) the multi-target
         // origin state, overriding each compound ancestor's `initial` to
-        // the child on the path so codegen-time `state_get_initial_child`
+        // the child on the path so a consumer that follows `initial`
         // routes to the path leaf rather than the doc-order default.
         // Skip parallel ancestors (they enter every region automatically).
         // Two scopes covered:

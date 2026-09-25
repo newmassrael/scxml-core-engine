@@ -2066,16 +2066,11 @@ SCE_SM_FN static SCE_C_UNUSED bool event_is_error({{ csym_prefix }}{{ model.name
 {# W3C SCXML 3.6/3.7: `_initial_state()` returns the resolved initial
    leaf (parser.rs `resolve_deep_initial` already collapses `model.initial`
    through the deep-initial chain so nested `<state initial="...">`
-   declarations end at the correct leaf). enter_state_recursive's
-   walk-up entry chain (HierarchicalStateHelper::buildEntryChain mirror)
-   now drives the ancestor onentry sequence — so emitting the leaf
-   directly is enough. An earlier revision returned the topmost
-   ancestor and relied on `state_get_initial_child` to walk back
-   down, but that path followed each ancestor's own `initial`
-   attribute and could diverge from `model.initial` when the SCXML
-   declared a deep initial that bypasses an intermediate state's
-   default initial child (test388: `<scxml initial="s012">` vs
-   `<state id="s01" initial="s011">`). #}
+   declarations end at the correct leaf). It is a host-facing answer only:
+   the machine itself enters its initial configuration from the document's
+   initial transition as written (`enter_initial_configuration`,
+   c/microstep.jinja2), which a single leaf cannot express when that
+   transition names several states. #}
 SCE_SM_FN {{ csym_prefix }}{{ model.name }}_state_t {{ csym_prefix }}{{ model.name }}_initial_state(void) {
     return {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ model.initial | upper | replace('-', '_') | replace('.', '_') }};
 }
@@ -2204,45 +2199,6 @@ SCE_SM_FN static SCE_C_UNUSED bool state_is_parallel({{ csym_prefix }}{{ model.n
     }
 }
 
-/* W3C SCXML 3.3: this state's position in DOCUMENT order.
-
-   The C twin of `get_document_order` (Rust / Go / Kotlin / Python), and it
-   exists here for the reason it exists there: Appendix D walks the active
-   configuration in document order in several places, and no engine can
-   recover that order from its own configuration store. This one least of all
-   — the configuration is a bitmap indexed by the state enum, and that enum is
-   emitted in ALPHABETICAL order, so iterating it ascending walks the document
-   in whatever order the author happened to name things.
-
-   Ranks are the parser's own, so they are stable across a regeneration and
-   comparable only with each other; nothing here assumes they are contiguous
-   or start at zero. */
-SCE_SM_FN static SCE_C_UNUSED uint32_t state_document_order({{ csym_prefix }}{{ model.name }}_state_t s) {
-    switch (s) {
-    {% for state_id, state in model.states | dictsort %}
-    case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}:
-        return {{ state.document_order }}u;
-    {% endfor %}
-    default:
-        return 0u;
-    }
-}
-
-/* W3C SCXML 3.6: Initial child of a compound state. Returns the state
-   itself if not compound (callers loop until `child == self` for descend). */
-SCE_SM_FN static SCE_C_UNUSED {{ csym_prefix }}{{ model.name }}_state_t state_get_initial_child({{ csym_prefix }}{{ model.name }}_state_t s) {
-    switch (s) {
-    {% for state_id, state in model.states | dictsort %}
-    {% if state.initial_children and state.initial_children | length > 0 %}
-    case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}:
-        return {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state.initial_children[0] | upper | replace('-', '_') | replace('.', '_') }};
-    {% endif %}
-    {% endfor %}
-    default:
-        return s;
-    }
-}
-
 /* ── W3C SCXML 3.2: Configuration bitmap helpers ──────────────────── */
 {# Each state's enum value doubles as a bit index in `sm->active`. Entry
    sets parent ancestors AND the leaf bit (mirrors cpp activeStates_ which
@@ -2342,8 +2298,8 @@ SCE_SM_FN {{ csym_prefix }}{{ model.name }}_configuration_rejection_t {{ csym_pr
         if (state_is_parallel(s)) {
             /* W3C SCXML 3.4: EVERY region, because they are "simultaneously
                active when the parent element is active". The regions are the
-               document's children of `s` — the same enumeration
-               `enter_parallel_regions` walks. */
+               document's children of `s` — the same set `k_child_states`
+               holds for the entry procedures. */
             size_t regions = 0u;
             for (uint32_t r = 0u; r < (uint32_t){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_COUNT; ++r) {
                 bool region_has_parent = false;
@@ -2375,52 +2331,6 @@ SCE_SM_FN {{ csym_prefix }}{{ model.name }}_configuration_rejection_t {{ csym_pr
     return {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_NONE;
 }
 
-/* W3C SCXML 3.2: leaf extraction. Returns the unique active state with
-   no active children (single-leaf invariant; <parallel> generalisation
-   lands when its first fixture forces multi-leaf walking — at that point
-   process_transition will iterate every leaf instead of just the first). */
-SCE_SM_FN static SCE_C_UNUSED {{ csym_prefix }}{{ model.name }}_state_t config_leaf(uint32_t active) {
-    for (uint32_t s = 0u; s < (uint32_t){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_COUNT; ++s) {
-        if ((active & ((uint32_t)1u << s)) == 0u) {
-            continue;
-        }
-        bool has_active_child = false;
-        for (uint32_t c = 0u; c < (uint32_t){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_COUNT; ++c) {
-            if (c == s || (active & ((uint32_t)1u << c)) == 0u) {
-                continue;
-            }
-            bool hp;
-            {{ csym_prefix }}{{ model.name }}_state_t cp = state_get_parent(({{ csym_prefix }}{{ model.name }}_state_t)c, &hp);
-            if (hp && cp == ({{ csym_prefix }}{{ model.name }}_state_t)s) {
-                has_active_child = true;
-                break;
-            }
-        }
-        if (!has_active_child) {
-            return ({{ csym_prefix }}{{ model.name }}_state_t)s;
-        }
-    }
-    return ({{ csym_prefix }}{{ model.name }}_state_t)0;  /* unreachable in well-formed config */
-}
-
-/* W3C SCXML 3.2: enter `s` and every ancestor on its parent chain. Mirrors
-   cpp HierarchicalStateHelper::buildEntryChain followed by the configuration
-   set inserts. Idempotent — re-entering an already-active state is a no-op. */
-SCE_SM_FN static SCE_C_UNUSED uint32_t config_enter_chain(uint32_t active, {{ csym_prefix }}{{ model.name }}_state_t s) {
-    uint32_t out = active | state_bit(s);
-    {{ csym_prefix }}{{ model.name }}_state_t cur = s;
-    while (true) {
-        bool has_parent;
-        {{ csym_prefix }}{{ model.name }}_state_t parent = state_get_parent(cur, &has_parent);
-        if (!has_parent) {
-            break;
-        }
-        out |= state_bit(parent);
-        cur = parent;
-    }
-    return out;
-}
-
 /* W3C SCXML 3.7: codegen-time bitmask of every TOP-LEVEL <final> state.
    `{{ csym_prefix }}{{ model.name }}_is_in_final_state` returns true only when the
    machine reaches a final whose parent is the SCXML root — the spec's
@@ -2434,15 +2344,10 @@ SCE_SM_FN static SCE_C_UNUSED uint32_t config_enter_chain(uint32_t active, {{ cs
     (uint32_t)0u{% for state_id, state in model.states | dictsort %}{% if state.is_final and not state.parent %} \
     | ((uint32_t)1u << (uint32_t){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}){% endif %}{% endfor %})
 
-/* W3C SCXML 3.4: <parallel> region-children dispatch. Forward-declared so
-   enter_state_recursive can recurse through it before the function body
-   appears (mutual recursion: parallel → regions → enter_state_recursive →
-   compound/leaf). The body switches on the parallel state and emits one
-   enter_state_recursive call per region child in document order. */
-SCE_SM_FN static void enter_state_recursive({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s);
-SCE_SM_FN static void enter_state_recursive_ex({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s,
-                                               bool expand_parent_parallel);
-SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s);
+/* §scxml-D-isInFinalState is defined with the rest of the Appendix D
+   transcription (c/microstep.jinja2); a <final>'s entry asks it of the
+   enclosing <parallel> long before that. */
+SCE_SM_FN static bool is_in_final_state_of(const {{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s);
 /* §scxml-3.13: an external event this machine will never look at, and the
    drain that records the whole queue's worth of them. Both are defined with
    the accessors they feed, at the bottom of this file; declared here because
@@ -2451,192 +2356,6 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
 SCE_SM_FN static void note_unseen_event({{ csym_prefix }}{{ model.name }}_t *sm,
                             {{ csym_prefix }}{{ model.name }}_event_t event);
 SCE_SM_FN static void record_unseen_external_events({{ csym_prefix }}{{ model.name }}_t *sm);
-{% if model.has_history_states %}
-/* enter_state_recursive's compound-with-history dispatch routes to
-   enter_history_state, which is defined alongside the rest of the
-   history machinery further down. The forward decl keeps that backward
-   call resolved in the same translation unit without reordering the
-   logical sections. */
-SCE_SM_FN static void enter_history_state({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_history_t hid);
-{% endif %}
-
-/* §scxml-D-addAncestorStatesToEnter: a `<parallel>` reached only as an ANCESTOR
-   of the entry target still gives its regions their defaults — that is Appendix
-   D's one exception to the ancestor rule. The exception has its own exception:
-   NOT the region the entry chain is already descending into. `path_child` names
-   it (with `has_path_child` false when this parallel is the target itself), and
-   entering that region here would descend it to its own default initial child
-   while the chain is on its way to a different descendant — two children of one
-   compound state, active at once.
-
-   Measured 2026-08-15 by `integration_resources/ancestor_entry_is_not_default_entry/`,
-   whose `lobbied == 1` clause is exactly this. */
-SCE_SM_FN static void enter_parallel_regions({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s,
-                                             {{ csym_prefix }}{{ model.name }}_state_t path_child, bool has_path_child) {
-    (void)sm;
-    (void)path_child;
-    (void)has_path_child;
-    switch (s) {
-    {% for state_id, state in model.states | dictsort %}
-    {% if state.is_parallel %}
-    case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}:
-        {% for child_id, child_state in model.states | dictsort %}
-        {% if child_state.parent == state_id %}
-        if (!has_path_child || path_child != {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ child_id | upper | replace('-', '_') | replace('.', '_') }}) {
-            /* `false`: this region is being entered BY the expansion of its own
-               parent, so it must not turn around and expand that parent again.
-               Doing so re-enters the sibling regions with THIS region as the
-               path child, which hands a default to the region the outer chain
-               is descending into — the `lobbied == 2` failure, measured
-               2026-08-15. */
-            enter_state_recursive_ex(sm, {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ child_id | upper | replace('-', '_') | replace('.', '_') }}, false);
-        }
-        {% endif %}
-        {% endfor %}
-        break;
-    {% endif %}
-    {% endfor %}
-    default:
-        break;
-    }
-}
-
-/* W3C SCXML 3.2/3.4/3.6: Unified entry walk. Walks up to the first
-   already-active ancestor (or the root), then walks back down running
-   onentry on every state in the chain — so cross-compound entries
-   activate every passive ancestor's onentry, not just the leaf's.
-   After the chain runs, descend: a <parallel> activates every region,
-   a compound state descends through state.initial. Idempotent — the
-   walk-up halts at the first active ancestor, so re-entry into an
-   already-active subtree does not double-fire onentry.
-
-   W3C SCXML 3.4 parallel-sibling re-entry: when an external transition
-   inside a parallel region exits all sibling regions (compute_exit_set
-   returns active descendants of the parallel LCA), re-entering the
-   target alone leaves the cousin regions inactive. Whenever an entered
-   state's parent is an already-active <parallel>, dispatch the parent's
-   region children — enter_state_recursive is idempotent on already-active
-   regions, so siblings that were never exited are no-ops.
-
-   Mirrors cpp HierarchicalStateHelper::buildEntryChain followed by the
-   StaticExecutionEngine::executeMicrostep parallel re-entry pass. */
-/* The ordinary entry: a state somebody targeted, whose parent `<parallel>` may
-   have lost cousin regions to the exit set and needs them back. */
-SCE_SM_FN static void enter_state_recursive({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s) {
-    enter_state_recursive_ex(sm, s, true);
-}
-
-SCE_SM_FN static void enter_state_recursive_ex({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s,
-                                               bool expand_parent_parallel) {
-    if (config_in(sm->active, s)) {
-        return;
-    }
-    {{ csym_prefix }}{{ model.name }}_state_t chain[{{ csym_prefix | upper }}{{ model.name | upper }}_STATE_COUNT];
-    uint32_t depth = 0u;
-    {
-        {{ csym_prefix }}{{ model.name }}_state_t cur = s;
-        while (depth < (uint32_t){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_COUNT) {
-            chain[depth++] = cur;
-            bool has_parent;
-            {{ csym_prefix }}{{ model.name }}_state_t p = state_get_parent(cur, &has_parent);
-            if (!has_parent || config_in(sm->active, p)) {
-                break;
-            }
-            cur = p;
-        }
-    }
-    /* W3C SCXML 3.6 + 3.4: top-down chain enter. Each compound chain
-       element runs its `<initial>` transition's executable content
-       between its own onentry and its child's onentry (test412 —
-       actions interleave at the parent/child boundary). Each parallel
-       chain element activates its sibling regions before the chain
-       descends past it (test413/364/576 — multi-target initial enters
-       every sibling region, not just the path of model.initial_leaf).
-       The chain only carries one path-branch from leaf walk-up; sibling
-       regions are expanded via enter_parallel_regions, whose recursive
-       enter_state_recursive calls are idempotent on already-active
-       states. The idempotent guard at top of the loop catches the
-       chain[i] elements that the sibling expansion entered for us
-       (regions whose path overlaps the chain). cpp
-       HierarchicalStateHelper::buildEntryChain bakes parallel regions
-       into the chain itself; C11 expands them inline because the chain
-       array is a fixed-depth walk-up, not a tree push. */
-    {% set has_initial_actions = namespace(v=false) %}
-    {% for state_id, state in model.states | dictsort %}{% if state.initial_transition_actions %}{% set has_initial_actions.v = true %}{% endif %}{% endfor %}
-    for (uint32_t i = depth; i > 0u; --i) {
-        {{ csym_prefix }}{{ model.name }}_state_t e = chain[i - 1u];
-        if (config_in(sm->active, e)) {
-            continue;
-        }
-        sm->active |= state_bit(e);
-        execute_entry_actions(sm, e);
-        {% if has_initial_actions.v %}
-        switch (e) {
-        {% for state_id, state in model.states | dictsort %}
-        {% if state.initial_transition_actions %}
-        case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}: {
-            {% for action in state.initial_transition_actions %}
-            {{ emit_action(action) }}
-            {% endfor %}
-            break;
-        }
-        {% endif %}
-        {% endfor %}
-        default:
-            break;
-        }
-        {% endif %}
-        if (state_is_parallel(e)) {
-            /* §scxml-D: chain[i - 2] is the region this chain descends into,
-               and it is entered by the next iteration with the target's own
-               path rather than with a default. When `e` IS the target (i == 1)
-               there is no such region and every one of them takes its default. */
-            enter_parallel_regions(sm, e, (i >= 2u) ? chain[i - 2u] : e, i >= 2u);
-        }
-    }
-    if (expand_parent_parallel) {
-        bool has_parent;
-        {{ csym_prefix }}{{ model.name }}_state_t parent = state_get_parent(s, &has_parent);
-        if (has_parent && state_is_parallel(parent)
-            && config_in(sm->active, parent)) {
-            /* `s` is the target and is already active by now, so it needs no
-               exclusion — but naming it keeps this call honest about which
-               region the chain owns. */
-            enter_parallel_regions(sm, parent, s, true);
-        }
-    }
-    if (state_is_compound(s) && !state_is_parallel(s)) {
-        /* W3C SCXML 3.6 + 3.10: when the compound leaf's `<initial>`
-           targets a history pseudo-state, route through
-           `enter_history_state` so any recorded snapshot wins over the
-           default leaf. Without this branch parser.rs's
-           `resolve_history_targets` collapse — which rewrites
-           `state.initial` to the resolved default leaf for the regular
-           descend path — would silently bypass the snapshot on
-           re-entry (test579's second entry through s0 must restore s03
-           from the captured snapshot rather than re-descend to s01). */
-        {% set has_initial_history = namespace(v=false) %}
-        {% for state_id, state in model.states | dictsort %}{% if state.initial_history_id %}{% set has_initial_history.v = true %}{% endif %}{% endfor %}
-        {% if has_initial_history.v %}
-        switch (s) {
-        {% for state_id, state in model.states | dictsort %}
-        {% if state.initial_history_id %}
-        case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}:
-            enter_history_state(sm, {{ csym_prefix | upper }}{{ model.name | upper }}_HIST_{{ state.initial_history_id | upper | replace('-', '_') | replace('.', '_') }});
-            return;
-        {% endif %}
-        {% endfor %}
-        default:
-            break;
-        }
-        {% endif %}
-
-        {{ csym_prefix }}{{ model.name }}_state_t child = state_get_initial_child(s);
-        if (child != s) {
-            enter_state_recursive(sm, child);
-        }
-    }
-}
 
 /* ── W3C SCXML 5.9: Action execution (per-state, document-order) ──── */
 {# Mirrors the C++ entry_exit_actions.jinja2 dispatch: each `<onentry>` /
@@ -2950,34 +2669,13 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
         }
         {% if model.states[state.parent].parent and model.states[model.states[state.parent].parent].is_parallel %}
         {% set parallel_id = model.states[state.parent].parent %}
-        /* W3C SCXML 3.4 + 3.7.1: <parallel> completion check — when every
-           region of {{ parallel_id }} has an active direct <final> child,
-           raise done.state.{{ parallel_id }}. Mirrors cpp
-           `entry_exit_actions.jinja2:476-505` via
-           `ParallelCompletionHelper::areAllRegionsInFinal` (Zero
-           Duplication helper). The cpp helper iterates regions at
-           runtime; C11 expands the `regions × final-children` enumeration
-           at codegen time (inline-only). Direct-child only
-           (cpp `getParent(active) == region`), no descendant final. */
+        /* §scxml-D-enterStates: when the grandparent {{ parallel_id }} is a
+           <parallel> and every one of its child states is in a final state,
+           raise done.state.{{ parallel_id }}. `is_in_final_state_of` is
+           §scxml-D-isInFinalState, asked recursively, so a region that is
+           itself a <parallel> counts only once all of ITS regions do. */
         {
-            bool _parallel_complete = true;
-            {% for region_id, region_state in model.states | dictsort %}
-            {% if region_state.parent == parallel_id %}
-            {
-                const uint32_t _region_final_mask = (uint32_t)0u
-                {% for fchild_id, fchild_state in model.states | dictsort %}
-                {% if fchild_state.parent == region_id and fchild_state.is_final %}
-                    | state_bit({{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ fchild_id | upper | replace('-', '_') | replace('.', '_') }})
-                {% endif %}
-                {% endfor %}
-                ;
-                if (!(sm->active & _region_final_mask)) {
-                    _parallel_complete = false;
-                }
-            }
-            {% endif %}
-            {% endfor %}
-            if (_parallel_complete) {
+            if (is_in_final_state_of(sm, {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ parallel_id | upper | replace('-', '_') | replace('.', '_') }})) {
                 {{ csym_prefix }}{{ model.name }}_event_with_meta_t _done_p_evt;
                 memset(&_done_p_evt, 0, sizeof(_done_p_evt));
                 _done_p_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_STATE_{{ parallel_id | upper | replace('-', '_') | replace('.', '_') }};
@@ -3097,18 +2795,16 @@ SCE_SM_FN static void execute_exit_actions({{ csym_prefix }}{{ model.name }}_t *
     }
 }
 
-{# W3C SCXML 3.13: Deferred transition body executor. Mirrors the C++
+{# W3C SCXML 3.13: one transition's executable content, keyed by its source
+   state and its index among that state's transitions. Mirrors the C++
    `executeTransitionActions` switch-on-source-state → switch-on-index
-   pattern in `process_transition.jinja2`. The body has to run between
-   the exit chain and the entry chain (per W3C 3.13 doc-order:
-   exit → transition → entry), so `process_transition` only stores
-   `(last_transition_source_state, last_transition_index)` when it
-   matches and `handle_hierarchical_transition` invokes this dispatcher
-   between `execute_exit_actions` and `execute_entry_actions`.
+   pattern in `process_transition.jinja2`. The microstep's
+   `execute_transition_content` calls it once per selected transition,
+   after every exit and before any entry (§scxml-D-microstepProcedure).
 
    When no transition in the SM carries a body, the entire dispatch
-   collapses to an `(void)sm` stub so we keep one canonical signature
-   across fixtures. #}
+   collapses to a stub so we keep one canonical signature across
+   fixtures. #}
 {% set any_transition_actions = namespace(value=False) %}
 {% for state_id, state in model.states | dictsort %}
 {% if state.transitions %}
@@ -3120,14 +2816,16 @@ SCE_SM_FN static void execute_exit_actions({{ csym_prefix }}{{ model.name }}_t *
 {% endif %}
 {% endfor %}
 {{ sce_map.source_marker(model.source_location, "c", symbol_artifact=sce_artifact.machine) }}
-SCE_SM_FN static void execute_transition_actions({{ csym_prefix }}{{ model.name }}_t *sm) {
+SCE_SM_FN static void execute_transition_actions({{ csym_prefix }}{{ model.name }}_t *sm,
+                                                 {{ csym_prefix }}{{ model.name }}_state_t source,
+                                                 uint16_t index) {
 {% if any_transition_actions.value %}
-    switch (sm->policy.last_transition_source_state) {
+    switch (source) {
     {% for state_id, state in model.states | dictsort %}
     {% set state_has_actions = state.transitions and (state.transitions | selectattr('actions') | list | length > 0) %}
     {% if state_has_actions %}
     case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}:
-        switch (sm->policy.last_transition_index) {
+        switch (index) {
         {% for trans in state.transitions %}
         {% if trans.actions %}
         case {{ trans.transition_index }}: {  {{- annot.annotation_comment(trans, "c", "            ") }}
@@ -3156,8 +2854,54 @@ SCE_SM_FN static void execute_transition_actions({{ csym_prefix }}{{ model.name 
     }
 {% else %}
     (void)sm;
+    (void)source;
+    (void)index;
 {% endif %}
 }
+
+{# §scxml-D-enterStates: a compound state's initial transition content, run
+   when — and only when — the state is entered by default. #}
+SCE_SM_FN static void execute_initial_transition_content({{ csym_prefix }}{{ model.name }}_t *sm,
+                                                         {{ csym_prefix }}{{ model.name }}_state_t s) {
+    (void)sm;
+    switch (s) {
+    {% for state_id, state in model.states | dictsort %}
+    {% if state.initial_transition_actions %}
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}: {
+        {% for action in state.initial_transition_actions %}
+        {{ emit_action(action) }}
+        {% endfor %}
+        break;
+    }
+    {% endif %}
+    {% endfor %}
+    default:
+        break;
+    }
+}
+{% if model.has_history_states %}
+
+{# §scxml-D-enterStates: a <history>'s default transition content, owed to
+   its parent when nothing was recorded, run once the parent is entered. #}
+SCE_SM_FN static void execute_history_default_content({{ csym_prefix }}{{ model.name }}_t *sm,
+                                                      {{ csym_prefix }}{{ model.name }}_history_t h) {
+    (void)sm;
+    switch (h) {
+    {% for hid, info in model.history_states | dictsort %}
+    {% if info.default_actions %}
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_HIST_{{ hid | upper | replace('-', '_') | replace('.', '_') }}: {
+        {% for action in info.default_actions %}
+        {{ emit_action(action) }}
+        {% endfor %}
+        break;
+    }
+    {% endif %}
+    {% endfor %}
+    default:
+        break;
+    }
+}
+{% endif %}
 
 /* ── W3C SCXML 3.13: Transition processing ────────────────────────── */
 {# Mirrors the C++ `tryTransitionInState` switch-on-source-state pattern.
@@ -3216,647 +2960,105 @@ SCE_SM_FN static void execute_transition_actions({{ csym_prefix }}{{ model.name 
 {% endmacro %}
 
 {# W3C SCXML 3.13: Per-match transition body. Records the source state
-   (`check_state` from the surrounding `process_transition` walker, NOT
-   `sm->current_state` — for hierarchical bubbling the matching state
-   may be an ancestor of the active leaf) plus the precomputed transition
-   index, so `execute_transition_actions` can re-find the correct
-   action list from `(source, index)` between the exit and entry chains.
-   `is_internal` follows `transition_type` after analyzer.rs:423 has
-   already collapsed not-proper-descendant `internal` markers down to
-   `external` (the spec correction in W3C SCXML 3.13). `transition_type`
-   is therefore the only reliable signal — the `trans.is_internal`
-   convenience field used previously did not exist on the model and
-   silently rendered to `false` for every transition. #}
+   (`check_state` — for the ancestor walk of selection the matching state
+   may be an ancestor of the active atomic state) plus the transition's
+   index among its source's own transitions, which is what
+   `transition_targets` and `execute_transition_actions` key on.
+   `is_internal` follows `type` after analyzer.rs has already collapsed
+   not-proper-descendant `internal` markers down to `external` (the spec
+   correction in W3C SCXML 3.13). The exit set is left to
+   `remove_conflicting_transitions`, which computes it against the
+   configuration it judges. #}
 {% macro emit_transition_body(trans) %}
-            /* W3C SCXML App.D: collect into the enabled list. The list is a
-               stack-local fixed-cap buffer (`SCE_MAX_ENABLED_TRANSITIONS`,
-               override at build time). Overflow drops silently — fixtures
-               that need a higher cap raise it via -D, mirroring how
-               SCE_MAX_EVENTS scales with the queue. The exit set is
-               computed at collect time so conflict resolution reduces to
-               bitmap intersection (no helper-class dispatch). */
-            if (*out_count < (uint8_t)SCE_MAX_ENABLED_TRANSITIONS) {
-                {{ csym_prefix }}{{ model.name }}_transition_info_t *_ti = &out_list[*out_count];
-                _ti->source = check_state;
-                _ti->target = {% if trans.target %}{{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ trans.target | upper | replace('-', '_') | replace('.', '_') }}{% else %}check_state{% endif %};
-                _ti->index = (uint16_t){{ trans.transition_index }}u;
-                _ti->is_internal = {{ 'true' if (trans.type == 'internal' or not trans.target) else 'false' }};
-                _ti->is_targetless = {{ 'true' if not trans.target else 'false' }};
-                _ti->exit_set = compute_exit_set(sm->active, _ti->source, _ti->target,
-                                                 _ti->is_internal, _ti->is_targetless);
-{% if model.has_history_states %}
-                _ti->history_target = {% if trans.history_target %}{{ csym_prefix | upper }}{{ model.name | upper }}_HIST_{{ trans.history_target | upper | replace('-', '_') | replace('.', '_') }}{% else %}{{ csym_prefix | upper }}{{ model.name | upper }}_HIST_NONE{% endif %};
-{% endif %}
-                (*out_count)++;
-            }
-            break;  /* W3C 3.13: preemption — first match in this state wins */
+            out->source = check_state;
+            out->index = (uint16_t){{ trans.transition_index }}u;
+            out->is_internal = {{ 'true' if trans.type == 'internal' else 'false' }};
+            out->exit_set = 0u;
+            return true;  /* W3C 3.13: the first enabled transition in document order */
 {% endmacro %}
 
-/* ── W3C SCXML App.D: optimal enabled transition set helpers ──────── */
-{# Mirrors cpp ParallelTransitionHelper + ConflictResolutionHelper. The
-   C11 backend inlines the algorithm bodies here (jinja2-inline: no helper
-   class dispatch). compute_exit_set is called at collect time so each
-   transition_info_t carries its exit_set as a uint32_t — conflict
-   detection then reduces to bitmap intersection plus a small parallel-
-   ancestor scan, no per-pair LCA recomputation. #}
+/* ── W3C SCXML Appendix D: the transition a state enables ─────────── */
 
-/* W3C SCXML 3.12: Least Common Compound Ancestor (findLCCA per the
-   Algorithms appendix, which is the function `getTransitionDomain` calls
-   for external transitions whose source/target hierarchy needs the
-   full proper-ancestor walk).
-   Walks `getProperAncestors(source)`, keeps only the ancestors the appendix
-   admits as CANDIDATES, and returns the first of those that contains
-   `target` as a STRICT descendant.
+/* The one place a guard is evaluated: `check_state`'s first transition, in
+   document order, that `event` enables and whose guard holds — for
+   `_EVENT_NONE`, its first eventless transition whose guard holds. Mirrors
+   the Go runtime's `Run.FirstEnabledTransition`; `select_transitions` in
+   c/microstep.jinja2 is its only caller.
 
-   The candidate filter is `isCompoundStateOrScxmlElement`. A `<parallel>` is
-   neither a compound `<state>` nor the `<scxml>` element, so it is skipped
-   and the walk continues above it — which is the whole difference between a
-   region root's external transition landing on its enclosing `<parallel>`
-   and landing on the document root. Omitting the filter is `findLCA`, the
-   function the appendix distinguishes this one from, and the two answers
-   coincide everywhere except when a `<parallel>` sits between the source and
-   the first compound `<state>` above it. `state_is_compound` is true for a
-   `<parallel>` too (the parser defaults every parent's `initial` to its first
-   child), which is why the parallel test is spelled separately here, exactly
-   as `compute_exit_set` spells it for the internal-transition rule.
-
-   The `<scxml>` element is the other candidate, and it is the has_parent ==
-   false answer below rather than an enum member: this document's states are
-   its own, the root is not one of them, and `compute_exit_set`'s no-LCA
-   branch is what gives that answer its meaning (exit the whole active
-   configuration).
-
-   The strict check is what
-   distinguishes findLCCA from the older single-pair `findLCA`: when
-   target is itself an ancestor of source (e.g. test579's s03→s0),
-   findLCA collapses LCA onto target, so exit set computation excludes
-   target's onexit and Var1 never increments — observably wrong. The
-   strict-descendant check skips that case and walks one level higher,
-   producing the W3C-correct domain (root/no_lca when target sits on
-   source's own ancestor chain), at which point compute_exit_set's
-   no-lca branch exits the entire configuration so the target gets a
-   fresh entry chain (including its onentry and `<initial>` content).
-   Returns has_lca=false in two cases: (a) the two states share no
-   common ancestor (top-level siblings under an implicit root) and
-   (b) target lies on source's ancestor chain (target == anc, never
-   strict-descendant). compute_exit_set treats both with the same
-   "exit everything active" semantics, matching cpp
-   StaticExecutionEngine::handleHierarchicalTransition's no-LCA branch. */
-SCE_SM_FN static SCE_C_UNUSED {{ csym_prefix }}{{ model.name }}_state_t find_lcca({{ csym_prefix }}{{ model.name }}_state_t source,
-                                                        {{ csym_prefix }}{{ model.name }}_state_t target,
-                                                        bool *out_has) {
-    bool hp = false;
-    {{ csym_prefix }}{{ model.name }}_state_t cur = state_get_parent(source, &hp);
-    while (hp) {
-        bool is_candidate = state_is_compound(cur) && !state_is_parallel(cur);
-        if (is_candidate && is_descendant_of(target, cur)) {
-            *out_has = true;
-            return cur;
-        }
-        cur = state_get_parent(cur, &hp);
-    }
-    *out_has = false;
-    return source;
-}
-
-/* W3C SCXML App.D.2: exit set per transition (cpp ParallelTransitionHelper::
-   computeStatesToExit mirror). The bitmap returned is the actual set of
-   states that will exit when this transition fires, and it doubles as the
-   conflict-resolution input — bigger sets mean bigger intersections, so
-   removeConflictingTransitions catches every parallel-ancestor conflict
-   without a separate ancestor-chain pass.
-   - targetless (W3C 5.9.2): empty — body fires, no state change.
-   - internal-to-compound-descendant (W3C 3.13): empty. Source stays
-     active; intermediate active descendants exit/re-enter via the entry
-     phase walk (test505's `<transition type="internal" target="s11">`
-     exits s11 so its onexit assigns Var2 each pass).
-   - else: active descendants of LCA(source, target) — the LCA itself
-     is included only when source==LCA (external self-loop). Cross-
-     compound asymmetric transitions (target not a sibling of source) and
-     parallel-region transitions both fall through this path, so test403c
-     and test505/506 share one implementation. */
-SCE_SM_FN static SCE_C_UNUSED uint32_t compute_exit_set(uint32_t active,
-                                              {{ csym_prefix }}{{ model.name }}_state_t source,
-                                              {{ csym_prefix }}{{ model.name }}_state_t target,
-                                              bool is_internal, bool is_targetless) {
-    if (is_targetless) {
-        return 0u;
-    }
-    bool internal_to_descendant = is_internal
-        && state_is_compound(source) && !state_is_parallel(source)
-        && is_descendant_of(target, source);
-    {{ csym_prefix }}{{ model.name }}_state_t lca;
-    bool has_lca;
-    if (internal_to_descendant) {
-        lca = source;
-        has_lca = true;
-    } else {
-        lca = find_lcca(source, target, &has_lca);
-    }
-    if (!has_lca) {
-        /* Cross-hierarchy transition (source and target are top-level
-           siblings under an implicit root) — exit the entire active
-           configuration. cpp StaticExecutionEngine::handleHierarchicalTransition
-           walks oldState (= currentState_, the deepest active leaf) up
-           to the root; the bitmap equivalent is `active` itself, since
-           every active state is on some leaf's ancestor chain. */
-        return active;
-    }
-    bool should_exit_source = !is_internal && (source == lca);
-    uint32_t exit_set = 0u;
-    for (uint32_t i = 0u; i < (uint32_t){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_COUNT; ++i) {
-        if ((active & ((uint32_t)1u << i)) == 0u) {
-            continue;
-        }
-        {{ csym_prefix }}{{ model.name }}_state_t s = ({{ csym_prefix }}{{ model.name }}_state_t)i;
-        if (s == lca) {
-            if (should_exit_source) {
-                exit_set |= state_bit(s);
-            }
-            continue;
-        }
-        if (is_descendant_of(s, lca)) {
-            exit_set |= state_bit(s);
-        }
-    }
-    return exit_set;
-}
-
-/* W3C SCXML App.D removeConflictingTransitions — full algorithm mirror.
-   Walks the input list in document order; each new transition t1 is
-   compared against the already-filtered list. Conflict is exit-set
-   bitmap intersection and nothing else; on conflict the preemption
-   rule decides which side survives:
-     - t1.source descends from t2.src → drop t2 (t1 deeper, preempts)
-     - else                           → drop t1 (t2 deeper or equal-depth-doc-prior)
-   Mirrors cpp ConflictResolutionAlgorithms::removeConflictingTransitions.
-   Working buffer reuses the SCE_MAX_ENABLED_TRANSITIONS cap so no
-   heap traffic; final result copied back into the caller's list. */
-SCE_SM_FN static SCE_C_UNUSED uint8_t remove_conflicting_transitions({{ csym_prefix }}{{ model.name }}_transition_info_t *list,
-                                                            uint8_t count) {
-    {{ csym_prefix }}{{ model.name }}_transition_info_t filtered[SCE_MAX_ENABLED_TRANSITIONS];
-    uint8_t filtered_count = 0u;
-
-    for (uint8_t k = 0u; k < count; ++k) {
-        {{ csym_prefix }}{{ model.name }}_transition_info_t t1 = list[k];
-
-        /* Appendix D selectTransitions: the enabled set is an ORDERED SET,
-           and the same transition reached from two different region leaves
-           is ONE element of it, not two. A transition written on a
-           <parallel>, or on an ancestor above one, is selected once per
-           region by the bubbling walk, so this is the ordinary case rather
-           than an edge one -- W3C test 403b turns on a <parallel>-level
-           <assign> running exactly once.
-
-           Selection stops at the first enabled transition of a state, so
-           within one microstep a source contributes at most one transition
-           and (source, target) identifies it. This is what the removed
-           target/source criterion was standing in for: a targetless
-           duplicate is spelled source -> source, so `t1.target ==
-           t2->source` happened to fire on it and drop the copy. That is
-           the set semantics stated where they belong, and it does not
-           depend on how a targetless transition is spelled. */
-        bool already_selected = false;
-        for (uint8_t d = 0u; d < filtered_count; ++d) {
-            if (filtered[d].source == t1.source && filtered[d].target == t1.target) {
-                already_selected = true;
-                break;
-            }
-        }
-        if (already_selected) {
-            continue;
-        }
-
-        bool t1_preempted = false;
-        bool to_remove[SCE_MAX_ENABLED_TRANSITIONS];
-        for (uint8_t r = 0u; r < (uint8_t)SCE_MAX_ENABLED_TRANSITIONS; ++r) {
-            to_remove[r] = false;
-        }
-
-        for (uint8_t i = 0u; i < filtered_count; ++i) {
-            {{ csym_prefix }}{{ model.name }}_transition_info_t *t2 = &filtered[i];
-
-            /* Appendix D removeConflictingTransitions: two transitions
-               conflict when their EXIT SETS intersect. That is the whole
-               test the appendix states, and it is now the whole test here.
-
-               Two more criteria used to stand beside it — target/source
-               equality, and a <parallel>-ancestor scan in each direction —
-               and neither is in the appendix. They stood in for exit sets
-               that could not name a sibling region; this backend already
-               computes the set over `active`, and the other engines do now
-               too, so the bitmap AND answers on its own.
-
-               A transition that exits nothing (exit_set == 0) still
-               conflicts with nothing, which is a targetless transition and
-               is what W3C test 403c means by "this transition never gets
-               preempted, should fire twice". */
-            if ((t1.exit_set & t2->exit_set) == 0u) {
-                continue;
-            }
-
-            /* Appendix D: the descendant source wins. */
-            if (is_descendant_of(t1.source, t2->source)) {
-                to_remove[i] = true;
-            } else {
-                t1_preempted = true;
-                break;
-            }
-        }
-
-        if (!t1_preempted) {
-            uint8_t kept = 0u;
-            for (uint8_t i = 0u; i < filtered_count; ++i) {
-                if (!to_remove[i]) {
-                    if (kept != i) {
-                        filtered[kept] = filtered[i];
-                    }
-                    kept++;
-                }
-            }
-            if (kept < (uint8_t)SCE_MAX_ENABLED_TRANSITIONS) {
-                filtered[kept] = t1;
-                filtered_count = (uint8_t)(kept + 1u);
-            } else {
-                filtered_count = kept;
-            }
-        }
-    }
-
-    for (uint8_t i = 0u; i < filtered_count; ++i) {
-        list[i] = filtered[i];
-    }
-    return filtered_count;
-}
-
-/* W3C SCXML 3.13: Per-state collection switch. Mirrors the C++
-   `tryTransitionInState` helper (process_transition.jinja2 collect mode):
-   evaluate every transition in the state in document order, push the
-   first match onto the enabled list, then break out of the do-while so
-   later transitions in the same state are not evaluated (preemption).
-   Returns true iff this state contributed a transition.
-   `(void)sm` and `(void)event` keep the helper warning-free for fixtures
-   whose transition graph is sparse — the casts are no-ops once the
-   switch arms reference sm->active (compute_exit_set) and `event`
-   (matcher branches). */
-SCE_SM_FN static bool try_match_in_state({{ csym_prefix }}{{ model.name }}_t *sm,
-                                {{ csym_prefix }}{{ model.name }}_state_t check_state,
-                                {{ csym_prefix }}{{ model.name }}_event_t event,
-                                {{ csym_prefix }}{{ model.name }}_transition_info_t *out_list,
-                                uint8_t *out_count) {
+   `(void)sm` and `(void)event` keep the helper warning-free for documents
+   whose transitions read neither. */
+SCE_SM_FN static bool first_enabled_transition({{ csym_prefix }}{{ model.name }}_t *sm,
+                                               {{ csym_prefix }}{{ model.name }}_state_t check_state,
+                                               {{ csym_prefix }}{{ model.name }}_event_t event,
+                                               {{ csym_prefix }}{{ model.name }}_transition_info_t *out) {
     (void)sm;
     (void)event;
-    (void)out_list;
-    uint8_t before = *out_count;
+    (void)out;
     switch (check_state) {
     {% for state_id, state in model.states | dictsort %}
     {% if state.transitions %}
     case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}:
-        do {
-            {% for trans in state.transitions %}
-            {{ emit_transition_match_check(trans) }} {
-            {% if trans.cond %}
-            {% set native_payload_guard_expr = trans.native_payload_guard %}
-            {% if trans.is_pure_in_predicate %}
-                /* W3C SCXML 3.13 + 5.9.2: cond="{{ trans.cond }}" pure
-                   In() predicate — native C lower via `to_in_predicate_c11`
-                   filter (mirrors cpp `parser::convert_in_to_cpp` of `this->
-                   isStateActive("...")`). Routes In('xx') → `<machine>_in_state(
-                   sm, <MACHINE>_STATE_<XX>)` so the chunk is compiler-checked
-                   instead of runtime-resolved through a lua trampoline (inline
-                   inline-only lock-in). The filter also unblocks pure-In conds
-                   in fixtures that don't otherwise need script-engine. */
-                if ({{ trans.cond | to_in_predicate_c11(model.name, model.history_states | list) }}) {
-                    {{ emit_transition_body(trans) }}
-                }
-            {% elif native_payload_guard_expr %}
-                /* W3C SCXML 3.13 + NL→IR Item C1 Path A:
-                   cond="{{ trans.cond }}" reads a typed
-                   `_event.data.<field>` of an EventSchema-imported event —
-                   lowered to a native tagged-union comparison (no script
-                   engine, MCU-clean). The tag check guards against an event
-                   delivered without a typed payload (`_PAYLOAD_NONE`); the
-                   field comparison is `expr.rs::transpile_typed` over the
-                   live `pending_payload` member (twin of the Rust
-                   `matches!(&self.pending_payload, …)` guard). */
-                if ({{ native_payload_guard_expr }}) {
-                    {{ emit_transition_body(trans) }}
-                }
-            {% elif model.needs_script_engine %}
-                /* W3C SCXML 3.13: cond="{{ trans.cond }}" (lua eval) */
-                bool _trans_pass;
-{{ se.lua_eval_guard(trans.cond, '_trans_pass') }}
-                if (_trans_pass) {
-                    {{ emit_transition_body(trans) }}
-                }
-            {% else %}
-                /* W3C SCXML 3.13: cond="{{ trans.cond }}" decided at
-                   build time (mirrors cpp process_transition.jinja2
-                   else-branch — the C compiler dead-code-eliminates an
-                   `if (false)` arm). */
-                if ({{ 'true' if trans.cond_constant else 'false' }}) {
-                    {{ emit_transition_body(trans) }}
-                }
-            {% endif %}
-            {% else %}
+        {% for trans in state.transitions %}
+        {{ emit_transition_match_check(trans) }} {
+        {% if trans.cond %}
+        {% set native_payload_guard_expr = trans.native_payload_guard %}
+        {% if trans.is_pure_in_predicate %}
+            /* W3C SCXML 3.13 + 5.9.2: cond="{{ trans.cond }}" pure
+               In() predicate — native C lower via `to_in_predicate_c11`
+               filter (mirrors cpp `parser::convert_in_to_cpp` of `this->
+               isStateActive("...")`). Routes In('xx') → `<machine>_in_state(
+               sm, <MACHINE>_STATE_<XX>)` so the chunk is compiler-checked
+               instead of runtime-resolved through a lua trampoline (inline
+               inline-only lock-in). The filter also unblocks pure-In conds
+               in fixtures that don't otherwise need script-engine. */
+            if ({{ trans.cond | to_in_predicate_c11(model.name, model.history_states | list) }}) {
                 {{ emit_transition_body(trans) }}
-            {% endif %}
             }
-            {% endfor %}
-        } while (0);
+        {% elif native_payload_guard_expr %}
+            /* W3C SCXML 3.13 + NL→IR Item C1 Path A:
+               cond="{{ trans.cond }}" reads a typed
+               `_event.data.<field>` of an EventSchema-imported event —
+               lowered to a native tagged-union comparison (no script
+               engine, MCU-clean). The tag check guards against an event
+               delivered without a typed payload (`_PAYLOAD_NONE`); the
+               field comparison is `expr.rs::transpile_typed` over the
+               live `pending_payload` member (twin of the Rust
+               `matches!(&self.pending_payload, …)` guard). */
+            if ({{ native_payload_guard_expr }}) {
+                {{ emit_transition_body(trans) }}
+            }
+        {% elif model.needs_script_engine %}
+            /* W3C SCXML 3.13: cond="{{ trans.cond }}" (lua eval) */
+            bool _trans_pass;
+{{ se.lua_eval_guard(trans.cond, '_trans_pass') }}
+            if (_trans_pass) {
+                {{ emit_transition_body(trans) }}
+            }
+        {% else %}
+            /* W3C SCXML 3.13: cond="{{ trans.cond }}" decided at
+               build time (mirrors cpp process_transition.jinja2
+               else-branch — the C compiler dead-code-eliminates an
+               `if (false)` arm). */
+            if ({{ 'true' if trans.cond_constant else 'false' }}) {
+                {{ emit_transition_body(trans) }}
+            }
+        {% endif %}
+        {% else %}
+            {{ emit_transition_body(trans) }}
+        {% endif %}
+        }
+        {% endfor %}
         break;
     {% endif %}
     {% endfor %}
     default:
         break;
     }
-    return *out_count > before;
-}
-
-/* The next active state in DOCUMENT order that `walked` does not already
-   hold, or false once the walk has seen them all. Written as a resumable step
-   rather than as a sorted list because this profile has no allocator and the
-   configuration is a bitmap: `walked` is the cursor, and it is a bitmap for
-   the same reason the configuration is. */
-SCE_SM_FN static SCE_C_UNUSED bool next_active_in_document_order(uint32_t active, uint32_t walked,
-                                                        {{ csym_prefix }}{{ model.name }}_state_t *out) {
-    bool found = false;
-    uint32_t best_rank = 0u;
-    for (uint32_t i = 0u; i < (uint32_t){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_COUNT; ++i) {
-        uint32_t bit = (uint32_t)1u << i;
-        if ((active & bit) == 0u || (walked & bit) != 0u) {
-            continue;
-        }
-        {{ csym_prefix }}{{ model.name }}_state_t s = ({{ csym_prefix }}{{ model.name }}_state_t)i;
-        uint32_t rank = state_document_order(s);
-        if (!found || rank < best_rank) {
-            found = true;
-            best_rank = rank;
-            *out = s;
-        }
-    }
-    return found;
-}
-
-/* W3C SCXML App.D: optimal-enabled-set selection. Two branches mirror
-   cpp processTransition's eventless / external split:
-   - eventless: walk every active state in document order, no parent
-     bubbling. cpp selectEventlessTransitions evaluates every active state
-     including compound and parallel ancestors; the C switch's
-     `default: break;` arm short-circuits ancestors that declare no
-     transitions.
-   - external: walk every active leaf in document order, bubble up the
-     parent chain, stop at the first match per leaf. The same parent
-     transition reached from two converging bubble paths gets pushed twice —
-     conflict resolution dedups via exit-set intersection (test403b
-     adversarial fixture pins this dedup behaviour).
-   Compound and parallel ancestors are excluded as candidate leaves; a
-   future fixture forcing done.state events on a compound/parallel target
-   relaxes that filter alongside the cpp `isDoneStateEvent` mirror.
-
-   Both branches walk `state_document_order`, and the ORDER IS LOAD-BEARING
-   rather than cosmetic: `remove_conflicting_transitions` keeps the first of
-   two conflicting transitions and preempts the later one unless the later
-   one's source is a strict descendant. Hand it the same two transitions
-   reversed and it preempts the other side.
-
-   This used to iterate the state enum ascending, on the reasoning that
-   "enum-value order = alphabetic = doc-order proxy". The two orders are not
-   the same order, and they diverge exactly where the answer matters — sibling
-   `<parallel>` regions, whose enabled transitions are the ones that conflict.
-   Measured 2026-08-25 on `tests/integration/parallel_region_root_external_domain.scxml`,
-   whose regions are `drive` (first in the document) and `watch` (second):
-   alphabetically `alive` precedes `working`, so the walk collected `watch`'s
-   transition first and preempted `drive`'s — the region that document order
-   says wins.
-
-   Ranks are compared, never indexed, so a document whose ranks are sparse
-   walks the same as one whose ranks are dense. The scan is quadratic in the
-   state count, which is bounded at 32 by the configuration bitmap; the five
-   other backends sort a list for this, and a list is what this profile has
-   no allocator for. */
-{{ sce_map.source_marker(model.source_location, "c", symbol_artifact=sce_artifact.machine) }}
-SCE_SM_FN static bool process_transition({{ csym_prefix }}{{ model.name }}_t *sm,
-                                {{ csym_prefix }}{{ model.name }}_event_t event,
-                                {{ csym_prefix }}{{ model.name }}_transition_info_t *out_list,
-                                uint8_t *out_count) {
-    *out_count = 0u;
-    sm->transition_taken = false;
-    uint32_t walked = 0u;
-    /* Written by the walk before either branch reads it. The initialiser is
-       here for the compiler's sake and not the algorithm's: `-Werror` does not
-       see through the helper's bool return that `*out` is set on every true,
-       and an uninitialised read is the one thing this must not be. */
-    {{ csym_prefix }}{{ model.name }}_state_t s = ({{ csym_prefix }}{{ model.name }}_state_t)0;
-    if (event == {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE) {
-        while (next_active_in_document_order(sm->active, walked, &s)) {
-            walked |= state_bit(s);
-            (void)try_match_in_state(sm, s, event, out_list, out_count);
-        }
-    } else {
-        while (next_active_in_document_order(sm->active, walked, &s)) {
-            walked |= state_bit(s);
-            if (state_is_compound(s) || state_is_parallel(s)) {
-                continue;
-            }
-            {{ csym_prefix }}{{ model.name }}_state_t check_state = s;
-            while (true) {
-                if (try_match_in_state(sm, check_state, event, out_list, out_count)) {
-                    break;
-                }
-                bool _hp;
-                {{ csym_prefix }}{{ model.name }}_state_t _p = state_get_parent(check_state, &_hp);
-                if (!_hp) {
-                    break;
-                }
-                check_state = _p;
-            }
-        }
-    }
-    if (*out_count > 0u) {
-        sm->transition_taken = true;
-        return true;
-    }
     return false;
 }
 
-{% if model.has_history_states %}
-/* W3C SCXML 3.10: snapshot every history state whose parent is exiting.
-   For each `<history>` child of an exiting parent, capture either the
-   parent's active immediate child (shallow) or the parent's active
-   leaf descendants (deep). Mirrors cpp HistoryHelper::captureHistory.
-   Called before the exit loop applies bit-clears so the active bitmap
-   still reflects the pre-exit configuration. The `_recorded` flag flips
-   to `true` even when the captured bitmap is empty — that is what
-   distinguishes "never visited" (default-target replay) from "visited
-   but currently empty" (restore-as-empty), per W3C 3.10. */
-SCE_SM_FN static void capture_histories({{ csym_prefix }}{{ model.name }}_t *sm, uint32_t exit_union) {
-    {% for hid, info in model.history_states | dictsort %}
-    {% set parent_enum = model.name | upper ~ '_STATE_' ~ (info.parent | upper | replace('-', '_') | replace('.', '_')) %}
-    /* <history id="{{ hid }}" type="{{ info.type }}"> child of {{ info.parent }} */
-    if ((exit_union & state_bit({{ parent_enum }})) != 0u
-        && config_in(sm->active, {{ parent_enum }})) {
-        uint32_t snap = 0u;
-        for (uint32_t i = 0u; i < (uint32_t){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_COUNT; ++i) {
-            if ((sm->active & ((uint32_t)1u << i)) == 0u) continue;
-            {{ csym_prefix }}{{ model.name }}_state_t s = ({{ csym_prefix }}{{ model.name }}_state_t)i;
-            if (s == {{ parent_enum }}) continue;
-            {% if info.type == 'shallow' %}
-            /* shallow: capture the parent's active immediate child only.
-               Compound-state semantics guarantee at most one such child;
-               <parallel> would relax that to all region children but the
-               first parallel+history fixture forces the generalisation. */
-            bool _hp;
-            {{ csym_prefix }}{{ model.name }}_state_t _p = state_get_parent(s, &_hp);
-            if (_hp && _p == {{ parent_enum }}) {
-                snap |= state_bit(s);
-            }
-            {% else %}
-            /* deep: capture every active descendant that has no further
-               active children (= currently a leaf in the active config).
-               enter_state_recursive's config_enter_chain re-establishes
-               the ancestor bits on restore, so storing leaves alone is
-               sufficient. */
-            if (!is_descendant_of(s, {{ parent_enum }})) continue;
-            bool has_active_child = false;
-            for (uint32_t c = 0u; c < (uint32_t){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_COUNT; ++c) {
-                if (c == i || (sm->active & ((uint32_t)1u << c)) == 0u) continue;
-                bool _hp;
-                {{ csym_prefix }}{{ model.name }}_state_t _p = state_get_parent(({{ csym_prefix }}{{ model.name }}_state_t)c, &_hp);
-                if (_hp && _p == s) { has_active_child = true; break; }
-            }
-            if (!has_active_child) snap |= state_bit(s);
-            {% endif %}
-        }
-        sm->policy.history_{{ hid }}_snapshot = snap;
-        sm->policy.history_{{ hid }}_recorded = true;
-    }
-    {% endfor %}
-}
-
-/* W3C SCXML 3.10: enter a history pseudo-state — restore the recorded
-   snapshot if present, otherwise execute the history's default
-   `<transition>` executable content and enter its default target.
-   Mirrors cpp HistoryHelper::buildEntryChain. enter_state_recursive is
-   idempotent so any ancestor bits already set by an earlier transition
-   are not double-fired. The default-actions branch only runs on the
-   first entry to the parent state (recorded=false); once a snapshot has
-   been captured, subsequent re-entries restore it verbatim, matching
-   the W3C "default transition body executes only when no stored history"
-   contract that test579 verifies. */
-SCE_SM_FN static void enter_history_state({{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_history_t hid) {
-    switch (hid) {
-    {% for hid, info in model.history_states | dictsort %}
-    case {{ csym_prefix | upper }}{{ model.name | upper }}_HIST_{{ hid | upper | replace('-', '_') | replace('.', '_') }}:
-        if (sm->policy.history_{{ hid }}_recorded) {
-            for (uint32_t i = 0u; i < (uint32_t){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_COUNT; ++i) {
-                if ((sm->policy.history_{{ hid }}_snapshot & ((uint32_t)1u << i)) == 0u) continue;
-                enter_state_recursive(sm, ({{ csym_prefix }}{{ model.name }}_state_t)i);
-            }
-        } else {
-            {% for action in info.default_actions %}
-            {{ emit_action(action) }}
-            {% endfor %}
-            enter_state_recursive(sm, {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ info.default_target | upper | replace('-', '_') | replace('.', '_') }});
-        }
-        break;
-    {% endfor %}
-    default:
-        break;
-    }
-}
-{% endif %}
-
-/* W3C SCXML App.D.2: Microstep execution.
-   - exit:  union of every selected transition's exit_set, walked in
-            reverse enum-value order (= reverse doc-order proxy) so the
-            deepest active descendant exits first; multi-leaf <parallel>
-            configurations drain every region simultaneously
-   - body:  transitions sorted by source enum-value, executed in order
-   - entry: transitions sorted by target enum-value, enter_state_recursive
-            is idempotent so duplicate / converging targets collapse
-   Mirrors cpp StaticExecutionEngine::executeMicrostep +
-   ParallelTransitionHelper::computeStatesToExit / sortTransitionsBySource /
-   sortTransitionsByTarget, inlined into one function (jinja2-inline contract).
-   compute_exit_set is the LCA-based cpp mirror so the pre-collected
-   exit_set bitmap drives both conflict resolution and the actual exit
-   walk in one pass. Sort keys use enum-value order — alphabetic sort
-   is the doc-order proxy across every currently registered fixture
-   (s01p > s01p1 > s01p11 ordering); a fixture whose alphabetic order
-   diverges from doc-order will force a codegen-time doc-order table
-   (cpp's StateRegistry mirror). */
-SCE_SM_FN static void handle_microstep({{ csym_prefix }}{{ model.name }}_t *sm,
-                             {{ csym_prefix }}{{ model.name }}_transition_info_t *list,
-                             uint8_t count) {
-    if (count == 0u) {
-        return;
-    }
-
-    uint32_t exit_union = 0u;
-    for (uint8_t i = 0u; i < count; ++i) {
-        exit_union |= list[i].exit_set;
-    }
-{% if model.has_history_states %}
-    /* W3C SCXML 3.10: snapshot history states before exit clears any
-       bits — capture sees the pre-exit active configuration. */
-    capture_histories(sm, exit_union);
-{% endif %}
-    for (uint32_t bit = (uint32_t){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_COUNT; bit > 0u; --bit) {
-        {{ csym_prefix }}{{ model.name }}_state_t s = ({{ csym_prefix }}{{ model.name }}_state_t)(bit - 1u);
-        if ((exit_union & state_bit(s)) == 0u) {
-            continue;
-        }
-        if ((sm->active & state_bit(s)) == 0u) {
-            continue;
-        }
-        execute_exit_actions(sm, s);
-        sm->active &= ~state_bit(s);
-    }
-
-    /* W3C App.D.2 Step 3: bodies in document order. */
-    for (uint8_t i = 1u; i < count; ++i) {
-        {{ csym_prefix }}{{ model.name }}_transition_info_t key = list[i];
-        uint8_t j = i;
-        while (j > 0u && (uint32_t)list[j - 1u].source > (uint32_t)key.source) {
-            list[j] = list[j - 1u];
-            j--;
-        }
-        list[j] = key;
-    }
-    for (uint8_t i = 0u; i < count; ++i) {
-        sm->policy.last_transition_source_state = list[i].source;
-        sm->policy.last_transition_target_state = list[i].target;
-        sm->policy.last_transition_is_internal = list[i].is_internal;
-        sm->policy.last_transition_is_targetless = list[i].is_targetless;
-        sm->policy.last_transition_index = list[i].index;
-        execute_transition_actions(sm);
-    }
-
-    /* W3C App.D.2 Step 4-5: entries in document order. */
-    for (uint8_t i = 1u; i < count; ++i) {
-        {{ csym_prefix }}{{ model.name }}_transition_info_t key = list[i];
-        uint8_t j = i;
-        while (j > 0u && (uint32_t)list[j - 1u].target > (uint32_t)key.target) {
-            list[j] = list[j - 1u];
-            j--;
-        }
-        list[j] = key;
-    }
-    for (uint8_t i = 0u; i < count; ++i) {
-        if (list[i].is_targetless) {
-            continue;
-        }
-{% if model.has_history_states %}
-        if (list[i].history_target != {{ csym_prefix | upper }}{{ model.name | upper }}_HIST_NONE) {
-            enter_history_state(sm, list[i].history_target);
-        } else {
-            enter_state_recursive(sm, list[i].target);
-        }
-{% else %}
-        enter_state_recursive(sm, list[i].target);
-{% endif %}
-    }
-}
+{{ sce_map.source_marker(model.source_location, "c", symbol_artifact=sce_artifact.machine) }}
+{% include 'c/microstep.jinja2' %}
 
 {% if (model.invokes | scxml_family) or (model.invokes | unsupported) %}
 /* ── W3C SCXML 6.4: Invoke lifecycle helpers (per-SM, inline) ──────── */
@@ -4665,7 +3867,11 @@ SCE_SM_FN static void record_truncated_macrostep({{ csym_prefix }}{{ model.name 
    here, so that document did not return at all. */
 SCE_SM_FN static void process_internal_queue({{ csym_prefix }}{{ model.name }}_t *sm) {
     {{ csym_prefix }}{{ model.name }}_event_with_meta_t evt;
-    {{ csym_prefix }}{{ model.name }}_transition_info_t enabled[SCE_MAX_ENABLED_TRANSITIONS];
+    /* Zeroed rather than left for `select_transitions` to fill: it writes
+       every entry `microstep` reads, but GCC cannot follow a count through a
+       const-pointer argument and `-Werror=maybe-uninitialized` stops the
+       build (measured on test415 at -O2). */
+    {{ csym_prefix }}{{ model.name }}_transition_info_t enabled[{{ csym_prefix | upper }}{{ model.name | upper }}_MAX_SELECTED] = {0};
     uint8_t count;
 
     if (sm->macrostep_truncated) {
@@ -4732,9 +3938,8 @@ SCE_SM_FN static void process_internal_queue({{ csym_prefix }}{{ model.name }}_t
            handler is running. */
         sm->handling_error_event = event_is_error(evt.event);
 {% endif %}
-        if (process_transition(sm, evt.event, enabled, &count)) {
-            count = remove_conflicting_transitions(enabled, count);
-            handle_microstep(sm, enabled, count);
+        if (select_transitions(sm, evt.event, enabled, &count)) {
+            microstep(sm, enabled, count);
             /* W3C SCXML Appendix D: the loop turn that selects nothing takes
                no microstep, so it spends no budget. Only a turn that answered
                the event moved the machine, and only those are what a ceiling
@@ -4788,7 +3993,11 @@ SCE_SM_FN static void process_internal_queue({{ csym_prefix }}{{ model.name }}_t
    child never sees it. */
 SCE_SM_FN static bool process_next_external_event({{ csym_prefix }}{{ model.name }}_t *sm) {
     {{ csym_prefix }}{{ model.name }}_event_with_meta_t evt;
-    {{ csym_prefix }}{{ model.name }}_transition_info_t enabled[SCE_MAX_ENABLED_TRANSITIONS];
+    /* Zeroed rather than left for `select_transitions` to fill: it writes
+       every entry `microstep` reads, but GCC cannot follow a count through a
+       const-pointer argument and `-Werror=maybe-uninitialized` stops the
+       build (measured on test415 at -O2). */
+    {{ csym_prefix }}{{ model.name }}_transition_info_t enabled[{{ csym_prefix | upper }}{{ model.name | upper }}_MAX_SELECTED] = {0};
     uint8_t count;
 
     if (event_queue_pop(&sm->external_queue, &evt)) {
@@ -4918,9 +4127,8 @@ SCE_SM_FN static bool process_next_external_event({{ csym_prefix }}{{ model.name
         {{ csym_prefix }}{{ model.name }}_forward_to_autoforward_children(sm, &evt);
         {% endif %}
 
-        if (process_transition(sm, evt.event, enabled, &count)) {
-            count = remove_conflicting_transitions(enabled, count);
-            handle_microstep(sm, enabled, count);
+        if (select_transitions(sm, evt.event, enabled, &count)) {
+            microstep(sm, enabled, count);
         } else {
             /* W3C SCXML 3.1.2: "If no transition matches in any state, the
                event is discarded." Discarding it is the rule; being unable to
@@ -4959,7 +4167,11 @@ SCE_SM_FN static bool process_next_external_event({{ csym_prefix }}{{ model.name
    The budget is the macrostep's rather than this call's, and it is spent by
    the internal-event branch too — see `process_internal_queue`. */
 SCE_SM_FN static void check_eventless_transitions({{ csym_prefix }}{{ model.name }}_t *sm) {
-    {{ csym_prefix }}{{ model.name }}_transition_info_t enabled[SCE_MAX_ENABLED_TRANSITIONS];
+    /* Zeroed rather than left for `select_transitions` to fill: it writes
+       every entry `microstep` reads, but GCC cannot follow a count through a
+       const-pointer argument and `-Werror=maybe-uninitialized` stops the
+       build (measured on test415 at -O2). */
+    {{ csym_prefix }}{{ model.name }}_transition_info_t enabled[{{ csym_prefix | upper }}{{ model.name | upper }}_MAX_SELECTED] = {0};
     uint8_t count;
     if (sm->macrostep_truncated) {
         /* This macrostep was already stopped at the ceiling. Re-entering the
@@ -4971,7 +4183,7 @@ SCE_SM_FN static void check_eventless_transitions({{ csym_prefix }}{{ model.name
         if ({{ csym_prefix }}{{ model.name }}_is_in_final_state(sm)) {
             return;
         }
-        if (!process_transition(sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE, enabled, &count)) {
+        if (!select_transitions(sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE, enabled, &count)) {
             /* Nothing is enabled by NULL — the macrostep reached the stable
                configuration the clause describes, and nothing was refused
                however long the chain was. */
@@ -4990,8 +4202,7 @@ SCE_SM_FN static void check_eventless_transitions({{ csym_prefix }}{{ model.name
             record_truncated_macrostep(sm, enabled[0].source);
             return;
         }
-        count = remove_conflicting_transitions(enabled, count);
-        handle_microstep(sm, enabled, count);
+        microstep(sm, enabled, count);
         sm->macrostep_microsteps_taken++;
     }
 }
@@ -5481,13 +4692,9 @@ SCE_SM_FN static {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_impl({{ cs
        so there is no instant's worth of executable content to hold together. */
     bool _turn_opened = begin_turn(sm);
 {% endif %}
-    /* W3C SCXML 3.2: Configuration entry via the unified
-       enter_state_recursive walk — sets the initial root and every
-       ancestor / region-child / initial-descendant bit, runs onentry in
-       walk order. Mirrors cpp StaticExecutionEngine::initialize entry
-       loop. The recursion handles compound, parallel, and leaf states
-       uniformly. */
-    enter_state_recursive(sm, {{ csym_prefix }}{{ model.name }}_initial_state());
+    /* §scxml-D-interpret: the initial configuration is the entry set of the
+       document's initial transition, entered by §scxml-D-enterStates. */
+    enter_initial_configuration(sm);
     /* W3C SCXML Appendix D: hand over to the outer loop. It fires eventless
        transitions and internal events to macrostep completion, executes the
        deferred `<invoke>` elements, and only then dequeues one external
@@ -6011,13 +5218,9 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init_with_parent({{ csym_prefix
        <onentry> body runs (those bodies may reference datamodel vars). */
 {{ se.lua_init_engine() }}
     {% endif %}
-    /* W3C SCXML 3.2: Configuration entry via the unified
-       enter_state_recursive walk — sets the initial root and every
-       ancestor / region-child / initial-descendant bit, runs onentry in
-       walk order. Mirrors cpp StaticExecutionEngine::initialize entry
-       loop. The recursion handles compound, parallel, and leaf states
-       uniformly. */
-    enter_state_recursive(sm, {{ csym_prefix }}{{ model.name }}_initial_state());
+    /* §scxml-D-interpret: the initial configuration is the entry set of the
+       document's initial transition, entered by §scxml-D-enterStates. */
+    enter_initial_configuration(sm);
     /* W3C SCXML 6.4: macrostep stabilisation deferred to the parent's
        `execute_pending_invokes` — it runs `<param>` / `namelist`
        overrides after the entry walk and only then drives the eventless
@@ -6068,7 +5271,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_destroy({{ csym_prefix }}{{ mod
 
 {# §scxml-3.13: the refusal bookkeeping lives HERE, past the
    `has_parent_communication` split above, because its callers do. The forward
-   declarations near `enter_state_recursive`, the refusal in `raise_external`
+   declarations above the entry/exit dispatchers, the refusal in `raise_external`
    and the drain in `run_main_event_loop` are all unconditional, so a child
    machine — which takes the other arm of that split — declared both functions,
    called both, and defined neither. Measured 2026-08-23: ten synth-invoke

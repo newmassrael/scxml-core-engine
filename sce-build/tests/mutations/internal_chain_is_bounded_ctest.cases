@@ -153,9 +153,8 @@ PY
 # thing (the turn pays whether or not it answered) and leaves the chain intact.
 mutation_case "an unanswered internal event still spends the c11 budget" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     """        if (process_transition(sm, evt.event, enabled, &count)) {
-            count = remove_conflicting_transitions(enabled, count);
-            handle_microstep(sm, enabled, count);
+     """        if (select_transitions(sm, evt.event, enabled, &count)) {
+            microstep(sm, enabled, count);
             /* W3C SCXML Appendix D: the loop turn that selects nothing takes
                no microstep, so it spends no budget. Only a turn that answered
                the event moved the machine, and only those are what a ceiling
@@ -163,9 +162,8 @@ edit("tools/codegen/templates/c/state_machine.c.jinja2",
             sm->macrostep_microsteps_taken++;
         }""",
      """        sm->macrostep_microsteps_taken++;  /* MUTANT: spent before the turn answered */
-        if (process_transition(sm, evt.event, enabled, &count)) {
-            count = remove_conflicting_transitions(enabled, count);
-            handle_microstep(sm, enabled, count);
+        if (select_transitions(sm, evt.event, enabled, &count)) {
+            microstep(sm, enabled, count);
         }""")
 PY
 

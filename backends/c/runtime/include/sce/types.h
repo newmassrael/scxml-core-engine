@@ -45,16 +45,6 @@
 #define SCE_MAX_PARALLEL_REGIONS 4
 #endif
 
-// §scxml-D-microstepProcedure — optimal enabled transition set.
-// Per-microstep cap on the number of transitions that may fire
-// simultaneously. Sized for the typical <parallel> region count plus
-// headroom; fixtures that drive many concurrent regions override at
-// build time (`-DSCE_MAX_ENABLED_TRANSITIONS=N`). Stack-local lifetime
-// inside process_transition — no SM struct footprint.
-#ifndef SCE_MAX_ENABLED_TRANSITIONS
-#define SCE_MAX_ENABLED_TRANSITIONS 8
-#endif
-
 // §scxml-6.2 — delayed `<send>` queue capacity. Per-instance bounded
 // array carrying scheduled events between dispatch (when `<send delay>`
 // runs) and fire time (when `_tick(sm)` promotes ready events into the

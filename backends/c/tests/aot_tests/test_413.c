@@ -9,10 +9,9 @@
 // parser.rs apply_parallel_initial_overrides walks each target's
 // ancestor chain and rewrites every compound ancestor's `initial` to
 // the path child (parallel parents are skipped — they enter every
-// region anyway). The C11 enter_state_recursive's chain loop expands
-// each parallel chain element via enter_parallel_regions, so when the
-// chain passes through s2p1 every region (s2p11, s2p12) enters and
-// follows the override-rewritten initial down to s2p112 / s2p122
+// region anyway). The C11 machine enters the document's initial
+// transition as written (§scxml-D-computeEntrySet over both targets),
+// so both s2p11 and s2p12 enter on the way down to s2p112 / s2p122
 // respectively. The pass transitions cross-check via In() —
 // `<transition cond="In('s2p122')" target="pass"/>` in s2p112 fires
 // only when both leaves are simultaneously active, so reaching pass

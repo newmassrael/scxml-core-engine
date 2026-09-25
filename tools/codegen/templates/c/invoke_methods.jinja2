@@ -298,7 +298,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
             /* W3C SCXML 6.4 (test191/338): stamp parent-routing fields
                BEFORE the configuration entry walk by passing them
                through `_init_with_parent`. `<onentry><send target="#_parent">`
-               in the child runs during `enter_state_recursive` inside
+               in the child runs during `enter_initial_configuration` inside
                this call, so a NULL `parent_dispatch` would silently
                drop the event. Fixtures whose child only routes to
                `#_parent` from inside `<transition>` bodies (test226/

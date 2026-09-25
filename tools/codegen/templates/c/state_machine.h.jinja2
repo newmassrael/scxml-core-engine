@@ -179,13 +179,13 @@ typedef enum {{ csym_prefix }}{{ model.name }}_configuration_rejection_e {{ csym
 
 {% if model.has_history_states %}
 /* ── W3C SCXML 3.10: History pseudo-state enumeration ─────────────── */
-{# History state IDs are not part of the regular state enum (parser.rs
-   collapses transition.target to the resolved leaf), so they get their
-   own enum here. The `_HIST_NONE` sentinel marks transitions whose
-   target is a regular state — every transition_info_t carries this
-   field, but only history-targeted transitions set it to a non-NONE
-   value. Mirrors the per-history `history_<id>: Option<Vec<State>>`
-   shape used by the Rust backend (state_machine.rs.jinja2:163). #}
+{# A <history> is not a state — it is never in a configuration — so it is
+   numbered apart from the state enum, and a target list names one by this
+   enumerator (see `_macros/c_entry_target.jinja2`); the entry procedures
+   dereference it to what it recorded, or to its default. `_HIST_NONE` is
+   the entry set's "no default history content owed" marker. Mirrors the
+   per-history `history_<id>: Option<Vec<State>>` shape used by the Rust
+   backend. #}
 enum {{ csym_prefix }}{{ model.name }}_history_e {
     {{ csym_prefix | upper }}{{ model.name | upper }}_HIST_NONE,
     {% for hid, _ in model.history_states | dictsort %}
@@ -242,33 +242,25 @@ typedef struct {{ csym_prefix }}{{ model.name }}_event_with_meta {
 {% endif %}
 } {{ csym_prefix }}{{ model.name }}_event_with_meta_t;
 
-/* ── Appendix D removeConflictingTransitions: Optimal enabled transition set ───────── */
-{# Mirrors the C++ `TransitionInfo` struct defined inside the generated
-   namespace (process_transition.jinja2 emits it per fixture). The C11
-   layout adds a `exit_set` bitmap field — cpp re-computes the exit set
-   inside `removeConflictingTransitions` via `ConflictResolutionHelper::
-   computeExitSet`, but the C11 backend evaluates it once at collect
-   time so conflict checks reduce to bitmap intersection (no helper
-   class dispatch — jinja2-inline contract). The struct is fixture-local rather
-   than runtime-shared because state_t is per-fixture.
+/* ── Appendix D: one transition of the optimal enabled transition set ─── */
+{# Appendix D's EnabledTransition, as the C11 microstep (c/microstep.jinja2)
+   carries it: the transition is named by its source and its index among the
+   source's own transitions, which is the key both its target list
+   (`transition_targets`) and its content (`execute_transition_actions`) are
+   looked up by. The struct is fixture-local rather than runtime-shared
+   because state_t is per-fixture.
 
-   Fields are read by:
-     - process_transition: writes (source, target, index, flags, exit_set)
-     - remove_conflicting_transitions: reads exit_set + source for the
-       depth-greedy preemption pass
-     - handle_microstep: reads (source, target, index, flags) for the
-       exit/body/entry sequence
+   Fields are written by:
+     - first_enabled_transition: (source, index, is_internal)
+     - remove_conflicting_transitions: exit_set, against the configuration
+       it judges — which `exit_states` then exits, unchanged, because
+       nothing runs between selection and the microstep
    #}
 typedef struct {{ csym_prefix }}{{ model.name }}_transition_info {
     {{ csym_prefix }}{{ model.name }}_state_t source;       /* W3C 3.13: source state of transition */
-    {{ csym_prefix }}{{ model.name }}_state_t target;       /* W3C 3.13: target state (== source when targetless) */
-    uint16_t index;                        /* W3C 3.13: per-source-state transition index for execute_transition_actions */
+    uint16_t index;                        /* W3C 3.13: index among the source's own transitions */
     bool is_internal;                      /* W3C 3.13: type="internal" (analyzer.rs has already collapsed not-proper-descendant cases to external) */
-    bool is_targetless;                    /* W3C 5.9.2: no target — body fires, no state change */
-    uint32_t exit_set;                     /* W3C App.D.2: states this transition would exit (computed at collect time) */
-{% if model.has_history_states %}
-    {{ csym_prefix }}{{ model.name }}_history_t history_target;  /* W3C 3.10: HIST_NONE for plain transitions; non-NONE = enter via enter_history_state (snapshot or default) */
-{% endif %}
+    uint32_t exit_set;                     /* §scxml-D-computeExitSet: the states this transition exits */
 } {{ csym_prefix }}{{ model.name }}_transition_info_t;
 
 /* ── Internal/external event queues — circular buffer ─────────────── */
@@ -366,26 +358,13 @@ typedef struct {{ csym_prefix }}{{ model.name }}_scheduled_queue {
 {% endif %}
 
 /* ── Policy state (datamodel + transition tracking) ───────────────── */
-{# C++ `{name}Policy` mutable members. E1 minimum keeps only the
-   transition-tracking trio that `AOT_EXECUTE_TRANSITION` always writes.
-   Datamodel variables, history slots, invoke tables, and parallel
-   active-state vectors join in E2-E5 as their owning fixture lands. #}
+{# C++ `{name}Policy` mutable members: the last microstep's source and
+   every <history>'s recorded configuration. #}
 typedef struct {{ csym_prefix }}{{ model.name }}_policy {
+    /* The source of the last transition the last microstep took — the state
+       a truncated macrostep names, since this profile keeps its
+       configuration in a bitmap and has no single current state. */
     {{ csym_prefix }}{{ model.name }}_state_t last_transition_source_state;
-    /* W3C SCXML 3.13: Target captured at process_transition match time so
-       handle_hierarchical_transition can run exit→body→entry without
-       requiring a separate `current_state` shadow (active configuration
-       lives in the bitmap `active`). Unused when last_transition_is_targetless. */
-    {{ csym_prefix }}{{ model.name }}_state_t last_transition_target_state;
-    bool last_transition_is_internal;
-    bool last_transition_is_targetless;
-    /* W3C SCXML 3.13: Transition body actions are deferred to
-       execute_transition_actions so they run between the exit and entry
-       chains (mirrors the C++ `lastTransitionIndex_` member used by
-       `process_transition.jinja2`'s deferred dispatch). The pair
-       (source_state, index) keys into the per-state switch the macro
-       emits for fixtures that carry transition body actions. */
-    uint16_t last_transition_index;
 {% if model.has_history_states %}
     {# W3C SCXML 3.10: per-history-state snapshot. `_recorded` distinguishes
        "first entry, use default transition target" from "captured snapshot
