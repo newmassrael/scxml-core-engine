@@ -3842,6 +3842,19 @@ either would enumerate a DIFFERENT population — own transitions on one side,
 effective transitions on the other — and the two would silently disagree for
 every state that inherits one.
 
+⚠⚠⚠ **The machine-wide number is retired (2026-09-25), and the repair is not.**
+It existed only because the dispatch was keyed on the atomic state a transition
+was FOUND from. The Kotlin runtime now selects through Appendix D's own walk
+(`com.sce.runtime.Microstep`, the backend's move onto that microstep), which
+reports an ancestor's transition under the ancestor — so each transition is
+dispatched once, under its own source, by its position in that source's own
+list: the per-state index the other five backends switch on.
+`assign_machine_transition_ids` and `compute_effective_transitions` are gone.
+What stays is the part that fixed the defect: the index travels on the
+selection's answer (`EnabledTransition.transitionIndex`) into
+`executeTransitionContent(source, transitionIndex)`, and nothing re-derives it
+from the `cond`.
+
 That the other backends had this from the start is not a memory:
 `git grep -l transition_index e53bdf48e2 -- tools/codegen/templates/` returns
 C, C++, Go, Python and Rust, and no Kotlin file.

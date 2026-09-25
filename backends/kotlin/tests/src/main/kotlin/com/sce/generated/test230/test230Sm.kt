@@ -55,6 +55,13 @@ class Test230StateMachine(
         super.enterInitialConfiguration()
     }
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
+
     // W3C SCXML 3.3: State hierarchy parent mapping
     override fun parentOf(state: Test230State): Test230State? = when (state) {
         is Test230State.S01 -> Test230State.S0
@@ -62,10 +69,80 @@ class Test230StateMachine(
         else -> null
     }
 
-    // W3C SCXML 3.3/3.4: Resolve compound/parallel state to initial leaf state
-    override fun resolveLeafState(state: Test230State): Test230State = when (state) {
-        is Test230State.S0 -> Test230State.S01
-        else -> state
+    // W3C SCXML 3.3: a <state> with child states — exactly the states that
+    // have an initial transition. A <parallel> is not compound.
+    override fun isCompoundState(state: Test230State): Boolean = when (state) {
+        is Test230State.S0 -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: Test230State): Boolean = when (state) {
+        is Test230State.Fail, is Test230State.Final -> true
+        else -> false
+    }
+
+    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+    // children, in document order — for a <parallel>, its regions.
+    override fun childStatesOf(state: Test230State): List<Test230State> =
+        childStates[state] ?: emptyList()
+
+    // W3C SCXML 3.3: a compound state's initial transition target, as written.
+    override fun initialTargetsOf(state: Test230State): List<EntryTarget<Test230State, HistoryId>> =
+        initialTargets[state] ?: emptyList()
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<Test230State, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val childStates: Map<Test230State, List<Test230State>> = mapOf(
+            Test230State.S0 to listOf(Test230State.S01, Test230State.S02),
+        )
+
+        val initialTargets: Map<Test230State, List<EntryTarget<Test230State, HistoryId>>> = mapOf(
+            Test230State.S0 to listOf(StateTarget(Test230State.S01)),
+        )
+
+        val documentInitialTargetList: List<EntryTarget<Test230State, HistoryId>> =
+            listOf(StateTarget(Test230State.S0))
+
+        // W3C SCXML 3.13: s0's transition 0, as the microstep reads it.
+        val transitionS0At0 = EnabledTransition<Test230State, HistoryId>(
+            Test230State.S0,
+            listOf(StateTarget(Test230State.Final)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: s01's transition 0, as the microstep reads it.
+        val transitionS01At0 = EnabledTransition<Test230State, HistoryId>(
+            Test230State.S01,
+            listOf(StateTarget(Test230State.S02)),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: s01's transition 1, as the microstep reads it.
+        val transitionS01At1 = EnabledTransition<Test230State, HistoryId>(
+            Test230State.S01,
+            listOf(StateTarget(Test230State.Fail)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: s02's transition 0, as the microstep reads it.
+        val transitionS02At0 = EnabledTransition<Test230State, HistoryId>(
+            Test230State.S02,
+            listOf(StateTarget(Test230State.Final)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
     }
 
     // W3C SCXML: Resolve state ID string to State object
@@ -87,14 +164,7 @@ class Test230StateMachine(
         is Test230State.S02 -> "s02"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: Test230State): Boolean = when (state) {
-        is Test230State.S0 -> false
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: Test230State): Int = when (state) {
         is Test230State.Fail -> 4
         is Test230State.Final -> 3
@@ -315,91 +385,56 @@ class Test230StateMachine(
     }
 
 
-    // W3C SCXML 3.12: Event processing with script engine condition evaluation
-    override fun processEvent(
-        state: Test230State,
-        event: Test230Event
-    ): TransitionResult<Test230State> {
-        // W3C SCXML 5.10: Set _event before guard evaluation
+
+    // W3C SCXML 5.10: bind the event as the `_event` its transitions' guards
+    // read — once, before the first guard runs, and not for an eventless
+    // selection, which has no event of its own.
+    override fun bindCurrentEvent(event: Test230Event) {
         setCurrentEventInScriptEngine(event)
-        return when (state) {
-        is Test230State.S0 -> processS0(event)
-        is Test230State.S01 -> {
-            val result = processS01(event)
-            // W3C SCXML 3.13: Ancestor transition routing
-            if (result !is TransitionResult.Ignored) result
-            else {
-                val anc1 = processS0(event)
-                if (anc1 !is TransitionResult.Ignored) anc1
-            else TransitionResult.Ignored
-            }
+    }
+
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
+        state: Test230State,
+        event: Test230Event?
+    ): EnabledTransition<Test230State, HistoryId>? = when (state) {
+        is Test230State.S0 -> when {
+            event is Test230Event.Timeout -> transitionS0At0
+            else -> null
         }
-        is Test230State.S02 -> {
-            val result = processS02(event)
-            // W3C SCXML 3.13: Ancestor transition routing
-            if (result !is TransitionResult.Ignored) result
-            else {
-                val anc1 = processS0(event)
-                if (anc1 !is TransitionResult.Ignored) anc1
-            else TransitionResult.Ignored
-            }
+        is Test230State.S01 -> when {
+            event is Test230Event.ChildToParent -> transitionS01At0
+            event != null -> transitionS01At1
+            else -> null
         }
-        else -> TransitionResult.Ignored
+        is Test230State.S02 -> when {
+            event is Test230Event.Done.Invoke -> transitionS02At0
+            else -> null
+        }
+        else -> null
     }
-    }
-
-
-    // --- Per-State Event Handlers ---
-
-    private fun processS0(
-        event: Test230Event
-    ): TransitionResult<Test230State> = when {
-        event is Test230Event.Timeout -> TransitionResult.External(Test230State.Final, Test230State.S0, 0)
-
-        else -> TransitionResult.Ignored
-    }
-
-    private fun processS01(
-        event: Test230Event
-    ): TransitionResult<Test230State> = when {
-        event is Test230Event.ChildToParent -> TransitionResult.External(Test230State.S02, Test230State.S01, 1)
-
-        // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test230State.Fail, Test230State.S01, 2)
-    }
-
-    private fun processS02(
-        event: Test230Event
-    ): TransitionResult<Test230State> = when {
-        event is Test230Event.Done.Invoke -> TransitionResult.External(Test230State.Final, Test230State.S02, 3)
-
-        else -> TransitionResult.Ignored
-    }
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test230.scxml:8 :: _machine
-    override fun onEntry(state: Test230State, pathChild: Test230State?) {
+    override fun onEntry(state: Test230State, isDefaultEntry: Boolean) {
         when (state) {
             is Test230State.Fail -> {
                 // SCE-MAP: test230.scxml:64 :: fail :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test230State.Final -> {
                 // SCE-MAP: test230.scxml:63 :: final :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("final")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test230State.S0 -> {
                 // SCE-MAP: test230.scxml:11 :: s0 :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("s0")) return
 
 
             scheduleSend("__send_0", 3000L, Test230Event.Timeout)
@@ -416,13 +451,9 @@ class Test230StateMachine(
             }
             is Test230State.S01 -> {
                 // SCE-MAP: test230.scxml:43 :: s01 :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("s01")) return
             }
             is Test230State.S02 -> {
                 // SCE-MAP: test230.scxml:56 :: s02 :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("s02")) return
             }
         }
     }
@@ -433,11 +464,9 @@ class Test230StateMachine(
         when (state) {
             is Test230State.Fail -> {
                 // SCE-MAP: test230.scxml:64 :: fail :: _state_body
-                activeStateIds.remove("fail")
             }
             is Test230State.Final -> {
                 // SCE-MAP: test230.scxml:63 :: final :: _state_body
-                activeStateIds.remove("final")
             }
             is Test230State.S0 -> {
                 // SCE-MAP: test230.scxml:11 :: s0 :: _state_body
@@ -445,30 +474,23 @@ class Test230StateMachine(
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("_invoke_0")
-                activeStateIds.remove("s0")
             }
             is Test230State.S01 -> {
                 // SCE-MAP: test230.scxml:43 :: s01 :: _state_body
-                activeStateIds.remove("s01")
             }
             is Test230State.S02 -> {
                 // SCE-MAP: test230.scxml:56 :: s02 :: _state_body
-                activeStateIds.remove("s02")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: test230.scxml:8 :: _machine
-    override fun executeTransitionActions(
-        source: Test230State,
-        event: Test230Event?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: Test230State, transitionIndex: Int) {
         when (source) {
         is Test230State.S01 -> when (transitionIndex) {
-            1 -> {
+            0 -> {
                 // SCE-MAP: test230.scxml:44 :: s01 :: _transition_0
 
             // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)

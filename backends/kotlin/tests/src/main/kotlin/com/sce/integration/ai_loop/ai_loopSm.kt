@@ -314,6 +314,13 @@ class AiLoopStateMachine(
         super.enterInitialConfiguration()
     }
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
+
     // W3C SCXML 3.3: State hierarchy parent mapping
     override fun parentOf(state: AiLoopState): AiLoopState? = when (state) {
         is AiLoopState.Abandoned -> AiLoopState.Drive
@@ -338,14 +345,354 @@ class AiLoopStateMachine(
         else -> null
     }
 
-    // W3C SCXML 3.3/3.4: Resolve compound/parallel state to initial leaf state
-    override fun resolveLeafState(state: AiLoopState): AiLoopState = when (state) {
-        is AiLoopState.Budget -> AiLoopState.Within
-        is AiLoopState.Drive -> AiLoopState.Priming
-        is AiLoopState.Run -> AiLoopState.Priming
-        is AiLoopState.Running -> AiLoopState.Priming
-        is AiLoopState.Watch -> AiLoopState.Alive
-        else -> state
+    // W3C SCXML 3.3: a <state> with child states — exactly the states that
+    // have an initial transition. A <parallel> is not compound.
+    override fun isCompoundState(state: AiLoopState): Boolean = when (state) {
+        is AiLoopState.Budget, is AiLoopState.Drive, is AiLoopState.Running, is AiLoopState.Watch -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.4: Check if state is a parallel state
+    override fun isParallelState(state: AiLoopState): Boolean = when (state) {
+        is AiLoopState.Run -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: AiLoopState): Boolean = when (state) {
+        is AiLoopState.Abandoned, is AiLoopState.Blocked, is AiLoopState.Cancelled, is AiLoopState.Converged, is AiLoopState.Exhausted, is AiLoopState.Failed, is AiLoopState.Reported, is AiLoopState.Stuck -> true
+        else -> false
+    }
+
+    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+    // children, in document order — for a <parallel>, its regions.
+    override fun childStatesOf(state: AiLoopState): List<AiLoopState> =
+        childStates[state] ?: emptyList()
+
+    // W3C SCXML 3.3: a compound state's initial transition target, as written.
+    override fun initialTargetsOf(state: AiLoopState): List<EntryTarget<AiLoopState, HistoryId>> =
+        initialTargets[state] ?: emptyList()
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<AiLoopState, HistoryId>>
+        get() = documentInitialTargetList
+
+    // W3C SCXML 3.10: the state a <history> is declared in.
+    override fun historyParentOf(history: HistoryId): AiLoopState = historyParents.getValue(history)
+
+    // W3C SCXML 3.10.2: a <history>'s default transition target, as written.
+    override fun historyDefaultTargetsOf(history: HistoryId): List<EntryTarget<AiLoopState, HistoryId>> =
+        historyDefaultTargets.getValue(history)
+
+    // W3C SCXML 3.10: a state's <history> children, each with whether it is
+    // deep — what the runtime records as the state is exited.
+    override fun historiesOf(state: AiLoopState): List<Pair<HistoryId, Boolean>> =
+        historiesByParent[state] ?: emptyList()
+
+    private companion object {
+        /** W3C SCXML 3.10: the `where` <history> (shallow). */
+        val historyWhere = HistoryId(0)
+
+        val childStates: Map<AiLoopState, List<AiLoopState>> = mapOf(
+            AiLoopState.Budget to listOf(AiLoopState.Within, AiLoopState.Spent),
+            AiLoopState.Drive to listOf(AiLoopState.Running, AiLoopState.Paused, AiLoopState.Abandoned),
+            AiLoopState.Run to listOf(AiLoopState.Drive, AiLoopState.Watch, AiLoopState.Budget),
+            AiLoopState.Running to listOf(AiLoopState.Priming, AiLoopState.Working, AiLoopState.Screening, AiLoopState.Judging, AiLoopState.Reflecting, AiLoopState.Restarting, AiLoopState.Closing, AiLoopState.Reported, AiLoopState.Stuck),
+            AiLoopState.Watch to listOf(AiLoopState.Alive, AiLoopState.Rebuilding),
+        )
+
+        val initialTargets: Map<AiLoopState, List<EntryTarget<AiLoopState, HistoryId>>> = mapOf(
+            AiLoopState.Budget to listOf(StateTarget(AiLoopState.Within)),
+            AiLoopState.Drive to listOf(StateTarget(AiLoopState.Running)),
+            AiLoopState.Running to listOf(StateTarget(AiLoopState.Priming)),
+            AiLoopState.Watch to listOf(StateTarget(AiLoopState.Alive)),
+        )
+
+        val documentInitialTargetList: List<EntryTarget<AiLoopState, HistoryId>> =
+            listOf(StateTarget(AiLoopState.Run))
+
+        val historyParents: Map<HistoryId, AiLoopState> = mapOf(
+            historyWhere to AiLoopState.Running,
+        )
+
+        val historyDefaultTargets: Map<HistoryId, List<EntryTarget<AiLoopState, HistoryId>>> = mapOf(
+            historyWhere to listOf(StateTarget(AiLoopState.Working)),
+        )
+
+        val historiesByParent: Map<AiLoopState, List<Pair<HistoryId, Boolean>>> = mapOf(
+            AiLoopState.Running to listOf(historyWhere to false),
+        )
+
+        // W3C SCXML 3.13: alive's transition 0, as the microstep reads it.
+        val transitionAliveAt0 = EnabledTransition<AiLoopState, HistoryId>(
+            AiLoopState.Alive,
+            listOf(StateTarget(AiLoopState.Rebuilding)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: closing's transition 0, as the microstep reads it.
+        val transitionClosingAt0 = EnabledTransition<AiLoopState, HistoryId>(
+            AiLoopState.Closing,
+            listOf(StateTarget(AiLoopState.Reported)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: closing's transition 1, as the microstep reads it.
+        val transitionClosingAt1 = EnabledTransition<AiLoopState, HistoryId>(
+            AiLoopState.Closing,
+            listOf(StateTarget(AiLoopState.Screening)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: drive's transition 0, as the microstep reads it.
+        val transitionDriveAt0 = EnabledTransition<AiLoopState, HistoryId>(
+            AiLoopState.Drive,
+            listOf(StateTarget(AiLoopState.Paused)),
+            0,
+            hasActions = false,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: drive's transition 1, as the microstep reads it.
+        val transitionDriveAt1 = EnabledTransition<AiLoopState, HistoryId>(
+            AiLoopState.Drive,
+            listOf(StateTarget(AiLoopState.Paused)),
+            1,
+            hasActions = false,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: drive's transition 2, as the microstep reads it.
+        val transitionDriveAt2 = EnabledTransition<AiLoopState, HistoryId>(
+            AiLoopState.Drive,
+            listOf(StateTarget(AiLoopState.Restarting)),
+            2,
+            hasActions = false,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: judging's transition 0, as the microstep reads it.
+        val transitionJudgingAt0 = EnabledTransition<AiLoopState, HistoryId>(
+            AiLoopState.Judging,
+            listOf(StateTarget(AiLoopState.Closing)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: judging's transition 1, as the microstep reads it.
+        val transitionJudgingAt1 = EnabledTransition<AiLoopState, HistoryId>(
+            AiLoopState.Judging,
+            listOf(StateTarget(AiLoopState.Reflecting)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: judging's transition 2, as the microstep reads it.
+        val transitionJudgingAt2 = EnabledTransition<AiLoopState, HistoryId>(
+            AiLoopState.Judging,
+            listOf(StateTarget(AiLoopState.Working)),
+            2,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: paused's transition 0, as the microstep reads it.
+        val transitionPausedAt0 = EnabledTransition<AiLoopState, HistoryId>(
+            AiLoopState.Paused,
+            listOf(StateTarget(AiLoopState.Judging)),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: paused's transition 1, as the microstep reads it.
+        val transitionPausedAt1 = EnabledTransition<AiLoopState, HistoryId>(
+            AiLoopState.Paused,
+            listOf(StateTarget(AiLoopState.Paused)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: paused's transition 2, as the microstep reads it.
+        val transitionPausedAt2 = EnabledTransition<AiLoopState, HistoryId>(
+            AiLoopState.Paused,
+            listOf(HistoryTarget(historyWhere)),
+            2,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: paused's transition 3, as the microstep reads it.
+        val transitionPausedAt3 = EnabledTransition<AiLoopState, HistoryId>(
+            AiLoopState.Paused,
+            listOf(StateTarget(AiLoopState.Abandoned)),
+            3,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: priming's transition 0, as the microstep reads it.
+        val transitionPrimingAt0 = EnabledTransition<AiLoopState, HistoryId>(
+            AiLoopState.Priming,
+            listOf(StateTarget(AiLoopState.Working)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: rebuilding's transition 0, as the microstep reads it.
+        val transitionRebuildingAt0 = EnabledTransition<AiLoopState, HistoryId>(
+            AiLoopState.Rebuilding,
+            listOf(StateTarget(AiLoopState.Alive)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: reflecting's transition 0, as the microstep reads it.
+        val transitionReflectingAt0 = EnabledTransition<AiLoopState, HistoryId>(
+            AiLoopState.Reflecting,
+            listOf(StateTarget(AiLoopState.Restarting)),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: reflecting's transition 1, as the microstep reads it.
+        val transitionReflectingAt1 = EnabledTransition<AiLoopState, HistoryId>(
+            AiLoopState.Reflecting,
+            listOf(StateTarget(AiLoopState.Working)),
+            1,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: restarting's transition 0, as the microstep reads it.
+        val transitionRestartingAt0 = EnabledTransition<AiLoopState, HistoryId>(
+            AiLoopState.Restarting,
+            listOf(StateTarget(AiLoopState.Stuck)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: restarting's transition 1, as the microstep reads it.
+        val transitionRestartingAt1 = EnabledTransition<AiLoopState, HistoryId>(
+            AiLoopState.Restarting,
+            listOf(StateTarget(AiLoopState.Priming)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: run's transition 0, as the microstep reads it.
+        val transitionRunAt0 = EnabledTransition<AiLoopState, HistoryId>(
+            AiLoopState.Run,
+            listOf(StateTarget(AiLoopState.Converged)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: run's transition 1, as the microstep reads it.
+        val transitionRunAt1 = EnabledTransition<AiLoopState, HistoryId>(
+            AiLoopState.Run,
+            listOf(StateTarget(AiLoopState.Exhausted)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: run's transition 2, as the microstep reads it.
+        val transitionRunAt2 = EnabledTransition<AiLoopState, HistoryId>(
+            AiLoopState.Run,
+            listOf(StateTarget(AiLoopState.Blocked)),
+            2,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: run's transition 3, as the microstep reads it.
+        val transitionRunAt3 = EnabledTransition<AiLoopState, HistoryId>(
+            AiLoopState.Run,
+            listOf(StateTarget(AiLoopState.Failed)),
+            3,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: run's transition 4, as the microstep reads it.
+        val transitionRunAt4 = EnabledTransition<AiLoopState, HistoryId>(
+            AiLoopState.Run,
+            listOf(StateTarget(AiLoopState.Cancelled)),
+            4,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: screening's transition 0, as the microstep reads it.
+        val transitionScreeningAt0 = EnabledTransition<AiLoopState, HistoryId>(
+            AiLoopState.Screening,
+            listOf(StateTarget(AiLoopState.Working)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: screening's transition 1, as the microstep reads it.
+        val transitionScreeningAt1 = EnabledTransition<AiLoopState, HistoryId>(
+            AiLoopState.Screening,
+            listOf(StateTarget(AiLoopState.Paused)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: within's transition 0, as the microstep reads it.
+        val transitionWithinAt0 = EnabledTransition<AiLoopState, HistoryId>(
+            AiLoopState.Within,
+            listOf(StateTarget(AiLoopState.Spent)),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: within's transition 1, as the microstep reads it.
+        val transitionWithinAt1 = EnabledTransition<AiLoopState, HistoryId>(
+            AiLoopState.Within,
+            listOf(StateTarget(AiLoopState.Within)),
+            1,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: working's transition 0, as the microstep reads it.
+        val transitionWorkingAt0 = EnabledTransition<AiLoopState, HistoryId>(
+            AiLoopState.Working,
+            listOf(StateTarget(AiLoopState.Judging)),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: working's transition 1, as the microstep reads it.
+        val transitionWorkingAt1 = EnabledTransition<AiLoopState, HistoryId>(
+            AiLoopState.Working,
+            listOf(StateTarget(AiLoopState.Screening)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
     }
 
     // W3C SCXML: Resolve state ID string to State object
@@ -407,29 +754,7 @@ class AiLoopStateMachine(
         is AiLoopState.Working -> "working"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: AiLoopState): Boolean = when (state) {
-        is AiLoopState.Budget -> false
-        is AiLoopState.Drive -> false
-        is AiLoopState.Run -> false
-        is AiLoopState.Running -> false
-        is AiLoopState.Watch -> false
-        else -> true
-    }
-
-    // W3C SCXML 3.4: Check if state is a parallel state
-    override fun isParallelState(state: AiLoopState): Boolean = when (state) {
-        is AiLoopState.Run -> true
-        else -> false
-    }
-
-    // W3C SCXML 3.4: Get child regions of a parallel state (C++ getParallelRegions pattern)
-    override fun getParallelRegions(state: AiLoopState): List<AiLoopState> = when (state) {
-        is AiLoopState.Run -> listOf(AiLoopState.Drive, AiLoopState.Watch, AiLoopState.Budget)
-        else -> emptyList()
-    }
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: AiLoopState): Int = when (state) {
         is AiLoopState.Abandoned -> 13
         is AiLoopState.Alive -> 15
@@ -836,423 +1161,132 @@ class AiLoopStateMachine(
     }
 
 
-    // W3C SCXML 3.12: Event processing with script engine condition evaluation
-    override fun processEvent(
-        state: AiLoopState,
-        event: AiLoopEvent
-    ): TransitionResult<AiLoopState> {
-        // W3C SCXML 5.10: Set _event before guard evaluation
+
+    // W3C SCXML 5.10: bind the event as the `_event` its transitions' guards
+    // read — once, before the first guard runs, and not for an eventless
+    // selection, which has no event of its own.
+    override fun bindCurrentEvent(event: AiLoopEvent) {
         setCurrentEventInScriptEngine(event)
-        return when (state) {
-        // W3C SCXML 3.13: Ancestor-only routing (abandoned has no own event transitions)
-        is AiLoopState.Abandoned -> {
-            val anc1 = processDrive(event)
-            if (anc1 !is TransitionResult.Ignored) anc1
-            else {
-                val anc2 = processRun(event)
-                if (anc2 !is TransitionResult.Ignored) anc2
-            else TransitionResult.Ignored
-            }
-        }
-        is AiLoopState.Alive -> {
-            val result = processAlive(event)
-            // W3C SCXML 3.13: Ancestor transition routing
-            if (result !is TransitionResult.Ignored) result
-            else {
-                val anc1 = processRun(event)
-                if (anc1 !is TransitionResult.Ignored) anc1
-            else TransitionResult.Ignored
-            }
-        }
-        // W3C SCXML 3.13: Ancestor-only routing (budget has no own event transitions)
-        is AiLoopState.Budget -> {
-            val anc1 = processRun(event)
-            if (anc1 !is TransitionResult.Ignored) anc1
-            else TransitionResult.Ignored
-        }
-        is AiLoopState.Closing -> {
-            val result = processClosing(event)
-            // W3C SCXML 3.13: Ancestor transition routing
-            if (result !is TransitionResult.Ignored) result
-            else {
-                val anc1 = processDrive(event)
-                if (anc1 !is TransitionResult.Ignored) anc1
-            else {
-                val anc2 = processRun(event)
-                if (anc2 !is TransitionResult.Ignored) anc2
-            else TransitionResult.Ignored
-            }
-            }
-        }
-        is AiLoopState.Drive -> {
-            val result = processDrive(event)
-            // W3C SCXML 3.13: Ancestor transition routing
-            if (result !is TransitionResult.Ignored) result
-            else {
-                val anc1 = processRun(event)
-                if (anc1 !is TransitionResult.Ignored) anc1
-            else TransitionResult.Ignored
-            }
-        }
-        is AiLoopState.Judging -> {
-            val result = processJudging(event)
-            // W3C SCXML 3.13: Ancestor transition routing
-            if (result !is TransitionResult.Ignored) result
-            else {
-                val anc1 = processDrive(event)
-                if (anc1 !is TransitionResult.Ignored) anc1
-            else {
-                val anc2 = processRun(event)
-                if (anc2 !is TransitionResult.Ignored) anc2
-            else TransitionResult.Ignored
-            }
-            }
-        }
-        is AiLoopState.Paused -> {
-            val result = processPaused(event)
-            // W3C SCXML 3.13: Ancestor transition routing
-            if (result !is TransitionResult.Ignored) result
-            else {
-                val anc1 = processDrive(event)
-                if (anc1 !is TransitionResult.Ignored) anc1
-            else {
-                val anc2 = processRun(event)
-                if (anc2 !is TransitionResult.Ignored) anc2
-            else TransitionResult.Ignored
-            }
-            }
-        }
-        is AiLoopState.Priming -> {
-            val result = processPriming(event)
-            // W3C SCXML 3.13: Ancestor transition routing
-            if (result !is TransitionResult.Ignored) result
-            else {
-                val anc1 = processDrive(event)
-                if (anc1 !is TransitionResult.Ignored) anc1
-            else {
-                val anc2 = processRun(event)
-                if (anc2 !is TransitionResult.Ignored) anc2
-            else TransitionResult.Ignored
-            }
-            }
-        }
-        is AiLoopState.Rebuilding -> {
-            val result = processRebuilding(event)
-            // W3C SCXML 3.13: Ancestor transition routing
-            if (result !is TransitionResult.Ignored) result
-            else {
-                val anc1 = processRun(event)
-                if (anc1 !is TransitionResult.Ignored) anc1
-            else TransitionResult.Ignored
-            }
-        }
-        is AiLoopState.Reflecting -> {
-            val result = processReflecting(event)
-            // W3C SCXML 3.13: Ancestor transition routing
-            if (result !is TransitionResult.Ignored) result
-            else {
-                val anc1 = processDrive(event)
-                if (anc1 !is TransitionResult.Ignored) anc1
-            else {
-                val anc2 = processRun(event)
-                if (anc2 !is TransitionResult.Ignored) anc2
-            else TransitionResult.Ignored
-            }
-            }
-        }
-        // W3C SCXML 3.13: Ancestor-only routing (reported has no own event transitions)
-        is AiLoopState.Reported -> {
-            val anc1 = processDrive(event)
-            if (anc1 !is TransitionResult.Ignored) anc1
-            else {
-                val anc2 = processRun(event)
-                if (anc2 !is TransitionResult.Ignored) anc2
-            else TransitionResult.Ignored
-            }
-        }
-        is AiLoopState.Restarting -> {
-            val result = processRestarting(event)
-            // W3C SCXML 3.13: Ancestor transition routing
-            if (result !is TransitionResult.Ignored) result
-            else {
-                val anc1 = processDrive(event)
-                if (anc1 !is TransitionResult.Ignored) anc1
-            else {
-                val anc2 = processRun(event)
-                if (anc2 !is TransitionResult.Ignored) anc2
-            else TransitionResult.Ignored
-            }
-            }
-        }
-        // W3C SCXML 3.13: Ancestor-only routing (running has no own event transitions)
-        is AiLoopState.Running -> {
-            val anc1 = processDrive(event)
-            if (anc1 !is TransitionResult.Ignored) anc1
-            else {
-                val anc2 = processRun(event)
-                if (anc2 !is TransitionResult.Ignored) anc2
-            else TransitionResult.Ignored
-            }
-        }
-        is AiLoopState.Screening -> {
-            val result = processScreening(event)
-            // W3C SCXML 3.13: Ancestor transition routing
-            if (result !is TransitionResult.Ignored) result
-            else {
-                val anc1 = processDrive(event)
-                if (anc1 !is TransitionResult.Ignored) anc1
-            else {
-                val anc2 = processRun(event)
-                if (anc2 !is TransitionResult.Ignored) anc2
-            else TransitionResult.Ignored
-            }
-            }
-        }
-        // W3C SCXML 3.13: Ancestor-only routing (spent has no own event transitions)
-        is AiLoopState.Spent -> {
-            val anc1 = processRun(event)
-            if (anc1 !is TransitionResult.Ignored) anc1
-            else TransitionResult.Ignored
-        }
-        // W3C SCXML 3.13: Ancestor-only routing (stuck has no own event transitions)
-        is AiLoopState.Stuck -> {
-            val anc1 = processDrive(event)
-            if (anc1 !is TransitionResult.Ignored) anc1
-            else {
-                val anc2 = processRun(event)
-                if (anc2 !is TransitionResult.Ignored) anc2
-            else TransitionResult.Ignored
-            }
-        }
-        // W3C SCXML 3.13: Ancestor-only routing (watch has no own event transitions)
-        is AiLoopState.Watch -> {
-            val anc1 = processRun(event)
-            if (anc1 !is TransitionResult.Ignored) anc1
-            else TransitionResult.Ignored
-        }
-        is AiLoopState.Within -> {
-            val result = processWithin(event)
-            // W3C SCXML 3.13: Ancestor transition routing
-            if (result !is TransitionResult.Ignored) result
-            else {
-                val anc1 = processRun(event)
-                if (anc1 !is TransitionResult.Ignored) anc1
-            else TransitionResult.Ignored
-            }
-        }
-        is AiLoopState.Working -> {
-            val result = processWorking(event)
-            // W3C SCXML 3.13: Ancestor transition routing
-            if (result !is TransitionResult.Ignored) result
-            else {
-                val anc1 = processDrive(event)
-                if (anc1 !is TransitionResult.Ignored) anc1
-            else {
-                val anc2 = processRun(event)
-                if (anc2 !is TransitionResult.Ignored) anc2
-            else TransitionResult.Ignored
-            }
-            }
-        }
-        else -> TransitionResult.Ignored
-    }
     }
 
-
-    // --- Per-State Event Handlers ---
-
-    private fun processAlive(
-        event: AiLoopEvent
-    ): TransitionResult<AiLoopState> = when {
-        event is AiLoopEvent.Session.Lost -> TransitionResult.External(AiLoopState.Rebuilding, AiLoopState.Alive, 0)
-
-        else -> TransitionResult.Ignored
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
+        state: AiLoopState,
+        event: AiLoopEvent?
+    ): EnabledTransition<AiLoopState, HistoryId>? = when (state) {
+        is AiLoopState.Alive -> when {
+            event is AiLoopEvent.Session.Lost -> transitionAliveAt0
+            else -> null
+        }
+        is AiLoopState.Closing -> when {
+            event is AiLoopEvent.Turn.Done -> transitionClosingAt0
+            event is AiLoopEvent.Turn.Blocked -> transitionClosingAt1
+            else -> null
+        }
+        is AiLoopState.Drive -> when {
+            event is AiLoopEvent.Hold -> transitionDriveAt0
+            event is AiLoopEvent.Turn.Interrupted -> transitionDriveAt1
+            event is AiLoopEvent.Session.Lost -> transitionDriveAt2
+            else -> null
+        }
+        is AiLoopState.Judging -> when {
+            (event is AiLoopEvent.Judge || event is AiLoopEvent.Judge.Begin) && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_truthy(_event.data.done)", "_event.data.done")) -> transitionJudgingAt0
+            (event is AiLoopEvent.Judge || event is AiLoopEvent.Judge.Begin) && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(turns_since_reflect >= reflect_every)", "turns_since_reflect >= reflect_every")) -> transitionJudgingAt1
+            (event is AiLoopEvent.Judge || event is AiLoopEvent.Judge.Begin) -> transitionJudgingAt2
+            else -> null
+        }
+        is AiLoopState.Paused -> when {
+            event is AiLoopEvent.Turn.Done -> transitionPausedAt0
+            event is AiLoopEvent.Turn.Interrupted -> transitionPausedAt1
+            event is AiLoopEvent.Resume -> transitionPausedAt2
+            event is AiLoopEvent.Unattended -> transitionPausedAt3
+            else -> null
+        }
+        is AiLoopState.Priming -> when {
+            event is AiLoopEvent.Prompt.Sent -> transitionPrimingAt0
+            else -> null
+        }
+        is AiLoopState.Rebuilding -> when {
+            event is AiLoopEvent.Session.Ready -> transitionRebuildingAt0
+            else -> null
+        }
+        is AiLoopState.Reflecting -> when {
+            event is AiLoopEvent.Reflect.Applied -> transitionReflectingAt0
+            event is AiLoopEvent.Reflect.None -> transitionReflectingAt1
+            else -> null
+        }
+        is AiLoopState.Restarting -> when {
+            event is AiLoopEvent.Session.Ready && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(restarts > max_restarts)", "restarts > max_restarts")) -> transitionRestartingAt0
+            event is AiLoopEvent.Session.Ready -> transitionRestartingAt1
+            else -> null
+        }
+        is AiLoopState.Run -> when {
+            event is AiLoopEvent.Run.Converged -> transitionRunAt0
+            event is AiLoopEvent.Run.Exhausted -> transitionRunAt1
+            event is AiLoopEvent.Run.Blocked -> transitionRunAt2
+            event is AiLoopEvent.Fail -> transitionRunAt3
+            event is AiLoopEvent.Cancel -> transitionRunAt4
+            else -> null
+        }
+        is AiLoopState.Screening -> when {
+            event is AiLoopEvent.Screen.Matched -> transitionScreeningAt0
+            event is AiLoopEvent.Screen.None -> transitionScreeningAt1
+            else -> null
+        }
+        is AiLoopState.Within -> when {
+            event is AiLoopEvent.Turn.Done && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_scxml_add(turns, 1) >= max_turns)", "turns + 1 >= max_turns")) -> transitionWithinAt0
+            event is AiLoopEvent.Turn.Done -> transitionWithinAt1
+            else -> null
+        }
+        is AiLoopState.Working -> when {
+            event is AiLoopEvent.Turn.Done -> transitionWorkingAt0
+            event is AiLoopEvent.Turn.Blocked -> transitionWorkingAt1
+            else -> null
+        }
+        else -> null
     }
-
-    private fun processClosing(
-        event: AiLoopEvent
-    ): TransitionResult<AiLoopState> = when {
-        event is AiLoopEvent.Turn.Done -> TransitionResult.External(AiLoopState.Reported, AiLoopState.Closing, 1)
-
-        event is AiLoopEvent.Turn.Blocked -> TransitionResult.External(AiLoopState.Screening, AiLoopState.Closing, 2)
-
-        else -> TransitionResult.Ignored
-    }
-
-    private fun processDrive(
-        event: AiLoopEvent
-    ): TransitionResult<AiLoopState> = when {
-        event is AiLoopEvent.Hold -> TransitionResult.InternalToTarget(AiLoopState.Paused, AiLoopState.Drive, 3)
-
-        event is AiLoopEvent.Turn.Interrupted -> TransitionResult.InternalToTarget(AiLoopState.Paused, AiLoopState.Drive, 4)
-
-        event is AiLoopEvent.Session.Lost -> TransitionResult.InternalToTarget(AiLoopState.Restarting, AiLoopState.Drive, 5)
-
-        else -> TransitionResult.Ignored
-    }
-
-    private fun processJudging(
-        event: AiLoopEvent
-    ): TransitionResult<AiLoopState> = when {
-        // W3C SCXML 3.12.1: Prefix match for "judge"
-        (event is AiLoopEvent.Judge || event is AiLoopEvent.Judge.Begin) && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_truthy(_event.data.done)", "_event.data.done")) -> TransitionResult.External(AiLoopState.Closing, AiLoopState.Judging, 6)
-
-        // W3C SCXML 3.12.1: Prefix match for "judge"
-        (event is AiLoopEvent.Judge || event is AiLoopEvent.Judge.Begin) && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(turns_since_reflect >= reflect_every)", "turns_since_reflect >= reflect_every")) -> TransitionResult.External(AiLoopState.Reflecting, AiLoopState.Judging, 7)
-
-        // W3C SCXML 3.12.1: Prefix match for "judge"
-        (event is AiLoopEvent.Judge || event is AiLoopEvent.Judge.Begin) -> TransitionResult.External(AiLoopState.Working, AiLoopState.Judging, 8)
-
-        else -> TransitionResult.Ignored
-    }
-
-    private fun processPaused(
-        event: AiLoopEvent
-    ): TransitionResult<AiLoopState> = when {
-        event is AiLoopEvent.Turn.Done -> TransitionResult.External(AiLoopState.Judging, AiLoopState.Paused, 9)
-
-        event is AiLoopEvent.Turn.Interrupted -> TransitionResult.External(AiLoopState.Paused, AiLoopState.Paused, 10)
-
-        event is AiLoopEvent.Resume -> TransitionResult.External((historyStore["where"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: AiLoopState.Working), AiLoopState.Paused, 11)
-
-        event is AiLoopEvent.Unattended -> TransitionResult.External(AiLoopState.Abandoned, AiLoopState.Paused, 12)
-
-        else -> TransitionResult.Ignored
-    }
-
-    private fun processPriming(
-        event: AiLoopEvent
-    ): TransitionResult<AiLoopState> = when {
-        event is AiLoopEvent.Prompt.Sent -> TransitionResult.External(AiLoopState.Working, AiLoopState.Priming, 13)
-
-        else -> TransitionResult.Ignored
-    }
-
-    private fun processRebuilding(
-        event: AiLoopEvent
-    ): TransitionResult<AiLoopState> = when {
-        event is AiLoopEvent.Session.Ready -> TransitionResult.External(AiLoopState.Alive, AiLoopState.Rebuilding, 14)
-
-        else -> TransitionResult.Ignored
-    }
-
-    private fun processReflecting(
-        event: AiLoopEvent
-    ): TransitionResult<AiLoopState> = when {
-        event is AiLoopEvent.Reflect.Applied -> TransitionResult.External(AiLoopState.Restarting, AiLoopState.Reflecting, 15)
-
-        event is AiLoopEvent.Reflect.None -> TransitionResult.External(AiLoopState.Working, AiLoopState.Reflecting, 16)
-
-        else -> TransitionResult.Ignored
-    }
-
-    private fun processRestarting(
-        event: AiLoopEvent
-    ): TransitionResult<AiLoopState> = when {
-        event is AiLoopEvent.Session.Ready && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(restarts > max_restarts)", "restarts > max_restarts")) -> TransitionResult.External(AiLoopState.Stuck, AiLoopState.Restarting, 17)
-
-        event is AiLoopEvent.Session.Ready -> TransitionResult.External(AiLoopState.Priming, AiLoopState.Restarting, 18)
-
-        else -> TransitionResult.Ignored
-    }
-
-    private fun processRun(
-        event: AiLoopEvent
-    ): TransitionResult<AiLoopState> = when {
-        event is AiLoopEvent.Run.Converged -> TransitionResult.External(AiLoopState.Converged, AiLoopState.Run, 19)
-
-        event is AiLoopEvent.Run.Exhausted -> TransitionResult.External(AiLoopState.Exhausted, AiLoopState.Run, 20)
-
-        event is AiLoopEvent.Run.Blocked -> TransitionResult.External(AiLoopState.Blocked, AiLoopState.Run, 21)
-
-        event is AiLoopEvent.Fail -> TransitionResult.External(AiLoopState.Failed, AiLoopState.Run, 22)
-
-        event is AiLoopEvent.Cancel -> TransitionResult.External(AiLoopState.Cancelled, AiLoopState.Run, 23)
-
-        else -> TransitionResult.Ignored
-    }
-
-    private fun processScreening(
-        event: AiLoopEvent
-    ): TransitionResult<AiLoopState> = when {
-        event is AiLoopEvent.Screen.Matched -> TransitionResult.External(AiLoopState.Working, AiLoopState.Screening, 24)
-
-        event is AiLoopEvent.Screen.None -> TransitionResult.External(AiLoopState.Paused, AiLoopState.Screening, 25)
-
-        else -> TransitionResult.Ignored
-    }
-
-    private fun processWithin(
-        event: AiLoopEvent
-    ): TransitionResult<AiLoopState> = when {
-        event is AiLoopEvent.Turn.Done && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_scxml_add(turns, 1) >= max_turns)", "turns + 1 >= max_turns")) -> TransitionResult.External(AiLoopState.Spent, AiLoopState.Within, 26)
-
-        event is AiLoopEvent.Turn.Done -> TransitionResult.External(AiLoopState.Within, AiLoopState.Within, 27)
-
-        else -> TransitionResult.Ignored
-    }
-
-    private fun processWorking(
-        event: AiLoopEvent
-    ): TransitionResult<AiLoopState> = when {
-        event is AiLoopEvent.Turn.Done -> TransitionResult.External(AiLoopState.Judging, AiLoopState.Working, 28)
-
-        event is AiLoopEvent.Turn.Blocked -> TransitionResult.External(AiLoopState.Screening, AiLoopState.Working, 29)
-
-        else -> TransitionResult.Ignored
-    }
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: ai_loop.scxml:155 :: _machine
-    override fun onEntry(state: AiLoopState, pathChild: AiLoopState?) {
+    override fun onEntry(state: AiLoopState, isDefaultEntry: Boolean) {
         when (state) {
             is AiLoopState.Abandoned -> {
                 // SCE-MAP: ai_loop.scxml:493 :: abandoned :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("abandoned")) return
 
             raiseInternal(AiLoopEvent.Run.Blocked)
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
                 raiseInternal(AiLoopEvent.Done.State.Drive, EventMetadata.platform())
-                // W3C SCXML 3.7.1: Check if all regions of parallel grandparent are complete
-                if (false) {
+                // W3C SCXML 3.7.1: this <final> may have completed the
+                // <parallel> grandparent — Appendix D's isInFinalState, which
+                // counts a region that is itself a <parallel> only once all
+                // of ITS regions are final.
+                if (isStateInFinalState(AiLoopState.Run)) {
                     raiseInternal(AiLoopEvent.Done.State.Run)
                 }
             }
             is AiLoopState.Alive -> {
                 // SCE-MAP: ai_loop.scxml:506 :: alive :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("alive")) return
             }
             is AiLoopState.Blocked -> {
                 // SCE-MAP: ai_loop.scxml:548 :: blocked :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("blocked")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AiLoopState.Budget -> {
                 // SCE-MAP: ai_loop.scxml:520 :: budget :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("budget")) return
-                if (pathChild == null) {
-                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                    onEntry(AiLoopState.Within)
-                }
             }
             is AiLoopState.Cancelled -> {
                 // SCE-MAP: ai_loop.scxml:547 :: cancelled :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("cancelled")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AiLoopState.Closing -> {
                 // SCE-MAP: ai_loop.scxml:405 :: closing :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("closing")) return
 
 
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
@@ -1298,38 +1332,24 @@ class AiLoopStateMachine(
             }
             is AiLoopState.Converged -> {
                 // SCE-MAP: ai_loop.scxml:544 :: converged :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("converged")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AiLoopState.Drive -> {
                 // SCE-MAP: ai_loop.scxml:236 :: drive :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("drive")) return
-                if (pathChild == null) {
-                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                    onEntry(AiLoopState.Running)
-                }
             }
             is AiLoopState.Exhausted -> {
                 // SCE-MAP: ai_loop.scxml:545 :: exhausted :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("exhausted")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AiLoopState.Failed -> {
                 // SCE-MAP: ai_loop.scxml:546 :: failed :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("failed")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AiLoopState.Judging -> {
                 // SCE-MAP: ai_loop.scxml:344 :: judging :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("judging")) return
 
 
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
@@ -1375,8 +1395,6 @@ class AiLoopStateMachine(
             }
             is AiLoopState.Paused -> {
                 // SCE-MAP: ai_loop.scxml:451 :: paused :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("paused")) return
 
 
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
@@ -1408,8 +1426,6 @@ class AiLoopStateMachine(
             }
             is AiLoopState.Priming -> {
                 // SCE-MAP: ai_loop.scxml:291 :: priming :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("priming")) return
 
 
             // W3C SCXML 6.2.5: "x-sce-host" is served by the host,
@@ -1455,13 +1471,9 @@ class AiLoopStateMachine(
             }
             is AiLoopState.Rebuilding -> {
                 // SCE-MAP: ai_loop.scxml:509 :: rebuilding :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("rebuilding")) return
             }
             is AiLoopState.Reflecting -> {
                 // SCE-MAP: ai_loop.scxml:374 :: reflecting :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("reflecting")) return
 
 
             executeAssign(com.sce.runtime.ScriptSource.lua("turns_since_reflect", "turns_since_reflect"), com.sce.runtime.ScriptSource.lua("0", "0"))
@@ -1496,8 +1508,6 @@ class AiLoopStateMachine(
             }
             is AiLoopState.Reported -> {
                 // SCE-MAP: ai_loop.scxml:426 :: reported :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("reported")) return
 
             raiseInternal(AiLoopEvent.Run.Converged)
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
@@ -1505,8 +1515,6 @@ class AiLoopStateMachine(
             }
             is AiLoopState.Restarting -> {
                 // SCE-MAP: ai_loop.scxml:394 :: restarting :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("restarting")) return
 
 
             executeAssign(com.sce.runtime.ScriptSource.lua("restarts", "restarts"), com.sce.runtime.ScriptSource.lua("_scxml_add(restarts, 1)", "restarts + 1"))
@@ -1541,37 +1549,12 @@ class AiLoopStateMachine(
             }
             is AiLoopState.Run -> {
                 // SCE-MAP: ai_loop.scxml:233 :: run :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("run")) return
-                // W3C SCXML 3.4 + §scxml-D-addDescendantStatesToEnter: a
-                // `<parallel>` hands out defaults even when it is only an
-                // ancestor — Appendix D's one exception to the ancestor rule.
-                // The exception has its own exception: not the region the entry
-                // set is already descending into, which `pathChild` names and
-                // which the caller enters with the target's own path.
-                if (pathChild != AiLoopState.Drive) {
-                    onEntry(AiLoopState.Drive)
-                }
-                if (pathChild != AiLoopState.Watch) {
-                    onEntry(AiLoopState.Watch)
-                }
-                if (pathChild != AiLoopState.Budget) {
-                    onEntry(AiLoopState.Budget)
-                }
             }
             is AiLoopState.Running -> {
                 // SCE-MAP: ai_loop.scxml:274 :: running :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("running")) return
-                if (pathChild == null) {
-                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                    onEntry(AiLoopState.Priming)
-                }
             }
             is AiLoopState.Screening -> {
                 // SCE-MAP: ai_loop.scxml:327 :: screening :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("screening")) return
 
 
             executeAssign(com.sce.runtime.ScriptSource.lua("screened", "screened"), com.sce.runtime.ScriptSource.lua("_scxml_add(screened, 1)", "screened + 1"))
@@ -1606,15 +1589,11 @@ class AiLoopStateMachine(
             }
             is AiLoopState.Spent -> {
                 // SCE-MAP: ai_loop.scxml:529 :: spent :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("spent")) return
 
             raiseInternal(AiLoopEvent.Run.Exhausted)
             }
             is AiLoopState.Stuck -> {
                 // SCE-MAP: ai_loop.scxml:434 :: stuck :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("stuck")) return
 
             raiseInternal(AiLoopEvent.Run.Exhausted)
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
@@ -1622,22 +1601,12 @@ class AiLoopStateMachine(
             }
             is AiLoopState.Watch -> {
                 // SCE-MAP: ai_loop.scxml:505 :: watch :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("watch")) return
-                if (pathChild == null) {
-                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                    onEntry(AiLoopState.Alive)
-                }
             }
             is AiLoopState.Within -> {
                 // SCE-MAP: ai_loop.scxml:521 :: within :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("within")) return
             }
             is AiLoopState.Working -> {
                 // SCE-MAP: ai_loop.scxml:310 :: working :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("working")) return
             }
         }
     }
@@ -1648,191 +1617,89 @@ class AiLoopStateMachine(
         when (state) {
             is AiLoopState.Abandoned -> {
                 // SCE-MAP: ai_loop.scxml:493 :: abandoned :: _state_body
-                activeStateIds.remove("abandoned")
             }
             is AiLoopState.Alive -> {
                 // SCE-MAP: ai_loop.scxml:506 :: alive :: _state_body
-                activeStateIds.remove("alive")
             }
             is AiLoopState.Blocked -> {
                 // SCE-MAP: ai_loop.scxml:548 :: blocked :: _state_body
-                activeStateIds.remove("blocked")
             }
             is AiLoopState.Budget -> {
                 // SCE-MAP: ai_loop.scxml:520 :: budget :: _state_body
-                activeStateIds.remove("budget")
             }
             is AiLoopState.Cancelled -> {
                 // SCE-MAP: ai_loop.scxml:547 :: cancelled :: _state_body
-                activeStateIds.remove("cancelled")
             }
             is AiLoopState.Closing -> {
                 // SCE-MAP: ai_loop.scxml:405 :: closing :: _state_body
-                activeStateIds.remove("closing")
             }
             is AiLoopState.Converged -> {
                 // SCE-MAP: ai_loop.scxml:544 :: converged :: _state_body
-                activeStateIds.remove("converged")
             }
             is AiLoopState.Drive -> {
                 // SCE-MAP: ai_loop.scxml:236 :: drive :: _state_body
-                activeStateIds.remove("drive")
             }
             is AiLoopState.Exhausted -> {
                 // SCE-MAP: ai_loop.scxml:545 :: exhausted :: _state_body
-                activeStateIds.remove("exhausted")
             }
             is AiLoopState.Failed -> {
                 // SCE-MAP: ai_loop.scxml:546 :: failed :: _state_body
-                activeStateIds.remove("failed")
             }
             is AiLoopState.Judging -> {
                 // SCE-MAP: ai_loop.scxml:344 :: judging :: _state_body
-                activeStateIds.remove("judging")
             }
             is AiLoopState.Paused -> {
                 // SCE-MAP: ai_loop.scxml:451 :: paused :: _state_body
-                activeStateIds.remove("paused")
             }
             is AiLoopState.Priming -> {
                 // SCE-MAP: ai_loop.scxml:291 :: priming :: _state_body
-                activeStateIds.remove("priming")
             }
             is AiLoopState.Rebuilding -> {
                 // SCE-MAP: ai_loop.scxml:509 :: rebuilding :: _state_body
-                activeStateIds.remove("rebuilding")
             }
             is AiLoopState.Reflecting -> {
                 // SCE-MAP: ai_loop.scxml:374 :: reflecting :: _state_body
-                activeStateIds.remove("reflecting")
             }
             is AiLoopState.Reported -> {
                 // SCE-MAP: ai_loop.scxml:426 :: reported :: _state_body
-                activeStateIds.remove("reported")
             }
             is AiLoopState.Restarting -> {
                 // SCE-MAP: ai_loop.scxml:394 :: restarting :: _state_body
-                activeStateIds.remove("restarting")
             }
             is AiLoopState.Run -> {
                 // SCE-MAP: ai_loop.scxml:233 :: run :: _state_body
-                // W3C SCXML 3.4/3.13: Exit active descendants of parallel state
-                // in reverse document order (deepest states exit first).
-                // Defensive: when called from exitHierarchy, descendants are already
-                // exited and removed from activeStateIds — the contains() checks below
-                // prevent double-exit. This code is needed for direct onExit() calls.
-                val toExit = mutableListOf<Pair<AiLoopState, Int>>()
-                if (activeStateIds.contains("budget")) {
-                    toExit.add(AiLoopState.Budget to 17)
-                }
-                if (activeStateIds.contains("spent")) {
-                    toExit.add(AiLoopState.Spent to 19)
-                }
-                if (activeStateIds.contains("within")) {
-                    toExit.add(AiLoopState.Within to 18)
-                }
-                if (activeStateIds.contains("drive")) {
-                    toExit.add(AiLoopState.Drive to 1)
-                }
-                if (activeStateIds.contains("abandoned")) {
-                    toExit.add(AiLoopState.Abandoned to 13)
-                }
-                if (activeStateIds.contains("paused")) {
-                    toExit.add(AiLoopState.Paused to 12)
-                }
-                if (activeStateIds.contains("running")) {
-                    toExit.add(AiLoopState.Running to 2)
-                }
-                if (activeStateIds.contains("closing")) {
-                    toExit.add(AiLoopState.Closing to 9)
-                }
-                if (activeStateIds.contains("judging")) {
-                    toExit.add(AiLoopState.Judging to 6)
-                }
-                if (activeStateIds.contains("priming")) {
-                    toExit.add(AiLoopState.Priming to 3)
-                }
-                if (activeStateIds.contains("reflecting")) {
-                    toExit.add(AiLoopState.Reflecting to 7)
-                }
-                if (activeStateIds.contains("reported")) {
-                    toExit.add(AiLoopState.Reported to 10)
-                }
-                if (activeStateIds.contains("restarting")) {
-                    toExit.add(AiLoopState.Restarting to 8)
-                }
-                if (activeStateIds.contains("screening")) {
-                    toExit.add(AiLoopState.Screening to 5)
-                }
-                if (activeStateIds.contains("stuck")) {
-                    toExit.add(AiLoopState.Stuck to 11)
-                }
-                if (activeStateIds.contains("working")) {
-                    toExit.add(AiLoopState.Working to 4)
-                }
-                if (activeStateIds.contains("watch")) {
-                    toExit.add(AiLoopState.Watch to 14)
-                }
-                if (activeStateIds.contains("alive")) {
-                    toExit.add(AiLoopState.Alive to 15)
-                }
-                if (activeStateIds.contains("rebuilding")) {
-                    toExit.add(AiLoopState.Rebuilding to 16)
-                }
-                toExit.sortByDescending { it.second }
-                for ((desc, _) in toExit) {
-                    onExit(desc)
-                }
-                activeStateIds.remove("run")
             }
             is AiLoopState.Running -> {
                 // SCE-MAP: ai_loop.scxml:274 :: running :: _state_body
-                // W3C SCXML 3.11: Record shallow history for where
-                // Uses preTransitionActiveStates (captured before exits, C++ pattern)
-                historyStore["where"] = preTransitionActiveStates.filter { stateId ->
-                    val st = resolveState(stateId) ?: return@filter false
-                    parentOf(st)?.let { stateIdOf(it) } == "running"
-                }.toList()
-                activeStateIds.remove("running")
             }
             is AiLoopState.Screening -> {
                 // SCE-MAP: ai_loop.scxml:327 :: screening :: _state_body
-                activeStateIds.remove("screening")
             }
             is AiLoopState.Spent -> {
                 // SCE-MAP: ai_loop.scxml:529 :: spent :: _state_body
-                activeStateIds.remove("spent")
             }
             is AiLoopState.Stuck -> {
                 // SCE-MAP: ai_loop.scxml:434 :: stuck :: _state_body
-                activeStateIds.remove("stuck")
             }
             is AiLoopState.Watch -> {
                 // SCE-MAP: ai_loop.scxml:505 :: watch :: _state_body
-                activeStateIds.remove("watch")
             }
             is AiLoopState.Within -> {
                 // SCE-MAP: ai_loop.scxml:521 :: within :: _state_body
-                activeStateIds.remove("within")
             }
             is AiLoopState.Working -> {
                 // SCE-MAP: ai_loop.scxml:310 :: working :: _state_body
-                activeStateIds.remove("working")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: ai_loop.scxml:155 :: _machine
-    override fun executeTransitionActions(
-        source: AiLoopState,
-        event: AiLoopEvent?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: AiLoopState, transitionIndex: Int) {
         when (source) {
         is AiLoopState.Judging -> when (transitionIndex) {
-            8 -> {
+            2 -> {
                 // SCE-MAP: ai_loop.scxml:362 :: judging :: _transition_2
 
 
@@ -1880,7 +1747,7 @@ class AiLoopStateMachine(
             else -> {}
         }
         is AiLoopState.Paused -> when (transitionIndex) {
-            9 -> {
+            0 -> {
                 // SCE-MAP: ai_loop.scxml:468 :: paused :: _transition_0
 
 
@@ -1889,7 +1756,7 @@ class AiLoopStateMachine(
             else -> {}
         }
         is AiLoopState.Reflecting -> when (transitionIndex) {
-            15 -> {
+            0 -> {
                 // SCE-MAP: ai_loop.scxml:379 :: reflecting :: _transition_0
 
 
@@ -1901,7 +1768,7 @@ class AiLoopStateMachine(
 
             executeAssign(com.sce.runtime.ScriptSource.lua("milestone", "milestone"), com.sce.runtime.ScriptSource.lua("_event.data.milestone", "_event.data.milestone"))
             }
-            16 -> {
+            1 -> {
                 // SCE-MAP: ai_loop.scxml:385 :: reflecting :: _transition_1
 
 
@@ -1949,13 +1816,13 @@ class AiLoopStateMachine(
             else -> {}
         }
         is AiLoopState.Within -> when (transitionIndex) {
-            26 -> {
+            0 -> {
                 // SCE-MAP: ai_loop.scxml:522 :: within :: _transition_0
 
 
             executeAssign(com.sce.runtime.ScriptSource.lua("turns", "turns"), com.sce.runtime.ScriptSource.lua("_scxml_add(turns, 1)", "turns + 1"))
             }
-            27 -> {
+            1 -> {
                 // SCE-MAP: ai_loop.scxml:525 :: within :: _transition_1
 
 
@@ -1964,7 +1831,7 @@ class AiLoopStateMachine(
             else -> {}
         }
         is AiLoopState.Working -> when (transitionIndex) {
-            28 -> {
+            0 -> {
                 // SCE-MAP: ai_loop.scxml:311 :: working :: _transition_0
 
 

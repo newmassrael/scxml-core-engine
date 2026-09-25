@@ -49,7 +49,64 @@ class AutoforwardInternalQueueStateMachine(
     // as `needs_event_scheduler`.
     override val needsEventScheduler: Boolean = true
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
 
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: AutoforwardInternalQueueState): Boolean = when (state) {
+        is AutoforwardInternalQueueState.Fail, is AutoforwardInternalQueueState.Pass -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<AutoforwardInternalQueueState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<AutoforwardInternalQueueState, HistoryId>> =
+            listOf(StateTarget(AutoforwardInternalQueueState.Phase))
+
+        // W3C SCXML 3.13: phase's transition 0, as the microstep reads it.
+        val transitionPhaseAt0 = EnabledTransition<AutoforwardInternalQueueState, HistoryId>(
+            AutoforwardInternalQueueState.Phase,
+            emptyList(),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: phase's transition 1, as the microstep reads it.
+        val transitionPhaseAt1 = EnabledTransition<AutoforwardInternalQueueState, HistoryId>(
+            AutoforwardInternalQueueState.Phase,
+            emptyList(),
+            1,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: phase's transition 2, as the microstep reads it.
+        val transitionPhaseAt2 = EnabledTransition<AutoforwardInternalQueueState, HistoryId>(
+            AutoforwardInternalQueueState.Phase,
+            listOf(StateTarget(AutoforwardInternalQueueState.Fail)),
+            2,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: phase's transition 3, as the microstep reads it.
+        val transitionPhaseAt3 = EnabledTransition<AutoforwardInternalQueueState, HistoryId>(
+            AutoforwardInternalQueueState.Phase,
+            listOf(StateTarget(AutoforwardInternalQueueState.Pass)),
+            3,
+            hasActions = false,
+            isInternal = false,
+        )
+    }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): AutoforwardInternalQueueState? = when (stateId) {
@@ -66,13 +123,7 @@ class AutoforwardInternalQueueStateMachine(
         is AutoforwardInternalQueueState.Phase -> "phase"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: AutoforwardInternalQueueState): Boolean = when (state) {
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: AutoforwardInternalQueueState): Int = when (state) {
         is AutoforwardInternalQueueState.Fail -> 2
         is AutoforwardInternalQueueState.Pass -> 1
@@ -107,56 +158,43 @@ class AutoforwardInternalQueueStateMachine(
 
 
 
-    // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
-    override fun processEvent(
+
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
         state: AutoforwardInternalQueueState,
-        event: AutoforwardInternalQueueEvent
-    ): TransitionResult<AutoforwardInternalQueueState> = when (state) {
-        is AutoforwardInternalQueueState.Phase -> processPhase(event)
-        else -> TransitionResult.Ignored
+        event: AutoforwardInternalQueueEvent?
+    ): EnabledTransition<AutoforwardInternalQueueState, HistoryId>? = when (state) {
+        is AutoforwardInternalQueueState.Phase -> when {
+            event is AutoforwardInternalQueueEvent.Ready -> transitionPhaseAt0
+            event is AutoforwardInternalQueueEvent.Error.Execution -> transitionPhaseAt1
+            event is AutoforwardInternalQueueEvent.SawInternal -> transitionPhaseAt2
+            event is AutoforwardInternalQueueEvent.SawProbeOnly -> transitionPhaseAt3
+            else -> null
+        }
+        else -> null
     }
-
-
-    // --- Per-State Event Handlers ---
-
-    private fun processPhase(
-        event: AutoforwardInternalQueueEvent
-    ): TransitionResult<AutoforwardInternalQueueState> = when {
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is AutoforwardInternalQueueEvent.Ready -> TransitionResult.Internal(0)
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is AutoforwardInternalQueueEvent.Error.Execution -> TransitionResult.Internal(1)
-        event is AutoforwardInternalQueueEvent.SawInternal -> TransitionResult.External(AutoforwardInternalQueueState.Fail, AutoforwardInternalQueueState.Phase, 2)
-
-        event is AutoforwardInternalQueueEvent.SawProbeOnly -> TransitionResult.External(AutoforwardInternalQueueState.Pass, AutoforwardInternalQueueState.Phase, 3)
-
-        else -> TransitionResult.Ignored
-    }
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: autoforward_internal_queue.scxml:51 :: _machine
-    override fun onEntry(state: AutoforwardInternalQueueState, pathChild: AutoforwardInternalQueueState?) {
+    override fun onEntry(state: AutoforwardInternalQueueState, isDefaultEntry: Boolean) {
         when (state) {
             is AutoforwardInternalQueueState.Fail -> {
                 // SCE-MAP: autoforward_internal_queue.scxml:85 :: fail :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AutoforwardInternalQueueState.Pass -> {
                 // SCE-MAP: autoforward_internal_queue.scxml:84 :: pass :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AutoforwardInternalQueueState.Phase -> {
                 // SCE-MAP: autoforward_internal_queue.scxml:54 :: phase :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("phase")) return
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
@@ -177,11 +215,9 @@ class AutoforwardInternalQueueStateMachine(
         when (state) {
             is AutoforwardInternalQueueState.Fail -> {
                 // SCE-MAP: autoforward_internal_queue.scxml:85 :: fail :: _state_body
-                activeStateIds.remove("fail")
             }
             is AutoforwardInternalQueueState.Pass -> {
                 // SCE-MAP: autoforward_internal_queue.scxml:84 :: pass :: _state_body
-                activeStateIds.remove("pass")
             }
             is AutoforwardInternalQueueState.Phase -> {
                 // SCE-MAP: autoforward_internal_queue.scxml:54 :: phase :: _state_body
@@ -189,19 +225,14 @@ class AutoforwardInternalQueueStateMachine(
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("inv_watch")
-                activeStateIds.remove("phase")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: autoforward_internal_queue.scxml:51 :: _machine
-    override fun executeTransitionActions(
-        source: AutoforwardInternalQueueState,
-        event: AutoforwardInternalQueueEvent?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: AutoforwardInternalQueueState, transitionIndex: Int) {
         when (source) {
         is AutoforwardInternalQueueState.Phase -> when (transitionIndex) {
             0 -> {

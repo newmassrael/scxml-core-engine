@@ -93,7 +93,100 @@ class SendNamelistOverHttpStateMachine(
         super.enterInitialConfiguration()
     }
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
 
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: SendNamelistOverHttpState): Boolean = when (state) {
+        is SendNamelistOverHttpState.FailMessageNotDiscarded, is SendNamelistOverHttpState.FailNamelistNeverArrived, is SendNamelistOverHttpState.FailNamelistNotPosted, is SendNamelistOverHttpState.FailNoNamelistError, is SendNamelistOverHttpState.Pass -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<SendNamelistOverHttpState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<SendNamelistOverHttpState, HistoryId>> =
+            listOf(StateTarget(SendNamelistOverHttpState.MapPhase))
+
+        // W3C SCXML 3.13: discardPhase's transition 0, as the microstep reads it.
+        val transitionDiscardPhaseAt0 = EnabledTransition<SendNamelistOverHttpState, HistoryId>(
+            SendNamelistOverHttpState.DiscardPhase,
+            emptyList(),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: discardPhase's transition 1, as the microstep reads it.
+        val transitionDiscardPhaseAt1 = EnabledTransition<SendNamelistOverHttpState, HistoryId>(
+            SendNamelistOverHttpState.DiscardPhase,
+            listOf(StateTarget(SendNamelistOverHttpState.FailMessageNotDiscarded)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: discardPhase's transition 2, as the microstep reads it.
+        val transitionDiscardPhaseAt2 = EnabledTransition<SendNamelistOverHttpState, HistoryId>(
+            SendNamelistOverHttpState.DiscardPhase,
+            listOf(StateTarget(SendNamelistOverHttpState.FailNoNamelistError)),
+            2,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: discardPhase's transition 3, as the microstep reads it.
+        val transitionDiscardPhaseAt3 = EnabledTransition<SendNamelistOverHttpState, HistoryId>(
+            SendNamelistOverHttpState.DiscardPhase,
+            listOf(StateTarget(SendNamelistOverHttpState.Pass)),
+            3,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: mapPhase's transition 0, as the microstep reads it.
+        val transitionMapPhaseAt0 = EnabledTransition<SendNamelistOverHttpState, HistoryId>(
+            SendNamelistOverHttpState.MapPhase,
+            listOf(StateTarget(SendNamelistOverHttpState.MapVerdict)),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: mapPhase's transition 1, as the microstep reads it.
+        val transitionMapPhaseAt1 = EnabledTransition<SendNamelistOverHttpState, HistoryId>(
+            SendNamelistOverHttpState.MapPhase,
+            listOf(StateTarget(SendNamelistOverHttpState.FailNamelistNeverArrived)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: mapVerdict's transition 0, as the microstep reads it.
+        val transitionMapVerdictAt0 = EnabledTransition<SendNamelistOverHttpState, HistoryId>(
+            SendNamelistOverHttpState.MapVerdict,
+            listOf(StateTarget(SendNamelistOverHttpState.DiscardPhase)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: mapVerdict's transition 1, as the microstep reads it.
+        val transitionMapVerdictAt1 = EnabledTransition<SendNamelistOverHttpState, HistoryId>(
+            SendNamelistOverHttpState.MapVerdict,
+            listOf(StateTarget(SendNamelistOverHttpState.FailNamelistNotPosted)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+    }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): SendNamelistOverHttpState? = when (stateId) {
@@ -120,13 +213,7 @@ class SendNamelistOverHttpStateMachine(
         is SendNamelistOverHttpState.Pass -> "pass"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: SendNamelistOverHttpState): Boolean = when (state) {
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: SendNamelistOverHttpState): Int = when (state) {
         is SendNamelistOverHttpState.DiscardPhase -> 2
         is SendNamelistOverHttpState.FailMessageNotDiscarded -> 6
@@ -373,73 +460,50 @@ class SendNamelistOverHttpStateMachine(
     }
 
 
-    // W3C SCXML 3.12: Event processing with script engine condition evaluation
-    override fun processEvent(
-        state: SendNamelistOverHttpState,
-        event: SendNamelistOverHttpEvent
-    ): TransitionResult<SendNamelistOverHttpState> {
-        // W3C SCXML 5.10: Set _event before guard evaluation
+
+    // W3C SCXML 5.10: bind the event as the `_event` its transitions' guards
+    // read — once, before the first guard runs, and not for an eventless
+    // selection, which has no event of its own.
+    override fun bindCurrentEvent(event: SendNamelistOverHttpEvent) {
         setCurrentEventInScriptEngine(event)
-        return when (state) {
-        is SendNamelistOverHttpState.DiscardPhase -> processDiscardPhase(event)
-        is SendNamelistOverHttpState.MapPhase -> processMapPhase(event)
-        else -> TransitionResult.Ignored
-    }
     }
 
-    // W3C SCXML Appendix D: Eventless (null) transition check
-    override fun processNullEvent(
-        state: SendNamelistOverHttpState
-    ): TransitionResult<SendNamelistOverHttpState> = when (state) {
-        is SendNamelistOverHttpState.MapVerdict -> processNullMapVerdict()
-        else -> TransitionResult.Ignored
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
+        state: SendNamelistOverHttpState,
+        event: SendNamelistOverHttpEvent?
+    ): EnabledTransition<SendNamelistOverHttpState, HistoryId>? = when (state) {
+        is SendNamelistOverHttpState.DiscardPhase -> when {
+            event is SendNamelistOverHttpEvent.Error.Execution -> transitionDiscardPhaseAt0
+            event is SendNamelistOverHttpEvent.ShouldNotArrive -> transitionDiscardPhaseAt1
+            event is SendNamelistOverHttpEvent.TimeoutDiscard && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(sawNamelistError ~= 1)", "sawNamelistError !== 1")) -> transitionDiscardPhaseAt2
+            event is SendNamelistOverHttpEvent.TimeoutDiscard -> transitionDiscardPhaseAt3
+            else -> null
+        }
+        is SendNamelistOverHttpState.MapPhase -> when {
+            event is SendNamelistOverHttpEvent.Mapped -> transitionMapPhaseAt0
+            event is SendNamelistOverHttpEvent.TimeoutMap -> transitionMapPhaseAt1
+            else -> null
+        }
+        is SendNamelistOverHttpState.MapVerdict -> when {
+            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(echoed, 2)", "echoed == 2")) -> transitionMapVerdictAt0
+            event == null -> transitionMapVerdictAt1
+            else -> null
+        }
+        else -> null
     }
-
-    // --- Per-State Null (Eventless) Handlers ---
-
-    private fun processNullMapVerdict(
-    ): TransitionResult<SendNamelistOverHttpState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(echoed, 2)", "echoed == 2")) -> TransitionResult.External(SendNamelistOverHttpState.DiscardPhase, SendNamelistOverHttpState.MapVerdict, 6)
-        // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(SendNamelistOverHttpState.FailNamelistNotPosted, SendNamelistOverHttpState.MapVerdict, 7)
-    }
-
-    // --- Per-State Event Handlers ---
-
-    private fun processDiscardPhase(
-        event: SendNamelistOverHttpEvent
-    ): TransitionResult<SendNamelistOverHttpState> = when {
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is SendNamelistOverHttpEvent.Error.Execution -> TransitionResult.Internal(0)
-        event is SendNamelistOverHttpEvent.ShouldNotArrive -> TransitionResult.External(SendNamelistOverHttpState.FailMessageNotDiscarded, SendNamelistOverHttpState.DiscardPhase, 1)
-
-        event is SendNamelistOverHttpEvent.TimeoutDiscard && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(sawNamelistError ~= 1)", "sawNamelistError !== 1")) -> TransitionResult.External(SendNamelistOverHttpState.FailNoNamelistError, SendNamelistOverHttpState.DiscardPhase, 2)
-
-        event is SendNamelistOverHttpEvent.TimeoutDiscard -> TransitionResult.External(SendNamelistOverHttpState.Pass, SendNamelistOverHttpState.DiscardPhase, 3)
-
-        else -> TransitionResult.Ignored
-    }
-
-    private fun processMapPhase(
-        event: SendNamelistOverHttpEvent
-    ): TransitionResult<SendNamelistOverHttpState> = when {
-        event is SendNamelistOverHttpEvent.Mapped -> TransitionResult.External(SendNamelistOverHttpState.MapVerdict, SendNamelistOverHttpState.MapPhase, 4)
-
-        event is SendNamelistOverHttpEvent.TimeoutMap -> TransitionResult.External(SendNamelistOverHttpState.FailNamelistNeverArrived, SendNamelistOverHttpState.MapPhase, 5)
-
-        else -> TransitionResult.Ignored
-    }
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: send_namelist_over_http.scxml:51 :: _machine
-    override fun onEntry(state: SendNamelistOverHttpState, pathChild: SendNamelistOverHttpState?) {
+    override fun onEntry(state: SendNamelistOverHttpState, isDefaultEntry: Boolean) {
         when (state) {
             is SendNamelistOverHttpState.DiscardPhase -> {
                 // SCE-MAP: send_namelist_over_http.scxml:95 :: discardPhase :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("discardPhase")) return
 
 
             scheduleSend("__send_2", 2000L, SendNamelistOverHttpEvent.TimeoutDiscard)
@@ -501,36 +565,26 @@ class SendNamelistOverHttpStateMachine(
             }
             is SendNamelistOverHttpState.FailMessageNotDiscarded -> {
                 // SCE-MAP: send_namelist_over_http.scxml:118 :: failMessageNotDiscarded :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("failMessageNotDiscarded")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is SendNamelistOverHttpState.FailNamelistNeverArrived -> {
                 // SCE-MAP: send_namelist_over_http.scxml:116 :: failNamelistNeverArrived :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("failNamelistNeverArrived")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is SendNamelistOverHttpState.FailNamelistNotPosted -> {
                 // SCE-MAP: send_namelist_over_http.scxml:117 :: failNamelistNotPosted :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("failNamelistNotPosted")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is SendNamelistOverHttpState.FailNoNamelistError -> {
                 // SCE-MAP: send_namelist_over_http.scxml:119 :: failNoNamelistError :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("failNoNamelistError")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is SendNamelistOverHttpState.MapPhase -> {
                 // SCE-MAP: send_namelist_over_http.scxml:71 :: mapPhase :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("mapPhase")) return
 
 
             scheduleSend("__send_0", 3000L, SendNamelistOverHttpEvent.TimeoutMap)
@@ -592,13 +646,9 @@ class SendNamelistOverHttpStateMachine(
             }
             is SendNamelistOverHttpState.MapVerdict -> {
                 // SCE-MAP: send_namelist_over_http.scxml:88 :: mapVerdict :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("mapVerdict")) return
             }
             is SendNamelistOverHttpState.Pass -> {
                 // SCE-MAP: send_namelist_over_http.scxml:115 :: pass :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
@@ -611,47 +661,35 @@ class SendNamelistOverHttpStateMachine(
         when (state) {
             is SendNamelistOverHttpState.DiscardPhase -> {
                 // SCE-MAP: send_namelist_over_http.scxml:95 :: discardPhase :: _state_body
-                activeStateIds.remove("discardPhase")
             }
             is SendNamelistOverHttpState.FailMessageNotDiscarded -> {
                 // SCE-MAP: send_namelist_over_http.scxml:118 :: failMessageNotDiscarded :: _state_body
-                activeStateIds.remove("failMessageNotDiscarded")
             }
             is SendNamelistOverHttpState.FailNamelistNeverArrived -> {
                 // SCE-MAP: send_namelist_over_http.scxml:116 :: failNamelistNeverArrived :: _state_body
-                activeStateIds.remove("failNamelistNeverArrived")
             }
             is SendNamelistOverHttpState.FailNamelistNotPosted -> {
                 // SCE-MAP: send_namelist_over_http.scxml:117 :: failNamelistNotPosted :: _state_body
-                activeStateIds.remove("failNamelistNotPosted")
             }
             is SendNamelistOverHttpState.FailNoNamelistError -> {
                 // SCE-MAP: send_namelist_over_http.scxml:119 :: failNoNamelistError :: _state_body
-                activeStateIds.remove("failNoNamelistError")
             }
             is SendNamelistOverHttpState.MapPhase -> {
                 // SCE-MAP: send_namelist_over_http.scxml:71 :: mapPhase :: _state_body
-                activeStateIds.remove("mapPhase")
             }
             is SendNamelistOverHttpState.MapVerdict -> {
                 // SCE-MAP: send_namelist_over_http.scxml:88 :: mapVerdict :: _state_body
-                activeStateIds.remove("mapVerdict")
             }
             is SendNamelistOverHttpState.Pass -> {
                 // SCE-MAP: send_namelist_over_http.scxml:115 :: pass :: _state_body
-                activeStateIds.remove("pass")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: send_namelist_over_http.scxml:51 :: _machine
-    override fun executeTransitionActions(
-        source: SendNamelistOverHttpState,
-        event: SendNamelistOverHttpEvent?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: SendNamelistOverHttpState, transitionIndex: Int) {
         when (source) {
         is SendNamelistOverHttpState.DiscardPhase -> when (transitionIndex) {
             0 -> {
@@ -663,7 +701,7 @@ class SendNamelistOverHttpStateMachine(
             else -> {}
         }
         is SendNamelistOverHttpState.MapPhase -> when (transitionIndex) {
-            4 -> {
+            0 -> {
                 // SCE-MAP: send_namelist_over_http.scxml:82 :: mapPhase :: _transition_0
 
 

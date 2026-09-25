@@ -63,7 +63,55 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedStateMachine(
         super.enterInitialConfiguration()
     }
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
 
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState): Boolean = when (state) {
+        is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Done -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState, HistoryId>> =
+            listOf(StateTarget(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Report))
+
+        // W3C SCXML 3.13: report's transition 0, as the microstep reads it.
+        val transitionReportAt0 = EnabledTransition<InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState, HistoryId>(
+            InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Report,
+            listOf(StateTarget(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Done)),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: report's transition 1, as the microstep reads it.
+        val transitionReportAt1 = EnabledTransition<InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState, HistoryId>(
+            InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Report,
+            listOf(StateTarget(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Done)),
+            1,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: report's transition 2, as the microstep reads it.
+        val transitionReportAt2 = EnabledTransition<InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState, HistoryId>(
+            InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Report,
+            listOf(StateTarget(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Done)),
+            2,
+            hasActions = true,
+            isInternal = false,
+        )
+    }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState? = when (stateId) {
@@ -78,13 +126,7 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedStateMachine(
         is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Report -> "report"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState): Boolean = when (state) {
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState): Int = when (state) {
         is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Done -> 1
         is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Report -> 0
@@ -307,55 +349,44 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedStateMachine(
     }
 
 
-    // W3C SCXML 3.12: Event processing with script engine condition evaluation
-    override fun processEvent(
-        state: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState,
-        event: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEvent
-    ): TransitionResult<InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState> {
-        // W3C SCXML 5.10: Set _event before guard evaluation
+
+    // W3C SCXML 5.10: bind the event as the `_event` its transitions' guards
+    // read — once, before the first guard runs, and not for an eventless
+    // selection, which has no event of its own.
+    override fun bindCurrentEvent(event: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEvent) {
         setCurrentEventInScriptEngine(event)
-        return when (state) {
-        else -> TransitionResult.Ignored
-    }
     }
 
-    // W3C SCXML Appendix D: Eventless (null) transition check
-    override fun processNullEvent(
-        state: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState
-    ): TransitionResult<InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState> = when (state) {
-        is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Report -> processNullReport()
-        else -> TransitionResult.Ignored
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
+        state: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState,
+        event: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEvent?
+    ): EnabledTransition<InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState, HistoryId>? = when (state) {
+        is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Report -> when {
+            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_typeof(nowhere) ~= \"undefined\")", "typeof nowhere !== 'undefined'")) -> transitionReportAt0
+            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(declared == \"carried\")", "declared === 'carried'")) -> transitionReportAt1
+            event == null -> transitionReportAt2
+            else -> null
+        }
+        else -> null
     }
-
-    // --- Per-State Null (Eventless) Handlers ---
-
-    private fun processNullReport(
-    ): TransitionResult<InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(_typeof(nowhere) ~= \"undefined\")", "typeof nowhere !== 'undefined'")) -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Report, 0)
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(declared == \"carried\")", "declared === 'carried'")) -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Report, 1)
-        // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Done, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Report, 2)
-    }
-
-    // --- Per-State Event Handlers ---
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_unmatched.scxml:3 :: _machine
-    override fun onEntry(state: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState, pathChild: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState?) {
+    override fun onEntry(state: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState, isDefaultEntry: Boolean) {
         when (state) {
             is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Done -> {
                 // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_unmatched.scxml:19 :: done :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("done")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Report -> {
                 // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_unmatched.scxml:8 :: report :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("report")) return
             }
         }
     }
@@ -366,23 +397,17 @@ class InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedStateMachine(
         when (state) {
             is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Done -> {
                 // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_unmatched.scxml:19 :: done :: _state_body
-                activeStateIds.remove("done")
             }
             is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Report -> {
                 // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_unmatched.scxml:8 :: report :: _state_body
-                activeStateIds.remove("report")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_unmatched.scxml:3 :: _machine
-    override fun executeTransitionActions(
-        source: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState,
-        event: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedEvent?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState, transitionIndex: Int) {
         when (source) {
         is InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvUnmatchedState.Report -> when (transitionIndex) {
             0 -> {

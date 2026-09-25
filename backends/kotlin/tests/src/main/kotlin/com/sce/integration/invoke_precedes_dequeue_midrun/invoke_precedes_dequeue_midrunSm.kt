@@ -51,7 +51,73 @@ class InvokePrecedesDequeueMidrunStateMachine(
     // as `needs_event_scheduler`.
     override val needsEventScheduler: Boolean = true
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
 
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: InvokePrecedesDequeueMidrunState): Boolean = when (state) {
+        is InvokePrecedesDequeueMidrunState.Fail, is InvokePrecedesDequeueMidrunState.Pass -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<InvokePrecedesDequeueMidrunState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<InvokePrecedesDequeueMidrunState, HistoryId>> =
+            listOf(StateTarget(InvokePrecedesDequeueMidrunState.Arm))
+
+        // W3C SCXML 3.13: arm's transition 0, as the microstep reads it.
+        val transitionArmAt0 = EnabledTransition<InvokePrecedesDequeueMidrunState, HistoryId>(
+            InvokePrecedesDequeueMidrunState.Arm,
+            listOf(StateTarget(InvokePrecedesDequeueMidrunState.Phase)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: phase's transition 0, as the microstep reads it.
+        val transitionPhaseAt0 = EnabledTransition<InvokePrecedesDequeueMidrunState, HistoryId>(
+            InvokePrecedesDequeueMidrunState.Phase,
+            emptyList(),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: phase's transition 1, as the microstep reads it.
+        val transitionPhaseAt1 = EnabledTransition<InvokePrecedesDequeueMidrunState, HistoryId>(
+            InvokePrecedesDequeueMidrunState.Phase,
+            emptyList(),
+            1,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: phase's transition 2, as the microstep reads it.
+        val transitionPhaseAt2 = EnabledTransition<InvokePrecedesDequeueMidrunState, HistoryId>(
+            InvokePrecedesDequeueMidrunState.Phase,
+            listOf(StateTarget(InvokePrecedesDequeueMidrunState.Pass)),
+            2,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: phase's transition 3, as the microstep reads it.
+        val transitionPhaseAt3 = EnabledTransition<InvokePrecedesDequeueMidrunState, HistoryId>(
+            InvokePrecedesDequeueMidrunState.Phase,
+            listOf(StateTarget(InvokePrecedesDequeueMidrunState.Fail)),
+            3,
+            hasActions = false,
+            isInternal = false,
+        )
+    }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): InvokePrecedesDequeueMidrunState? = when (stateId) {
@@ -70,13 +136,7 @@ class InvokePrecedesDequeueMidrunStateMachine(
         is InvokePrecedesDequeueMidrunState.Phase -> "phase"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: InvokePrecedesDequeueMidrunState): Boolean = when (state) {
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: InvokePrecedesDequeueMidrunState): Int = when (state) {
         is InvokePrecedesDequeueMidrunState.Arm -> 0
         is InvokePrecedesDequeueMidrunState.Fail -> 3
@@ -114,73 +174,53 @@ class InvokePrecedesDequeueMidrunStateMachine(
 
 
 
-    // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
-    override fun processEvent(
+
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
         state: InvokePrecedesDequeueMidrunState,
-        event: InvokePrecedesDequeueMidrunEvent
-    ): TransitionResult<InvokePrecedesDequeueMidrunState> = when (state) {
-        is InvokePrecedesDequeueMidrunState.Arm -> processArm(event)
-        is InvokePrecedesDequeueMidrunState.Phase -> processPhase(event)
-        else -> TransitionResult.Ignored
+        event: InvokePrecedesDequeueMidrunEvent?
+    ): EnabledTransition<InvokePrecedesDequeueMidrunState, HistoryId>? = when (state) {
+        is InvokePrecedesDequeueMidrunState.Arm -> when {
+            event is InvokePrecedesDequeueMidrunEvent.Go -> transitionArmAt0
+            else -> null
+        }
+        is InvokePrecedesDequeueMidrunState.Phase -> when {
+            event is InvokePrecedesDequeueMidrunEvent.Kick -> transitionPhaseAt0
+            event is InvokePrecedesDequeueMidrunEvent.Ready -> transitionPhaseAt1
+            event is InvokePrecedesDequeueMidrunEvent.SawKick -> transitionPhaseAt2
+            event is InvokePrecedesDequeueMidrunEvent.SawNoKick -> transitionPhaseAt3
+            else -> null
+        }
+        else -> null
     }
-
-
-    // --- Per-State Event Handlers ---
-
-    private fun processArm(
-        event: InvokePrecedesDequeueMidrunEvent
-    ): TransitionResult<InvokePrecedesDequeueMidrunState> = when {
-        event is InvokePrecedesDequeueMidrunEvent.Go -> TransitionResult.External(InvokePrecedesDequeueMidrunState.Phase, InvokePrecedesDequeueMidrunState.Arm, 0)
-
-        else -> TransitionResult.Ignored
-    }
-
-    private fun processPhase(
-        event: InvokePrecedesDequeueMidrunEvent
-    ): TransitionResult<InvokePrecedesDequeueMidrunState> = when {
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is InvokePrecedesDequeueMidrunEvent.Kick -> TransitionResult.Internal(1)
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is InvokePrecedesDequeueMidrunEvent.Ready -> TransitionResult.Internal(2)
-        event is InvokePrecedesDequeueMidrunEvent.SawKick -> TransitionResult.External(InvokePrecedesDequeueMidrunState.Pass, InvokePrecedesDequeueMidrunState.Phase, 3)
-
-        event is InvokePrecedesDequeueMidrunEvent.SawNoKick -> TransitionResult.External(InvokePrecedesDequeueMidrunState.Fail, InvokePrecedesDequeueMidrunState.Phase, 4)
-
-        else -> TransitionResult.Ignored
-    }
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:42 :: _machine
-    override fun onEntry(state: InvokePrecedesDequeueMidrunState, pathChild: InvokePrecedesDequeueMidrunState?) {
+    override fun onEntry(state: InvokePrecedesDequeueMidrunState, isDefaultEntry: Boolean) {
         when (state) {
             is InvokePrecedesDequeueMidrunState.Arm -> {
                 // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:45 :: arm :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("arm")) return
 
 
             send(InvokePrecedesDequeueMidrunEvent.Go, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
             }
             is InvokePrecedesDequeueMidrunState.Fail -> {
                 // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:89 :: fail :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is InvokePrecedesDequeueMidrunState.Pass -> {
                 // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:88 :: pass :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is InvokePrecedesDequeueMidrunState.Phase -> {
                 // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:54 :: phase :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("phase")) return
 
 
             send(InvokePrecedesDequeueMidrunEvent.Kick, EventMetadata.external(sendId = "__send_2", origin = scriptSessionId ?: ""))
@@ -204,15 +244,12 @@ class InvokePrecedesDequeueMidrunStateMachine(
         when (state) {
             is InvokePrecedesDequeueMidrunState.Arm -> {
                 // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:45 :: arm :: _state_body
-                activeStateIds.remove("arm")
             }
             is InvokePrecedesDequeueMidrunState.Fail -> {
                 // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:89 :: fail :: _state_body
-                activeStateIds.remove("fail")
             }
             is InvokePrecedesDequeueMidrunState.Pass -> {
                 // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:88 :: pass :: _state_body
-                activeStateIds.remove("pass")
             }
             is InvokePrecedesDequeueMidrunState.Phase -> {
                 // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:54 :: phase :: _state_body
@@ -220,22 +257,17 @@ class InvokePrecedesDequeueMidrunStateMachine(
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("inv_watch")
-                activeStateIds.remove("phase")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:42 :: _machine
-    override fun executeTransitionActions(
-        source: InvokePrecedesDequeueMidrunState,
-        event: InvokePrecedesDequeueMidrunEvent?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: InvokePrecedesDequeueMidrunState, transitionIndex: Int) {
         when (source) {
         is InvokePrecedesDequeueMidrunState.Phase -> when (transitionIndex) {
-            2 -> {
+            1 -> {
                 // SCE-MAP: invoke_precedes_dequeue_midrun.scxml:82 :: phase :: _transition_1
 
 

@@ -5825,11 +5825,10 @@ trait W3cBackend {
 
     /// §scxml-6.4: Whether this backend's parent template constructs a
     /// generated child class for hybrid (`srcexpr` / `contentexpr`)
-    /// invokes. Rust / Go / C++ instantiate the stub by name
-    /// (`Test{N}Hybrid{M}Policy` etc.), so the child SM must be emitted.
-    /// Kotlin resolves hybrid invokes through `ScxmlRuntimeInterpreter`
-    /// at runtime and never imports the generated class, so emitting
-    /// the stub would be dead code — Kotlin overrides to `false`.
+    /// invokes. Every backend now instantiates the stub by name
+    /// (`Test{N}Hybrid{M}Policy` etc.), so the child SM must be emitted —
+    /// Kotlin included, since it stopped resolving the evaluated value
+    /// into a document at run time (docs/SCE_ACCEPTED_SUBSET.md §2.13).
     /// Static `src=` / inline `<content>` invokes always get a stub
     /// because every backend's template references the child class
     /// by name and there is no runtime fallback.

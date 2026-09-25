@@ -47,7 +47,46 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
         super.enterInitialConfiguration()
     }
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
 
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: AutoforwardEventFieldsSceSynthInvokeInvEchoState): Boolean = when (state) {
+        is AutoforwardEventFieldsSceSynthInvokeInvEchoState.Reported -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<AutoforwardEventFieldsSceSynthInvokeInvEchoState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<AutoforwardEventFieldsSceSynthInvokeInvEchoState, HistoryId>> =
+            listOf(StateTarget(AutoforwardEventFieldsSceSynthInvokeInvEchoState.Emit))
+
+        // W3C SCXML 3.13: emit's transition 0, as the microstep reads it.
+        val transitionEmitAt0 = EnabledTransition<AutoforwardEventFieldsSceSynthInvokeInvEchoState, HistoryId>(
+            AutoforwardEventFieldsSceSynthInvokeInvEchoState.Emit,
+            listOf(StateTarget(AutoforwardEventFieldsSceSynthInvokeInvEchoState.Reported)),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: emit's transition 1, as the microstep reads it.
+        val transitionEmitAt1 = EnabledTransition<AutoforwardEventFieldsSceSynthInvokeInvEchoState, HistoryId>(
+            AutoforwardEventFieldsSceSynthInvokeInvEchoState.Emit,
+            listOf(StateTarget(AutoforwardEventFieldsSceSynthInvokeInvEchoState.Reported)),
+            1,
+            hasActions = true,
+            isInternal = false,
+        )
+    }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): AutoforwardEventFieldsSceSynthInvokeInvEchoState? = when (stateId) {
@@ -62,13 +101,7 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
         is AutoforwardEventFieldsSceSynthInvokeInvEchoState.Reported -> "reported"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: AutoforwardEventFieldsSceSynthInvokeInvEchoState): Boolean = when (state) {
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: AutoforwardEventFieldsSceSynthInvokeInvEchoState): Int = when (state) {
         is AutoforwardEventFieldsSceSynthInvokeInvEchoState.Emit -> 0
         is AutoforwardEventFieldsSceSynthInvokeInvEchoState.Reported -> 1
@@ -284,42 +317,38 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
     }
 
 
-    // W3C SCXML 3.12: Event processing with script engine condition evaluation
-    override fun processEvent(
-        state: AutoforwardEventFieldsSceSynthInvokeInvEchoState,
-        event: AutoforwardEventFieldsSceSynthInvokeInvEchoEvent
-    ): TransitionResult<AutoforwardEventFieldsSceSynthInvokeInvEchoState> {
-        // W3C SCXML 5.10: Set _event before guard evaluation
+
+    // W3C SCXML 5.10: bind the event as the `_event` its transitions' guards
+    // read — once, before the first guard runs, and not for an eventless
+    // selection, which has no event of its own.
+    override fun bindCurrentEvent(event: AutoforwardEventFieldsSceSynthInvokeInvEchoEvent) {
         setCurrentEventInScriptEngine(event)
-        return when (state) {
-        is AutoforwardEventFieldsSceSynthInvokeInvEchoState.Emit -> processEmit(event)
-        else -> TransitionResult.Ignored
-    }
     }
 
-
-    // --- Per-State Event Handlers ---
-
-    private fun processEmit(
-        event: AutoforwardEventFieldsSceSynthInvokeInvEchoEvent
-    ): TransitionResult<AutoforwardEventFieldsSceSynthInvokeInvEchoState> = when {
-        event is AutoforwardEventFieldsSceSynthInvokeInvEchoEvent.ChildToParent && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(((_scxml_truthy(_event.data) and (_event.data.value == 42)) and (_event.origin ~= \"\")) and (_event.invokeid ~= \"\"))", "_event.data && _event.data.value === 42                                           && _event.origin !== ''                                           && _event.invokeid !== ''")) -> TransitionResult.External(AutoforwardEventFieldsSceSynthInvokeInvEchoState.Reported, AutoforwardEventFieldsSceSynthInvokeInvEchoState.Emit, 0)
-
-        event is AutoforwardEventFieldsSceSynthInvokeInvEchoEvent.ChildToParent -> TransitionResult.External(AutoforwardEventFieldsSceSynthInvokeInvEchoState.Reported, AutoforwardEventFieldsSceSynthInvokeInvEchoState.Emit, 1)
-
-        else -> TransitionResult.Ignored
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
+        state: AutoforwardEventFieldsSceSynthInvokeInvEchoState,
+        event: AutoforwardEventFieldsSceSynthInvokeInvEchoEvent?
+    ): EnabledTransition<AutoforwardEventFieldsSceSynthInvokeInvEchoState, HistoryId>? = when (state) {
+        is AutoforwardEventFieldsSceSynthInvokeInvEchoState.Emit -> when {
+            event is AutoforwardEventFieldsSceSynthInvokeInvEchoEvent.ChildToParent && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(((_scxml_truthy(_event.data) and (_event.data.value == 42)) and (_event.origin ~= \"\")) and (_event.invokeid ~= \"\"))", "_event.data && _event.data.value === 42                                           && _event.origin !== ''                                           && _event.invokeid !== ''")) -> transitionEmitAt0
+            event is AutoforwardEventFieldsSceSynthInvokeInvEchoEvent.ChildToParent -> transitionEmitAt1
+            else -> null
+        }
+        else -> null
     }
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:3 :: _machine
-    override fun onEntry(state: AutoforwardEventFieldsSceSynthInvokeInvEchoState, pathChild: AutoforwardEventFieldsSceSynthInvokeInvEchoState?) {
+    override fun onEntry(state: AutoforwardEventFieldsSceSynthInvokeInvEchoState, isDefaultEntry: Boolean) {
         when (state) {
             is AutoforwardEventFieldsSceSynthInvokeInvEchoState.Emit -> {
                 // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:5 :: emit :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("emit")) return
 
 
             // W3C SCXML 5.10: Evaluate params for parent send (test233)
@@ -341,8 +370,6 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
             }
             is AutoforwardEventFieldsSceSynthInvokeInvEchoState.Reported -> {
                 // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:22 :: reported :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("reported")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
@@ -355,23 +382,17 @@ class AutoforwardEventFieldsSceSynthInvokeInvEchoStateMachine(
         when (state) {
             is AutoforwardEventFieldsSceSynthInvokeInvEchoState.Emit -> {
                 // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:5 :: emit :: _state_body
-                activeStateIds.remove("emit")
             }
             is AutoforwardEventFieldsSceSynthInvokeInvEchoState.Reported -> {
                 // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:22 :: reported :: _state_body
-                activeStateIds.remove("reported")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: autoforward_event_fields__sce_synth_invoke__inv_echo.scxml:3 :: _machine
-    override fun executeTransitionActions(
-        source: AutoforwardEventFieldsSceSynthInvokeInvEchoState,
-        event: AutoforwardEventFieldsSceSynthInvokeInvEchoEvent?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: AutoforwardEventFieldsSceSynthInvokeInvEchoState, transitionIndex: Int) {
         when (source) {
         is AutoforwardEventFieldsSceSynthInvokeInvEchoState.Emit -> when (transitionIndex) {
             0 -> {

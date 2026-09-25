@@ -60,7 +60,46 @@ class Test241SceSynthInvokeInvoke2StateMachine(
         super.enterInitialConfiguration()
     }
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
 
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: Test241SceSynthInvokeInvoke2State): Boolean = when (state) {
+        is Test241SceSynthInvokeInvoke2State.SubFinal3 -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<Test241SceSynthInvokeInvoke2State, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<Test241SceSynthInvokeInvoke2State, HistoryId>> =
+            listOf(StateTarget(Test241SceSynthInvokeInvoke2State.Sub03))
+
+        // W3C SCXML 3.13: sub03's transition 0, as the microstep reads it.
+        val transitionSub03At0 = EnabledTransition<Test241SceSynthInvokeInvoke2State, HistoryId>(
+            Test241SceSynthInvokeInvoke2State.Sub03,
+            listOf(StateTarget(Test241SceSynthInvokeInvoke2State.SubFinal3)),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: sub03's transition 1, as the microstep reads it.
+        val transitionSub03At1 = EnabledTransition<Test241SceSynthInvokeInvoke2State, HistoryId>(
+            Test241SceSynthInvokeInvoke2State.Sub03,
+            listOf(StateTarget(Test241SceSynthInvokeInvoke2State.SubFinal3)),
+            1,
+            hasActions = true,
+            isInternal = false,
+        )
+    }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test241SceSynthInvokeInvoke2State? = when (stateId) {
@@ -75,13 +114,7 @@ class Test241SceSynthInvokeInvoke2StateMachine(
         is Test241SceSynthInvokeInvoke2State.SubFinal3 -> "subFinal3"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: Test241SceSynthInvokeInvoke2State): Boolean = when (state) {
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: Test241SceSynthInvokeInvoke2State): Int = when (state) {
         is Test241SceSynthInvokeInvoke2State.Sub03 -> 0
         is Test241SceSynthInvokeInvoke2State.SubFinal3 -> 1
@@ -302,52 +335,41 @@ class Test241SceSynthInvokeInvoke2StateMachine(
     }
 
 
-    // W3C SCXML 3.12: Event processing with script engine condition evaluation
-    override fun processEvent(
-        state: Test241SceSynthInvokeInvoke2State,
-        event: Test241SceSynthInvokeInvoke2Event
-    ): TransitionResult<Test241SceSynthInvokeInvoke2State> {
-        // W3C SCXML 5.10: Set _event before guard evaluation
+
+    // W3C SCXML 5.10: bind the event as the `_event` its transitions' guards
+    // read — once, before the first guard runs, and not for an eventless
+    // selection, which has no event of its own.
+    override fun bindCurrentEvent(event: Test241SceSynthInvokeInvoke2Event) {
         setCurrentEventInScriptEngine(event)
-        return when (state) {
-        else -> TransitionResult.Ignored
-    }
     }
 
-    // W3C SCXML Appendix D: Eventless (null) transition check
-    override fun processNullEvent(
-        state: Test241SceSynthInvokeInvoke2State
-    ): TransitionResult<Test241SceSynthInvokeInvoke2State> = when (state) {
-        is Test241SceSynthInvokeInvoke2State.Sub03 -> processNullSub03()
-        else -> TransitionResult.Ignored
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
+        state: Test241SceSynthInvokeInvoke2State,
+        event: Test241SceSynthInvokeInvoke2Event?
+    ): EnabledTransition<Test241SceSynthInvokeInvoke2State, HistoryId>? = when (state) {
+        is Test241SceSynthInvokeInvoke2State.Sub03 -> when {
+            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 1)", "Var1 == 1")) -> transitionSub03At0
+            event == null -> transitionSub03At1
+            else -> null
+        }
+        else -> null
     }
-
-    // --- Per-State Null (Eventless) Handlers ---
-
-    private fun processNullSub03(
-    ): TransitionResult<Test241SceSynthInvokeInvoke2State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, 1)", "Var1 == 1")) -> TransitionResult.External(Test241SceSynthInvokeInvoke2State.SubFinal3, Test241SceSynthInvokeInvoke2State.Sub03, 0)
-        // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test241SceSynthInvokeInvoke2State.SubFinal3, Test241SceSynthInvokeInvoke2State.Sub03, 1)
-    }
-
-    // --- Per-State Event Handlers ---
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test241__sce_synth_invoke__invoke_2.scxml:3 :: _machine
-    override fun onEntry(state: Test241SceSynthInvokeInvoke2State, pathChild: Test241SceSynthInvokeInvoke2State?) {
+    override fun onEntry(state: Test241SceSynthInvokeInvoke2State, isDefaultEntry: Boolean) {
         when (state) {
             is Test241SceSynthInvokeInvoke2State.Sub03 -> {
                 // SCE-MAP: test241__sce_synth_invoke__invoke_2.scxml:8 :: sub03 :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("sub03")) return
             }
             is Test241SceSynthInvokeInvoke2State.SubFinal3 -> {
                 // SCE-MAP: test241__sce_synth_invoke__invoke_2.scxml:17 :: subFinal3 :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("subFinal3")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
@@ -360,23 +382,17 @@ class Test241SceSynthInvokeInvoke2StateMachine(
         when (state) {
             is Test241SceSynthInvokeInvoke2State.Sub03 -> {
                 // SCE-MAP: test241__sce_synth_invoke__invoke_2.scxml:8 :: sub03 :: _state_body
-                activeStateIds.remove("sub03")
             }
             is Test241SceSynthInvokeInvoke2State.SubFinal3 -> {
                 // SCE-MAP: test241__sce_synth_invoke__invoke_2.scxml:17 :: subFinal3 :: _state_body
-                activeStateIds.remove("subFinal3")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: test241__sce_synth_invoke__invoke_2.scxml:3 :: _machine
-    override fun executeTransitionActions(
-        source: Test241SceSynthInvokeInvoke2State,
-        event: Test241SceSynthInvokeInvoke2Event?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: Test241SceSynthInvokeInvoke2State, transitionIndex: Int) {
         when (source) {
         is Test241SceSynthInvokeInvoke2State.Sub03 -> when (transitionIndex) {
             0 -> {

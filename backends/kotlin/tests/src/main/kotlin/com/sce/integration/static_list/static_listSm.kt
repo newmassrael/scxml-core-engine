@@ -156,7 +156,64 @@ class StaticListStateMachine(
     // as `needs_event_scheduler`.
     override val needsEventScheduler: Boolean = false
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
 
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: StaticListState): Boolean = when (state) {
+        is StaticListState.Done -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<StaticListState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<StaticListState, HistoryId>> =
+            listOf(StateTarget(StaticListState.Collecting))
+
+        // W3C SCXML 3.13: collecting's transition 0, as the microstep reads it.
+        val transitionCollectingAt0 = EnabledTransition<StaticListState, HistoryId>(
+            StaticListState.Collecting,
+            emptyList(),
+            0,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: collecting's transition 1, as the microstep reads it.
+        val transitionCollectingAt1 = EnabledTransition<StaticListState, HistoryId>(
+            StaticListState.Collecting,
+            listOf(StateTarget(StaticListState.Done)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: collecting's transition 2, as the microstep reads it.
+        val transitionCollectingAt2 = EnabledTransition<StaticListState, HistoryId>(
+            StaticListState.Collecting,
+            emptyList(),
+            2,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: collecting's transition 3, as the microstep reads it.
+        val transitionCollectingAt3 = EnabledTransition<StaticListState, HistoryId>(
+            StaticListState.Collecting,
+            emptyList(),
+            3,
+            hasActions = true,
+            isInternal = true,
+        )
+    }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticListState? = when (stateId) {
@@ -171,13 +228,7 @@ class StaticListStateMachine(
         is StaticListState.Done -> "done"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: StaticListState): Boolean = when (state) {
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticListState): Int = when (state) {
         is StaticListState.Collecting -> 0
         is StaticListState.Done -> 1
@@ -203,47 +254,36 @@ class StaticListStateMachine(
 
 
 
-    // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
-    override fun processEvent(
+
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
         state: StaticListState,
-        event: StaticListEvent
-    ): TransitionResult<StaticListState> = when (state) {
-        is StaticListState.Collecting -> processCollecting(event)
-        else -> TransitionResult.Ignored
+        event: StaticListEvent?
+    ): EnabledTransition<StaticListState, HistoryId>? = when (state) {
+        is StaticListState.Collecting -> when {
+            event is StaticListEvent.Day.Picked -> transitionCollectingAt0
+            event is StaticListEvent.Full && (picked).size == 3 -> transitionCollectingAt1
+            event is StaticListEvent.Reset -> transitionCollectingAt2
+            event is StaticListEvent.Error.Execution -> transitionCollectingAt3
+            else -> null
+        }
+        else -> null
     }
-
-
-    // --- Per-State Event Handlers ---
-
-    private fun processCollecting(
-        event: StaticListEvent
-    ): TransitionResult<StaticListState> = when {
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is StaticListEvent.Day.Picked -> TransitionResult.Internal(0)
-        event is StaticListEvent.Full && (picked).size == 3 -> TransitionResult.External(StaticListState.Done, StaticListState.Collecting, 1)
-
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is StaticListEvent.Reset -> TransitionResult.Internal(2)
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is StaticListEvent.Error.Execution -> TransitionResult.Internal(3)
-        else -> TransitionResult.Ignored
-    }
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_list.scxml:13 :: _machine
-    override fun onEntry(state: StaticListState, pathChild: StaticListState?) {
+    override fun onEntry(state: StaticListState, isDefaultEntry: Boolean) {
         when (state) {
             is StaticListState.Collecting -> {
                 // SCE-MAP: static_list.scxml:21 :: collecting :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("collecting")) return
             }
             is StaticListState.Done -> {
                 // SCE-MAP: static_list.scxml:34 :: done :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("done")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
@@ -256,23 +296,17 @@ class StaticListStateMachine(
         when (state) {
             is StaticListState.Collecting -> {
                 // SCE-MAP: static_list.scxml:21 :: collecting :: _state_body
-                activeStateIds.remove("collecting")
             }
             is StaticListState.Done -> {
                 // SCE-MAP: static_list.scxml:34 :: done :: _state_body
-                activeStateIds.remove("done")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_list.scxml:13 :: _machine
-    override fun executeTransitionActions(
-        source: StaticListState,
-        event: StaticListEvent?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: StaticListState, transitionIndex: Int) {
         when (source) {
         is StaticListState.Collecting -> when (transitionIndex) {
             0 -> {

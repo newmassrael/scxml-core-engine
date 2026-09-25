@@ -50,6 +50,13 @@ class Test576StateMachine(
     // as `needs_event_scheduler`.
     override val needsEventScheduler: Boolean = true
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
+
     // W3C SCXML 3.3: State hierarchy parent mapping
     override fun parentOf(state: Test576State): Test576State? = when (state) {
         is Test576State.S11 -> Test576State.S1
@@ -64,14 +71,84 @@ class Test576StateMachine(
         else -> null
     }
 
-    // W3C SCXML 3.3/3.4: Resolve compound/parallel state to initial leaf state
-    override fun resolveLeafState(state: Test576State): Test576State = when (state) {
-        is Test576State.S1 -> Test576State.S11p112
-        is Test576State.S11 -> Test576State.S11p112
-        is Test576State.S11p1 -> Test576State.S11p112
-        is Test576State.S11p11 -> Test576State.S11p112
-        is Test576State.S11p12 -> Test576State.S11p122
-        else -> state
+    // W3C SCXML 3.3: a <state> with child states — exactly the states that
+    // have an initial transition. A <parallel> is not compound.
+    override fun isCompoundState(state: Test576State): Boolean = when (state) {
+        is Test576State.S1, is Test576State.S11, is Test576State.S11p11, is Test576State.S11p12 -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.4: Check if state is a parallel state
+    override fun isParallelState(state: Test576State): Boolean = when (state) {
+        is Test576State.S11p1 -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: Test576State): Boolean = when (state) {
+        is Test576State.Fail, is Test576State.Pass -> true
+        else -> false
+    }
+
+    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+    // children, in document order — for a <parallel>, its regions.
+    override fun childStatesOf(state: Test576State): List<Test576State> =
+        childStates[state] ?: emptyList()
+
+    // W3C SCXML 3.3: a compound state's initial transition target, as written.
+    override fun initialTargetsOf(state: Test576State): List<EntryTarget<Test576State, HistoryId>> =
+        initialTargets[state] ?: emptyList()
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<Test576State, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val childStates: Map<Test576State, List<Test576State>> = mapOf(
+            Test576State.S1 to listOf(Test576State.S11),
+            Test576State.S11 to listOf(Test576State.S111, Test576State.S11p1),
+            Test576State.S11p1 to listOf(Test576State.S11p11, Test576State.S11p12),
+            Test576State.S11p11 to listOf(Test576State.S11p111, Test576State.S11p112),
+            Test576State.S11p12 to listOf(Test576State.S11p121, Test576State.S11p122),
+        )
+
+        val initialTargets: Map<Test576State, List<EntryTarget<Test576State, HistoryId>>> = mapOf(
+            Test576State.S1 to listOf(StateTarget(Test576State.S11)),
+            Test576State.S11 to listOf(StateTarget(Test576State.S111)),
+            Test576State.S11p11 to listOf(StateTarget(Test576State.S11p111)),
+            Test576State.S11p12 to listOf(StateTarget(Test576State.S11p121)),
+        )
+
+        val documentInitialTargetList: List<EntryTarget<Test576State, HistoryId>> =
+            listOf(StateTarget(Test576State.S11p112), StateTarget(Test576State.S11p122))
+
+        // W3C SCXML 3.13: s0's transition 0, as the microstep reads it.
+        val transitionS0At0 = EnabledTransition<Test576State, HistoryId>(
+            Test576State.S0,
+            listOf(StateTarget(Test576State.Fail)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: s1's transition 0, as the microstep reads it.
+        val transitionS1At0 = EnabledTransition<Test576State, HistoryId>(
+            Test576State.S1,
+            listOf(StateTarget(Test576State.Fail)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: s11p122's transition 0, as the microstep reads it.
+        val transitionS11p122At0 = EnabledTransition<Test576State, HistoryId>(
+            Test576State.S11p122,
+            listOf(StateTarget(Test576State.Pass)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
     }
 
     // W3C SCXML: Resolve state ID string to State object
@@ -109,29 +186,7 @@ class Test576StateMachine(
         is Test576State.S11p122 -> "s11p122"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: Test576State): Boolean = when (state) {
-        is Test576State.S1 -> false
-        is Test576State.S11 -> false
-        is Test576State.S11p1 -> false
-        is Test576State.S11p11 -> false
-        is Test576State.S11p12 -> false
-        else -> true
-    }
-
-    // W3C SCXML 3.4: Check if state is a parallel state
-    override fun isParallelState(state: Test576State): Boolean = when (state) {
-        is Test576State.S11p1 -> true
-        else -> false
-    }
-
-    // W3C SCXML 3.4: Get child regions of a parallel state (C++ getParallelRegions pattern)
-    override fun getParallelRegions(state: Test576State): List<Test576State> = when (state) {
-        is Test576State.S11p1 -> listOf(Test576State.S11p11, Test576State.S11p12)
-        else -> emptyList()
-    }
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: Test576State): Int = when (state) {
         is Test576State.Fail -> 12
         is Test576State.Pass -> 11
@@ -152,208 +207,83 @@ class Test576StateMachine(
 
 
 
-    // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
-    override fun processEvent(
+
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
         state: Test576State,
-        event: Test576Event
-    ): TransitionResult<Test576State> = when (state) {
-        is Test576State.S1 -> processS1(event)
-        // W3C SCXML 3.13: Ancestor-only routing (s11 has no own event transitions)
-        is Test576State.S11 -> {
-            val anc1 = processS1(event)
-            if (anc1 !is TransitionResult.Ignored) anc1
-            else TransitionResult.Ignored
+        event: Test576Event?
+    ): EnabledTransition<Test576State, HistoryId>? = when (state) {
+        is Test576State.S0 -> when {
+            event == null -> transitionS0At0
+            else -> null
         }
-        // W3C SCXML 3.13: Ancestor-only routing (s111 has no own event transitions)
-        is Test576State.S111 -> {
-            val anc1 = processS1(event)
-            if (anc1 !is TransitionResult.Ignored) anc1
-            else TransitionResult.Ignored
+        is Test576State.S1 -> when {
+            event is Test576Event.Timeout -> transitionS1At0
+            else -> null
         }
-        // W3C SCXML 3.13: Ancestor-only routing (s11p11 has no own event transitions)
-        is Test576State.S11p11 -> {
-            val anc1 = processS1(event)
-            if (anc1 !is TransitionResult.Ignored) anc1
-            else TransitionResult.Ignored
+        is Test576State.S11p122 -> when {
+            event is Test576Event.InS11p112 -> transitionS11p122At0
+            else -> null
         }
-        // W3C SCXML 3.13: Ancestor-only routing (s11p111 has no own event transitions)
-        is Test576State.S11p111 -> {
-            val anc1 = processS1(event)
-            if (anc1 !is TransitionResult.Ignored) anc1
-            else TransitionResult.Ignored
-        }
-        // W3C SCXML 3.13: Ancestor-only routing (s11p112 has no own event transitions)
-        is Test576State.S11p112 -> {
-            val anc1 = processS1(event)
-            if (anc1 !is TransitionResult.Ignored) anc1
-            else TransitionResult.Ignored
-        }
-        // W3C SCXML 3.13: Ancestor-only routing (s11p12 has no own event transitions)
-        is Test576State.S11p12 -> {
-            val anc1 = processS1(event)
-            if (anc1 !is TransitionResult.Ignored) anc1
-            else TransitionResult.Ignored
-        }
-        // W3C SCXML 3.13: Ancestor-only routing (s11p121 has no own event transitions)
-        is Test576State.S11p121 -> {
-            val anc1 = processS1(event)
-            if (anc1 !is TransitionResult.Ignored) anc1
-            else TransitionResult.Ignored
-        }
-        is Test576State.S11p122 -> {
-            val result = processS11p122(event)
-            // W3C SCXML 3.13: Ancestor transition routing
-            if (result !is TransitionResult.Ignored) result
-            else {
-                val anc1 = processS1(event)
-                if (anc1 !is TransitionResult.Ignored) anc1
-            else TransitionResult.Ignored
-            }
-        }
-        else -> TransitionResult.Ignored
+        else -> null
     }
-
-    // W3C SCXML Appendix D: Eventless (null) transition check
-    override fun processNullEvent(
-        state: Test576State
-    ): TransitionResult<Test576State> = when (state) {
-        is Test576State.S0 -> processNullS0()
-        else -> TransitionResult.Ignored
-    }
-
-    // --- Per-State Null (Eventless) Handlers ---
-
-    private fun processNullS0(
-    ): TransitionResult<Test576State> = when {
-        // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test576State.Fail, Test576State.S0, 0)
-    }
-
-    // --- Per-State Event Handlers ---
-
-    private fun processS1(
-        event: Test576Event
-    ): TransitionResult<Test576State> = when {
-        event is Test576Event.Timeout -> TransitionResult.External(Test576State.Fail, Test576State.S1, 1)
-
-        else -> TransitionResult.Ignored
-    }
-
-    private fun processS11p122(
-        event: Test576Event
-    ): TransitionResult<Test576State> = when {
-        event is Test576Event.InS11p112 -> TransitionResult.External(Test576State.Pass, Test576State.S11p122, 2)
-
-        else -> TransitionResult.Ignored
-    }
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test576.scxml:6 :: _machine
-    override fun onEntry(state: Test576State, pathChild: Test576State?) {
+    override fun onEntry(state: Test576State, isDefaultEntry: Boolean) {
         when (state) {
             is Test576State.Fail -> {
                 // SCE-MAP: test576.scxml:40 :: fail :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test576State.Pass -> {
                 // SCE-MAP: test576.scxml:39 :: pass :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test576State.S0 -> {
                 // SCE-MAP: test576.scxml:9 :: s0 :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("s0")) return
             }
             is Test576State.S1 -> {
                 // SCE-MAP: test576.scxml:13 :: s1 :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("s1")) return
 
 
             scheduleSend("__send_0", 1000L, Test576Event.Timeout)
-                if (pathChild == null) {
-                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                    onEntry(Test576State.S11)
-                }
             }
             is Test576State.S11 -> {
                 // SCE-MAP: test576.scxml:18 :: s11 :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("s11")) return
-                if (pathChild == null) {
-                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                    onEntry(Test576State.S11p1)
-                }
             }
             is Test576State.S111 -> {
                 // SCE-MAP: test576.scxml:19 :: s111 :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("s111")) return
             }
             is Test576State.S11p1 -> {
                 // SCE-MAP: test576.scxml:20 :: s11p1 :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("s11p1")) return
-                // W3C SCXML 3.4 + §scxml-D-addDescendantStatesToEnter: a
-                // `<parallel>` hands out defaults even when it is only an
-                // ancestor — Appendix D's one exception to the ancestor rule.
-                // The exception has its own exception: not the region the entry
-                // set is already descending into, which `pathChild` names and
-                // which the caller enters with the target's own path.
-                if (pathChild != Test576State.S11p11) {
-                    onEntry(Test576State.S11p11)
-                }
-                if (pathChild != Test576State.S11p12) {
-                    onEntry(Test576State.S11p12)
-                }
             }
             is Test576State.S11p11 -> {
                 // SCE-MAP: test576.scxml:21 :: s11p11 :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("s11p11")) return
-                if (pathChild == null) {
-                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                    onEntry(Test576State.S11p112)
-                }
             }
             is Test576State.S11p111 -> {
                 // SCE-MAP: test576.scxml:22 :: s11p111 :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("s11p111")) return
             }
             is Test576State.S11p112 -> {
                 // SCE-MAP: test576.scxml:23 :: s11p112 :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("s11p112")) return
 
             raiseInternal(Test576Event.InS11p112)
             }
             is Test576State.S11p12 -> {
                 // SCE-MAP: test576.scxml:29 :: s11p12 :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("s11p12")) return
-                if (pathChild == null) {
-                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                    onEntry(Test576State.S11p122)
-                }
             }
             is Test576State.S11p121 -> {
                 // SCE-MAP: test576.scxml:30 :: s11p121 :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("s11p121")) return
             }
             is Test576State.S11p122 -> {
                 // SCE-MAP: test576.scxml:31 :: s11p122 :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("s11p122")) return
             }
         }
     }
@@ -364,95 +294,50 @@ class Test576StateMachine(
         when (state) {
             is Test576State.Fail -> {
                 // SCE-MAP: test576.scxml:40 :: fail :: _state_body
-                activeStateIds.remove("fail")
             }
             is Test576State.Pass -> {
                 // SCE-MAP: test576.scxml:39 :: pass :: _state_body
-                activeStateIds.remove("pass")
             }
             is Test576State.S0 -> {
                 // SCE-MAP: test576.scxml:9 :: s0 :: _state_body
-                activeStateIds.remove("s0")
             }
             is Test576State.S1 -> {
                 // SCE-MAP: test576.scxml:13 :: s1 :: _state_body
-                activeStateIds.remove("s1")
             }
             is Test576State.S11 -> {
                 // SCE-MAP: test576.scxml:18 :: s11 :: _state_body
-                activeStateIds.remove("s11")
             }
             is Test576State.S111 -> {
                 // SCE-MAP: test576.scxml:19 :: s111 :: _state_body
-                activeStateIds.remove("s111")
             }
             is Test576State.S11p1 -> {
                 // SCE-MAP: test576.scxml:20 :: s11p1 :: _state_body
-                // W3C SCXML 3.4/3.13: Exit active descendants of parallel state
-                // in reverse document order (deepest states exit first).
-                // Defensive: when called from exitHierarchy, descendants are already
-                // exited and removed from activeStateIds — the contains() checks below
-                // prevent double-exit. This code is needed for direct onExit() calls.
-                val toExit = mutableListOf<Pair<Test576State, Int>>()
-                if (activeStateIds.contains("s11p11")) {
-                    toExit.add(Test576State.S11p11 to 5)
-                }
-                if (activeStateIds.contains("s11p111")) {
-                    toExit.add(Test576State.S11p111 to 6)
-                }
-                if (activeStateIds.contains("s11p112")) {
-                    toExit.add(Test576State.S11p112 to 7)
-                }
-                if (activeStateIds.contains("s11p12")) {
-                    toExit.add(Test576State.S11p12 to 8)
-                }
-                if (activeStateIds.contains("s11p121")) {
-                    toExit.add(Test576State.S11p121 to 9)
-                }
-                if (activeStateIds.contains("s11p122")) {
-                    toExit.add(Test576State.S11p122 to 10)
-                }
-                toExit.sortByDescending { it.second }
-                for ((desc, _) in toExit) {
-                    onExit(desc)
-                }
-                activeStateIds.remove("s11p1")
             }
             is Test576State.S11p11 -> {
                 // SCE-MAP: test576.scxml:21 :: s11p11 :: _state_body
-                activeStateIds.remove("s11p11")
             }
             is Test576State.S11p111 -> {
                 // SCE-MAP: test576.scxml:22 :: s11p111 :: _state_body
-                activeStateIds.remove("s11p111")
             }
             is Test576State.S11p112 -> {
                 // SCE-MAP: test576.scxml:23 :: s11p112 :: _state_body
-                activeStateIds.remove("s11p112")
             }
             is Test576State.S11p12 -> {
                 // SCE-MAP: test576.scxml:29 :: s11p12 :: _state_body
-                activeStateIds.remove("s11p12")
             }
             is Test576State.S11p121 -> {
                 // SCE-MAP: test576.scxml:30 :: s11p121 :: _state_body
-                activeStateIds.remove("s11p121")
             }
             is Test576State.S11p122 -> {
                 // SCE-MAP: test576.scxml:31 :: s11p122 :: _state_body
-                activeStateIds.remove("s11p122")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: test576.scxml:6 :: _machine
-    override fun executeTransitionActions(
-        source: Test576State,
-        event: Test576Event?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: Test576State, transitionIndex: Int) {
         when (source) {
         else -> {}
         }

@@ -15,131 +15,86 @@
 #
 # Measured 2026-08-20, three of seven engines ended the macrostep there, in
 # three shapes. Two of them are C++ and live in
-# `targetless_transition_completes_macrostep_ctest.cases`. The third is the
-# Kotlin CODE GENERATOR, and it is here: `processNullEvent` was emitted only for
-# transitions that named a target, so a targetless eventless transition was
-# dropped from selection while `executeTransitionActions` still carried its
-# content — actions the generated machine could never ask for. The runtime
-# witness for that runs under Gradle; `targetless_eventless_transition_is_selectable`
-# is the same contract where cargo can reach it.
+# `targetless_transition_completes_macrostep_ctest.cases`. The third was the
+# Kotlin CODE GENERATOR, and it is here: its eventless selection was emitted
+# only for transitions that named a target, so a targetless eventless
+# transition was dropped from selection while the transition-content dispatch
+# still carried its content — actions the generated machine could never ask
+# for.
 #
-# The Rust engine was already right, and the last two cases are why that is
-# worth a round: its correctness comes from `run_main_event_loop` implementing
-# the clause literally, which is exactly the kind of thing an optimisation
-# rewrites.
+# Since 2026-09-25 the Kotlin backend selects through the runtime's Appendix D
+# transcription (`com.sce.runtime.Microstep`): the walk from each atomic state
+# up through its ancestors, conflict removal and the exit and entry sets are
+# written once there, and what the generator emits is the half only the
+# document can answer — `firstEnabledTransition(state, event)`, the first of a
+# state's OWN transitions an event enables, answered with a transition object
+# declared once in the machine's companion. The cases below are the shipped
+# defect restated against that surface: the transition not offered, offered as
+# a state change, offered nowhere its ancestor can be reached from. The walk
+# itself, and the macrostep carrying on past an in-place microstep, are the
+# runtime's and run under Gradle (`MicrostepTest`, and the seven-channel
+# fixture of the same name); cargo cannot reach them.
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --test targetless_eventless_transition_is_selectable
-mutation_targets sce-build/src/kotlin.rs
-mutation_runtime_targets tools/codegen/templates/kotlin/process_event.kt.jinja2
+mutation_runtime_targets tools/codegen/templates/kotlin/process_event.kt.jinja2 \
+    tools/codegen/templates/kotlin/state_machine.kt.jinja2
 mutation_oracles sce-build/tests/targetless_eventless_transition_is_selectable.rs
 
 # ── The Kotlin generator: selection ────────────────────────────────
 #
-# The shipped filter, restored. A state whose only eventless transition is
-# targetless gets no null handler and no dispatch arm, so the engine's drain
-# has nothing to select — and the missing microstep is silent, because the
-# actions are still emitted under the null-event arm of
-# `executeTransitionActions`.
+# The shipped filter, restored on the new surface. A state whose only eventless
+# transition is targetless gets no arm, so the runtime's walk finds nothing to
+# select from it — and the missing microstep is silent, because the content is
+# still emitted under that transition's index in `executeTransitionContent`.
 
-mutation_case "the per-state null handler is emitted only for a transition that names a target" <<'PY'
+mutation_case "the selection offers only a transition that names a target" <<'PY'
 edit("tools/codegen/templates/kotlin/process_event.kt.jinja2",
-     """{% set ns_null = namespace(has=false) %}
-{% for trans in state.transitions %}
-{% if not trans.event %}
-{% set ns_null.has = true %}
-{% endif %}
-{% endfor %}
-{% if ns_null.has %}""",
-     """{% set ns_null = namespace(has=false) %}
-{% for trans in state.transitions %}
-{% if not trans.event and trans.target %}
-{% set ns_null.has = true %}
-{% endif %}
-{% endfor %}
-{% if ns_null.has %}""")
+     """{% for trans in state.transitions %}
+{% if not arm.closed %}""",
+     """{% for trans in state.transitions %}
+{% if not arm.closed and trans.targets %}""")
 PY
 
-# The dispatch arm, separately: a handler nothing calls is the same silence one
-# step later, and the two filters are edited in different places, so a repair
-# that fixed one and missed the other would still ship the defect.
+# The same filter, narrowed to where the old one hid: a COMPOUND state's own
+# targetless eventless transition. Appendix D reaches it from the leaf by
+# walking up, so it has to be offered under the ancestor; a filter that dropped
+# it there would leave every atomic state's arm intact and the leaf with
+# nothing to inherit.
 
-mutation_case "the null dispatch arm is emitted only for a transition that names a target" <<'PY'
+mutation_case "a compound state's targetless eventless transition is not offered" <<'PY'
 edit("tools/codegen/templates/kotlin/process_event.kt.jinja2",
-     """{% set ns_null_self = namespace(has=false) %}
-{% for trans in state.transitions %}
-{% if not trans.event %}
-{% set ns_null_self.has = true %}
-{% endif %}
-{% endfor %}""",
-     """{% set ns_null_self = namespace(has=false) %}
-{% for trans in state.transitions %}
-{% if not trans.event and trans.target %}
-{% set ns_null_self.has = true %}
-{% endif %}
-{% endfor %}""")
+     """{% for trans in state.transitions %}
+{% if not arm.closed %}""",
+     """{% for trans in state.transitions %}
+{% if not arm.closed and (trans.targets or not state.children) %}""")
 PY
 
 # ── The Kotlin generator: what the selection answers ────────────────
 #
-# A targetless transition answered as a state change names the state it is
-# already in, so the engine exits and re-enters it: `<onexit>` and `<onentry>`
-# run for a transition the clause says leaves the configuration alone.
-#
-# ⚠ The anchor is deliberately a PARTIAL line, cut off before the transition
-# index. It used to quote both arms of the `if` whole, and `c5cfa53bd9` — which
-# gave `TransitionResult` a machine-wide index so the action dispatch would stop
-# re-running `cond` — moved every one of those characters without touching what
-# this case is about. The case then read INCONCLUSIVE, which is a mutation that
-# proves nothing while reading as evidence. What the case asks is only which
-# CONSTRUCTOR the targetless arm names, so the anchor stops at that word and the
-# argument list after it — index and all — is carried through untouched by the
-# replacement. A later change to those arguments cannot break this case; a
-# change to the answer still does.
+# A targetless transition answered as a transition to its own source is a
+# state change: the runtime exits and re-enters the state, so `<onexit>` and
+# `<onentry>` run for a transition the clause says leaves the configuration
+# alone. The runtime reads "moves nothing" from an EMPTY target list, which the
+# transition's declaration is the one place to spell.
 
-mutation_case "a targetless eventless transition is answered as a state change" <<'PY'
-edit("tools/codegen/templates/kotlin/process_event.kt.jinja2",
-     """{% else %}
-{% set result_expr = "TransitionResult.Internal(" ~ """,
-     """{% else %}
-{% set result_expr = "TransitionResult.External(" ~ machine_name ~ "State." ~ (state_id | to_state_class_name) ~ ", " ~ machine_name ~ "State." ~ (state_id | to_state_class_name) ~ ", " ~ """)
+mutation_case "a targetless transition is declared as a transition to its source" <<'PY'
+edit("tools/codegen/templates/kotlin/state_machine.kt.jinja2",
+     """{% else %}emptyList(){% endif %},""",
+     """{% else %}listOf(StateTarget({{ machine_name }}State.{{ state_id | to_state_class_name }})){% endif %},""")
 PY
 
 # ── The `else` that Kotlin rejects ─────────────────────────────────
 #
 # `-Werror` refuses a redundant `else` on an exhaustive `when`, so a flag that
-# always says "needed" turns every document whose states all have an eventless
-# transition into a compile failure. That is not hypothetical here: emitting
+# always says "needed" turns every document whose states all have a
+# transition into a compile failure. That is not hypothetical here: offering
 # targetless transitions is what made such documents reachable at all.
 
-mutation_case "the null dispatch carries an else whenever a state inherits none" <<'PY'
-edit("sce-build/src/kotlin.rs",
-     """        let inherits_one = ancestors_with_null_transitions
-            .get(state_id)
-            .is_some_and(|ancestors| !ancestors.is_empty());
-        !has_own_null_transition && !inherits_one
-    })
-}""",
-     """        let inherits_one = ancestors_with_null_transitions
-            .get(state_id)
-            .is_some_and(|ancestors| !ancestors.is_empty());
-        !has_own_null_transition || !inherits_one
-    })
-}""")
-PY
-
-# The inherited half. A state with no eventless transition of its own answers
-# through an ancestor's, and a filter that requires a target there drops the
-# ancestor from the map — so the state loses its arm and the `else` it no
-# longer has stops covering it.
-
-mutation_case "an ancestor's targetless eventless transition is not inherited" <<'PY'
-edit("sce-build/src/kotlin.rs",
-     """                let has_null = anc_state.transitions.iter().any(|t| t.event.is_empty());""",
-     """                let has_null = anc_state
-                    .transitions
-                    .iter()
-                    .any(|t| t.event.is_empty() && !t.target.is_empty());""")
+mutation_case "the selection carries an else even when every state has a transition" <<'PY'
+edit("tools/codegen/templates/kotlin/process_event.kt.jinja2",
+     """{% if ns_selecting.states < model.states | length %}""",
+     """{% if ns_selecting.states <= model.states | length %}""")
 PY

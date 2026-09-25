@@ -86,15 +86,22 @@ data class EventMetadata(
  * Abstract base class for generated SCXML state machines.
  *
  * Provides the event processing loop, state observation via StateFlow,
- * and transition history via SharedFlow. Generated code overrides
- * [processEvent], [onEntry], [onExit], and [executeTransitionActions].
+ * and transition history via SharedFlow. Generated code answers what only the
+ * document knows — its structure ([parentOf], [childStatesOf],
+ * [initialTargetsOf], the `<history>` tables), which of a state's transitions
+ * an event enables ([firstEnabledTransition]), and what entering and exiting a
+ * state and running a transition's content do ([onEntry], [onExit],
+ * [executeTransitionContent], [executeHistoryDefaultContent]).
  *
  * Threading model:
  *   - Microstep loop runs on [Dispatchers.Default] (never blocks UI)
  *   - State observation via [currentState] (StateFlow, Compose-ready)
  *   - [send] is non-suspending (Channel.UNLIMITED, always succeeds)
  *
- * W3C SCXML Appendix D: Microstep algorithm.
+ * W3C SCXML Appendix D: the microstep — selection, conflict removal, the exit
+ * and entry sets — is [Microstep]'s, the one transcription every machine
+ * shares. This class runs the main event loop around it and owns the
+ * configuration and what each `<history>` recorded.
  *
  * @param S State sealed interface type
  * @param E Event sealed interface type
@@ -196,49 +203,59 @@ abstract class StateMachineEngine<S : State, E : Event>(
     // --- Active State Configuration (§scxml-5.9.2) ---
 
     /**
-     * §scxml-5.9.2: Set of currently active state IDs for In() predicate.
+     * The active configuration: every state this machine is in, including each
+     * region of an active `<parallel>`.
      *
-     * Tracks all active states including parallel region children.
-     * Managed by generated [onEntry]/[onExit] code.
+     * Owned here and written in exactly two places — the microstep adds a
+     * state as it enters it and removes one as it exits it ([run]) — plus
+     * [enterAt], which replaces it whole. Generated code never touches it:
+     * when it did, each machine carried its own copy of the bookkeeping, and
+     * entry guarded against entering a state twice because nothing computed
+     * the entry set once.
      *
      * Thread safety: Only accessed from the microstep coroutine
      * ([Dispatchers.Default] single-writer). Do not access from external threads.
      */
-    protected val activeStateIds: MutableSet<String> = mutableSetOf()
+    private val configuration: MutableSet<S> = LinkedHashSet()
 
     /**
-     * §scxml-3.11: History state storage.
-     * Maps history state ID to recorded active state IDs at time of parent exit.
-     * Shallow history stores direct children; deep history stores leaf descendants.
+     * §scxml-3.10: what each `<history>` recorded when its parent was last
+     * exited — its parent's active children for a shallow history, the active
+     * atomic states below the parent for a deep one. A history absent from the
+     * map has never recorded, which is what sends an entry to its default.
      */
-    protected val historyStore: MutableMap<String, List<String>> = mutableMapOf()
-
-    /**
-     * §scxml-3.11: Pre-transition active states snapshot.
-     * Captured before exit phase so history recording sees the full configuration.
-     * Matches C++ activeStatesBeforeTransition pattern.
-     */
-    protected var preTransitionActiveStates: Set<String> = emptySet()
+    private val historyValues: MutableMap<HistoryId, List<S>> = mutableMapOf()
 
     /**
      * §scxml-5.9.2: Check if a state is in the active configuration.
      *
      * Used by generated code for In() predicate evaluation.
      * Must only be called from within the microstep loop (same coroutine as
-     * [processEvent], [onEntry], [onExit]).
+     * [firstEnabledTransition], [onEntry], [onExit]).
      *
      * @param stateId The SCXML state ID to check
      * @return true if the state is currently active
      */
-    protected fun isStateActive(stateId: String): Boolean = stateId in activeStateIds
+    protected fun isStateActive(stateId: String): Boolean =
+        resolveState(stateId)?.let { it in configuration } ?: false
+
+    /**
+     * Appendix D's isInFinalState of [state] against the configuration as it
+     * stands: a compound state whose `<final>` child is active, or a
+     * `<parallel>` whose every region is in a final state, asked recursively.
+     *
+     * Called by generated code entering a `<final>`, which is the moment
+     * §scxml-3.7 asks whether its grandparent `<parallel>` has just completed.
+     */
+    protected fun isStateInFinalState(state: S): Boolean = Microstep.isInFinalState(run, state, configuration)
 
     /**
      * §scxml-3.3: every state this machine is currently in.
      *
-     * The host-facing half of [activeStateIds], which is `protected` because
-     * the microstep loop is its only writer. A host that means to persist where
-     * a machine was has to be able to READ where it is, and until this existed
-     * it could not: [currentState] answers one leaf, and one leaf is not a
+     * The host-facing half of [configuration], which is private because the
+     * microstep loop is its only writer. A host that means to persist where a
+     * machine was has to be able to READ where it is, and until this existed it
+     * could not: [currentState] answers one leaf, and one leaf is not a
      * configuration of a document with `<parallel>` regions.
      *
      * Pair it with [enterAt], which takes exactly this and a current state
@@ -246,7 +263,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * artefact of one process, and the process that resumes is a different one.
      */
     val activeConfiguration: Set<S>
-        get() = activeStateIds.mapNotNull { resolveState(it) }.toSet()
+        get() = configuration.toSet()
 
     /**
      * §scxml-3.3: the document's own name for [state] — what a host writes down.
@@ -363,8 +380,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
     /**
      * §scxml-5.10: Metadata for the event currently being processed.
-     * Set before processEvent/processNullEvent so that generated
-     * setCurrentEventInScriptEngine() can read it.
+     * Set before the event's transitions are selected so that the generated
+     * [bindCurrentEvent] can read it.
      */
     protected var currentEventMetadata: EventMetadata = EventMetadata.EMPTY
 
@@ -951,9 +968,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * Whether the state machine has reached a final state.
      *
      * Guaranteed to be visible only after [currentState] reflects the final state.
-     * This ordering is enforced by [markFinalStateReached] + deferred flush in
-     * [processOneEvent], preventing observers from seeing isInFinalState=true
-     * while currentState still points to the source state.
+     * This ordering is enforced by [markFinalStateReached] + the deferred flush
+     * at the end of every microstep, preventing observers from seeing
+     * isInFinalState=true while currentState still points to the source state.
      */
     @Volatile
     var isInFinalState: Boolean = false
@@ -961,8 +978,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
     /**
      * Pending final state flag, set by generated onEntry() code via
-     * [markFinalStateReached]. Flushed to [isInFinalState] after
-     * _currentState.value is updated in [processOneEvent].
+     * [markFinalStateReached]. Flushed to [isInFinalState] once the microstep
+     * that entered the final state has updated _currentState.value.
      */
     private var pendingFinalState: Boolean = false
 
@@ -1078,8 +1095,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
     /**
      * Initial state of the state machine.
      *
-     * §scxml-3.2: Resolved from the `initial` attribute.
-     * Must be an atomic (leaf) state for processEvent to work correctly.
+     * §scxml-3.2: Resolved from the `initial` attribute to the atomic state it
+     * leads to. It is what [currentState] reports before the machine has
+     * entered anything; the initial configuration itself is entered from
+     * [documentInitialTargets].
      */
     abstract val initialState: S
 
@@ -1101,65 +1120,71 @@ abstract class StateMachineEngine<S : State, E : Event>(
     open val needsEventScheduler: Boolean = false
 
     /**
-     * Pure function: determine transition result for (state, event) pair.
+     * §scxml-5.10: bind [event] as the `_event` the guards about to be
+     * evaluated read.
      *
-     * Generated as exhaustive `when` expressions over state and event types.
-     * No side effects — the engine handles exit/entry/action ordering.
-     *
-     * §scxml-3.12: Event processing algorithm.
+     * Called once per selection, before the first guard runs, and not for an
+     * eventless selection, which has no event of its own. Generated code
+     * overrides it for a machine whose guards read `_event`; the default is a
+     * machine whose guards read nothing of it.
      */
-    abstract fun processEvent(state: S, event: E): TransitionResult<S>
+    protected open fun bindCurrentEvent(event: E) {}
 
     /**
-     * W3C SCXML Appendix D: Check for eventless (null) transitions.
+     * The per-state half of Appendix D's selectTransitions, the half only the
+     * document can answer: the first of [state]'s OWN transitions, in document
+     * order, that [event] enables and whose guard holds — for a `null` event,
+     * its first eventless transition whose guard holds.
      *
-     * Eventless transitions fire automatically after state entry,
-     * before waiting for external events. Override in generated code
-     * for state machines that have eventless transitions.
+     * The only place a guard is evaluated, and the only place a transition is
+     * matched against an event. Everything else the selection does — the walk
+     * from each atomic state up through its ancestors, the ordered set, the
+     * conflict removal — is [Microstep.selectTransitions], written once for
+     * every machine. A transition an ancestor owns is answered by asking the
+     * ancestor, so it is reported under its own source and its own index.
      *
-     * @return TransitionResult for any enabled eventless transition, or Ignored
+     * The answer is the document's own record of the transition; a generated
+     * machine hands out objects it built once rather than a new one per event.
      */
-    protected open fun processNullEvent(state: S): TransitionResult<S> = TransitionResult.Ignored
+    protected abstract fun firstEnabledTransition(state: S, event: E?): EnabledTransition<S, HistoryId>?
 
     /**
-     * Execute entry actions for a state, and give it the descendants Appendix D
-     * says it is owed.
+     * Run a state's entry actions.
      *
-     * §scxml-3.8: `<onentry>` executable content + initial child entry.
+     * §scxml-3.8: `<onentry>` executable content; the invocations it owes,
+     * deferred to the macrostep's end (§scxml-6.4); for a `<final>`, what
+     * §scxml-3.7 does on entering one; and, when [isDefaultEntry], its
+     * `<initial>` transition's content (§scxml-3.3).
      *
-     * [pathChild] is what tells Appendix D's two entry functions apart, and it
-     * is the whole of the difference between them:
-     *
-     * - `null` — [state] is the entry TARGET, so `addDescendantStatesToEnter`
-     *   applies: a compound state takes its default initial child and a
-     *   `<parallel>` takes every region.
-     * - non-null — [state] is merely an ANCESTOR on the way to a deeper target,
-     *   and [pathChild] is the one of its children the entry set already holds.
-     *   `addAncestorStatesToEnter` adds it WITHOUT its default; the single
-     *   exception is a `<parallel>`, whose OTHER regions still take theirs
-     *   because nothing is entering inside them.
-     *
-     * This replaced a `suppressChildEntry` flag that could only say "no
-     * defaults at all". Measured 2026-08-15: with the flag set for a parallel
-     * ancestor, its sibling regions were entered without descending, so a
-     * region nothing was targeting inside never reached its initial child —
-     * pinned by `integration_resources/ancestor_entry_is_not_default_entry/`.
+     * One state and nothing else. The engine has already added it to the
+     * configuration, and which descendants and ancestors enter with it is the
+     * entry set [Microstep.computeEntrySet] computed — so nothing here enters
+     * another state. [isDefaultEntry] is the entry set's statesForDefaultEntry
+     * answer, the one condition under which the `<initial>` content runs: a
+     * compound state entered only as the ANCESTOR of a deeper target takes no
+     * default, and neither does its content.
      */
-    abstract fun onEntry(state: S, pathChild: S? = null)
-
+    protected abstract fun onEntry(state: S, isDefaultEntry: Boolean)
 
     /**
-     * Execute exit actions for a state.
+     * Run a state's exit actions.
      *
-     * §scxml-3.9: `<onexit>` executable content.
+     * §scxml-3.9: `<onexit>` executable content, and cancelling the
+     * invocations the state started (§scxml-6.4).
+     *
+     * One state and nothing else. The engine has already recorded its
+     * `<history>` children and removed it from the configuration, and the exit
+     * set it belongs to is [Microstep.computeStatesToExit]'s — so nothing here
+     * exits another state.
      */
-    abstract fun onExit(state: S)
+    protected abstract fun onExit(state: S)
 
     /**
      * Execute the executable content of the transition that was SELECTED.
      *
-     * §scxml-3.13: Executable content within `<transition>`.
-     * Called between onExit(source) and onEntry(target).
+     * §scxml-3.13: Executable content within `<transition>`, run by
+     * [Microstep.executeTransitionContent] between the microstep's exits and
+     * its entries, in the order the transitions were selected.
      *
      * ⚠ [transitionIndex] is not a convenience. Without it a generated
      * dispatch has to re-decide which transition ran by re-evaluating the same
@@ -1169,85 +1194,108 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * other arm's content. The index is the selection's own answer, carried
      * forward instead of recomputed.
      *
-     * ⚠⚠ No default and no two-argument overload, deliberately. An override
-     * that had not been migrated would keep re-deciding and would keep
-     * passing, which is the exact shape of an escape hatch that disables its
-     * own gate; without one, it fails to compile.
+     * ⚠⚠ No default, deliberately: a machine that could leave this out would
+     * run a microstep with its transitions' content silently skipped.
      *
-     * @param event null for eventless transitions
-     * @param transitionIndex [TransitionResult.transitionIndex] of the result
-     *        the selection returned, or [TransitionResult.NO_TRANSITION] when
-     *        the caller has no transition content to dispatch
+     * @param source the state that owns the transition
+     * @param transitionIndex [EnabledTransition.transitionIndex] of the
+     *        transition the selection returned — its position among
+     *        [source]'s own transitions
      */
-    abstract fun executeTransitionActions(source: S, event: E?, transitionIndex: Int)
-
-    // --- State Hierarchy (§scxml-3.3 / §scxml-3.4) ---
+    protected abstract fun executeTransitionContent(source: S, transitionIndex: Int)
 
     /**
-     * §scxml-3.3: Get the parent of a state in the hierarchy.
+     * §scxml-3.10.2: run a `<history>`'s default transition content.
      *
-     * Override in generated code with the actual state hierarchy.
-     * Returns null for root states.
+     * Run after the history's parent is entered (and after the parent's own
+     * `<initial>` content), when the history was taken with nothing recorded —
+     * the entry set's defaultHistoryContent answer. A history that restored
+     * what it recorded runs nothing. The default is a machine with no
+     * `<history>` that carries content.
+     */
+    protected open fun executeHistoryDefaultContent(history: HistoryId) {}
+
+    // --- Document Structure ---
+    //
+    // What Appendix D's procedures read of the document, through [run]. The
+    // defaults describe a flat machine — no compound state, no `<parallel>`,
+    // no `<history>` — so a hand-written machine answers only what it has.
+
+    /**
+     * §scxml-3.3: the parent of a state in the hierarchy, or `null` when its
+     * parent is the `<scxml>` element.
      */
     protected open fun parentOf(state: S): S? = null
-
-    /**
-     * §scxml-3.4: Check if [descendant] is a descendant of [ancestor].
-     *
-     * Uses [parentOf] to walk up the hierarchy.
-     */
-    protected fun isDescendantOf(descendant: S, ancestor: S): Boolean {
-        var current: S? = parentOf(descendant)
-        while (current != null) {
-            if (current == ancestor) return true
-            current = parentOf(current)
-        }
-        return false
-    }
-
-    /**
-     * Resolve a compound/parallel state to its initial leaf state.
-     *
-     * Override in generated code for state machines with compound/parallel states.
-     * Default returns state unchanged (already a leaf).
-     */
-    protected open fun resolveLeafState(state: S): S = state
 
     /**
      * Resolve a state ID string back to its State object.
      *
      * Override in generated code to map state IDs to sealed interface objects.
-     * Used by the runtime to iterate over active states for parallel processing.
+     * Used for the In() predicate and for the names a host journals.
      */
     protected open fun resolveState(stateId: String): S? = null
 
     /**
-     * Check if a state is an atomic (leaf) state — no children.
-     *
-     * Override in generated code. Default returns true (flat state machines).
+     * §scxml-3.3: whether the state is a `<state>` with child states — exactly
+     * the states that have an initial transition. A `<parallel>` is not
+     * compound: this is the set Appendix D's findLCCA chooses a domain from.
      */
-    protected open fun isAtomicState(state: S): Boolean = true
+    protected open fun isCompoundState(state: S): Boolean = false
 
-    /**
-     * §scxml-3.4: Check if a state is a parallel state.
-     *
-     * Override in generated code for state machines with parallel states.
-     * Used to determine if sibling regions need re-entry after transitions.
-     */
+    /** §scxml-3.4: whether the state is a `<parallel>`. */
     protected open fun isParallelState(state: S): Boolean = false
 
     /**
-     * §scxml-3.4: Get child regions of a parallel state.
-     *
-     * C++ getParallelRegions() pattern: returns direct child states of a parallel state.
-     * Override in generated code for state machines with parallel states.
+     * §scxml-3.7: whether the state is a `<final>` element — not whether it is
+     * IN a final state; that is [isStateInFinalState].
      */
-    protected open fun getParallelRegions(state: S): List<S> = emptyList()
+    protected open fun isFinalState(state: S): Boolean = false
 
     /**
-     * §scxml-3.13: Get document order index for exit order sorting.
-     *
-     * Override in generated code. Higher values = later in document.
+     * §scxml-D-getChildStates: the state's `<state>`, `<parallel>` and
+     * `<final>` children, in document order — for a `<parallel>`, its regions.
+     */
+    protected open fun childStatesOf(state: S): List<S> = emptyList()
+
+    /**
+     * §scxml-3.3: a compound state's initial transition target, as written —
+     * the first child state when the document names none. The entry
+     * procedures dereference a `<history>` among them.
+     */
+    protected open fun initialTargetsOf(state: S): List<EntryTarget<S, HistoryId>> = emptyList()
+
+    /**
+     * §scxml-3.2: the target of the document's own initial transition, as
+     * written. The default is the flat machine's: [initialState] itself.
+     */
+    protected open val documentInitialTargets: List<EntryTarget<S, HistoryId>>
+        get() = listOf(StateTarget(initialState))
+
+    /**
+     * §scxml-3.10: the state a `<history>` is declared in. The default is a
+     * machine that declares no `<history>`, so no target list names one and
+     * nothing asks; answering would mean inventing one.
+     */
+    protected open fun historyParentOf(history: HistoryId): S =
+        error("${this::class.simpleName} declares no <history>; asked for the parent of $history")
+
+    /**
+     * §scxml-3.10.2: a `<history>`'s default transition target, as written.
+     * The default is a machine that declares no `<history>`.
+     */
+    protected open fun historyDefaultTargetsOf(history: HistoryId): List<EntryTarget<S, HistoryId>> =
+        error("${this::class.simpleName} declares no <history>; asked for the default of $history")
+
+    /**
+     * §scxml-3.10: the `<history>` children of [state], each with whether it is
+     * a deep history. Read as [state] is exited, which is when Appendix D's
+     * exitStates records what each of them stores.
+     */
+    protected open fun historiesOf(state: S): List<Pair<HistoryId, Boolean>> = emptyList()
+
+    /**
+     * §scxml-D-enterStates: the state's position in document order, which is
+     * also entry order; exit order is its reverse.
      */
     protected open fun documentOrderOf(state: S): Int = 0
 
@@ -1317,94 +1365,19 @@ abstract class StateMachineEngine<S : State, E : Event>(
     // --- Lifecycle ---
 
     /**
-     * §scxml-3.2 / §scxml-3.4: Enter initial state configuration.
+     * §scxml-D-interpret: enter the initial configuration.
      *
-     * C++ buildEntryChain pattern: build ancestor chain from root to initialState,
-     * then enter each state. onEntry for compound/parallel states handles recursive
-     * descent into initial children and parallel regions.
+     * Appendix D enters it as it enters any other set of states: the
+     * document's initial transition — whose source is the `<scxml>` element —
+     * handed to [Microstep.enterStates]. The targets are as written
+     * ([documentInitialTargets]), so a multi-target or deep `initial` enters
+     * exactly the states it names, and every compound state the entry reaches
+     * only as an ancestor of one of them takes no default.
      *
      * Override in generated code only for script engine initialization.
      */
     protected open fun enterInitialConfiguration() {
-        // C++ HierarchicalStateHelper::buildEntryChain pattern:
-        // Walk from initialState to root, reverse, enter each
-        val chain = mutableListOf<S>()
-        var cur: S? = initialState
-        while (cur != null) {
-            chain.add(cur)
-            cur = parentOf(cur)
-        }
-        chain.reverse()
-        // Every link here takes its defaults — `pathChild` stays null on
-        // purpose. §scxml-D-addAncestorStatesToEnter is about a state on the way
-        // to a target somebody NAMED; this chain is the opposite, a default
-        // descent that codegen has already resolved (`initialState` is the leaf,
-        // not the document's `initial`). Measured 2026-08-15: passing the next
-        // link here suppressed `s0`'s `<initial>` transition content and W3C
-        // test579 reached `fail` — the `<initial>`/history branch is exactly
-        // what a default entry owes. The duplicate guard in `onEntry` makes the
-        // later links no-ops.
-        for (state in chain) {
-            onEntry(state)
-        }
-    }
-
-    /**
-     * §scxml-3.4: Re-enter exited regions of an active parallel state.
-     *
-     * C++ executeMicrostep pattern: when a parallel state is still active but some of its
-     * child regions were exited during the microstep, re-enter those regions with their
-     * initial states.
-     *
-     * The region the entry set is descending into needs no exclusion here: the
-     * ancestor walk that precedes every call enters the inactive ancestors
-     * first, so by the time this runs that region is active and the loop below
-     * skips it. §scxml-D-addDescendantStatesToEnter is then exactly what is
-     * left — the regions with nothing entering inside them.
-     *
-     * @param parallelState the parallel state to check
-     */
-    private fun reenterParallelRegions(parallelState: S) {
-        // C++ executeMicrostep pattern (lines 456-482):
-        // Use getParallelRegions() to find child regions, re-enter only inactive ones.
-        val regions = getParallelRegions(parallelState)
-        for (region in regions) {
-            val regionId = stateIdOf(region)
-            if (regionId.isNotEmpty() && activeStateIds.contains(regionId)) continue
-
-            // Region was exited — re-enter with entry actions
-            onEntry(region)
-
-            // §scxml-3.3: If region is compound, enter initial child
-            enterInitialChildrenIfNeeded(region)
-        }
-    }
-
-    private fun enterInitialChildrenIfNeeded(target: S) {
-        val leaf = resolveLeafState(target)
-        if (leaf == target) return
-        // C++ pattern: check if onEntry already entered a child (history or parallel)
-        val targetId = stateIdOf(target)
-        val hasActiveChild = activeStateIds.any { stateId ->
-            val st = resolveState(stateId) ?: return@any false
-            val p = parentOf(st)
-            p != null && stateIdOf(p) == targetId
-        }
-        if (hasActiveChild) return
-        // C++ buildEntryChain: walk from leaf to target, reverse, enter each
-        val intermediates = mutableListOf<S>()
-        var cur: S? = leaf
-        while (cur != null && cur != target) {
-            intermediates.add(cur)
-            cur = parentOf(cur)
-        }
-        intermediates.reverse()
-        // Default descent, so every link takes its defaults — see
-        // `enterInitialConfiguration` for why `pathChild` stays null on a chain
-        // nobody targeted.
-        for (state in intermediates) {
-            onEntry(state)
-        }
+        Microstep.enterStates(run, listOf(EntryTransition(null, documentInitialTargets)))
     }
 
     /**
@@ -1427,10 +1400,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         job = scope.launch(Dispatchers.Default) {
             // R4 fix: Execute initial entry on Dispatchers.Default, not caller thread
             enterInitialConfiguration()
-
-            // Resolve to actual leaf state after initial configuration (C++ pattern)
-            _currentState.value = activeLeafStatesInDocumentOrder().lastOrNull()
-                ?: resolveLeafState(_currentState.value)
+            settleCurrentState()
 
             // Flush pending final state from initial entry (e.g., test415:
             // initial state IS a final state)
@@ -1480,8 +1450,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         val opened = beginTurn()
         try {
             enterInitialConfiguration()
-            _currentState.value = activeLeafStatesInDocumentOrder().lastOrNull()
-                ?: resolveLeafState(_currentState.value)
+            settleCurrentState()
             flushPendingFinalState()
 
             // W3C SCXML Appendix D: hand over to the outer loop. The macrostep
@@ -1555,9 +1524,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
             configuration.toList(),
             current,
             ::parentOf,
-            ::isAtomicState,
+            { !isCompoundState(it) && !isParallelState(it) },
             ::isParallelState,
-            ::getParallelRegions,
+            ::childStatesOf,
         )
         if (verdict != ConfigurationRejection.NONE) {
             return verdict
@@ -1573,13 +1542,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // the way into [initialize].
         declareDatamodel()
 
-        activeStateIds.clear()
-        for (state in configuration) {
-            val id = stateIdOf(state)
-            if (id.isNotEmpty()) {
-                activeStateIds.add(id)
-            }
-        }
+        this.configuration.clear()
+        this.configuration.addAll(configuration)
         _currentState.value = current
 
         return ConfigurationRejection.NONE
@@ -2166,11 +2130,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // party that got the event wrong. Counted for the external queue only:
         // an internal `<raise>` that matches nothing has both its ends inside
         // the document.
-        if (!processOneEvent(queued.event)) {
+        if (!takeEvent(queued.event)) {
             discardedExternalEventCount++
             lastDiscarded = queued.event
         }
-        flushPendingFinalState()
     }
 
     /**
@@ -2199,8 +2162,12 @@ abstract class StateMachineEngine<S : State, E : Event>(
             scriptEngineInitialized = false
             scriptSessionId = null
         }
-        // Reset state for stop/start reuse
-        activeStateIds.clear()
+        // Reset state for stop/start reuse. What each `<history>` recorded
+        // belongs to the session that is ending (§scxml-3.10): a restarted
+        // machine is a new session, and one that remembered would enter a
+        // history's recorded configuration where the document says default.
+        configuration.clear()
+        historyValues.clear()
         isInFinalState = false
         pendingFinalState = false
         internalEventQueue.clear()
@@ -2215,7 +2182,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
     /**
      * §scxml-3.12.1: Raise an internal event (processed before external events).
      *
-     * Called from generated onEntry/onExit/executeTransitionActions code.
+     * Called from generated onEntry/onExit/executeTransitionContent code.
      * Always called from the microstep coroutine (single-threaded access).
      * Default metadata type = "internal" per §scxml-5.10.
      */
@@ -2863,7 +2830,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // is owed the same answer — this engine has two entry points for one
         // queue, so a count recorded at only one of them would be right for
         // half its callers.
-        if (!processOneEvent(event)) {
+        if (!takeEvent(event)) {
             discardedExternalEventCount++
             lastDiscarded = event
         }
@@ -2910,10 +2877,12 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // §scxml-3.8: Execute onexit actions for the final state before
             // notifying parent. Matches C++ AOT StaticExecutionEngine::initialize()
             // which calls executeOnExit(currentState_) for the final state only.
-            // Ancestors are NOT exited here — transition exitHierarchy already
-            // handled ancestor exits. This ensures child-to-parent events
-            // (e.g., test236 SubFinal onexit) arrive before done.invoke.
-            onExit(_currentState.value)
+            // A top-level <final> is entered by a transition whose domain is
+            // the <scxml> element, which exited everything else, so it is the
+            // configuration's one state and exiting it empties the
+            // configuration. This ensures child-to-parent events (e.g.,
+            // test236 SubFinal onexit) arrive before done.invoke.
+            run.exitState(_currentState.value, configuration.toList())
 
             // §scxml-6.4: Notify invoke monitors that this SM completed
             if (!completion.isCompleted) completion.complete(Unit)
@@ -2942,21 +2911,119 @@ abstract class StateMachineEngine<S : State, E : Event>(
     }
 
     /**
-     * Collect active atomic (leaf) states sorted by document order.
+     * This machine as Appendix D's procedures drive it: its document through
+     * the generated tables, its configuration and what each `<history>`
+     * recorded from here, and what exiting a state, running a transition's
+     * content and entering a state DO through the generated actions.
      *
-     * §scxml-3.13: Document order determines transition priority
-     * when multiple parallel children could handle the same event.
-     * Returns empty list only when no states are active (before start or after final).
+     * The only writer of [configuration] and [historyValues] besides [enterAt]
+     * and [stop]: a state is added as it is entered and removed as it is
+     * exited, and a history records as its parent is exited.
      */
-    private fun activeLeafStatesInDocumentOrder(): List<S> {
-        val leaves = mutableListOf<Pair<S, Int>>()
-        for (stateId in activeStateIds) {
-            val state = resolveState(stateId) ?: continue
-            if (!isAtomicState(state)) continue
-            leaves.add(state to documentOrderOf(state))
+    private val run: Run<S, HistoryId, E> = object : Run<S, HistoryId, E> {
+        override fun parentOf(state: S): S? = this@StateMachineEngine.parentOf(state)
+
+        override fun isCompound(state: S): Boolean = isCompoundState(state)
+
+        override fun isParallel(state: S): Boolean = isParallelState(state)
+
+        override fun isFinal(state: S): Boolean = isFinalState(state)
+
+        override fun childStates(state: S): List<S> = childStatesOf(state)
+
+        override fun initialTargets(state: S): List<EntryTarget<S, HistoryId>> = initialTargetsOf(state)
+
+        override fun historyParent(history: HistoryId): S = historyParentOf(history)
+
+        override fun historyValue(history: HistoryId): List<S>? = historyValues[history]
+
+        override fun historyDefaultTargets(history: HistoryId): List<EntryTarget<S, HistoryId>> =
+            historyDefaultTargetsOf(history)
+
+        override fun documentOrder(state: S): Int = documentOrderOf(state)
+
+        override fun configuration(): List<S> = this@StateMachineEngine.configuration.toList()
+
+        override fun firstEnabledTransition(state: S, event: E?): EnabledTransition<S, HistoryId>? =
+            this@StateMachineEngine.firstEnabledTransition(state, event)
+
+        override fun exitState(state: S, configurationBeforeExit: List<S>) {
+            // §scxml-D-exitStates: every history of the state records from the
+            // configuration as it stood before the microstep's first exit.
+            for ((history, deep) in historiesOf(state)) {
+                historyValues[history] = Microstep.recordedHistory(this, state, deep, configurationBeforeExit)
+            }
+            this@StateMachineEngine.configuration.remove(state)
+            onExit(state)
         }
-        leaves.sortBy { it.second }
-        return leaves.map { it.first }
+
+        override fun executeTransitionContent(transition: EnabledTransition<S, HistoryId>) {
+            this@StateMachineEngine.executeTransitionContent(transition.source, transition.transitionIndex)
+        }
+
+        override fun enterState(state: S, isDefaultEntry: Boolean) {
+            this@StateMachineEngine.configuration.add(state)
+            onEntry(state, isDefaultEntry)
+        }
+
+        override fun executeHistoryDefaultContent(history: HistoryId) {
+            this@StateMachineEngine.executeHistoryDefaultContent(history)
+        }
+    }
+
+    /**
+     * W3C SCXML Appendix D: select the transitions [event] enables — the
+     * eventless ones for `null` — and take them as one microstep.
+     *
+     * @return whether a transition was selected. For an event that is the
+     *   §scxml-3.1.2 question the external dequeue counts discards by.
+     */
+    private fun takeEvent(event: E?): Boolean {
+        if (event != null) bindCurrentEvent(event)
+        val transitions = Microstep.selectTransitions(run, event)
+        if (transitions.isEmpty()) return false
+        microstep(transitions, event)
+        return true
+    }
+
+    /**
+     * §scxml-D-microstepProcedure over [transitions], then what a host is
+     * shown of it: [currentState], the final state if one was entered, and a
+     * [TransitionRecord] per transition that moved the machine.
+     */
+    private fun microstep(transitions: List<EnabledTransition<S, HistoryId>>, event: E?) {
+        Microstep.microstep(run, transitions)
+        settleCurrentState()
+        // §scxml-3.7 + 6.4: Single path for final state + invoke completion
+        flushPendingFinalState()
+        if (event != null) {
+            for (transition in transitions) {
+                if (transition.isTargetless) continue
+                _transitions.tryEmit(
+                    TransitionRecord(
+                        source = transition.source,
+                        event = event,
+                        target = _currentState.value,
+                        timestamp = nextTimestamp()
+                    )
+                )
+            }
+        }
+    }
+
+    /**
+     * Point [currentState] at the last atomic state of the configuration in
+     * document order — the leaf the machine descended to, which for a machine
+     * without `<parallel>` regions is THE active leaf.
+     *
+     * Left where it was when the configuration holds no atomic state, which
+     * is only before the machine has entered anything.
+     */
+    private fun settleCurrentState() {
+        configuration
+            .filter { !isCompoundState(it) && !isParallelState(it) }
+            .maxByOrNull { documentOrderOf(it) }
+            ?.let { _currentState.value = it }
     }
 
     /**
@@ -2966,10 +3033,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * internal event queue is empty. This implements the inner loop of
      * the W3C macrostep algorithm.
      *
-     * §scxml-3.4: For parallel states, ALL non-conflicting eventless
-     * transitions are selected and fired in a single microstep. This matches
-     * the W3C selectEventlessTransitions() algorithm where transitions in
-     * different parallel regions execute simultaneously.
+     * §scxml-3.4: the eventless transitions of every region are selected
+     * together by [Microstep.selectTransitions] and taken as one microstep, so
+     * the regions of a `<parallel>` move simultaneously, conflicts removed as
+     * for any other selection.
      */
     private fun drainEventlessAndInternal() {
         if (macrostepTruncated) {
@@ -2985,35 +3052,21 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // one — see [MAX_MACROSTEP_MICROSTEPS] for what separate budgets let
         // through.
         while (!isInFinalState) {
-            // W3C SCXML Appendix D: Eventless transitions take priority
-
-            // W3C SCXML Appendix D: Unified eventless processing (C++ pattern)
-            val leaves = activeLeafStatesInDocumentOrder()
-            val enabledTransitions = mutableListOf<Pair<S, TransitionResult<S>>>()
-            for (state in leaves) {
-                val nullResult = processNullEvent(state)
-                if (nullResult !is TransitionResult.Ignored) {
-                    enabledTransitions.add(state to nullResult)
-                }
-            }
-            if (enabledTransitions.isNotEmpty()) {
+            // W3C SCXML Appendix D: eventless transitions take priority over
+            // the internal queue — §scxml-D-selectEventlessTransitions.
+            val eventless = Microstep.selectTransitions(run, null)
+            if (eventless.isNotEmpty()) {
                 if (macrostepMicrostepsTaken == MAX_MACROSTEP_MICROSTEPS) {
                     // The chain is still going one microstep past the budget,
                     // so this is the case the specification calls a macrostep
                     // that cannot end. Refuse the microstep rather than take it,
                     // and publish the refusal: the configuration left behind
                     // is not a stable one and only this counter says so.
-                    recordTruncatedMacrostep(enabledTransitions[0].first)
+                    recordTruncatedMacrostep(eventless[0].source)
                     break
                 }
-                if (enabledTransitions.size > 1) {
-                    applySimultaneousTransitions(enabledTransitions)
-                } else {
-                    val (source, result) = enabledTransitions[0]
-                    applyTransitionFrom(source, result, null)
-                }
+                microstep(eventless, null)
                 macrostepMicrostepsTaken++
-                flushPendingFinalState()
                 continue
             }
 
@@ -3071,7 +3124,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 // needs no such guard, because it only ever rises while an
                 // error handler is running.
                 handlingErrorEvent = isError
-                val selected = processOneEvent(queued.event)
+                val selected = takeEvent(queued.event)
                 handlingErrorEvent = false
                 if (selected) {
                     // Appendix D: the loop turn that selects nothing takes no
@@ -3084,7 +3137,6 @@ abstract class StateMachineEngine<S : State, E : Event>(
                     unhandledErrorEventCount++
                     lastUnhandledErrorEvent = queued.event
                 }
-                flushPendingFinalState()
                 continue
             }
 
@@ -3094,469 +3146,6 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // the count of what was refused stays where the host reads it.
             errorCascadeDepth = 0
             break
-        }
-    }
-
-    /**
-     * §scxml-D-microstepProcedure: Apply multiple non-conflicting transitions
-     * as a single microstep.
-     *
-     * For parallel states, the W3C algorithm requires that all enabled
-     * non-conflicting eventless transitions fire simultaneously:
-     * 1. Exit all source states in reverse document order
-     * 2. Execute all transition actions in document order
-     * 3. Enter all target states in document order
-     *
-     * This ensures correct event ordering when parallel regions have
-     * eventless transitions with executable content in exits/actions/entries.
-     *
-     * NOTE: This assumes all transitions are non-conflicting (different parallel
-     * regions). AOT-generated processNullEvent() only returns leaf-state transitions
-     * within their own region — ancestor eventless transitions are not included.
-     * This makes W3C removeConflictingTransitions() unnecessary for AOT machines.
-     */
-    private fun applySimultaneousTransitions(
-        transitions: List<Pair<S, TransitionResult<S>>>
-    ) {
-        // Separate External and Internal transitions
-        val externals = mutableListOf<Pair<S, TransitionResult.External<S>>>()
-        val internals = mutableListOf<Pair<S, TransitionResult.Internal>>()
-        for ((source, result) in transitions) {
-            when (result) {
-                is TransitionResult.External -> externals.add(source to result)
-                is TransitionResult.InternalToTarget -> {
-                    // Treat internal-with-target like external for parallel batch processing.
-                    // The index travels with it: this is a re-wrapping of one
-                    // selected transition, not a new one, and dropping it here
-                    // would leave the batch path re-deciding what the single
-                    // path no longer does.
-                    externals.add(
-                        source to TransitionResult.External(
-                            result.target,
-                            result.transitionSource,
-                            result.transitionIndex,
-                        )
-                    )
-                }
-                is TransitionResult.Internal -> internals.add(source to result)
-                is TransitionResult.Ignored -> {}
-            }
-        }
-
-        if (externals.isNotEmpty()) {
-            // Sort by source document order
-            val sorted = externals.sortedBy { documentOrderOf(it.first) }
-
-            // §scxml-D-microstepProcedure, Step 1: Exit all in reverse document order
-            for ((source, result) in sorted.reversed()) {
-                exitHierarchy(source, result.target, result.transitionSource)
-            }
-
-            // §scxml-D-microstepProcedure, Step 2: Transition actions in document order
-            for ((source, result) in sorted) {
-                executeTransitionActions(source, null, result.transitionIndex)
-            }
-
-            // §scxml-D-microstepProcedure, Step 3: Enter all targets in document order
-            // C++ pattern: onEntry (executeEntryActions) handles parallel region descent
-            for ((_, result) in sorted) {
-                onEntry(result.target)
-            }
-
-            // Update _currentState to last entered leaf
-            _currentState.value = activeLeafStatesInDocumentOrder().lastOrNull()
-                ?: resolveLeafState(sorted.last().second.target)
-        }
-
-        // Internal transitions: execute actions only (no state change)
-        for ((source, result) in internals) {
-            executeTransitionActions(source, null, result.transitionIndex)
-        }
-    }
-
-    /**
-     * Process a single event (internal or external).
-     *
-     * §scxml-D-removeConflictingTransitions: For parallel state machines, collect ALL enabled
-     * transitions from all active leaf states, remove conflicting transitions,
-     * then execute as an atomic microstep.
-     *
-     * For non-parallel (single active leaf), first match wins.
-     */
-    private fun processOneEvent(event: E): Boolean {
-        val leaves = activeLeafStatesInDocumentOrder()
-
-        if (leaves.size <= 1) {
-            // Non-parallel: simple first-match-wins (original behavior)
-            for (state in leaves) {
-                val result = processEvent(state, event)
-                if (result !is TransitionResult.Ignored) {
-                    applyTransitionFrom(state, result, event)
-                    return true
-                }
-            }
-            // §scxml-3.1.2: no transition matched, so the event is discarded.
-            // Reported rather than merely done, so the external dequeue can
-            // count it — see [discardedExternalEvents].
-            return false
-        }
-
-        // §scxml-D-selectTransitions: Collect transitions from all active leaf states.
-        //
-        // External/InternalToTarget: collect ALL and apply conflict resolution.
-        // Internal (targetless): collect per leaf state for action execution.
-        val enabledTransitions = mutableListOf<Pair<S, TransitionResult<S>>>()
-        val internalTransitions = mutableListOf<Pair<S, TransitionResult<S>>>()
-        for (state in leaves) {
-            val result = processEvent(state, event)
-            if (result !is TransitionResult.Ignored) {
-                if (result is TransitionResult.Internal) {
-                    internalTransitions.add(state to result)
-                } else {
-                    enabledTransitions.add(state to result)
-                }
-            }
-        }
-
-        // §scxml-3.1.2: nothing in any region answered, so the event is discarded.
-        if (enabledTransitions.isEmpty() && internalTransitions.isEmpty()) return false
-
-        // §scxml-3.13: Internal (targetless) transitions execute actions only.
-        // For parallel states, execute each unique Internal transition's actions.
-        // Dedup: if the generated executeTransitionActions for two different source states
-        // both dispatch to the same ancestor's branch, the actions fire twice. To prevent
-        // this, we use first-match-wins for Internal transitions — only the first leaf
-        // in document order executes actions (it includes ancestor actions via effective_transitions).
-        if (enabledTransitions.isEmpty()) {
-            // Only Internal transitions — first-match-wins
-            if (internalTransitions.isNotEmpty()) {
-                val (source, result) = internalTransitions[0]
-                applyTransitionFrom(source, result, event)
-            }
-            return true
-        }
-
-        // Mix of External and Internal transitions
-        // Add Internal transitions to the enabled set for simultaneous execution
-        val allTransitions = enabledTransitions + internalTransitions
-        val filtered = removeConflictingTransitions(allTransitions)
-        if (filtered.size == 1) {
-            val (source, result) = filtered[0]
-            applyTransitionFrom(source, result, event)
-        } else if (filtered.size > 1) {
-            applySimultaneousTransitions(filtered, event)
-        }
-        return true
-    }
-
-    /**
-     * §scxml-D-removeConflictingTransitions: Remove conflicting transitions from the enabled set.
-     *
-     * Two transitions conflict if their exit sets overlap. The exit set of a
-     * transition is the set of all states that would be exited by it:
-     * - For external: all descendants of the LCCA (domain) of source and target
-     * - For internal/targetless: empty
-     *
-     * When conflicts exist, the transition from the descendant source preempts
-     * the ancestor. For same-depth siblings, document order wins.
-     *
-     * C++ ConflictResolutionHelper pattern.
-     */
-    private fun removeConflictingTransitions(
-        transitions: List<Pair<S, TransitionResult<S>>>
-    ): List<Pair<S, TransitionResult<S>>> {
-        if (transitions.size <= 1) return transitions
-
-        // Compute exit set (as domain state) for each transition
-        data class TransitionWithDomain(
-            val pair: Pair<S, TransitionResult<S>>,
-            val domain: S?,  // LCCA of source and target (null = root domain OR targetless)
-            val isTargetless: Boolean  // §scxml-5.9.2: targetless transitions never conflict
-        )
-
-        val withDomains = transitions.map { pair ->
-            val (source, result) = pair
-            val domain: S? = when (result) {
-                is TransitionResult.External -> {
-                    // Domain = LCCA of transitionSource (or source) and target
-                    val txSource = result.transitionSource ?: source
-                    computeLCCA(txSource, result.target)
-                }
-                is TransitionResult.InternalToTarget -> {
-                    result.transitionSource  // Domain is the transition source for internal-with-target
-                }
-                else -> null  // Targetless: no exit set, never conflicts
-            }
-            val isTargetless = result is TransitionResult.Internal
-            TransitionWithDomain(pair, domain, isTargetless)
-        }
-
-        val result = mutableListOf<TransitionWithDomain>()
-        for (candidate in withDomains) {
-            if (candidate.isTargetless) {
-                // §scxml-5.9.2: Targetless transitions have no exit set.
-                // They don't conflict with External transitions, pass through.
-                // Dedup of same-ancestor targetless transitions is handled in processOneEvent
-                // (Internal transitions use first-match-wins when no External transitions exist).
-                result.add(candidate)
-                continue
-            }
-
-            var dominated = false
-            val toRemove = mutableListOf<TransitionWithDomain>()
-
-            for (existing in result) {
-                if (existing.isTargetless) continue
-
-                // §scxml-3.13: Check if exit sets overlap
-                // Exit sets overlap if one domain is ancestor-or-equal of the other's source,
-                // or the domains overlap. Domain=null means root (exits everything).
-                val candidateSource = candidate.pair.first
-                val existingSource = existing.pair.first
-
-                val conflict = if (candidate.domain == null || existing.domain == null) {
-                    // Domain=null (root): conflicts with everything that has an exit set
-                    true
-                } else {
-                    isDescendantOrSelf(existingSource, candidate.domain!!) ||
-                    isDescendantOrSelf(candidateSource, existing.domain!!)
-                }
-
-                if (conflict) {
-                    // §scxml-3.13: Use transition source (where transition is defined)
-                    // for preemption, not the leaf state that was checked.
-                    val candidateTxSource = when (val r = candidate.pair.second) {
-                        is TransitionResult.External -> r.transitionSource ?: candidateSource
-                        else -> candidateSource
-                    }
-                    val existingTxSource = when (val r = existing.pair.second) {
-                        is TransitionResult.External -> r.transitionSource ?: existingSource
-                        else -> existingSource
-                    }
-
-                    // Resolve: descendant transition source wins
-                    if (isDescendantOf(candidateTxSource, existingTxSource)) {
-                        // Candidate is more specific -> it preempts existing
-                        toRemove.add(existing)
-                    } else if (isDescendantOf(existingTxSource, candidateTxSource)) {
-                        // Existing is more specific -> it preempts candidate
-                        dominated = true
-                        break
-                    } else {
-                        // Same level or siblings: document order of transition source — lower wins
-                        if (documentOrderOf(existingTxSource) < documentOrderOf(candidateTxSource)) {
-                            dominated = true
-                            break
-                        } else {
-                            toRemove.add(existing)
-                        }
-                    }
-                }
-            }
-
-            if (!dominated) {
-                result.removeAll(toRemove)
-                result.add(candidate)
-            }
-        }
-        return result.map { it.pair }
-    }
-
-    /**
-     * §scxml-3.13: Compute LCCA (Least Common Compound Ancestor) of two states.
-     */
-    private fun computeLCCA(source: S, target: S): S? {
-        // Collect ancestors of source
-        val sourceAncestors = mutableListOf<S>()
-        var anc: S? = parentOf(source)
-        while (anc != null) {
-            sourceAncestors.add(anc)
-            anc = parentOf(anc)
-        }
-
-        // Walk up from target's parent, find first shared ancestor
-        var tAnc: S? = parentOf(target)
-        while (tAnc != null) {
-            if (sourceAncestors.contains(tAnc)) return tAnc
-            tAnc = parentOf(tAnc)
-        }
-
-        // Also check if source itself is ancestor of target
-        anc = parentOf(target)
-        while (anc != null) {
-            if (anc == source) return parentOf(source)
-            anc = parentOf(anc)
-        }
-
-        return null  // Root
-    }
-
-    private fun isDescendantOrSelf(state: S, possibleAncestor: S): Boolean {
-        if (stateIdOf(state) == stateIdOf(possibleAncestor)) return true
-        return isDescendantOf(state, possibleAncestor)
-    }
-
-    /**
-     * The domain of an EXTERNAL transition: the nearest proper ancestor of the
-     * source that contains the target, or `null` for the `<scxml>` element when
-     * no ancestor does.
-     *
-     * Split out so that the internal case can state its own answer rather than be
-     * rewritten into this one — see [applySimultaneousTransitions], where doing
-     * that produced a configuration the document does not have.
-     */
-    private fun externalTransitionDomain(txSource: S, target: S): S? {
-        // §scxml-D-getTransitionDomain, the `else` branch: findLCCA over the
-        // source's proper ancestors.
-        var lcca: S? = parentOf(txSource)
-        while (lcca != null) {
-            if (isDescendantOf(target, lcca)) break
-            lcca = parentOf(lcca)
-        }
-        return lcca
-    }
-
-    /**
-     * Apply multiple non-conflicting event-based transitions as a single microstep.
-     * §scxml-D-microstepProcedure: Compute exit set -> Exit all -> Actions all -> Enter all.
-     *
-     * C++ ParallelTransitionHelper::computeStatesToExit pattern:
-     * The exit set is the union of all individual transitions' exit sets,
-     * but only states that are NOT targets of any transition.
-     */
-    private fun applySimultaneousTransitions(
-        transitions: List<Pair<S, TransitionResult<S>>>,
-        event: E?
-    ) {
-        // Each state-changing transition as (source, target, DOMAIN). The domain
-        // travels with the transition rather than being re-derived below, because
-        // §scxml-D-getTransitionDomain does not answer it from source and target
-        // alone: for an internal transition whose target descends from its
-        // compound source, the domain IS that source, and no walk over the
-        // source's ancestors can produce it.
-        //
-        // This list used to hold synthesized `External`s — an `InternalToTarget`
-        // was rewritten as `External(target, transitionSource)` so one exit-set
-        // path could serve both. That rewrite discards the only thing that made
-        // the transition internal. The ancestor walk then answered with the
-        // enclosing `<parallel>`, the exit set grew to every region under it, and
-        // the parallel re-entry in step 3 brought each sibling region back at its
-        // DEFAULT child while that region's own transition in the same microstep
-        // had already entered a different one — two children of one compound
-        // state active at once, which is not a configuration (§scxml-3.4).
-        //
-        // Measured 2026-08-25 on tests/integration/parallel_region_root_external_domain.scxml:
-        // `hold` (internal, written on the region root `drive`) left `watch`
-        // holding both `alive` and `rebuilding`.
-        // A named record rather than a `Triple` grown to four, because the
-        // fourth field is the one whose loss is silent: `index` is what the
-        // action dispatch switches on, and a positional `it.fourth` read at the
-        // wrong place would run some other transition's content rather than
-        // fail to compile.
-        val externals = mutableListOf<BatchedTransition<S>>()
-        val internals = mutableListOf<Pair<S, TransitionResult<S>>>()
-        for ((source, result) in transitions) {
-            when (result) {
-                is TransitionResult.External ->
-                    externals.add(BatchedTransition(source, result.target, externalTransitionDomain(result.transitionSource ?: source, result.target), result.transitionIndex))
-                is TransitionResult.InternalToTarget ->
-                    externals.add(BatchedTransition(source, result.target, result.transitionSource ?: source, result.transitionIndex))
-                is TransitionResult.Internal -> internals.add(source to result)
-                is TransitionResult.Ignored -> {}
-            }
-        }
-
-        if (externals.isNotEmpty()) {
-            val sorted = externals.sortedBy { documentOrderOf(it.source) }
-
-            // §scxml-3.11: Capture active states before exit for history recording
-            preTransitionActiveStates = activeStateIds.toSet()
-
-            // §scxml-D-computeExitSet: Compute union exit set (C++ ParallelTransitionHelper pattern)
-            // For each external transition, compute its individual exit set,
-            // then union them. A state is in the exit set if it is a descendant
-            // of the transition's domain AND it's currently active.
-            val exitSet = mutableSetOf<String>()
-            for (domain in sorted.map { it.domain }) {
-                // Add all active proper descendants of the domain to the exit
-                // set. A null domain is the `<scxml>` element — the whole active
-                // configuration goes.
-                for (stateId in activeStateIds) {
-                    if (domain != null) {
-                        val state = resolveState(stateId) ?: continue
-                        if (state == domain) continue
-                        if (!isDescendantOf(state, domain)) continue
-                    }
-                    exitSet.add(stateId)
-                }
-            }
-
-            // Sort exit set by reverse document order
-            val statesToExit = exitSet.mapNotNull { id ->
-                resolveState(id)?.let { it to documentOrderOf(it) }
-            }.sortedByDescending { it.second }
-
-            // Step 1: Exit all in reverse document order
-            for ((state, _) in statesToExit) {
-                val sid = stateIdOf(state)
-                if (sid.isNotEmpty() && activeStateIds.contains(sid)) {
-                    onExit(state)
-                }
-            }
-
-            // Step 2: Transition actions in document order
-            for (batched in sorted) {
-                executeTransitionActions(batched.source, event, batched.transitionIndex)
-            }
-
-            // Step 3: Enter all targets in document order
-            // C++ executeMicrostep pattern: buildEntryChain + parallel region re-entry
-            for (target in sorted.map { it.target }) {
-                val ancestorsToEnter = mutableListOf<S>()
-                var parallelAncToReenter: S? = null
-                var anc = parentOf(target)
-                while (anc != null) {
-                    val ancId = stateIdOf(anc)
-                    if (ancId.isNotEmpty() && !activeStateIds.contains(ancId)) {
-                        ancestorsToEnter.add(anc)
-                    } else {
-                        // §scxml-3.4: If active ancestor is parallel, re-enter exited regions
-                        if (isParallelState(anc)) {
-                            parallelAncToReenter = anc
-                        }
-                        break
-                    }
-                    anc = parentOf(anc)
-                }
-                ancestorsToEnter.reverse()
-
-                // §scxml-D-addAncestorStatesToEnter: an ancestor is entered
-                // WITHOUT its default initial child — the entry set already
-                // holds the next link, which is the following ancestor or, for
-                // the last one, the target itself.
-                for ((i, ancestor) in ancestorsToEnter.withIndex()) {
-                    onEntry(ancestor, ancestorsToEnter.getOrNull(i + 1) ?: target)
-                }
-
-                // C++ executeMicrostep: re-enter parallel sibling regions
-                if (parallelAncToReenter != null) {
-                    reenterParallelRegions(parallelAncToReenter!!)
-                    parallelAncToReenter = null
-                }
-
-                // Enter target with full entry
-                onEntry(target)
-                enterInitialChildrenIfNeeded(target)
-            }
-
-            _currentState.value = activeLeafStatesInDocumentOrder().lastOrNull()
-                ?: resolveLeafState(sorted.last().target)
-            flushPendingFinalState()
-        }
-
-        // Internal transitions: execute actions only
-        for ((source, result) in internals) {
-            executeTransitionActions(source, event, result.transitionIndex)
         }
     }
 
@@ -3581,233 +3170,6 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 // dropped deliberately — it is bound to the parent's own event
                 // type and the child re-hydrates from `data`.
                 entry.child.sendEventByName(eventName, metadata.copy(typedPayload = null))
-            }
-        }
-    }
-
-    /**
-     * Apply a transition result using _currentState as source.
-     *
-     * @param event null for eventless transitions
-     */
-    private fun applyTransition(result: TransitionResult<S>, event: E?) {
-        applyTransitionFrom(_currentState.value, result, event)
-    }
-
-    /**
-     * Apply a transition result with an explicit source state.
-     *
-     * Used by parallel eventless processing where the source may differ
-     * from _currentState (multiple active leaf states).
-     *
-     * @param source the state that originated the transition
-     * @param event null for eventless transitions
-     */
-    private fun applyTransitionFrom(source: S, result: TransitionResult<S>, event: E?) {
-        when (result) {
-            is TransitionResult.External -> {
-                val target = result.target
-
-                // §scxml-3.11: Capture active states before exit for history recording
-                preTransitionActiveStates = activeStateIds.toSet()
-
-                // §scxml-3.13: Exit -> Transition Actions -> Entry
-                // When transitionSource is set, use it for LCCA in the parallel path
-                exitHierarchy(source, target, result.transitionSource)
-                executeTransitionActions(source, event, result.transitionIndex)
-
-                // §scxml-3.13: Enter ancestors on path from LCCA to target
-                // C++ buildEntryChainFromParent: [ancestor1, ancestor2, ..., target]
-                // All use same onEntry — duplicate guard prevents double initial child entry
-                val ancestorsToEnter = mutableListOf<S>()
-                var parallelAncestorToReenter: S? = null
-                var anc = parentOf(target)
-                while (anc != null) {
-                    val ancId = stateIdOf(anc)
-                    if (ancId.isNotEmpty() && !activeStateIds.contains(ancId)) {
-                        ancestorsToEnter.add(anc)
-                    } else {
-                        // §scxml-3.4: If active ancestor is parallel, re-enter exited regions
-                        if (isParallelState(anc)) {
-                            parallelAncestorToReenter = anc
-                        }
-                        break
-                    }
-                    anc = parentOf(anc)
-                }
-                ancestorsToEnter.reverse()
-
-                // §scxml-D-addAncestorStatesToEnter: an ancestor is entered
-                // WITHOUT its default initial child — the entry set already
-                // holds the next link, which is the following ancestor or, for
-                // the last one, the target itself.
-                for ((i, ancestor) in ancestorsToEnter.withIndex()) {
-                    onEntry(ancestor, ancestorsToEnter.getOrNull(i + 1) ?: target)
-                }
-
-                // C++ executeMicrostep: re-enter parallel sibling regions (full entry)
-                if (parallelAncestorToReenter != null) {
-                    reenterParallelRegions(parallelAncestorToReenter)
-                }
-
-                // Enter target with full entry (C++ executeEntryActions + initial child)
-                onEntry(target)
-                enterInitialChildrenIfNeeded(target)
-
-                // §scxml-3.13: Resolve to actual active leaf (C++ pattern)
-                val leafTarget = activeLeafStatesInDocumentOrder().lastOrNull()
-                    ?: resolveLeafState(target)
-
-                // Update observable state BEFORE flushing isInFinalState.
-                _currentState.value = leafTarget
-                // §scxml-3.7 + 6.4: Single path for final state + invoke completion
-                flushPendingFinalState()
-
-                // Emit transition record (only for event-based transitions)
-                if (event != null) {
-                    _transitions.tryEmit(
-                        TransitionRecord(
-                            source = source,
-                            event = event,
-                            target = leafTarget,
-                            timestamp = nextTimestamp()
-                        )
-                    )
-                }
-            }
-            is TransitionResult.InternalToTarget -> {
-                // §scxml-3.13: Internal transition with target.
-                // Exit descendants of transitionSource (but NOT the source itself),
-                // execute transition actions, enter target.
-                val target = result.target
-                val txSource = result.transitionSource
-
-                // §scxml-3.11: Capture active states before exit for history recording.
-                //
-                // The External branch above does this and this one did not, which
-                // is not a difference the clause makes: a `<history>` inside the
-                // exit set records what was active WHEN IT WAS EXITED, and an
-                // internal transition exits states exactly as an external one
-                // does. Generated `onExit` reads this field, so without the
-                // capture it read whatever the last EXTERNAL transition left
-                // there — the configuration from one transition ago, or nothing
-                // at all when no external transition had run yet.
-                //
-                // Measured 2026-08-25 on `examples/ai_loop/ai_loop.scxml`, whose
-                // `<history id="where">` restores the cycle after a hold: a hold
-                // taken in `working` resumed into `judging` (where the run had
-                // been one transition earlier) and a hold taken before the first
-                // prompt resumed into the history's DEFAULT, which is what a
-                // history that recorded nothing looks like. Both are silent —
-                // the machine comes back somewhere plausible.
-                preTransitionActiveStates = activeStateIds.toSet()
-
-                // §scxml-3.13: Exit active descendants of transitionSource (unified C++ pattern)
-                // Target is included in exit set (will be re-entered)
-                val statesToExit = mutableListOf<Pair<S, Int>>()
-                for (stateId in activeStateIds.toList()) {
-                    val state = resolveState(stateId) ?: continue
-                    if (state == txSource) continue  // Don't exit the source itself
-                    if (!isDescendantOf(state, txSource)) continue
-                    statesToExit.add(state to documentOrderOf(state))
-                }
-                statesToExit.sortByDescending { it.second }
-                for ((state, _) in statesToExit) {
-                    val sid = stateIdOf(state)
-                    if (sid.isNotEmpty() && activeStateIds.contains(sid)) {
-                        onExit(state)
-                    }
-                }
-
-                executeTransitionActions(source, event, result.transitionIndex)
-                onEntry(target)
-
-                // §scxml-3.3: Enter initial children (same as External case)
-                enterInitialChildrenIfNeeded(target)
-
-                val leafTarget = activeLeafStatesInDocumentOrder().lastOrNull()
-                    ?: resolveLeafState(target)
-                _currentState.value = leafTarget
-                flushPendingFinalState()
-
-                if (event != null) {
-                    _transitions.tryEmit(
-                        TransitionRecord(source = source, event = event, target = leafTarget, timestamp = nextTimestamp())
-                    )
-                }
-            }
-            is TransitionResult.Internal -> {
-                // §scxml-3.13: type="internal" — actions only (targetless)
-                executeTransitionActions(source, event, result.transitionIndex)
-            }
-            is TransitionResult.Ignored -> {
-                // §scxml-3.12: No matching transition, discard event
-            }
-        }
-    }
-
-    // --- Hierarchical Exit (§scxml-3.4 / §scxml-3.13) ---
-
-    /**
-     * §scxml-3.13: Exit states from source up to the LCCA with target.
-     *
-     * For flat machines (no activeStateIds), exits source only.
-     * For hierarchical machines, computes the proper exit set:
-     * 1. Find LCCA (Least Common Compound Ancestor)
-     * 2. Collect all active states that are descendants of LCCA
-     *    but not the target or its descendants
-     * 3. Sort by reverse document order
-     * 4. Exit each in order
-     *
-     * This matches the W3C SCXML algorithm and correctly handles
-     * parallel state exit ordering.
-     *
-     * Note: Generated onExit() for parallel states also contains descendant
-     * exit logic as a defensive fallback (e.g., when onExit is called directly
-     * outside of exitHierarchy). When called from here, the activeStateIds
-     * check in that generated code ensures no double-exit occurs — descendants
-     * are already removed by the time the parallel state's onExit runs.
-     */
-    private fun exitHierarchy(source: S, target: S, transitionSource: S? = null) {
-        // §scxml-3.13: Unified exit (C++ StaticExecutionEngine pattern)
-        // Step 1: Find LCCA (Least Common Compound Ancestor)
-        // §scxml-3.13: Use transition source (where transition is defined)
-        // for LCCA computation when available, instead of the leaf state.
-        // This ensures correct exit sets for transitions defined on ancestor states.
-        val lccaStart = transitionSource ?: source
-        var lcca: S? = parentOf(lccaStart)
-        while (lcca != null) {
-            // §scxml-3.13: LCCA must be a PROPER ancestor of both source and target.
-            // For external transitions to an ancestor, the ancestor itself is NOT the LCCA
-            // (it must be exited and re-entered).
-            if (isDescendantOf(target, lcca)) break
-            lcca = parentOf(lcca)
-        }
-
-        // Step 2: Collect active states to exit
-        // W3C SCXML: Exit set = all active states that are proper descendants of domain(t)
-        // For external transitions, this includes the target if it's active (it will be re-entered)
-        val statesToExit = mutableListOf<Pair<S, Int>>()
-        for (stateId in activeStateIds.toList()) {
-            val state = resolveState(stateId) ?: continue
-            if (lcca != null) {
-                // Normal case: exit all descendants of LCCA (but not LCCA itself)
-                if (state == lcca) continue
-                if (!isDescendantOf(state, lcca)) continue
-            }
-            // lcca == null: domain is implicit root — exit ALL active states
-            statesToExit.add(state to documentOrderOf(state))
-        }
-
-        // Step 3: Sort by reverse document order (deepest states first)
-        statesToExit.sortByDescending { it.second }
-
-        // Step 4: Exit each
-        for ((state, _) in statesToExit) {
-            // Check still active (may have been removed by a parallel's onExit)
-            val sid = stateIdOf(state)
-            if (sid.isNotEmpty() && activeStateIds.contains(sid)) {
-                onExit(state)
             }
         }
     }
@@ -3843,30 +3205,3 @@ abstract class StateMachineEngine<S : State, E : Event>(
     private var sequenceCounter = 0L
     private fun nextTimestamp(): Long = sequenceCounter++
 }
-
-/**
- * One state-changing transition inside a parallel microstep batch.
- *
- * §scxml-D-microstepProcedure runs exit, transition content and entry as three
- * passes over the SAME batch, so each pass needs what the selection decided
- * rather than what it can re-derive.
- *
- * [domain] travels with the transition because §scxml-D-getTransitionDomain
- * cannot answer it from source and target alone: for an internal transition
- * whose target descends from its compound source, the domain IS that source.
- *
- * [transitionIndex] travels with it for the same reason one step further on —
- * the content pass has to run the content of the transition that was SELECTED,
- * and the only alternative is re-evaluating its `cond`, which is wrong for a
- * guard with a side effect.
- *
- * A named record rather than a four-field tuple: both extra fields are read
- * positionally nowhere, so getting one wrong is a compile error rather than a
- * machine that quietly runs another transition's content.
- */
-private data class BatchedTransition<S>(
-    val source: S,
-    val target: S,
-    val domain: S?,
-    val transitionIndex: Int,
-)

@@ -42,6 +42,13 @@ class NestedFinalNotTerminalStateMachine(
     // as `needs_event_scheduler`.
     override val needsEventScheduler: Boolean = false
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
+
     // W3C SCXML 3.3: State hierarchy parent mapping
     override fun parentOf(state: NestedFinalNotTerminalState): NestedFinalNotTerminalState? = when (state) {
         is NestedFinalNotTerminalState.PhaseDone -> NestedFinalNotTerminalState.Phase
@@ -49,10 +56,62 @@ class NestedFinalNotTerminalStateMachine(
         else -> null
     }
 
-    // W3C SCXML 3.3/3.4: Resolve compound/parallel state to initial leaf state
-    override fun resolveLeafState(state: NestedFinalNotTerminalState): NestedFinalNotTerminalState = when (state) {
-        is NestedFinalNotTerminalState.Phase -> NestedFinalNotTerminalState.Running
-        else -> state
+    // W3C SCXML 3.3: a <state> with child states — exactly the states that
+    // have an initial transition. A <parallel> is not compound.
+    override fun isCompoundState(state: NestedFinalNotTerminalState): Boolean = when (state) {
+        is NestedFinalNotTerminalState.Phase -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: NestedFinalNotTerminalState): Boolean = when (state) {
+        is NestedFinalNotTerminalState.Pass, is NestedFinalNotTerminalState.PhaseDone -> true
+        else -> false
+    }
+
+    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+    // children, in document order — for a <parallel>, its regions.
+    override fun childStatesOf(state: NestedFinalNotTerminalState): List<NestedFinalNotTerminalState> =
+        childStates[state] ?: emptyList()
+
+    // W3C SCXML 3.3: a compound state's initial transition target, as written.
+    override fun initialTargetsOf(state: NestedFinalNotTerminalState): List<EntryTarget<NestedFinalNotTerminalState, HistoryId>> =
+        initialTargets[state] ?: emptyList()
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<NestedFinalNotTerminalState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val childStates: Map<NestedFinalNotTerminalState, List<NestedFinalNotTerminalState>> = mapOf(
+            NestedFinalNotTerminalState.Phase to listOf(NestedFinalNotTerminalState.Running, NestedFinalNotTerminalState.PhaseDone),
+        )
+
+        val initialTargets: Map<NestedFinalNotTerminalState, List<EntryTarget<NestedFinalNotTerminalState, HistoryId>>> = mapOf(
+            NestedFinalNotTerminalState.Phase to listOf(StateTarget(NestedFinalNotTerminalState.Running)),
+        )
+
+        val documentInitialTargetList: List<EntryTarget<NestedFinalNotTerminalState, HistoryId>> =
+            listOf(StateTarget(NestedFinalNotTerminalState.Phase))
+
+        // W3C SCXML 3.13: phase's transition 0, as the microstep reads it.
+        val transitionPhaseAt0 = EnabledTransition<NestedFinalNotTerminalState, HistoryId>(
+            NestedFinalNotTerminalState.Phase,
+            listOf(StateTarget(NestedFinalNotTerminalState.Pass)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: running's transition 0, as the microstep reads it.
+        val transitionRunningAt0 = EnabledTransition<NestedFinalNotTerminalState, HistoryId>(
+            NestedFinalNotTerminalState.Running,
+            listOf(StateTarget(NestedFinalNotTerminalState.PhaseDone)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
     }
 
     // W3C SCXML: Resolve state ID string to State object
@@ -72,14 +131,7 @@ class NestedFinalNotTerminalStateMachine(
         is NestedFinalNotTerminalState.Running -> "running"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: NestedFinalNotTerminalState): Boolean = when (state) {
-        is NestedFinalNotTerminalState.Phase -> false
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: NestedFinalNotTerminalState): Int = when (state) {
         is NestedFinalNotTerminalState.Pass -> 3
         is NestedFinalNotTerminalState.Phase -> 0
@@ -91,82 +143,47 @@ class NestedFinalNotTerminalStateMachine(
 
 
 
-    // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
-    override fun processEvent(
+
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
         state: NestedFinalNotTerminalState,
-        event: NestedFinalNotTerminalEvent
-    ): TransitionResult<NestedFinalNotTerminalState> = when (state) {
-        is NestedFinalNotTerminalState.Phase -> processPhase(event)
-        // W3C SCXML 3.13: Ancestor-only routing (phaseDone has no own event transitions)
-        is NestedFinalNotTerminalState.PhaseDone -> {
-            val anc1 = processPhase(event)
-            if (anc1 !is TransitionResult.Ignored) anc1
-            else TransitionResult.Ignored
+        event: NestedFinalNotTerminalEvent?
+    ): EnabledTransition<NestedFinalNotTerminalState, HistoryId>? = when (state) {
+        is NestedFinalNotTerminalState.Phase -> when {
+            event is NestedFinalNotTerminalEvent.Resume -> transitionPhaseAt0
+            else -> null
         }
-        // W3C SCXML 3.13: Ancestor-only routing (running has no own event transitions)
-        is NestedFinalNotTerminalState.Running -> {
-            val anc1 = processPhase(event)
-            if (anc1 !is TransitionResult.Ignored) anc1
-            else TransitionResult.Ignored
+        is NestedFinalNotTerminalState.Running -> when {
+            event == null -> transitionRunningAt0
+            else -> null
         }
-        else -> TransitionResult.Ignored
+        else -> null
     }
-
-    // W3C SCXML Appendix D: Eventless (null) transition check
-    override fun processNullEvent(
-        state: NestedFinalNotTerminalState
-    ): TransitionResult<NestedFinalNotTerminalState> = when (state) {
-        is NestedFinalNotTerminalState.Running -> processNullRunning()
-        else -> TransitionResult.Ignored
-    }
-
-    // --- Per-State Null (Eventless) Handlers ---
-
-    private fun processNullRunning(
-    ): TransitionResult<NestedFinalNotTerminalState> = when {
-        // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(NestedFinalNotTerminalState.PhaseDone, NestedFinalNotTerminalState.Running, 1)
-    }
-
-    // --- Per-State Event Handlers ---
-
-    private fun processPhase(
-        event: NestedFinalNotTerminalEvent
-    ): TransitionResult<NestedFinalNotTerminalState> = when {
-        event is NestedFinalNotTerminalEvent.Resume -> TransitionResult.External(NestedFinalNotTerminalState.Pass, NestedFinalNotTerminalState.Phase, 0)
-
-        else -> TransitionResult.Ignored
-    }
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: nested_final_not_terminal.scxml:41 :: _machine
-    override fun onEntry(state: NestedFinalNotTerminalState, pathChild: NestedFinalNotTerminalState?) {
+    override fun onEntry(state: NestedFinalNotTerminalState, isDefaultEntry: Boolean) {
         when (state) {
             is NestedFinalNotTerminalState.Pass -> {
                 // SCE-MAP: nested_final_not_terminal.scxml:51 :: pass :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is NestedFinalNotTerminalState.Phase -> {
                 // SCE-MAP: nested_final_not_terminal.scxml:44 :: phase :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("phase")) return
             }
             is NestedFinalNotTerminalState.PhaseDone -> {
                 // SCE-MAP: nested_final_not_terminal.scxml:48 :: phaseDone :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("phaseDone")) return
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
                 raiseInternal(NestedFinalNotTerminalEvent.Done.State.Phase, EventMetadata.platform())
             }
             is NestedFinalNotTerminalState.Running -> {
                 // SCE-MAP: nested_final_not_terminal.scxml:45 :: running :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("running")) return
             }
         }
     }
@@ -177,31 +194,23 @@ class NestedFinalNotTerminalStateMachine(
         when (state) {
             is NestedFinalNotTerminalState.Pass -> {
                 // SCE-MAP: nested_final_not_terminal.scxml:51 :: pass :: _state_body
-                activeStateIds.remove("pass")
             }
             is NestedFinalNotTerminalState.Phase -> {
                 // SCE-MAP: nested_final_not_terminal.scxml:44 :: phase :: _state_body
-                activeStateIds.remove("phase")
             }
             is NestedFinalNotTerminalState.PhaseDone -> {
                 // SCE-MAP: nested_final_not_terminal.scxml:48 :: phaseDone :: _state_body
-                activeStateIds.remove("phaseDone")
             }
             is NestedFinalNotTerminalState.Running -> {
                 // SCE-MAP: nested_final_not_terminal.scxml:45 :: running :: _state_body
-                activeStateIds.remove("running")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: nested_final_not_terminal.scxml:41 :: _machine
-    override fun executeTransitionActions(
-        source: NestedFinalNotTerminalState,
-        event: NestedFinalNotTerminalEvent?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: NestedFinalNotTerminalState, transitionIndex: Int) {
         when (source) {
         else -> {}
         }

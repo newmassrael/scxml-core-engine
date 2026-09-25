@@ -44,7 +44,22 @@ class SessionIdsAreDistinctSceSynthInvokeInvBStateMachine(
         super.enterInitialConfiguration()
     }
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
 
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<SessionIdsAreDistinctSceSynthInvokeInvBState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<SessionIdsAreDistinctSceSynthInvokeInvBState, HistoryId>> =
+            listOf(StateTarget(SessionIdsAreDistinctSceSynthInvokeInvBState.Emit))
+    }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): SessionIdsAreDistinctSceSynthInvokeInvBState? = when (stateId) {
@@ -57,13 +72,7 @@ class SessionIdsAreDistinctSceSynthInvokeInvBStateMachine(
         is SessionIdsAreDistinctSceSynthInvokeInvBState.Emit -> "emit"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: SessionIdsAreDistinctSceSynthInvokeInvBState): Boolean = when (state) {
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: SessionIdsAreDistinctSceSynthInvokeInvBState): Int = when (state) {
         is SessionIdsAreDistinctSceSynthInvokeInvBState.Emit -> 0
     }
@@ -274,31 +283,33 @@ class SessionIdsAreDistinctSceSynthInvokeInvBStateMachine(
     }
 
 
-    // W3C SCXML 3.12: Event processing with script engine condition evaluation
-    override fun processEvent(
-        state: SessionIdsAreDistinctSceSynthInvokeInvBState,
-        event: SessionIdsAreDistinctSceSynthInvokeInvBEvent
-    ): TransitionResult<SessionIdsAreDistinctSceSynthInvokeInvBState> {
-        // W3C SCXML 5.10: Set _event before guard evaluation
+
+    // W3C SCXML 5.10: bind the event as the `_event` its transitions' guards
+    // read — once, before the first guard runs, and not for an eventless
+    // selection, which has no event of its own.
+    override fun bindCurrentEvent(event: SessionIdsAreDistinctSceSynthInvokeInvBEvent) {
         setCurrentEventInScriptEngine(event)
-        return when (state) {
-        else -> TransitionResult.Ignored
-    }
     }
 
-
-    // --- Per-State Event Handlers ---
-
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
+        state: SessionIdsAreDistinctSceSynthInvokeInvBState,
+        event: SessionIdsAreDistinctSceSynthInvokeInvBEvent?
+    ): EnabledTransition<SessionIdsAreDistinctSceSynthInvokeInvBState, HistoryId>? = when (state) {
+        else -> null
+    }
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: session_ids_are_distinct__sce_synth_invoke__inv_b.scxml:3 :: _machine
-    override fun onEntry(state: SessionIdsAreDistinctSceSynthInvokeInvBState, pathChild: SessionIdsAreDistinctSceSynthInvokeInvBState?) {
+    override fun onEntry(state: SessionIdsAreDistinctSceSynthInvokeInvBState, isDefaultEntry: Boolean) {
         when (state) {
             is SessionIdsAreDistinctSceSynthInvokeInvBState.Emit -> {
                 // SCE-MAP: session_ids_are_distinct__sce_synth_invoke__inv_b.scxml:5 :: emit :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("emit")) return
 
 
             // W3C SCXML 5.10: Evaluate params for parent send (test233)
@@ -327,19 +338,14 @@ class SessionIdsAreDistinctSceSynthInvokeInvBStateMachine(
         when (state) {
             is SessionIdsAreDistinctSceSynthInvokeInvBState.Emit -> {
                 // SCE-MAP: session_ids_are_distinct__sce_synth_invoke__inv_b.scxml:5 :: emit :: _state_body
-                activeStateIds.remove("emit")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: session_ids_are_distinct__sce_synth_invoke__inv_b.scxml:3 :: _machine
-    override fun executeTransitionActions(
-        source: SessionIdsAreDistinctSceSynthInvokeInvBState,
-        event: SessionIdsAreDistinctSceSynthInvokeInvBEvent?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: SessionIdsAreDistinctSceSynthInvokeInvBState, transitionIndex: Int) {
         when (source) {
         else -> {}
         }

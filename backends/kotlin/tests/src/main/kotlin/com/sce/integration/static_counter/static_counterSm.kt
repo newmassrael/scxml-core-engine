@@ -87,7 +87,46 @@ class StaticCounterStateMachine(
     // as `needs_event_scheduler`.
     override val needsEventScheduler: Boolean = false
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
 
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: StaticCounterState): Boolean = when (state) {
+        is StaticCounterState.Done -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<StaticCounterState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<StaticCounterState, HistoryId>> =
+            listOf(StateTarget(StaticCounterState.Counting))
+
+        // W3C SCXML 3.13: counting's transition 0, as the microstep reads it.
+        val transitionCountingAt0 = EnabledTransition<StaticCounterState, HistoryId>(
+            StaticCounterState.Counting,
+            emptyList(),
+            0,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: counting's transition 1, as the microstep reads it.
+        val transitionCountingAt1 = EnabledTransition<StaticCounterState, HistoryId>(
+            StaticCounterState.Counting,
+            listOf(StateTarget(StaticCounterState.Done)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+    }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticCounterState? = when (stateId) {
@@ -102,13 +141,7 @@ class StaticCounterStateMachine(
         is StaticCounterState.Done -> "done"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: StaticCounterState): Boolean = when (state) {
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticCounterState): Int = when (state) {
         is StaticCounterState.Counting -> 0
         is StaticCounterState.Done -> 1
@@ -118,44 +151,36 @@ class StaticCounterStateMachine(
 
 
 
-    // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
-    override fun processEvent(
+
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
         state: StaticCounterState,
-        event: StaticCounterEvent
-    ): TransitionResult<StaticCounterState> = when (state) {
-        is StaticCounterState.Counting -> processCounting(event)
-        else -> TransitionResult.Ignored
+        event: StaticCounterEvent?
+    ): EnabledTransition<StaticCounterState, HistoryId>? = when (state) {
+        is StaticCounterState.Counting -> when {
+            event is StaticCounterEvent.Tick && count < 10.toUInt() && isStateActive("counting") -> transitionCountingAt0
+            event is StaticCounterEvent.Go && ready -> transitionCountingAt1
+            else -> null
+        }
+        else -> null
     }
-
-
-    // --- Per-State Event Handlers ---
-
-    private fun processCounting(
-        event: StaticCounterEvent
-    ): TransitionResult<StaticCounterState> = when {
-        event is StaticCounterEvent.Tick && count < 10.toUInt() && isStateActive("counting") -> TransitionResult.Internal(0)
-        event is StaticCounterEvent.Go && ready -> TransitionResult.External(StaticCounterState.Done, StaticCounterState.Counting, 1)
-
-        else -> TransitionResult.Ignored
-    }
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_counter.scxml:13 :: _machine
-    override fun onEntry(state: StaticCounterState, pathChild: StaticCounterState?) {
+    override fun onEntry(state: StaticCounterState, isDefaultEntry: Boolean) {
         when (state) {
             is StaticCounterState.Counting -> {
                 // SCE-MAP: static_counter.scxml:20 :: counting :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("counting")) return
 
             println("count: " + count)
             }
             is StaticCounterState.Done -> {
                 // SCE-MAP: static_counter.scxml:32 :: done :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("done")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
@@ -168,23 +193,17 @@ class StaticCounterStateMachine(
         when (state) {
             is StaticCounterState.Counting -> {
                 // SCE-MAP: static_counter.scxml:20 :: counting :: _state_body
-                activeStateIds.remove("counting")
             }
             is StaticCounterState.Done -> {
                 // SCE-MAP: static_counter.scxml:32 :: done :: _state_body
-                activeStateIds.remove("done")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_counter.scxml:13 :: _machine
-    override fun executeTransitionActions(
-        source: StaticCounterState,
-        event: StaticCounterEvent?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: StaticCounterState, transitionIndex: Int) {
         when (source) {
         is StaticCounterState.Counting -> when (transitionIndex) {
             0 -> {

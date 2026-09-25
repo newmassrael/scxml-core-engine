@@ -60,7 +60,46 @@ class UnseenEventIsReportedStateMachine(
         super.enterInitialConfiguration()
     }
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
 
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: UnseenEventIsReportedState): Boolean = when (state) {
+        is UnseenEventIsReportedState.Done -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<UnseenEventIsReportedState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<UnseenEventIsReportedState, HistoryId>> =
+            listOf(StateTarget(UnseenEventIsReportedState.Working))
+
+        // W3C SCXML 3.13: working's transition 0, as the microstep reads it.
+        val transitionWorkingAt0 = EnabledTransition<UnseenEventIsReportedState, HistoryId>(
+            UnseenEventIsReportedState.Working,
+            emptyList(),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: working's transition 1, as the microstep reads it.
+        val transitionWorkingAt1 = EnabledTransition<UnseenEventIsReportedState, HistoryId>(
+            UnseenEventIsReportedState.Working,
+            listOf(StateTarget(UnseenEventIsReportedState.Done)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+    }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): UnseenEventIsReportedState? = when (stateId) {
@@ -75,13 +114,7 @@ class UnseenEventIsReportedStateMachine(
         is UnseenEventIsReportedState.Working -> "working"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: UnseenEventIsReportedState): Boolean = when (state) {
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: UnseenEventIsReportedState): Int = when (state) {
         is UnseenEventIsReportedState.Done -> 1
         is UnseenEventIsReportedState.Working -> 0
@@ -302,49 +335,43 @@ class UnseenEventIsReportedStateMachine(
     }
 
 
-    // W3C SCXML 3.12: Event processing with script engine condition evaluation
-    override fun processEvent(
-        state: UnseenEventIsReportedState,
-        event: UnseenEventIsReportedEvent
-    ): TransitionResult<UnseenEventIsReportedState> {
-        // W3C SCXML 5.10: Set _event before guard evaluation
+
+    // W3C SCXML 5.10: bind the event as the `_event` its transitions' guards
+    // read — once, before the first guard runs, and not for an eventless
+    // selection, which has no event of its own.
+    override fun bindCurrentEvent(event: UnseenEventIsReportedEvent) {
         setCurrentEventInScriptEngine(event)
-        return when (state) {
-        is UnseenEventIsReportedState.Working -> processWorking(event)
-        else -> TransitionResult.Ignored
-    }
     }
 
-
-    // --- Per-State Event Handlers ---
-
-    private fun processWorking(
-        event: UnseenEventIsReportedEvent
-    ): TransitionResult<UnseenEventIsReportedState> = when {
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is UnseenEventIsReportedEvent.Poke -> TransitionResult.Internal(0)
-        event is UnseenEventIsReportedEvent.Finish -> TransitionResult.External(UnseenEventIsReportedState.Done, UnseenEventIsReportedState.Working, 1)
-
-        else -> TransitionResult.Ignored
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
+        state: UnseenEventIsReportedState,
+        event: UnseenEventIsReportedEvent?
+    ): EnabledTransition<UnseenEventIsReportedState, HistoryId>? = when (state) {
+        is UnseenEventIsReportedState.Working -> when {
+            event is UnseenEventIsReportedEvent.Poke -> transitionWorkingAt0
+            event is UnseenEventIsReportedEvent.Finish -> transitionWorkingAt1
+            else -> null
+        }
+        else -> null
     }
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: unseen_event_is_reported.scxml:41 :: _machine
-    override fun onEntry(state: UnseenEventIsReportedState, pathChild: UnseenEventIsReportedState?) {
+    override fun onEntry(state: UnseenEventIsReportedState, isDefaultEntry: Boolean) {
         when (state) {
             is UnseenEventIsReportedState.Done -> {
                 // SCE-MAP: unseen_event_is_reported.scxml:53 :: done :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("done")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is UnseenEventIsReportedState.Working -> {
                 // SCE-MAP: unseen_event_is_reported.scxml:47 :: working :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("working")) return
             }
         }
     }
@@ -355,23 +382,17 @@ class UnseenEventIsReportedStateMachine(
         when (state) {
             is UnseenEventIsReportedState.Done -> {
                 // SCE-MAP: unseen_event_is_reported.scxml:53 :: done :: _state_body
-                activeStateIds.remove("done")
             }
             is UnseenEventIsReportedState.Working -> {
                 // SCE-MAP: unseen_event_is_reported.scxml:47 :: working :: _state_body
-                activeStateIds.remove("working")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: unseen_event_is_reported.scxml:41 :: _machine
-    override fun executeTransitionActions(
-        source: UnseenEventIsReportedState,
-        event: UnseenEventIsReportedEvent?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: UnseenEventIsReportedState, transitionIndex: Int) {
         when (source) {
         is UnseenEventIsReportedState.Working -> when (transitionIndex) {
             0 -> {

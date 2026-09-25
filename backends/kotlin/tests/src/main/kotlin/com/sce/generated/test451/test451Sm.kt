@@ -38,6 +38,13 @@ class Test451StateMachine(
     // as `needs_event_scheduler`.
     override val needsEventScheduler: Boolean = false
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
+
     // W3C SCXML 3.3: State hierarchy parent mapping
     override fun parentOf(state: Test451State): Test451State? = when (state) {
         is Test451State.S0 -> Test451State.P
@@ -45,10 +52,53 @@ class Test451StateMachine(
         else -> null
     }
 
-    // W3C SCXML 3.3/3.4: Resolve compound/parallel state to initial leaf state
-    override fun resolveLeafState(state: Test451State): Test451State = when (state) {
-        is Test451State.P -> Test451State.S0
-        else -> state
+    // W3C SCXML 3.4: Check if state is a parallel state
+    override fun isParallelState(state: Test451State): Boolean = when (state) {
+        is Test451State.P -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: Test451State): Boolean = when (state) {
+        is Test451State.Fail, is Test451State.Pass -> true
+        else -> false
+    }
+
+    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+    // children, in document order — for a <parallel>, its regions.
+    override fun childStatesOf(state: Test451State): List<Test451State> =
+        childStates[state] ?: emptyList()
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<Test451State, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val childStates: Map<Test451State, List<Test451State>> = mapOf(
+            Test451State.P to listOf(Test451State.S0, Test451State.S1),
+        )
+
+        val documentInitialTargetList: List<EntryTarget<Test451State, HistoryId>> =
+            listOf(StateTarget(Test451State.P))
+
+        // W3C SCXML 3.13: s0's transition 0, as the microstep reads it.
+        val transitionS0At0 = EnabledTransition<Test451State, HistoryId>(
+            Test451State.S0,
+            listOf(StateTarget(Test451State.Pass)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: s0's transition 1, as the microstep reads it.
+        val transitionS0At1 = EnabledTransition<Test451State, HistoryId>(
+            Test451State.S0,
+            listOf(StateTarget(Test451State.Fail)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
     }
 
     // W3C SCXML: Resolve state ID string to State object
@@ -70,25 +120,7 @@ class Test451StateMachine(
         is Test451State.S1 -> "s1"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: Test451State): Boolean = when (state) {
-        is Test451State.P -> false
-        else -> true
-    }
-
-    // W3C SCXML 3.4: Check if state is a parallel state
-    override fun isParallelState(state: Test451State): Boolean = when (state) {
-        is Test451State.P -> true
-        else -> false
-    }
-
-    // W3C SCXML 3.4: Get child regions of a parallel state (C++ getParallelRegions pattern)
-    override fun getParallelRegions(state: Test451State): List<Test451State> = when (state) {
-        is Test451State.P -> listOf(Test451State.S0, Test451State.S1)
-        else -> emptyList()
-    }
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: Test451State): Int = when (state) {
         is Test451State.Fail -> 4
         is Test451State.P -> 0
@@ -101,79 +133,47 @@ class Test451StateMachine(
 
 
 
-    // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
-    override fun processEvent(
+
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
         state: Test451State,
-        event: Test451Event
-    ): TransitionResult<Test451State> = when (state) {
-        else -> TransitionResult.Ignored
+        event: Test451Event?
+    ): EnabledTransition<Test451State, HistoryId>? = when (state) {
+        is Test451State.S0 -> when {
+            event == null && isStateActive("s1") -> transitionS0At0
+            event == null -> transitionS0At1
+            else -> null
+        }
+        else -> null
     }
-
-    // W3C SCXML Appendix D: Eventless (null) transition check
-    override fun processNullEvent(
-        state: Test451State
-    ): TransitionResult<Test451State> = when (state) {
-        is Test451State.S0 -> processNullS0()
-        else -> TransitionResult.Ignored
-    }
-
-    // --- Per-State Null (Eventless) Handlers ---
-
-    private fun processNullS0(
-    ): TransitionResult<Test451State> = when {
-        isStateActive("s1") -> TransitionResult.External(Test451State.Pass, Test451State.S0, 0)
-        // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test451State.Fail, Test451State.S0, 1)
-    }
-
-    // --- Per-State Event Handlers ---
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test451.scxml:5 :: _machine
-    override fun onEntry(state: Test451State, pathChild: Test451State?) {
+    override fun onEntry(state: Test451State, isDefaultEntry: Boolean) {
         when (state) {
             is Test451State.Fail -> {
                 // SCE-MAP: test451.scxml:19 :: fail :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test451State.P -> {
                 // SCE-MAP: test451.scxml:8 :: p :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("p")) return
-                // W3C SCXML 3.4 + §scxml-D-addDescendantStatesToEnter: a
-                // `<parallel>` hands out defaults even when it is only an
-                // ancestor — Appendix D's one exception to the ancestor rule.
-                // The exception has its own exception: not the region the entry
-                // set is already descending into, which `pathChild` names and
-                // which the caller enters with the target's own path.
-                if (pathChild != Test451State.S0) {
-                    onEntry(Test451State.S0)
-                }
-                if (pathChild != Test451State.S1) {
-                    onEntry(Test451State.S1)
-                }
             }
             is Test451State.Pass -> {
                 // SCE-MAP: test451.scxml:18 :: pass :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test451State.S0 -> {
                 // SCE-MAP: test451.scxml:10 :: s0 :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("s0")) return
             }
             is Test451State.S1 -> {
                 // SCE-MAP: test451.scxml:15 :: s1 :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("s1")) return
             }
         }
     }
@@ -184,51 +184,26 @@ class Test451StateMachine(
         when (state) {
             is Test451State.Fail -> {
                 // SCE-MAP: test451.scxml:19 :: fail :: _state_body
-                activeStateIds.remove("fail")
             }
             is Test451State.P -> {
                 // SCE-MAP: test451.scxml:8 :: p :: _state_body
-                // W3C SCXML 3.4/3.13: Exit active descendants of parallel state
-                // in reverse document order (deepest states exit first).
-                // Defensive: when called from exitHierarchy, descendants are already
-                // exited and removed from activeStateIds — the contains() checks below
-                // prevent double-exit. This code is needed for direct onExit() calls.
-                val toExit = mutableListOf<Pair<Test451State, Int>>()
-                if (activeStateIds.contains("s0")) {
-                    toExit.add(Test451State.S0 to 1)
-                }
-                if (activeStateIds.contains("s1")) {
-                    toExit.add(Test451State.S1 to 2)
-                }
-                toExit.sortByDescending { it.second }
-                for ((desc, _) in toExit) {
-                    onExit(desc)
-                }
-                activeStateIds.remove("p")
             }
             is Test451State.Pass -> {
                 // SCE-MAP: test451.scxml:18 :: pass :: _state_body
-                activeStateIds.remove("pass")
             }
             is Test451State.S0 -> {
                 // SCE-MAP: test451.scxml:10 :: s0 :: _state_body
-                activeStateIds.remove("s0")
             }
             is Test451State.S1 -> {
                 // SCE-MAP: test451.scxml:15 :: s1 :: _state_body
-                activeStateIds.remove("s1")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: test451.scxml:5 :: _machine
-    override fun executeTransitionActions(
-        source: Test451State,
-        event: Test451Event?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: Test451State, transitionIndex: Int) {
         when (source) {
         else -> {}
         }

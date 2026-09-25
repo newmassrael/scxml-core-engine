@@ -45,7 +45,37 @@ class EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedStateMachine(
         super.enterInitialConfiguration()
     }
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
 
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState): Boolean = when (state) {
+        is EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState.Done -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState, HistoryId>> =
+            listOf(StateTarget(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState.Answer))
+
+        // W3C SCXML 3.13: answer's transition 0, as the microstep reads it.
+        val transitionAnswerAt0 = EnabledTransition<EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState, HistoryId>(
+            EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState.Answer,
+            listOf(StateTarget(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState.Done)),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+    }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState? = when (stateId) {
@@ -60,13 +90,7 @@ class EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedStateMachine(
         is EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState.Done -> "done"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState): Boolean = when (state) {
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState): Int = when (state) {
         is EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState.Answer -> 0
         is EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState.Done -> 1
@@ -283,51 +307,40 @@ class EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedStateMachine(
     }
 
 
-    // W3C SCXML 3.12: Event processing with script engine condition evaluation
-    override fun processEvent(
-        state: EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState,
-        event: EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedEvent
-    ): TransitionResult<EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState> {
-        // W3C SCXML 5.10: Set _event before guard evaluation
+
+    // W3C SCXML 5.10: bind the event as the `_event` its transitions' guards
+    // read — once, before the first guard runs, and not for an eventless
+    // selection, which has no event of its own.
+    override fun bindCurrentEvent(event: EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedEvent) {
         setCurrentEventInScriptEngine(event)
-        return when (state) {
-        else -> TransitionResult.Ignored
-    }
     }
 
-    // W3C SCXML Appendix D: Eventless (null) transition check
-    override fun processNullEvent(
-        state: EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState
-    ): TransitionResult<EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState> = when (state) {
-        is EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState.Answer -> processNullAnswer()
-        else -> TransitionResult.Ignored
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
+        state: EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState,
+        event: EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedEvent?
+    ): EnabledTransition<EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState, HistoryId>? = when (state) {
+        is EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState.Answer -> when {
+            event == null -> transitionAnswerAt0
+            else -> null
+        }
+        else -> null
     }
-
-    // --- Per-State Null (Eventless) Handlers ---
-
-    private fun processNullAnswer(
-    ): TransitionResult<EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState> = when {
-        // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState.Done, EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState.Answer, 0)
-    }
-
-    // --- Per-State Event Handlers ---
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: empty_finalize_updates_the_location__sce_synth_invoke__inv_unmatched.scxml:3 :: _machine
-    override fun onEntry(state: EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState, pathChild: EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState?) {
+    override fun onEntry(state: EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState, isDefaultEntry: Boolean) {
         when (state) {
             is EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState.Answer -> {
                 // SCE-MAP: empty_finalize_updates_the_location__sce_synth_invoke__inv_unmatched.scxml:8 :: answer :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("answer")) return
             }
             is EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState.Done -> {
                 // SCE-MAP: empty_finalize_updates_the_location__sce_synth_invoke__inv_unmatched.scxml:18 :: done :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("done")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
@@ -340,23 +353,17 @@ class EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedStateMachine(
         when (state) {
             is EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState.Answer -> {
                 // SCE-MAP: empty_finalize_updates_the_location__sce_synth_invoke__inv_unmatched.scxml:8 :: answer :: _state_body
-                activeStateIds.remove("answer")
             }
             is EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState.Done -> {
                 // SCE-MAP: empty_finalize_updates_the_location__sce_synth_invoke__inv_unmatched.scxml:18 :: done :: _state_body
-                activeStateIds.remove("done")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: empty_finalize_updates_the_location__sce_synth_invoke__inv_unmatched.scxml:3 :: _machine
-    override fun executeTransitionActions(
-        source: EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState,
-        event: EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedEvent?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState, transitionIndex: Int) {
         when (source) {
         is EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState.Answer -> when (transitionIndex) {
             0 -> {

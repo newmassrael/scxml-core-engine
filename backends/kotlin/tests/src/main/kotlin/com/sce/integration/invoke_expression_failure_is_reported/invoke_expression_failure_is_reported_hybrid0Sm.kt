@@ -34,7 +34,27 @@ class InvokeExpressionFailureIsReportedHybrid0StateMachine(
     // as `needs_event_scheduler`.
     override val needsEventScheduler: Boolean = false
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
 
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: InvokeExpressionFailureIsReportedHybrid0State): Boolean = when (state) {
+        is InvokeExpressionFailureIsReportedHybrid0State.Final -> true
+    }
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<InvokeExpressionFailureIsReportedHybrid0State, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<InvokeExpressionFailureIsReportedHybrid0State, HistoryId>> =
+            listOf(StateTarget(InvokeExpressionFailureIsReportedHybrid0State.Final))
+    }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): InvokeExpressionFailureIsReportedHybrid0State? = when (stateId) {
@@ -47,13 +67,7 @@ class InvokeExpressionFailureIsReportedHybrid0StateMachine(
         is InvokeExpressionFailureIsReportedHybrid0State.Final -> "final"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: InvokeExpressionFailureIsReportedHybrid0State): Boolean = when (state) {
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: InvokeExpressionFailureIsReportedHybrid0State): Int = when (state) {
         is InvokeExpressionFailureIsReportedHybrid0State.Final -> 0
     }
@@ -76,27 +90,26 @@ class InvokeExpressionFailureIsReportedHybrid0StateMachine(
 
 
 
-    // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
-    override fun processEvent(
+
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
         state: InvokeExpressionFailureIsReportedHybrid0State,
-        event: InvokeExpressionFailureIsReportedHybrid0Event
-    ): TransitionResult<InvokeExpressionFailureIsReportedHybrid0State> = when (state) {
-        else -> TransitionResult.Ignored
+        event: InvokeExpressionFailureIsReportedHybrid0Event?
+    ): EnabledTransition<InvokeExpressionFailureIsReportedHybrid0State, HistoryId>? = when (state) {
+        else -> null
     }
-
-
-    // --- Per-State Event Handlers ---
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: invoke_expression_failure_is_reported_hybrid0.scxml:2 :: _machine
-    override fun onEntry(state: InvokeExpressionFailureIsReportedHybrid0State, pathChild: InvokeExpressionFailureIsReportedHybrid0State?) {
+    override fun onEntry(state: InvokeExpressionFailureIsReportedHybrid0State, isDefaultEntry: Boolean) {
         when (state) {
             is InvokeExpressionFailureIsReportedHybrid0State.Final -> {
                 // SCE-MAP: invoke_expression_failure_is_reported_hybrid0.scxml:3 :: final :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("final")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
@@ -109,19 +122,14 @@ class InvokeExpressionFailureIsReportedHybrid0StateMachine(
         when (state) {
             is InvokeExpressionFailureIsReportedHybrid0State.Final -> {
                 // SCE-MAP: invoke_expression_failure_is_reported_hybrid0.scxml:3 :: final :: _state_body
-                activeStateIds.remove("final")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: invoke_expression_failure_is_reported_hybrid0.scxml:2 :: _machine
-    override fun executeTransitionActions(
-        source: InvokeExpressionFailureIsReportedHybrid0State,
-        event: InvokeExpressionFailureIsReportedHybrid0Event?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: InvokeExpressionFailureIsReportedHybrid0State, transitionIndex: Int) {
         when (source) {
         else -> {}
         }

@@ -46,7 +46,64 @@ class AutoforwardDequeuePointSceSynthInvokeInvProbeStateMachine(
     // as `needs_event_scheduler`.
     override val needsEventScheduler: Boolean = false
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
 
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: AutoforwardDequeuePointSceSynthInvokeInvProbeState): Boolean = when (state) {
+        is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Early, is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Ordered -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<AutoforwardDequeuePointSceSynthInvokeInvProbeState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<AutoforwardDequeuePointSceSynthInvokeInvProbeState, HistoryId>> =
+            listOf(StateTarget(AutoforwardDequeuePointSceSynthInvokeInvProbeState.Probe))
+
+        // W3C SCXML 3.13: awaiting's transition 0, as the microstep reads it.
+        val transitionAwaitingAt0 = EnabledTransition<AutoforwardDequeuePointSceSynthInvokeInvProbeState, HistoryId>(
+            AutoforwardDequeuePointSceSynthInvokeInvProbeState.Awaiting,
+            listOf(StateTarget(AutoforwardDequeuePointSceSynthInvokeInvProbeState.Marked)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: awaiting's transition 1, as the microstep reads it.
+        val transitionAwaitingAt1 = EnabledTransition<AutoforwardDequeuePointSceSynthInvokeInvProbeState, HistoryId>(
+            AutoforwardDequeuePointSceSynthInvokeInvProbeState.Awaiting,
+            listOf(StateTarget(AutoforwardDequeuePointSceSynthInvokeInvProbeState.Early)),
+            1,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: marked's transition 0, as the microstep reads it.
+        val transitionMarkedAt0 = EnabledTransition<AutoforwardDequeuePointSceSynthInvokeInvProbeState, HistoryId>(
+            AutoforwardDequeuePointSceSynthInvokeInvProbeState.Marked,
+            listOf(StateTarget(AutoforwardDequeuePointSceSynthInvokeInvProbeState.Ordered)),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: probe's transition 0, as the microstep reads it.
+        val transitionProbeAt0 = EnabledTransition<AutoforwardDequeuePointSceSynthInvokeInvProbeState, HistoryId>(
+            AutoforwardDequeuePointSceSynthInvokeInvProbeState.Probe,
+            listOf(StateTarget(AutoforwardDequeuePointSceSynthInvokeInvProbeState.Awaiting)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+    }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): AutoforwardDequeuePointSceSynthInvokeInvProbeState? = when (stateId) {
@@ -67,13 +124,7 @@ class AutoforwardDequeuePointSceSynthInvokeInvProbeStateMachine(
         is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Probe -> "probe"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: AutoforwardDequeuePointSceSynthInvokeInvProbeState): Boolean = when (state) {
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: AutoforwardDequeuePointSceSynthInvokeInvProbeState): Int = when (state) {
         is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Awaiting -> 1
         is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Early -> 3
@@ -108,80 +159,55 @@ class AutoforwardDequeuePointSceSynthInvokeInvProbeStateMachine(
 
 
 
-    // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
-    override fun processEvent(
+
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
         state: AutoforwardDequeuePointSceSynthInvokeInvProbeState,
-        event: AutoforwardDequeuePointSceSynthInvokeInvProbeEvent
-    ): TransitionResult<AutoforwardDequeuePointSceSynthInvokeInvProbeState> = when (state) {
-        is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Awaiting -> processAwaiting(event)
-        is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Marked -> processMarked(event)
-        is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Probe -> processProbe(event)
-        else -> TransitionResult.Ignored
+        event: AutoforwardDequeuePointSceSynthInvokeInvProbeEvent?
+    ): EnabledTransition<AutoforwardDequeuePointSceSynthInvokeInvProbeState, HistoryId>? = when (state) {
+        is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Awaiting -> when {
+            event is AutoforwardDequeuePointSceSynthInvokeInvProbeEvent.Mark -> transitionAwaitingAt0
+            event is AutoforwardDequeuePointSceSynthInvokeInvProbeEvent.Second -> transitionAwaitingAt1
+            else -> null
+        }
+        is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Marked -> when {
+            event is AutoforwardDequeuePointSceSynthInvokeInvProbeEvent.Second -> transitionMarkedAt0
+            else -> null
+        }
+        is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Probe -> when {
+            event is AutoforwardDequeuePointSceSynthInvokeInvProbeEvent.First -> transitionProbeAt0
+            else -> null
+        }
+        else -> null
     }
-
-
-    // --- Per-State Event Handlers ---
-
-    private fun processAwaiting(
-        event: AutoforwardDequeuePointSceSynthInvokeInvProbeEvent
-    ): TransitionResult<AutoforwardDequeuePointSceSynthInvokeInvProbeState> = when {
-        event is AutoforwardDequeuePointSceSynthInvokeInvProbeEvent.Mark -> TransitionResult.External(AutoforwardDequeuePointSceSynthInvokeInvProbeState.Marked, AutoforwardDequeuePointSceSynthInvokeInvProbeState.Awaiting, 0)
-
-        event is AutoforwardDequeuePointSceSynthInvokeInvProbeEvent.Second -> TransitionResult.External(AutoforwardDequeuePointSceSynthInvokeInvProbeState.Early, AutoforwardDequeuePointSceSynthInvokeInvProbeState.Awaiting, 1)
-
-        else -> TransitionResult.Ignored
-    }
-
-    private fun processMarked(
-        event: AutoforwardDequeuePointSceSynthInvokeInvProbeEvent
-    ): TransitionResult<AutoforwardDequeuePointSceSynthInvokeInvProbeState> = when {
-        event is AutoforwardDequeuePointSceSynthInvokeInvProbeEvent.Second -> TransitionResult.External(AutoforwardDequeuePointSceSynthInvokeInvProbeState.Ordered, AutoforwardDequeuePointSceSynthInvokeInvProbeState.Marked, 2)
-
-        else -> TransitionResult.Ignored
-    }
-
-    private fun processProbe(
-        event: AutoforwardDequeuePointSceSynthInvokeInvProbeEvent
-    ): TransitionResult<AutoforwardDequeuePointSceSynthInvokeInvProbeState> = when {
-        event is AutoforwardDequeuePointSceSynthInvokeInvProbeEvent.First -> TransitionResult.External(AutoforwardDequeuePointSceSynthInvokeInvProbeState.Awaiting, AutoforwardDequeuePointSceSynthInvokeInvProbeState.Probe, 3)
-
-        else -> TransitionResult.Ignored
-    }
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:3 :: _machine
-    override fun onEntry(state: AutoforwardDequeuePointSceSynthInvokeInvProbeState, pathChild: AutoforwardDequeuePointSceSynthInvokeInvProbeState?) {
+    override fun onEntry(state: AutoforwardDequeuePointSceSynthInvokeInvProbeState, isDefaultEntry: Boolean) {
         when (state) {
             is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Awaiting -> {
                 // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:11 :: awaiting :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("awaiting")) return
             }
             is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Early -> {
                 // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:22 :: early :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("early")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Marked -> {
                 // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:17 :: marked :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("marked")) return
             }
             is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Ordered -> {
                 // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:23 :: ordered :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("ordered")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Probe -> {
                 // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:5 :: probe :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("probe")) return
 
 
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
@@ -196,35 +222,26 @@ class AutoforwardDequeuePointSceSynthInvokeInvProbeStateMachine(
         when (state) {
             is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Awaiting -> {
                 // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:11 :: awaiting :: _state_body
-                activeStateIds.remove("awaiting")
             }
             is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Early -> {
                 // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:22 :: early :: _state_body
-                activeStateIds.remove("early")
             }
             is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Marked -> {
                 // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:17 :: marked :: _state_body
-                activeStateIds.remove("marked")
             }
             is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Ordered -> {
                 // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:23 :: ordered :: _state_body
-                activeStateIds.remove("ordered")
             }
             is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Probe -> {
                 // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:5 :: probe :: _state_body
-                activeStateIds.remove("probe")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:3 :: _machine
-    override fun executeTransitionActions(
-        source: AutoforwardDequeuePointSceSynthInvokeInvProbeState,
-        event: AutoforwardDequeuePointSceSynthInvokeInvProbeEvent?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: AutoforwardDequeuePointSceSynthInvokeInvProbeState, transitionIndex: Int) {
         when (source) {
         is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Awaiting -> when (transitionIndex) {
             1 -> {
@@ -237,7 +254,7 @@ class AutoforwardDequeuePointSceSynthInvokeInvProbeStateMachine(
             else -> {}
         }
         is AutoforwardDequeuePointSceSynthInvokeInvProbeState.Marked -> when (transitionIndex) {
-            2 -> {
+            0 -> {
                 // SCE-MAP: autoforward_dequeue_point__sce_synth_invoke__inv_probe.scxml:18 :: marked :: _transition_0
 
 
