@@ -275,6 +275,9 @@ fn transpile_at(
     // `Raw` arm of `infer_types` already documents).
     resolve_then_rename(&mut ast, ctx, renames, target, &[], expr)?;
     judge_value(&ast, slot, expr)?;
+    if ctx.checked_arithmetic {
+        check_integer_arithmetic(&mut ast, expected);
+    }
 
     // RFC c7-wildcard W-project: Go exports struct fields in PascalCase
     // (the `codec_field_id` SSOT). Inside an algorithm body every member
@@ -390,6 +393,9 @@ pub(crate) fn transpile_typed_with_import_lowering(
     let mut ast = parse_to_ast(expr)?;
     resolve_then_rename(&mut ast, ctx, renames, ExprTarget::C, lowerings, expr)?;
     judge_value(&ast, expected, expr)?;
+    if ctx.checked_arithmetic {
+        check_integer_arithmetic(&mut ast, expected.ty());
+    }
     Ok(emit_c(&ast, expected.ty())?)
 }
 
@@ -505,7 +511,7 @@ pub(crate) fn host_only_call(target: &str, slot: &str, observed: Option<String>)
     ExprError::UnsupportedConstruct {
         construct: format!(
             "a call to algorithm `{target}`, which {slot} \
-             (v1: only a host calls an algorithm with a list<T> or record slot)"
+             (v1: only a host calls such an algorithm)"
         ),
         observed,
     }
@@ -601,6 +607,14 @@ fn reject_out_of_range_literals(
             reject_out_of_range_literals(of, InferredType::Unknown, source)?;
             match len {
                 Some(len) => reject_out_of_range_literals(len, InferredType::Unknown, source),
+                None => Ok(()),
+            }
+        }
+        // Its operands are checked at the operation's own type.
+        ExprKind::Checked { left, right, .. } => {
+            reject_out_of_range_literals(left, ast.ty, source)?;
+            match right {
+                Some(right) => reject_out_of_range_literals(right, ast.ty, source),
                 None => Ok(()),
             }
         }
@@ -963,6 +977,12 @@ fn lower_stateful_import_calls(ast: &mut TypedExpr, lowerings: &[ImportLowering]
                 lower_stateful_import_calls(len, lowerings);
             }
         }
+        ExprKind::Checked { left, right, .. } => {
+            lower_stateful_import_calls(left, lowerings);
+            if let Some(right) = right {
+                lower_stateful_import_calls(right, lowerings);
+            }
+        }
         ExprKind::Raw(_)
         | ExprKind::Ident(_)
         | ExprKind::NumberLit(_)
@@ -1221,6 +1241,7 @@ fn shape_name(kind: &ExprKind) -> &'static str {
         ExprKind::Index { .. } => "index expression",
         ExprKind::Call { .. } => "call expression",
         ExprKind::BytesView { .. } => "bytes-view projection",
+        ExprKind::Checked { .. } => "checked integer operation",
     }
 }
 
@@ -1288,6 +1309,40 @@ impl TypedExpr {
             ExprKind::BytesView { source, len } => {
                 std::iter::once(&**source).chain(len.as_deref()).collect()
             }
+            ExprKind::Checked { left, right, .. } => {
+                std::iter::once(&**left).chain(right.as_deref()).collect()
+            }
+        }
+    }
+
+    /// [`children`](Self::children), for a pass that rewrites them.
+    pub(crate) fn children_mut(&mut self) -> Vec<&mut TypedExpr> {
+        match &mut self.kind {
+            ExprKind::NumberLit(_)
+            | ExprKind::StringLit { .. }
+            | ExprKind::BytesLit { .. }
+            | ExprKind::BoolLit(_)
+            | ExprKind::NullLit
+            | ExprKind::Ident(_)
+            | ExprKind::Raw(_) => Vec::new(),
+            ExprKind::Binary { left, right, .. } => vec![left, right],
+            ExprKind::Unary { operand, .. } => vec![operand],
+            ExprKind::Conditional {
+                condition,
+                consequent,
+                alternate,
+            } => vec![condition, consequent, alternate],
+            ExprKind::Member { object, .. } => vec![object],
+            ExprKind::Index { object, index } => vec![object, index],
+            ExprKind::Call { callee, args, .. } => std::iter::once(&mut **callee)
+                .chain(args.iter_mut())
+                .collect(),
+            ExprKind::BytesView { source, len } => std::iter::once(&mut **source)
+                .chain(len.as_deref_mut())
+                .collect(),
+            ExprKind::Checked { left, right, .. } => std::iter::once(&mut **left)
+                .chain(right.as_deref_mut())
+                .collect(),
         }
     }
 }
@@ -1399,6 +1454,148 @@ pub(crate) enum ExprKind {
         /// falls back to the `<src>_len` sibling convention.
         len: Option<Box<TypedExpr>>,
     },
+    /// An integer operation that can fail, in an algorithm that declares
+    /// `may-fail` (SCE_FORGE.md §3.4.1, the integer arithmetic contract):
+    /// an overflow of the node's type, a division by zero, or a signed
+    /// `MIN / -1` hands a failure to the caller instead of a value.
+    ///
+    /// A rewrite of a `Binary` or `Unary` node ([`check_integer_arithmetic`])
+    /// run once the tree is judged and renamed, just before emission, so
+    /// every pass that reads arithmetic — inference, the range analysis in
+    /// [`crate::forge::int_ranges`], the literal checks — sees the operators
+    /// the author wrote. The node's `ty` is the integer type the operation
+    /// is checked at; `right` is `None` for a negation.
+    Checked {
+        op: CheckedOp,
+        left: Box<TypedExpr>,
+        right: Option<Box<TypedExpr>>,
+    },
+}
+
+/// The integer operations [`ExprKind::Checked`] carries — exactly those the
+/// integer arithmetic contract names (SCE_FORGE.md §3.4.1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CheckedOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Rem,
+    Neg,
+}
+
+impl CheckedOp {
+    fn of_binary(op: BinOp) -> Option<Self> {
+        Some(match op {
+            BinOp::Add => Self::Add,
+            BinOp::Sub => Self::Sub,
+            BinOp::Mul => Self::Mul,
+            BinOp::Div => Self::Div,
+            BinOp::Mod => Self::Rem,
+            _ => return None,
+        })
+    }
+
+    /// The runtime helper's name — one spelling every backend's checked
+    /// arithmetic helpers share.
+    pub(crate) fn helper(self) -> &'static str {
+        match self {
+            Self::Add => "add",
+            Self::Sub => "sub",
+            Self::Mul => "mul",
+            Self::Div => "div",
+            Self::Rem => "rem",
+            Self::Neg => "neg",
+        }
+    }
+}
+
+/// The refusal of an [`ExprKind::Checked`] node by an emitter that has not
+/// learned the checked lowering. `render_algorithm`'s `MAY_FAIL_BACKENDS`
+/// gate refuses such an algorithm first, so this is the second line: an
+/// emitter reached some other way still says so instead of emitting an
+/// unchecked operation.
+fn checked_arithmetic_unlowered(backend: &str) -> ExprError {
+    ExprError::UnsupportedConstruct {
+        construct: format!(
+            "a checked integer operation (an algorithm declaring may-fail) on the \
+             {backend} backend, which does not lower one yet"
+        ),
+        observed: None,
+    }
+}
+
+/// Rewrite every integer `+ - * / %` and unary `-` of `node` into an
+/// [`ExprKind::Checked`] node (SCE_FORGE.md §3.4.1).
+///
+/// Only an operation whose type is a declared integer width is rewritten:
+/// an operation on two literals has no width until it lands, and a real or
+/// a string operation has no failure to check. Nor is one in float context
+/// — `expected` a real, pushed down through arithmetic as every emitter
+/// pushes it — which divides and multiplies as reals (§3.4.1's table).
+pub(crate) fn check_integer_arithmetic(node: &mut TypedExpr, expected: InferredType) {
+    let float_context = matches!(expected, InferredType::Float { .. });
+    match &mut node.kind {
+        ExprKind::Binary { op, left, right } => {
+            let inner = if float_context && op.is_arith() {
+                expected
+            } else {
+                InferredType::Unknown
+            };
+            check_integer_arithmetic(left, inner);
+            check_integer_arithmetic(right, inner);
+        }
+        ExprKind::Unary { op, operand } => {
+            let inner = if float_context && matches!(op, UnaryOp::Neg | UnaryOp::Pos) {
+                expected
+            } else {
+                InferredType::Unknown
+            };
+            check_integer_arithmetic(operand, inner);
+        }
+        // Every other child is emitted at its own type, whatever the
+        // enclosing context expects.
+        ExprKind::Conditional { .. }
+        | ExprKind::Member { .. }
+        | ExprKind::Index { .. }
+        | ExprKind::Call { .. }
+        | ExprKind::BytesView { .. }
+        | ExprKind::Checked { .. }
+        | ExprKind::NumberLit(_)
+        | ExprKind::StringLit { .. }
+        | ExprKind::BytesLit { .. }
+        | ExprKind::BoolLit(_)
+        | ExprKind::NullLit
+        | ExprKind::Ident(_)
+        | ExprKind::Raw(_) => {
+            for child in node.children_mut() {
+                check_integer_arithmetic(child, InferredType::Unknown);
+            }
+        }
+    }
+    if float_context || !matches!(node.ty, InferredType::Int { .. }) {
+        return;
+    }
+    let placeholder = ExprKind::NullLit;
+    node.kind = match std::mem::replace(&mut node.kind, placeholder) {
+        ExprKind::Binary { op, left, right } => match CheckedOp::of_binary(op) {
+            Some(op) => ExprKind::Checked {
+                op,
+                left,
+                right: Some(right),
+            },
+            None => ExprKind::Binary { op, left, right },
+        },
+        ExprKind::Unary {
+            op: UnaryOp::Neg,
+            operand,
+        } => ExprKind::Checked {
+            op: CheckedOp::Neg,
+            left: operand,
+            right: None,
+        },
+        other => other,
+    };
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2645,6 +2842,12 @@ fn rename_identifiers(ast: &mut TypedExpr, renames: &HashMap<&str, &str>) {
                 rename_identifiers(len, renames);
             }
         }
+        ExprKind::Checked { left, right, .. } => {
+            rename_identifiers(left, renames);
+            if let Some(right) = right {
+                rename_identifiers(right, renames);
+            }
+        }
         ExprKind::Raw(_)
         | ExprKind::NumberLit(_)
         | ExprKind::StringLit { .. }
@@ -2695,6 +2898,12 @@ fn export_go_member_properties(ast: &mut TypedExpr) {
             export_go_member_properties(source);
             if let Some(len) = len {
                 export_go_member_properties(len);
+            }
+        }
+        ExprKind::Checked { left, right, .. } => {
+            export_go_member_properties(left);
+            if let Some(right) = right {
+                export_go_member_properties(right);
             }
         }
         ExprKind::Raw(_)
@@ -3031,6 +3240,15 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
                 infer_types(len, ctx);
             }
             InferredType::Bytes
+        }
+        // Written by the rewrite at the type it checks, which inference
+        // cannot recover from the operator alone.
+        ExprKind::Checked { left, right, .. } => {
+            infer_types(left, ctx);
+            if let Some(right) = right {
+                infer_types(right, ctx);
+            }
+            expr.ty
         }
     };
 }
@@ -3963,6 +4181,7 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 "std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>({s}.data()), {s}.size())"
             )
         }
+        ExprKind::Checked { .. } => return Err(checked_arithmetic_unlowered("C++")),
     })
 }
 
@@ -4434,6 +4653,7 @@ fn kotlin_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 emit_kotlin(source, InferredType::Unknown)?
             )
         }
+        ExprKind::Checked { .. } => return Err(checked_arithmetic_unlowered("Kotlin")),
     })
 }
 
@@ -4911,6 +5131,29 @@ fn rust_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
             // algorithm `bytes` param type (`&[u8]`) via `.as_bytes()`.
             format!("{}.as_bytes()", emit_rust(source, InferredType::Unknown)?)
         }
+        // SCE_FORGE.md §3.4.1: the runtime's checked helper at the operation's
+        // own width, its failure returned through the algorithm's `Result`
+        // by `?`. The width rides as a turbofish so a literal operand takes
+        // it too, where a method call on the literal would be ambiguous.
+        ExprKind::Checked { op, left, right } => {
+            let InferredType::Int { signed, bits } = expr.ty else {
+                return Err(ExprError::UnsupportedConstruct {
+                    construct: format!("a checked operation of type {:?}", expr.ty),
+                    observed: None,
+                }
+                .at(expr.span.clone()));
+            };
+            let mut operands = vec![emit_rust(left, expr.ty)?];
+            if let Some(right) = right {
+                operands.push(emit_rust(right, expr.ty)?);
+            }
+            format!(
+                "sce_forge_runtime::algorithm::{}::<{}>({})?",
+                op.helper(),
+                rust_int_type(signed, bits),
+                operands.join(", ")
+            )
+        }
     })
 }
 
@@ -5243,6 +5486,9 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
             // RFC c7-wildcard W-project: bounded-string field (`string`) →
             // the algorithm `bytes` param type (`[]byte`).
             format!("[]byte({})", emit_go(source, InferredType::Unknown)?)
+        }
+        ExprKind::Checked { .. } => {
+            return Err(checked_arithmetic_unlowered("Go").at(expr.span.clone()))
         }
     })
 }
@@ -5601,6 +5847,7 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 emit_python(source, InferredType::Unknown)?
             )
         }
+        ExprKind::Checked { .. } => return Err(checked_arithmetic_unlowered("Python")),
     })
 }
 
@@ -5957,6 +6204,7 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             };
             format!("(sce_forge_bytes_view_t){{ (const uint8_t *){s}, {len_expr} }}")
         }
+        ExprKind::Checked { .. } => return Err(checked_arithmetic_unlowered("C11")),
     })
 }
 

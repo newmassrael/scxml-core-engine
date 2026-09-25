@@ -4554,7 +4554,7 @@ fn validate_and_enrich_imports(
                 let sig = discover_stateless_signature(&doc);
                 ctx.param_types = sig.params;
                 ctx.ret_type = sig.ret;
-                ctx.list_slot = sig.list_slot;
+                ctx.host_only = sig.host_only;
             } else {
                 // Qualify every discovered field key with the import's alias
                 // so the typed expression pipeline can look it up via the
@@ -5579,9 +5579,10 @@ fn validate_worker_inbox_ordering_placement(
 pub(crate) struct StatelessSignature {
     pub(crate) params: Vec<forge::model::SceType>,
     pub(crate) ret: Option<forge::model::SceType>,
-    /// Why the import cannot be called from another algorithm (a `list<T>`
-    /// slot); when set, `params`/`ret` are empty and say nothing.
-    pub(crate) list_slot: Option<String>,
+    /// Why only a host may call the import — a `list<T>` or record slot, or
+    /// a `may-fail` declaration its callers cannot yet receive; when set,
+    /// `params`/`ret` are empty and say nothing.
+    pub(crate) host_only: Option<String>,
 }
 
 /// Extract parameter and return types for a stateless imported kind.
@@ -5600,7 +5601,8 @@ pub(crate) struct StatelessSignature {
 /// unjudged rather than judged against a list nobody declared.
 ///
 /// * Algorithm → parameters and return are the `<sce:signature>`; one with a
-///   `list<T>` slot carries no signature and names that slot in `list_slot`.
+///   `list<T>` or record slot, or a `may-fail` declaration, carries no
+///   signature and names why in `host_only`.
 pub(crate) fn discover_stateless_signature(
     doc: &forge::model::ForgeDocument,
 ) -> StatelessSignature {
@@ -5608,7 +5610,7 @@ pub(crate) fn discover_stateless_signature(
     let known = |params: Vec<SceType>, ret: Option<SceType>| StatelessSignature {
         params,
         ret,
-        list_slot: None,
+        host_only: None,
     };
     match doc {
         ForgeDocument::Transform(m) => {
@@ -5647,12 +5649,16 @@ pub(crate) fn discover_stateless_signature(
         // insufficient for the type-driven projection).
         //
         // A `list<T>` slot is not a `SceType` and never enters these lists:
-        // the whole signature is withheld and `list_slot` names why, so a
+        // the whole signature is withheld and `host_only` names why, so a
         // caller refuses from that reason instead of judging a call against
         // an emptied parameter list or an `Unknown` return (SCE_FORGE.md
         // §4.12 — in v1 only a host calls a list-signature algorithm).
+        //
+        // A `may-fail` algorithm is withheld the same way (SCE_FORGE.md
+        // §3.4.1): its failure reaches a host through the target's failure
+        // channel, and no caller statement yet receives it.
         ForgeDocument::Algorithm(m) => {
-            let list_slot = m
+            let host_only = m
                 .signature
                 .params
                 .iter()
@@ -5664,10 +5670,15 @@ pub(crate) fn discover_stateless_signature(
                         .as_ref()
                         .filter(|t| t.scalar().is_none())
                         .map(|t| format!("returns {}", t.as_attr()))
+                })
+                .or_else(|| {
+                    m.signature
+                        .may_fail
+                        .then(|| "declares may-fail".to_string())
                 });
-            if let Some(reason) = list_slot {
+            if let Some(reason) = host_only {
                 return StatelessSignature {
-                    list_slot: Some(reason),
+                    host_only: Some(reason),
                     ..StatelessSignature::default()
                 };
             }
@@ -5683,7 +5694,7 @@ pub(crate) fn discover_stateless_signature(
                     .return_type
                     .as_ref()
                     .and_then(|t| t.scalar().cloned()),
-                list_slot: None,
+                host_only: None,
             }
         }
         _ => StatelessSignature::default(),

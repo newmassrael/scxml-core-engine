@@ -777,6 +777,13 @@ pub struct TypeCtx<'a> {
     /// [`ExprKind::BytesView`]: crate::forge::expr::ExprKind::BytesView
     /// [`infer_types`]: crate::forge::expr::infer_types
     pub project_str_args_as_bytes_view: bool,
+    /// Whether every integer `+ - * / %` and unary `-` is emitted checked
+    /// (an [`ExprKind::Checked`] node): set by the algorithm renderer for an
+    /// algorithm that declares `may-fail` (SCE_FORGE.md §3.4.1), and
+    /// nowhere else.
+    ///
+    /// [`ExprKind::Checked`]: crate::forge::expr::ExprKind::Checked
+    pub checked_arithmetic: bool,
     /// Whether a call to a name this context does not carry is an ERROR.
     ///
     /// ⚠ OFF by default, and the default is the interesting half. A statechart
@@ -873,6 +880,7 @@ impl<'a> TypeCtx<'a> {
             funcs: HashMap::new(),
             array_elems: HashMap::new(),
             project_str_args_as_bytes_view: false,
+            checked_arithmetic: false,
             reject_unknown_callees: false,
             reject_unknown_identifiers: false,
             enums: HashMap::new(),

@@ -340,8 +340,10 @@ impl ForgeKind {
             Self::Statechart => RuntimeDep::SceRuntime,
             // RFC §synth-5-A: Algorithm bottom-outs to language-native loops
             // and locals, no helper crate. `#![no_std]`-clean on Rust
-            // when no `bytes` parameter.
-            Self::Algorithm => RuntimeDep::None,
+            // when no `bytes` parameter. The upper bound is ForgeRuntime:
+            // a `may-fail` algorithm calls its checked arithmetic helpers
+            // (SCE_FORGE.md §3.4.1).
+            Self::Algorithm => RuntimeDep::ForgeRuntime,
             // RFC §synth-5-C: Link's generated code depends on the `Link`
             // trait surface owned by SCE's `sce-link-runtime` crate.
             // No SCE-side runtime dependency tier captures "downstream
@@ -4982,8 +4984,16 @@ impl ForgeDocument {
                     RuntimeDep::None
                 }
             }
-            // RFC §synth-5-A: free function over language-native loops/locals.
-            Self::Algorithm(_) => RuntimeDep::None,
+            // RFC §synth-5-A: free function over language-native loops/locals —
+            // and, when it declares `may-fail`, the runtime's checked
+            // arithmetic helpers (SCE_FORGE.md §3.4.1).
+            Self::Algorithm(m) => {
+                if m.signature.may_fail {
+                    RuntimeDep::ForgeRuntime
+                } else {
+                    RuntimeDep::None
+                }
+            }
             // RFC §synth-5-C: trait surface owned by SCE's `sce-link-runtime`;
             // per-OS impls live downstream. SCE-side tier `None`.
             Self::Link(_) => RuntimeDep::None,

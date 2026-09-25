@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE_FORGE.md §3.4.1 — the integer arithmetic contract, one operation per
+  `op`, so each failure the contract names is reachable by one case:
+
+    op 0  a + b   overflow past int32
+    op 1  a - b   overflow past int32
+    op 2  a * b   overflow past int32
+    op 3  a / b   division by zero; int32 MIN / -1 overflows
+    op 4  a % b   remainder by zero; int32 MIN % -1 overflows
+    op 5  -a      negation of int32 MIN overflows
+    op 6  op - 7  a uint8 below zero overflows, before it reaches `r`
+
+  Every operation is checked because the algorithm declares may-fail, not
+  only those the range analysis flags; the cases that do not fail pin that
+  the checked lowering computes the same value the unchecked one does.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="algorithm"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="a" type="int32"/>
+    <sce:param name="b" type="int32"/>
+    <sce:param name="op" type="uint8"/>
+    <sce:return type="int32" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="r" type="int32" init="0"/>
+    <sce:if cond="op === 0">
+      <sce:assign target="r" expr="a + b"/>
+    </sce:if>
+    <sce:if cond="op === 1">
+      <sce:assign target="r" expr="a - b"/>
+    </sce:if>
+    <sce:if cond="op === 2">
+      <sce:assign target="r" expr="a * b"/>
+    </sce:if>
+    <sce:if cond="op === 3">
+      <sce:assign target="r" expr="a / b"/>
+    </sce:if>
+    <sce:if cond="op === 4">
+      <sce:assign target="r" expr="a % b"/>
+    </sce:if>
+    <sce:if cond="op === 5">
+      <sce:assign target="r" expr="-a"/>
+    </sce:if>
+    <sce:if cond="op === 6">
+      <sce:assign target="r" expr="op - 7"/>
+    </sce:if>
+    <sce:return expr="r"/>
+  </sce:body>
+</scxml>

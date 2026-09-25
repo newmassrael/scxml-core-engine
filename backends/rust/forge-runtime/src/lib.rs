@@ -18,6 +18,7 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
+pub mod algorithm;
 pub mod codec;
 pub mod filter;
 pub mod interpolation;

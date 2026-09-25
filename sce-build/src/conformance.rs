@@ -640,6 +640,15 @@ pub enum FixtureSpec {
         /// stays the single source of truth.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         has_test_vectors: bool,
+        /// Derived at harness-rendering time: the algorithm declares
+        /// `<sce:return may-fail="true">` (SCE_FORGE.md §3.4.1), read with
+        /// the parse the generator reads. Its call returns through the
+        /// backend's failure channel, and a case may expect a failure
+        /// (`"fails": "<contract name>"`) in place of a value. Only a backend
+        /// that lowers `may-fail` schedules the fixture
+        /// ([`lang_supports_fixture`]). Never present in fixtures.json.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        may_fail: bool,
     },
 }
 
@@ -1246,7 +1255,15 @@ impl Manifest {
                     output,
                     function,
                     has_test_vectors,
+                    may_fail,
                 } => {
+                    if *may_fail {
+                        return Err(format!(
+                            "fixture {}: algorithm `may_fail` is derived from the \
+                             SCXML (<sce:return may-fail>); remove it from fixtures.json",
+                            f.name
+                        ));
+                    }
                     if let AlgorithmOutput::List(list) = output {
                         if matches!(list.list_of, CanonicalType::String | CanonicalType::Bytes) {
                             return Err(format!(
@@ -1459,6 +1476,18 @@ pub fn lang_supports_fixture(
     if is_non_mcu && matches!(fixture.spec, FixtureSpec::Codec { .. }) {
         let scxml_path = resource_dir.join(format!("{}.scxml", fixture.name));
         if scxml_path.exists() && codec_has_mcu_only_features(&scxml_path)? {
+            return Ok(false);
+        }
+    }
+    // Per-fixture `may-fail` gate (SCE_FORGE.md §3.4.1): a backend lowers a
+    // `may-fail` algorithm in the commit that teaches it the checked
+    // lowering, and refuses it until then — so the harness schedules the
+    // fixture exactly where the generator's own list admits it.
+    if matches!(fixture.spec, FixtureSpec::Algorithm { .. })
+        && !crate::forge::generator::lowers_may_fail(language)
+    {
+        let scxml_path = resource_dir.join(format!("{}.scxml", fixture.name));
+        if scxml_path.exists() && read_algorithm_may_fail(&scxml_path, &fixture.name)? {
             return Ok(false);
         }
     }
@@ -1819,6 +1848,26 @@ pub fn codec_has_mcu_only_features(scxml_path: &Path) -> Result<bool, String> {
         false
     }
     Ok(walk(doc.root_element(), sce_ns))
+}
+
+/// Whether an algorithm fixture declares `may-fail` (SCE_FORGE.md §3.4.1) —
+/// asked of the parse the generator reads, as [`read_transform_holder`]
+/// asks its question, so the harness and the product cannot disagree.
+fn read_algorithm_may_fail(scxml_path: &Path, fixture_name: &str) -> Result<bool, String> {
+    let text = crate::load_forge_source(scxml_path, &[])
+        .map_err(|e| format!("cannot read {}: {e}", scxml_path.display()))?
+        .positions
+        .expanded;
+    match crate::forge::parser::parse_forge(&text, crate::DocumentLabel::symmetric(fixture_name))
+        .map_err(|e| format!("{}: {e}", scxml_path.display()))?
+    {
+        Some(crate::forge::model::ForgeDocument::Algorithm(m)) => Ok(m.signature.may_fail),
+        _ => Err(format!(
+            "fixture {fixture_name}: the manifest says `algorithm`, and {} is not an \
+             algorithm document",
+            scxml_path.display()
+        )),
+    }
 }
 
 /// The oracle section a transform with a holder is judged under.
@@ -2359,9 +2408,11 @@ pub fn render_harness(
                 output,
                 function,
                 has_test_vectors,
+                may_fail,
             } => {
                 let scxml_path = resource_dir.join(format!("{}.scxml", fixture_name));
                 *has_test_vectors = has_test_vectors_in_file(&scxml_path)?;
+                *may_fail = read_algorithm_may_fail(&scxml_path, &fixture_name)?;
                 // A record's fields come from its event-schema document, as
                 // this language spells them.
                 for arg in args.iter_mut() {

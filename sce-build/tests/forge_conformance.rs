@@ -420,6 +420,16 @@ fn forge_cpp_algorithm_crc16_test_vector_sidecar() {
     );
 }
 
+// ── SCE_FORGE.md §3.4.1: the integer arithmetic contract ──
+// `algorithm_checked_arith` declares may-fail, so every integer operation
+// lowers to a checked helper and the value returns inside a `Result`. A
+// backend gains a golden here in the commit that teaches it the lowering.
+
+#[test]
+fn forge_rust_algorithm_checked_arith() {
+    assert_standalone_forge_rust("algorithm_checked_arith", "algorithm_checked_arith.rs");
+}
+
 // ── Item C7 wildcard keyexpr: bytes-view random index + `len` builtin ──
 // `algorithm_bytes_equal` exercises `a[i]`/`b[i]` (bytes-view
 // index) and `len(a)`/`len(b)` (length builtin) on all six

@@ -542,6 +542,12 @@ fn cond_references_event_data(expr: &TypedExpr) -> bool {
         // EventSchema typed-guard AST. The transparent recursion keeps the
         // predicate exhaustive without asserting unreachability.
         ExprKind::BytesView { source, .. } => cond_references_event_data(source),
+        // Written just before emission, for a `may-fail` algorithm only;
+        // recursed transparently for the same reason.
+        ExprKind::Checked { left, right, .. } => {
+            cond_references_event_data(left)
+                || right.as_deref().is_some_and(cond_references_event_data)
+        }
         ExprKind::Ident(_)
         | ExprKind::Raw(_)
         | ExprKind::NumberLit(_)
@@ -585,6 +591,10 @@ fn cond_is_pure_typed_payload(expr: &TypedExpr) -> bool {
         // and cannot reach this statechart-side predicate; recurse
         // transparently to stay exhaustive.
         ExprKind::BytesView { source, .. } => cond_is_pure_typed_payload(source),
+        ExprKind::Checked { left, right, .. } => {
+            cond_is_pure_typed_payload(left)
+                && right.as_deref().is_none_or(cond_is_pure_typed_payload)
+        }
         // Any other Member shape (`frame.x`, `_event.data.a.b`), bare
         // Ident (datamodel var), Call, Index, or Raw fragment references
         // something the payload `matches!` cannot bind.
@@ -890,6 +900,19 @@ fn walk_for_event_data_refs(
                 statechart_name,
                 diag_label,
             )?;
+        }
+        // A `may-fail` algorithm's checked operation; recurse transparently.
+        ExprKind::Checked { left, right, .. } => {
+            for operand in std::iter::once(&**left).chain(right.as_deref()) {
+                walk_for_event_data_refs(
+                    operand,
+                    schema,
+                    imported_enums,
+                    transition,
+                    statechart_name,
+                    diag_label,
+                )?;
+            }
         }
         // Leaf nodes — nothing to walk.
         ExprKind::NumberLit(_)

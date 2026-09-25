@@ -389,7 +389,14 @@ This is what C99, C++11, Rust, Go and Kotlin compute natively for integers, so t
 
 The proof is an interval analysis over the body: each integer value's range, narrowed by the conditions that guard it, with loops widened to their declared type and re-narrowed by their conditions. A divisor excluded from zero by a `!== 0` guard is known non-zero. One fact is contractual rather than derived — **the length contract**: `len(x)` is at most `2^32 − 1` on every backend, so an index held below a length by `i < len(a)` steps safely in `uint32`.
 
-A backend lowers `may-fail` in the commit that teaches it the checked lowering; until then it refuses the algorithm (`generate/unsupported-feature`), because an unchecked body behind a signature that promises a failure is the silent disagreement this contract exists to remove. Today no backend lowers it, and an algorithm that does not declare `may-fail` is not yet refused when the analysis finds an operation it cannot prove safe.
+A `may-fail` algorithm checks **every** integer `+ - * / %` and unary `-` it computes, not only those the analysis flags, at the operation's own width — so `op - 7` on a `uint8` fails before its value widens into an `int32` local. An operation in float context (the table above) divides as reals and is not checked. The failures have one name on every backend: `overflow` (a signed `MIN / -1` or `MIN % -1` included), `divide-by-zero`, and `capacity-exceeded` for a buffer append past its capacity.
+
+| Backend | Failure channel |
+|---|---|
+| Rust | `Result<T, sce_forge_runtime::algorithm::AlgorithmError>`; each operation is `sce_forge_runtime::algorithm::<op>::<width>(…)?` |
+| C11, C++, Go, Kotlin, Python | not lowered yet — refused |
+
+A backend lowers `may-fail` in the commit that teaches it the checked lowering; until then it refuses the algorithm (`generate/unsupported-feature`), because an unchecked body behind a signature that promises a failure is the silent disagreement this contract exists to remove. No caller statement receives a failure yet, so only a host calls a `may-fail` algorithm — another algorithm or kind that calls one is refused, as a call to a `list<T>` or record algorithm is (§4.12). An algorithm that does not declare `may-fail` is not yet refused when the analysis finds an operation it cannot prove safe. Conformance: `algorithm_checked_arith` in `tests/forge/conformance/`, whose cases may name a failure (`"fails"`) in place of a value.
 
 #### Transpiler Architecture
 

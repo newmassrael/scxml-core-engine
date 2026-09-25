@@ -87,7 +87,7 @@ pub(crate) fn resolve(
             document_name: parsed.document.name().to_string(),
             params: signature.params,
             ret: signature.ret,
-            host_only: signature.list_slot,
+            host_only: signature.host_only,
             line: import.line,
         });
     }

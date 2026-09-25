@@ -18,7 +18,13 @@
    A record argument or output (SCE_FORGE.md §4.12) is the event-schema's
    payload struct, built from and compared against a JSON object keyed by
    the schema's field ids; `fields` carries each field's Rust identifier,
-   derived from the schema document when the harness renders. #}
+   derived from the schema document when the harness renders.
+
+   A `may-fail` algorithm (SCE_FORGE.md §3.4.1) returns `Result<T,
+   AlgorithmError>`. A case that names a failure (`"fails": "overflow"`)
+   carries no `expected`; it is judged by the error's contract name before
+   anything reads `expected`, and every other case unwraps the value. #}
+{% set call %}fixtures::{{ f.name }}::{{ f.function }}({% for arg_ty in f.args %}{% if arg_ty == "bytes" %}&arg{{ loop.index0 }}{% else %}arg{{ loop.index0 }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}){% endset %}
 {% if f.output.compare == "tolerance" %}
     let tol = tolerance(&reference);
 {% endif %}
@@ -36,8 +42,19 @@
         let arg{{ i }} = {{ ("case[\"args\"][" ~ i ~ "]") | rust_unmarshal(arg_ty) }};
 {% endif %}
 {% endfor %}
+{% if f.may_fail %}
+        let result = {{ call }};
+        if let Some(kind) = case.get("fails").and_then(|v| v.as_str()) {
+            let err = result.expect_err("{{ f.name }}: the case expects a failure");
+            assert_eq!(err.contract_name(), kind, "{{ f.name }}");
+            continue;
+        }
+        let actual = result.expect("{{ f.name }}: the case expects a value");
+{% endif %}
 {% if f.output.record is defined %}
-        let actual = fixtures::{{ f.name }}::{{ f.function }}({% for arg_ty in f.args %}{% if arg_ty == "bytes" %}&arg{{ loop.index0 }}{% else %}arg{{ loop.index0 }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %});
+{% if not f.may_fail %}
+        let actual = {{ call }};
+{% endif %}
 {% for fld in f.output.fields %}
         assert_eq!(
             actual.{{ fld.ident }},
@@ -52,8 +69,10 @@
             .iter()
             .map(|x| {{ "x" | rust_unmarshal(f.output.list_of) }})
             .collect();
-        let actual = fixtures::{{ f.name }}::{{ f.function }}({% for arg_ty in f.args %}{% if arg_ty == "bytes" %}&arg{{ loop.index0 }}{% else %}arg{{ loop.index0 }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %})
+{% if not f.may_fail %}
+        let actual = {{ call }}
             .expect("{{ f.name }}: a case within the declared capacity");
+{% endif %}
         let actual = actual.as_slice();
 {% if f.output.compare == "tolerance" %}
         assert_eq!(actual.len(), expected.len(), "{{ f.name }} length");
@@ -65,7 +84,9 @@
 {% endif %}
 {% else %}
         let expected = {{ "case[\"expected\"]" | rust_unmarshal(f.output.type) }};
-        let actual = fixtures::{{ f.name }}::{{ f.function }}({% for arg_ty in f.args %}{% if arg_ty == "bytes" %}&arg{{ loop.index0 }}{% else %}arg{{ loop.index0 }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %});
+{% if not f.may_fail %}
+        let actual = {{ call }};
+{% endif %}
 {% if f.output.compare == "tolerance" %}
         assert_close(actual as f64, expected as f64, tol, "{{ f.name }}");
 {% else %}

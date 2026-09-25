@@ -224,6 +224,11 @@ fn find_unit_mismatch(ast: &TypedExpr) -> Option<UnitMismatch> {
         // recurse into its source (unreachable on the unit-mismatch path,
         // which runs over typed numeric expressions).
         ExprKind::BytesView { source, .. } => find_unit_mismatch(source),
+        // A `may-fail` algorithm's checked operation, written just before
+        // emission; recurse into its operands.
+        ExprKind::Checked { left, right, .. } => {
+            find_unit_mismatch(left).or_else(|| right.as_deref().and_then(find_unit_mismatch))
+        }
         // Leaves carry no nested arithmetic.
         ExprKind::NumberLit(_)
         | ExprKind::StringLit { .. }

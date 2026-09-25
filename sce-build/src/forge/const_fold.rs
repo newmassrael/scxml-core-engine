@@ -718,6 +718,11 @@ fn eval_node(node: &TypedExpr, scope: &Scope) -> Result<EvalValue, ConstFoldKind
              (algorithm-kind call-site node)"
                 .to_string(),
         )),
+        // Written just before a `may-fail` algorithm's emission, never into
+        // the parser-produced AST a fold body feeds here.
+        ExprKind::Checked { .. } => Err(ConstFoldKind::NotFoldable(
+            "a checked integer operation is an emission node, not a fold-time value".to_string(),
+        )),
     }
 }
 

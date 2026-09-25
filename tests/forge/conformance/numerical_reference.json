@@ -2,7 +2,7 @@
   "version": 1,
   "description": "Cross-language numerical conformance reference for sce_forge_runtime generated code. All five languages (C++, Rust, Python, Kotlin, Go) MUST produce these exact outputs. Every entry is computed by hand from the algorithms in sce-forge-runtime/rust/src/ and verified against the live Rust smoke tests. If any language disagrees, the bug is in that language's codegen template or runtime helper \u2014 not in this file.",
   "float_tolerance": 1e-12,
-  "expected_shape": "For fixtures with a single output, 'expected' is a scalar (number or bool). For compound-output fixtures (procedures returning ProcedureResult, transforms with multiple <data direction=out>), 'expected' is a JSON object whose keys are the SCXML data ids in snake_case. Each language test must map those canonical keys to its own identifier case (camelCase / PascalCase / snake_case).",
+  "expected_shape": "For fixtures with a single output, 'expected' is a scalar (number or bool). For compound-output fixtures (procedures returning ProcedureResult, transforms with multiple <data direction=out>), 'expected' is a JSON object whose keys are the SCXML data ids in snake_case. Each language test must map those canonical keys to its own identifier case (camelCase / PascalCase / snake_case). A case of an algorithm that declares may-fail (SCE_FORGE.md §3.4.1) may carry 'fails' — the failure's contract name ('overflow', 'divide-by-zero', 'capacity-exceeded') — in place of 'expected'.",
   "pure_functions": {
     "interpolation_1d_linear": {
       "fixture": "Interpolation1dLinear::lookup",
@@ -1306,6 +1306,29 @@
           "expected": 0,
           "note": "miss -> default fallback (above any key)"
         }
+      ]
+    },
+    "algorithm_checked_arith": {
+      "fixture": "algorithm_checked_arith",
+      "signature": "(a: i32, b: i32, op: u8) -> i32 may-fail",
+      "formula": "op 0: a + b; 1: a - b; 2: a * b; 3: a / b truncated; 4: a % b, the dividend's sign; 5: -a; 6: op - 7 in u8; any other op: 0. A result outside its type, a MIN / -1 or MIN % -1 included, fails 'overflow'; a / or % by zero fails 'divide-by-zero' (SCE_FORGE.md §3.4.1)",
+      "cases": [
+        { "args": [2147483646, 1, 0], "expected": 2147483647, "note": "the largest sum that fits" },
+        { "args": [2147483647, 1, 0], "fails": "overflow", "note": "one past int32 MAX" },
+        { "args": [-5, 3, 1], "expected": -8 },
+        { "args": [-2147483648, 1, 1], "fails": "overflow", "note": "one below int32 MIN" },
+        { "args": [46340, 46340, 2], "expected": 2147395600, "note": "the largest square that fits" },
+        { "args": [65536, 32768, 2], "fails": "overflow", "note": "2^31" },
+        { "args": [-7, 2, 3], "expected": -3, "note": "truncated toward zero" },
+        { "args": [1, 0, 3], "fails": "divide-by-zero" },
+        { "args": [-2147483648, -1, 3], "fails": "overflow", "note": "MIN / -1" },
+        { "args": [-7, 3, 4], "expected": -1, "note": "the sign of the dividend" },
+        { "args": [1, 0, 4], "fails": "divide-by-zero" },
+        { "args": [-2147483648, -1, 4], "fails": "overflow", "note": "MIN % -1, whose remainder is 0 but whose division is not a value" },
+        { "args": [5, 0, 5], "expected": -5 },
+        { "args": [-2147483648, 0, 5], "fails": "overflow", "note": "-MIN" },
+        { "args": [0, 0, 6], "fails": "overflow", "note": "6 - 7 in uint8, before the value widens into r" },
+        { "args": [0, 0, 7], "expected": 0, "note": "no operation runs" }
       ]
     },
     "algorithm_crc16": {

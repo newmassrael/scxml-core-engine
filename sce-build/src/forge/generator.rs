@@ -92,7 +92,7 @@ pub struct ImportContext {
     /// caller refuses from this reason instead (v1: a list-signature
     /// algorithm is callable only from a host — SCE_FORGE.md §4.12).
     #[serde(skip)]
-    pub list_slot: Option<String>,
+    pub host_only: Option<String>,
 
     /// For stateful kinds: member fields exposed to user expressions as
     /// `alias_.field_name` (or equivalent member access syntax). Each entry
@@ -659,7 +659,7 @@ fn resolve_single_import(
         qualified_call: String::new(),
         param_types: Vec::new(),
         ret_type: None,
-        list_slot: None,
+        host_only: None,
         member_field_types: Vec::new(),
         member_method_sigs: Vec::new(),
         go_init_expr,
@@ -21385,11 +21385,14 @@ impl<'a> ListSpelling<'a> {
     }
 
     /// The function's return type for a list of capacity `cap`.
-    fn return_type(&self, cap: u32, primary_symbol: &str) -> String {
+    fn return_type(&self, cap: u32, primary_symbol: &str, may_fail: bool) -> String {
         use crate::generator::Language;
         let t = &self.elem_name;
         match self.lang {
-            Language::Rust => format!("Result<SceOwnedList<{t}, {cap}>, CapacityExceeded>"),
+            Language::Rust => format!(
+                "Result<SceOwnedList<{t}, {cap}>, {}>",
+                rust_algorithm_failure(may_fail)
+            ),
             Language::C11 => format!("{primary_symbol}_result_t"),
             Language::Cpp => format!("std::vector<{t}>"),
             Language::Go => format!("[]{t}"),
@@ -21522,6 +21525,7 @@ struct AlgorithmBodyCfg<'a> {
     append_buffers: &'a std::collections::HashMap<String, AppendBufferDecl>,
     c11_result_type: Option<&'a str>,
     records: &'a std::collections::HashMap<String, String>,
+    may_fail: bool,
 }
 
 /// Lower an algorithm body into a multi-line code string in the target
@@ -21560,6 +21564,7 @@ fn lower_algorithm_body(
         append_buffers: cfg.append_buffers,
         c11_result_type: cfg.c11_result_type,
         records: cfg.records,
+        may_fail: cfg.may_fail,
     };
     for s in stmts {
         lower_algorithm_stmt(s, &ctx, &pad, indent, &mut out)?;
@@ -21646,6 +21651,9 @@ struct AlgorithmLowerCtx<'a> {
     /// SCXML name, to the event-schema alias that types it — what a member
     /// assignment, a record local and a record return are judged against.
     records: &'a std::collections::HashMap<String, String>,
+    /// The algorithm declares `may-fail` (SCE_FORGE.md §3.4.1): Rust returns
+    /// every value inside the `Result` its checked operations `?` out of.
+    may_fail: bool,
 }
 
 /// Lower one statement. Every refusal is placed at the attribute it names,
@@ -21678,6 +21686,7 @@ fn lower_algorithm_stmt(
         append_buffers,
         c11_result_type,
         records,
+        may_fail,
     } = ctx;
     match s {
         AlgorithmStmt::Var {
@@ -22552,6 +22561,7 @@ fn lower_algorithm_stmt(
                         Language::Python | Language::Kotlin | Language::Go => {
                             format!("{pad}return {local}\n")
                         }
+                        Language::Rust if may_fail => format!("{pad}return Ok({local});\n"),
                         Language::Rust | Language::Cpp | Language::C11 => {
                             format!("{pad}return {local};\n")
                         }
@@ -22591,6 +22601,7 @@ fn lower_algorithm_stmt(
                         match lang {
                             Language::Python => format!("{pad}return {lowered}\n"),
                             Language::Kotlin => format!("{pad}return {lowered}\n"),
+                            Language::Rust if may_fail => format!("{pad}return Ok({lowered});\n"),
                             _ => format!("{pad}return {lowered};\n"),
                         }
                     }
@@ -22827,7 +22838,7 @@ fn algorithm_call_target<'a>(
     trimmed: &str,
     site: &ExpressionSite<'_>,
 ) -> Result<CallTarget<'a>, ForgeError> {
-    let Some(slot) = &imp.list_slot else {
+    let Some(slot) = &imp.host_only else {
         return Ok(CallTarget::Algorithm(imp));
     };
     let at = site.locate(Some(0..trimmed.len()));
@@ -23105,6 +23116,20 @@ pub(crate) fn forge_interpolation_symbol(language: crate::generator::Language) -
     }
 }
 
+/// The error a Rust algorithm's `Result` carries. A buffer append past its
+/// capacity is the only failure of an algorithm that does not declare
+/// `may-fail`; one that does returns `sce_forge_runtime::algorithm::
+/// AlgorithmError`, which names every failure the integer arithmetic
+/// contract admits and absorbs the capacity one through `From`, so one `?`
+/// threads them all (SCE_FORGE.md §3.4.1).
+fn rust_algorithm_failure(may_fail: bool) -> &'static str {
+    if may_fail {
+        "sce_forge_runtime::algorithm::AlgorithmError"
+    } else {
+        "CapacityExceeded"
+    }
+}
+
 /// The backends that lower `<sce:return may-fail="true">`: every integer
 /// operation checked, and a failure returned through the target's failure
 /// channel instead of a value (SCE_FORGE.md §3.4.1).
@@ -23113,13 +23138,20 @@ pub(crate) fn forge_interpolation_symbol(language: crate::generator::Language) -
 /// lowering. Until then the algorithm is refused for it, because the
 /// alternative is an unchecked body behind a signature that promises the
 /// caller a failure it will never see.
-const MAY_FAIL_BACKENDS: &[crate::generator::Language] = &[];
+const MAY_FAIL_BACKENDS: &[crate::generator::Language] = &[crate::generator::Language::Rust];
+
+/// Whether `lang` lowers a `may-fail` algorithm — the question the
+/// conformance harness asks before scheduling one, answered from the list
+/// the generator itself refuses by.
+pub fn lowers_may_fail(lang: crate::generator::Language) -> bool {
+    MAY_FAIL_BACKENDS.contains(&lang)
+}
 
 fn reject_may_fail_in_unsupported_lang(
     m: &AlgorithmModel,
     lang: crate::generator::Language,
 ) -> Result<(), ForgeError> {
-    if !m.signature.may_fail || MAY_FAIL_BACKENDS.contains(&lang) {
+    if !m.signature.may_fail || lowers_may_fail(lang) {
         return Ok(());
     }
     let served: Vec<&'static str> = MAY_FAIL_BACKENDS
@@ -23351,6 +23383,9 @@ fn render_algorithm(
     // The per-backend `BytesView` emit assumes the algorithm-kind string
     // representation, so the flag stays off for every other kind.
     type_ctx.project_str_args_as_bytes_view = true;
+    // SCE_FORGE.md §3.4.1: a `may-fail` algorithm checks every integer
+    // operation it emits, not only the ones the range analysis flags.
+    type_ctx.checked_arithmetic = m.signature.may_fail;
     crate::forge::type_ctx::insert_enum_imports(&mut type_ctx, imports);
     type_ctx.reject_unknown_identifiers = true;
     // RFC §synth-5-F `<sce:const name="X" type="array<elem, N>">` registers X
@@ -23391,7 +23426,7 @@ fn render_algorithm(
         if imp.kind == "algorithm" {
             // A `list<T>` slot has no signature to register: the alias is
             // registered as callable only by a host (SCE_FORGE.md §4.12).
-            if let Some(slot) = &imp.list_slot {
+            if let Some(slot) = &imp.host_only {
                 type_ctx.insert_func(imp.alias.as_str(), FuncSig::host_only(slot.as_str()));
                 continue;
             }
@@ -23498,11 +23533,12 @@ fn render_algorithm(
         Some(alias) => Some(resolve_record(imports, alias, None, "<sce:return>")?),
         None => None,
     };
+    let may_fail = m.signature.may_fail;
     let return_type = match (return_scalar, lang) {
         _ if return_list.is_some() => return_list
             .as_ref()
             .zip(list_return_cap)
-            .map(|(list, cap)| list.return_type(cap, &primary_symbol))
+            .map(|(list, cap)| list.return_type(cap, &primary_symbol, may_fail))
             .expect("guarded by the arm"),
         _ if return_record.is_some() => return_record
             .map(|record| record.qualified_type.clone())
@@ -23517,7 +23553,10 @@ fn render_algorithm(
                 ))
             })?;
             match lang {
-                Language::Rust => format!("Result<SceBytes<{n}>, CapacityExceeded>"),
+                Language::Rust => format!(
+                    "Result<SceBytes<{n}>, {}>",
+                    rust_algorithm_failure(may_fail)
+                ),
                 Language::C11 => format!("{primary_symbol}_result_t"),
                 Language::Cpp => "std::vector<std::uint8_t>".to_string(),
                 Language::Go => "[]byte".to_string(),
@@ -23532,6 +23571,16 @@ fn render_algorithm(
         (None, Language::Kotlin) => "Unit".to_string(),
         (None, Language::Python) => "None".to_string(),
     };
+    // SCE_FORGE.md §3.4.1: a `may-fail` Rust algorithm's value rides in a
+    // `Result` — a buffer return's already does, with the error widened
+    // above; a scalar or record return is wrapped here. `may-fail` sits on
+    // the signature's `<sce:return>`, so there is always a value to wrap.
+    let returns_buffer = declared_return.is_some_and(|t| t.is_append_buffer());
+    let return_type = if may_fail && lang == Language::Rust && !returns_buffer {
+        format!("Result<{return_type}, {}>", rust_algorithm_failure(true))
+    } else {
+        return_type
+    };
 
     // SCE byte-buffer-build (§4.12): per-buffer capacity table (for the C11
     // append bound) and the C11 result-struct type name. Empty / `None` for
@@ -23540,7 +23589,6 @@ fn render_algorithm(
     let mut append_buffers: std::collections::HashMap<String, AppendBufferDecl> =
         std::collections::HashMap::new();
     collect_append_buffers(&m.body, &mut append_buffers);
-    let returns_buffer = declared_return.is_some_and(|t| t.is_append_buffer());
     let c11_result_type = match lang {
         Language::C11 if returns_buffer => Some(format!("{primary_symbol}_result_t")),
         _ => None,
@@ -23571,6 +23619,10 @@ fn render_algorithm(
         _ if return_list.is_some() => {
             let list = return_list.as_ref().expect("guarded by the arm");
             match lang {
+                // A `may-fail` algorithm names its error by path.
+                Language::Rust if may_fail => {
+                    "use sce_portable_bytes::SceOwnedList;\n\n".to_string()
+                }
                 Language::Rust => {
                     "use sce_portable_bytes::{SceOwnedList, CapacityExceeded};\n\n".to_string()
                 }
@@ -23581,6 +23633,9 @@ fn render_algorithm(
                 ),
                 Language::Cpp | Language::Go | Language::Python => String::new(),
             }
+        }
+        (Some(SceType::Bytes), Language::Rust) if may_fail => {
+            "use sce_portable_bytes::SceBytes;\n\n".to_string()
         }
         (Some(SceType::Bytes), Language::Rust) => {
             "use sce_portable_bytes::{SceBytes, CapacityExceeded};\n\n".to_string()
@@ -23650,6 +23705,7 @@ fn render_algorithm(
             append_buffers: &append_buffers,
             c11_result_type: c11_result_type.as_deref(),
             records: &records,
+            may_fail,
         },
         1,
     )?;
@@ -24098,6 +24154,9 @@ fn render_algorithm_test_vector_sidecar(
         forge_algorithm_symbol(&m.name, lang).into(),
     );
     ctx.insert("return_type".into(), return_type_native.clone().into());
+    // SCE_FORGE.md §3.4.1: a `may-fail` algorithm hands its value back
+    // through the failure channel, and a vector's row expects a value.
+    ctx.insert("may_fail".into(), m.signature.may_fail.into());
     ctx.insert(
         "test_vectors".into(),
         minijinja::Value::from_serialize(&rows),
@@ -24920,7 +24979,7 @@ mod tests {
             qualified_call: String::new(),
             param_types: Vec::new(),
             ret_type: None,
-            list_slot: None,
+            host_only: None,
             member_field_types: Vec::new(),
             member_method_sigs: Vec::new(),
             go_init_expr: String::new(),
@@ -25551,7 +25610,7 @@ mod tests {
                 qualified_call: String::new(),
                 param_types: Vec::new(),
                 ret_type: None,
-                list_slot: None,
+                host_only: None,
                 member_field_types: Vec::new(),
                 member_method_sigs: Vec::new(),
                 go_init_expr: String::new(),
@@ -25590,7 +25649,7 @@ mod tests {
                 qualified_call: String::new(),
                 param_types: Vec::new(),
                 ret_type: None,
-                list_slot: None,
+                host_only: None,
                 member_field_types: Vec::new(),
                 member_method_sigs: Vec::new(),
                 go_init_expr: String::new(),

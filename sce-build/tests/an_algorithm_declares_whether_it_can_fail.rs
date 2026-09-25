@@ -11,6 +11,7 @@
 //! than emitting an unchecked body behind a signature that promises a
 //! failure channel.
 
+use sce_build::forge::generator::lowers_may_fail;
 use sce_build::forge::model::{AlgorithmModel, ForgeDocument};
 use sce_build::forge::parser::parse_forge;
 use sce_build::forge::unpseudo;
@@ -116,23 +117,52 @@ fn the_page_shows_the_declaration_and_reads_it_back() {
     );
 }
 
-/// No backend lowers the checked arithmetic yet, so every one refuses —
-/// each joins `MAY_FAIL_BACKENDS` in the commit that teaches it.
+/// Generate `text` (written as `<stem>.scxml` beside `support`) for `lang`.
+fn generate(
+    stem: &str,
+    text: &str,
+    support: &[(&str, &str)],
+    lang: Language,
+) -> Result<String, String> {
+    let dir = tempfile::tempdir().expect("tempdir");
+    for (file, body) in support {
+        std::fs::write(dir.path().join(file), body).expect("write support document");
+    }
+    let path = dir.path().join(format!("{stem}.scxml"));
+    std::fs::write(&path, text).expect("write document");
+    sce_build::compile_forge_file(&path, lang, &[], &ForgeCompileOptions::default())
+        .map(|out| out.files[0].1.clone())
+        .map_err(|e| e.to_string())
+}
+
+/// A backend lowers `may-fail` in the commit that teaches it the checked
+/// lowering, and refuses it until then; the refusal is of the declaration,
+/// not of the document.
 #[test]
-fn a_backend_without_the_checked_lowering_refuses_the_algorithm() {
+fn only_a_backend_with_the_checked_lowering_accepts_the_algorithm() {
+    assert!(
+        lowers_may_fail(Language::Rust),
+        "Rust lowers may-fail since the checked lowering landed"
+    );
+    for &lang in Language::ALL {
+        let outcome = generate(
+            "probe_may_fail",
+            &document(r#" may-fail="true""#),
+            &[],
+            lang,
+        );
+        match (lowers_may_fail(lang), outcome) {
+            (true, Ok(_)) => {}
+            (true, Err(err)) => panic!("{lang:?} lowers may-fail and refused it: {err}"),
+            (false, Ok(_)) => panic!("{lang:?} emitted a may-fail algorithm it does not check"),
+            (false, Err(text)) => assert!(
+                text.contains("feature unsupported") && text.contains("may-fail"),
+                "{lang:?}: {text}"
+            ),
+        }
+    }
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("probe_may_fail.scxml");
-    std::fs::write(&path, document(r#" may-fail="true""#)).expect("write document");
-    for &lang in Language::ALL {
-        let err = sce_build::compile_forge_file(&path, lang, &[], &ForgeCompileOptions::default())
-            .err()
-            .unwrap_or_else(|| panic!("{lang:?} accepted a may-fail algorithm"));
-        let text = err.to_string();
-        assert!(
-            text.contains("feature unsupported") && text.contains("may-fail"),
-            "{lang:?}: {text}"
-        );
-    }
     // The same algorithm without the declaration is accepted: the refusal
     // is of the declaration, not of the document.
     std::fs::write(&path, document("")).expect("write document");
@@ -143,4 +173,92 @@ fn a_backend_without_the_checked_lowering_refuses_the_algorithm() {
             panic!("{lang:?} refused the undeclared algorithm: {err}");
         }
     }
+}
+
+/// Rust checks every integer operation at its declared width and returns
+/// the value inside the `Result` the checks `?` out of; the same document
+/// without the declaration emits the plain operator and a plain return.
+#[test]
+fn rust_checks_each_operation_and_returns_through_a_result() {
+    let checked = generate(
+        "probe_may_fail",
+        &document(r#" may-fail="true""#),
+        &[],
+        Language::Rust,
+    )
+    .expect("Rust lowers may-fail");
+    for needle in [
+        "-> Result<u32, sce_forge_runtime::algorithm::AlgorithmError>",
+        "sce_forge_runtime::algorithm::add::<u32>(prev, 1)?",
+        "return Ok(",
+    ] {
+        assert!(checked.contains(needle), "missing `{needle}`:\n{checked}");
+    }
+    let plain = generate("probe_may_fail", &document(""), &[], Language::Rust)
+        .expect("an undeclared algorithm generates");
+    assert!(
+        !plain.contains("sce_forge_runtime") && plain.contains("prev + 1"),
+        "an undeclared algorithm is emitted as before:\n{plain}"
+    );
+}
+
+/// An integer division that lands in a real is real division (SCE_FORGE.md
+/// §3.4.1's table), so it is not an integer operation to check — while the
+/// integer operation beside it still is.
+#[test]
+fn a_division_in_float_context_stays_real_division() {
+    let text = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_float_ctx" version="1.0">
+  <sce:signature>
+    <sce:param name="a" type="int32"/>
+    <sce:param name="b" type="int32"/>
+    <sce:return type="int32" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="x" type="float64" init="a / b"/>
+    <sce:return expr="a / b"/>
+  </sce:body>
+</scxml>
+"#;
+    let out = generate("probe_float_ctx", text, &[], Language::Rust).expect("Rust lowers it");
+    assert_eq!(
+        out.matches("sce_forge_runtime::algorithm::div::<i32>(a, b)?")
+            .count(),
+        1,
+        "only the integer division is checked:\n{out}"
+    );
+    assert!(
+        out.contains("a as f64 / b as f64"),
+        "the real division stays real:\n{out}"
+    );
+}
+
+/// No caller statement receives a failure yet, so another algorithm may not
+/// call a `may-fail` one — the same host-only rule a list slot follows.
+#[test]
+fn another_algorithm_cannot_call_a_may_fail_algorithm() {
+    let caller = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_caller" version="1.0">
+  <sce:import kind="algorithm" src="probe_may_fail.scxml" as="tick"/>
+  <sce:signature>
+    <sce:param name="n" type="uint32"/>
+    <sce:return type="uint32"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="tick(n)"/>
+  </sce:body>
+</scxml>
+"#;
+    let callee = document(r#" may-fail="true""#);
+    let err = generate(
+        "probe_caller",
+        caller,
+        &[("probe_may_fail.scxml", &callee)],
+        Language::Rust,
+    )
+    .expect_err("a call to a may-fail algorithm is refused");
+    assert!(
+        err.contains("declares may-fail") && err.contains("only a host"),
+        "{err}"
+    );
 }

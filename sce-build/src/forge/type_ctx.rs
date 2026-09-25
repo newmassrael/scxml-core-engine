@@ -82,7 +82,7 @@ fn insert_stateless_imports<'a>(ctx: &mut TypeCtx<'a>, imports: &'a [ImportConte
         if let Some(sig) = imported_callee_sig(
             &imp.param_types,
             imp.ret_type.as_ref(),
-            imp.list_slot.as_deref(),
+            imp.host_only.as_deref(),
         ) {
             ctx.insert_func(imp.alias.as_str(), sig);
         }

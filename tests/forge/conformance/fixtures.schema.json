@@ -600,6 +600,10 @@
                 "algorithm"
               ]
             },
+            "may_fail": {
+              "description": "Derived at harness-rendering time: the algorithm declares `<sce:return may-fail=\"true\">` (SCE_FORGE.md §3.4.1), read with the parse the generator reads. Its call returns through the backend's failure channel, and a case may expect a failure (`\"fails\": \"<contract name>\"`) in place of a value. Only a backend that lowers `may-fail` schedules the fixture ([`lang_supports_fixture`]). Never present in fixtures.json.",
+              "type": "boolean"
+            },
             "output": {
               "$ref": "#/definitions/AlgorithmOutput"
             }
