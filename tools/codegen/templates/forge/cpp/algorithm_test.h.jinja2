@@ -31,12 +31,28 @@ static inline int test_vector_{{ name }}() {
     {
 {% if tv.hex_bytes %}
         static constexpr std::uint8_t row_bytes[] = { {{ tv.hex_bytes_literal }} };
-        const {{ return_type }} actual = SCE::Generated::{{ name_pascal }}::{{ primary_symbol }}(std::span<const std::uint8_t>{row_bytes});
+{% set call %}SCE::Generated::{{ name_pascal }}::{{ primary_symbol }}(std::span<const std::uint8_t>{row_bytes}){% endset %}
 {% else %}
-        const {{ return_type }} actual = SCE::Generated::{{ name_pascal }}::{{ primary_symbol }}(std::span<const std::uint8_t>{});
+{% set call %}SCE::Generated::{{ name_pascal }}::{{ primary_symbol }}(std::span<const std::uint8_t>{}){% endset %}
+{% endif %}
+{% if may_fail %}
+        // SCE_FORGE.md §3.4.1: a row expects a value, so a failure fails it.
+        const auto result = {{ call }};
+        const {{ return_type }} actual = result.value();
+{% else %}
+        const {{ return_type }} actual = {{ call }};
 {% endif %}
         const {{ return_type }} expected = {{ tv.value_literal_c }};
+{% if may_fail %}
+        if (!result.ok()) {
+            std::fprintf(stderr,
+                "FAIL: {{ primary_symbol }} test_vector @SCXML L{{ tv.source_line }}: failed with %s\n",
+                SCE::Forge::contractName(result.error()));
+            ++failures;
+        } else if (actual != expected) {
+{% else %}
         if (actual != expected) {
+{% endif %}
             std::fprintf(stderr,
                 "FAIL: {{ primary_symbol }} test_vector @SCXML L{{ tv.source_line }}: actual={{ tv.printf_fmt }} expected={{ tv.printf_fmt }}\n",
                 static_cast<{{ tv.printf_cast }}>(actual), static_cast<{{ tv.printf_cast }}>(expected));

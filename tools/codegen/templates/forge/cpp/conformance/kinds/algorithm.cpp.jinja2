@@ -9,7 +9,14 @@
    Bytes args lower to `std::span<const std::uint8_t>` per RFC §synth-5-J-5
    (algorithm_param_type cpp arm); the oracle JSON delivers each `bytes`
    argument as a JSON array of integers, materialised here into a
-   `std::vector<std::uint8_t>` so a `std::span` can borrow into it. #}
+   `std::vector<std::uint8_t>` so a `std::span` can borrow into it.
+
+   A `may-fail` algorithm (SCE_FORGE.md §3.4.1) returns an
+   `SCE::Forge::AlgorithmResult<T>`. A case that names a failure
+   (`"fails": "overflow"`) carries no `expected`; it is judged by the error's
+   contract name before anything reads `expected`, and every other case reads
+   the value. #}
+{% set call %}SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %}){% endset %}
     const auto &spec = ref["{{ f.ref_section }}"]["{{ f.name }}"];
     int i = 0;
     for (const auto &c : spec["cases"]) {
@@ -34,8 +41,26 @@
         auto arg{{ loop.index0 }} = c["args"][{{ loop.index0 }}].get<{{ arg_ty | cpp_type }}>();
 {% endif %}
 {% endfor %}
+{% if f.may_fail %}
+        const auto result = {{ call }};
+        if (c.contains("fails")) {
+            const std::string fails = c["fails"].get<std::string>();
+            CHECK(!result.ok() && fails == SCE::Forge::contractName(result.error()),
+                  "{{ f.name }} case %d: expected failure %s, got %s",
+                  i,
+                  fails.c_str(),
+                  result.ok() ? "a value" : SCE::Forge::contractName(result.error()));
+            ++i;
+            continue;
+        }
+        CHECK(result.ok(),
+              "{{ f.name }} case %d: expected a value, failed with %s",
+              i,
+              SCE::Forge::contractName(result.error()));
+        const auto returned = result.value();
+{% endif %}
 {% if f.output.record is defined %}
-        auto actual = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+        auto actual = {% if f.may_fail %}returned{% else %}{{ call }}{% endif %};
 {% for fld in f.output.fields %}
         CHECK(actual.{{ fld.ident }} == c["expected"]["{{ fld.name }}"].get<{{ fld.type | cpp_type }}>(),
               "{{ f.name }} case %d: {{ fld.name }} actual=%s expected=%s",
@@ -48,7 +73,7 @@
    by length, then element by element. `std::to_string` prints any element
    type, signed or not, without a per-type format specifier. #}
         auto expected = c["expected"].get<std::vector<{{ f.output.list_of | cpp_type }}>>();
-        auto actual = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+        auto actual = {% if f.may_fail %}returned{% else %}{{ call }}{% endif %};
         CHECK(actual.size() == expected.size(),
               "{{ f.name }} case %d: length actual=%zu expected=%zu",
               i,
@@ -68,7 +93,7 @@
         }
 {% else %}
         auto expected = c["expected"].get<{{ f.output.type | cpp_type }}>();
-        auto actual = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+        auto actual = {% if f.may_fail %}returned{% else %}{{ call }}{% endif %};
 {% if f.output.compare == "tolerance" %}
         assert_close(static_cast<double>(actual), static_cast<double>(expected), tol, "{{ f.name }}");
 {% else %}

@@ -21528,7 +21528,7 @@ struct AlgorithmBodyCfg<'a> {
     append_buffers: &'a std::collections::HashMap<String, AppendBufferDecl>,
     c11_result_type: Option<&'a str>,
     records: &'a std::collections::HashMap<String, String>,
-    may_fail: bool,
+    channel: ReturnChannel<'a>,
 }
 
 /// Lower an algorithm body into a multi-line code string in the target
@@ -21567,10 +21567,10 @@ fn lower_algorithm_body(
         append_buffers: cfg.append_buffers,
         c11_result_type: cfg.c11_result_type,
         records: cfg.records,
-        may_fail: cfg.may_fail,
+        channel: cfg.channel,
     };
     for s in stmts {
-        lower_algorithm_stmt(s, &ctx, &pad, indent, &mut out)?;
+        lower_algorithm_stmt_and_check(s, &ctx, &pad, indent, &mut out)?;
     }
     Ok(out.trim_end().to_string())
 }
@@ -21654,14 +21654,48 @@ struct AlgorithmLowerCtx<'a> {
     /// SCXML name, to the event-schema alias that types it — what a member
     /// assignment, a record local and a record return are judged against.
     records: &'a std::collections::HashMap<String, String>,
-    /// The algorithm declares `may-fail` (SCE_FORGE.md §3.4.1): Rust returns
-    /// every value inside the `Result` its checked operations `?` out of.
-    may_fail: bool,
+    /// How the body returns its value, and a failure in its place when the
+    /// algorithm declares `may-fail` (SCE_FORGE.md §3.4.1).
+    channel: ReturnChannel<'a>,
 }
 
-/// Lower one statement. Every refusal is placed at the attribute it names,
-/// from the statement's spellings (`crate::forge::expression_site`); nested
-/// bodies recurse through here, and a nested statement places its own.
+/// Lower one statement ([`lower_algorithm_stmt`]) and the return of any
+/// failure its expressions recorded (SCE_FORGE.md §3.4.1), so the next
+/// statement never runs on a value that is not one. Every body and every
+/// nested block lowers its statements through here.
+///
+/// The check is appended around the statement rather than at the end of
+/// [`lower_algorithm_stmt`] because several statements finish early there:
+/// an append that returns partway would otherwise skip it. A block
+/// statement's condition is checked in its own header and each statement of
+/// its body checks itself; a return computes its value and checks it in
+/// place.
+fn lower_algorithm_stmt_and_check(
+    s: &AlgorithmStmt,
+    ctx: &AlgorithmLowerCtx<'_>,
+    pad: &str,
+    indent: usize,
+    out: &mut String,
+) -> Result<(), ForgeError> {
+    lower_algorithm_stmt(s, ctx, pad, indent, out)?;
+    if matches!(
+        s,
+        AlgorithmStmt::Var { .. }
+            | AlgorithmStmt::RecordVar { .. }
+            | AlgorithmStmt::Assign { .. }
+            | AlgorithmStmt::Append { .. }
+            | AlgorithmStmt::Call { .. }
+    ) {
+        out.push_str(&ctx.channel.check(pad));
+    }
+    Ok(())
+}
+
+/// Lower one statement, without the failure check that follows it
+/// ([`lower_algorithm_stmt_and_check`]). Every refusal is placed at the
+/// attribute it names, from the statement's spellings
+/// (`crate::forge::expression_site`); nested bodies recurse through the
+/// checking wrapper, and a nested statement places its own.
 ///
 /// ⚠ This used to place every failure at the statement's recorded ROW — the
 /// row its start tag begins on — which only `<sce:call>` recorded at all.
@@ -21689,7 +21723,7 @@ fn lower_algorithm_stmt(
         append_buffers,
         c11_result_type,
         records,
-        may_fail,
+        channel,
     } = ctx;
     match s {
         AlgorithmStmt::Var {
@@ -22152,29 +22186,32 @@ fn lower_algorithm_stmt(
                     out.push_str(&format!("{pad}if {cond_lowered}:\n"));
                     let inner_pad = "    ".repeat(indent + 1);
                     for st in then_body {
-                        lower_algorithm_stmt(st, ctx, &inner_pad, indent + 1, out)?;
+                        lower_algorithm_stmt_and_check(st, ctx, &inner_pad, indent + 1, out)?;
                     }
                     if let Some(eb) = else_body {
                         out.push_str(&format!("{pad}else:\n"));
                         for st in eb {
-                            lower_algorithm_stmt(st, ctx, &inner_pad, indent + 1, out)?;
+                            lower_algorithm_stmt_and_check(st, ctx, &inner_pad, indent + 1, out)?;
                         }
                     }
                 }
                 _ => {
                     let header_open = match lang {
                         Language::Rust => format!("{pad}if {cond_lowered} {{\n"),
+                        Language::Cpp if channel.checks_conditions() => {
+                            channel.cpp_if_header(pad, &cond_lowered, indent)
+                        }
                         _ => format!("{pad}if ({cond_lowered}) {{\n"),
                     };
                     out.push_str(&header_open);
                     let inner_pad = "    ".repeat(indent + 1);
                     for st in then_body {
-                        lower_algorithm_stmt(st, ctx, &inner_pad, indent + 1, out)?;
+                        lower_algorithm_stmt_and_check(st, ctx, &inner_pad, indent + 1, out)?;
                     }
                     if let Some(eb) = else_body {
                         out.push_str(&format!("{pad}}} else {{\n"));
                         for st in eb {
-                            lower_algorithm_stmt(st, ctx, &inner_pad, indent + 1, out)?;
+                            lower_algorithm_stmt_and_check(st, ctx, &inner_pad, indent + 1, out)?;
                         }
                     }
                     out.push_str(&format!("{pad}}}\n"));
@@ -22199,7 +22236,7 @@ fn lower_algorithm_stmt(
                     out.push_str(&format!("{pad}while {cond_lowered}:\n"));
                     let inner_pad = "    ".repeat(indent + 1);
                     for st in body {
-                        lower_algorithm_stmt(st, ctx, &inner_pad, indent + 1, out)?;
+                        lower_algorithm_stmt_and_check(st, ctx, &inner_pad, indent + 1, out)?;
                     }
                 }
                 _ => {
@@ -22210,12 +22247,15 @@ fn lower_algorithm_stmt(
                     let header_open = match lang {
                         Language::Rust => format!("{pad}while {cond_lowered} {{\n"),
                         Language::Go => format!("{pad}for {cond_lowered} {{\n"),
+                        Language::Cpp if channel.checks_conditions() => {
+                            channel.cpp_while_header(pad, &cond_lowered, indent)
+                        }
                         _ => format!("{pad}while ({cond_lowered}) {{\n"),
                     };
                     out.push_str(&header_open);
                     let inner_pad = "    ".repeat(indent + 1);
                     for st in body {
-                        lower_algorithm_stmt(st, ctx, &inner_pad, indent + 1, out)?;
+                        lower_algorithm_stmt_and_check(st, ctx, &inner_pad, indent + 1, out)?;
                     }
                     out.push_str(&format!("{pad}}}\n"));
                 }
@@ -22414,7 +22454,7 @@ fn lower_algorithm_stmt(
                     }
                 }
                 for st in body {
-                    lower_algorithm_stmt(st, ctx, &inner_pad, body_inner_indent, out)?;
+                    lower_algorithm_stmt_and_check(st, ctx, &inner_pad, body_inner_indent, out)?;
                 }
                 // Per-backend close braces. Rust/Cpp/C11 close two
                 // blocks (the Some/has_value branch + the for-loop);
@@ -22494,7 +22534,7 @@ fn lower_algorithm_stmt(
                 let inner_indent = indent + 1;
                 let inner_pad = "    ".repeat(inner_indent);
                 for st in body {
-                    lower_algorithm_stmt(st, ctx, &inner_pad, inner_indent, out)?;
+                    lower_algorithm_stmt_and_check(st, ctx, &inner_pad, inner_indent, out)?;
                 }
                 if !matches!(lang, Language::Python) {
                     out.push_str(&format!("{pad}}}\n"));
@@ -22536,7 +22576,7 @@ fn lower_algorithm_stmt(
                         return Err(at.place(refusal));
                     }
                     let value = ListSpelling::new(l, elem).return_value(&l.local_id(name));
-                    algorithm_return(lang, pad, &value, may_fail || lang == Language::Rust)
+                    channel.value(pad, &value, true)
                 }
                 // A record return (SCE_FORGE.md §4.12): the returned value is
                 // a record parameter or local of the same schema, by name —
@@ -22560,7 +22600,7 @@ fn lower_algorithm_stmt(
                             .into();
                         return Err(at.place(refusal));
                     }
-                    algorithm_return(lang, pad, &l.local_id(name), may_fail)
+                    channel.value(pad, &l.local_id(name), false)
                 }
                 Some(rhs) => {
                     // Coerce to the function's declared return type so
@@ -22588,9 +22628,9 @@ fn lower_algorithm_stmt(
                                 lowered
                             }
                         };
-                        algorithm_return(lang, pad, &value, may_fail || lang == Language::Rust)
+                        channel.value(pad, &value, true)
                     } else {
-                        algorithm_return(lang, pad, &lowered, may_fail)
+                        channel.value(pad, &lowered, false)
                     }
                 }
                 None => match lang {
@@ -23117,29 +23157,102 @@ fn rust_algorithm_failure(may_fail: bool) -> &'static str {
     }
 }
 
-/// The statement that returns `value` from an algorithm body.
+/// How an algorithm body hands back its value, or the failure that took its
+/// place (SCE_FORGE.md §3.4.1, §4.12) — the one place every return and every
+/// failure check of a body is spelled.
 ///
-/// `fallible` says the function hands its value back through a failure
-/// channel: every `may-fail` algorithm (SCE_FORGE.md §3.4.1), and on Rust a
-/// buffer return too, whose append can exceed its capacity (§4.12). The
-/// value then rides in that channel's success case. A backend that has no
-/// failure channel never reaches here fallible:
-/// `reject_may_fail_in_unsupported_lang` refuses a `may-fail` algorithm for
-/// it first.
-fn algorithm_return(
+/// The backends reach a failure two ways. Rust and Kotlin carry it out of
+/// the expression that failed (`?`, a thrown `AlgorithmFailure`), so a
+/// statement needs nothing after it. C++ has neither in its embedded
+/// profile: a checked helper records the failure in the body's
+/// `sce_failure_` and yields 0, and the body reads that record after each
+/// statement and returns it — [`ReturnChannel::check`].
+#[derive(Clone, Copy)]
+struct ReturnChannel<'a> {
     lang: crate::generator::Language,
-    pad: &str,
-    value: &str,
-    fallible: bool,
-) -> String {
-    use crate::generator::Language;
-    match lang {
-        Language::Rust if fallible => format!("{pad}return Ok({value});\n"),
-        Language::Kotlin if fallible => {
-            format!("{pad}return com.sce.forge.runtime.AlgorithmResult.Ok({value})\n")
+    may_fail: bool,
+    /// The declared return as the backend spells its value, before any
+    /// failure channel wraps it (`std::int32_t`, `std::vector<…>`).
+    value_type: &'a str,
+}
+
+impl ReturnChannel<'_> {
+    /// The C++ type the body returns when it `may-fail`.
+    fn cpp_result(&self) -> String {
+        format!("SCE::Forge::AlgorithmResult<{}>", self.value_type)
+    }
+
+    /// The statement that returns `value`. `buffer` says the value is a
+    /// buffer, whose Rust return is fallible whether or not the algorithm
+    /// declares `may-fail`: its append can exceed its capacity (§4.12).
+    ///
+    /// A backend without a failure channel never reaches here `may_fail`:
+    /// `reject_may_fail_in_unsupported_lang` refuses the algorithm first.
+    fn value(&self, pad: &str, value: &str, buffer: bool) -> String {
+        use crate::generator::Language;
+        match self.lang {
+            Language::Rust if self.may_fail || buffer => format!("{pad}return Ok({value});\n"),
+            Language::Kotlin if self.may_fail => {
+                format!("{pad}return com.sce.forge.runtime.AlgorithmResult.Ok({value})\n")
+            }
+            // The value is computed first, because computing it can fail.
+            Language::Cpp if self.may_fail => {
+                let result = self.cpp_result();
+                format!(
+                    "{pad}{{\n\
+                     {pad}    const {ty} sce_value_ = {value};\n\
+                     {pad}    if (sce_failure_.failed()) return {result}::failure(sce_failure_.error());\n\
+                     {pad}    return {result}::success(sce_value_);\n\
+                     {pad}}}\n",
+                    ty = self.value_type,
+                )
+            }
+            Language::Python | Language::Kotlin | Language::Go => format!("{pad}return {value}\n"),
+            Language::Rust | Language::Cpp | Language::C11 => format!("{pad}return {value};\n"),
         }
-        Language::Python | Language::Kotlin | Language::Go => format!("{pad}return {value}\n"),
-        Language::Rust | Language::Cpp | Language::C11 => format!("{pad}return {value};\n"),
+    }
+
+    /// What follows a statement whose expressions may have failed: on C++, a
+    /// return of the recorded failure; nothing on a backend whose failure
+    /// leaves the expression by itself, or in a body that cannot fail.
+    fn check(&self, pad: &str) -> String {
+        match self.lang {
+            crate::generator::Language::Cpp if self.may_fail => format!(
+                "{pad}if (sce_failure_.failed()) return {}::failure(sce_failure_.error());\n",
+                self.cpp_result()
+            ),
+            _ => String::new(),
+        }
+    }
+
+    /// The C++ `if` header for `cond`, computed before the branch: a failure
+    /// in it is returned, and only a value decides which branch runs. The
+    /// name carries the nesting depth, so an inner `if` does not shadow it.
+    fn cpp_if_header(&self, pad: &str, cond: &str, depth: usize) -> String {
+        format!(
+            "{pad}if (const bool sce_cond{depth}_ = {cond}; sce_failure_.failed()) {{\n\
+             {pad}    return {result}::failure(sce_failure_.error());\n\
+             {pad}}} else if (sce_cond{depth}_) {{\n",
+            result = self.cpp_result(),
+        )
+    }
+
+    /// The C++ loop head for `cond`, computed at the top of every pass for the
+    /// reason [`Self::cpp_if_header`] gives; the caller closes the `while`.
+    fn cpp_while_header(&self, pad: &str, cond: &str, depth: usize) -> String {
+        format!(
+            "{pad}while (true) {{\n\
+             {pad}    const bool sce_cond{depth}_ = {cond};\n\
+             {check}\
+             {pad}    if (!sce_cond{depth}_) break;\n",
+            check = self.check(&format!("{pad}    ")),
+        )
+    }
+
+    /// Whether a condition must be computed before the branch it decides,
+    /// so a failure in it is returned rather than taken as `false`.
+    fn checks_conditions(&self) -> bool {
+        self.may_fail && self.lang == crate::generator::Language::Cpp
     }
 }
 
@@ -23154,6 +23267,7 @@ fn algorithm_return(
 const MAY_FAIL_BACKENDS: &[crate::generator::Language] = &[
     crate::generator::Language::Rust,
     crate::generator::Language::Kotlin,
+    crate::generator::Language::Cpp,
 ];
 
 /// Whether `lang` lowers a `may-fail` algorithm — the question the
@@ -23592,8 +23706,14 @@ fn render_algorithm(
     // above; a scalar or record return is wrapped here. `may-fail` sits on
     // the signature's `<sce:return>`, so there is always a value to wrap.
     let returns_buffer = declared_return.is_some_and(|t| t.is_append_buffer());
-    // Kotlin wraps every return, a buffer's included — its buffers grow and
-    // have no failure of their own (§4.12).
+    let value_type = return_type.clone();
+    let channel = ReturnChannel {
+        lang,
+        may_fail,
+        value_type: &value_type,
+    };
+    // Kotlin and C++ wrap every return, a buffer's included — their buffers
+    // grow and have no failure of their own (§4.12).
     let return_type = match lang {
         Language::Rust if may_fail && !returns_buffer => {
             format!("Result<{return_type}, {}>", rust_algorithm_failure(true))
@@ -23601,6 +23721,7 @@ fn render_algorithm(
         Language::Kotlin if may_fail => {
             format!("com.sce.forge.runtime.AlgorithmResult<{return_type}>")
         }
+        Language::Cpp if may_fail => channel.cpp_result(),
         _ => return_type,
     };
 
@@ -23727,7 +23848,7 @@ fn render_algorithm(
             append_buffers: &append_buffers,
             c11_result_type: c11_result_type.as_deref(),
             records: &records,
-            may_fail,
+            channel,
         },
         // A `may-fail` Kotlin body sits inside the `try` that turns a failure
         // into `AlgorithmResult.Failed` (`algorithm.kt.jinja2`).

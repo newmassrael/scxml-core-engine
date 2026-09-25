@@ -4181,7 +4181,29 @@ fn cpp_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 "std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>({s}.data()), {s}.size())"
             )
         }
-        ExprKind::Checked { .. } => return Err(checked_arithmetic_unlowered("C++")),
+        // SCE_FORGE.md §3.4.1: the runtime's helper at the operation's own
+        // width, which records a failure in the body's `sce_failure_` and
+        // yields 0; the statement around it returns that failure. The width
+        // is explicit so an operand of another type converts to it rather
+        // than choosing the instantiation.
+        ExprKind::Checked { op, left, right } => {
+            let InferredType::Int { signed, bits } = expr.ty else {
+                return Err(ExprError::UnsupportedConstruct {
+                    construct: format!("a checked operation of type {:?}", expr.ty),
+                    observed: None,
+                });
+            };
+            let mut operands = vec!["sce_failure_".to_string(), emit_cpp(left, expr.ty)?];
+            if let Some(right) = right {
+                operands.push(emit_cpp(right, expr.ty)?);
+            }
+            format!(
+                "SCE::Forge::Checked::{}<std::{}int{bits}_t>({})",
+                op.helper(),
+                if signed { "" } else { "u" },
+                operands.join(", ")
+            )
+        }
     })
 }
 

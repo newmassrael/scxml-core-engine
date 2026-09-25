@@ -435,6 +435,11 @@ fn forge_kotlin_algorithm_checked_arith() {
     assert_standalone_forge_kotlin("algorithm_checked_arith", "AlgorithmCheckedArith.kt");
 }
 
+#[test]
+fn forge_cpp_algorithm_checked_arith() {
+    assert_standalone_forge("algorithm_checked_arith", "algorithm_checked_arith.h");
+}
+
 // ── Item C7 wildcard keyexpr: bytes-view random index + `len` builtin ──
 // `algorithm_bytes_equal` exercises `a[i]`/`b[i]` (bytes-view
 // index) and `len(a)`/`len(b)` (length builtin) on all six

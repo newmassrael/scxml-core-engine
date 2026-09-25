@@ -21,11 +21,17 @@
 #include <cstdint>
 {% if needs_vector %}#include <vector>
 {% endif %}{% if needs_span %}#include <span>
+{% endif %}{% if may_fail %}#include <sce/forge/algorithm.h>
 {% endif %}{% if all_imports %}{% for imp in all_imports %}{{ imp.include_stmt }}
 {% endfor %}{% endif %}
 namespace SCE::Generated::{{ namespace }} {
 
 {{ consts_prelude }}inline {{ return_type }} {{ primary_symbol }}({{ params_str }}) {
+{% if may_fail %}
+    // SCE_FORGE.md §3.4.1: each checked operation records a failure here, and
+    // the statement around it returns it before the next statement runs.
+    SCE::Forge::AlgorithmFailure sce_failure_;
+{% endif %}
 {{ body }}
 }
 
