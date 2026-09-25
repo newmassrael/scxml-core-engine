@@ -1,11 +1,7 @@
-{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
-{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
-
-{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
-{{ sce_map.source_marker(source_location, "python", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+# SCE-MAP: algorithm_checked_arith:18 :: _forge_body
 
 # SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
-# Runtime: {{ runtime_dep }}
+# Runtime: sce_forge_runtime
 # Do not edit — regenerate from the source SCXML file.
 #
 # RFC §synth-5-A: pure synchronous function with bounded loops. Free
@@ -15,7 +11,6 @@
 # contract that `<sce:foreach item>` is `uint8`. Numeric arithmetic
 # in Python is arbitrary-precision so unsigned-narrow truncation is
 # the body author's responsibility (e.g. `crc & 0xFFFF`).
-{% if may_fail %}
 #
 # SCE_FORGE.md §3.4.1: this algorithm declares may-fail. Each integer
 # operation goes through `sce_algorithm`, which holds it to its declared
@@ -23,13 +18,21 @@
 # in place of a value.
 
 from sce_forge_runtime import algorithm as sce_algorithm
-{% endif %}
-{% if all_imports %}
 
-{% for imp in all_imports %}
-{{ imp.include_stmt }}
-{% endfor %}
-{% endif %}
-
-{{ consts_prelude }}def {{ primary_symbol }}({{ params_str }}){% if has_return %} -> {{ return_type }}{% endif %}:
-{{ body }}
+def algorithm_checked_arith(a: int, b: int, op: int) -> int:
+    r: int = 0
+    if op == 0:
+        r = sce_algorithm.I32.add(a, b)
+    if op == 1:
+        r = sce_algorithm.I32.sub(a, b)
+    if op == 2:
+        r = sce_algorithm.I32.mul(a, b)
+    if op == 3:
+        r = sce_algorithm.I32.div(a, b)
+    if op == 4:
+        r = sce_algorithm.I32.rem(a, b)
+    if op == 5:
+        r = sce_algorithm.I32.neg(a)
+    if op == 6:
+        r = sce_algorithm.U8.sub(op, 7)
+    return r

@@ -9,7 +9,13 @@
    `bytes` args lower to Python's `bytes` (RFC §synth-5-J-5). Numeric scalar
    args route through Python's dynamic typing, so the JSON values are
    passed through directly. The oracle delivers `bytes` arguments as a
-   JSON array of integers, which we convert via `bytes(...)`. #}
+   JSON array of integers, which we convert via `bytes(...)`.
+
+   A `may-fail` algorithm (SCE_FORGE.md §3.4.1) raises `AlgorithmFailure` in
+   place of a value. A case that names a failure (`"fails": "overflow"`)
+   carries no `expected`; it is judged by the raised error's contract name
+   before anything reads `expected`. #}
+{% set call %}{{ f.name }}.{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %}){% endset %}
         for case in spec["cases"]:
 {# A record argument or output (SCE_FORGE.md §4.12) is the event-schema's
    dataclass, built by keyword from a JSON object keyed by the schema's
@@ -30,8 +36,16 @@
             arg{{ ai }} = case["args"][{{ ai }}]
 {% endif %}
 {% endfor %}
+{% if f.may_fail %}
+            if "fails" in case:
+                from sce_forge_runtime.algorithm import AlgorithmFailure
+                with self.assertRaises(AlgorithmFailure, msg="{{ f.name }}") as caught:
+                    {{ call }}
+                self.assertEqual(caught.exception.error.contract_name, case["fails"], "{{ f.name }}")
+                continue
+{% endif %}
             expected = case["expected"]
-            actual = {{ f.name }}.{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+            actual = {{ call }}
 {% if f.output.record is defined %}
 {% for fld in f.output.fields %}
             self.assertEqual(actual.{{ fld.ident }}, expected["{{ fld.name }}"], "{{ f.name }}.{{ fld.name }}")

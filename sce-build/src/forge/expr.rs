@@ -1510,21 +1510,6 @@ impl CheckedOp {
     }
 }
 
-/// The refusal of an [`ExprKind::Checked`] node by an emitter that has not
-/// learned the checked lowering. `render_algorithm`'s `MAY_FAIL_BACKENDS`
-/// gate refuses such an algorithm first, so this is the second line: an
-/// emitter reached some other way still says so instead of emitting an
-/// unchecked operation.
-fn checked_arithmetic_unlowered(backend: &str) -> ExprError {
-    ExprError::UnsupportedConstruct {
-        construct: format!(
-            "a checked integer operation (an algorithm declaring may-fail) on the \
-             {backend} backend, which does not lower one yet"
-        ),
-        observed: None,
-    }
-}
-
 /// Rewrite every integer `+ - * / %` and unary `-` of `node` into an
 /// [`ExprKind::Checked`] node (SCE_FORGE.md §3.4.1).
 ///
@@ -5907,7 +5892,28 @@ fn python_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 emit_python(source, InferredType::Unknown)?
             )
         }
-        ExprKind::Checked { .. } => return Err(checked_arithmetic_unlowered("Python")),
+        // SCE_FORGE.md §3.4.1: the runtime's method for the operation's own
+        // width, which computes exactly and raises `AlgorithmFailure` for a
+        // result the width does not hold. Python's integers never overflow,
+        // so this is the one place its `int32` is held to 32 bits.
+        ExprKind::Checked { op, left, right } => {
+            let InferredType::Int { signed, bits } = expr.ty else {
+                return Err(ExprError::UnsupportedConstruct {
+                    construct: format!("a checked operation of type {:?}", expr.ty),
+                    observed: None,
+                });
+            };
+            let mut operands = vec![emit_python(left, expr.ty)?];
+            if let Some(right) = right {
+                operands.push(emit_python(right, expr.ty)?);
+            }
+            format!(
+                "sce_algorithm.{}{bits}.{}({})",
+                if signed { "I" } else { "U" },
+                op.helper(),
+                operands.join(", ")
+            )
+        }
     })
 }
 

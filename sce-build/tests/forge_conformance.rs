@@ -450,6 +450,15 @@ fn forge_go_algorithm_checked_arith() {
 }
 
 #[test]
+fn forge_python_algorithm_checked_arith() {
+    assert_standalone_forge_lang(
+        "algorithm_checked_arith",
+        "algorithm_checked_arith.py",
+        sce_build::generator::Language::Python,
+    );
+}
+
+#[test]
 fn forge_c11_algorithm_checked_arith() {
     assert_standalone_forge_lang(
         "algorithm_checked_arith",

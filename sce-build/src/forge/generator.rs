@@ -23414,6 +23414,7 @@ const MAY_FAIL_BACKENDS: &[crate::generator::Language] = &[
     crate::generator::Language::Cpp,
     crate::generator::Language::C11,
     crate::generator::Language::Go,
+    crate::generator::Language::Python,
 ];
 
 /// Whether `lang` lowers a `may-fail` algorithm — the question the
