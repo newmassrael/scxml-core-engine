@@ -469,6 +469,20 @@
                 // follow: an attribute that cannot be evaluated starts
                 // nothing, and a `<param>` that cannot is reported and left
                 // out (§scxml-5.7.1).
+{% if invoke_info.idlocation %}
+                // §scxml-6.4.1: the invocation's generated id goes to
+                // `idlocation` when the element is evaluated. It is the id the
+                // host is handed and `done.invoke.<id>` names, so the document
+                // can match on what it stored.
+                {
+                    self.ensure_script_engine();
+                    let sid = self.session_id.as_ref().unwrap().clone();
+                    let se = self.script_engine.clone();
+                    let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                    let _ = se.set_variable(&sid, "{{ invoke_info.idlocation }}",
+                        sce_rust_runtime::ScriptValue::String("{{ invoke_info.invoke_id }}".to_string()));
+                }
+{% endif %}
                 #[allow(unused_mut)]
                 let mut host_invoke_src = "{{ invoke_info.src | default('', true) | escape_rust }}".to_string();
                 #[allow(unused_mut)]

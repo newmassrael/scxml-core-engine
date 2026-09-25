@@ -63,6 +63,7 @@ class HostInvokerTest {
             "ended" -> sm.ended()
             "entered" -> sm.entered()
             "dropped" -> sm.dropped()
+            "matched" -> sm.matched()
             else -> error("the fixture declares no counter named `$name`")
         }
         assertNotNull(value, "the fixture declares `$name` and the machine could not read it")
@@ -347,6 +348,50 @@ class HostInvokerTest {
             sm.sendEventByName("done.invoke.probe", EventMetadata(invokeId = "probe"))
             sm.tick()
             assertEquals(0L, counter(sm, "started"), "a completion that skipped the running check reached the document")
+            assertEquals(1L, sm.refusedHostInvokeCompletions)
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    /**
+     * W3C SCXML 6.4.1: an invoke with no id and an `idlocation` gets a
+     * generated `stateid.platformid` id, written to the location, handed to
+     * the host, and carried as `_event.invokeid` on the completion. The
+     * document names no specific `done.invoke.<id>`, so the completion arrives
+     * as the generic `done.invoke`, and `matched` counts it only when its
+     * invokeid is what the document stored.
+     */
+    @Test
+    fun anIdlocationHoldsTheIdTheHostIsHanded() {
+        val sm = machine()
+        val log = mutableListOf<String>()
+        sm.registerInvoker(declaredType, recordingInvoker(log))
+        sm.initialize()
+        try {
+            deliver(sm, StatechartHostInvokerEvent.Leave)
+            assertTrue(log.any { it.startsWith("START id=done._invoke_0 ") }, "the host was not handed the generated id: $log")
+            assertEquals(1L, counter(sm, "matched"), "the completion did not arrive, or its invokeid is not what idlocation holds")
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    /**
+     * The generic `done.invoke` is a host completion too when its invokeid
+     * names a host-run invoke, so raised around `completeHostInvoke` it is
+     * refused like the specific name is.
+     */
+    @Test
+    fun aGenericDoneInvokeRaisedTheOldWayIsRefused() {
+        val sm = machine()
+        sm.registerInvoker(declaredType, runningInvoker(mutableListOf(), mutableListOf()))
+        sm.initialize()
+        try {
+            deliver(sm, StatechartHostInvokerEvent.Leave)
+            sm.sendEventByName("done.invoke", EventMetadata(invokeId = "done._invoke_0"))
+            sm.tick()
+            assertEquals(0L, counter(sm, "matched"), "a completion that skipped the running check reached the document")
             assertEquals(1L, sm.refusedHostInvokeCompletions)
         } finally {
             sm.cleanup()

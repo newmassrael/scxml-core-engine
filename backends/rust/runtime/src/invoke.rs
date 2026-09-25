@@ -117,6 +117,12 @@ pub fn execute_pending_invokes<S: Copy + PartialEq + Debug, F>(
 /// building the name and recognising it cannot disagree.
 pub const DONE_INVOKE_PREFIX: &str = "done.invoke.";
 
+/// §scxml-3.12.1: the generic completion descriptor. A document that names no
+/// specific `done.invoke.<id>` matches every completion through it, so it is
+/// the event a completion falls back to when the specific name is not one the
+/// document declares.
+pub const DONE_INVOKE_EVENT: &str = "done.invoke";
+
 /// §scxml-6.3.1: Create done.invoke event name.
 ///
 /// 1:1 port of C++ `InvokeHelper::createDoneInvokeEventName`.

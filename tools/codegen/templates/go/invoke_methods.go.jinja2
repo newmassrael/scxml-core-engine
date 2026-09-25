@@ -270,8 +270,15 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			// that cannot is reported and left out (W3C SCXML 5.7.1).
 			hostInvokeSrc := "{{ invoke_info.src | default('', true) | escape_go }}"
 			hostInvokeContent := "{{ invoke_info.content | default('', true) | escape_go }}"
-{% if invoke_info.srcexpr or invoke_info.contentexpr or invoke_info.namelist %}
+{% if invoke_info.srcexpr or invoke_info.contentexpr or invoke_info.namelist or invoke_info.idlocation or (invoke_info.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0) %}
 			p.ensureScriptEngine()
+{% endif %}
+{% if invoke_info.idlocation %}
+			// W3C SCXML 6.4.1: the invocation's generated id goes to
+			// `idlocation` when the element is evaluated. It is the id the host
+			// is handed and `done.invoke.<id>` names, so the document can match
+			// on what it stored.
+			_ = p.ScriptEngine.SetVariable(p.SessionID, "{{ invoke_info.idlocation }}", "{{ invoke_info.invoke_id }}")
 {% endif %}
 {% for attr, var, expr in [('src', 'hostInvokeSrc', invoke_info.srcexpr), ('content', 'hostInvokeContent', invoke_info.contentexpr)] %}
 {% if expr %}

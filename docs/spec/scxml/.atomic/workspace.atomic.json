@@ -945,6 +945,51 @@
         {
           "file": "backends/go/runtime/doc.go",
           "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/host_processor.h",
+          "symbol": "SCE_DONE_INVOKE_EVENT",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/host_processor.go",
+          "symbol": "CompleteHostInvoke",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/invoke.go",
+          "symbol": "DoneInvokeEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "DONE_INVOKE_EVENT",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "completeHostInvoke",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "complete_host_invoke",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/host_processor_analyzer.rs",
+          "symbol": "declare_host_surfaces",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/InvokeHelper.h",
+          "symbol": "DONE_INVOKE_EVENT",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "completeHostInvoke",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",

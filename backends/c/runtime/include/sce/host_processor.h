@@ -319,6 +319,11 @@ static inline const sce_host_processor_entry_t *sce_host_registry_find(const sce
     disagree. */
 #define SCE_DONE_INVOKE_PREFIX "done.invoke."
 
+/** §scxml-3.12.1: the generic completion descriptor. A document that names
+    no specific `done.invoke.<id>` matches every completion through it, so it
+    is the event a completion falls back to. */
+#define SCE_DONE_INVOKE_EVENT "done.invoke"
+
 /** How many host-run invocations may be in flight at once. Each generated
     machine asserts it covers the most its own configurations can hold. */
 #ifndef SCE_MAX_HOST_INVOCATIONS

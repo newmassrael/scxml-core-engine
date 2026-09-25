@@ -53,7 +53,7 @@ edit("tools/codegen/templates/python/scriptengine_helpers.py.jinja2",
                 ).to_python()
             except _ScriptError:
                 self._raise_error_execution(
-                    engine, "<send> <content> failed to evaluate"
+                    engine, f"{element} <content> failed to evaluate"
                 )
                 raise _ActionAbort""",
      """            return content""")

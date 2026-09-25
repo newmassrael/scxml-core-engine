@@ -669,9 +669,12 @@ fn collect_invoke_causes(invoke: &Invoke, out: &mut Vec<NeedsScriptEngineCause>)
 /// The cause a host-served `info` costs, if its request carries anything
 /// evaluated when it starts (§scxml-6.4.1).
 fn host_invoke_cause(info: &crate::model::UnsupportedInvokeInfo) -> Option<NeedsScriptEngineCause> {
+    // `idlocation` writes the data model rather than reading it, and the
+    // write goes through the script engine all the same.
     let evaluates = !info.srcexpr.is_empty()
         || !info.namelist.is_empty()
         || !info.contentexpr.is_empty()
+        || !info.base.idlocation.is_empty()
         || info.base.params.iter().any(|p| !p.is_static_literal);
     (info.host_served && evaluates).then(|| {
         NeedsScriptEngineCause::new(

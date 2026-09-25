@@ -140,35 +140,56 @@ PY
 
 mutation_case "the invoker is never started" <<'PY'
 edit("backends/rust/runtime/src/host_processor.rs",
-     """        let handler = self.invokers.get_mut(&request.processor_type)?;
-        let response = handler(HostInvokeEvent::Start(request));""",
-     """        let handler = self.invokers.get_mut(&request.processor_type)?;
-        let _ = handler;
+     "        let response = handler(HostInvokeEvent::Start(request));",
+     """        let _ = handler;
         let _ = request;
         let response: Option<HostInvokeResponse> = None;""")
 PY
 
 mutation_case "the invocation is never recorded as started" <<'PY'
 edit("backends/rust/runtime/src/host_processor.rs",
-     "        self.started.insert(key);",
-     "        let _ = key;")
+     """        self.started.insert(
+            (request.processor_type.clone(), request.invoke_id.clone()),
+            token,
+        );""",
+     "")
 PY
 
 mutation_case "cancel is delivered for an invocation that never started" <<'PY'
 edit("backends/rust/runtime/src/host_processor.rs",
-     """        if !self.started.remove(&key) {
+     """        let Some(token) = self.started.remove(&key) else {
             return false;
-        }""",
-     """        self.started.remove(&key);""")
+        };""",
+     """        let token = self.started.remove(&key).unwrap_or_default();""")
 PY
 
 mutation_case "the invoker is never told to stop" <<'PY'
 edit("backends/rust/runtime/src/host_processor.rs",
-     """        handler(HostInvokeEvent::Cancel(HostInvokeCancel {
-            processor_type: processor_type.to_string(),
-            invoke_id: invoke_id.to_string(),
-        }));""",
-     """        let _ = handler;""")
+     """        handler(HostInvokeEvent::Cancel(HostInvokeCancel {""",
+     """        let _ = handler;
+        let _unsent = (HostInvokeCancel {""")
+PY
+
+# ── …and it is accepted once, from its own run ─────────────────────
+#
+# §scxml-6.4: what a cancelled process sends is ignored, and a restarted
+# `<invoke>` is a different process under the same id. The token is what
+# tells the runs apart, and the dequeue refusal is what keeps a completion
+# from going around the check.
+
+mutation_case "a stale token completes the invocation" <<'PY'
+edit("backends/rust/runtime/src/host_processor.rs",
+     "        if self.started.get(&key) != Some(&token) {",
+     "        if !self.started.contains_key(&key) {")
+PY
+
+mutation_case "a done.invoke raised around the completion is accepted" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """            self.refused_host_invoke_completions =
+                self.refused_host_invoke_completions.saturating_add(1);
+            return true;""",
+     """            self.refused_host_invoke_completions =
+                self.refused_host_invoke_completions.saturating_add(1);""")
 PY
 
 # ── …and the completion it reports ──────────────────────────────────

@@ -114,7 +114,7 @@
                 run {
                     val generatedInvokeId = "{{ inv.state_id }}.${System.identityHashCode(this)}.{{ inv.invoke_id }}"
                     deferInvoke(state, generatedInvokeId) {
-{% set host_evaluates = inv.srcexpr or inv.namelist or inv.contentexpr or (inv.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0) %}
+{% set host_evaluates = inv.srcexpr or inv.namelist or inv.contentexpr or inv.idlocation or (inv.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0) %}
 {% if host_evaluates and model.needs_script_engine %}
                         // W3C SCXML 6.4.1: what the request says is evaluated
                         // now, when the invocation starts. An attribute that
@@ -124,6 +124,13 @@
                         ensureScriptEngine()
                         val hostEngine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                         val hostSid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+{% endif %}
+{% if inv.idlocation and model.needs_script_engine %}
+                        // W3C SCXML 6.4.1: the invocation's generated id goes
+                        // to `idlocation` when the element is evaluated. It is
+                        // the id the host is handed and `done.invoke.<id>`
+                        // names, so the document can match on what it stored.
+                        hostEngine.setVariable(hostSid, "{{ inv.idlocation | escape_kotlin }}", "{{ inv.invoke_id | escape_kotlin }}")
 {% endif %}
 {% if model.needs_script_engine %}
 {% for attr, var, expr in [('src', 'hostInvokeSrc', inv.srcexpr), ('content', 'hostInvokeContent', inv.contentexpr)] %}

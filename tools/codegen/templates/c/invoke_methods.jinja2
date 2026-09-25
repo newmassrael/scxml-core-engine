@@ -156,6 +156,15 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
             sce_host_send_param_t _host_inv_params[{{ host_param_cap }}];
             int _host_inv_param_count = 0;
 {% endif %}
+{% if invoke_info.idlocation %}
+            /* W3C SCXML 6.4.1: the invocation's generated id goes to
+               `idlocation` when the element is evaluated. It is the id the
+               host is handed and `done.invoke.<id>` names, so the document can
+               match on what it stored. Assigned through a chunk, as the
+               `<send idlocation>` arm does, so a member path lands too. */
+            (void)luaL_dostring(sm->L,
+                "{{ invoke_info.idlocation | to_lua_location | escape_c }} = '{{ invoke_info.invoke_id | escape_c }}'");
+{% endif %}
             /* W3C SCXML 6.4.1: what the request says is evaluated now, when
                the invocation starts. An attribute that cannot be evaluated
                raises error.execution and starts nothing; a `<param>` that

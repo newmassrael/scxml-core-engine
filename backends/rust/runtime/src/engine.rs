@@ -2363,8 +2363,14 @@ impl<P: StatePolicy> Engine<P> {
         {
             return false;
         }
+        // §scxml-3.12.1: the specific `done.invoke.<id>` when the document
+        // names it, and otherwise the generic `done.invoke` its descriptor
+        // matches — as an SCXML child's completion does. Looking up only the
+        // specific name lost every completion a document handled generically.
         let event_name = crate::invoke::create_done_invoke_event_name(invoke_id);
-        if let Some(evt) = P::get_event_from_name(&event_name) {
+        if let Some(evt) = P::get_event_from_name(&event_name)
+            .or_else(|| P::get_event_from_name(crate::invoke::DONE_INVOKE_EVENT))
+        {
             let mut meta = EventWithMetadata::new(evt);
             meta.metadata = EventMetadata::external(SceString::new(), SceString::new());
             meta.metadata.data = crate::sce_string_from_str(done_data);
@@ -2768,6 +2774,7 @@ impl<P: StatePolicy> Engine<P> {
         if event_with_meta.metadata.host_invoke_token.is_none()
             && crate::host_processor::is_host_invoke_completion(
                 P::get_event_name(event_with_meta.event),
+                event_with_meta.metadata.invoke_id.as_str(),
                 P::HOST_INVOKE_IDS,
             )
         {

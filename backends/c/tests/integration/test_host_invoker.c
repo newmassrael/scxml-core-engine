@@ -92,6 +92,8 @@ static int64_t counter(const statechart_host_invoker_t *sm, const char *name) {
         ok = statechart_host_invoker_entered(sm, &value);
     } else if (strcmp(name, "dropped") == 0) {
         ok = statechart_host_invoker_dropped(sm, &value);
+    } else if (strcmp(name, "matched") == 0) {
+        ok = statechart_host_invoker_matched(sm, &value);
     }
     if (!ok) {
         (void)fprintf(stderr, "host_invoker: FAIL - the fixture declares `%s` and the machine could not read it\n",
@@ -390,6 +392,53 @@ static int a_done_invoke_raised_the_old_way_is_refused_and_counted(void) {
     return bad;
 }
 
+// W3C SCXML 6.4.1: an invoke with no id and an `idlocation` gets a generated
+// `stateid.platformid` id, written to the location, handed to the host, and
+// carried as `_event.invokeid` on the completion. The document names no
+// specific `done.invoke.<id>`, so the completion arrives as the generic
+// `done.invoke`, and `matched` counts it only when its invokeid is what the
+// document stored.
+static int an_idlocation_holds_the_id_the_host_is_handed(void) {
+    recorder_t rec;
+    memset(&rec, 0, sizeof(rec));
+    statechart_host_invoker_t sm;
+    boot(&sm, &rec, DECLARED_TYPE);
+    deliver(&sm, STATECHART_HOST_INVOKER_EVENT_LEAVE);
+
+    bool handed = false;
+    for (int i = 0; i < rec.calls && i < (int)(sizeof(rec.log) / sizeof(rec.log[0])); i++) {
+        handed = handed || strncmp(rec.log[i], "START id=done._invoke_0 ", strlen("START id=done._invoke_0 ")) == 0;
+    }
+    int bad = 0;
+    bad |= expect("idlocation", "the host was not handed the generated id", handed);
+    bad |= check("idlocation", "matched", counter(&sm, "matched"), 1);
+    statechart_host_invoker_destroy(&sm);
+    return bad;
+}
+
+// The generic `done.invoke` is a host completion too when its invokeid names a
+// host-run invoke, so raised around `_complete_host_invoke` it is refused like
+// the specific name is.
+static int a_generic_done_invoke_raised_the_old_way_is_refused(void) {
+    running_t run;
+    statechart_host_invoker_t sm;
+    boot_running(&sm, &run);
+    deliver(&sm, STATECHART_HOST_INVOKER_EVENT_LEAVE);
+    statechart_host_invoker_event_with_meta_t done;
+    memset(&done, 0, sizeof(done));
+    done.event = STATECHART_HOST_INVOKER_EVENT_DONE_INVOKE;
+    (void)snprintf(done.invoke_id, sizeof(done.invoke_id), "%s", "done._invoke_0");
+    statechart_host_invoker_raise_external(&sm, &done);
+    statechart_host_invoker_step(&sm);
+
+    int bad = 0;
+    bad |= check("generic-old-way", "matched", counter(&sm, "matched"), 0);
+    bad |= check("generic-old-way", "refused completions", statechart_host_invoker_refused_host_invoke_completions(&sm),
+                 1);
+    statechart_host_invoker_destroy(&sm);
+    return bad;
+}
+
 // The invocation ends with the state that started it. Still running when the
 // state exits — a completed invocation has nothing left to cancel (the case
 // above).
@@ -491,6 +540,8 @@ int main(void) {
     bad |= a_completion_after_the_cancel_is_refused();
     bad |= a_restarted_invoke_refuses_the_first_runs_reply();
     bad |= a_done_invoke_raised_the_old_way_is_refused_and_counted();
+    bad |= an_idlocation_holds_the_id_the_host_is_handed();
+    bad |= a_generic_done_invoke_raised_the_old_way_is_refused();
     bad |= a_declared_type_with_no_invoker_still_raises_error_execution();
     bad |= an_invoker_registered_for_another_type_does_not_run_this_one();
 

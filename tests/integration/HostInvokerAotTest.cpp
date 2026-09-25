@@ -368,6 +368,46 @@ TEST_F(HostInvokerAotTest, ADoneInvokeRaisedTheOldWayIsRefusedAndCounted) {
     EXPECT_EQ(sm.refusedHostInvokeCompletions(), 1u);
 }
 
+// W3C SCXML 6.4.1: an invoke with no id and an `idlocation` gets a generated
+// `stateid.platformid` id, written to the location, handed to the host, and
+// carried as `_event.invokeid` on the completion. The document names no
+// specific `done.invoke.<id>`, so the completion arrives as the generic
+// `done.invoke`, and `matched` counts it only when its invokeid is what the
+// document stored.
+TEST_F(HostInvokerAotTest, AnIdlocationHoldsTheIdTheHostIsHanded) {
+    Machine sm;
+    registerRecordingInvoker(sm);
+    boot(sm);
+    sm.processEvent(Event::Leave);
+
+    bool handed = false;
+    for (const auto &entry : log) {
+        handed = handed || entry.rfind("START id=done._invoke_0 ", 0) == 0;
+    }
+    EXPECT_TRUE(handed) << "the host was not handed the generated id";
+    EXPECT_EQ(sm.getPolicy().matched(), std::optional<int64_t>(1))
+        << "the completion did not arrive, or its invokeid is not what idlocation holds";
+}
+
+// The generic `done.invoke` is a host completion too when its invokeid names a
+// host-run invoke, so raised around completeHostInvoke() it is refused like
+// the specific name is.
+TEST_F(HostInvokerAotTest, AGenericDoneInvokeRaisedTheOldWayIsRefused) {
+    Machine sm;
+    registerRunningInvoker(sm);
+    boot(sm);
+    sm.processEvent(Event::Leave);
+
+    const auto doneEvent = sm.getPolicy().getEventFromName("done.invoke");
+    ASSERT_TRUE(doneEvent.has_value()) << "a host-invoker build declares the generic done.invoke";
+    sm.raiseExternal(Machine::EventWithMetadata(*doneEvent, "x", "", "", "external", "", "done._invoke_0"));
+    sm.step();
+
+    EXPECT_EQ(sm.getPolicy().matched(), std::optional<int64_t>(0))
+        << "a completion that skipped the running check reached the document";
+    EXPECT_EQ(sm.refusedHostInvokeCompletions(), 1u);
+}
+
 TEST_F(HostInvokerAotTest, ADeclaredTypeWithNoInvokerStillRaisesErrorExecution) {
     Machine sm;
     boot(sm);

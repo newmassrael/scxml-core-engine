@@ -49,6 +49,13 @@
   run can be told apart from the second run's by the start's token and
   refused.
 
+  `done` also runs an invoke with no id and an `idlocation` (W3C SCXML
+  6.4.1): the generated id is written to `doneId`, handed to the host, and
+  carried as `_event.invokeid` on the completion. The document names no
+  specific `done.invoke.<id>` for it, so the completion arrives as the generic
+  `done.invoke`, and `matched` counts it only when its invokeid is what the
+  document stored.
+
   The generated machine is compiled with the host-invoker declaration
   `x-sce-host` (scripts/regen_host_processor.sh names the flag; an XML
   comment cannot spell a double hyphen).
@@ -65,6 +72,8 @@
     <data id="destination" expr="'pane://dyn'"/>
     <data id="n" expr="7"/>
     <data id="dropped" expr="0"/>
+    <data id="doneId" expr="''"/>
+    <data id="matched" expr="0"/>
   </datamodel>
 
   <state id="invoking">
@@ -112,6 +121,10 @@
     <onentry>
       <assign location="ended" expr="ended + 1"/>
     </onentry>
+    <invoke type="x-sce-host" idlocation="doneId"/>
+    <transition event="done.invoke" cond="_event.invokeid === doneId">
+      <assign location="matched" expr="matched + 1"/>
+    </transition>
     <transition event="again" target="invoking"/>
   </state>
 </scxml>

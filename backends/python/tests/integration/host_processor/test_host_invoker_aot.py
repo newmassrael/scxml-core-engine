@@ -351,6 +351,40 @@ def test_a_done_invoke_raised_the_old_way_is_refused_and_counted() -> None:
     assert engine.refused_host_invoke_completions() == 1
 
 
+def test_an_idlocation_holds_the_id_the_host_is_handed() -> None:
+    """W3C SCXML 6.4.1: an invoke with no id and an ``idlocation`` gets a
+    generated ``stateid.platformid`` id, written to the location, handed to
+    the host, and carried as ``_event.invokeid`` on the completion. The
+    document names no specific ``done.invoke.<id>``, so the completion
+    arrives as the generic ``done.invoke``, and ``matched`` counts it only
+    when its invokeid is what the document stored."""
+    engine, log = _started()
+    _deliver(engine, Event.LEAVE)
+
+    assert any(e.startswith("START id=done._invoke_0 ") for e in log), (
+        f"the host was not handed the generated id: {log}"
+    )
+    assert _counter(engine, "matched") == 1, (
+        "the completion did not arrive, or its invokeid is not what idlocation holds"
+    )
+
+
+def test_a_generic_done_invoke_raised_the_old_way_is_refused() -> None:
+    """The generic ``done.invoke`` is a host completion too when its
+    invokeid names a host-run invoke, so raised around
+    ``complete_host_invoke`` it is refused like the specific name is."""
+    engine, _log, _starts = _running()
+    _deliver(engine, Event.LEAVE)
+
+    engine.send_external_by_name("done.invoke", data="x", invoke_id="done._invoke_0")
+    engine.advance_time(0)
+
+    assert _counter(engine, "matched") == 0, (
+        "a completion that skipped the running check reached the document"
+    )
+    assert engine.refused_host_invoke_completions() == 1
+
+
 def test_a_declared_type_with_no_invoker_still_raises_error_execution() -> None:
     """The other half. The build declared the type, so codegen emitted a start
     — but nothing was registered, so no process was run. Same event as an

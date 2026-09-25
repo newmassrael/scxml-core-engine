@@ -274,6 +274,14 @@ public:
     static constexpr std::string_view DONE_INVOKE_PREFIX = "done.invoke.";
 
     /**
+     * @brief §scxml-3.12.1: the generic completion descriptor
+     *
+     * A document that names no specific `done.invoke.<id>` matches every
+     * completion through it, so it is the event a completion falls back to.
+     */
+    static constexpr std::string_view DONE_INVOKE_EVENT = "done.invoke";
+
+    /**
      * @brief §scxml-6.4.1: Validate invoke ID format
      *
      * Single Source of Truth for invoke ID validation.

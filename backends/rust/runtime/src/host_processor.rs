@@ -347,15 +347,25 @@ impl HostProcessorRegistry {
     }
 }
 
-/// Whether `event_name` is the completion of a host-run invocation — a
-/// `done.invoke.<id>` whose `<id>` is one of `host_invoke_ids`.
+/// Whether an event named `event_name` carrying `_event.invokeid` =
+/// `invoke_id` is the completion of a host-run invocation: a
+/// `done.invoke.<id>` whose `<id>` is one of `host_invoke_ids`, or the generic
+/// `done.invoke` a document that names no specific completion receives,
+/// whose invokeid is one of them.
 ///
 /// Such an event is accepted only through `Engine::complete_host_invoke`,
 /// which is the one path that knows the invocation is still running. Raised
 /// any other way it could be a cancelled run's late reply, so the engine
 /// refuses it at dequeue.
-pub(crate) fn is_host_invoke_completion(event_name: &str, host_invoke_ids: &[&str]) -> bool {
-    event_name
-        .strip_prefix(crate::invoke::DONE_INVOKE_PREFIX)
-        .is_some_and(|id| host_invoke_ids.contains(&id))
+pub(crate) fn is_host_invoke_completion(
+    event_name: &str,
+    invoke_id: &str,
+    host_invoke_ids: &[&str],
+) -> bool {
+    match event_name.strip_prefix(crate::invoke::DONE_INVOKE_PREFIX) {
+        Some(id) => host_invoke_ids.contains(&id),
+        None => {
+            event_name == crate::invoke::DONE_INVOKE_EVENT && host_invoke_ids.contains(&invoke_id)
+        }
+    }
 }

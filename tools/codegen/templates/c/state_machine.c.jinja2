@@ -3999,6 +3999,17 @@ SCE_SM_FN static bool is_refused_host_invoke_completion(const {{ csym_prefix }}{
         return true;
 {% endif %}
 {% endfor %}
+{% if 'done.invoke' in model.events %}
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_INVOKE:
+        /* The generic `done.invoke` a document that names no specific
+           completion receives: its invokeid says whose completion it is. */
+{% for inv in model.invokes | host_invoker %}
+        if (strcmp(evt->invoke_id, "{{ inv.invoke_id | escape_c }}") == 0) {
+            return true;
+        }
+{% endfor %}
+        return false;
+{% endif %}
     default:
         return false;
     }
@@ -5016,6 +5027,13 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_complete_host_invoke({{ csym_pr
     memcpy(name + prefix_len, invoke_id, id_len);
     name[prefix_len + id_len] = '\0';
     done_event = {{ csym_prefix }}{{ model.name }}_event_from_name(name, prefix_len + id_len);
+    if (done_event == {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE) {
+        /* W3C SCXML 3.12.1: the generic `done.invoke` its descriptor matches
+           when the document names no specific completion — as an SCXML
+           child's completion does. */
+        done_event = {{ csym_prefix }}{{ model.name }}_event_from_name(SCE_DONE_INVOKE_EVENT,
+                                                                       sizeof(SCE_DONE_INVOKE_EVENT) - 1u);
+    }
     if (done_event != {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE) {
         {{ csym_prefix }}{{ model.name }}_event_with_meta_t completion;
         memset(&completion, 0, sizeof(completion));

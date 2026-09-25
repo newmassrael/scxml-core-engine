@@ -329,6 +329,17 @@
                 # DOCUMENT's, not the per-instance one the pending queue
                 # carries: `done.invoke.<id>` is the name the author wrote a
                 # transition for, so it is the name the host must answer on.
+{% if inv.idlocation %}
+                # W3C SCXML 6.4.1: the invocation's generated id goes to
+                # `idlocation` when the element is evaluated. It is the id the
+                # host is handed and `done.invoke.<id>` names, so the document
+                # can match on what it stored.
+                engine._script_engine.set_variable(
+                    self._session_id,
+                    {{ inv.idlocation | py_string_literal }},
+                    _ScriptValue.of({{ inv.invoke_id | py_string_literal }}),
+                )
+{% endif %}
                 _host_src = {{ inv.src | default('', true) | py_string_literal }}
                 _host_content = {{ inv.content | default('', true) | py_string_literal }}
 {% set host_evaluates = inv.srcexpr or inv.namelist or inv.contentexpr or (inv.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0) %}

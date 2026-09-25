@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "cd59c76656",
+  "embed_version": "af73a96a7d",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 266,
+  "symbol_count": 268,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -705,6 +705,12 @@
     },
     {
       "header": "core/HostProcessor.h",
+      "kind": "function",
+      "name": "SCE::isHostInvokeCompletion",
+      "signature": "bool SCE::isHostInvokeCompletion(std::string_view, std::string_view, const std::string_view *, std::size_t)"
+    },
+    {
+      "header": "core/HostProcessor.h",
       "kind": "struct",
       "members": [
         "field std::map<std::string, std::vector<std::string>> params",
@@ -730,6 +736,7 @@
         "field std::string invokeId",
         "field std::string processorType",
         "field std::string src",
+        "field uint64_t token",
         "method HostInvokeRequest &(HostInvokeRequest &&) noexcept operator=",
         "method HostInvokeRequest &(const HostInvokeRequest &) noexcept(false) operator=",
         "method void () noexcept HostInvokeRequest",
@@ -817,6 +824,7 @@
       "members": [
         "field std::string invokeId",
         "field std::string processorType",
+        "field uint64_t token",
         "method HostInvokeCancel &(HostInvokeCancel &&) noexcept operator=",
         "method HostInvokeCancel &(const HostInvokeCancel &) noexcept(false) operator=",
         "method void () noexcept HostInvokeCancel",
@@ -968,6 +976,12 @@
       "kind": "struct",
       "members": [],
       "name": "SCE::Core::HasFinalizeTrait<T>"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Core::HasHostInvokeIdsTrait<T>"
     },
     {
       "header": "core/StatePolicyConcepts.h",

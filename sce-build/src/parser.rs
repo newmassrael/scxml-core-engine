@@ -4087,6 +4087,35 @@ impl SCXMLParser {
                 source_name,
             )?;
             let invoke_unresolved = collect_sce_unresolved(elem, source_name);
+            // §scxml-6.4.1: an `idlocation` with no `id` asks for a generated
+            // id of the form `stateid.platformid`, written to that location,
+            // and that id is the invocation's `_event.invokeid`. For an invoke
+            // the host runs it is also the id the host is handed and the one
+            // `done.invoke.<id>` names, so it is decided here, once, rather
+            // than at run time: the auto-id is already unique within the
+            // session, and prefixing the state gives the form the clause
+            // asks for. The SCXML child path is unchanged: it generates its
+            // id per instance at entry (`entry_exit_actions.jinja2`).
+            let invoke_id = if elem.attribute("id").is_none() && !idlocation.is_empty() {
+                let generated = format!("{state_id}.{invoke_id}");
+                if !self.invoke_ids_seen.insert(generated.clone()) {
+                    let pos = elem.document().text_pos_at(elem.range().start);
+                    return Err(crate::forge::error::Located::new(
+                        crate::forge::error::ValidationError::DuplicateId {
+                            kind: crate::forge::model::ForgeKind::Statechart,
+                            what: "<invoke id>".into(),
+                            id: generated,
+                        }
+                        .into(),
+                        source_name,
+                        Some(pos.row),
+                        Some(pos.col),
+                    ));
+                }
+                generated
+            } else {
+                invoke_id
+            };
             return Ok(Some(Invoke::Unsupported(UnsupportedInvokeInfo {
                 base: InvokeBase {
                     source_location: source_location_of(elem, source_name),

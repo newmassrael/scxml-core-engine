@@ -1491,7 +1491,7 @@ nested union:
 | `hybrid-invoke` | `<invoke srcexpr=…>` / `contentexpr`. |
 | `static-invoke-namelist` | `<invoke namelist=…>`. |
 | `mesh-rpc-srcexpr` | `<invoke type="sce:mesh-rpc">` with an `srcexpr` target. |
-| `host-invoke-expr` | An `<invoke>` the host runs (`--host-invoker`) whose request is evaluated when it starts: `srcexpr`, `namelist`, `<content expr>`, or a non-literal `<param>`. |
+| `host-invoke-expr` | An `<invoke>` the host runs (`--host-invoker`) whose request is evaluated when it starts: `srcexpr`, `namelist`, `<content expr>`, or a non-literal `<param>` — or that writes its id to an `idlocation`. |
 | `donedata-param`, `donedata-content` | `<donedata>` `<param>` / `<content expr=…>`. |
 | `child-invoke-needs-script-engine` | A statically-invoked child whose own analysis required an engine. |
 

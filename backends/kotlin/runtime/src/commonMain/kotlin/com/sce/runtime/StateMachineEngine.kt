@@ -36,6 +36,12 @@ private val scriptSessionIdCounter = AtomicLong(0)
 const val DONE_INVOKE_PREFIX = "done.invoke."
 
 /**
+ * §scxml-3.12.1: the generic completion descriptor. A document that names no
+ * specific `done.invoke.<id>` matches every completion through it.
+ */
+const val DONE_INVOKE_EVENT = "done.invoke"
+
+/**
  * §scxml-5.10: Event metadata for _event system variable.
  *
  * Carries type, data, sendid, origin, origintype, and invokeid
@@ -753,9 +759,14 @@ abstract class StateMachineEngine<S : State, E : Event>(
     private fun refusesHostInvokeCompletion(queued: QueuedEvent<E>): Boolean {
         if (queued.metadata.hostInvokeToken != null || hostInvokeIds.isEmpty()) return false
         val name = eventNameOf(queued.event) ?: return false
-        if (!name.startsWith(DONE_INVOKE_PREFIX) || name.removePrefix(DONE_INVOKE_PREFIX) !in hostInvokeIds) {
-            return false
+        val isHostCompletion = if (name.startsWith(DONE_INVOKE_PREFIX)) {
+            name.removePrefix(DONE_INVOKE_PREFIX) in hostInvokeIds
+        } else {
+            // The generic `done.invoke` a document that names no specific
+            // completion receives: its invokeid says whose completion it is.
+            name == DONE_INVOKE_EVENT && queued.metadata.invokeId in hostInvokeIds
         }
+        if (!isHostCompletion) return false
         refusedHostInvokeCompletions++
         return true
     }
@@ -828,12 +839,15 @@ abstract class StateMachineEngine<S : State, E : Event>(
         val key = processorType to invokeId
         if (startedHostInvokes[key] != token) return false
         startedHostInvokes.remove(key)
-        // Under the id the AUTHOR wrote a transition for. §scxml-5.10.1: it is
-        // an event of the invocation, so `_event.invokeid` is that same id.
-        sendEventByName(
-            DONE_INVOKE_PREFIX + invokeId,
-            EventMetadata(type = "external", data = doneData, invokeId = invokeId, hostInvokeToken = token),
-        )
+        // Under the id the AUTHOR wrote a transition for, or — §scxml-3.12.1 —
+        // the generic `done.invoke` its descriptor matches when the document
+        // names no specific completion, as an SCXML child's completion does.
+        // §scxml-5.10.1: it is an event of the invocation, so
+        // `_event.invokeid` is that same id.
+        val done = resolveEventByName(DONE_INVOKE_PREFIX + invokeId) ?: resolveEventByName(DONE_INVOKE_EVENT)
+        if (done != null) {
+            send(done, EventMetadata(type = "external", data = doneData, invokeId = invokeId, hostInvokeToken = token))
+        }
         return true
     }
 

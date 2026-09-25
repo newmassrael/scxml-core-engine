@@ -218,20 +218,30 @@ struct HostInvokeResponse {
 using HostInvokeHandler = std::function<std::optional<HostInvokeResponse>(const HostInvokeEvent &)>;
 
 /**
- * @brief Whether `eventName` is the completion of a host-run invocation — a
- *        `done.invoke.<id>` whose `<id>` is one of `hostInvokeIds`
+ * @brief Whether an event named `eventName` carrying `_event.invokeid` =
+ *        `invokeId` is the completion of a host-run invocation
+ *
+ * That is a `done.invoke.<id>` whose `<id>` is one of `hostInvokeIds`, or the
+ * generic `done.invoke` a document that names no specific completion
+ * receives, whose invokeid is one of them.
  *
  * Such an event is accepted only through `completeHostInvoke`, the one path
  * that knows the invocation is still running. Raised any other way it could
  * be a cancelled run's late reply (§scxml-6.4), so the engine refuses it.
  */
-inline bool isHostInvokeCompletion(std::string_view eventName, const std::string_view *hostInvokeIds,
-                                   std::size_t hostInvokeIdCount) {
+inline bool isHostInvokeCompletion(std::string_view eventName, std::string_view invokeId,
+                                   const std::string_view *hostInvokeIds, std::size_t hostInvokeIdCount) {
     constexpr std::string_view prefix = ::SCE::Core::InvokeHelper::DONE_INVOKE_PREFIX;
-    if (eventName.substr(0, prefix.size()) != prefix) {
+    std::string_view id;
+    if (eventName.substr(0, prefix.size()) == prefix) {
+        id = eventName.substr(prefix.size());
+    } else if (eventName == ::SCE::Core::InvokeHelper::DONE_INVOKE_EVENT) {
+        // The generic `done.invoke` a document that names no specific
+        // completion receives: its invokeid says whose completion it is.
+        id = invokeId;
+    } else {
         return false;
     }
-    const std::string_view id = eventName.substr(prefix.size());
     for (std::size_t i = 0; i < hostInvokeIdCount; ++i) {
         if (id == hostInvokeIds[i]) {
             return true;

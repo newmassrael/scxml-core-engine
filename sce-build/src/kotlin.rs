@@ -367,6 +367,7 @@ pub fn compute_invoke_entries(model: &SCXMLModel) -> BTreeMap<String, Vec<serde_
                     "namelist": ui.namelist.as_str(),
                     "content": ui.content.as_str(),
                     "contentexpr": ui.contentexpr.as_str(),
+                    "idlocation": ui.base.idlocation.as_str(),
                     "params": serde_json::to_value(&ui.base.params).unwrap_or_default(),
                 }));
             }

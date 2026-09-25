@@ -24,6 +24,7 @@
 
 mutation_ctest --test-dir build -R '^c11_integration_host_processor$'
 mutation_targets tools/codegen/templates/c/state_machine.c.jinja2 \
+    tools/codegen/templates/c/param_macros.jinja2 \
     backends/c/runtime/include/sce/host_processor.h
 # The one authored file in that test: everything else the target compiles is
 # generated at CMake time (`sce_generate_static_integration_c_test`), so every
@@ -84,15 +85,13 @@ PY
 # `-Werror=unused-variable` refuses the mutant. Consuming and discarding it is
 # what the defect looks like anyway: the value was computed and then not sent.
 mutation_case "the param value does not cross" <<'PY'
-edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     """                _host_params[_host_param_count].name = "{{ param.name | escape_c }}";
-                _host_params[_host_param_count].value = _host_param_value_{{ loop.index0 }};
-                _host_param_count++;
+edit("tools/codegen/templates/c/param_macros.jinja2",
+     """{{ indent }}{{ arr }}[{{ count }}].value = {{ prefix }}_value_{{ loop.index0 }};
+{{ indent }}{{ count }}++;
 {% else %}""",
-     """                _host_params[_host_param_count].name = "{{ param.name | escape_c }}";
-                (void)_host_param_value_{{ loop.index0 }};
-                _host_params[_host_param_count].value = "";
-                _host_param_count++;
+     """{{ indent }}(void){{ prefix }}_value_{{ loop.index0 }};
+{{ indent }}{{ arr }}[{{ count }}].value = "";
+{{ indent }}{{ count }}++;
 {% else %}""")
 PY
 

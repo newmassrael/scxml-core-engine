@@ -271,6 +271,18 @@ pub fn declare_host_surfaces(
             }
         }
         model.refresh_invokes_view();
+        // §scxml-3.12.1: a host completion falls back to the generic
+        // `done.invoke` when the document names no specific one, as an SCXML
+        // child's does, so the generic event has to exist for it to land on.
+        // Analysis registers it for SCXML and mesh invokes; a host-served one
+        // is only known to be served from here.
+        if model
+            .invokes
+            .iter()
+            .any(|i| matches!(i, Invoke::Unsupported(info) if info.host_served))
+        {
+            model.events.insert("done.invoke".to_string());
+        }
         // A host-served invoke evaluates its request when it starts, which
         // analysis — run before this declaration — could not know it would.
         crate::script_engine_analyzer::record_host_invoke_causes(model);

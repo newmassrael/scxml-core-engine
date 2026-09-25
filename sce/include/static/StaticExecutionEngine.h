@@ -1960,8 +1960,8 @@ protected:
         // event was taken.
         if constexpr (SCE::Core::HasHostInvokeIds<StatePolicy>) {
             if (!eventWithMeta.hostInvokeToken.has_value() &&
-                ::SCE::isHostInvokeCompletion(policy_.getEventName(eventWithMeta.event), StatePolicy::HOST_INVOKE_IDS,
-                                              std::size(StatePolicy::HOST_INVOKE_IDS))) {
+                ::SCE::isHostInvokeCompletion(policy_.getEventName(eventWithMeta.event), eventWithMeta.invokeId,
+                                              StatePolicy::HOST_INVOKE_IDS, std::size(StatePolicy::HOST_INVOKE_IDS))) {
                 ++refusedHostInvokeCompletions_;
                 return true;
             }
@@ -2792,8 +2792,15 @@ public:
         // §scxml-5.10.1: the completion is an event of the invocation, so its
         // `_event.invokeid` is the invocation's id — the one `done.invoke.<id>`
         // names and the host was handed.
+        // §scxml-3.12.1: the specific `done.invoke.<id>` when the document
+        // names it, and otherwise the generic `done.invoke` its descriptor
+        // matches — as an SCXML child's completion does.
         const std::string name = ::SCE::Core::InvokeHelper::createDoneInvokeEventName(invokeId);
-        if (auto done = policy_.getEventFromName(name)) {
+        auto done = policy_.getEventFromName(name);
+        if (!done) {
+            done = policy_.getEventFromName(std::string(::SCE::Core::InvokeHelper::DONE_INVOKE_EVENT));
+        }
+        if (done) {
             EventWithMetadata completion(*done, doneData, "", "", "external",
                                          SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE, invokeId);
             completion.hostInvokeToken = token;

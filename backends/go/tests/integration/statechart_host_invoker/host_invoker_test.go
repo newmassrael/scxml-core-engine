@@ -430,6 +430,58 @@ func TestADoneInvokeRaisedTheOldWayIsRefusedAndCounted(t *testing.T) {
 	}
 }
 
+// §scxml-6.4.1: an invoke with no id and an `idlocation` gets a generated
+// `stateid.platformid` id, written to the location, handed to the host, and
+// carried as `_event.invokeid` on the completion. The document names no
+// specific `done.invoke.<id>`, so the completion arrives as the generic
+// `done.invoke` — which used to be dropped, because only the specific name was
+// looked up — and `matched` counts it only when its invokeid is what the
+// document stored.
+func TestAnIdlocationHoldsTheIDTheHostIsHanded(t *testing.T) {
+	var log []string
+	s := newStarted()
+	s.engine.RegisterInvoker(declaredType, recordingInvoker(&log))
+	s.engine.Initialize()
+	s.engine.Step()
+	s.engine.ProcessEvent(StatechartHostInvokerEventLeave)
+
+	handed := false
+	for _, e := range log {
+		if strings.HasPrefix(e, "START id=done._invoke_0 ") {
+			handed = true
+		}
+	}
+	if !handed {
+		t.Fatalf("the host was not handed the generated id: %v", log)
+	}
+	if got := s.counter(t, "matched"); got != 1 {
+		t.Fatalf("the completion did not arrive, or its invokeid is not what idlocation holds: matched = %d", got)
+	}
+}
+
+// The generic `done.invoke` is a host completion too when its invokeid names a
+// host-run invoke, so raised around CompleteHostInvoke it is refused like the
+// specific name is.
+func TestAGenericDoneInvokeRaisedTheOldWayIsRefused(t *testing.T) {
+	var log []string
+	var starts []hostStart
+	s := newStarted()
+	s.engine.RegisterInvoker(declaredType, runningInvoker(&log, &starts))
+	s.engine.Initialize()
+	s.engine.Step()
+	s.engine.ProcessEvent(StatechartHostInvokerEventLeave)
+
+	s.engine.RaiseExternalByNameWithMeta("done.invoke", sce.EventMetadata{InvokeID: "done._invoke_0"})
+	s.engine.Step()
+
+	if got := s.counter(t, "matched"); got != 0 {
+		t.Fatalf("a completion that skipped the running check reached the document: matched = %d", got)
+	}
+	if got := s.engine.RefusedHostInvokeCompletions(); got != 1 {
+		t.Fatalf("refused completions = %d", got)
+	}
+}
+
 // The other half. The build declared the type, so codegen emitted a start —
 // but nothing was registered, so no process was run. Same event as an
 // unsupported type, because from the document's side it is the same fact.

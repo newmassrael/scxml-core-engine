@@ -463,7 +463,7 @@
                         hostInvoke.invokeId = "{{ invoke_info.invoke_id }}";
                         hostInvoke.src = "{{ invoke_info.src | default('', true) | escape_cpp }}";
                         hostInvoke.content = "{{ invoke_info.content | default('', true) | escape_cpp }}";
-{% set host_evaluates = invoke_info.srcexpr or invoke_info.namelist or invoke_info.contentexpr or (invoke_info.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0) %}
+{% set host_evaluates = invoke_info.srcexpr or invoke_info.namelist or invoke_info.contentexpr or invoke_info.idlocation or (invoke_info.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0) %}
 {% if host_evaluates %}
                         // W3C SCXML 6.4.1: what the request says is evaluated
                         // now, when the invocation starts, by the rules the
@@ -472,6 +472,13 @@
                         // cannot is reported and left out (W3C SCXML 5.7.1).
                         ensureScriptEngine();
                         auto& hostScript = getScriptEngine();
+{% endif %}
+{% if invoke_info.idlocation %}
+                        // W3C SCXML 6.4.1: the invocation's generated id goes
+                        // to `idlocation` when the element is evaluated. It is
+                        // the id the host is handed and `done.invoke.<id>`
+                        // names, so the document can match on what it stored.
+                        hostScript.setVariable(sessionId_.value(), "{{ invoke_info.idlocation | escape_cpp }}", std::string("{{ invoke_info.invoke_id | escape_cpp }}")).get();
 {% endif %}
 {% if invoke_info.srcexpr %}
                         {

@@ -88,6 +88,11 @@ func ExecutePendingInvokes[S comparable](pending *[]PendingInvoke[S], executor f
 // spelled once so building the name and recognising it cannot disagree.
 const DoneInvokePrefix = "done.invoke."
 
+// DoneInvokeEvent is the generic completion descriptor (§scxml-3.12.1). A
+// document that names no specific `done.invoke.<id>` matches every completion
+// through it, so it is the event a completion falls back to.
+const DoneInvokeEvent = "done.invoke"
+
 // CreateDoneInvokeEventName creates a done.invoke event name (§scxml-6.3.1).
 //
 // Ports Rust create_done_invoke_event_name from backends/rust/runtime/src/invoke.rs.
@@ -189,11 +194,11 @@ func RaiseDoneInvoke[S comparable, E comparable](
 	donedata string,
 	engine *Engine[S, E],
 ) {
-	eventName := "done.invoke." + invokeID
+	eventName := CreateDoneInvokeEventName(invokeID)
 	event, ok := engine.policy.GetEventFromName(eventName)
 	if !ok {
 		// Try without the specific ID (generic done.invoke)
-		event, ok = engine.policy.GetEventFromName("done.invoke")
+		event, ok = engine.policy.GetEventFromName(DoneInvokeEvent)
 		if !ok {
 			return
 		}

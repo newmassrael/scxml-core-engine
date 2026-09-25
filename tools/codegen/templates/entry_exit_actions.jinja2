@@ -127,10 +127,13 @@
                 // W3C outcome (an invoke that never ran raises nothing).
                 // ============================================================
 {% for invoke_info in state.invokes | unsupported %}
-                std::string generatedInvokeId_{{ invoke_info.invoke_id }} = "{{ state_id }}." + std::to_string(reinterpret_cast<uintptr_t>(this)) + ".{{ invoke_info.invoke_id }}";
+                {# Named by position rather than by id: an id generated for an
+                   `idlocation` (`<state>._invoke_N`, §scxml-6.4.1) is not a C++
+                   identifier, and the variable lives only in this block. #}
+                std::string generatedUnsupportedInvokeId_{{ loop.index0 }} = "{{ state_id }}." + std::to_string(reinterpret_cast<uintptr_t>(this)) + ".{{ invoke_info.invoke_id | escape_cpp }}";
                 ::SCE::Core::InvokeHelper::deferInvoke(pendingInvokes_,
-                    PendingInvoke{generatedInvokeId_{{ invoke_info.invoke_id }}, State::{{ state_id | capitalize }}, "{{ invoke_info.invoke_id }}"});
-                AOT_DEBUG("Deferred {{ 'host-served' if invoke_info.host_served is defined and invoke_info.host_served else 'unsupported-type' }} invoke: {} in state {{ state_id }}", generatedInvokeId_{{ invoke_info.invoke_id }});
+                    PendingInvoke{generatedUnsupportedInvokeId_{{ loop.index0 }}, State::{{ state_id | capitalize }}, "{{ invoke_info.invoke_id | escape_cpp }}"});
+                AOT_DEBUG("Deferred {{ 'host-served' if invoke_info.host_served is defined and invoke_info.host_served else 'unsupported-type' }} invoke: {} in state {{ state_id }}", generatedUnsupportedInvokeId_{{ loop.index0 }});
 {% endfor %}
 {% endif %}
 {% if state.invokes | scxml %}

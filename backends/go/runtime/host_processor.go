@@ -368,8 +368,14 @@ func (e *Engine[S, E]) CompleteHostInvoke(processorType, invokeID string, token 
 	}
 	delete(e.startedHostInvokes, key)
 	// The id is the DOCUMENT's, because `done.invoke.<id>` is the name the
-	// author wrote a transition for.
-	if evt, known := e.policy.GetEventFromName(CreateDoneInvokeEventName(invokeID)); known {
+	// author wrote a transition for. §scxml-3.12.1: when the document names no
+	// specific completion, the generic `done.invoke` its descriptor matches —
+	// as an SCXML child's completion does.
+	evt, known := e.policy.GetEventFromName(CreateDoneInvokeEventName(invokeID))
+	if !known {
+		evt, known = e.policy.GetEventFromName(DoneInvokeEvent)
+	}
+	if known {
 		meta := NewEventWithMetadata(evt)
 		meta.Metadata = ExternalMetadata("", "")
 		meta.Metadata.Data = doneData
@@ -441,8 +447,13 @@ func (e *Engine[S, E]) isRefusedHostInvokeCompletion(meta EventWithMetadata[E]) 
 	if !ok {
 		return false
 	}
-	id, isDone := strings.CutPrefix(e.policy.GetEventName(meta.Event), DoneInvokePrefix)
-	return isDone && slices.Contains(hostPolicy.HostInvokeIDs(), id)
+	name := e.policy.GetEventName(meta.Event)
+	if id, isSpecific := strings.CutPrefix(name, DoneInvokePrefix); isSpecific {
+		return slices.Contains(hostPolicy.HostInvokeIDs(), id)
+	}
+	// The generic `done.invoke` a document that names no specific completion
+	// receives: its invokeid says whose completion it is.
+	return name == DoneInvokeEvent && slices.Contains(hostPolicy.HostInvokeIDs(), meta.Metadata.InvokeID)
 }
 
 // hostInvokeKey identifies one host-run invocation that was started and has

@@ -438,6 +438,63 @@ fn a_done_invoke_raised_the_old_way_is_refused_and_counted() {
     assert_eq!(engine.refused_host_invoke_completions(), 1);
 }
 
+/// §scxml-6.4.1: an invoke with no id and an `idlocation` gets a generated
+/// `stateid.platformid` id, written to the location, handed to the host, and
+/// carried as `_event.invokeid` on the completion. The document names no
+/// specific `done.invoke.<id>`, so the completion arrives as the generic
+/// `done.invoke` — which used to be dropped, because only the specific name
+/// was looked up — and `matched` counts it only when its invokeid is what the
+/// document stored.
+#[test]
+fn an_idlocation_holds_the_id_the_host_is_handed() {
+    let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let (mut engine, script_engine) = started();
+    engine.register_invoker(DECLARED_TYPE, recording_invoker(&log));
+    engine.initialize();
+    engine.step();
+    engine.process_event(Event::Leave);
+
+    let seen = log.lock().expect("invoker log");
+    assert!(
+        seen.iter()
+            .any(|e| e.starts_with("START id=done._invoke_0 ")),
+        "the host was not handed the generated id: {seen:?}",
+    );
+    assert_eq!(
+        counter(&engine, &script_engine, "matched"),
+        1,
+        "the completion did not arrive, or its invokeid is not what idlocation holds",
+    );
+}
+
+/// The generic `done.invoke` is a host completion too when its invokeid
+/// names a host-run invoke, so raised around `complete_host_invoke` it is
+/// refused like the specific name is.
+#[test]
+fn a_generic_done_invoke_raised_the_old_way_is_refused() {
+    let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let starts: Starts = Arc::default();
+    let (mut engine, script_engine) = started();
+    engine.register_invoker(DECLARED_TYPE, running_invoker(&log, &starts));
+    engine.initialize();
+    engine.step();
+    engine.process_event(Event::Leave);
+
+    let metadata = sce_rust_runtime::event::EventMetadata {
+        invoke_id: "done._invoke_0".into(),
+        ..Default::default()
+    };
+    engine.raise_external_by_name_with_meta("done.invoke", &metadata);
+    engine.step();
+
+    assert_eq!(
+        counter(&engine, &script_engine, "matched"),
+        0,
+        "a completion that skipped the running check reached the document",
+    );
+    assert_eq!(engine.refused_host_invoke_completions(), 1);
+}
+
 /// The other half. The build declared the type, so codegen emitted a start
 /// — but nothing was registered, so no process was run. Same event as an
 /// unsupported type, because from the document's side it is the same fact.

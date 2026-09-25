@@ -29,7 +29,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional
 
-from .invoke import DONE_INVOKE_PREFIX
+from .invoke import DONE_INVOKE_EVENT, DONE_INVOKE_PREFIX
 
 
 @dataclass
@@ -194,14 +194,17 @@ class HostInvokeResponse:
 HostInvokeHandler = Callable[[HostInvokeEvent], Optional[HostInvokeResponse]]
 
 
-def is_host_invoke_completion(event_name: str, host_invoke_ids) -> bool:
-    """Whether ``event_name`` is the completion of a host-run invocation — a
-    ``done.invoke.<id>`` whose ``<id>`` is one of ``host_invoke_ids``.
+def is_host_invoke_completion(event_name: str, invoke_id: str, host_invoke_ids) -> bool:
+    """Whether an event named ``event_name`` carrying ``_event.invokeid`` =
+    ``invoke_id`` is the completion of a host-run invocation: a
+    ``done.invoke.<id>`` whose ``<id>`` is one of ``host_invoke_ids``, or the
+    generic ``done.invoke`` a document that names no specific completion
+    receives, whose invokeid is one of them.
 
     Such an event is accepted only through ``Engine.complete_host_invoke``,
     the one path that knows the invocation is still running. Raised any other
     way it could be a cancelled run's late reply (§scxml-6.4), so the engine
     refuses it."""
-    if not event_name.startswith(DONE_INVOKE_PREFIX):
-        return False
-    return event_name[len(DONE_INVOKE_PREFIX):] in host_invoke_ids
+    if event_name.startswith(DONE_INVOKE_PREFIX):
+        return event_name[len(DONE_INVOKE_PREFIX):] in host_invoke_ids
+    return event_name == DONE_INVOKE_EVENT and invoke_id in host_invoke_ids

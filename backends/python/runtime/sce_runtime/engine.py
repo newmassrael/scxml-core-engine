@@ -1050,7 +1050,9 @@ class Engine(Generic[S, E]):
         `complete_host_invoke`. Counts the refusal when it is."""
         if metadata.host_invoke_token is not None:
             return False
-        if not is_host_invoke_completion(event_name, self._policy.host_invoke_ids()):
+        if not is_host_invoke_completion(
+            event_name, metadata.invoke_id, self._policy.host_invoke_ids()
+        ):
             return False
         self._refused_host_invoke_completions += 1
         return True

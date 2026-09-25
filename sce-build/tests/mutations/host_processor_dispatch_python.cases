@@ -86,7 +86,7 @@ edit("tools/codegen/templates/python/actions/send.py.jinja2",
 {%- for param in action.params -%}
 ({{ param.name | py_string_literal }}, {{ param.expr | to_lua_expr | py_string_literal }}),
 {%- endfor -%}
-], {{ action.namelist | py_string_literal }})""",
+], {{ action.namelist | py_string_literal }}, "<send>")""",
      "{{ indent }}_host_params = {}")
 PY
 

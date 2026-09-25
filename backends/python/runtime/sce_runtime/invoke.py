@@ -215,6 +215,10 @@ class ScxmlInvoke(Invoke):
 #: once so building the name and recognising it cannot disagree.
 DONE_INVOKE_PREFIX = "done.invoke."
 
+#: W3C SCXML 3.12.1 — the generic completion descriptor. A document that
+#: names no specific ``done.invoke.<id>`` matches every completion through it.
+DONE_INVOKE_EVENT = "done.invoke"
+
 
 def create_done_invoke_event_name(invoke_id: str) -> str:
     """W3C SCXML 6.3.1 — `done.invoke.<id>` event name."""
