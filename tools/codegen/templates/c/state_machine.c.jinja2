@@ -2822,6 +2822,9 @@ SCE_SM_FN static void execute_transition_actions({{ csym_prefix }}{{ model.name 
                                                  {{ csym_prefix }}{{ model.name }}_state_t source,
                                                  uint16_t index) {
 {% if any_transition_actions.value %}
+    /* A document whose only transition content reads nothing of the machine
+       — a `<log>` without a script engine — leaves `sm` unread. */
+    (void)sm;
     switch (source) {
     {% for state_id, state in model.states | dictsort %}
     {% set state_has_actions = state.transitions and (state.transitions | selectattr('actions') | list | length > 0) %}
