@@ -153,7 +153,49 @@ class StaticRecordStateMachine(
     // as `needs_event_scheduler`.
     override val needsEventScheduler: Boolean = false
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
 
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<StaticRecordState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<StaticRecordState, HistoryId>> =
+            listOf(StateTarget(StaticRecordState.Showing))
+
+        // W3C SCXML 3.13: showing's transition 0, as the microstep reads it.
+        val transitionShowingAt0 = EnabledTransition<StaticRecordState, HistoryId>(
+            StaticRecordState.Showing,
+            emptyList(),
+            0,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: showing's transition 1, as the microstep reads it.
+        val transitionShowingAt1 = EnabledTransition<StaticRecordState, HistoryId>(
+            StaticRecordState.Showing,
+            emptyList(),
+            1,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: showing's transition 2, as the microstep reads it.
+        val transitionShowingAt2 = EnabledTransition<StaticRecordState, HistoryId>(
+            StaticRecordState.Showing,
+            emptyList(),
+            2,
+            hasActions = true,
+            isInternal = true,
+        )
+    }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StaticRecordState? = when (stateId) {
@@ -166,13 +208,7 @@ class StaticRecordStateMachine(
         is StaticRecordState.Showing -> "showing"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: StaticRecordState): Boolean = when (state) {
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StaticRecordState): Int = when (state) {
         is StaticRecordState.Showing -> 0
     }
@@ -195,38 +231,31 @@ class StaticRecordStateMachine(
 
 
 
-    // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
-    override fun processEvent(
+
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
         state: StaticRecordState,
-        event: StaticRecordEvent
-    ): TransitionResult<StaticRecordState> = when (state) {
-        is StaticRecordState.Showing -> processShowing(event)
+        event: StaticRecordEvent?
+    ): EnabledTransition<StaticRecordState, HistoryId>? = when (state) {
+        is StaticRecordState.Showing -> when {
+            event is StaticRecordEvent.Next && shown.dayOfMonth < daysInMonth(shown.year, shown.month) -> transitionShowingAt0
+            event is StaticRecordEvent.Day.Picked -> transitionShowingAt1
+            event is StaticRecordEvent.Error.Execution -> transitionShowingAt2
+            else -> null
+        }
     }
-
-
-    // --- Per-State Event Handlers ---
-
-    private fun processShowing(
-        event: StaticRecordEvent
-    ): TransitionResult<StaticRecordState> = when {
-        event is StaticRecordEvent.Next && shown.dayOfMonth < daysInMonth(shown.year, shown.month) -> TransitionResult.Internal(0)
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is StaticRecordEvent.Day.Picked -> TransitionResult.Internal(1)
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is StaticRecordEvent.Error.Execution -> TransitionResult.Internal(2)
-        else -> TransitionResult.Ignored
-    }
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: static_record.scxml:13 :: _machine
-    override fun onEntry(state: StaticRecordState, pathChild: StaticRecordState?) {
+    override fun onEntry(state: StaticRecordState, isDefaultEntry: Boolean) {
         when (state) {
             is StaticRecordState.Showing -> {
                 // SCE-MAP: static_record.scxml:25 :: showing :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("showing")) return
             }
         }
     }
@@ -237,19 +266,14 @@ class StaticRecordStateMachine(
         when (state) {
             is StaticRecordState.Showing -> {
                 // SCE-MAP: static_record.scxml:25 :: showing :: _state_body
-                activeStateIds.remove("showing")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: static_record.scxml:13 :: _machine
-    override fun executeTransitionActions(
-        source: StaticRecordState,
-        event: StaticRecordEvent?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: StaticRecordState, transitionIndex: Int) {
         when (source) {
         is StaticRecordState.Showing -> when (transitionIndex) {
             0 -> {

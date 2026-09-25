@@ -33,9 +33,10 @@
 #
 # The helper below is shared between the Interpreter and the AOT engines
 # (`ai_loop_sm.inl` calls it by name), so a defect restored here is a defect in
-# both. Its Rust sibling is `ai_loop_history_rust.cases`, which mutates the
-# committed generated tree because that backend inlines the same filter instead
-# of calling a helper.
+# both. Its Rust sibling is `ai_loop_history_rust.cases`, which mutates the Rust
+# runtime's `recorded_history`: since that backend moved onto Appendix D
+# (2026-09-24) its generated policy calls the runtime for the filter, as this
+# one calls the helper below, where it used to inline the filter itself.
 
 mutation_ctest --test-dir build -R '^IntegrationTests$'
 mutation_targets sce/include/core/HistoryHelper.h

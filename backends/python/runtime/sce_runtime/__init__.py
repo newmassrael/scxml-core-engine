@@ -32,7 +32,8 @@ from .invoke import (
     ScxmlInvoke,
     create_done_invoke_event_name,
 )
-from .policy import StatePolicy, TransitionResult
+from .microstep import EnabledTransition, EntryTarget, HistoryTarget, StateTarget
+from .policy import StatePolicy
 from .scheduler import ScheduledEvent, Scheduler
 from .scripting import (
     IScriptEngine,
@@ -45,10 +46,13 @@ from .scripting import (
 __all__ = [
     "ChildSession",
     "ConfigurationRejection",
+    "EnabledTransition",
     "Engine",
+    "EntryTarget",
     "Event",
     "EventMetadata",
     "EventWithMetadata",
+    "HistoryTarget",
     "HostSendHandler",
     "HostInvokeCancel",
     "HostInvokeEvent",
@@ -70,7 +74,7 @@ __all__ = [
     "ScriptValueKind",
     "ScxmlInvoke",
     "StatePolicy",
-    "TransitionResult",
+    "StateTarget",
     "create_done_invoke_event_name",
     "published_origin",
     "session_id_from_scxml_location",

@@ -81,11 +81,12 @@ PY
 
 mutation_case "the chain depth is never reset between drains" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """        // The queue emptied, so the chain — refused or merely finished — is
-        // over. A machine whose next macrostep starts a new one starts it from
-        // zero, and the count of what was refused stays where the host reads it.
-        self.error_cascade_depth = 0;""",
-     """        // MUTANT: the depth outlives the drain that built it.""")
+     """                // The queue emptied, so the chain — refused or merely finished —
+                // is over. A machine whose next macrostep starts a new one
+                // starts it from zero, and the count of what was refused stays
+                // where the host reads it.
+                self.error_cascade_depth = 0;""",
+     """                // MUTANT: the depth outlives the drain that built it.""")
 PY
 
 # ── The chain the document's own raises must not end ───────────────
@@ -107,13 +108,13 @@ PY
 
 mutation_case "an unrelated internal event ends the chain again" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """            self.handling_error_event = is_error;
-            let outcome = self.execute_transition(event_with_meta.event);""",
-     """            if !is_error {
-                self.error_cascade_depth = 0;
-            }
-            self.handling_error_event = is_error;
-            let outcome = self.execute_transition(event_with_meta.event);""")
+     """        self.handling_error_event = is_error;
+        let outcome = self.take_event(event_with_meta.event);""",
+     """        if !is_error {
+            self.error_cascade_depth = 0;
+        }
+        self.handling_error_event = is_error;
+        let outcome = self.take_event(event_with_meta.event);""")
 PY
 
 # ── The count ──────────────────────────────────────────────────────

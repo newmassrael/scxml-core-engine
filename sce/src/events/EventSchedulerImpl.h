@@ -122,6 +122,7 @@ private:
     using QueueIterator = ExecutionQueueType::iterator;
 
     size_t processReadyEvents();
+    void requestThreadsStop();
     std::string generateSendId();
     std::chrono::steady_clock::time_point getNextExecutionTime() const;
     std::chrono::steady_clock::time_point getNextExecutionTimeUnlocked() const;

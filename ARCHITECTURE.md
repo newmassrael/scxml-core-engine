@@ -143,10 +143,9 @@ sce_runtime       (STATIC, full interpreter — umbrella target)
 
 **Contents**:
 - **Model**: `SCXMLModel`, `StateNode`, `TransitionNode`, `GuardNode`, `InvokeNode`
-- **Runtime**: `StateMachine`, `ActionExecutorImpl`, `StateMachineBuilder`
+- **Runtime**: `StateMachine`, `InterpreterDocument`, `ActionExecutorImpl`, `StateMachineBuilder`
 - **Actions**: `ScriptAction`, `AssignAction`, `SendAction`, `IfAction`, `ForeachAction`, `CancelAction`
 - **Events**: `EventSchedulerImpl`, `EventDispatcherImpl`, `EventTargetFactoryImpl`, HTTP infrastructure
-- **States**: `ConcurrentStateNode`, `ParallelRegionOrchestrator`, `ConcurrentEventBroadcaster`
 - **Parsing**: `SCXMLParser`, `StateNodeParser`, `TransitionParser`, `ActionParser`
 - **History**: `HistoryManager`, `HistoryStateAutoRegistrar`, `HistoryValidator`
 
@@ -700,8 +699,19 @@ helpers. An engine hands it a Host: the document as `EntrySetAlgorithms` reads
 it, plus the run — the configuration, which transition of a state an event
 enables, and what one state's entry, exit or transition content does. The AOT
 engine's Host is `StaticExecutionEngine::MicrostepHost`, over the generated
-policy; everything Appendix D does with the Host's answers is the shared
+policy; the Interpreter's is `StateMachine::MicrostepHost`, over
+`InterpreterDocument` — the parsed model read the way Appendix D reads a
+document. Everything Appendix D does with the Host's answers is the shared
 procedure, for a machine with a `<parallel>` and one without alike.
+
+Around the microstep, both engines run `mainEventLoop` in the same shape: a
+macrostep completes on eventless transitions and internal events, the invokes
+it armed start, and only then is the next external event taken — after a
+macrostep stopped at `MAX_MACROSTEP_MICROSTEPS` too. The Interpreter's two
+queues are its `IEventRaiser`'s, which keeps them in one structure, so the loop
+names the one it takes from (`EventQueue::Internal` / `EventQueue::External`).
+An event handed to a machine in the middle of its own macrostep is `enqueue`d
+on the queue it belongs to and taken in turn, never processed where it lands.
 
 **`common/`** — Action/data primitive helpers:
 
@@ -753,7 +763,7 @@ BasicHTTP Event I/O Processor support for `<send type="BasicHTTPEventProcessor">
 
 ### Native (Linux, macOS, Windows)
 - `QueuedExecutionHelper`: Worker thread with operation queue for QuickJS thread safety
-- pthread for `EventDispatcherImpl` and `ConcurrentEventBroadcaster`
+- pthread for `EventDispatcherImpl`
 
 ### WASM (Emscripten)
 - `SynchronousExecutionHelper`: Direct synchronous execution (no pthread for QuickJS)
@@ -826,7 +836,8 @@ Cargo.toml            Workspace (Rust 1.75+, edition 2021)
 
 **Architecture**:
 - **Code Generator**: `sce-codegen generate -l rust` + `templates/rust/*.rs.jinja2`
-- **Template Parity**: 1:1 port of C++ Jinja2 templates (state_machine, actions, invoke, etc.)
+- **The microstep**: Appendix D's procedures are `backends/rust/runtime/src/helpers/microstep.rs`, a transcription of `MicrostepAlgorithms` / `EntrySetAlgorithms` / `ExitSetAlgorithms` / `ConflictResolutionAlgorithms` / `CompletionAlgorithms` over a `Document` and a `Run` the caller supplies. `Engine<P>` hands it the generated policy through `EngineHost` and runs `mainEventLoop` in the same shape as the C++ engines. The policy supplies only its document's tables — child states, initial and history targets as written, document order — and one-state hooks (`first_enabled_transition`, `execute_entry_actions`, `execute_exit_actions`, `execute_transition_content`, `execute_history_default_content`), for a machine with a `<parallel>` and one without alike.
+- **Template Parity**: mirrors the C++ AOT templates (`process_transition.jinja2`, `state_machine_inl.jinja2`, `entry_exit_actions.jinja2`) — the policy answers the same questions the C++ `MicrostepHost` asks
 - **Scripting**: Lua 5.4 via `mlua` crate (vendored, same as C++ default engine)
 - **JSON Builtins**: `include_str!("../../../../sce/include/scripting/json_builtins.lua")` — shared with C++/Kotlin
 - **Test Registration**: `linkme` crate for compile-time test registration (equivalent to C++ `AotTestRegistrar`)
@@ -853,6 +864,8 @@ backends/kotlin/android-app         Android real-device benchmark (Compose UI)
 
 **Kotlin code generator**: `sce-codegen generate -l kotlin` — generates sealed interface hierarchies + coroutine-based state machines from the same SCXML sources.
 
+- **The microstep**: `backends/kotlin/runtime/.../Microstep.kt` is the runtime's one transcription of W3C SCXML Appendix D — selection, conflict removal, exit and entry sets with their `<history>` and `<initial>` defaults, `isInFinalState` — function for function with the Go runtime's `microstep.go` and held to the same hand-worked answers (`backends/kotlin/tests/.../runtime/MicrostepTest.kt`). `StateMachineEngine<S, E>` drives it through a `Run` over its own configuration and history store — generated code touches neither — and runs `mainEventLoop` in the same shape as the other engines, in both the synchronous and the coroutine mode. The generated machine supplies its document's tables — child states, initial and history targets as written, document order, each transition as the microstep reads it, built once in a companion object — and one-state hooks (`firstEnabledTransition`, `onEntry(state, isDefaultEntry)`, `onExit`, `executeTransitionContent`, `executeHistoryDefaultContent`), for a machine with a `<parallel>` and one without alike. A `<history>` is named by a `HistoryId` rather than by a third type parameter, as in Go.
+
 ### Go Backend
 
 Go backend generates native Go state machines with Go 1.22+ generics:
@@ -863,8 +876,9 @@ backends/go/lua          Lua script engine via Shopify/go-lua (pure Go, no CGo)
 backends/go/tests        W3C conformance (202/202)
 ```
 
-- **Templates**: `tools/codegen/templates/go/*.go.jinja2` — 1:1 port of Rust templates
-- **Generics**: `Engine[S comparable, E comparable]` with `StatePolicy[S, E]` interface
+- **Templates**: `tools/codegen/templates/go/*.go.jinja2` — ported from the Rust templates, and answering the same questions (`process_transition` / `entry_exit_actions` / `state_machine`)
+- **The microstep**: `backends/go/runtime/microstep.go` is the runtime's one transcription of W3C SCXML Appendix D — selection, conflict removal, exit and entry sets with their `<history>` and `<initial>` defaults, `isInFinalState` — function for function with the Rust runtime's `helpers/microstep.rs` and held to the same hand-worked answers (`microstep_test.go`). `Engine[S, E]` drives it through `engineHost` and runs `mainEventLoop` in the same shape as the C++ and Rust engines. The generated policy supplies its document's tables — child states, initial and history targets as written, document order — and one-state hooks (`FirstEnabledTransition`, `ExecuteEntryActions`, `ExecuteExitActions`, `ExecuteTransitionContent`, `ExecuteHistoryDefaultContent`), for a machine with a `<parallel>` and one without alike
+- **Generics**: `Engine[S comparable, E comparable]` with `StatePolicy[S, E]` interface. A `<history>` is named by the policy's `sce.HistoryID` rather than by a third type parameter, so the type a host names does not change for a fact only the policy uses
 - **State/Event**: `type State int` + `const ( StateXxx State = iota )` pattern
 - **Scripting**: Lua via Shopify/go-lua (pure Go, no C compiler required)
 - **JSON Builtins**: `//go:embed json_builtins.lua` — shared with C++/Rust/Kotlin
@@ -891,7 +905,8 @@ sce-forge-runtime/    Non-MCU Forge kinds: codec / filter / interpolation / look
 
 **Architecture**:
 - **Code Generator**: `sce-codegen generate-w3c -l python` + `tools/codegen/templates/python/*.py.jinja2`
-- **Template Parity**: 1:1 port of Rust templates (state_machine / entry_exit_actions / process_transition / scriptengine_helpers / conflict_resolution / invoke_methods). Per-action emission lives in `tools/codegen/templates/python/actions/{assign,cancel,log,raise,script,send}.py.jinja2`; recursive `<if>` / `<foreach>` stay in `_actions.py.jinja2` so nested children can recurse through `emit` without a circular Jinja2 macro import
+- **The microstep**: `sce_runtime/microstep.py` is the runtime's one transcription of W3C SCXML Appendix D — selection, conflict removal, exit and entry sets with their `<history>` and `<initial>` defaults, `isInFinalState` — function for function with the Rust runtime's `helpers/microstep.rs` and held to the same hand-worked answers (`backends/python/tests/microstep/`). `Engine` drives it through `_MicrostepHost`; the generated policy supplies the document's structure as written (child states, initial targets, `<history>` elements), which of one state's transitions an event enables, and the executable content of states and transitions
+- **Template Parity**: ported from the Rust templates (state_machine / entry_exit_actions / process_transition / scriptengine_helpers / invoke_methods). Per-action emission lives in `tools/codegen/templates/python/actions/{assign,cancel,log,raise,script,send}.py.jinja2`; recursive `<if>` / `<foreach>` stay in `_actions.py.jinja2` so nested children can recurse through `emit` without a circular Jinja2 macro import
 - **Scripting**: Lua 5.4 via `lupa` (PyPI), same ECMAScript→Lua transformer (`to_lua_expr` / `to_lua_guard` / `to_lua_script`) every other Lua-family backend uses. DOM bridge (`getElementsByTagName` / `getAttribute`) uses `xml.etree.ElementTree` + a thin `_DomElement` wrapper in `lua_engine.py`, mirroring `backends/rust/lua::dom::XmlRef`
 - **State/Event**: `IntEnum` members named in UPPER_SNAKE_CASE; identifiers normalised via `to_python_const` filter
 - **HTTP**: `backends/python/tests/conftest.py` spawns an in-process `http.server.HTTPServer` on port 8080 mirroring `tests/w3c/standalone_http_server.js` — no Node.js dependency in the AOT CI lane

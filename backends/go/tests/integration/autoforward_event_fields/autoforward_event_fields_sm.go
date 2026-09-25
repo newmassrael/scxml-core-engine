@@ -104,6 +104,44 @@ var AutoforwardEventFieldsAllStates = []AutoforwardEventFieldsState{
 	AutoforwardEventFieldsStatePhase,
 }
 
+// AutoforwardEventFieldsTarget is one token of a target list, as the document wrote
+// it (W3C SCXML 3.13): a state, or a <history> the engine dereferences.
+type AutoforwardEventFieldsTarget = sce.EntryTarget[AutoforwardEventFieldsState, sce.HistoryID]
+
+// ======================================================================
+// Document structure (W3C SCXML 3.2-3.4, 3.10)
+//
+// Package-level tables, because the structure is a fact about the document
+// and not about a run: the engine's Appendix D procedures read them through
+// the policy methods below, and a transition's target list is handed out as
+// a slice of them rather than rebuilt on every selection.
+// ======================================================================
+
+// childStatesOfAutoforwardEventFields is §scxml-D-getChildStates per state: its
+// <state>, <parallel> and <final> children, in document order.
+var childStatesOfAutoforwardEventFields = [3][]AutoforwardEventFieldsState{
+}
+
+// initialTargetsOfAutoforwardEventFields is each compound state's initial transition
+// target, as written (§scxml-3.3).
+var initialTargetsOfAutoforwardEventFields = [3][]AutoforwardEventFieldsTarget{
+}
+
+// documentInitialTargetsOfAutoforwardEventFields is the target of the document's own
+// initial transition, as written (§scxml-3.2).
+var documentInitialTargetsOfAutoforwardEventFields = []AutoforwardEventFieldsTarget{sce.StateTarget[AutoforwardEventFieldsState, sce.HistoryID](AutoforwardEventFieldsStatePhase)}
+
+// transitionTargetsOfAutoforwardEventFields is each transition's target list, as
+// written (§scxml-3.13), by source state and the transition's index among its
+// source's own transitions. A targetless transition's entry is empty.
+var transitionTargetsOfAutoforwardEventFields = [3][][]AutoforwardEventFieldsTarget{
+	AutoforwardEventFieldsStatePhase: {
+		1: {sce.StateTarget[AutoforwardEventFieldsState, sce.HistoryID](AutoforwardEventFieldsStatePass)},
+		2: {sce.StateTarget[AutoforwardEventFieldsState, sce.HistoryID](AutoforwardEventFieldsStateFail)},
+		3: {sce.StateTarget[AutoforwardEventFieldsState, sce.HistoryID](AutoforwardEventFieldsStateFail)},
+	},
+}
+
 // ======================================================================
 // Event type (W3C SCXML 3.12)
 // ======================================================================
@@ -146,10 +184,6 @@ func (e AutoforwardEventFieldsEvent) String() string {
 // ======================================================================
 
 type AutoforwardEventFieldsPolicy struct {
-	// W3C SCXML 3.13: Last transition metadata
-	lastTransitionIsInternal  bool
-	lastTransitionIsTargetless bool
-	lastTransitionSourceState AutoforwardEventFieldsState
 	// W3C SCXML 5.10.1: External event flag
 	nextEventIsExternal bool
 	pendingEventName string
@@ -186,7 +220,6 @@ type AutoforwardEventFieldsPolicy struct {
 // NewAutoforwardEventFieldsPolicy creates a new policy with default values.
 func NewAutoforwardEventFieldsPolicy() AutoforwardEventFieldsPolicy {
 	return AutoforwardEventFieldsPolicy{
-		lastTransitionSourceState: AutoforwardEventFieldsStatePhase,
 		pendingInvokes: make([]sce.PendingInvoke[AutoforwardEventFieldsState], 0),
 		activeInvokes:  make(map[string]*sce.ChildSession),
 	}
@@ -544,29 +577,45 @@ func (p *AutoforwardEventFieldsPolicy) GetParent(state AutoforwardEventFieldsSta
 	return 0, false
 }
 
-// IsCompoundState returns true if state has children (W3C SCXML 3.3).
+// IsCompoundState returns true if state is a <state> with child states — exactly
+// the states that have an initial transition. A <parallel> is not compound
+// (W3C SCXML 3.3).
 func (p *AutoforwardEventFieldsPolicy) IsCompoundState(state AutoforwardEventFieldsState) bool {
-	switch state {
-	}
-	return false
+	return len(initialTargetsOfAutoforwardEventFields[state]) > 0
 }
 
 func (p *AutoforwardEventFieldsPolicy) IsParallelState(_ AutoforwardEventFieldsState) bool { return false }
-func (p *AutoforwardEventFieldsPolicy) GetParallelRegions(_ AutoforwardEventFieldsState) []AutoforwardEventFieldsState { return nil }
 
-// IsDescendantOf returns true if desc is a descendant of anc (W3C SCXML 3.12).
-func (p *AutoforwardEventFieldsPolicy) IsDescendantOf(desc, anc AutoforwardEventFieldsState) bool {
-	current := desc
-	for {
-		parent, ok := p.GetParent(current)
-		if !ok {
-			return false
-		}
-		if parent == anc {
-			return true
-		}
-		current = parent
-	}
+// GetChildStates returns state's <state>, <parallel> and <final> children, in
+// document order — for a <parallel>, its regions (§scxml-D-getChildStates).
+func (p *AutoforwardEventFieldsPolicy) GetChildStates(state AutoforwardEventFieldsState) []AutoforwardEventFieldsState {
+	return childStatesOfAutoforwardEventFields[state]
+}
+
+// GetInitialTargets returns a compound state's initial transition target, as
+// written; the engine's entry procedures dereference a <history> among them
+// (W3C SCXML 3.3).
+func (p *AutoforwardEventFieldsPolicy) GetInitialTargets(state AutoforwardEventFieldsState) []AutoforwardEventFieldsTarget {
+	return initialTargetsOfAutoforwardEventFields[state]
+}
+
+// GetDocumentInitialTargets returns the target of the document's own initial
+// transition, as written (W3C SCXML 3.2).
+func (p *AutoforwardEventFieldsPolicy) GetDocumentInitialTargets() []AutoforwardEventFieldsTarget {
+	return documentInitialTargetsOfAutoforwardEventFields
+}
+
+// W3C SCXML 3.10: this document declares no <history>, so no target list names
+// one and the engine never asks the two below; answering would mean inventing
+// one.
+func (p *AutoforwardEventFieldsPolicy) GetHistoryParent(history sce.HistoryID) AutoforwardEventFieldsState {
+	panic(fmt.Sprintf("AutoforwardEventFieldsPolicy declares no <history>; asked for %d", history))
+}
+func (p *AutoforwardEventFieldsPolicy) GetHistoryDefaultTargets(history sce.HistoryID) []AutoforwardEventFieldsTarget {
+	panic(fmt.Sprintf("AutoforwardEventFieldsPolicy declares no <history>; asked for %d", history))
+}
+func (p *AutoforwardEventFieldsPolicy) HistoryValue(_ sce.HistoryID) ([]AutoforwardEventFieldsState, bool) {
+	return nil, false
 }
 
 // GetDocumentOrder returns the document order index (W3C SCXML Appendix D).
@@ -623,43 +672,6 @@ func (p *AutoforwardEventFieldsPolicy) NullEvent() AutoforwardEventFieldsEvent {
 	return AutoforwardEventFieldsEventNull
 }
 
-// GetInitialChildren returns initial children of a compound state (W3C SCXML 3.6).
-func (p *AutoforwardEventFieldsPolicy) GetInitialChildren(state AutoforwardEventFieldsState) []AutoforwardEventFieldsState {
-	switch state {
-	}
-	return nil
-}
-
-// LastTransitionIsInternal returns the internal transition flag (W3C SCXML 3.13).
-func (p *AutoforwardEventFieldsPolicy) LastTransitionIsInternal() bool {
-	return p.lastTransitionIsInternal
-}
-
-// SetLastTransitionIsInternal sets the internal transition flag.
-func (p *AutoforwardEventFieldsPolicy) SetLastTransitionIsInternal(value bool) {
-	p.lastTransitionIsInternal = value
-}
-
-// LastTransitionIsTargetless returns the targetless transition flag (W3C SCXML 3.13).
-func (p *AutoforwardEventFieldsPolicy) LastTransitionIsTargetless() bool {
-	return p.lastTransitionIsTargetless
-}
-
-// SetLastTransitionIsTargetless sets the targetless transition flag.
-func (p *AutoforwardEventFieldsPolicy) SetLastTransitionIsTargetless(value bool) {
-	p.lastTransitionIsTargetless = value
-}
-
-// LastTransitionSourceState returns the source state of the last transition.
-func (p *AutoforwardEventFieldsPolicy) LastTransitionSourceState() AutoforwardEventFieldsState {
-	return p.lastTransitionSourceState
-}
-
-// SetLastTransitionSourceState sets the source state of the last transition.
-func (p *AutoforwardEventFieldsPolicy) SetLastTransitionSourceState(state AutoforwardEventFieldsState) {
-	p.lastTransitionSourceState = state
-}
-
 
 // SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
 func (p *AutoforwardEventFieldsPolicy) SetNextEventIsExternal(value bool) {
@@ -706,14 +718,6 @@ func (p *AutoforwardEventFieldsPolicy) GetActiveStates() []AutoforwardEventField
 // which is false above; the method exists because the interface is one contract.
 func (p *AutoforwardEventFieldsPolicy) SetActiveStates(_ []AutoforwardEventFieldsState) {}
 func (p *AutoforwardEventFieldsPolicy) HasExternalEventFlag() bool { return true }
-// GetInitialOrHistoryChild returns the initial child considering history (W3C SCXML 3.11).
-func (p *AutoforwardEventFieldsPolicy) GetInitialOrHistoryChild(state AutoforwardEventFieldsState) AutoforwardEventFieldsState {
-	children := p.GetInitialChildren(state)
-	if len(children) > 0 {
-		return children[0]
-	}
-	return state
-}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *AutoforwardEventFieldsPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[AutoforwardEventFieldsEvent], _ *sce.Engine[AutoforwardEventFieldsState, AutoforwardEventFieldsEvent]) {}
 
@@ -755,13 +759,11 @@ func (p *AutoforwardEventFieldsPolicy) ClearEventMetadata() {
 
 
 
-
-// ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
+// ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
+// configuration, runs its <onentry>, and its <initial> transition's content when
+// its initial state is entered by default.
 //line autoforward_event_fields.scxml:30
-func (p *AutoforwardEventFieldsPolicy) ExecuteEntryActions(state AutoforwardEventFieldsState, engine *sce.Engine[AutoforwardEventFieldsState, AutoforwardEventFieldsEvent], pathChild *AutoforwardEventFieldsState) {
-	// Only a `<parallel>` machine descends into defaults here, so a machine
-	// without one has nothing to tell an ancestor entry from a target entry.
-	_ = pathChild
+func (p *AutoforwardEventFieldsPolicy) ExecuteEntryActions(state AutoforwardEventFieldsState, engine *sce.Engine[AutoforwardEventFieldsState, AutoforwardEventFieldsEvent], isDefaultEntry bool) {
 	p.ensureScriptEngine()
 	switch state {
 	case AutoforwardEventFieldsStatePhase:
@@ -779,9 +781,21 @@ func (p *AutoforwardEventFieldsPolicy) ExecuteEntryActions(state AutoforwardEven
 	}
 }
 
-// ExecuteExitActions executes onexit actions for a state (W3C SCXML 3.9).
+// ExecuteHistoryDefaultContent runs a <history>'s default transition content
+// (W3C SCXML 3.10.2), after its parent's onentry (and after the parent's own
+// <initial> content) when the history was taken with nothing recorded. The
+// engine asks for it by the entry set's defaultHistoryContent answer; a history
+// that restored what it recorded runs nothing.
 //line autoforward_event_fields.scxml:30
-func (p *AutoforwardEventFieldsPolicy) ExecuteExitActions(state AutoforwardEventFieldsState, engine *sce.Engine[AutoforwardEventFieldsState, AutoforwardEventFieldsEvent], preTransitionActive []AutoforwardEventFieldsState) {
+func (p *AutoforwardEventFieldsPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[AutoforwardEventFieldsState, AutoforwardEventFieldsEvent]) {
+	// W3C SCXML 3.10.2: no <history> in this document has default content.
+}
+
+// ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
+// removes it from the configuration, cancels its invocations and runs its
+// <onexit>.
+//line autoforward_event_fields.scxml:30
+func (p *AutoforwardEventFieldsPolicy) ExecuteExitActions(state AutoforwardEventFieldsState, engine *sce.Engine[AutoforwardEventFieldsState, AutoforwardEventFieldsEvent], configurationBeforeExit []AutoforwardEventFieldsState) {
 	p.ensureScriptEngine()
 	// W3C SCXML 6.4: Cancel pending invokes and cleanup active children on state exit
 	switch state {
@@ -800,69 +814,80 @@ func (p *AutoforwardEventFieldsPolicy) ExecuteExitActions(state AutoforwardEvent
 	}
 }
 
-// ProcessTransition evaluates guards and takes a matching transition (W3C SCXML 3.13).
-// Returns true if a transition was taken.
+
+
+// BindCurrentEvent binds the event whose transitions are about to be selected as
+// the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
+// and not for an eventless selection, which has no event of its own.
 //line autoforward_event_fields.scxml:30
-func (p *AutoforwardEventFieldsPolicy) ProcessTransition(currentState *AutoforwardEventFieldsState, event AutoforwardEventFieldsEvent, engine *sce.Engine[AutoforwardEventFieldsState, AutoforwardEventFieldsEvent]) bool {
-	// W3C SCXML 5.10: Bind _event system variable for guard evaluation
+func (p *AutoforwardEventFieldsPolicy) BindCurrentEvent(event AutoforwardEventFieldsEvent, engine *sce.Engine[AutoforwardEventFieldsState, AutoforwardEventFieldsEvent]) {
 	if event != AutoforwardEventFieldsEventNull {
 		// §scxml-B-2-8-1: the rung the payload got, handed to the engine
 		// rather than dropped. This is the only frame that has both the
 		// reading and the event it belongs to.
 		engine.NotePayloadReading(event, p.setCurrentEvent(p.GetEventName(event)))
 	}
-
-	// W3C SCXML 3.12: Try transitions in current state first
-	if p.tryTransitionInState(*currentState, event, currentState, engine) {
-		return true
-	}
-
-
-	return false
 }
 
-
-// tryTransitionInState checks transitions for a single state.
+// FirstEnabledTransition is Appendix D selectTransitions, the half only this
+// document can answer: the first of state's own transitions, in document order,
+// that event enables and whose guard holds. The engine walks the atomic states
+// and their ancestors and keeps the ordered set; the null event asks for
+// eventless transitions.
 //line autoforward_event_fields.scxml:30
-func (p *AutoforwardEventFieldsPolicy) tryTransitionInState(checkState AutoforwardEventFieldsState, event AutoforwardEventFieldsEvent, currentState *AutoforwardEventFieldsState, engine *sce.Engine[AutoforwardEventFieldsState, AutoforwardEventFieldsEvent]) bool {
-	switch checkState {
+func (p *AutoforwardEventFieldsPolicy) FirstEnabledTransition(state AutoforwardEventFieldsState, event AutoforwardEventFieldsEvent, engine *sce.Engine[AutoforwardEventFieldsState, AutoforwardEventFieldsEvent]) (sce.EnabledTransition[AutoforwardEventFieldsState, sce.HistoryID], bool) {
+	switch state {
 	case AutoforwardEventFieldsStatePhase:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AutoforwardEventFieldsEventChildToParent {
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = true
-			p.lastTransitionSourceState = AutoforwardEventFieldsStatePhase
-			return true
+			{
+				return sce.EnabledTransition[AutoforwardEventFieldsState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AutoforwardEventFieldsEventFieldsPreserved {
-			*currentState = AutoforwardEventFieldsStatePass
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AutoforwardEventFieldsStatePhase
-			return true
+			{
+				return sce.EnabledTransition[AutoforwardEventFieldsState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAutoforwardEventFields[state][1],
+					TransitionIndex: 1,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AutoforwardEventFieldsEventFieldsStripped {
-			*currentState = AutoforwardEventFieldsStateFail
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AutoforwardEventFieldsStatePhase
-			return true
+			{
+				return sce.EnabledTransition[AutoforwardEventFieldsState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAutoforwardEventFields[state][2],
+					TransitionIndex: 2,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == AutoforwardEventFieldsEventErrorExecution {
-			*currentState = AutoforwardEventFieldsStateFail
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = AutoforwardEventFieldsStatePhase
-			return true
+			{
+				return sce.EnabledTransition[AutoforwardEventFieldsState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfAutoforwardEventFields[state][3],
+					TransitionIndex: 3,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	}
-	return false
+	return sce.EnabledTransition[AutoforwardEventFieldsState, sce.HistoryID]{}, false
 }
 
-// ExecuteTransitionActions executes actions for the last taken transition (W3C SCXML 3.13).
+// ExecuteTransitionContent runs one transition's executable content (W3C SCXML
+// 3.13), between the microstep's exits and its entries.
 //line autoforward_event_fields.scxml:30
-func (p *AutoforwardEventFieldsPolicy) ExecuteTransitionActions(engine *sce.Engine[AutoforwardEventFieldsState, AutoforwardEventFieldsEvent]) {
+func (p *AutoforwardEventFieldsPolicy) ExecuteTransitionContent(source AutoforwardEventFieldsState, transitionIndex int, engine *sce.Engine[AutoforwardEventFieldsState, AutoforwardEventFieldsEvent]) {
+	// W3C SCXML 3.13: no transition in this document has content.
 }

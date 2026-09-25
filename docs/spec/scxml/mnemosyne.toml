@@ -105,8 +105,6 @@ paths = [
     "sce/src/runtime",
     "sce/include/scripting",
     "sce/src/scripting",
-    "sce/include/states",
-    "sce/src/states",
     "sce/include/wrappers",
     "sce/src/model",
     "sce/include/parsing",

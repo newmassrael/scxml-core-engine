@@ -351,15 +351,16 @@ fn walk_action_block(
 /// [`build_symbol_table`] assigns it, so the SCE-MAP marker emit sites
 /// carry the symbol rather than re-deriving it from the render site.
 ///
-/// Re-derivation at the render site is not merely duplication, it is
-/// wrong: the Kotlin backend renders a state's *effective* transitions
-/// (its own plus every ancestor's, per
-/// [`crate::kotlin::compute_effective_transitions`]), so the arm a
-/// transition renders under is frequently not the state that owns it.
-/// A marker built from the arm would cite a symbol belonging to a
-/// different transition, or none at all. Riding the identity home on
-/// the transition makes that unrepresentable — the value survives the
-/// `serde_json` round trip `compute_effective_transitions` performs.
+/// Re-derivation at the render site is a second computation of one
+/// identity, and it was once wrong in practice: the Kotlin backend used
+/// to render a state's *effective* transitions (its own plus every
+/// ancestor's), so the arm a transition rendered under was frequently
+/// not the state that owned it, and a marker built from the arm cited a
+/// symbol belonging to a different transition, or none at all. Every
+/// backend now renders a transition once, under its owner — the Kotlin
+/// runtime selects an ancestor's transition under the ancestor — but
+/// riding the identity home on the transition keeps the marker from
+/// depending on where a template happens to render it.
 ///
 /// States need no stamp: `_state_body` is the constant this module
 /// exports as [`ARTIFACT_STATE_BODY`], and entry/exit dispatch arms are

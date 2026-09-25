@@ -4,26 +4,34 @@
 # Run with
 # `scripts/mutate sce-build/tests/mutations/parallel_region_transition_domain.cases`.
 #
-# The three defects below were live in this tree on 2026-08-13 and none of them
+# Defects on this axis were live in this tree on 2026-08-13, and none of them
 # produced a build error, a warning, or a failing test. What they produced was a
 # `<parallel>` whose region silently stopped: no active leaf, no transition
 # content executed, and every existing suite still green — the W3C parallel
 # fixtures are all one level deep and reach their regions through the eventless
 # path, so nothing in them sampled either condition.
 #
-# Each case restores one of those defects verbatim. A case that SURVIVES means
-# the gate that replaced it is decorative.
+# The case below restores its defect verbatim. If it SURVIVES, the gate that
+# replaced the defect is decorative.
+#
+# Only the self-transition domain still has code to mutate. The region lookup
+# and the configuration copy lived in the Interpreter's region layer — a region
+# object that looked for its own active state, and a configuration that copied
+# what the region had entered — and that layer is gone: a `<parallel>`'s regions
+# are its child states in the one configuration, entered and exited by the
+# shared microstep. Their mutations went with the code they edited; the fixtures
+# that caught them still run.
 
 mutation_ctest --test-dir build -R '^(StatesTests|IntegrationTests)$'
-mutation_targets sce/include/core/HierarchicalStateHelper.h sce/src/states/ConcurrentRegion.cpp
-mutation_targets sce/src/runtime/StateHierarchyManager.cpp
-# The suites the round reds, measured across the three cases: `AiLoopAotTest`,
+mutation_targets sce/include/core/HierarchicalStateHelper.h
+# The suites the round redded, measured before the region layer and its
+# mutations were removed: `AiLoopAotTest`,
 # `AncestorEntryIsNotDefaultEntryTest.AnAncestorEnteredOnTheWayToATargetTakes
 # NoDefaultChild`, `ParallelRegionsTakeOwnTransitionsTest.EveryRegionTakesItsOwn
 # Transition` and `ParallelSelfTransitionKeepsItsLeafTest.TheSelfTransitioned
 # RegionAnswersTheNextEvent`.
 #
-# ⚠ The first case reds ten tests and the report prints three of them, so this
+# ⚠ The case below reds ten tests and the report prints three of them, so this
 # list is what was seen rather than provably all of it. A file left out is a
 # file whose weakening does not select this round — stated because the
 # alternative is believing the list is complete.
@@ -46,51 +54,4 @@ mutation_case "a self-transition is its own transition domain" <<'PY'
 edit("sce/include/core/HierarchicalStateHelper.h",
      "        if (state1 == state2) {\n            return getParent(state1);\n        }",
      "        if (state1 == state2) {\n            return state1;\n        }")
-PY
-
-# ── Finding the region's active state ──────────────────────────────
-#
-# A region's active state is a direct child of the region root only when that
-# child is atomic. Searching one level down leaves a deeper region unable to
-# locate its own active state, so no transition in it is ever enabled — the
-# region sits still while its siblings move, and the engine logs nothing worse
-# than "No enabled transitions found".
-
-mutation_case "a region looks for its active state only among direct children" <<'PY'
-edit("sce/src/states/ConcurrentRegion.cpp",
-     "        std::shared_ptr<IStateNode> stateNode = findStateInRegion(rootState_, currentState_);",
-     """        std::shared_ptr<IStateNode> stateNode = nullptr;
-        if (currentState_ == rootState_->getId()) {
-            stateNode = rootState_;
-        } else {
-            for (const auto &child : rootState_->getChildren()) {
-                if (child->getId() == currentState_) {
-                    stateNode = child;
-                    break;
-                }
-            }
-        }""")
-PY
-
-# ── Reflecting what the region entered ─────────────────────────────
-#
-# `ConcurrentRegion::enterInitialState` descends the region to a leaf.
-# Recomputing one level of that descent here and stopping puts a three-level
-# region into the configuration without its leaf, so `In()` and every
-# configuration query disagree with the region's own view of itself.
-
-mutation_case "the configuration recomputes one level of the region's descent" <<'PY'
-edit("sce/src/runtime/StateHierarchyManager.cpp",
-     """                    const auto entered = region->getActiveStates();
-                    if (entered.empty()) {
-                        addStateToConfigurationWithoutOnEntry(initialChild);
-                        synchronizeParallelRegionState(initialChild);
-                    } else {
-                        for (const auto &enteredState : entered) {
-                            addStateToConfigurationWithoutOnEntry(enteredState);
-                            synchronizeParallelRegionState(enteredState);
-                        }
-                    }""",
-     """                    addStateToConfigurationWithoutOnEntry(initialChild);
-                    synchronizeParallelRegionState(initialChild);""")
 PY

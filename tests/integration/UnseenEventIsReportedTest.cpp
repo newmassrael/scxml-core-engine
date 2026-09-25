@@ -47,8 +47,8 @@ protected:
         buffer << in.rdbuf();
 
         sm_ = std::make_shared<StateMachine>(*engine_);
-        auto eventRaiser = std::make_shared<EventRaiserImpl>();
-        sm_->setEventRaiser(eventRaiser);
+        raiser_ = std::make_shared<EventRaiserImpl>();
+        sm_->setEventRaiser(raiser_);
         ASSERT_TRUE(sm_->loadSCXMLFromString(buffer.str()));
         ASSERT_TRUE(sm_->start());
         ASSERT_EQ(sm_->getCurrentState(), "working");
@@ -61,7 +61,16 @@ protected:
         }
     }
 
+    /// The fixture's `pokes` counts the deliveries that ran `poke`'s
+    /// transition — the one witness of whether an event was looked at.
+    std::string pokes() {
+        auto result = engine_->evaluateExpression(sm_->getSessionId(), "pokes").get();
+        EXPECT_TRUE(result.isSuccess()) << "the fixture declares `pokes` in its datamodel";
+        return result.isSuccess() ? result.getValueAsString() : std::string("<unreadable>");
+    }
+
     IScriptEngine *engine_ = nullptr;
+    std::shared_ptr<EventRaiserImpl> raiser_;
     std::shared_ptr<StateMachine> sm_;
 };
 
@@ -119,6 +128,42 @@ TEST_F(UnseenEventIsReportedTest, TheEngineNamesTheEventItNeverLookedAt) {
     (void)sm_->processEvent("finish");
     EXPECT_EQ(sm_->getStatistics().unseenExternalEvents, 2u) << "the count is a count, not a flag";
     EXPECT_EQ(sm_->getStatistics().lastUnseenEventName, "finish") << "the name did not follow the second refusal";
+}
+
+/// The other way an event goes unlooked-at: it was already on the external
+/// queue when the loop ended.
+///
+/// Every test above hands the event over AFTER the machine stopped, which is
+/// the door — `processEvent`'s `!isRunning_` branch. Appendix D's loop has a
+/// second place where an event stops being looked at, and it is not the door:
+/// the loop checks for a top-level final state before it dequeues again, so
+/// whatever is waiting on the external queue when the machine gets there is
+/// never taken. `UnseenEventIsReportedAotTest` pins the same case on the AOT
+/// engine, whose loop counts it the same way.
+///
+/// The raiser is told to queue rather than deliver, because a raiser that
+/// delivers at once hands the event straight to the running machine, which
+/// takes it. `pokes` is the half that makes this a statement about the loop:
+/// it says the event was never looked at, rather than looked at and matched.
+TEST_F(UnseenEventIsReportedTest, AnEventStillQueuedWhenTheLoopEndsIsCounted) {
+    raiser_->setImmediateMode(false);
+    ASSERT_TRUE(raiser_->raiseExternalEvent("poke", ""));
+    EXPECT_EQ(sm_->getStatistics().unseenExternalEvents, 0u) << "queuing is not refusing; the machine is still running";
+
+    ASSERT_TRUE(sm_->processEvent("finish").success)
+        << "the host's event is taken ahead of the queue, as it is on the AOT engine";
+    ASSERT_FALSE(sm_->isRunning()) << "`finish` should have taken the machine to its top-level final state";
+
+    EXPECT_EQ(sm_->getStatistics().unseenExternalEvents, 1u)
+        << "`poke` was on the external queue when the machine reached its final state, so the loop "
+           "ended without ever dequeuing it. A host that read only the door's count would be told "
+           "nothing about the events its own queue still held";
+    EXPECT_EQ(sm_->getStatistics().lastUnseenEventName, "poke") << "and the count names the event it recorded";
+    EXPECT_EQ(pokes(), "0") << "`poke`'s transition ran, so the event WAS looked at and this count is measuring "
+                               "something other than the loop abandoning its queue";
+    EXPECT_FALSE(raiser_->hasQueuedEvents())
+        << "the queue ends with the interpretation: left in place, each event would be counted again by "
+           "whatever pumped this raiser next";
 }
 
 }  // namespace Tests

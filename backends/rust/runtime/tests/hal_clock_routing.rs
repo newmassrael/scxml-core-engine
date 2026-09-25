@@ -21,7 +21,7 @@ use core::time::Duration;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
-use sce_rust_runtime::{Engine, Hal, StatePolicy};
+use sce_rust_runtime::{EnabledTransition, Engine, EntryTarget, Hal, NoHistory, StatePolicy};
 
 // ─────────────────────────────────────────────────────────────
 // MockHal: process-global tick the test drives by hand
@@ -83,25 +83,18 @@ enum Ev {
     Delayed,
 }
 
-struct MockPolicy {
-    last_internal: bool,
-    last_targetless: bool,
-    last_source: St,
-}
+struct MockPolicy;
 
 impl MockPolicy {
     fn new() -> Self {
-        Self {
-            last_internal: false,
-            last_targetless: false,
-            last_source: St::S0,
-        }
+        Self
     }
 }
 
 impl StatePolicy for MockPolicy {
     type State = St;
     type Event = Ev;
+    type History = NoHistory;
     type Payload = ();
     type Hal = MockHal;
     type EventQueue = sce_rust_runtime::EventQueueManager<
@@ -121,8 +114,22 @@ impl StatePolicy for MockPolicy {
     fn is_compound_state(_s: Self::State) -> bool {
         false
     }
-    fn is_descendant_of(_d: Self::State, _a: Self::State) -> bool {
-        false
+    fn get_child_states(_s: Self::State) -> &'static [Self::State] {
+        &[]
+    }
+    fn get_initial_targets(_s: Self::State) -> &'static [EntryTarget<Self::State, Self::History>] {
+        &[]
+    }
+    fn get_document_initial_targets() -> &'static [EntryTarget<Self::State, Self::History>] {
+        &[EntryTarget::State(St::S0)]
+    }
+    fn get_history_parent(h: Self::History) -> Self::State {
+        match h {}
+    }
+    fn get_history_default_targets(
+        h: Self::History,
+    ) -> &'static [EntryTarget<Self::State, Self::History>] {
+        match h {}
     }
     fn get_document_order(_s: Self::State) -> u32 {
         0
@@ -153,50 +160,34 @@ impl StatePolicy for MockPolicy {
         }
     }
 
-    fn last_transition_is_internal(&self) -> bool {
-        self.last_internal
-    }
-    fn set_last_transition_is_internal(&mut self, v: bool) {
-        self.last_internal = v;
-    }
-    fn last_transition_is_targetless(&self) -> bool {
-        self.last_targetless
-    }
-    fn set_last_transition_is_targetless(&mut self, v: bool) {
-        self.last_targetless = v;
-    }
-    fn last_transition_source_state(&self) -> Self::State {
-        self.last_source
-    }
-    fn set_last_transition_source_state(&mut self, s: Self::State) {
-        self.last_source = s;
+    fn history_value(&self, h: Self::History) -> Option<&[Self::State]> {
+        match h {}
     }
 
-    // `_path_child` (§scxml-D) is unused: this policy has no compound states,
-    // so nothing distinguishes an ancestor entry from a target entry.
+    // `_is_default_entry` is unused: this policy has no compound states.
     fn execute_entry_actions(
         &mut self,
         _s: Self::State,
         _eng: &mut Engine<Self>,
-        _path_child: Option<Self::State>,
+        _is_default_entry: bool,
     ) {
     }
     fn execute_exit_actions(
         &mut self,
         _s: Self::State,
         _eng: &mut Engine<Self>,
-        _pre: &[Self::State],
+        _before: &[Self::State],
     ) {
     }
-    fn process_transition(
+    fn first_enabled_transition(
         &mut self,
-        _cur: &mut Self::State,
+        _s: Self::State,
         _e: Self::Event,
         _eng: &mut Engine<Self>,
-    ) -> bool {
-        false
+    ) -> Option<EnabledTransition<Self::State, Self::History>> {
+        None
     }
-    fn execute_transition_actions(&mut self, _eng: &mut Engine<Self>) {}
+    fn execute_transition_content(&mut self, _s: Self::State, _i: usize, _eng: &mut Engine<Self>) {}
 }
 
 // ─────────────────────────────────────────────────────────────

@@ -42,6 +42,13 @@ class ParallelRegionRootExternalDomainStateMachine(
     // as `needs_event_scheduler`.
     override val needsEventScheduler: Boolean = false
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
+
     // W3C SCXML 3.3: State hierarchy parent mapping
     override fun parentOf(state: ParallelRegionRootExternalDomainState): ParallelRegionRootExternalDomainState? = when (state) {
         is ParallelRegionRootExternalDomainState.Alive -> ParallelRegionRootExternalDomainState.Watch
@@ -54,12 +61,83 @@ class ParallelRegionRootExternalDomainStateMachine(
         else -> null
     }
 
-    // W3C SCXML 3.3/3.4: Resolve compound/parallel state to initial leaf state
-    override fun resolveLeafState(state: ParallelRegionRootExternalDomainState): ParallelRegionRootExternalDomainState = when (state) {
-        is ParallelRegionRootExternalDomainState.Drive -> ParallelRegionRootExternalDomainState.Working
-        is ParallelRegionRootExternalDomainState.Run -> ParallelRegionRootExternalDomainState.Working
-        is ParallelRegionRootExternalDomainState.Watch -> ParallelRegionRootExternalDomainState.Alive
-        else -> state
+    // W3C SCXML 3.3: a <state> with child states — exactly the states that
+    // have an initial transition. A <parallel> is not compound.
+    override fun isCompoundState(state: ParallelRegionRootExternalDomainState): Boolean = when (state) {
+        is ParallelRegionRootExternalDomainState.Drive, is ParallelRegionRootExternalDomainState.Watch -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.4: Check if state is a parallel state
+    override fun isParallelState(state: ParallelRegionRootExternalDomainState): Boolean = when (state) {
+        is ParallelRegionRootExternalDomainState.Run -> true
+        else -> false
+    }
+
+    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+    // children, in document order — for a <parallel>, its regions.
+    override fun childStatesOf(state: ParallelRegionRootExternalDomainState): List<ParallelRegionRootExternalDomainState> =
+        childStates[state] ?: emptyList()
+
+    // W3C SCXML 3.3: a compound state's initial transition target, as written.
+    override fun initialTargetsOf(state: ParallelRegionRootExternalDomainState): List<EntryTarget<ParallelRegionRootExternalDomainState, HistoryId>> =
+        initialTargets[state] ?: emptyList()
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<ParallelRegionRootExternalDomainState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val childStates: Map<ParallelRegionRootExternalDomainState, List<ParallelRegionRootExternalDomainState>> = mapOf(
+            ParallelRegionRootExternalDomainState.Drive to listOf(ParallelRegionRootExternalDomainState.Working, ParallelRegionRootExternalDomainState.Restarting, ParallelRegionRootExternalDomainState.Paused),
+            ParallelRegionRootExternalDomainState.Run to listOf(ParallelRegionRootExternalDomainState.Drive, ParallelRegionRootExternalDomainState.Watch),
+            ParallelRegionRootExternalDomainState.Watch to listOf(ParallelRegionRootExternalDomainState.Alive, ParallelRegionRootExternalDomainState.Rebuilding),
+        )
+
+        val initialTargets: Map<ParallelRegionRootExternalDomainState, List<EntryTarget<ParallelRegionRootExternalDomainState, HistoryId>>> = mapOf(
+            ParallelRegionRootExternalDomainState.Drive to listOf(StateTarget(ParallelRegionRootExternalDomainState.Working)),
+            ParallelRegionRootExternalDomainState.Watch to listOf(StateTarget(ParallelRegionRootExternalDomainState.Alive)),
+        )
+
+        val documentInitialTargetList: List<EntryTarget<ParallelRegionRootExternalDomainState, HistoryId>> =
+            listOf(StateTarget(ParallelRegionRootExternalDomainState.Run))
+
+        // W3C SCXML 3.13: alive's transition 0, as the microstep reads it.
+        val transitionAliveAt0 = EnabledTransition<ParallelRegionRootExternalDomainState, HistoryId>(
+            ParallelRegionRootExternalDomainState.Alive,
+            listOf(StateTarget(ParallelRegionRootExternalDomainState.Rebuilding)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: alive's transition 1, as the microstep reads it.
+        val transitionAliveAt1 = EnabledTransition<ParallelRegionRootExternalDomainState, HistoryId>(
+            ParallelRegionRootExternalDomainState.Alive,
+            listOf(StateTarget(ParallelRegionRootExternalDomainState.Rebuilding)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: drive's transition 0, as the microstep reads it.
+        val transitionDriveAt0 = EnabledTransition<ParallelRegionRootExternalDomainState, HistoryId>(
+            ParallelRegionRootExternalDomainState.Drive,
+            listOf(StateTarget(ParallelRegionRootExternalDomainState.Restarting)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: drive's transition 1, as the microstep reads it.
+        val transitionDriveAt1 = EnabledTransition<ParallelRegionRootExternalDomainState, HistoryId>(
+            ParallelRegionRootExternalDomainState.Drive,
+            listOf(StateTarget(ParallelRegionRootExternalDomainState.Paused)),
+            1,
+            hasActions = false,
+            isInternal = true,
+        )
     }
 
     // W3C SCXML: Resolve state ID string to State object
@@ -87,27 +165,7 @@ class ParallelRegionRootExternalDomainStateMachine(
         is ParallelRegionRootExternalDomainState.Working -> "working"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: ParallelRegionRootExternalDomainState): Boolean = when (state) {
-        is ParallelRegionRootExternalDomainState.Drive -> false
-        is ParallelRegionRootExternalDomainState.Run -> false
-        is ParallelRegionRootExternalDomainState.Watch -> false
-        else -> true
-    }
-
-    // W3C SCXML 3.4: Check if state is a parallel state
-    override fun isParallelState(state: ParallelRegionRootExternalDomainState): Boolean = when (state) {
-        is ParallelRegionRootExternalDomainState.Run -> true
-        else -> false
-    }
-
-    // W3C SCXML 3.4: Get child regions of a parallel state (C++ getParallelRegions pattern)
-    override fun getParallelRegions(state: ParallelRegionRootExternalDomainState): List<ParallelRegionRootExternalDomainState> = when (state) {
-        is ParallelRegionRootExternalDomainState.Run -> listOf(ParallelRegionRootExternalDomainState.Drive, ParallelRegionRootExternalDomainState.Watch)
-        else -> emptyList()
-    }
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: ParallelRegionRootExternalDomainState): Int = when (state) {
         is ParallelRegionRootExternalDomainState.Alive -> 6
         is ParallelRegionRootExternalDomainState.Drive -> 1
@@ -123,122 +181,57 @@ class ParallelRegionRootExternalDomainStateMachine(
 
 
 
-    // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
-    override fun processEvent(
+
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
         state: ParallelRegionRootExternalDomainState,
-        event: ParallelRegionRootExternalDomainEvent
-    ): TransitionResult<ParallelRegionRootExternalDomainState> = when (state) {
-        is ParallelRegionRootExternalDomainState.Alive -> processAlive(event)
-        is ParallelRegionRootExternalDomainState.Drive -> processDrive(event)
-        // W3C SCXML 3.13: Ancestor-only routing (paused has no own event transitions)
-        is ParallelRegionRootExternalDomainState.Paused -> {
-            val anc1 = processDrive(event)
-            if (anc1 !is TransitionResult.Ignored) anc1
-            else TransitionResult.Ignored
+        event: ParallelRegionRootExternalDomainEvent?
+    ): EnabledTransition<ParallelRegionRootExternalDomainState, HistoryId>? = when (state) {
+        is ParallelRegionRootExternalDomainState.Alive -> when {
+            event is ParallelRegionRootExternalDomainEvent.Restart -> transitionAliveAt0
+            event is ParallelRegionRootExternalDomainEvent.Hold -> transitionAliveAt1
+            else -> null
         }
-        // W3C SCXML 3.13: Ancestor-only routing (restarting has no own event transitions)
-        is ParallelRegionRootExternalDomainState.Restarting -> {
-            val anc1 = processDrive(event)
-            if (anc1 !is TransitionResult.Ignored) anc1
-            else TransitionResult.Ignored
+        is ParallelRegionRootExternalDomainState.Drive -> when {
+            event is ParallelRegionRootExternalDomainEvent.Restart -> transitionDriveAt0
+            event is ParallelRegionRootExternalDomainEvent.Hold -> transitionDriveAt1
+            else -> null
         }
-        // W3C SCXML 3.13: Ancestor-only routing (working has no own event transitions)
-        is ParallelRegionRootExternalDomainState.Working -> {
-            val anc1 = processDrive(event)
-            if (anc1 !is TransitionResult.Ignored) anc1
-            else TransitionResult.Ignored
-        }
-        else -> TransitionResult.Ignored
+        else -> null
     }
-
-
-    // --- Per-State Event Handlers ---
-
-    private fun processAlive(
-        event: ParallelRegionRootExternalDomainEvent
-    ): TransitionResult<ParallelRegionRootExternalDomainState> = when {
-        event is ParallelRegionRootExternalDomainEvent.Restart -> TransitionResult.External(ParallelRegionRootExternalDomainState.Rebuilding, ParallelRegionRootExternalDomainState.Alive, 0)
-
-        event is ParallelRegionRootExternalDomainEvent.Hold -> TransitionResult.External(ParallelRegionRootExternalDomainState.Rebuilding, ParallelRegionRootExternalDomainState.Alive, 1)
-
-        else -> TransitionResult.Ignored
-    }
-
-    private fun processDrive(
-        event: ParallelRegionRootExternalDomainEvent
-    ): TransitionResult<ParallelRegionRootExternalDomainState> = when {
-        event is ParallelRegionRootExternalDomainEvent.Restart -> TransitionResult.External(ParallelRegionRootExternalDomainState.Restarting, ParallelRegionRootExternalDomainState.Drive, 2)
-
-        event is ParallelRegionRootExternalDomainEvent.Hold -> TransitionResult.InternalToTarget(ParallelRegionRootExternalDomainState.Paused, ParallelRegionRootExternalDomainState.Drive, 3)
-
-        else -> TransitionResult.Ignored
-    }
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: parallel_region_root_external_domain.scxml:34 :: _machine
-    override fun onEntry(state: ParallelRegionRootExternalDomainState, pathChild: ParallelRegionRootExternalDomainState?) {
+    override fun onEntry(state: ParallelRegionRootExternalDomainState, isDefaultEntry: Boolean) {
         when (state) {
             is ParallelRegionRootExternalDomainState.Alive -> {
                 // SCE-MAP: parallel_region_root_external_domain.scxml:65 :: alive :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("alive")) return
             }
             is ParallelRegionRootExternalDomainState.Drive -> {
                 // SCE-MAP: parallel_region_root_external_domain.scxml:45 :: drive :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("drive")) return
-                if (pathChild == null) {
-                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                    onEntry(ParallelRegionRootExternalDomainState.Working)
-                }
             }
             is ParallelRegionRootExternalDomainState.Paused -> {
                 // SCE-MAP: parallel_region_root_external_domain.scxml:55 :: paused :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("paused")) return
             }
             is ParallelRegionRootExternalDomainState.Rebuilding -> {
                 // SCE-MAP: parallel_region_root_external_domain.scxml:69 :: rebuilding :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("rebuilding")) return
             }
             is ParallelRegionRootExternalDomainState.Restarting -> {
                 // SCE-MAP: parallel_region_root_external_domain.scxml:54 :: restarting :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("restarting")) return
             }
             is ParallelRegionRootExternalDomainState.Run -> {
                 // SCE-MAP: parallel_region_root_external_domain.scxml:37 :: run :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("run")) return
-                // W3C SCXML 3.4 + §scxml-D-addDescendantStatesToEnter: a
-                // `<parallel>` hands out defaults even when it is only an
-                // ancestor — Appendix D's one exception to the ancestor rule.
-                // The exception has its own exception: not the region the entry
-                // set is already descending into, which `pathChild` names and
-                // which the caller enters with the target's own path.
-                if (pathChild != ParallelRegionRootExternalDomainState.Drive) {
-                    onEntry(ParallelRegionRootExternalDomainState.Drive)
-                }
-                if (pathChild != ParallelRegionRootExternalDomainState.Watch) {
-                    onEntry(ParallelRegionRootExternalDomainState.Watch)
-                }
             }
             is ParallelRegionRootExternalDomainState.Watch -> {
                 // SCE-MAP: parallel_region_root_external_domain.scxml:64 :: watch :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("watch")) return
-                if (pathChild == null) {
-                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                    onEntry(ParallelRegionRootExternalDomainState.Alive)
-                }
             }
             is ParallelRegionRootExternalDomainState.Working -> {
                 // SCE-MAP: parallel_region_root_external_domain.scxml:53 :: working :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("working")) return
             }
         }
     }
@@ -249,78 +242,35 @@ class ParallelRegionRootExternalDomainStateMachine(
         when (state) {
             is ParallelRegionRootExternalDomainState.Alive -> {
                 // SCE-MAP: parallel_region_root_external_domain.scxml:65 :: alive :: _state_body
-                activeStateIds.remove("alive")
             }
             is ParallelRegionRootExternalDomainState.Drive -> {
                 // SCE-MAP: parallel_region_root_external_domain.scxml:45 :: drive :: _state_body
-                activeStateIds.remove("drive")
             }
             is ParallelRegionRootExternalDomainState.Paused -> {
                 // SCE-MAP: parallel_region_root_external_domain.scxml:55 :: paused :: _state_body
-                activeStateIds.remove("paused")
             }
             is ParallelRegionRootExternalDomainState.Rebuilding -> {
                 // SCE-MAP: parallel_region_root_external_domain.scxml:69 :: rebuilding :: _state_body
-                activeStateIds.remove("rebuilding")
             }
             is ParallelRegionRootExternalDomainState.Restarting -> {
                 // SCE-MAP: parallel_region_root_external_domain.scxml:54 :: restarting :: _state_body
-                activeStateIds.remove("restarting")
             }
             is ParallelRegionRootExternalDomainState.Run -> {
                 // SCE-MAP: parallel_region_root_external_domain.scxml:37 :: run :: _state_body
-                // W3C SCXML 3.4/3.13: Exit active descendants of parallel state
-                // in reverse document order (deepest states exit first).
-                // Defensive: when called from exitHierarchy, descendants are already
-                // exited and removed from activeStateIds — the contains() checks below
-                // prevent double-exit. This code is needed for direct onExit() calls.
-                val toExit = mutableListOf<Pair<ParallelRegionRootExternalDomainState, Int>>()
-                if (activeStateIds.contains("drive")) {
-                    toExit.add(ParallelRegionRootExternalDomainState.Drive to 1)
-                }
-                if (activeStateIds.contains("paused")) {
-                    toExit.add(ParallelRegionRootExternalDomainState.Paused to 4)
-                }
-                if (activeStateIds.contains("restarting")) {
-                    toExit.add(ParallelRegionRootExternalDomainState.Restarting to 3)
-                }
-                if (activeStateIds.contains("working")) {
-                    toExit.add(ParallelRegionRootExternalDomainState.Working to 2)
-                }
-                if (activeStateIds.contains("watch")) {
-                    toExit.add(ParallelRegionRootExternalDomainState.Watch to 5)
-                }
-                if (activeStateIds.contains("alive")) {
-                    toExit.add(ParallelRegionRootExternalDomainState.Alive to 6)
-                }
-                if (activeStateIds.contains("rebuilding")) {
-                    toExit.add(ParallelRegionRootExternalDomainState.Rebuilding to 7)
-                }
-                toExit.sortByDescending { it.second }
-                for ((desc, _) in toExit) {
-                    onExit(desc)
-                }
-                activeStateIds.remove("run")
             }
             is ParallelRegionRootExternalDomainState.Watch -> {
                 // SCE-MAP: parallel_region_root_external_domain.scxml:64 :: watch :: _state_body
-                activeStateIds.remove("watch")
             }
             is ParallelRegionRootExternalDomainState.Working -> {
                 // SCE-MAP: parallel_region_root_external_domain.scxml:53 :: working :: _state_body
-                activeStateIds.remove("working")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: parallel_region_root_external_domain.scxml:34 :: _machine
-    override fun executeTransitionActions(
-        source: ParallelRegionRootExternalDomainState,
-        event: ParallelRegionRootExternalDomainEvent?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: ParallelRegionRootExternalDomainState, transitionIndex: Int) {
         when (source) {
         else -> {}
         }

@@ -72,7 +72,55 @@ class UndecodablePayloadIsReportedStateMachine(
         super.enterInitialConfiguration()
     }
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
 
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: UndecodablePayloadIsReportedState): Boolean = when (state) {
+        is UndecodablePayloadIsReportedState.Accepted -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<UndecodablePayloadIsReportedState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<UndecodablePayloadIsReportedState, HistoryId>> =
+            listOf(StateTarget(UndecodablePayloadIsReportedState.Waiting))
+
+        // W3C SCXML 3.13: waiting's transition 0, as the microstep reads it.
+        val transitionWaitingAt0 = EnabledTransition<UndecodablePayloadIsReportedState, HistoryId>(
+            UndecodablePayloadIsReportedState.Waiting,
+            listOf(StateTarget(UndecodablePayloadIsReportedState.Accepted)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: waiting's transition 1, as the microstep reads it.
+        val transitionWaitingAt1 = EnabledTransition<UndecodablePayloadIsReportedState, HistoryId>(
+            UndecodablePayloadIsReportedState.Waiting,
+            emptyList(),
+            1,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: waiting's transition 2, as the microstep reads it.
+        val transitionWaitingAt2 = EnabledTransition<UndecodablePayloadIsReportedState, HistoryId>(
+            UndecodablePayloadIsReportedState.Waiting,
+            emptyList(),
+            2,
+            hasActions = true,
+            isInternal = false,
+        )
+    }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): UndecodablePayloadIsReportedState? = when (stateId) {
@@ -87,13 +135,7 @@ class UndecodablePayloadIsReportedStateMachine(
         is UndecodablePayloadIsReportedState.Waiting -> "waiting"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: UndecodablePayloadIsReportedState): Boolean = when (state) {
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: UndecodablePayloadIsReportedState): Int = when (state) {
         is UndecodablePayloadIsReportedState.Accepted -> 1
         is UndecodablePayloadIsReportedState.Waiting -> 0
@@ -321,51 +363,44 @@ class UndecodablePayloadIsReportedStateMachine(
     }
 
 
-    // W3C SCXML 3.12: Event processing with script engine condition evaluation
-    override fun processEvent(
-        state: UndecodablePayloadIsReportedState,
-        event: UndecodablePayloadIsReportedEvent
-    ): TransitionResult<UndecodablePayloadIsReportedState> {
-        // W3C SCXML 5.10: Set _event before guard evaluation
+
+    // W3C SCXML 5.10: bind the event as the `_event` its transitions' guards
+    // read — once, before the first guard runs, and not for an eventless
+    // selection, which has no event of its own.
+    override fun bindCurrentEvent(event: UndecodablePayloadIsReportedEvent) {
         setCurrentEventInScriptEngine(event)
-        return when (state) {
-        is UndecodablePayloadIsReportedState.Waiting -> processWaiting(event)
-        else -> TransitionResult.Ignored
-    }
     }
 
-
-    // --- Per-State Event Handlers ---
-
-    private fun processWaiting(
-        event: UndecodablePayloadIsReportedEvent
-    ): TransitionResult<UndecodablePayloadIsReportedState> = when {
-        event is UndecodablePayloadIsReportedEvent.Answer && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_truthy(_event.data.done)", "_event.data.done")) -> TransitionResult.External(UndecodablePayloadIsReportedState.Accepted, UndecodablePayloadIsReportedState.Waiting, 0)
-
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is UndecodablePayloadIsReportedEvent.Answer -> TransitionResult.Internal(1)
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is UndecodablePayloadIsReportedEvent.Note -> TransitionResult.Internal(2)
-        else -> TransitionResult.Ignored
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
+        state: UndecodablePayloadIsReportedState,
+        event: UndecodablePayloadIsReportedEvent?
+    ): EnabledTransition<UndecodablePayloadIsReportedState, HistoryId>? = when (state) {
+        is UndecodablePayloadIsReportedState.Waiting -> when {
+            event is UndecodablePayloadIsReportedEvent.Answer && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_truthy(_event.data.done)", "_event.data.done")) -> transitionWaitingAt0
+            event is UndecodablePayloadIsReportedEvent.Answer -> transitionWaitingAt1
+            event is UndecodablePayloadIsReportedEvent.Note -> transitionWaitingAt2
+            else -> null
+        }
+        else -> null
     }
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: undecodable_payload_is_reported.scxml:56 :: _machine
-    override fun onEntry(state: UndecodablePayloadIsReportedState, pathChild: UndecodablePayloadIsReportedState?) {
+    override fun onEntry(state: UndecodablePayloadIsReportedState, isDefaultEntry: Boolean) {
         when (state) {
             is UndecodablePayloadIsReportedState.Accepted -> {
                 // SCE-MAP: undecodable_payload_is_reported.scxml:72 :: accepted :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("accepted")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is UndecodablePayloadIsReportedState.Waiting -> {
                 // SCE-MAP: undecodable_payload_is_reported.scxml:63 :: waiting :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("waiting")) return
             }
         }
     }
@@ -376,23 +411,17 @@ class UndecodablePayloadIsReportedStateMachine(
         when (state) {
             is UndecodablePayloadIsReportedState.Accepted -> {
                 // SCE-MAP: undecodable_payload_is_reported.scxml:72 :: accepted :: _state_body
-                activeStateIds.remove("accepted")
             }
             is UndecodablePayloadIsReportedState.Waiting -> {
                 // SCE-MAP: undecodable_payload_is_reported.scxml:63 :: waiting :: _state_body
-                activeStateIds.remove("waiting")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: undecodable_payload_is_reported.scxml:56 :: _machine
-    override fun executeTransitionActions(
-        source: UndecodablePayloadIsReportedState,
-        event: UndecodablePayloadIsReportedEvent?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: UndecodablePayloadIsReportedState, transitionIndex: Int) {
         when (source) {
         is UndecodablePayloadIsReportedState.Waiting -> when (transitionIndex) {
             1 -> {

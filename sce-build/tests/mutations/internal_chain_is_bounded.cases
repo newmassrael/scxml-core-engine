@@ -38,9 +38,9 @@ mutation_oracles backends/rust/tests/tests/internal_chain_is_bounded.rs
 mutation_case "the internal drain has no ceiling at all" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
      """            if self.macrostep_microsteps_taken == MAX_MACROSTEP_MICROSTEPS {
-                // Work is still queued one microstep past the budget, so this""",
+                // Work is still queued one microstep past the budget. Refuse the""",
      """            if false {
-                // Work is still queued one microstep past the budget, so this""")
+                // Work is still queued one microstep past the budget. Refuse the""")
 PY
 
 # ── The refusal leaves the queue alone ─────────────────────────────
@@ -53,30 +53,34 @@ PY
 
 mutation_case "the drain swallows the event it refused" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """                self.record_truncated_macrostep(self.current_state);
-                #[cfg(not(feature = "no_macrostep_diagnostics"))]""",
-     """                let _swallowed = self.internal_queue.pop();
-                self.record_truncated_macrostep(self.current_state);
-                #[cfg(not(feature = "no_macrostep_diagnostics"))]""")
+     """                // which is where the next macrostep will find it.
+                self.refuse_macrostep(self.current_state);""",
+     """                // which is where the next macrostep will find it.
+                let _swallowed = self.internal_queue.pop();
+                self.refuse_macrostep(self.current_state);""")
 PY
 
 # ── One budget, not one per branch ─────────────────────────────────
 #
-# The internal branch keeps a counter of its own, which is what the Kotlin
-# engine shipped. Nothing hangs and the `spin` outcome still reports exactly
-# one refusal — the chain that gets through is the one that alternates, because
-# each branch keeps finding its own counter unspent. `alts` is the only reading
-# that separates them: five hundred when the budget is shared, a thousand when
-# it is not.
+# Internal microsteps stop counting against the macrostep's budget, which then
+# bounds the eventless branch alone — the per-branch budget the Kotlin engine
+# shipped, where the internal drain kept a counter of its own. The inner loop
+# has one counter now, so the regression that remains is forgetting to spend it
+# on this branch. The `alternating` chain gets through twice as far, because
+# only its eventless half is counted: `alts` reads five hundred when the budget
+# is shared and a thousand when it is not. (`spin`, all internal, is then
+# bounded by nothing and the round's artefact timeout reports it.)
 
-mutation_case "the internal branch budgets itself" <<'PY'
+mutation_case "internal microsteps are not counted against the macrostep's budget" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """    pub(crate) fn process_internal_queue(&mut self) {
-        if self.macrostep_truncated {""",
-     """    pub(crate) fn process_internal_queue(&mut self) {
-        // MUTANT: a budget of this drain's own, reset on every entry.
-        self.macrostep_microsteps_taken = 0;
-        if self.macrostep_truncated {""")
+     """        if outcome == EventOutcome::Taken {
+            // Appendix D: the loop turn that selects nothing takes no
+            // microstep, so it spends no budget. Only a turn that answered
+            // the event moved the machine, and only those are what a
+            // ceiling on microsteps can be counted in.
+            self.macrostep_microsteps_taken += 1;
+        }""",
+     """        // MUTANT: the internal branch spends none of the shared budget.""")
 PY
 
 # ── The microstep that was answered is the one that is counted ─────
@@ -87,8 +91,8 @@ PY
 
 mutation_case "an unanswered internal event still spends the budget" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """            if outcome != EventOutcome::Discarded {""",
-     """            if true {""")
+     """        if outcome == EventOutcome::Taken {""",
+     """        if true {""")
 PY
 
 # ── The report ─────────────────────────────────────────────────────

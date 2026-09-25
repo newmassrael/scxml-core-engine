@@ -52,7 +52,136 @@ class Test331StateMachine(
         super.enterInitialConfiguration()
     }
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
 
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: Test331State): Boolean = when (state) {
+        is Test331State.Fail, is Test331State.Pass -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<Test331State, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<Test331State, HistoryId>> =
+            listOf(StateTarget(Test331State.S0))
+
+        // W3C SCXML 3.13: s0's transition 0, as the microstep reads it.
+        val transitionS0At0 = EnabledTransition<Test331State, HistoryId>(
+            Test331State.S0,
+            listOf(StateTarget(Test331State.S1)),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: s0's transition 1, as the microstep reads it.
+        val transitionS0At1 = EnabledTransition<Test331State, HistoryId>(
+            Test331State.S0,
+            listOf(StateTarget(Test331State.Fail)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: s1's transition 0, as the microstep reads it.
+        val transitionS1At0 = EnabledTransition<Test331State, HistoryId>(
+            Test331State.S1,
+            listOf(StateTarget(Test331State.S2)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: s1's transition 1, as the microstep reads it.
+        val transitionS1At1 = EnabledTransition<Test331State, HistoryId>(
+            Test331State.S1,
+            listOf(StateTarget(Test331State.Fail)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: s2's transition 0, as the microstep reads it.
+        val transitionS2At0 = EnabledTransition<Test331State, HistoryId>(
+            Test331State.S2,
+            listOf(StateTarget(Test331State.S3)),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: s2's transition 1, as the microstep reads it.
+        val transitionS2At1 = EnabledTransition<Test331State, HistoryId>(
+            Test331State.S2,
+            listOf(StateTarget(Test331State.Fail)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: s3's transition 0, as the microstep reads it.
+        val transitionS3At0 = EnabledTransition<Test331State, HistoryId>(
+            Test331State.S3,
+            listOf(StateTarget(Test331State.S4)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: s3's transition 1, as the microstep reads it.
+        val transitionS3At1 = EnabledTransition<Test331State, HistoryId>(
+            Test331State.S3,
+            listOf(StateTarget(Test331State.Fail)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: s4's transition 0, as the microstep reads it.
+        val transitionS4At0 = EnabledTransition<Test331State, HistoryId>(
+            Test331State.S4,
+            listOf(StateTarget(Test331State.S5)),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: s4's transition 1, as the microstep reads it.
+        val transitionS4At1 = EnabledTransition<Test331State, HistoryId>(
+            Test331State.S4,
+            listOf(StateTarget(Test331State.Fail)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: s5's transition 0, as the microstep reads it.
+        val transitionS5At0 = EnabledTransition<Test331State, HistoryId>(
+            Test331State.S5,
+            listOf(StateTarget(Test331State.Pass)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: s5's transition 1, as the microstep reads it.
+        val transitionS5At1 = EnabledTransition<Test331State, HistoryId>(
+            Test331State.S5,
+            listOf(StateTarget(Test331State.Fail)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+    }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test331State? = when (stateId) {
@@ -79,13 +208,7 @@ class Test331StateMachine(
         is Test331State.S5 -> "s5"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: Test331State): Boolean = when (state) {
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: Test331State): Int = when (state) {
         is Test331State.Fail -> 7
         is Test331State.Pass -> 6
@@ -310,120 +433,81 @@ class Test331StateMachine(
     }
 
 
-    // W3C SCXML 3.12: Event processing with script engine condition evaluation
-    override fun processEvent(
-        state: Test331State,
-        event: Test331Event
-    ): TransitionResult<Test331State> {
-        // W3C SCXML 5.10: Set _event before guard evaluation
+
+    // W3C SCXML 5.10: bind the event as the `_event` its transitions' guards
+    // read — once, before the first guard runs, and not for an eventless
+    // selection, which has no event of its own.
+    override fun bindCurrentEvent(event: Test331Event) {
         setCurrentEventInScriptEngine(event)
-        return when (state) {
-        is Test331State.S0 -> processS0(event)
-        is Test331State.S2 -> processS2(event)
-        is Test331State.S4 -> processS4(event)
-        else -> TransitionResult.Ignored
-    }
     }
 
-    // W3C SCXML Appendix D: Eventless (null) transition check
-    override fun processNullEvent(
-        state: Test331State
-    ): TransitionResult<Test331State> = when (state) {
-        is Test331State.S1 -> processNullS1()
-        is Test331State.S3 -> processNullS3()
-        is Test331State.S5 -> processNullS5()
-        else -> TransitionResult.Ignored
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
+        state: Test331State,
+        event: Test331Event?
+    ): EnabledTransition<Test331State, HistoryId>? = when (state) {
+        is Test331State.S0 -> when {
+            event is Test331Event.Foo -> transitionS0At0
+            event != null -> transitionS0At1
+            else -> null
+        }
+        is Test331State.S1 -> when {
+            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, \"internal\")", "Var1 == 'internal'")) -> transitionS1At0
+            event == null -> transitionS1At1
+            else -> null
+        }
+        is Test331State.S2 -> when {
+            (event is Test331Event.Error || event is Test331Event.Error.Execution) -> transitionS2At0
+            event != null -> transitionS2At1
+            else -> null
+        }
+        is Test331State.S3 -> when {
+            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, \"platform\")", "Var1 == 'platform'")) -> transitionS3At0
+            event == null -> transitionS3At1
+            else -> null
+        }
+        is Test331State.S4 -> when {
+            event is Test331Event.Foo -> transitionS4At0
+            event != null -> transitionS4At1
+            else -> null
+        }
+        is Test331State.S5 -> when {
+            event == null && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, \"external\")", "Var1 == 'external'")) -> transitionS5At0
+            event == null -> transitionS5At1
+            else -> null
+        }
+        else -> null
     }
-
-    // --- Per-State Null (Eventless) Handlers ---
-
-    private fun processNullS1(
-    ): TransitionResult<Test331State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, \"internal\")", "Var1 == 'internal'")) -> TransitionResult.External(Test331State.S2, Test331State.S1, 2)
-        // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test331State.Fail, Test331State.S1, 3)
-    }
-
-    private fun processNullS3(
-    ): TransitionResult<Test331State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, \"platform\")", "Var1 == 'platform'")) -> TransitionResult.External(Test331State.S4, Test331State.S3, 6)
-        // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test331State.Fail, Test331State.S3, 7)
-    }
-
-    private fun processNullS5(
-    ): TransitionResult<Test331State> = when {
-        safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("_scxml_eq(Var1, \"external\")", "Var1 == 'external'")) -> TransitionResult.External(Test331State.Pass, Test331State.S5, 10)
-        // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test331State.Fail, Test331State.S5, 11)
-    }
-
-    // --- Per-State Event Handlers ---
-
-    private fun processS0(
-        event: Test331Event
-    ): TransitionResult<Test331State> = when {
-        event is Test331Event.Foo -> TransitionResult.External(Test331State.S1, Test331State.S0, 0)
-
-        // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test331State.Fail, Test331State.S0, 1)
-    }
-
-    private fun processS2(
-        event: Test331Event
-    ): TransitionResult<Test331State> = when {
-        // W3C SCXML 3.12.1: Prefix match for "error"
-        (event is Test331Event.Error || event is Test331Event.Error.Execution) -> TransitionResult.External(Test331State.S3, Test331State.S2, 4)
-
-        // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test331State.Fail, Test331State.S2, 5)
-    }
-
-    private fun processS4(
-        event: Test331Event
-    ): TransitionResult<Test331State> = when {
-        event is Test331Event.Foo -> TransitionResult.External(Test331State.S5, Test331State.S4, 8)
-
-        // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test331State.Fail, Test331State.S4, 9)
-    }
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test331.scxml:3 :: _machine
-    override fun onEntry(state: Test331State, pathChild: Test331State?) {
+    override fun onEntry(state: Test331State, isDefaultEntry: Boolean) {
         when (state) {
             is Test331State.Fail -> {
                 // SCE-MAP: test331.scxml:60 :: fail :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test331State.Pass -> {
                 // SCE-MAP: test331.scxml:59 :: pass :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test331State.S0 -> {
                 // SCE-MAP: test331.scxml:10 :: s0 :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("s0")) return
 
             raiseInternal(Test331Event.Foo)
             }
             is Test331State.S1 -> {
                 // SCE-MAP: test331.scxml:21 :: s1 :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("s1")) return
             }
             is Test331State.S2 -> {
                 // SCE-MAP: test331.scxml:26 :: s2 :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("s2")) return
 
 
             // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
@@ -431,21 +515,15 @@ class Test331StateMachine(
             }
             is Test331State.S3 -> {
                 // SCE-MAP: test331.scxml:37 :: s3 :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("s3")) return
             }
             is Test331State.S4 -> {
                 // SCE-MAP: test331.scxml:42 :: s4 :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("s4")) return
 
 
             send(Test331Event.Foo, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
             }
             is Test331State.S5 -> {
                 // SCE-MAP: test331.scxml:53 :: s5 :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("s5")) return
             }
         }
     }
@@ -456,47 +534,35 @@ class Test331StateMachine(
         when (state) {
             is Test331State.Fail -> {
                 // SCE-MAP: test331.scxml:60 :: fail :: _state_body
-                activeStateIds.remove("fail")
             }
             is Test331State.Pass -> {
                 // SCE-MAP: test331.scxml:59 :: pass :: _state_body
-                activeStateIds.remove("pass")
             }
             is Test331State.S0 -> {
                 // SCE-MAP: test331.scxml:10 :: s0 :: _state_body
-                activeStateIds.remove("s0")
             }
             is Test331State.S1 -> {
                 // SCE-MAP: test331.scxml:21 :: s1 :: _state_body
-                activeStateIds.remove("s1")
             }
             is Test331State.S2 -> {
                 // SCE-MAP: test331.scxml:26 :: s2 :: _state_body
-                activeStateIds.remove("s2")
             }
             is Test331State.S3 -> {
                 // SCE-MAP: test331.scxml:37 :: s3 :: _state_body
-                activeStateIds.remove("s3")
             }
             is Test331State.S4 -> {
                 // SCE-MAP: test331.scxml:42 :: s4 :: _state_body
-                activeStateIds.remove("s4")
             }
             is Test331State.S5 -> {
                 // SCE-MAP: test331.scxml:53 :: s5 :: _state_body
-                activeStateIds.remove("s5")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: test331.scxml:3 :: _machine
-    override fun executeTransitionActions(
-        source: Test331State,
-        event: Test331Event?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: Test331State, transitionIndex: Int) {
         when (source) {
         is Test331State.S0 -> when (transitionIndex) {
             0 -> {
@@ -508,7 +574,7 @@ class Test331StateMachine(
             else -> {}
         }
         is Test331State.S2 -> when (transitionIndex) {
-            4 -> {
+            0 -> {
                 // SCE-MAP: test331.scxml:31 :: s2 :: _transition_0
 
 
@@ -517,7 +583,7 @@ class Test331StateMachine(
             else -> {}
         }
         is Test331State.S4 -> when (transitionIndex) {
-            8 -> {
+            0 -> {
                 // SCE-MAP: test331.scxml:47 :: s4 :: _transition_0
 
 

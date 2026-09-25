@@ -121,7 +121,7 @@ def validate_configuration(
         )
 
         if policy.is_parallel_state(state):
-            regions = policy.get_parallel_regions(state)
+            regions = policy.get_child_states(state)
             for region in regions:
                 if region not in members:
                     return ConfigurationRejection.PARALLEL_REGION_MISSING

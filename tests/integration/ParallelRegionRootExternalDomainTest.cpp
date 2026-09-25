@@ -5,13 +5,12 @@
 // path.
 //
 // Sibling of `ParallelRegionRootExternalDomainAotTest.cpp`, which pins the same
-// clause against the generated machine. The two engines reach the domain by
-// different routes and had to be repaired in different places: the AOT engine
-// asks `HierarchicalStateHelper::findLCCA` over the State enum, while the
-// Interpreter asks `TransitionDomainCalculator` over the parsed model tree by
-// state id. A repair to one is not a repair to the other, so the clause is
-// asked of both -- the recurring way this repository's backends drift apart is
-// a rule that only ever had one channel's witness.
+// clause against the generated machine. The two engines once reached the
+// domain by different routes and had to be repaired in different places; both
+// now ask `ExitSetAlgorithms::getTransitionDomain` through
+// `MicrostepAlgorithms`, over their own state representation. The clause is
+// still asked of both -- the recurring way this repository's backends drift
+// apart is a rule that only ever had one channel's witness.
 //
 // Fixture: tests/integration/parallel_region_root_external_domain.scxml
 

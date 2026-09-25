@@ -3,6 +3,7 @@
 
 {% include 'license_header.go.jinja2' %}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{%- import '_macros/go_entry_target.jinja2' as et %}
 
 // Generated Go state machine for `{{ model.name }}`.
 //
@@ -23,9 +24,6 @@ package {{ model.name | to_snake_case }}
 import (
 	"fmt"
 	"path/filepath"
-{% if model.has_parallel_states %}
-	"sort"
-{% endif %}
 	"strings"
 	"time"
 
@@ -36,9 +34,6 @@ import (
 var (
 	_ = fmt.Sprintf
 	_ = filepath.Join
-{% if model.has_parallel_states %}
-	_ = sort.Slice
-{% endif %}
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
 )
@@ -104,6 +99,94 @@ var {{ machine_name }}AllStates = []{{ machine_name }}State{
 {% endfor %}
 }
 
+// {{ machine_name }}Target is one token of a target list, as the document wrote
+// it (W3C SCXML 3.13): a state, or a <history> the engine dereferences.
+type {{ machine_name }}Target = sce.EntryTarget[{{ machine_name }}State, sce.HistoryID]
+{% if model.history_states %}
+
+// ======================================================================
+// History pseudo-states (W3C SCXML 3.10)
+// ======================================================================
+
+// The document's <history> pseudo-states. A history is not a state — it is
+// never in a configuration — so it is numbered apart from {{ machine_name }}State,
+// and a target list names one through sce.HistoryTarget: the engine
+// dereferences it to what it recorded, or to its default.
+const (
+{% for history_id in model.history_states | sort %}
+	{{ machine_name }}History{{ history_id | to_state_variant }} sce.HistoryID = {{ loop.index0 }}
+{% endfor %}
+)
+{% endif %}
+
+// ======================================================================
+// Document structure (W3C SCXML 3.2-3.4, 3.10)
+//
+// Package-level tables, because the structure is a fact about the document
+// and not about a run: the engine's Appendix D procedures read them through
+// the policy methods below, and a transition's target list is handed out as
+// a slice of them rather than rebuilt on every selection.
+// ======================================================================
+
+// childStatesOf{{ machine_name }} is §scxml-D-getChildStates per state: its
+// <state>, <parallel> and <final> children, in document order.
+var childStatesOf{{ machine_name }} = [{{ model.states | length }}][]{{ machine_name }}State{
+{% for state_id, state in model.states | dictsort %}
+{% if state.children %}
+	{{ machine_name }}State{{ state_id | to_state_variant }}: { {%- for child in state.children %}{{ machine_name }}State{{ child | to_state_variant }}{{ ", " if not loop.last }}{% endfor -%} },
+{% endif %}
+{% endfor %}
+}
+
+// initialTargetsOf{{ machine_name }} is each compound state's initial transition
+// target, as written (§scxml-3.3).
+var initialTargetsOf{{ machine_name }} = [{{ model.states | length }}][]{{ machine_name }}Target{
+{% for state_id, state in model.states | dictsort %}
+{% if state.initial_targets %}
+	{{ machine_name }}State{{ state_id | to_state_variant }}: {{ et.entry_targets(state.initial_targets, model.history_states, machine_name) }},
+{% endif %}
+{% endfor %}
+}
+
+// documentInitialTargetsOf{{ machine_name }} is the target of the document's own
+// initial transition, as written (§scxml-3.2).
+var documentInitialTargetsOf{{ machine_name }} = []{{ machine_name }}Target{{ et.entry_targets(model.initial_targets, model.history_states, machine_name) }}
+
+// transitionTargetsOf{{ machine_name }} is each transition's target list, as
+// written (§scxml-3.13), by source state and the transition's index among its
+// source's own transitions. A targetless transition's entry is empty.
+var transitionTargetsOf{{ machine_name }} = [{{ model.states | length }}][][]{{ machine_name }}Target{
+{% for state_id, state in model.states | dictsort %}
+{% if state.transitions | selectattr('targets') | list %}
+	{{ machine_name }}State{{ state_id | to_state_variant }}: {
+{% for trans in state.transitions %}
+{% if trans.targets %}
+		{{ trans.transition_index }}: {{ et.entry_targets(trans.targets, model.history_states, machine_name) }},
+{% endif %}
+{% endfor %}
+	},
+{% endif %}
+{% endfor %}
+}
+{% if model.history_states %}
+
+// historyParentOf{{ machine_name }} is the state each <history> is declared in
+// (§scxml-3.10).
+var historyParentOf{{ machine_name }} = [{{ model.history_states | length }}]{{ machine_name }}State{
+{% for history_id, info in model.history_states | dictsort %}
+	{{ machine_name }}History{{ history_id | to_state_variant }}: {{ machine_name }}State{{ info.parent | to_state_variant }},
+{% endfor %}
+}
+
+// historyDefaultTargetsOf{{ machine_name }} is each <history>'s default
+// transition target, as written (§scxml-3.10.2).
+var historyDefaultTargetsOf{{ machine_name }} = [{{ model.history_states | length }}][]{{ machine_name }}Target{
+{% for history_id, info in model.history_states | dictsort %}
+	{{ machine_name }}History{{ history_id | to_state_variant }}: {{ et.entry_targets(info.default_targets, model.history_states, machine_name) }},
+{% endfor %}
+}
+{% endif %}
+
 // ======================================================================
 // Event type (W3C SCXML 3.12)
 // ======================================================================
@@ -163,15 +246,6 @@ type {{ machine_name }}Policy struct {
 	// native transition guards (`p.pending<Event>Payload.<field>`). Mirrors
 	// the Rust policy's `pending_payload` / the C11 `sm->pending_payload`.
 {{ event_payload_policy_fields }}
-{% endif %}
-	// W3C SCXML 3.13: Last transition metadata
-	lastTransitionIsInternal  bool
-	lastTransitionIsTargetless bool
-	lastTransitionSourceState {{ machine_name }}State
-{% if model.has_transition_actions %}
-	// W3C SCXML 3.13: Transition action tracking
-	lastTransitionIndex   int
-	hasTransitionActions   bool
 {% endif %}
 {% if model.has_parallel_states or model.uses_in_predicate %}
 	// W3C SCXML 3.4: Active state configuration for parallel states / In() predicate
@@ -263,11 +337,9 @@ type {{ machine_name }}Policy struct {
 func New{{ machine_name }}Policy(actions {{ native_actions_interface }}) {{ machine_name }}Policy {
 	return {{ machine_name }}Policy{
 		actions: actions,
-		lastTransitionSourceState: {{ machine_name }}State{{ model.initial_leaf | default(model.initial) | to_state_variant }},
 {% else %}
 func New{{ machine_name }}Policy() {{ machine_name }}Policy {
 	return {{ machine_name }}Policy{
-		lastTransitionSourceState: {{ machine_name }}State{{ model.initial_leaf | default(model.initial) | to_state_variant }},
 {% endif %}
 {% if model.has_parallel_states or model.uses_in_predicate %}
 		activeStates: make([]{{ machine_name }}State, 0),
@@ -355,17 +427,11 @@ func (p *{{ machine_name }}Policy) GetParent(state {{ machine_name }}State) ({{ 
 	return 0, false
 }
 
-// IsCompoundState returns true if state has children (W3C SCXML 3.3).
+// IsCompoundState returns true if state is a <state> with child states — exactly
+// the states that have an initial transition. A <parallel> is not compound
+// (W3C SCXML 3.3).
 func (p *{{ machine_name }}Policy) IsCompoundState(state {{ machine_name }}State) bool {
-	switch state {
-{% for state_id, state in model.states | dictsort %}
-{% if state.initial or state.initial_children %}
-	case {{ machine_name }}State{{ state_id | to_state_variant }}:
-		return true
-{% endif %}
-{% endfor %}
-	}
-	return false
+	return len(initialTargetsOf{{ machine_name }}[state]) > 0
 }
 
 {% if model.has_parallel_states %}
@@ -382,39 +448,67 @@ func (p *{{ machine_name }}Policy) IsParallelState(state {{ machine_name }}State
 	return false
 }
 
-// GetParallelRegions returns child regions of a parallel state (W3C SCXML 3.4).
-func (p *{{ machine_name }}Policy) GetParallelRegions(state {{ machine_name }}State) []{{ machine_name }}State {
-	switch state {
-{% for parallel_id, regions in model.parallel_regions | dictsort %}
-	case {{ machine_name }}State{{ parallel_id | to_state_variant }}:
-		return []{{ machine_name }}State{
-{% for region in regions %}
-			{{ machine_name }}State{{ region | to_state_variant }},
-{% endfor %}
-		}
-{% endfor %}
-	}
-	return nil
-}
 {% else %}
 func (p *{{ machine_name }}Policy) IsParallelState(_ {{ machine_name }}State) bool { return false }
-func (p *{{ machine_name }}Policy) GetParallelRegions(_ {{ machine_name }}State) []{{ machine_name }}State { return nil }
 {% endif %}
 
-// IsDescendantOf returns true if desc is a descendant of anc (W3C SCXML 3.12).
-func (p *{{ machine_name }}Policy) IsDescendantOf(desc, anc {{ machine_name }}State) bool {
-	current := desc
-	for {
-		parent, ok := p.GetParent(current)
-		if !ok {
-			return false
-		}
-		if parent == anc {
-			return true
-		}
-		current = parent
-	}
+// GetChildStates returns state's <state>, <parallel> and <final> children, in
+// document order — for a <parallel>, its regions (§scxml-D-getChildStates).
+func (p *{{ machine_name }}Policy) GetChildStates(state {{ machine_name }}State) []{{ machine_name }}State {
+	return childStatesOf{{ machine_name }}[state]
 }
+
+// GetInitialTargets returns a compound state's initial transition target, as
+// written; the engine's entry procedures dereference a <history> among them
+// (W3C SCXML 3.3).
+func (p *{{ machine_name }}Policy) GetInitialTargets(state {{ machine_name }}State) []{{ machine_name }}Target {
+	return initialTargetsOf{{ machine_name }}[state]
+}
+
+// GetDocumentInitialTargets returns the target of the document's own initial
+// transition, as written (W3C SCXML 3.2).
+func (p *{{ machine_name }}Policy) GetDocumentInitialTargets() []{{ machine_name }}Target {
+	return documentInitialTargetsOf{{ machine_name }}
+}
+{% if model.history_states %}
+
+// GetHistoryParent returns the state a <history> is declared in (W3C SCXML 3.10).
+func (p *{{ machine_name }}Policy) GetHistoryParent(history sce.HistoryID) {{ machine_name }}State {
+	return historyParentOf{{ machine_name }}[history]
+}
+
+// GetHistoryDefaultTargets returns a <history>'s default transition target, as
+// written (W3C SCXML 3.10.2).
+func (p *{{ machine_name }}Policy) GetHistoryDefaultTargets(history sce.HistoryID) []{{ machine_name }}Target {
+	return historyDefaultTargetsOf{{ machine_name }}[history]
+}
+
+// HistoryValue returns what a <history> recorded when its parent was last
+// exited, and false before that ever happened (W3C SCXML 3.10).
+func (p *{{ machine_name }}Policy) HistoryValue(history sce.HistoryID) ([]{{ machine_name }}State, bool) {
+	switch history {
+{% for history_id in model.history_states | sort %}
+	case {{ machine_name }}History{{ history_id | to_state_variant }}:
+		return p.history{{ history_id | to_pascal_case }}, p.history{{ history_id | to_pascal_case }} != nil
+{% endfor %}
+	}
+	return nil, false
+}
+{% else %}
+
+// W3C SCXML 3.10: this document declares no <history>, so no target list names
+// one and the engine never asks the two below; answering would mean inventing
+// one.
+func (p *{{ machine_name }}Policy) GetHistoryParent(history sce.HistoryID) {{ machine_name }}State {
+	panic(fmt.Sprintf("{{ machine_name }}Policy declares no <history>; asked for %d", history))
+}
+func (p *{{ machine_name }}Policy) GetHistoryDefaultTargets(history sce.HistoryID) []{{ machine_name }}Target {
+	panic(fmt.Sprintf("{{ machine_name }}Policy declares no <history>; asked for %d", history))
+}
+func (p *{{ machine_name }}Policy) HistoryValue(_ sce.HistoryID) ([]{{ machine_name }}State, bool) {
+	return nil, false
+}
+{% endif %}
 
 // GetDocumentOrder returns the document order index (W3C SCXML Appendix D).
 func (p *{{ machine_name }}Policy) GetDocumentOrder(state {{ machine_name }}State) int {
@@ -460,56 +554,6 @@ func (p *{{ machine_name }}Policy) GetStateFromName(name string) ({{ machine_nam
 // NullEvent returns the sentinel for eventless transition dispatch (W3C SCXML 3.13).
 func (p *{{ machine_name }}Policy) NullEvent() {{ machine_name }}Event {
 	return {{ machine_name }}EventNull
-}
-
-// GetInitialChildren returns initial children of a compound state (W3C SCXML 3.6).
-func (p *{{ machine_name }}Policy) GetInitialChildren(state {{ machine_name }}State) []{{ machine_name }}State {
-	switch state {
-{% for state_id, state in model.states | dictsort %}
-{% if state.initial_children %}
-	case {{ machine_name }}State{{ state_id | to_state_variant }}:
-		return []{{ machine_name }}State{
-{% for child in state.initial_children %}
-			{{ machine_name }}State{{ child | to_state_variant }},
-{% endfor %}
-		}
-{% elif state.initial %}
-	case {{ machine_name }}State{{ state_id | to_state_variant }}:
-		return []{{ machine_name }}State{ {{ machine_name }}State{{ state.initial | to_state_variant }} }
-{% endif %}
-{% endfor %}
-	}
-	return nil
-}
-
-// LastTransitionIsInternal returns the internal transition flag (W3C SCXML 3.13).
-func (p *{{ machine_name }}Policy) LastTransitionIsInternal() bool {
-	return p.lastTransitionIsInternal
-}
-
-// SetLastTransitionIsInternal sets the internal transition flag.
-func (p *{{ machine_name }}Policy) SetLastTransitionIsInternal(value bool) {
-	p.lastTransitionIsInternal = value
-}
-
-// LastTransitionIsTargetless returns the targetless transition flag (W3C SCXML 3.13).
-func (p *{{ machine_name }}Policy) LastTransitionIsTargetless() bool {
-	return p.lastTransitionIsTargetless
-}
-
-// SetLastTransitionIsTargetless sets the targetless transition flag.
-func (p *{{ machine_name }}Policy) SetLastTransitionIsTargetless(value bool) {
-	p.lastTransitionIsTargetless = value
-}
-
-// LastTransitionSourceState returns the source state of the last transition.
-func (p *{{ machine_name }}Policy) LastTransitionSourceState() {{ machine_name }}State {
-	return p.lastTransitionSourceState
-}
-
-// SetLastTransitionSourceState sets the source state of the last transition.
-func (p *{{ machine_name }}Policy) SetLastTransitionSourceState(state {{ machine_name }}State) {
-	p.lastTransitionSourceState = state
 }
 
 {% if model.has_parallel_states or model.uses_in_predicate %}
@@ -603,23 +647,6 @@ func (p *{{ machine_name }}Policy) SetNextEventIsExternal(_ bool) {}
 {% else %}
 func (p *{{ machine_name }}Policy) HasExternalEventFlag() bool { return true }
 {% endif %}
-// GetInitialOrHistoryChild returns the initial child considering history (W3C SCXML 3.11).
-func (p *{{ machine_name }}Policy) GetInitialOrHistoryChild(state {{ machine_name }}State) {{ machine_name }}State {
-{% for history_id, history_info in model.history_states | dictsort %}
-{% if history_info.parent %}
-	if state == {{ machine_name }}State{{ history_info.parent | to_state_variant }} {
-		if p.history{{ history_id | to_pascal_case }} != nil && len(p.history{{ history_id | to_pascal_case }}) > 0 {
-			return p.history{{ history_id | to_pascal_case }}[0]
-		}
-	}
-{% endif %}
-{% endfor %}
-	children := p.GetInitialChildren(state)
-	if len(children) > 0 {
-		return children[0]
-	}
-	return state
-}
 {% set finalize_invokes = model.invokes | scxml | selectattr('finalize_content') | list if model.invokes | scxml else [] %}
 {% if not finalize_invokes %}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
@@ -709,17 +736,5 @@ func (p *{{ machine_name }}Policy) ClearEventMetadata() {
 {% endif %}
 }
 
-{% for history_id, history_info in model.history_states | dictsort %}
-// resolveHistoryTarget{{ history_id | to_pascal_case }} resolves history target for {{ history_id }} (W3C SCXML 3.11).
-func (p *{{ machine_name }}Policy) resolveHistoryTarget{{ history_id | to_pascal_case }}() {{ machine_name }}State {
-	if p.history{{ history_id | to_pascal_case }} != nil && len(p.history{{ history_id | to_pascal_case }}) > 0 {
-		return p.history{{ history_id | to_pascal_case }}[0]
-	}
-	// No history recorded — use default transition target
-	return {{ machine_name }}State{{ history_info.leaf_target | to_state_variant }}
-}
-{% endfor %}
-
 {% include 'entry_exit_actions.go.jinja2' %}
 {% include 'process_transition.go.jinja2' %}
-{% include 'conflict_resolution.go.jinja2' %}

@@ -34,7 +34,27 @@ class Test415StateMachine(
     // as `needs_event_scheduler`.
     override val needsEventScheduler: Boolean = false
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
 
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: Test415State): Boolean = when (state) {
+        is Test415State.Final -> true
+    }
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<Test415State, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<Test415State, HistoryId>> =
+            listOf(StateTarget(Test415State.Final))
+    }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test415State? = when (stateId) {
@@ -47,13 +67,7 @@ class Test415StateMachine(
         is Test415State.Final -> "final"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: Test415State): Boolean = when (state) {
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: Test415State): Int = when (state) {
         is Test415State.Final -> 0
     }
@@ -62,27 +76,26 @@ class Test415StateMachine(
 
 
 
-    // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
-    override fun processEvent(
+
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
         state: Test415State,
-        event: Test415Event
-    ): TransitionResult<Test415State> = when (state) {
-        else -> TransitionResult.Ignored
+        event: Test415Event?
+    ): EnabledTransition<Test415State, HistoryId>? = when (state) {
+        else -> null
     }
-
-
-    // --- Per-State Event Handlers ---
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: test415.scxml:8 :: _machine
-    override fun onEntry(state: Test415State, pathChild: Test415State?) {
+    override fun onEntry(state: Test415State, isDefaultEntry: Boolean) {
         when (state) {
             is Test415State.Final -> {
                 // SCE-MAP: test415.scxml:9 :: final :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("final")) return
 
             raiseInternal(Test415Event.Event1)
                 // W3C SCXML 3.7: Top-level final state reached
@@ -97,19 +110,14 @@ class Test415StateMachine(
         when (state) {
             is Test415State.Final -> {
                 // SCE-MAP: test415.scxml:9 :: final :: _state_body
-                activeStateIds.remove("final")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: test415.scxml:8 :: _machine
-    override fun executeTransitionActions(
-        source: Test415State,
-        event: Test415Event?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: Test415State, transitionIndex: Int) {
         when (source) {
         else -> {}
         }

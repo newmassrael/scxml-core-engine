@@ -64,7 +64,55 @@ class InvokeCandidateSelectsTheChildStateMachine(
         super.enterInitialConfiguration()
     }
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
 
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: InvokeCandidateSelectsTheChildState): Boolean = when (state) {
+        is InvokeCandidateSelectsTheChildState.NoChild, is InvokeCandidateSelectsTheChildState.Pass, is InvokeCandidateSelectsTheChildState.WrongChild -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<InvokeCandidateSelectsTheChildState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<InvokeCandidateSelectsTheChildState, HistoryId>> =
+            listOf(StateTarget(InvokeCandidateSelectsTheChildState.Probe))
+
+        // W3C SCXML 3.13: probe's transition 0, as the microstep reads it.
+        val transitionProbeAt0 = EnabledTransition<InvokeCandidateSelectsTheChildState, HistoryId>(
+            InvokeCandidateSelectsTheChildState.Probe,
+            listOf(StateTarget(InvokeCandidateSelectsTheChildState.Pass)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: probe's transition 1, as the microstep reads it.
+        val transitionProbeAt1 = EnabledTransition<InvokeCandidateSelectsTheChildState, HistoryId>(
+            InvokeCandidateSelectsTheChildState.Probe,
+            listOf(StateTarget(InvokeCandidateSelectsTheChildState.WrongChild)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: probe's transition 2, as the microstep reads it.
+        val transitionProbeAt2 = EnabledTransition<InvokeCandidateSelectsTheChildState, HistoryId>(
+            InvokeCandidateSelectsTheChildState.Probe,
+            listOf(StateTarget(InvokeCandidateSelectsTheChildState.NoChild)),
+            2,
+            hasActions = false,
+            isInternal = false,
+        )
+    }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): InvokeCandidateSelectsTheChildState? = when (stateId) {
@@ -83,13 +131,7 @@ class InvokeCandidateSelectsTheChildStateMachine(
         is InvokeCandidateSelectsTheChildState.WrongChild -> "wrongChild"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: InvokeCandidateSelectsTheChildState): Boolean = when (state) {
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: InvokeCandidateSelectsTheChildState): Int = when (state) {
         is InvokeCandidateSelectsTheChildState.NoChild -> 3
         is InvokeCandidateSelectsTheChildState.Pass -> 1
@@ -312,58 +354,49 @@ class InvokeCandidateSelectsTheChildStateMachine(
     }
 
 
-    // W3C SCXML 3.12: Event processing with script engine condition evaluation
-    override fun processEvent(
-        state: InvokeCandidateSelectsTheChildState,
-        event: InvokeCandidateSelectsTheChildEvent
-    ): TransitionResult<InvokeCandidateSelectsTheChildState> {
-        // W3C SCXML 5.10: Set _event before guard evaluation
+
+    // W3C SCXML 5.10: bind the event as the `_event` its transitions' guards
+    // read — once, before the first guard runs, and not for an eventless
+    // selection, which has no event of its own.
+    override fun bindCurrentEvent(event: InvokeCandidateSelectsTheChildEvent) {
         setCurrentEventInScriptEngine(event)
-        return when (state) {
-        is InvokeCandidateSelectsTheChildState.Probe -> processProbe(event)
-        else -> TransitionResult.Ignored
-    }
     }
 
-
-    // --- Per-State Event Handlers ---
-
-    private fun processProbe(
-        event: InvokeCandidateSelectsTheChildEvent
-    ): TransitionResult<InvokeCandidateSelectsTheChildState> = when {
-        event is InvokeCandidateSelectsTheChildEvent.From.Chosen -> TransitionResult.External(InvokeCandidateSelectsTheChildState.Pass, InvokeCandidateSelectsTheChildState.Probe, 0)
-
-        event is InvokeCandidateSelectsTheChildEvent.From.Other -> TransitionResult.External(InvokeCandidateSelectsTheChildState.WrongChild, InvokeCandidateSelectsTheChildState.Probe, 1)
-
-        event is InvokeCandidateSelectsTheChildEvent.Error.Execution -> TransitionResult.External(InvokeCandidateSelectsTheChildState.NoChild, InvokeCandidateSelectsTheChildState.Probe, 2)
-
-        else -> TransitionResult.Ignored
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
+        state: InvokeCandidateSelectsTheChildState,
+        event: InvokeCandidateSelectsTheChildEvent?
+    ): EnabledTransition<InvokeCandidateSelectsTheChildState, HistoryId>? = when (state) {
+        is InvokeCandidateSelectsTheChildState.Probe -> when {
+            event is InvokeCandidateSelectsTheChildEvent.From.Chosen -> transitionProbeAt0
+            event is InvokeCandidateSelectsTheChildEvent.From.Other -> transitionProbeAt1
+            event is InvokeCandidateSelectsTheChildEvent.Error.Execution -> transitionProbeAt2
+            else -> null
+        }
+        else -> null
     }
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: invoke_candidate_selects_the_child.scxml:34 :: _machine
-    override fun onEntry(state: InvokeCandidateSelectsTheChildState, pathChild: InvokeCandidateSelectsTheChildState?) {
+    override fun onEntry(state: InvokeCandidateSelectsTheChildState, isDefaultEntry: Boolean) {
         when (state) {
             is InvokeCandidateSelectsTheChildState.NoChild -> {
                 // SCE-MAP: invoke_candidate_selects_the_child.scxml:55 :: noChild :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("noChild")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is InvokeCandidateSelectsTheChildState.Pass -> {
                 // SCE-MAP: invoke_candidate_selects_the_child.scxml:48 :: pass :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is InvokeCandidateSelectsTheChildState.Probe -> {
                 // SCE-MAP: invoke_candidate_selects_the_child.scxml:41 :: probe :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("probe")) return
                 // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
                 // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
                 run {
@@ -420,8 +453,6 @@ class InvokeCandidateSelectsTheChildStateMachine(
             }
             is InvokeCandidateSelectsTheChildState.WrongChild -> {
                 // SCE-MAP: invoke_candidate_selects_the_child.scxml:54 :: wrongChild :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("wrongChild")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
@@ -434,11 +465,9 @@ class InvokeCandidateSelectsTheChildStateMachine(
         when (state) {
             is InvokeCandidateSelectsTheChildState.NoChild -> {
                 // SCE-MAP: invoke_candidate_selects_the_child.scxml:55 :: noChild :: _state_body
-                activeStateIds.remove("noChild")
             }
             is InvokeCandidateSelectsTheChildState.Pass -> {
                 // SCE-MAP: invoke_candidate_selects_the_child.scxml:48 :: pass :: _state_body
-                activeStateIds.remove("pass")
             }
             is InvokeCandidateSelectsTheChildState.Probe -> {
                 // SCE-MAP: invoke_candidate_selects_the_child.scxml:41 :: probe :: _state_body
@@ -446,23 +475,17 @@ class InvokeCandidateSelectsTheChildStateMachine(
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("_invoke_0")
-                activeStateIds.remove("probe")
             }
             is InvokeCandidateSelectsTheChildState.WrongChild -> {
                 // SCE-MAP: invoke_candidate_selects_the_child.scxml:54 :: wrongChild :: _state_body
-                activeStateIds.remove("wrongChild")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: invoke_candidate_selects_the_child.scxml:34 :: _machine
-    override fun executeTransitionActions(
-        source: InvokeCandidateSelectsTheChildState,
-        event: InvokeCandidateSelectsTheChildEvent?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: InvokeCandidateSelectsTheChildState, transitionIndex: Int) {
         when (source) {
         else -> {}
         }

@@ -320,15 +320,6 @@ void ActionExecutorImpl::setEventRaiser(std::shared_ptr<IEventRaiser> eventRaise
     }
 }
 
-void ActionExecutorImpl::setImmediateMode(bool immediate) {
-    // §scxml-3.13: Control immediate mode for event raising (test 404)
-    // Exit actions should queue events, not process them immediately
-    if (eventRaiser_) {
-        eventRaiser_->setImmediateMode(immediate);
-        SCE_LOG_DEBUG("ActionExecutorImpl: Set immediate mode to {}", immediate);
-    }
-}
-
 void ActionExecutorImpl::setCurrentEvent(const EventMetadata &metadata) {
     // §scxml-5.10: Set all event metadata fields
     currentEventName_ = metadata.name;

@@ -164,6 +164,59 @@ var SendParamPayloadAllStates = []SendParamPayloadState{
 	SendParamPayloadStateTypedPhase,
 }
 
+// SendParamPayloadTarget is one token of a target list, as the document wrote
+// it (W3C SCXML 3.13): a state, or a <history> the engine dereferences.
+type SendParamPayloadTarget = sce.EntryTarget[SendParamPayloadState, sce.HistoryID]
+
+// ======================================================================
+// Document structure (W3C SCXML 3.2-3.4, 3.10)
+//
+// Package-level tables, because the structure is a fact about the document
+// and not about a run: the engine's Appendix D procedures read them through
+// the policy methods below, and a transition's target list is handed out as
+// a slice of them rather than rebuilt on every selection.
+// ======================================================================
+
+// childStatesOfSendParamPayload is §scxml-D-getChildStates per state: its
+// <state>, <parallel> and <final> children, in document order.
+var childStatesOfSendParamPayload = [13][]SendParamPayloadState{
+}
+
+// initialTargetsOfSendParamPayload is each compound state's initial transition
+// target, as written (§scxml-3.3).
+var initialTargetsOfSendParamPayload = [13][]SendParamPayloadTarget{
+}
+
+// documentInitialTargetsOfSendParamPayload is the target of the document's own
+// initial transition, as written (§scxml-3.2).
+var documentInitialTargetsOfSendParamPayload = []SendParamPayloadTarget{sce.StateTarget[SendParamPayloadState, sce.HistoryID](SendParamPayloadStateAwaitChild)}
+
+// transitionTargetsOfSendParamPayload is each transition's target list, as
+// written (§scxml-3.13), by source state and the transition's index among its
+// source's own transitions. A targetless transition's entry is empty.
+var transitionTargetsOfSendParamPayload = [13][][]SendParamPayloadTarget{
+	SendParamPayloadStateAwaitChild: {
+		0: {sce.StateTarget[SendParamPayloadState, sce.HistoryID](SendParamPayloadStateInternalPhase)},
+		1: {sce.StateTarget[SendParamPayloadState, sce.HistoryID](SendParamPayloadStateFailChildPayload)},
+	},
+	SendParamPayloadStateInternalPhase: {
+		0: {sce.StateTarget[SendParamPayloadState, sce.HistoryID](SendParamPayloadStateTypedPhase)},
+		1: {sce.StateTarget[SendParamPayloadState, sce.HistoryID](SendParamPayloadStateFailInternalPayload)},
+	},
+	SendParamPayloadStateParamErrorPhase: {
+		1: {sce.StateTarget[SendParamPayloadState, sce.HistoryID](SendParamPayloadStateFailNoParamError)},
+		2: {sce.StateTarget[SendParamPayloadState, sce.HistoryID](SendParamPayloadStateFailBrokenParamDelivered)},
+		3: {sce.StateTarget[SendParamPayloadState, sce.HistoryID](SendParamPayloadStatePass)},
+		4: {sce.StateTarget[SendParamPayloadState, sce.HistoryID](SendParamPayloadStateFailSiblingParamLost)},
+	},
+	SendParamPayloadStateTypedPhase: {
+		0: {sce.StateTarget[SendParamPayloadState, sce.HistoryID](SendParamPayloadStateFailNumberType)},
+		1: {sce.StateTarget[SendParamPayloadState, sce.HistoryID](SendParamPayloadStateFailStringType)},
+		2: {sce.StateTarget[SendParamPayloadState, sce.HistoryID](SendParamPayloadStateParamErrorPhase)},
+		3: {sce.StateTarget[SendParamPayloadState, sce.HistoryID](SendParamPayloadStateFailDuplicateParams)},
+	},
+}
+
 // ======================================================================
 // Event type (W3C SCXML 3.12)
 // ======================================================================
@@ -209,13 +262,6 @@ func (e SendParamPayloadEvent) String() string {
 // ======================================================================
 
 type SendParamPayloadPolicy struct {
-	// W3C SCXML 3.13: Last transition metadata
-	lastTransitionIsInternal  bool
-	lastTransitionIsTargetless bool
-	lastTransitionSourceState SendParamPayloadState
-	// W3C SCXML 3.13: Transition action tracking
-	lastTransitionIndex   int
-	hasTransitionActions   bool
 	// W3C SCXML 5.10.1: External event flag
 	nextEventIsExternal bool
 	pendingEventName string
@@ -252,7 +298,6 @@ type SendParamPayloadPolicy struct {
 // NewSendParamPayloadPolicy creates a new policy with default values.
 func NewSendParamPayloadPolicy() SendParamPayloadPolicy {
 	return SendParamPayloadPolicy{
-		lastTransitionSourceState: SendParamPayloadStateAwaitChild,
 		pendingInvokes: make([]sce.PendingInvoke[SendParamPayloadState], 0),
 		activeInvokes:  make(map[string]*sce.ChildSession),
 	}
@@ -657,29 +702,45 @@ func (p *SendParamPayloadPolicy) GetParent(state SendParamPayloadState) (SendPar
 	return 0, false
 }
 
-// IsCompoundState returns true if state has children (W3C SCXML 3.3).
+// IsCompoundState returns true if state is a <state> with child states — exactly
+// the states that have an initial transition. A <parallel> is not compound
+// (W3C SCXML 3.3).
 func (p *SendParamPayloadPolicy) IsCompoundState(state SendParamPayloadState) bool {
-	switch state {
-	}
-	return false
+	return len(initialTargetsOfSendParamPayload[state]) > 0
 }
 
 func (p *SendParamPayloadPolicy) IsParallelState(_ SendParamPayloadState) bool { return false }
-func (p *SendParamPayloadPolicy) GetParallelRegions(_ SendParamPayloadState) []SendParamPayloadState { return nil }
 
-// IsDescendantOf returns true if desc is a descendant of anc (W3C SCXML 3.12).
-func (p *SendParamPayloadPolicy) IsDescendantOf(desc, anc SendParamPayloadState) bool {
-	current := desc
-	for {
-		parent, ok := p.GetParent(current)
-		if !ok {
-			return false
-		}
-		if parent == anc {
-			return true
-		}
-		current = parent
-	}
+// GetChildStates returns state's <state>, <parallel> and <final> children, in
+// document order — for a <parallel>, its regions (§scxml-D-getChildStates).
+func (p *SendParamPayloadPolicy) GetChildStates(state SendParamPayloadState) []SendParamPayloadState {
+	return childStatesOfSendParamPayload[state]
+}
+
+// GetInitialTargets returns a compound state's initial transition target, as
+// written; the engine's entry procedures dereference a <history> among them
+// (W3C SCXML 3.3).
+func (p *SendParamPayloadPolicy) GetInitialTargets(state SendParamPayloadState) []SendParamPayloadTarget {
+	return initialTargetsOfSendParamPayload[state]
+}
+
+// GetDocumentInitialTargets returns the target of the document's own initial
+// transition, as written (W3C SCXML 3.2).
+func (p *SendParamPayloadPolicy) GetDocumentInitialTargets() []SendParamPayloadTarget {
+	return documentInitialTargetsOfSendParamPayload
+}
+
+// W3C SCXML 3.10: this document declares no <history>, so no target list names
+// one and the engine never asks the two below; answering would mean inventing
+// one.
+func (p *SendParamPayloadPolicy) GetHistoryParent(history sce.HistoryID) SendParamPayloadState {
+	panic(fmt.Sprintf("SendParamPayloadPolicy declares no <history>; asked for %d", history))
+}
+func (p *SendParamPayloadPolicy) GetHistoryDefaultTargets(history sce.HistoryID) []SendParamPayloadTarget {
+	panic(fmt.Sprintf("SendParamPayloadPolicy declares no <history>; asked for %d", history))
+}
+func (p *SendParamPayloadPolicy) HistoryValue(_ sce.HistoryID) ([]SendParamPayloadState, bool) {
+	return nil, false
 }
 
 // GetDocumentOrder returns the document order index (W3C SCXML Appendix D).
@@ -758,43 +819,6 @@ func (p *SendParamPayloadPolicy) NullEvent() SendParamPayloadEvent {
 	return SendParamPayloadEventNull
 }
 
-// GetInitialChildren returns initial children of a compound state (W3C SCXML 3.6).
-func (p *SendParamPayloadPolicy) GetInitialChildren(state SendParamPayloadState) []SendParamPayloadState {
-	switch state {
-	}
-	return nil
-}
-
-// LastTransitionIsInternal returns the internal transition flag (W3C SCXML 3.13).
-func (p *SendParamPayloadPolicy) LastTransitionIsInternal() bool {
-	return p.lastTransitionIsInternal
-}
-
-// SetLastTransitionIsInternal sets the internal transition flag.
-func (p *SendParamPayloadPolicy) SetLastTransitionIsInternal(value bool) {
-	p.lastTransitionIsInternal = value
-}
-
-// LastTransitionIsTargetless returns the targetless transition flag (W3C SCXML 3.13).
-func (p *SendParamPayloadPolicy) LastTransitionIsTargetless() bool {
-	return p.lastTransitionIsTargetless
-}
-
-// SetLastTransitionIsTargetless sets the targetless transition flag.
-func (p *SendParamPayloadPolicy) SetLastTransitionIsTargetless(value bool) {
-	p.lastTransitionIsTargetless = value
-}
-
-// LastTransitionSourceState returns the source state of the last transition.
-func (p *SendParamPayloadPolicy) LastTransitionSourceState() SendParamPayloadState {
-	return p.lastTransitionSourceState
-}
-
-// SetLastTransitionSourceState sets the source state of the last transition.
-func (p *SendParamPayloadPolicy) SetLastTransitionSourceState(state SendParamPayloadState) {
-	p.lastTransitionSourceState = state
-}
-
 
 // SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
 func (p *SendParamPayloadPolicy) SetNextEventIsExternal(value bool) {
@@ -841,14 +865,6 @@ func (p *SendParamPayloadPolicy) GetActiveStates() []SendParamPayloadState { ret
 // which is false above; the method exists because the interface is one contract.
 func (p *SendParamPayloadPolicy) SetActiveStates(_ []SendParamPayloadState) {}
 func (p *SendParamPayloadPolicy) HasExternalEventFlag() bool { return true }
-// GetInitialOrHistoryChild returns the initial child considering history (W3C SCXML 3.11).
-func (p *SendParamPayloadPolicy) GetInitialOrHistoryChild(state SendParamPayloadState) SendParamPayloadState {
-	children := p.GetInitialChildren(state)
-	if len(children) > 0 {
-		return children[0]
-	}
-	return state
-}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *SendParamPayloadPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[SendParamPayloadEvent], _ *sce.Engine[SendParamPayloadState, SendParamPayloadEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).
@@ -892,13 +908,11 @@ func (p *SendParamPayloadPolicy) ClearEventMetadata() {
 
 
 
-
-// ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
+// ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
+// configuration, runs its <onentry>, and its <initial> transition's content when
+// its initial state is entered by default.
 //line send_param_payload.scxml:82
-func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState, engine *sce.Engine[SendParamPayloadState, SendParamPayloadEvent], pathChild *SendParamPayloadState) {
-	// Only a `<parallel>` machine descends into defaults here, so a machine
-	// without one has nothing to tell an ancestor entry from a target entry.
-	_ = pathChild
+func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState, engine *sce.Engine[SendParamPayloadState, SendParamPayloadEvent], isDefaultEntry bool) {
 	p.ensureScriptEngine()
 	switch state {
 	case SendParamPayloadStateAwaitChild:
@@ -1024,9 +1038,21 @@ func (p *SendParamPayloadPolicy) ExecuteEntryActions(state SendParamPayloadState
 	}
 }
 
-// ExecuteExitActions executes onexit actions for a state (W3C SCXML 3.9).
+// ExecuteHistoryDefaultContent runs a <history>'s default transition content
+// (W3C SCXML 3.10.2), after its parent's onentry (and after the parent's own
+// <initial> content) when the history was taken with nothing recorded. The
+// engine asks for it by the entry set's defaultHistoryContent answer; a history
+// that restored what it recorded runs nothing.
 //line send_param_payload.scxml:82
-func (p *SendParamPayloadPolicy) ExecuteExitActions(state SendParamPayloadState, engine *sce.Engine[SendParamPayloadState, SendParamPayloadEvent], preTransitionActive []SendParamPayloadState) {
+func (p *SendParamPayloadPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[SendParamPayloadState, SendParamPayloadEvent]) {
+	// W3C SCXML 3.10.2: no <history> in this document has default content.
+}
+
+// ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
+// removes it from the configuration, cancels its invocations and runs its
+// <onexit>.
+//line send_param_payload.scxml:82
+func (p *SendParamPayloadPolicy) ExecuteExitActions(state SendParamPayloadState, engine *sce.Engine[SendParamPayloadState, SendParamPayloadEvent], configurationBeforeExit []SendParamPayloadState) {
 	p.ensureScriptEngine()
 	// W3C SCXML 6.4: Cancel pending invokes and cleanup active children on state exit
 	switch state {
@@ -1045,202 +1071,195 @@ func (p *SendParamPayloadPolicy) ExecuteExitActions(state SendParamPayloadState,
 	}
 }
 
-// ProcessTransition evaluates guards and takes a matching transition (W3C SCXML 3.13).
-// Returns true if a transition was taken.
+
+
+// BindCurrentEvent binds the event whose transitions are about to be selected as
+// the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
+// and not for an eventless selection, which has no event of its own.
 //line send_param_payload.scxml:82
-func (p *SendParamPayloadPolicy) ProcessTransition(currentState *SendParamPayloadState, event SendParamPayloadEvent, engine *sce.Engine[SendParamPayloadState, SendParamPayloadEvent]) bool {
-	// W3C SCXML 5.10: Bind _event system variable for guard evaluation
+func (p *SendParamPayloadPolicy) BindCurrentEvent(event SendParamPayloadEvent, engine *sce.Engine[SendParamPayloadState, SendParamPayloadEvent]) {
 	if event != SendParamPayloadEventNull {
 		// §scxml-B-2-8-1: the rung the payload got, handed to the engine
 		// rather than dropped. This is the only frame that has both the
 		// reading and the event it belongs to.
 		engine.NotePayloadReading(event, p.setCurrentEvent(p.GetEventName(event)))
 	}
-
-	// W3C SCXML 3.12: Try transitions in current state first
-	if p.tryTransitionInState(*currentState, event, currentState, engine) {
-		return true
-	}
-
-
-	return false
 }
 
-
-// tryTransitionInState checks transitions for a single state.
+// FirstEnabledTransition is Appendix D selectTransitions, the half only this
+// document can answer: the first of state's own transitions, in document order,
+// that event enables and whose guard holds. The engine walks the atomic states
+// and their ancestors and keeps the ordered set; the null event asks for
+// eventless transitions.
 //line send_param_payload.scxml:82
-func (p *SendParamPayloadPolicy) tryTransitionInState(checkState SendParamPayloadState, event SendParamPayloadEvent, currentState *SendParamPayloadState, engine *sce.Engine[SendParamPayloadState, SendParamPayloadEvent]) bool {
-	switch checkState {
+func (p *SendParamPayloadPolicy) FirstEnabledTransition(state SendParamPayloadState, event SendParamPayloadEvent, engine *sce.Engine[SendParamPayloadState, SendParamPayloadEvent]) (sce.EnabledTransition[SendParamPayloadState, sce.HistoryID], bool) {
+	switch state {
 	case SendParamPayloadStateAwaitChild:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == SendParamPayloadEventFromChild {
 			if p.evaluateGuard(`(_scxml_truthy(_event.data) and (_event.data.value == "42"))`, engine) {
-			*currentState = SendParamPayloadStateInternalPhase
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = SendParamPayloadStateAwaitChild
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = false
-			return true
+				return sce.EnabledTransition[SendParamPayloadState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfSendParamPayload[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == SendParamPayloadEventFromChild {
-			*currentState = SendParamPayloadStateFailChildPayload
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = SendParamPayloadStateAwaitChild
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = false
-			return true
+			{
+				return sce.EnabledTransition[SendParamPayloadState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfSendParamPayload[state][1],
+					TransitionIndex: 1,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	case SendParamPayloadStateInternalPhase:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == SendParamPayloadEventLoopback {
 			if p.evaluateGuard(`(_scxml_truthy(_event.data) and (_event.data.carried == "kept"))`, engine) {
-			*currentState = SendParamPayloadStateTypedPhase
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = SendParamPayloadStateInternalPhase
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = false
-			return true
+				return sce.EnabledTransition[SendParamPayloadState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfSendParamPayload[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == SendParamPayloadEventLoopback {
-			*currentState = SendParamPayloadStateFailInternalPayload
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = SendParamPayloadStateInternalPhase
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = false
-			return true
+			{
+				return sce.EnabledTransition[SendParamPayloadState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfSendParamPayload[state][1],
+					TransitionIndex: 1,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	case SendParamPayloadStateParamErrorPhase:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == SendParamPayloadEventErrorExecution {
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = true
-			p.lastTransitionSourceState = SendParamPayloadStateParamErrorPhase
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[SendParamPayloadState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 0,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == SendParamPayloadEventWithBadParam {
 			if p.evaluateGuard(`(sawParamError ~= 1)`, engine) {
-			*currentState = SendParamPayloadStateFailNoParamError
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = SendParamPayloadStateParamErrorPhase
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = false
-			return true
+				return sce.EnabledTransition[SendParamPayloadState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfSendParamPayload[state][1],
+					TransitionIndex: 1,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == SendParamPayloadEventWithBadParam {
 			if p.evaluateGuard(`(_event.data.broken == "")`, engine) {
-			*currentState = SendParamPayloadStateFailBrokenParamDelivered
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = SendParamPayloadStateParamErrorPhase
-			p.lastTransitionIndex = 2
-			p.hasTransitionActions = false
-			return true
+				return sce.EnabledTransition[SendParamPayloadState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfSendParamPayload[state][2],
+					TransitionIndex: 2,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == SendParamPayloadEventWithBadParam {
 			if p.evaluateGuard(`(_event.data.kept == "here")`, engine) {
-			*currentState = SendParamPayloadStatePass
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = SendParamPayloadStateParamErrorPhase
-			p.lastTransitionIndex = 3
-			p.hasTransitionActions = false
-			return true
+				return sce.EnabledTransition[SendParamPayloadState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfSendParamPayload[state][3],
+					TransitionIndex: 3,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == SendParamPayloadEventWithBadParam {
-			*currentState = SendParamPayloadStateFailSiblingParamLost
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = SendParamPayloadStateParamErrorPhase
-			p.lastTransitionIndex = 4
-			p.hasTransitionActions = false
-			return true
+			{
+				return sce.EnabledTransition[SendParamPayloadState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfSendParamPayload[state][4],
+					TransitionIndex: 4,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	case SendParamPayloadStateTypedPhase:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == SendParamPayloadEventTyped {
 			if p.evaluateGuard(`(_event.data.n ~= 7)`, engine) {
-			*currentState = SendParamPayloadStateFailNumberType
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = SendParamPayloadStateTypedPhase
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = false
-			return true
+				return sce.EnabledTransition[SendParamPayloadState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfSendParamPayload[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == SendParamPayloadEventTyped {
 			if p.evaluateGuard(`(_event.data.s ~= "kept")`, engine) {
-			*currentState = SendParamPayloadStateFailStringType
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = SendParamPayloadStateTypedPhase
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = false
-			return true
+				return sce.EnabledTransition[SendParamPayloadState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfSendParamPayload[state][1],
+					TransitionIndex: 1,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == SendParamPayloadEventTyped {
 			if p.evaluateGuard(`(((#_event.data.d == 2) and (_event.data.d[1] == 1)) and (_event.data.d[2] == 2))`, engine) {
-			*currentState = SendParamPayloadStateParamErrorPhase
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = SendParamPayloadStateTypedPhase
-			p.lastTransitionIndex = 2
-			p.hasTransitionActions = false
-			return true
+				return sce.EnabledTransition[SendParamPayloadState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfSendParamPayload[state][2],
+					TransitionIndex: 2,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == SendParamPayloadEventTyped {
-			*currentState = SendParamPayloadStateFailDuplicateParams
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = SendParamPayloadStateTypedPhase
-			p.lastTransitionIndex = 3
-			p.hasTransitionActions = false
-			return true
+			{
+				return sce.EnabledTransition[SendParamPayloadState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfSendParamPayload[state][3],
+					TransitionIndex: 3,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	}
-	return false
+	return sce.EnabledTransition[SendParamPayloadState, sce.HistoryID]{}, false
 }
 
-// ExecuteTransitionActions executes actions for the last taken transition (W3C SCXML 3.13).
+// ExecuteTransitionContent runs one transition's executable content (W3C SCXML
+// 3.13), between the microstep's exits and its entries.
 //line send_param_payload.scxml:82
-func (p *SendParamPayloadPolicy) ExecuteTransitionActions(engine *sce.Engine[SendParamPayloadState, SendParamPayloadEvent]) {
+func (p *SendParamPayloadPolicy) ExecuteTransitionContent(source SendParamPayloadState, transitionIndex int, engine *sce.Engine[SendParamPayloadState, SendParamPayloadEvent]) {
 	p.ensureScriptEngine()
-	if !p.hasTransitionActions {
-		return
-	}
-	source := p.lastTransitionSourceState
-	idx := p.lastTransitionIndex
-	if source == SendParamPayloadStateParamErrorPhase && idx == 0 {
-		//line send_param_payload.scxml:199
+	switch source {
+	case SendParamPayloadStateParamErrorPhase:
+		switch transitionIndex {
+		case 0:
+			//line send_param_payload.scxml:199
 
 	// W3C SCXML 5.3: <assign location="sawParamError" expr="1">
 	if err := p.assignVariable(`sawParamError`, `1`); err != nil {
 		engine.Raise(sce.NewPlatformError(SendParamPayloadEventErrorExecution, "<assign> to 'sawParamError' failed"))
 	}
 
-		return
+		}
 	}
 }

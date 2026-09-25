@@ -21,6 +21,12 @@ SCE::SCXMLModel::~SCXMLModel() {
 void SCE::SCXMLModel::setRootState(std::shared_ptr<SCE::IStateNode> rootState) {
     SCE_LOG_DEBUG("Setting root state: {}", (rootState ? rootState->getId() : "null"));
     rootState_ = rootState;
+    // The root is the first top-level state. The parser adds it before naming
+    // it; a model assembled by hand may only name it.
+    if (rootState && rootState->getParent() == nullptr &&
+        std::find(topLevelStates_.begin(), topLevelStates_.end(), rootState) == topLevelStates_.end()) {
+        topLevelStates_.insert(topLevelStates_.begin(), rootState);
+    }
     // Rebuild the complete state list to include all nested children
     rebuildAllStatesList();
 }
@@ -102,8 +108,10 @@ const std::vector<std::shared_ptr<SCE::IGuardNode>> &SCE::SCXMLModel::getGuards(
 void SCE::SCXMLModel::addState(std::shared_ptr<SCE::IStateNode> state) {
     if (state) {
         SCE_LOG_DEBUG("Adding state: {}", state->getId());
-        allStates_.push_back(state);
-        stateIdMap_[state->getId()] = state.get();
+        addedStates_.push_back(state);
+        if (state->getParent() == nullptr) {
+            topLevelStates_.push_back(state);
+        }
         // Rebuild the complete state list to include all nested children
         rebuildAllStatesList();
     }
@@ -111,6 +119,10 @@ void SCE::SCXMLModel::addState(std::shared_ptr<SCE::IStateNode> state) {
 
 const std::vector<std::shared_ptr<SCE::IStateNode>> &SCE::SCXMLModel::getAllStates() const {
     return allStates_;
+}
+
+const std::vector<std::shared_ptr<SCE::IStateNode>> &SCE::SCXMLModel::getTopLevelStates() const {
+    return topLevelStates_;
 }
 
 SCE::IStateNode *SCE::SCXMLModel::findStateById(const std::string &id) const {
@@ -391,72 +403,42 @@ const std::vector<std::shared_ptr<SCE::IActionNode>> &SCE::SCXMLModel::getTopLev
     return topLevelScripts_;
 }
 
-void SCE::SCXMLModel::collectAllStatesRecursively(IStateNode *state,
-                                                  std::vector<std::shared_ptr<IStateNode>> &allStates) const {
-    if (!state) {
-        return;
-    }
-
-    // Find the shared_ptr version of this raw pointer from the root states
-    bool found = false;
-    for (const auto &sharedState : allStates_) {
-        if (sharedState.get() == state) {
-            allStates.push_back(sharedState);
-            found = true;
-            break;
-        }
-    }
-
-    // If not found in root states, recursively search in already collected states
-    if (!found) {
-        for (const auto &sharedState : allStates) {
-            const auto &children = sharedState->getChildren();
-            for (const auto &child : children) {
-                if (child.get() == state) {
-                    allStates.push_back(child);
-                    found = true;
-                    break;
-                }
-            }
-            if (found) {
-                break;
-            }
-        }
-    }
-
-    // Recursively collect children
-    const auto &children = state->getChildren();
-    for (const auto &child : children) {
-        collectAllStatesRecursively(child.get(), allStates);
-    }
-}
-
 void SCE::SCXMLModel::rebuildAllStatesList() {
-    std::vector<std::shared_ptr<IStateNode>> newAllStates;
-
-    // Start from root state if available
-    if (rootState_) {
-        collectAllStatesRecursively(rootState_.get(), newAllStates);
-    }
-
-    // Also add any states that were explicitly added but might not be in the hierarchy
-    for (const auto &state : allStates_) {
-        bool alreadyIncluded = false;
-        for (const auto &existingState : newAllStates) {
-            if (existingState.get() == state.get()) {
-                alreadyIncluded = true;
-                break;
+    // Document order is a pre-order walk: each top-level state, in the order
+    // `<scxml>` holds them, followed by its subtree. A state added on its own
+    // rather than as a top-level state — a model assembled by hand — comes
+    // after, so it is still found by id. Each node is listed once: the walk
+    // this replaced re-added the second and later top-level states on every
+    // rebuild, so they appeared twice.
+    std::vector<std::shared_ptr<IStateNode>> ordered;
+    std::unordered_set<const IStateNode *> seen;
+    std::vector<std::shared_ptr<IStateNode>> pending;
+    const auto visit = [&](const std::shared_ptr<IStateNode> &start) {
+        pending.push_back(start);
+        while (!pending.empty()) {
+            const auto state = pending.back();
+            pending.pop_back();
+            if (!state || !seen.insert(state.get()).second) {
+                continue;
+            }
+            ordered.push_back(state);
+            const auto &children = state->getChildren();
+            for (auto child = children.rbegin(); child != children.rend(); ++child) {
+                pending.push_back(*child);
             }
         }
-        if (!alreadyIncluded) {
-            newAllStates.push_back(state);
-            // Also recursively add their children
-            collectAllStatesRecursively(state.get(), newAllStates);
-        }
+    };
+    if (rootState_) {
+        visit(rootState_);
+    }
+    for (const auto &state : topLevelStates_) {
+        visit(state);
+    }
+    for (const auto &state : addedStates_) {
+        visit(state);
     }
 
-    // Replace the current allStates_ with the complete list
-    allStates_ = std::move(newAllStates);
+    allStates_ = std::move(ordered);
 
     // Rebuild the state ID map as well
     stateIdMap_.clear();

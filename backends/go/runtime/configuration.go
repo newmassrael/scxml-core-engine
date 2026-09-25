@@ -160,7 +160,7 @@ func ValidateConfiguration[S comparable, E comparable](
 		}
 
 		if policy.HasParallelStates() && policy.IsParallelState(state) {
-			regions := policy.GetParallelRegions(state)
+			regions := policy.GetChildStates(state)
 			// §scxml-3.4: every region, simultaneously.
 			for _, region := range regions {
 				if !holds(region) {

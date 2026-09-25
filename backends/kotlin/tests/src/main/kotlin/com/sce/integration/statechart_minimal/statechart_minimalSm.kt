@@ -97,7 +97,31 @@ class StatechartMinimalStateMachine(
     // as `needs_event_scheduler`.
     override val needsEventScheduler: Boolean = false
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
 
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<StatechartMinimalState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<StatechartMinimalState, HistoryId>> =
+            listOf(StateTarget(StatechartMinimalState.Waiting))
+
+        // W3C SCXML 3.13: waiting's transition 0, as the microstep reads it.
+        val transitionWaitingAt0 = EnabledTransition<StatechartMinimalState, HistoryId>(
+            StatechartMinimalState.Waiting,
+            listOf(StateTarget(StatechartMinimalState.Done)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+    }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StatechartMinimalState? = when (stateId) {
@@ -112,13 +136,7 @@ class StatechartMinimalStateMachine(
         is StatechartMinimalState.Waiting -> "waiting"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: StatechartMinimalState): Boolean = when (state) {
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StatechartMinimalState): Int = when (state) {
         is StatechartMinimalState.Done -> 1
         is StatechartMinimalState.Waiting -> 0
@@ -138,41 +156,33 @@ class StatechartMinimalStateMachine(
 
 
 
-    // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
-    override fun processEvent(
+
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
         state: StatechartMinimalState,
-        event: StatechartMinimalEvent
-    ): TransitionResult<StatechartMinimalState> = when (state) {
-        is StatechartMinimalState.Waiting -> processWaiting(event)
-        else -> TransitionResult.Ignored
+        event: StatechartMinimalEvent?
+    ): EnabledTransition<StatechartMinimalState, HistoryId>? = when (state) {
+        is StatechartMinimalState.Waiting -> when {
+            event is StatechartMinimalEvent.Job.Completed && pendingJobCompletedPayload != null && (pendingJobCompletedPayload!!.elapsed_ms == 0.toUInt()) -> transitionWaitingAt0
+            else -> null
+        }
+        else -> null
     }
-
-
-    // --- Per-State Event Handlers ---
-
-    private fun processWaiting(
-        event: StatechartMinimalEvent
-    ): TransitionResult<StatechartMinimalState> = when {
-        event is StatechartMinimalEvent.Job.Completed && pendingJobCompletedPayload != null && (pendingJobCompletedPayload!!.elapsed_ms == 0.toUInt()) -> TransitionResult.External(StatechartMinimalState.Done, StatechartMinimalState.Waiting, 0)
-
-        else -> TransitionResult.Ignored
-    }
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: statechart_minimal.scxml:8 :: _machine
-    override fun onEntry(state: StatechartMinimalState, pathChild: StatechartMinimalState?) {
+    override fun onEntry(state: StatechartMinimalState, isDefaultEntry: Boolean) {
         when (state) {
             is StatechartMinimalState.Done -> {
                 // SCE-MAP: statechart_minimal.scxml:18 :: done :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("done")) return
             }
             is StatechartMinimalState.Waiting -> {
                 // SCE-MAP: statechart_minimal.scxml:15 :: waiting :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("waiting")) return
             }
         }
     }
@@ -183,23 +193,17 @@ class StatechartMinimalStateMachine(
         when (state) {
             is StatechartMinimalState.Done -> {
                 // SCE-MAP: statechart_minimal.scxml:18 :: done :: _state_body
-                activeStateIds.remove("done")
             }
             is StatechartMinimalState.Waiting -> {
                 // SCE-MAP: statechart_minimal.scxml:15 :: waiting :: _state_body
-                activeStateIds.remove("waiting")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: statechart_minimal.scxml:8 :: _machine
-    override fun executeTransitionActions(
-        source: StatechartMinimalState,
-        event: StatechartMinimalEvent?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: StatechartMinimalState, transitionIndex: Int) {
         when (source) {
         else -> {}
         }

@@ -40,14 +40,16 @@ SCE::TransitionParser::parseTransitionNode(const std::shared_ptr<IXMLElement> &t
     SCE_LOG_DEBUG("Parsing transition: {} -> {}", (event.empty() ? "<no event>" : event),
                   (target.empty() ? "<internal>" : target));
 
-    // Treat as internal transition if target is empty
-    bool isInternal = target.empty();
+    // §scxml-3.13: a transition with no `target` exits and enters nothing. That
+    // is a property of its target list, not of its `type`, which says how a
+    // transition that does have targets treats its source.
+    const bool isTargetless = target.empty();
 
     // Create transition node
     std::shared_ptr<SCE::ITransitionNode> transition;
 
-    if (isInternal) {
-        SCE_LOG_DEBUG("Internal transition detected (no target)");
+    if (isTargetless) {
+        SCE_LOG_DEBUG("Targetless transition detected");
 
         // Create transition with empty target
         transition = nodeFactory_->createTransitionNode(event, "");
@@ -76,20 +78,12 @@ SCE::TransitionParser::parseTransitionNode(const std::shared_ptr<IXMLElement> &t
         }
     }
 
-    // Set internal transition
-    transition->setInternal(isInternal);
-
-    // Process type attribute
+    // §scxml-3.13: `type` is "external" unless written "internal"
     if (transElement->hasAttribute("type")) {
         std::string type = transElement->getAttribute("type");
         transition->setAttribute("type", type);
         SCE_LOG_DEBUG("Type: {}", type);
-
-        // Set as internal transition if type is "internal"
-        if (type == "internal") {
-            transition->setInternal(true);
-            isInternal = true;  // Update isInternal variable
-        }
+        transition->setInternal(type == "internal");
     }
 
     // Process condition attribute

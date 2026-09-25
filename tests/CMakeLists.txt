@@ -687,15 +687,12 @@ target_link_libraries(state_machine_tests
 )
 
 # ============================================================================
-# 3.5. States Tests (ConcurrentRegion Unit Tests)
+# 3.5. States Tests (the shared Appendix D state algorithms)
 # ============================================================================
 add_executable(states_tests
-    states/ConcurrentRegionTest.cpp
-    states/ParallelPseudoStateChildTest.cpp
     states/TransitionDomainSelfTransitionTest.cpp
     states/EntrySetAlgorithmsTest.cpp
     states/CompletionAlgorithmsTest.cpp
-    mocks/MockActionExecutor.cpp
 )
 
 target_include_directories(states_tests
@@ -986,13 +983,16 @@ add_executable(integration_tests
     # configuration, so a transition leaving the `<parallel>` names the sibling
     # region too — which one region's own leaf-to-domain chain can never do.
     integration/ParallelExitSetNamesSiblingRegionTest.cpp
-    # Interpreter only, deliberately: the seam it exercises is
-    # `EventContextGuard`'s, and that guard is the Interpreter's. Its document is
-    # inline rather than a fixture stem because no other channel has the site.
-    # ⚠ Read its header before counting it as coverage — it pins the nesting
-    # recipe and the outer report, NOT the constructor-timing hazard, and it says
-    # why no witness for that is constructible today.
-    integration/NestedDeliveryKeepsTheOuterPayloadReportTest.cpp
+    # Interpreter only, and inline documents rather than fixture stems: each
+    # pins a place where this engine's main event loop used to differ from
+    # Appendix D — the `_event` a macrostep leaves bound, the external queue a
+    # host call leaves behind, an event handed over mid-macrostep, the
+    # done.invoke a cancel threw away once events reached the loop with their
+    # origin — and the generated engines never had the sites.
+    integration/EventBindingAcrossAMacrostepTest.cpp
+    integration/HostCallTakesTheExternalQueueTest.cpp
+    integration/ReentrantDeliveryWaitsItsTurnTest.cpp
+    integration/DoneInvokeOutlivesTheInvokingStateTest.cpp
     integration/UnseenEventIsReportedTest.cpp
     integration/UnseenEventIsReportedAotTest.cpp
     integration/UnhandledErrorIsObservableTest.cpp
@@ -1062,10 +1062,7 @@ add_executable(integration_tests
     integration/SCXMLParallelParsingTest.cpp
     integration/ParallelStateEndToEndTest.cpp
     integration/SCXMLParallelComplianceTest.cpp
-    integration/ConcurrentCompletionMonitoringTest.cpp
-    integration/ExternalTransitionHandlerTest.cpp
-    integration/ParallelStateEventBroadcastingTest.cpp
-    integration/ParallelStateComponentTest.cpp
+    integration/ParallelWithAHistoryChildCompletesTest.cpp
     integration/SCXMLForeachIntegrationTest.cpp
     integration/HistoryStateIntegrationTest.cpp
     integration/StaticCodegenIntegrationTest.cpp
@@ -2163,6 +2160,7 @@ add_dependencies(w3c_test_cli w3c_aot_brief_check)
 # state consistency across all W3C SCXML 3.13 microstep semantics
 add_executable(comprehensive_interactive_test
     w3c/ComprehensiveInteractiveTest.cpp
+    w3c/InteractiveRestoreFidelityTest.cpp
     w3c/InteractiveTestRunner.cpp
     w3c/impl/SnapshotComparator.cpp
     w3c/impl/TXMLConverter.cpp

@@ -170,6 +170,15 @@ HistoryRestorationResult HistoryManager::restoreHistory(const std::string &histo
     }
 }
 
+std::optional<std::vector<std::string>> HistoryManager::recordedValue(const std::string &historyStateId) const {
+    std::lock_guard<std::mutex> lock(historyMutex_);
+    const auto it = recordedHistory_.find(historyStateId);
+    if (it == recordedHistory_.end() || !it->second.isValid) {
+        return std::nullopt;
+    }
+    return it->second.recordedStateIds;
+}
+
 bool HistoryManager::isHistoryState(const std::string &stateId) const {
     std::lock_guard<std::mutex> lock(historyMutex_);
     return historyStates_.find(stateId) != historyStates_.end();

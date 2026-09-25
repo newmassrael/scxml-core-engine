@@ -40,9 +40,12 @@
 // by fixtures that actually exercise the corresponding W3C feature.
 #![allow(dead_code)]
 #![allow(unused_variables)]
-// `let mut current_state = ...` in process_transition is mutated only by
-// internal-transition fixtures; pure-external-transition fixtures leave it
-// untouched after the let binding.
+// Bindings emitted `mut` for the documents that write them: `done_data_ok` in
+// `<donedata>` evaluation is cleared only by a param that fails (test294,
+// test343), `json_parts` is pushed only by a param that evaluates (test298),
+// and a send's `err_meta` gets a `send_id` only when the document has a
+// datamodel (test194, test199). Measured 2026-09-24: removing this allow
+// reds those fixtures under `-D warnings`.
 #![allow(unused_mut)]
 // `'action_block:` early-exit label wraps every onentry block but is only
 // `break`-ed to from fixtures that emit error-on-action sequences.
@@ -103,6 +106,22 @@ pub enum Test387State {
 }
 
 // ======================================================================
+// History enum (W3C SCXML 3.10)
+// ======================================================================
+
+/// The document's `<history>` pseudo-states. A history is not a state — it is
+/// never in a configuration — so it is named apart from `Test387State`,
+/// and a target list names one as `EntryTarget::History`: the engine
+/// dereferences it to what it recorded, or to its default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Test387History {
+    S0HistDeep,
+    S0HistShallow,
+    S1HistDeep,
+    S1HistShallow,
+}
+
+// ======================================================================
 // Event enum (W3C SCXML 3.12)
 // ======================================================================
 
@@ -146,10 +165,6 @@ impl Test387Event {
 // ======================================================================
 
 pub struct Test387Policy {
-    // W3C SCXML 3.13: Last transition metadata
-    last_transition_is_internal: bool,
-    last_transition_is_targetless: bool,
-    last_transition_source_state: Test387State,
     // W3C SCXML 3.11: History state s0HistDeep (deep)
     //
     // SCE Protocol-Synthesis RFC §synth-5-J-2: the recorded configuration is a
@@ -203,9 +218,6 @@ pub struct Test387Policy {
 impl Test387Policy {
     pub fn new() -> Self {
         Self {
-            last_transition_is_internal: false,
-            last_transition_is_targetless: false,
-            last_transition_source_state: Test387State::S3,
             history_s0HistDeep: None,
             history_s0HistShallow: None,
             history_s1HistDeep: None,
@@ -231,6 +243,7 @@ impl Default for Test387Policy {
 impl StatePolicy for Test387Policy {
     type State = Test387State;
     type Event = Test387Event;
+    type History = Test387History;
     // EventSchema native lowering: `()` = schemaless (dynamic
     // `_event.data` baseline); a `<Machine>Payload` sum is emitted when a
     // transition guard reads a typed `_event.data.<field>` (NL→IR C1 Path A).
@@ -306,6 +319,8 @@ impl StatePolicy for Test387Policy {
         }
     }
 
+    // W3C SCXML 3.3: a <state> with child states — exactly the states that have
+    // an initial transition. A <parallel> is not compound.
     fn is_compound_state(state: Self::State) -> bool {
         match state {
             Test387State::S0 => true,
@@ -318,17 +333,68 @@ impl StatePolicy for Test387Policy {
         }
     }
 
-    fn is_descendant_of(desc: Self::State, anc: Self::State) -> bool {
-        let mut current = desc;
-        loop {
-            match Self::get_parent(current) {
-                None => return false,
-                Some(parent) => {
-                    if parent == anc {
-                        return true;
-                    }
-                    current = parent;
-                }
+    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+    // children, in document order — for a <parallel>, its regions.
+    fn get_child_states(state: Self::State) -> &'static [Self::State] {
+        match state {
+            Test387State::S0 => &[Test387State::S01, Test387State::S02],
+            Test387State::S01 => &[Test387State::S011, Test387State::S012],
+            Test387State::S02 => &[Test387State::S021, Test387State::S022],
+            Test387State::S1 => &[Test387State::S11, Test387State::S12],
+            Test387State::S11 => &[Test387State::S111, Test387State::S112],
+            Test387State::S12 => &[Test387State::S121, Test387State::S122],
+            _ => &[],
+        }
+    }
+
+    // §scxml-3.3: a compound state's initial transition target, as written —
+    // the engine's entry procedures dereference a <history> among them.
+    fn get_initial_targets(
+        state: Self::State,
+    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
+        match state {
+            Test387State::S0 => &[::sce_rust_runtime::EntryTarget::State(Test387State::S01)],
+            Test387State::S01 => &[::sce_rust_runtime::EntryTarget::State(Test387State::S011)],
+            Test387State::S02 => &[::sce_rust_runtime::EntryTarget::State(Test387State::S021)],
+            Test387State::S1 => &[::sce_rust_runtime::EntryTarget::State(Test387State::S11)],
+            Test387State::S11 => &[::sce_rust_runtime::EntryTarget::State(Test387State::S111)],
+            Test387State::S12 => &[::sce_rust_runtime::EntryTarget::State(Test387State::S121)],
+            _ => &[],
+        }
+    }
+
+    // §scxml-3.2: the target of the document's own initial transition, as written.
+    fn get_document_initial_targets(
+    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
+        &[::sce_rust_runtime::EntryTarget::State(Test387State::S3)]
+    }
+
+    // §scxml-3.10: the state a <history> is declared in.
+    fn get_history_parent(history: Self::History) -> Self::State {
+        match history {
+            Test387History::S0HistDeep => Test387State::S0,
+            Test387History::S0HistShallow => Test387State::S0,
+            Test387History::S1HistDeep => Test387State::S1,
+            Test387History::S1HistShallow => Test387State::S1,
+        }
+    }
+
+    // §scxml-3.10.2: a <history>'s default transition target, as written.
+    fn get_history_default_targets(
+        history: Self::History,
+    ) -> &'static [::sce_rust_runtime::EntryTarget<Self::State, Self::History>] {
+        match history {
+            Test387History::S0HistDeep => {
+                &[::sce_rust_runtime::EntryTarget::State(Test387State::S022)]
+            }
+            Test387History::S0HistShallow => {
+                &[::sce_rust_runtime::EntryTarget::State(Test387State::S01)]
+            }
+            Test387History::S1HistDeep => {
+                &[::sce_rust_runtime::EntryTarget::State(Test387State::S122)]
+            }
+            Test387History::S1HistShallow => {
+                &[::sce_rust_runtime::EntryTarget::State(Test387State::S11)]
             }
         }
     }
@@ -442,77 +508,19 @@ impl StatePolicy for Test387Policy {
         Test387Event::Null
     }
 
-    // W3C SCXML 3.6: Get initial children of a compound state
-    //
-    // SCE Protocol-Synthesis RFC §synth-5-J-2: return type is the runtime crate's
-    // [`StateChain`] alias and the body uses `state_chain_from_slice` instead of
-    // `vec![...]` so the emitted code compiles under `--no-std` (`vec!` is a
-    // std-only macro; heapless has no equivalent).
-    fn get_initial_children(
-        state: Self::State,
-    ) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> {
-        match state {
-            Test387State::S0 => {
-                ::sce_rust_runtime::helpers::hierarchy::state_chain_from_slice([Test387State::S01])
-            }
-            Test387State::S01 => {
-                ::sce_rust_runtime::helpers::hierarchy::state_chain_from_slice([Test387State::S011])
-            }
-            Test387State::S02 => {
-                ::sce_rust_runtime::helpers::hierarchy::state_chain_from_slice([Test387State::S021])
-            }
-            Test387State::S1 => {
-                ::sce_rust_runtime::helpers::hierarchy::state_chain_from_slice([Test387State::S11])
-            }
-            Test387State::S11 => {
-                ::sce_rust_runtime::helpers::hierarchy::state_chain_from_slice([Test387State::S111])
-            }
-            Test387State::S12 => {
-                ::sce_rust_runtime::helpers::hierarchy::state_chain_from_slice([Test387State::S121])
-            }
-            _ => ::sce_rust_runtime::helpers::hierarchy::new_chain(),
-        }
-    }
-
-    // W3C SCXML 3.11: Get initial or history-restored child
-    fn get_initial_or_history_child(&self, state: Self::State) -> Self::State {
-        match state {
-            Test387State::S0 => Test387State::S01,
-            Test387State::S01 => Test387State::S011,
-            Test387State::S02 => Test387State::S021,
-            Test387State::S1 => Test387State::S11,
-            Test387State::S11 => Test387State::S111,
-            Test387State::S12 => Test387State::S121,
-            _ => state,
-        }
-    }
-
     // ======================================================================
-    // Mutable field accessors
+    // Run-time state the entry procedures read
     // ======================================================================
 
-    fn last_transition_is_internal(&self) -> bool {
-        self.last_transition_is_internal
-    }
-
-    fn set_last_transition_is_internal(&mut self, value: bool) {
-        self.last_transition_is_internal = value;
-    }
-
-    fn last_transition_is_targetless(&self) -> bool {
-        self.last_transition_is_targetless
-    }
-
-    fn set_last_transition_is_targetless(&mut self, value: bool) {
-        self.last_transition_is_targetless = value;
-    }
-
-    fn last_transition_source_state(&self) -> Self::State {
-        self.last_transition_source_state
-    }
-
-    fn set_last_transition_source_state(&mut self, state: Self::State) {
-        self.last_transition_source_state = state;
+    // §scxml-3.10: what a <history> recorded when its parent was last exited;
+    // None before that ever happened.
+    fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
+        match history {
+            Test387History::S0HistDeep => self.history_s0HistDeep.as_deref(),
+            Test387History::S0HistShallow => self.history_s0HistShallow.as_deref(),
+            Test387History::S1HistDeep => self.history_s1HistDeep.as_deref(),
+            Test387History::S1HistShallow => self.history_s1HistShallow.as_deref(),
+        }
     }
 
     // ======================================================================
@@ -526,12 +534,8 @@ impl StatePolicy for Test387Policy {
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
-        path_child: Option<Self::State>,
+        is_default_entry: bool,
     ) {
-        // Only a `<parallel>` machine descends into defaults here — see the
-        // blocks at the end of this function — so a machine without one has
-        // nothing to tell an ancestor entry from a target entry.
-        let _ = path_child;
         match state {
             Test387State::S011 => {
                 // SCE-MAP: test387.scxml:22 :: s011 :: _state_body
@@ -648,6 +652,12 @@ impl StatePolicy for Test387Policy {
         }
     }
 
+    // §scxml-3.10.2: a <history>'s default transition content, run after its
+    // parent's onentry (and after the parent's own <initial> content) when the
+    // history was taken with nothing recorded. The engine asks for it by the
+    // entry set's defaultHistoryContent answer; a history that restored what it
+    // recorded runs nothing.
+
     // W3C SCXML 3.8: Execute <onexit> actions for a state
     #[doc = "SCE-MAP: test387.scxml:7 :: _machine"]
     // SCE-MAP: test387.scxml:7 :: _machine
@@ -655,277 +665,182 @@ impl StatePolicy for Test387Policy {
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
-        pre_transition_active: &[Self::State],
+        configuration_before_exit: &[Self::State],
     ) {
-        // W3C SCXML 3.11: Record history before exiting compound states
+        // W3C SCXML 3.10: Record history as this state exits, from the
+        // configuration the microstep started from — the engine hands every
+        // exit the configuration as it stood before the first one, so every
+        // history in one microstep reads the same configuration.
         if state == Test387State::S0 {
-            // W3C SCXML 3.11: Deep history - record all active descendants.
-            // SCE Protocol-Synthesis RFC §synth-5-J-2: [`StateChain`] alias (heapless under
-            // no_std); recorded history is a subset of the active configuration
-            // so it stays within MAX_HIERARCHY_DEPTH.
-            let filtered: ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> =
-                pre_transition_active
-                    .iter()
-                    .filter(|&&s| {
-                        Self::is_descendant_of(s, Test387State::S0)
-                            && !Self::is_compound_state(s)
-                            && !Self::is_parallel_state(s)
-                    })
-                    .copied()
-                    .collect();
-            self.history_s0HistDeep = Some(filtered);
+            // W3C SCXML 3.11: deep history — SCE Protocol-Synthesis
+            // RFC §synth-5-J-2: the record is a [`StateChain`] (heapless under
+            // no_std), and a subset of the configuration, so it fits the depth bound.
+            self.history_s0HistDeep =
+                Some(::sce_rust_runtime::helpers::microstep::recorded_history(
+                    &::sce_rust_runtime::PolicyDocument(&*self),
+                    Test387State::S0,
+                    true,
+                    configuration_before_exit,
+                ));
         }
         if state == Test387State::S0 {
-            // W3C SCXML 3.11: Shallow history - record direct children only.
-            // SCE Protocol-Synthesis RFC §synth-5-J-2: [`StateChain`] alias (heapless under no_std).
-            let filtered: ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> =
-                pre_transition_active
-                    .iter()
-                    .filter(|&&s| Self::get_parent(s) == Some(Test387State::S0))
-                    .copied()
-                    .collect();
-            self.history_s0HistShallow = Some(filtered);
+            // W3C SCXML 3.11: shallow history — SCE Protocol-Synthesis
+            // RFC §synth-5-J-2: the record is a [`StateChain`] (heapless under
+            // no_std), and a subset of the configuration, so it fits the depth bound.
+            self.history_s0HistShallow =
+                Some(::sce_rust_runtime::helpers::microstep::recorded_history(
+                    &::sce_rust_runtime::PolicyDocument(&*self),
+                    Test387State::S0,
+                    false,
+                    configuration_before_exit,
+                ));
         }
         if state == Test387State::S1 {
-            // W3C SCXML 3.11: Deep history - record all active descendants.
-            // SCE Protocol-Synthesis RFC §synth-5-J-2: [`StateChain`] alias (heapless under
-            // no_std); recorded history is a subset of the active configuration
-            // so it stays within MAX_HIERARCHY_DEPTH.
-            let filtered: ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> =
-                pre_transition_active
-                    .iter()
-                    .filter(|&&s| {
-                        Self::is_descendant_of(s, Test387State::S1)
-                            && !Self::is_compound_state(s)
-                            && !Self::is_parallel_state(s)
-                    })
-                    .copied()
-                    .collect();
-            self.history_s1HistDeep = Some(filtered);
+            // W3C SCXML 3.11: deep history — SCE Protocol-Synthesis
+            // RFC §synth-5-J-2: the record is a [`StateChain`] (heapless under
+            // no_std), and a subset of the configuration, so it fits the depth bound.
+            self.history_s1HistDeep =
+                Some(::sce_rust_runtime::helpers::microstep::recorded_history(
+                    &::sce_rust_runtime::PolicyDocument(&*self),
+                    Test387State::S1,
+                    true,
+                    configuration_before_exit,
+                ));
         }
         if state == Test387State::S1 {
-            // W3C SCXML 3.11: Shallow history - record direct children only.
-            // SCE Protocol-Synthesis RFC §synth-5-J-2: [`StateChain`] alias (heapless under no_std).
-            let filtered: ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> =
-                pre_transition_active
-                    .iter()
-                    .filter(|&&s| Self::get_parent(s) == Some(Test387State::S1))
-                    .copied()
-                    .collect();
-            self.history_s1HistShallow = Some(filtered);
+            // W3C SCXML 3.11: shallow history — SCE Protocol-Synthesis
+            // RFC §synth-5-J-2: the record is a [`StateChain`] (heapless under
+            // no_std), and a subset of the configuration, so it fits the depth bound.
+            self.history_s1HistShallow =
+                Some(::sce_rust_runtime::helpers::microstep::recorded_history(
+                    &::sce_rust_runtime::PolicyDocument(&*self),
+                    Test387State::S1,
+                    false,
+                    configuration_before_exit,
+                ));
         }
     }
 
-    // W3C SCXML 3.13: Evaluate guards and take a matching transition
+    // Appendix D selectTransitions, the half only this document can answer:
+    // the first of `state`'s own transitions, in document order, that `event`
+    // enables. The engine walks the atomic states and their ancestors and
+    // keeps the ordered set. `Event::Null` asks for eventless transitions.
     #[doc = "SCE-MAP: test387.scxml:7 :: _machine"]
     // SCE-MAP: test387.scxml:7 :: _machine
-    fn process_transition(
+    fn first_enabled_transition(
         &mut self,
-        current_state: &mut Self::State,
+        state: Self::State,
         event: Self::Event,
         engine: &mut sce_rust_runtime::Engine<Self>,
-    ) -> bool {
-        let mut transition_taken = false;
-
-        // W3C SCXML 3.12: Hierarchical event processing (innermost to outermost)
-        let mut check_state = *current_state;
-
-        loop {
-            let found = self.try_transition_in_state(
-                check_state,
-                event,
-                current_state,
-                &mut transition_taken,
-                engine,
-            );
-
-            if found {
-                break;
-            }
-
-            // W3C SCXML 3.13: Eventless transitions do NOT bubble to parent states
-            if event == Self::null_event() {
-                break;
-            }
-
-            // W3C SCXML 3.12: Move to parent state for hierarchical event bubbling
-            match Self::get_parent(check_state) {
-                Some(parent) => check_state = parent,
-                None => break,
-            }
-        }
-
-        transition_taken
-    }
-
-    // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
-    #[doc = "SCE-MAP: test387.scxml:7 :: _machine"]
-    // SCE-MAP: test387.scxml:7 :: _machine
-    fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
-        // W3C SCXML 3.13: No transition actions in this state machine
-        let _ = engine;
-    }
-}
-
-// ======================================================================
-// Helper impl block (try_transition_in_state, conflict resolution, etc.)
-// ======================================================================
-
-impl Test387Policy {
-    // W3C SCXML 3.12: Helper method for hierarchical transition checking
-    fn try_transition_in_state(
-        &mut self,
-        check_state: Test387State,
-        event: Test387Event,
-        current_state: &mut Test387State,
-        transition_taken: &mut bool,
-        engine: &mut sce_rust_runtime::Engine<Self>,
-    ) -> bool {
-        match check_state {
-            Test387State::Fail => false,
-            Test387State::Pass => false,
+    ) -> Option<::sce_rust_runtime::EnabledTransition<Self::State, Self::History>> {
+        match state {
             Test387State::S0 => {
-                // W3C SCXML 3.12: Event-triggered transitions (document order)
-                // W3C SCXML 5.9.3: Direct enum comparison
                 if event == Test387Event::EnteringS011 {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
-
-                    *current_state = Test387State::S4;
-                    *transition_taken = true;
-                    return true;
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(Test387State::S4)],
+                            transition_index: 0,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
                 }
-                // W3C SCXML 5.9.3: Runtime event descriptor matching
                 if event != Test387Event::Null
                     && sce_rust_runtime::helpers::event_matching::matches_event_descriptor(
                         Self::get_event_name(event),
                         "*",
                     )
                 {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
-
-                    *current_state = Test387State::Fail;
-                    *transition_taken = true;
-                    return true;
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(Test387State::Fail)],
+                            transition_index: 1,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
                 }
-                false
+                None
             }
-            Test387State::S01 => false,
-            Test387State::S011 => false,
-            Test387State::S012 => false,
-            Test387State::S02 => false,
-            Test387State::S021 => false,
-            Test387State::S022 => false,
             Test387State::S1 => {
-                // W3C SCXML 3.12: Event-triggered transitions (document order)
-                // W3C SCXML 5.9.3: Direct enum comparison
                 if event == Test387Event::EnteringS122 {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
-
-                    *current_state = Test387State::Pass;
-                    *transition_taken = true;
-                    return true;
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(Test387State::Pass)],
+                            transition_index: 0,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
                 }
-                // W3C SCXML 5.9.3: Runtime event descriptor matching
                 if event != Test387Event::Null
                     && sce_rust_runtime::helpers::event_matching::matches_event_descriptor(
                         Self::get_event_name(event),
                         "*",
                     )
                 {
-                    // W3C SCXML 3.4: Track transition metadata
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
-
-                    *current_state = Test387State::Fail;
-                    *transition_taken = true;
-                    return true;
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::State(Test387State::Fail)],
+                            transition_index: 1,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
                 }
-                false
+                None
             }
-            Test387State::S11 => false,
-            Test387State::S111 => false,
-            Test387State::S112 => false,
-            Test387State::S12 => false,
-            Test387State::S121 => false,
-            Test387State::S122 => false,
             Test387State::S3 => {
-                // W3C SCXML 3.13: Eventless transitions
                 if event == Test387Event::Null {
-                    // Unconditional eventless transition
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
-                    *current_state = self.resolve_history_target_s0HistShallow();
-                    *transition_taken = true;
-                    return true;
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::History(
+                                Test387History::S0HistShallow,
+                            )],
+                            transition_index: 0,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
                 }
-                false
+                None
             }
             Test387State::S4 => {
-                // W3C SCXML 3.13: Eventless transitions
                 if event == Test387Event::Null {
-                    // Unconditional eventless transition
-                    self.last_transition_source_state = check_state;
-                    self.last_transition_is_internal = false;
-                    self.last_transition_is_targetless = false;
-                    *current_state = self.resolve_history_target_s1HistDeep();
-                    *transition_taken = true;
-                    return true;
+                    {
+                        return Some(::sce_rust_runtime::EnabledTransition {
+                            source: state,
+                            targets: &[::sce_rust_runtime::EntryTarget::History(
+                                Test387History::S1HistDeep,
+                            )],
+                            transition_index: 0,
+                            has_actions: false,
+                            is_internal: false,
+                        });
+                    }
                 }
-                false
+                None
             }
-            _ => false,
+            _ => None,
         }
     }
 
-    // W3C SCXML 3.11: Resolve history target for s0HistDeep
-    fn resolve_history_target_s0HistDeep(&self) -> Test387State {
-        if let Some(ref recorded) = self.history_s0HistDeep {
-            if let Some(&first) = recorded.first() {
-                return first;
-            }
-        }
-        // No history recorded - use default transition target
-        Test387State::S022
-    }
-    // W3C SCXML 3.11: Resolve history target for s0HistShallow
-    fn resolve_history_target_s0HistShallow(&self) -> Test387State {
-        if let Some(ref recorded) = self.history_s0HistShallow {
-            if let Some(&first) = recorded.first() {
-                return first;
-            }
-        }
-        // No history recorded - use default transition target
-        Test387State::S011
-    }
-    // W3C SCXML 3.11: Resolve history target for s1HistDeep
-    fn resolve_history_target_s1HistDeep(&self) -> Test387State {
-        if let Some(ref recorded) = self.history_s1HistDeep {
-            if let Some(&first) = recorded.first() {
-                return first;
-            }
-        }
-        // No history recorded - use default transition target
-        Test387State::S122
-    }
-    // W3C SCXML 3.11: Resolve history target for s1HistShallow
-    fn resolve_history_target_s1HistShallow(&self) -> Test387State {
-        if let Some(ref recorded) = self.history_s1HistShallow {
-            if let Some(&first) = recorded.first() {
-                return first;
-            }
-        }
-        // No history recorded - use default transition target
-        Test387State::S111
+    // W3C SCXML 3.13: a transition's executable content, run by the engine
+    // between the microstep's exits and its entries.
+    #[doc = "SCE-MAP: test387.scxml:7 :: _machine"]
+    // SCE-MAP: test387.scxml:7 :: _machine
+    fn execute_transition_content(
+        &mut self,
+        source: Self::State,
+        transition_index: usize,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
+        // W3C SCXML 3.13: no transition in this document has content.
+        let _ = (source, transition_index, engine);
     }
 }

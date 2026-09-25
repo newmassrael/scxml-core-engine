@@ -7,11 +7,11 @@
 # separately for the reason the sibling axis's does: the ctest runner builds a
 # different tree, and mixing the two in one file makes a round rebuild both.
 #
-# The C++ Interpreter's half is the odd one and is why its cases are here at
-# all: the budget belongs to the machine and the queue belongs to the raiser,
-# so the refusal has to happen inside the raiser — the only party that can
-# decline a dispatch without consuming the event. `MicrostepBudget` is that
-# loan, and two of the cases below cut one end of it each.
+# The C++ Interpreter's half is the odd one: the budget belongs to the machine
+# and the queue belongs to the raiser. The main event loop asks the budget
+# BEFORE it takes the next internal event off the raiser's queue, so a refusal
+# leaves the event queued instead of consuming it — the cases below cut that
+# ask, and the report the refusal owes.
 #
 # ⚠ A case that edits `sce/include/static/StaticExecutionEngine.h` costs a full
 # C++ rebuild, because every generated machine includes it. Measured
@@ -92,64 +92,31 @@ edit("sce/include/static/StaticExecutionEngine.h",
                     // Appendix D: the loop turn that selects nothing takes no""")
 PY
 
-# ── Interpreter: the loan itself ───────────────────────────────────
+# ── Interpreter: the loop that asks ────────────────────────────────
 #
-# The machine never hands the raiser its budget, so the raiser dispatches
-# forever — and this engine recurses, so the stack runs out rather than
-# spinning. The ctest TIMEOUT is what turns that into a verdict.
-
-mutation_case "the interpreter never lends the raiser its budget" <<'PY'
+# The interpreter's main event loop takes internal events off the raiser
+# itself, and asks the budget before each one leaves the queue. A loop that
+# stopped asking would take a `<raise>` that answers itself forever — the
+# eventless branch's own check never sees an internal chain.
+#
+# (Two cases stood here for the budget the machine used to LEND its raiser,
+# and the raiser's gate that refused a dispatch with it. The raiser no longer
+# dispatches internal events inside a macrostep — the loop takes them — so
+# neither the loan nor that gate exists, and a mutation of either would have
+# matched nothing.)
+#
+# ⚠ What the gate protects is TERMINATION, not a value, so the only observable
+# is a run that does not end. `IntegrationTests` carries `TIMEOUT 180`
+# (tests/CMakeLists.txt); measured 2026-08-25 a timed-out ctest run came back
+# `ran 0 tests, baseline ran 3`, INCONCLUSIVE rather than CAUGHT. The honest
+# mutation is still the one below; the repair belongs in the harness's reading
+# of a timed-out ctest run.
+mutation_case "the interpreter loop stops asking the budget" <<'PY'
 edit("sce/src/runtime/StateMachine.cpp",
-     """            eventRaiserImpl->setMicrostepBudget(makeMicrostepBudget());""",
-     """            // MUTANT: the raiser is never given a budget.""")
-PY
-
-# ── Interpreter: the drain that asks ───────────────────────────────
-#
-# The raiser refuses by leaving the event queued, so `hasEvents()` stays true.
-# A drain that only watched the dispatch result would turn forever on a queue
-# nobody is draining — this is the second gate, and it is not redundant.
-
-# ⚠ This case cannot currently be judged, and the reason is the harness rather
-# than the case. What the gate protects here is TERMINATION, not a value:
-# `drainInternalEvents` says so itself — the raiser answers a refusal by
-# leaving the event queued, so `hasEvents()` stays true and a drain that stops
-# asking turns forever. So the only observable is that the suite does not end.
-#
-# `IntegrationTests` does carry `TIMEOUT 180` (tests/CMakeLists.txt), and
-# `mutation_ctest_run` asserts in its own comment that "a mutant that never
-# ends comes back as an ordinary red rather than a hung round". Measured
-# 2026-08-25, it does not: the round reported `ran 0 tests, baseline ran 3`,
-# which is INCONCLUSIVE — no verdict about the tests at all.
-#
-# Weakening the predicate to keep it finite was tried and is worse: any form
-# that lets `mayTakeMicrostep()` run once restores the original behaviour,
-# because the raiser reaches the same `StateMachine::mayTakeMicrostep()`
-# through the budget it was lent, sets `macrostepTruncated_`, and ends the
-# chain. The case then SURVIVES while expressing no defect at all. The honest
-# mutation is the one below; the repair belongs in the harness's reading of a
-# timed-out ctest run.
-mutation_case "the interpreter drain stops asking the budget" <<'PY'
-edit("sce/src/runtime/StateMachine.cpp",
-     """        [this]() { return mayTakeMicrostep(); });""",
-     """        []() { return true; });""")
-PY
-
-# ── Interpreter: the refusal leaves the queue alone ────────────────
-#
-# Popping before the gate consumes the event the raiser then declines to
-# dispatch. `ARefusedChainIsLeftQueuedForTheNextMacrostep` is the only
-# assertion that can see it.
-
-mutation_case "the raiser swallows the internal event it refused" <<'PY'
-edit("sce/src/runtime/EventRaiserImpl.cpp",
-     """        eventToProcess = synchronousQueue_.top();
-
-        SCE_LOG_DEBUG("EventRaiserImpl: Dequeued INTERNAL event '{}' - {} events left in queue",""",
-     """        eventToProcess = synchronousQueue_.top();
-        synchronousQueue_.pop();  // MUTANT: consumed before the gate is asked
-
-        SCE_LOG_DEBUG("EventRaiserImpl: Dequeued INTERNAL event '{}' - {} events left in queue",""")
+     """            if (!mayTakeMicrostep()) {
+                // Asked before the event leaves the queue, so a refusal leaves""",
+     """            if (false) {
+                // Asked before the event leaves the queue, so a refusal leaves""")
 PY
 
 # ── Interpreter: the report ────────────────────────────────────────
@@ -159,7 +126,7 @@ PY
 
 mutation_case "the interpreter internal refusal is silent" <<'PY'
 edit("sce/src/runtime/StateMachine.cpp",
-     """    // leaves the event where it is; this publishes the refusal.
+     """    // stays where it is; this publishes the refusal.
     recordTruncatedMacrostep();
     return false;""",
      """    // MUTANT: refused, and nothing said so.

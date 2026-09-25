@@ -92,6 +92,39 @@ var DonedataLocalInvokeSceSynthInvokeInvParamAllStates = []DonedataLocalInvokeSc
 	DonedataLocalInvokeSceSynthInvokeInvParamStateDone,
 }
 
+// DonedataLocalInvokeSceSynthInvokeInvParamTarget is one token of a target list, as the document wrote
+// it (W3C SCXML 3.13): a state, or a <history> the engine dereferences.
+type DonedataLocalInvokeSceSynthInvokeInvParamTarget = sce.EntryTarget[DonedataLocalInvokeSceSynthInvokeInvParamState, sce.HistoryID]
+
+// ======================================================================
+// Document structure (W3C SCXML 3.2-3.4, 3.10)
+//
+// Package-level tables, because the structure is a fact about the document
+// and not about a run: the engine's Appendix D procedures read them through
+// the policy methods below, and a transition's target list is handed out as
+// a slice of them rather than rebuilt on every selection.
+// ======================================================================
+
+// childStatesOfDonedataLocalInvokeSceSynthInvokeInvParam is §scxml-D-getChildStates per state: its
+// <state>, <parallel> and <final> children, in document order.
+var childStatesOfDonedataLocalInvokeSceSynthInvokeInvParam = [1][]DonedataLocalInvokeSceSynthInvokeInvParamState{
+}
+
+// initialTargetsOfDonedataLocalInvokeSceSynthInvokeInvParam is each compound state's initial transition
+// target, as written (§scxml-3.3).
+var initialTargetsOfDonedataLocalInvokeSceSynthInvokeInvParam = [1][]DonedataLocalInvokeSceSynthInvokeInvParamTarget{
+}
+
+// documentInitialTargetsOfDonedataLocalInvokeSceSynthInvokeInvParam is the target of the document's own
+// initial transition, as written (§scxml-3.2).
+var documentInitialTargetsOfDonedataLocalInvokeSceSynthInvokeInvParam = []DonedataLocalInvokeSceSynthInvokeInvParamTarget{sce.StateTarget[DonedataLocalInvokeSceSynthInvokeInvParamState, sce.HistoryID](DonedataLocalInvokeSceSynthInvokeInvParamStateDone)}
+
+// transitionTargetsOfDonedataLocalInvokeSceSynthInvokeInvParam is each transition's target list, as
+// written (§scxml-3.13), by source state and the transition's index among its
+// source's own transitions. A targetless transition's entry is empty.
+var transitionTargetsOfDonedataLocalInvokeSceSynthInvokeInvParam = [1][][]DonedataLocalInvokeSceSynthInvokeInvParamTarget{
+}
+
 // ======================================================================
 // Event type (W3C SCXML 3.12)
 // ======================================================================
@@ -119,10 +152,6 @@ func (e DonedataLocalInvokeSceSynthInvokeInvParamEvent) String() string {
 // ======================================================================
 
 type DonedataLocalInvokeSceSynthInvokeInvParamPolicy struct {
-	// W3C SCXML 3.13: Last transition metadata
-	lastTransitionIsInternal  bool
-	lastTransitionIsTargetless bool
-	lastTransitionSourceState DonedataLocalInvokeSceSynthInvokeInvParamState
 	// W3C SCXML 5.10.1: External event flag
 	nextEventIsExternal bool
 	pendingEventName string
@@ -155,7 +184,6 @@ type DonedataLocalInvokeSceSynthInvokeInvParamPolicy struct {
 // NewDonedataLocalInvokeSceSynthInvokeInvParamPolicy creates a new policy with default values.
 func NewDonedataLocalInvokeSceSynthInvokeInvParamPolicy() DonedataLocalInvokeSceSynthInvokeInvParamPolicy {
 	return DonedataLocalInvokeSceSynthInvokeInvParamPolicy{
-		lastTransitionSourceState: DonedataLocalInvokeSceSynthInvokeInvParamStateDone,
 	}
 }
 
@@ -360,29 +388,45 @@ func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) GetParent(state Doneda
 	return 0, false
 }
 
-// IsCompoundState returns true if state has children (W3C SCXML 3.3).
+// IsCompoundState returns true if state is a <state> with child states — exactly
+// the states that have an initial transition. A <parallel> is not compound
+// (W3C SCXML 3.3).
 func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) IsCompoundState(state DonedataLocalInvokeSceSynthInvokeInvParamState) bool {
-	switch state {
-	}
-	return false
+	return len(initialTargetsOfDonedataLocalInvokeSceSynthInvokeInvParam[state]) > 0
 }
 
 func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) IsParallelState(_ DonedataLocalInvokeSceSynthInvokeInvParamState) bool { return false }
-func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) GetParallelRegions(_ DonedataLocalInvokeSceSynthInvokeInvParamState) []DonedataLocalInvokeSceSynthInvokeInvParamState { return nil }
 
-// IsDescendantOf returns true if desc is a descendant of anc (W3C SCXML 3.12).
-func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) IsDescendantOf(desc, anc DonedataLocalInvokeSceSynthInvokeInvParamState) bool {
-	current := desc
-	for {
-		parent, ok := p.GetParent(current)
-		if !ok {
-			return false
-		}
-		if parent == anc {
-			return true
-		}
-		current = parent
-	}
+// GetChildStates returns state's <state>, <parallel> and <final> children, in
+// document order — for a <parallel>, its regions (§scxml-D-getChildStates).
+func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) GetChildStates(state DonedataLocalInvokeSceSynthInvokeInvParamState) []DonedataLocalInvokeSceSynthInvokeInvParamState {
+	return childStatesOfDonedataLocalInvokeSceSynthInvokeInvParam[state]
+}
+
+// GetInitialTargets returns a compound state's initial transition target, as
+// written; the engine's entry procedures dereference a <history> among them
+// (W3C SCXML 3.3).
+func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) GetInitialTargets(state DonedataLocalInvokeSceSynthInvokeInvParamState) []DonedataLocalInvokeSceSynthInvokeInvParamTarget {
+	return initialTargetsOfDonedataLocalInvokeSceSynthInvokeInvParam[state]
+}
+
+// GetDocumentInitialTargets returns the target of the document's own initial
+// transition, as written (W3C SCXML 3.2).
+func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) GetDocumentInitialTargets() []DonedataLocalInvokeSceSynthInvokeInvParamTarget {
+	return documentInitialTargetsOfDonedataLocalInvokeSceSynthInvokeInvParam
+}
+
+// W3C SCXML 3.10: this document declares no <history>, so no target list names
+// one and the engine never asks the two below; answering would mean inventing
+// one.
+func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) GetHistoryParent(history sce.HistoryID) DonedataLocalInvokeSceSynthInvokeInvParamState {
+	panic(fmt.Sprintf("DonedataLocalInvokeSceSynthInvokeInvParamPolicy declares no <history>; asked for %d", history))
+}
+func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) GetHistoryDefaultTargets(history sce.HistoryID) []DonedataLocalInvokeSceSynthInvokeInvParamTarget {
+	panic(fmt.Sprintf("DonedataLocalInvokeSceSynthInvokeInvParamPolicy declares no <history>; asked for %d", history))
+}
+func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) HistoryValue(_ sce.HistoryID) ([]DonedataLocalInvokeSceSynthInvokeInvParamState, bool) {
+	return nil, false
 }
 
 // GetDocumentOrder returns the document order index (W3C SCXML Appendix D).
@@ -423,43 +467,6 @@ func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) GetStateFromName(name 
 // NullEvent returns the sentinel for eventless transition dispatch (W3C SCXML 3.13).
 func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) NullEvent() DonedataLocalInvokeSceSynthInvokeInvParamEvent {
 	return DonedataLocalInvokeSceSynthInvokeInvParamEventNull
-}
-
-// GetInitialChildren returns initial children of a compound state (W3C SCXML 3.6).
-func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) GetInitialChildren(state DonedataLocalInvokeSceSynthInvokeInvParamState) []DonedataLocalInvokeSceSynthInvokeInvParamState {
-	switch state {
-	}
-	return nil
-}
-
-// LastTransitionIsInternal returns the internal transition flag (W3C SCXML 3.13).
-func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) LastTransitionIsInternal() bool {
-	return p.lastTransitionIsInternal
-}
-
-// SetLastTransitionIsInternal sets the internal transition flag.
-func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) SetLastTransitionIsInternal(value bool) {
-	p.lastTransitionIsInternal = value
-}
-
-// LastTransitionIsTargetless returns the targetless transition flag (W3C SCXML 3.13).
-func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) LastTransitionIsTargetless() bool {
-	return p.lastTransitionIsTargetless
-}
-
-// SetLastTransitionIsTargetless sets the targetless transition flag.
-func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) SetLastTransitionIsTargetless(value bool) {
-	p.lastTransitionIsTargetless = value
-}
-
-// LastTransitionSourceState returns the source state of the last transition.
-func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) LastTransitionSourceState() DonedataLocalInvokeSceSynthInvokeInvParamState {
-	return p.lastTransitionSourceState
-}
-
-// SetLastTransitionSourceState sets the source state of the last transition.
-func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) SetLastTransitionSourceState(state DonedataLocalInvokeSceSynthInvokeInvParamState) {
-	p.lastTransitionSourceState = state
 }
 
 
@@ -506,14 +513,6 @@ func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) GetActiveStates() []Do
 // which is false above; the method exists because the interface is one contract.
 func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) SetActiveStates(_ []DonedataLocalInvokeSceSynthInvokeInvParamState) {}
 func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) HasExternalEventFlag() bool { return true }
-// GetInitialOrHistoryChild returns the initial child considering history (W3C SCXML 3.11).
-func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) GetInitialOrHistoryChild(state DonedataLocalInvokeSceSynthInvokeInvParamState) DonedataLocalInvokeSceSynthInvokeInvParamState {
-	children := p.GetInitialChildren(state)
-	if len(children) > 0 {
-		return children[0]
-	}
-	return state
-}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[DonedataLocalInvokeSceSynthInvokeInvParamEvent], _ *sce.Engine[DonedataLocalInvokeSceSynthInvokeInvParamState, DonedataLocalInvokeSceSynthInvokeInvParamEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).
@@ -557,13 +556,11 @@ func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) ClearEventMetadata() {
 
 
 
-
-// ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
+// ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
+// configuration, runs its <onentry>, and its <initial> transition's content when
+// its initial state is entered by default.
 //line donedata_local_invoke__sce_synth_invoke__inv_param.scxml:3
-func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) ExecuteEntryActions(state DonedataLocalInvokeSceSynthInvokeInvParamState, engine *sce.Engine[DonedataLocalInvokeSceSynthInvokeInvParamState, DonedataLocalInvokeSceSynthInvokeInvParamEvent], pathChild *DonedataLocalInvokeSceSynthInvokeInvParamState) {
-	// Only a `<parallel>` machine descends into defaults here, so a machine
-	// without one has nothing to tell an ancestor entry from a target entry.
-	_ = pathChild
+func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) ExecuteEntryActions(state DonedataLocalInvokeSceSynthInvokeInvParamState, engine *sce.Engine[DonedataLocalInvokeSceSynthInvokeInvParamState, DonedataLocalInvokeSceSynthInvokeInvParamEvent], isDefaultEntry bool) {
 	p.ensureScriptEngine()
 	switch state {
 	case DonedataLocalInvokeSceSynthInvokeInvParamStateDone:
@@ -604,9 +601,21 @@ func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) ExecuteEntryActions(st
 	}
 }
 
-// ExecuteExitActions executes onexit actions for a state (W3C SCXML 3.9).
+// ExecuteHistoryDefaultContent runs a <history>'s default transition content
+// (W3C SCXML 3.10.2), after its parent's onentry (and after the parent's own
+// <initial> content) when the history was taken with nothing recorded. The
+// engine asks for it by the entry set's defaultHistoryContent answer; a history
+// that restored what it recorded runs nothing.
 //line donedata_local_invoke__sce_synth_invoke__inv_param.scxml:3
-func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) ExecuteExitActions(state DonedataLocalInvokeSceSynthInvokeInvParamState, engine *sce.Engine[DonedataLocalInvokeSceSynthInvokeInvParamState, DonedataLocalInvokeSceSynthInvokeInvParamEvent], preTransitionActive []DonedataLocalInvokeSceSynthInvokeInvParamState) {
+func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[DonedataLocalInvokeSceSynthInvokeInvParamState, DonedataLocalInvokeSceSynthInvokeInvParamEvent]) {
+	// W3C SCXML 3.10.2: no <history> in this document has default content.
+}
+
+// ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
+// removes it from the configuration, cancels its invocations and runs its
+// <onexit>.
+//line donedata_local_invoke__sce_synth_invoke__inv_param.scxml:3
+func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) ExecuteExitActions(state DonedataLocalInvokeSceSynthInvokeInvParamState, engine *sce.Engine[DonedataLocalInvokeSceSynthInvokeInvParamState, DonedataLocalInvokeSceSynthInvokeInvParamEvent], configurationBeforeExit []DonedataLocalInvokeSceSynthInvokeInvParamState) {
 	p.ensureScriptEngine()
 	switch state {
 	default:
@@ -614,37 +623,36 @@ func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) ExecuteExitActions(sta
 	}
 }
 
-// ProcessTransition evaluates guards and takes a matching transition (W3C SCXML 3.13).
-// Returns true if a transition was taken.
+
+
+// BindCurrentEvent binds the event whose transitions are about to be selected as
+// the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
+// and not for an eventless selection, which has no event of its own.
 //line donedata_local_invoke__sce_synth_invoke__inv_param.scxml:3
-func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) ProcessTransition(currentState *DonedataLocalInvokeSceSynthInvokeInvParamState, event DonedataLocalInvokeSceSynthInvokeInvParamEvent, engine *sce.Engine[DonedataLocalInvokeSceSynthInvokeInvParamState, DonedataLocalInvokeSceSynthInvokeInvParamEvent]) bool {
-	// W3C SCXML 5.10: Bind _event system variable for guard evaluation
+func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) BindCurrentEvent(event DonedataLocalInvokeSceSynthInvokeInvParamEvent, engine *sce.Engine[DonedataLocalInvokeSceSynthInvokeInvParamState, DonedataLocalInvokeSceSynthInvokeInvParamEvent]) {
 	if event != DonedataLocalInvokeSceSynthInvokeInvParamEventNull {
 		// §scxml-B-2-8-1: the rung the payload got, handed to the engine
 		// rather than dropped. This is the only frame that has both the
 		// reading and the event it belongs to.
 		engine.NotePayloadReading(event, p.setCurrentEvent(p.GetEventName(event)))
 	}
-
-	// W3C SCXML 3.12: Try transitions in current state first
-	if p.tryTransitionInState(*currentState, event, currentState, engine) {
-		return true
-	}
-
-
-	return false
 }
 
-
-// tryTransitionInState checks transitions for a single state.
+// FirstEnabledTransition is Appendix D selectTransitions, the half only this
+// document can answer: the first of state's own transitions, in document order,
+// that event enables and whose guard holds. The engine walks the atomic states
+// and their ancestors and keeps the ordered set; the null event asks for
+// eventless transitions.
 //line donedata_local_invoke__sce_synth_invoke__inv_param.scxml:3
-func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) tryTransitionInState(checkState DonedataLocalInvokeSceSynthInvokeInvParamState, event DonedataLocalInvokeSceSynthInvokeInvParamEvent, currentState *DonedataLocalInvokeSceSynthInvokeInvParamState, engine *sce.Engine[DonedataLocalInvokeSceSynthInvokeInvParamState, DonedataLocalInvokeSceSynthInvokeInvParamEvent]) bool {
-	switch checkState {
+func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) FirstEnabledTransition(state DonedataLocalInvokeSceSynthInvokeInvParamState, event DonedataLocalInvokeSceSynthInvokeInvParamEvent, engine *sce.Engine[DonedataLocalInvokeSceSynthInvokeInvParamState, DonedataLocalInvokeSceSynthInvokeInvParamEvent]) (sce.EnabledTransition[DonedataLocalInvokeSceSynthInvokeInvParamState, sce.HistoryID], bool) {
+	switch state {
 	}
-	return false
+	return sce.EnabledTransition[DonedataLocalInvokeSceSynthInvokeInvParamState, sce.HistoryID]{}, false
 }
 
-// ExecuteTransitionActions executes actions for the last taken transition (W3C SCXML 3.13).
+// ExecuteTransitionContent runs one transition's executable content (W3C SCXML
+// 3.13), between the microstep's exits and its entries.
 //line donedata_local_invoke__sce_synth_invoke__inv_param.scxml:3
-func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) ExecuteTransitionActions(engine *sce.Engine[DonedataLocalInvokeSceSynthInvokeInvParamState, DonedataLocalInvokeSceSynthInvokeInvParamEvent]) {
+func (p *DonedataLocalInvokeSceSynthInvokeInvParamPolicy) ExecuteTransitionContent(source DonedataLocalInvokeSceSynthInvokeInvParamState, transitionIndex int, engine *sce.Engine[DonedataLocalInvokeSceSynthInvokeInvParamState, DonedataLocalInvokeSceSynthInvokeInvParamEvent]) {
+	// W3C SCXML 3.13: no transition in this document has content.
 }

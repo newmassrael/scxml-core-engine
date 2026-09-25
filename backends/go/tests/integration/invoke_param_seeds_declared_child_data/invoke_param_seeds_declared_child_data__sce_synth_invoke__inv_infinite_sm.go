@@ -98,6 +98,44 @@ var InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteAllStates = []Invo
 	InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteStateReport,
 }
 
+// InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteTarget is one token of a target list, as the document wrote
+// it (W3C SCXML 3.13): a state, or a <history> the engine dereferences.
+type InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteTarget = sce.EntryTarget[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, sce.HistoryID]
+
+// ======================================================================
+// Document structure (W3C SCXML 3.2-3.4, 3.10)
+//
+// Package-level tables, because the structure is a fact about the document
+// and not about a run: the engine's Appendix D procedures read them through
+// the policy methods below, and a transition's target list is handed out as
+// a slice of them rather than rebuilt on every selection.
+// ======================================================================
+
+// childStatesOfInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinite is §scxml-D-getChildStates per state: its
+// <state>, <parallel> and <final> children, in document order.
+var childStatesOfInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinite = [2][]InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState{
+}
+
+// initialTargetsOfInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinite is each compound state's initial transition
+// target, as written (§scxml-3.3).
+var initialTargetsOfInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinite = [2][]InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteTarget{
+}
+
+// documentInitialTargetsOfInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinite is the target of the document's own
+// initial transition, as written (§scxml-3.2).
+var documentInitialTargetsOfInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinite = []InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteTarget{sce.StateTarget[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, sce.HistoryID](InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteStateReport)}
+
+// transitionTargetsOfInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinite is each transition's target list, as
+// written (§scxml-3.13), by source state and the transition's index among its
+// source's own transitions. A targetless transition's entry is empty.
+var transitionTargetsOfInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinite = [2][][]InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteTarget{
+	InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteStateReport: {
+		0: {sce.StateTarget[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, sce.HistoryID](InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteStateDone)},
+		1: {sce.StateTarget[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, sce.HistoryID](InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteStateDone)},
+		2: {sce.StateTarget[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, sce.HistoryID](InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteStateDone)},
+	},
+}
+
 // ======================================================================
 // Event type (W3C SCXML 3.12)
 // ======================================================================
@@ -134,13 +172,6 @@ func (e InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEvent) String(
 // ======================================================================
 
 type InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy struct {
-	// W3C SCXML 3.13: Last transition metadata
-	lastTransitionIsInternal  bool
-	lastTransitionIsTargetless bool
-	lastTransitionSourceState InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState
-	// W3C SCXML 3.13: Transition action tracking
-	lastTransitionIndex   int
-	hasTransitionActions   bool
 	// W3C SCXML 5.10.1: External event flag
 	nextEventIsExternal bool
 	pendingEventName string
@@ -173,7 +204,6 @@ type InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy struct {
 // NewInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy creates a new policy with default values.
 func NewInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy() InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy {
 	return InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy{
-		lastTransitionSourceState: InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteStateReport,
 	}
 }
 
@@ -400,29 +430,45 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) GetPa
 	return 0, false
 }
 
-// IsCompoundState returns true if state has children (W3C SCXML 3.3).
+// IsCompoundState returns true if state is a <state> with child states — exactly
+// the states that have an initial transition. A <parallel> is not compound
+// (W3C SCXML 3.3).
 func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) IsCompoundState(state InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState) bool {
-	switch state {
-	}
-	return false
+	return len(initialTargetsOfInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinite[state]) > 0
 }
 
 func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) IsParallelState(_ InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState) bool { return false }
-func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) GetParallelRegions(_ InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState) []InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState { return nil }
 
-// IsDescendantOf returns true if desc is a descendant of anc (W3C SCXML 3.12).
-func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) IsDescendantOf(desc, anc InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState) bool {
-	current := desc
-	for {
-		parent, ok := p.GetParent(current)
-		if !ok {
-			return false
-		}
-		if parent == anc {
-			return true
-		}
-		current = parent
-	}
+// GetChildStates returns state's <state>, <parallel> and <final> children, in
+// document order — for a <parallel>, its regions (§scxml-D-getChildStates).
+func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) GetChildStates(state InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState) []InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState {
+	return childStatesOfInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinite[state]
+}
+
+// GetInitialTargets returns a compound state's initial transition target, as
+// written; the engine's entry procedures dereference a <history> among them
+// (W3C SCXML 3.3).
+func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) GetInitialTargets(state InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState) []InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteTarget {
+	return initialTargetsOfInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinite[state]
+}
+
+// GetDocumentInitialTargets returns the target of the document's own initial
+// transition, as written (W3C SCXML 3.2).
+func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) GetDocumentInitialTargets() []InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteTarget {
+	return documentInitialTargetsOfInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinite
+}
+
+// W3C SCXML 3.10: this document declares no <history>, so no target list names
+// one and the engine never asks the two below; answering would mean inventing
+// one.
+func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) GetHistoryParent(history sce.HistoryID) InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState {
+	panic(fmt.Sprintf("InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy declares no <history>; asked for %d", history))
+}
+func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) GetHistoryDefaultTargets(history sce.HistoryID) []InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteTarget {
+	panic(fmt.Sprintf("InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy declares no <history>; asked for %d", history))
+}
+func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) HistoryValue(_ sce.HistoryID) ([]InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, bool) {
+	return nil, false
 }
 
 // GetDocumentOrder returns the document order index (W3C SCXML Appendix D).
@@ -473,43 +519,6 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) NullE
 	return InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEventNull
 }
 
-// GetInitialChildren returns initial children of a compound state (W3C SCXML 3.6).
-func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) GetInitialChildren(state InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState) []InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState {
-	switch state {
-	}
-	return nil
-}
-
-// LastTransitionIsInternal returns the internal transition flag (W3C SCXML 3.13).
-func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) LastTransitionIsInternal() bool {
-	return p.lastTransitionIsInternal
-}
-
-// SetLastTransitionIsInternal sets the internal transition flag.
-func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) SetLastTransitionIsInternal(value bool) {
-	p.lastTransitionIsInternal = value
-}
-
-// LastTransitionIsTargetless returns the targetless transition flag (W3C SCXML 3.13).
-func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) LastTransitionIsTargetless() bool {
-	return p.lastTransitionIsTargetless
-}
-
-// SetLastTransitionIsTargetless sets the targetless transition flag.
-func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) SetLastTransitionIsTargetless(value bool) {
-	p.lastTransitionIsTargetless = value
-}
-
-// LastTransitionSourceState returns the source state of the last transition.
-func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) LastTransitionSourceState() InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState {
-	return p.lastTransitionSourceState
-}
-
-// SetLastTransitionSourceState sets the source state of the last transition.
-func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) SetLastTransitionSourceState(state InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState) {
-	p.lastTransitionSourceState = state
-}
-
 
 // SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
 func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) SetNextEventIsExternal(value bool) {
@@ -554,14 +563,6 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) GetAc
 // which is false above; the method exists because the interface is one contract.
 func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) SetActiveStates(_ []InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState) {}
 func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) HasExternalEventFlag() bool { return true }
-// GetInitialOrHistoryChild returns the initial child considering history (W3C SCXML 3.11).
-func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) GetInitialOrHistoryChild(state InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState) InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState {
-	children := p.GetInitialChildren(state)
-	if len(children) > 0 {
-		return children[0]
-	}
-	return state
-}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEvent], _ *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).
@@ -605,13 +606,11 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) Clear
 
 
 
-
-// ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
+// ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
+// configuration, runs its <onentry>, and its <initial> transition's content when
+// its initial state is entered by default.
 //line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_infinite.scxml:3
-func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) ExecuteEntryActions(state InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEvent], pathChild *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState) {
-	// Only a `<parallel>` machine descends into defaults here, so a machine
-	// without one has nothing to tell an ancestor entry from a target entry.
-	_ = pathChild
+func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) ExecuteEntryActions(state InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEvent], isDefaultEntry bool) {
 	p.ensureScriptEngine()
 	switch state {
 	default:
@@ -619,9 +618,21 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) Execu
 	}
 }
 
-// ExecuteExitActions executes onexit actions for a state (W3C SCXML 3.9).
+// ExecuteHistoryDefaultContent runs a <history>'s default transition content
+// (W3C SCXML 3.10.2), after its parent's onentry (and after the parent's own
+// <initial> content) when the history was taken with nothing recorded. The
+// engine asks for it by the entry set's defaultHistoryContent answer; a history
+// that restored what it recorded runs nothing.
 //line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_infinite.scxml:3
-func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) ExecuteExitActions(state InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEvent], preTransitionActive []InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState) {
+func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEvent]) {
+	// W3C SCXML 3.10.2: no <history> in this document has default content.
+}
+
+// ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
+// removes it from the configuration, cancels its invocations and runs its
+// <onexit>.
+//line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_infinite.scxml:3
+func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) ExecuteExitActions(state InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEvent], configurationBeforeExit []InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState) {
 	p.ensureScriptEngine()
 	switch state {
 	default:
@@ -629,82 +640,77 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) Execu
 	}
 }
 
-// ProcessTransition evaluates guards and takes a matching transition (W3C SCXML 3.13).
-// Returns true if a transition was taken.
+
+
+// BindCurrentEvent binds the event whose transitions are about to be selected as
+// the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
+// and not for an eventless selection, which has no event of its own.
 //line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_infinite.scxml:3
-func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) ProcessTransition(currentState *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, event InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEvent, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEvent]) bool {
-	// W3C SCXML 5.10: Bind _event system variable for guard evaluation
+func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) BindCurrentEvent(event InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEvent, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEvent]) {
 	if event != InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEventNull {
 		// §scxml-B-2-8-1: the rung the payload got, handed to the engine
 		// rather than dropped. This is the only frame that has both the
 		// reading and the event it belongs to.
 		engine.NotePayloadReading(event, p.setCurrentEvent(p.GetEventName(event)))
 	}
-
-	// W3C SCXML 3.12: Try transitions in current state first
-	if p.tryTransitionInState(*currentState, event, currentState, engine) {
-		return true
-	}
-
-
-	return false
 }
 
-
-// tryTransitionInState checks transitions for a single state.
+// FirstEnabledTransition is Appendix D selectTransitions, the half only this
+// document can answer: the first of state's own transitions, in document order,
+// that event enables and whose guard holds. The engine walks the atomic states
+// and their ancestors and keeps the ordered set; the null event asks for
+// eventless transitions.
 //line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_infinite.scxml:3
-func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) tryTransitionInState(checkState InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, event InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEvent, currentState *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEvent]) bool {
-	switch checkState {
+func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) FirstEnabledTransition(state InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, event InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEvent, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEvent]) (sce.EnabledTransition[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, sce.HistoryID], bool) {
+	switch state {
 	case InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteStateReport:
-		// Eventless transition 0
 		if event == InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEventNull {
 			if p.evaluateGuard(`((_typeof(seen) == "number") and (seen > 1e308))`, engine) {
-			*currentState = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteStateDone
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteStateReport
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = true
-			return true
+				return sce.EnabledTransition[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinite[state][0],
+					TransitionIndex: 0,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// Eventless transition 1
 		if event == InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEventNull {
 			if p.evaluateGuard(`(_typeof(seen) == "string")`, engine) {
-			*currentState = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteStateDone
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteStateReport
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = true
-			return true
+				return sce.EnabledTransition[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinite[state][1],
+					TransitionIndex: 1,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
 			}
 		}
-		// Eventless transition 2
 		if event == InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEventNull {
-			*currentState = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteStateDone
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteStateReport
-			p.lastTransitionIndex = 2
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfInvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinite[state][2],
+					TransitionIndex: 2,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	}
-	return false
+	return sce.EnabledTransition[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, sce.HistoryID]{}, false
 }
 
-// ExecuteTransitionActions executes actions for the last taken transition (W3C SCXML 3.13).
+// ExecuteTransitionContent runs one transition's executable content (W3C SCXML
+// 3.13), between the microstep's exits and its entries.
 //line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_infinite.scxml:3
-func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) ExecuteTransitionActions(engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEvent]) {
+func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) ExecuteTransitionContent(source InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, transitionIndex int, engine *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteEvent]) {
 	p.ensureScriptEngine()
-	if !p.hasTransitionActions {
-		return
-	}
-	source := p.lastTransitionSourceState
-	idx := p.lastTransitionIndex
-	if source == InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteStateReport && idx == 0 {
-		//line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_infinite.scxml:9
+	switch source {
+	case InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteStateReport:
+		switch transitionIndex {
+		case 0:
+			//line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_infinite.scxml:9
 
 	// W3C SCXML 6.2: send id="__send_0"
 	{
@@ -716,10 +722,8 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) Execu
 	}
 	}
 
-		return
-	}
-	if source == InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteStateReport && idx == 1 {
-		//line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_infinite.scxml:12
+		case 1:
+			//line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_infinite.scxml:12
 
 	// W3C SCXML 6.2: send id="__send_1"
 	{
@@ -731,10 +735,8 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) Execu
 	}
 	}
 
-		return
-	}
-	if source == InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfiniteStateReport && idx == 2 {
-		//line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_infinite.scxml:15
+		case 2:
+			//line invoke_param_seeds_declared_child_data__sce_synth_invoke__inv_infinite.scxml:15
 
 	// W3C SCXML 6.2: send id="__send_2"
 	{
@@ -746,6 +748,6 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvInfinitePolicy) Execu
 	}
 	}
 
-		return
+		}
 	}
 }

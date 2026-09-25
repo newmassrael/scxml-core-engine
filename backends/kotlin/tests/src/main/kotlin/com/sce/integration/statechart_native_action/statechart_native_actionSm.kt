@@ -167,7 +167,67 @@ class StatechartNativeActionStateMachine(
     // as `needs_event_scheduler`.
     override val needsEventScheduler: Boolean = false
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
 
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<StatechartNativeActionState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<StatechartNativeActionState, HistoryId>> =
+            listOf(StateTarget(StatechartNativeActionState.Idle))
+
+        // W3C SCXML 3.13: assembling's transition 0, as the microstep reads it.
+        val transitionAssemblingAt0 = EnabledTransition<StatechartNativeActionState, HistoryId>(
+            StatechartNativeActionState.Assembling,
+            listOf(StateTarget(StatechartNativeActionState.Idle)),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: assembling's transition 1, as the microstep reads it.
+        val transitionAssemblingAt1 = EnabledTransition<StatechartNativeActionState, HistoryId>(
+            StatechartNativeActionState.Assembling,
+            listOf(StateTarget(StatechartNativeActionState.Faulted)),
+            1,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: faulted's transition 0, as the microstep reads it.
+        val transitionFaultedAt0 = EnabledTransition<StatechartNativeActionState, HistoryId>(
+            StatechartNativeActionState.Faulted,
+            listOf(StateTarget(StatechartNativeActionState.Idle)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: idle's transition 0, as the microstep reads it.
+        val transitionIdleAt0 = EnabledTransition<StatechartNativeActionState, HistoryId>(
+            StatechartNativeActionState.Idle,
+            listOf(StateTarget(StatechartNativeActionState.Assembling)),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: idle's transition 1, as the microstep reads it.
+        val transitionIdleAt1 = EnabledTransition<StatechartNativeActionState, HistoryId>(
+            StatechartNativeActionState.Idle,
+            emptyList(),
+            1,
+            hasActions = true,
+            isInternal = false,
+        )
+    }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): StatechartNativeActionState? = when (stateId) {
@@ -184,13 +244,7 @@ class StatechartNativeActionStateMachine(
         is StatechartNativeActionState.Idle -> "idle"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: StatechartNativeActionState): Boolean = when (state) {
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: StatechartNativeActionState): Int = when (state) {
         is StatechartNativeActionState.Assembling -> 1
         is StatechartNativeActionState.Faulted -> 2
@@ -217,67 +271,45 @@ class StatechartNativeActionStateMachine(
 
 
 
-    // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
-    override fun processEvent(
+
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
         state: StatechartNativeActionState,
-        event: StatechartNativeActionEvent
-    ): TransitionResult<StatechartNativeActionState> = when (state) {
-        is StatechartNativeActionState.Assembling -> processAssembling(event)
-        is StatechartNativeActionState.Faulted -> processFaulted(event)
-        is StatechartNativeActionState.Idle -> processIdle(event)
+        event: StatechartNativeActionEvent?
+    ): EnabledTransition<StatechartNativeActionState, HistoryId>? = when (state) {
+        is StatechartNativeActionState.Assembling -> when {
+            event is StatechartNativeActionEvent.Reset -> transitionAssemblingAt0
+            event is StatechartNativeActionEvent.Error.Execution -> transitionAssemblingAt1
+            else -> null
+        }
+        is StatechartNativeActionState.Faulted -> when {
+            event is StatechartNativeActionEvent.Reset -> transitionFaultedAt0
+            else -> null
+        }
+        is StatechartNativeActionState.Idle -> when {
+            event is StatechartNativeActionEvent.Fragment.Received -> transitionIdleAt0
+            event is StatechartNativeActionEvent.Selftest -> transitionIdleAt1
+            else -> null
+        }
     }
-
-
-    // --- Per-State Event Handlers ---
-
-    private fun processAssembling(
-        event: StatechartNativeActionEvent
-    ): TransitionResult<StatechartNativeActionState> = when {
-        event is StatechartNativeActionEvent.Reset -> TransitionResult.External(StatechartNativeActionState.Idle, StatechartNativeActionState.Assembling, 0)
-
-        event is StatechartNativeActionEvent.Error.Execution -> TransitionResult.External(StatechartNativeActionState.Faulted, StatechartNativeActionState.Assembling, 1)
-
-        else -> TransitionResult.Ignored
-    }
-
-    private fun processFaulted(
-        event: StatechartNativeActionEvent
-    ): TransitionResult<StatechartNativeActionState> = when {
-        event is StatechartNativeActionEvent.Reset -> TransitionResult.External(StatechartNativeActionState.Idle, StatechartNativeActionState.Faulted, 2)
-
-        else -> TransitionResult.Ignored
-    }
-
-    private fun processIdle(
-        event: StatechartNativeActionEvent
-    ): TransitionResult<StatechartNativeActionState> = when {
-        event is StatechartNativeActionEvent.Fragment.Received -> TransitionResult.External(StatechartNativeActionState.Assembling, StatechartNativeActionState.Idle, 3)
-
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is StatechartNativeActionEvent.Selftest -> TransitionResult.Internal(4)
-        else -> TransitionResult.Ignored
-    }
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: statechart_native_action.scxml:31 :: _machine
-    override fun onEntry(state: StatechartNativeActionState, pathChild: StatechartNativeActionState?) {
+    override fun onEntry(state: StatechartNativeActionState, isDefaultEntry: Boolean) {
         when (state) {
             is StatechartNativeActionState.Assembling -> {
                 // SCE-MAP: statechart_native_action.scxml:59 :: assembling :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("assembling")) return
             }
             is StatechartNativeActionState.Faulted -> {
                 // SCE-MAP: statechart_native_action.scxml:71 :: faulted :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("faulted")) return
             }
             is StatechartNativeActionState.Idle -> {
                 // SCE-MAP: statechart_native_action.scxml:38 :: idle :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("idle")) return
 
             // W3C SCXML G.7: <sce:action name="on_idle_entry">
             actions.onIdleEntry()
@@ -291,30 +323,23 @@ class StatechartNativeActionStateMachine(
         when (state) {
             is StatechartNativeActionState.Assembling -> {
                 // SCE-MAP: statechart_native_action.scxml:59 :: assembling :: _state_body
-                activeStateIds.remove("assembling")
 
             // W3C SCXML G.7: <sce:action name="on_assembling_exit">
             actions.onAssemblingExit()
             }
             is StatechartNativeActionState.Faulted -> {
                 // SCE-MAP: statechart_native_action.scxml:71 :: faulted :: _state_body
-                activeStateIds.remove("faulted")
             }
             is StatechartNativeActionState.Idle -> {
                 // SCE-MAP: statechart_native_action.scxml:38 :: idle :: _state_body
-                activeStateIds.remove("idle")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: statechart_native_action.scxml:31 :: _machine
-    override fun executeTransitionActions(
-        source: StatechartNativeActionState,
-        event: StatechartNativeActionEvent?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: StatechartNativeActionState, transitionIndex: Int) {
         when (source) {
         is StatechartNativeActionState.Assembling -> when (transitionIndex) {
             0 -> {
@@ -326,13 +351,13 @@ class StatechartNativeActionStateMachine(
             else -> {}
         }
         is StatechartNativeActionState.Idle -> when (transitionIndex) {
-            3 -> {
+            0 -> {
                 // SCE-MAP: statechart_native_action.scxml:42 :: idle :: _transition_0
 
             // W3C SCXML G.7: <sce:action name="append_fragment_payload">
             pendingFragmentReceivedPayload?.let { actions.appendFragmentPayload(it.payload, it.offset) } ?: run { raiseInternal(StatechartNativeActionEvent.Error.Execution, EventMetadata(data = "<sce:action name='append_fragment_payload'> needs the typed payload of 'fragment.received', which this delivery did not carry", type = "platform")) }
             }
-            4 -> {
+            1 -> {
                 // SCE-MAP: statechart_native_action.scxml:55 :: idle :: _transition_1
 
             raiseInternal(StatechartNativeActionEvent.Fragment.Received)

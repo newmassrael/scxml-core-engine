@@ -23,6 +23,14 @@
  * Every case here bounds its own wait with `wait_for` rather than calling
  * `.get()`. A test that reproduces a hang by hanging is not a test — it is the
  * defect again, wearing the harness's timeout.
+ *
+ * Built with ThreadSanitizer (`scripts/build_tsan.sh`), this file also
+ * witnesses how the executor publishes its stop. Every case resets the engine
+ * in `SetUp`, which shuts down a live worker, and a stop flag stored outside
+ * the mutex that worker waits under is a data race TSAN reports at that first
+ * reset — measured 2026-09-25 with the lock removed. Without TSAN the same
+ * defect is a hang in about one reset in ten thousand, which no case here
+ * comes near.
  */
 
 #include "scripting/JSEngine.h"

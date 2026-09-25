@@ -3,6 +3,8 @@
 
 #include "MockEventRaiser.h"
 
+#include <algorithm>
+
 namespace SCE {
 namespace Test {
 
@@ -119,18 +121,29 @@ bool MockEventRaiser::processNextQueuedEvent() {
 }
 
 bool MockEventRaiser::hasQueuedEvents() const {
-    // Mock implementation - no actual queue
-    return false;
-}
-
-bool MockEventRaiser::processNextInternalEvent() {
-    // Mock implementation - no actual queue to process
-    return false;
+    // Raised events are recorded, never queued; only held ones wait here.
+    return !held_.empty();
 }
 
 bool MockEventRaiser::hasQueuedInternalEvents() const {
-    // Mock implementation - no actual queue
-    return false;
+    return std::any_of(held_.begin(), held_.end(),
+                       [](const auto &entry) { return entry.second == EventQueue::Internal; });
+}
+
+std::optional<Core::EventMetadata> MockEventRaiser::takeQueuedEvent(EventQueue queue) {
+    const auto entry =
+        std::find_if(held_.begin(), held_.end(), [queue](const auto &candidate) { return candidate.second == queue; });
+    if (entry == held_.end()) {
+        return std::nullopt;
+    }
+    Core::EventMetadata event = entry->first;
+    held_.erase(entry);
+    return event;
+}
+
+bool MockEventRaiser::enqueue(const Core::EventMetadata &event, EventQueue queue) {
+    held_.emplace_back(event, queue);
+    return true;
 }
 
 void MockEventRaiser::getEventQueues(std::vector<EventSnapshot> &outInternal,

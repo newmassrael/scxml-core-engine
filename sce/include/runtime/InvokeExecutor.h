@@ -412,8 +412,11 @@ public:
      * Restore invoke configuration without side effects
      * Zero Duplication: Delegates to IInvokeHandler for actual restoration
      *
-     * Creates child state machines and restores their states using
-     * restoreActiveStatesDirectly() to prevent onentry re-execution.
+     * Cancels every live invocation first, then creates child state machines
+     * for the recorded ones and restores their states using
+     * restoreActiveStatesDirectly() to prevent onentry re-execution. The
+     * cancel is part of the restore: a step that recorded no invocations
+     * restores to none, so an empty `invokes` is a call to make, not to skip.
      *
      * @param invokes Vector of InvokeSnapshot instances to restore
      * @param parentSM Parent state machine (for child creation context)

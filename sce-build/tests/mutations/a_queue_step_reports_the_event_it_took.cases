@@ -1,0 +1,41 @@
+# Mutation cases for §scxml-3.1.2 as a host stepping the queue sees it — a
+# step whose event no active state answers is still a step.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_queue_step_reports_the_event_it_took.cases`.
+#
+# IEventRaiser::processNextQueuedEvent promises true when it took an event and
+# false when the queue was empty. The implementation returned the event
+# callback's answer instead — whether a transition was selected — so an event
+# that was taken off the queue and discarded read as an empty queue, and a host
+# stepping one event at a time lost both the step and the event.
+#
+# Measured 2026-09-25 on the interactive runner's forward run of W3C test 240:
+# the child the first state invoked had ended, so its done.invoke outlives the
+# parent leaving that state (W3C test 236) and reaches a state that does not
+# answer it. The step that took it answered false, the runner concluded there
+# was nothing to step, and the forward run stopped short of `pass` while a
+# replay from the recorded snapshots reached it — ComprehensiveInteractiveTests
+# failed on Test240 and Test241 in all three of its replay scenarios.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^(IntegrationTests|ComprehensiveInteractiveTests)$'
+mutation_targets sce/src/runtime/EventRaiserImpl.cpp
+mutation_oracles tests/integration/HostCallTakesTheExternalQueueTest.cpp \
+    tests/w3c/ComprehensiveInteractiveTest.cpp
+
+# ── C++ Interpreter's raiser: the step answers with the transition result ──
+#
+# The defect as it shipped: a discarded event and an empty queue give the same
+# answer, so the host cannot tell a step that took an event from no step.
+
+mutation_case "a step whose event nothing answers reads as an empty queue" <<'PY'
+edit("sce/src/runtime/EventRaiserImpl.cpp",
+     """    executeEventCallback(eventToProcess);
+
+    // The answer is that an event was taken, which is what IEventRaiser""",
+     """    return executeEventCallback(eventToProcess);
+
+    // The answer is that an event was taken, which is what IEventRaiser""")
+PY

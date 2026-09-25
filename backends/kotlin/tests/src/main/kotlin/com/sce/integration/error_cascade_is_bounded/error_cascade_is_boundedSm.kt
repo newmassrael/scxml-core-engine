@@ -101,7 +101,121 @@ class ErrorCascadeIsBoundedStateMachine(
         super.enterInitialConfiguration()
     }
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
 
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<ErrorCascadeIsBoundedState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<ErrorCascadeIsBoundedState, HistoryId>> =
+            listOf(StateTarget(ErrorCascadeIsBoundedState.Idle))
+
+        // W3C SCXML 3.13: idle's transition 0, as the microstep reads it.
+        val transitionIdleAt0 = EnabledTransition<ErrorCascadeIsBoundedState, HistoryId>(
+            ErrorCascadeIsBoundedState.Idle,
+            listOf(StateTarget(ErrorCascadeIsBoundedState.Idle)),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: idle's transition 1, as the microstep reads it.
+        val transitionIdleAt1 = EnabledTransition<ErrorCascadeIsBoundedState, HistoryId>(
+            ErrorCascadeIsBoundedState.Idle,
+            listOf(StateTarget(ErrorCascadeIsBoundedState.Idle)),
+            1,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: idle's transition 2, as the microstep reads it.
+        val transitionIdleAt2 = EnabledTransition<ErrorCascadeIsBoundedState, HistoryId>(
+            ErrorCascadeIsBoundedState.Idle,
+            listOf(StateTarget(ErrorCascadeIsBoundedState.Settling)),
+            2,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: idle's transition 3, as the microstep reads it.
+        val transitionIdleAt3 = EnabledTransition<ErrorCascadeIsBoundedState, HistoryId>(
+            ErrorCascadeIsBoundedState.Idle,
+            listOf(StateTarget(ErrorCascadeIsBoundedState.Runaway)),
+            3,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: runaway's transition 0, as the microstep reads it.
+        val transitionRunawayAt0 = EnabledTransition<ErrorCascadeIsBoundedState, HistoryId>(
+            ErrorCascadeIsBoundedState.Runaway,
+            emptyList(),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: runaway's transition 1, as the microstep reads it.
+        val transitionRunawayAt1 = EnabledTransition<ErrorCascadeIsBoundedState, HistoryId>(
+            ErrorCascadeIsBoundedState.Runaway,
+            emptyList(),
+            1,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: runaway's transition 2, as the microstep reads it.
+        val transitionRunawayAt2 = EnabledTransition<ErrorCascadeIsBoundedState, HistoryId>(
+            ErrorCascadeIsBoundedState.Runaway,
+            emptyList(),
+            2,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: runaway's transition 3, as the microstep reads it.
+        val transitionRunawayAt3 = EnabledTransition<ErrorCascadeIsBoundedState, HistoryId>(
+            ErrorCascadeIsBoundedState.Runaway,
+            listOf(StateTarget(ErrorCascadeIsBoundedState.Idle)),
+            3,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: settling's transition 0, as the microstep reads it.
+        val transitionSettlingAt0 = EnabledTransition<ErrorCascadeIsBoundedState, HistoryId>(
+            ErrorCascadeIsBoundedState.Settling,
+            emptyList(),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: settling's transition 1, as the microstep reads it.
+        val transitionSettlingAt1 = EnabledTransition<ErrorCascadeIsBoundedState, HistoryId>(
+            ErrorCascadeIsBoundedState.Settling,
+            emptyList(),
+            1,
+            hasActions = true,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: settling's transition 2, as the microstep reads it.
+        val transitionSettlingAt2 = EnabledTransition<ErrorCascadeIsBoundedState, HistoryId>(
+            ErrorCascadeIsBoundedState.Settling,
+            listOf(StateTarget(ErrorCascadeIsBoundedState.Idle)),
+            2,
+            hasActions = false,
+            isInternal = false,
+        )
+    }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): ErrorCascadeIsBoundedState? = when (stateId) {
@@ -118,13 +232,7 @@ class ErrorCascadeIsBoundedStateMachine(
         is ErrorCascadeIsBoundedState.Settling -> "settling"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: ErrorCascadeIsBoundedState): Boolean = when (state) {
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: ErrorCascadeIsBoundedState): Int = when (state) {
         is ErrorCascadeIsBoundedState.Idle -> 0
         is ErrorCascadeIsBoundedState.Runaway -> 2
@@ -375,77 +483,55 @@ class ErrorCascadeIsBoundedStateMachine(
     }
 
 
-    // W3C SCXML 3.12: Event processing with script engine condition evaluation
-    override fun processEvent(
-        state: ErrorCascadeIsBoundedState,
-        event: ErrorCascadeIsBoundedEvent
-    ): TransitionResult<ErrorCascadeIsBoundedState> {
-        // W3C SCXML 5.10: Set _event before guard evaluation
+
+    // W3C SCXML 5.10: bind the event as the `_event` its transitions' guards
+    // read — once, before the first guard runs, and not for an eventless
+    // selection, which has no event of its own.
+    override fun bindCurrentEvent(event: ErrorCascadeIsBoundedEvent) {
         setCurrentEventInScriptEngine(event)
-        return when (state) {
-        is ErrorCascadeIsBoundedState.Idle -> processIdle(event)
-        is ErrorCascadeIsBoundedState.Runaway -> processRunaway(event)
-        is ErrorCascadeIsBoundedState.Settling -> processSettling(event)
-    }
     }
 
-
-    // --- Per-State Event Handlers ---
-
-    private fun processIdle(
-        event: ErrorCascadeIsBoundedEvent
-    ): TransitionResult<ErrorCascadeIsBoundedState> = when {
-        event is ErrorCascadeIsBoundedEvent.Poke -> TransitionResult.External(ErrorCascadeIsBoundedState.Idle, ErrorCascadeIsBoundedState.Idle, 0)
-
-        event is ErrorCascadeIsBoundedEvent.Boom -> TransitionResult.External(ErrorCascadeIsBoundedState.Idle, ErrorCascadeIsBoundedState.Idle, 1)
-
-        event is ErrorCascadeIsBoundedEvent.Settle -> TransitionResult.External(ErrorCascadeIsBoundedState.Settling, ErrorCascadeIsBoundedState.Idle, 2)
-
-        event is ErrorCascadeIsBoundedEvent.Spin -> TransitionResult.External(ErrorCascadeIsBoundedState.Runaway, ErrorCascadeIsBoundedState.Idle, 3)
-
-        else -> TransitionResult.Ignored
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
+        state: ErrorCascadeIsBoundedState,
+        event: ErrorCascadeIsBoundedEvent?
+    ): EnabledTransition<ErrorCascadeIsBoundedState, HistoryId>? = when (state) {
+        is ErrorCascadeIsBoundedState.Idle -> when {
+            event is ErrorCascadeIsBoundedEvent.Poke -> transitionIdleAt0
+            event is ErrorCascadeIsBoundedEvent.Boom -> transitionIdleAt1
+            event is ErrorCascadeIsBoundedEvent.Settle -> transitionIdleAt2
+            event is ErrorCascadeIsBoundedEvent.Spin -> transitionIdleAt3
+            else -> null
+        }
+        is ErrorCascadeIsBoundedState.Runaway -> when {
+            event is ErrorCascadeIsBoundedEvent.Error.Execution -> transitionRunawayAt0
+            event is ErrorCascadeIsBoundedEvent.Tick -> transitionRunawayAt1
+            event is ErrorCascadeIsBoundedEvent.Poke -> transitionRunawayAt2
+            event is ErrorCascadeIsBoundedEvent.Reset -> transitionRunawayAt3
+            else -> null
+        }
+        is ErrorCascadeIsBoundedState.Settling -> when {
+            event is ErrorCascadeIsBoundedEvent.Error.Execution && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(repairs < 3)", "repairs < 3")) -> transitionSettlingAt0
+            event is ErrorCascadeIsBoundedEvent.Poke -> transitionSettlingAt1
+            event is ErrorCascadeIsBoundedEvent.Reset -> transitionSettlingAt2
+            else -> null
+        }
     }
-
-    private fun processRunaway(
-        event: ErrorCascadeIsBoundedEvent
-    ): TransitionResult<ErrorCascadeIsBoundedState> = when {
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is ErrorCascadeIsBoundedEvent.Error.Execution -> TransitionResult.Internal(4)
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is ErrorCascadeIsBoundedEvent.Tick -> TransitionResult.Internal(5)
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is ErrorCascadeIsBoundedEvent.Poke -> TransitionResult.Internal(6)
-        event is ErrorCascadeIsBoundedEvent.Reset -> TransitionResult.External(ErrorCascadeIsBoundedState.Idle, ErrorCascadeIsBoundedState.Runaway, 7)
-
-        else -> TransitionResult.Ignored
-    }
-
-    private fun processSettling(
-        event: ErrorCascadeIsBoundedEvent
-    ): TransitionResult<ErrorCascadeIsBoundedState> = when {
-        event is ErrorCascadeIsBoundedEvent.Error.Execution && safeEvaluateGuard(com.sce.runtime.ScriptSource.lua("(repairs < 3)", "repairs < 3")) -> TransitionResult.Internal(8)
-        // W3C SCXML 3.13: Targetless transition (actions only)
-        event is ErrorCascadeIsBoundedEvent.Poke -> TransitionResult.Internal(9)
-        event is ErrorCascadeIsBoundedEvent.Reset -> TransitionResult.External(ErrorCascadeIsBoundedState.Idle, ErrorCascadeIsBoundedState.Settling, 10)
-
-        else -> TransitionResult.Ignored
-    }
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: error_cascade_is_bounded.scxml:45 :: _machine
-    override fun onEntry(state: ErrorCascadeIsBoundedState, pathChild: ErrorCascadeIsBoundedState?) {
+    override fun onEntry(state: ErrorCascadeIsBoundedState, isDefaultEntry: Boolean) {
         when (state) {
             is ErrorCascadeIsBoundedState.Idle -> {
                 // SCE-MAP: error_cascade_is_bounded.scxml:67 :: idle :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("idle")) return
             }
             is ErrorCascadeIsBoundedState.Runaway -> {
                 // SCE-MAP: error_cascade_is_bounded.scxml:103 :: runaway :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("runaway")) return
 
 
             // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
@@ -453,8 +539,6 @@ class ErrorCascadeIsBoundedStateMachine(
             }
             is ErrorCascadeIsBoundedState.Settling -> {
                 // SCE-MAP: error_cascade_is_bounded.scxml:85 :: settling :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("settling")) return
 
 
             // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
@@ -469,27 +553,20 @@ class ErrorCascadeIsBoundedStateMachine(
         when (state) {
             is ErrorCascadeIsBoundedState.Idle -> {
                 // SCE-MAP: error_cascade_is_bounded.scxml:67 :: idle :: _state_body
-                activeStateIds.remove("idle")
             }
             is ErrorCascadeIsBoundedState.Runaway -> {
                 // SCE-MAP: error_cascade_is_bounded.scxml:103 :: runaway :: _state_body
-                activeStateIds.remove("runaway")
             }
             is ErrorCascadeIsBoundedState.Settling -> {
                 // SCE-MAP: error_cascade_is_bounded.scxml:85 :: settling :: _state_body
-                activeStateIds.remove("settling")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: error_cascade_is_bounded.scxml:45 :: _machine
-    override fun executeTransitionActions(
-        source: ErrorCascadeIsBoundedState,
-        event: ErrorCascadeIsBoundedEvent?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: ErrorCascadeIsBoundedState, transitionIndex: Int) {
         when (source) {
         is ErrorCascadeIsBoundedState.Idle -> when (transitionIndex) {
             0 -> {
@@ -508,7 +585,7 @@ class ErrorCascadeIsBoundedStateMachine(
             else -> {}
         }
         is ErrorCascadeIsBoundedState.Runaway -> when (transitionIndex) {
-            4 -> {
+            0 -> {
                 // SCE-MAP: error_cascade_is_bounded.scxml:107 :: runaway :: _transition_0
 
 
@@ -520,13 +597,13 @@ class ErrorCascadeIsBoundedStateMachine(
             // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
             raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<assign> has an invalid or read-only location")
             }
-            5 -> {
+            1 -> {
                 // SCE-MAP: error_cascade_is_bounded.scxml:120 :: runaway :: _transition_1
 
 
             executeAssign(com.sce.runtime.ScriptSource.lua("ticks", "ticks"), com.sce.runtime.ScriptSource.lua("_scxml_add(ticks, 1)", "ticks + 1"))
             }
-            6 -> {
+            2 -> {
                 // SCE-MAP: error_cascade_is_bounded.scxml:123 :: runaway :: _transition_2
 
 
@@ -535,7 +612,7 @@ class ErrorCascadeIsBoundedStateMachine(
             else -> {}
         }
         is ErrorCascadeIsBoundedState.Settling -> when (transitionIndex) {
-            8 -> {
+            0 -> {
                 // SCE-MAP: error_cascade_is_bounded.scxml:89 :: settling :: _transition_0
 
 
@@ -545,7 +622,7 @@ class ErrorCascadeIsBoundedStateMachine(
             // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
             raisePlatformError(ErrorCascadeIsBoundedEvent.Error.Execution, "<assign> has an invalid or read-only location")
             }
-            9 -> {
+            1 -> {
                 // SCE-MAP: error_cascade_is_bounded.scxml:93 :: settling :: _transition_1
 
 

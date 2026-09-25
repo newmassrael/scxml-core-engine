@@ -19,6 +19,13 @@
 # hang by hanging is the defect again, wearing the harness's timeout, and the
 # harness would report a 60-second ctest timeout rather than a red assertion.
 #
+# How `shutdown()` publishes its stop has no case here, and deliberately. Stored
+# outside the mutex the worker waits under, the stop can lose its wakeup and
+# hang the join — measured 2026-09-25 as about one reset in ten thousand, which
+# no run of this suite comes near, so such a case could only ever SURVIVE. The
+# build that sees it on every run is ThreadSanitizer's, and no lane runs that;
+# the oracle's header says how.
+#
 # Anchors are literal slices of the source; an edit that moves one is
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
@@ -30,7 +37,7 @@ mutation_oracles tests/engine/ShutDownEngineAnswersTest.cpp
 
 mutation_case "a stopped executor accepts work nothing will ever run" <<'PY'
 edit("sce/src/scripting/PlatformExecutionHelper.cpp",
-     """            if (shouldStop_.load()) {
+     """            if (shouldStop_) {
                 SCE_LOG_ERROR("PlatformExecutionHelper: executeAsync on a shut-down executor; "
                               "the operation was refused rather than queued to a stopped worker");
                 queuedOp->promise.set_value(ScriptResult::createError(
@@ -49,7 +56,7 @@ PY
 
 mutation_case "the executor refuses work even when its worker is running" <<'PY'
 edit("sce/src/scripting/PlatformExecutionHelper.cpp",
-     """            if (shouldStop_.load()) {
+     """            if (shouldStop_) {
                 SCE_LOG_ERROR("PlatformExecutionHelper: executeAsync on a shut-down executor; """,
      """            if (true) {
                 SCE_LOG_ERROR("PlatformExecutionHelper: executeAsync on a shut-down executor; """)

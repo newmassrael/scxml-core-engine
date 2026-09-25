@@ -86,7 +86,8 @@ public:
  * Architecture:
  * - Main thread: Queues operations via executeAsync()
  * - Worker thread: Processes queued operations in order
- * - Thread safety: Mutex protects queue, condition variable signals new work
+ * - Thread safety: Mutex protects the queue and both flags, condition variables
+ *   signal new work and a created runtime
  */
 class QueuedExecutionHelper : public PlatformExecutionHelper {
 private:
@@ -103,8 +104,20 @@ private:
     mutable std::condition_variable queueCondition_;
     mutable std::condition_variable runtimeInitCondition_;
     std::thread workerThread_;
-    std::atomic<bool> shouldStop_{false};
-    std::atomic<bool> runtimeInitialized_{false};
+
+    // Each flag is what a wait on one of the condition variables above reads
+    // in its predicate, so each is read and written only while `queueMutex_`
+    // is held. A waiter reads its predicate under the mutex and only then
+    // blocks; a flag stored without the mutex can land between those two
+    // steps, its notification with it, and the waiter then blocks on a wakeup
+    // that has already been sent. Being `std::atomic` does not prevent that —
+    // the race is about ordering against the wait, not about tearing — it
+    // only makes the unguarded store legal, and so invisible to
+    // ThreadSanitizer. As plain `bool`s, an access made without the mutex is a
+    // data race, which a ThreadSanitizer build (`scripts/build_tsan.sh`)
+    // reports on any run that makes one, whatever the interleaving.
+    bool shouldStop_ = false;
+    bool runtimeInitialized_ = false;
 
     /**
      * @brief Worker thread main loop
@@ -136,9 +149,9 @@ private:
             // Wait for work or shutdown signal
             {
                 std::unique_lock<std::mutex> lock(queueMutex_);
-                queueCondition_.wait(lock, [this] { return !operationQueue_.empty() || shouldStop_.load(); });
+                queueCondition_.wait(lock, [this] { return !operationQueue_.empty() || shouldStop_; });
 
-                if (shouldStop_.load() && operationQueue_.empty()) {
+                if (shouldStop_ && operationQueue_.empty()) {
                     SCE_LOG_DEBUG("PlatformExecutionHelper: Worker thread stopping");
                     break;
                 }
@@ -203,7 +216,7 @@ public:
             // empty, so anything pushed before the join still runs. What cannot
             // be served is a push that arrives after it — and after the join
             // `shouldStop_` is true, which is what this reads.
-            if (shouldStop_.load()) {
+            if (shouldStop_) {
                 SCE_LOG_ERROR("PlatformExecutionHelper: executeAsync on a shut-down executor; "
                               "the operation was refused rather than queued to a stopped worker");
                 queuedOp->promise.set_value(ScriptResult::createError(
@@ -220,12 +233,21 @@ public:
     void shutdown() override {
         SCE_LOG_DEBUG("PlatformExecutionHelper: Queued executor shutdown requested");
 
-        if (shouldStop_.load()) {
-            SCE_LOG_DEBUG("PlatformExecutionHelper: Already shut down");
-            return;
+        {
+            // Stored without the mutex, this flag and the notify below could
+            // both land after the worker had read its predicate as false and
+            // before it blocked: the notification found no waiter, the worker
+            // slept for good, and the join below never returned. Measured
+            // 2026-09-25 on a build machine: IntegrationTests hung in a test's
+            // SetUp, in JSEngine::reset -> shutdown -> join, with the worker
+            // parked in its wait — about once in ten thousand resets.
+            std::lock_guard<std::mutex> lock(queueMutex_);
+            if (shouldStop_) {
+                SCE_LOG_DEBUG("PlatformExecutionHelper: Already shut down");
+                return;
+            }
+            shouldStop_ = true;
         }
-
-        shouldStop_ = true;
         queueCondition_.notify_one();
 
         if (workerThread_.joinable()) {
@@ -238,25 +260,25 @@ public:
     void reset() override {
         SCE_LOG_DEBUG("PlatformExecutionHelper: Queued executor reset");
 
-        // Stop existing worker
-        if (!shouldStop_.load()) {
-            shutdown();
-        }
+        // Stop existing worker; `shutdown()` itself answers whether one runs
+        shutdown();
 
-        // Clear any remaining operations
         {
             std::lock_guard<std::mutex> lock(queueMutex_);
+
+            // Clear any remaining operations
             while (!operationQueue_.empty()) {
                 auto op = std::move(operationQueue_.front());
                 operationQueue_.pop();
                 // Set error for pending operations
                 op->promise.set_value(ScriptResult::createError("JSEngine reset"));
             }
+
+            shouldStop_ = false;
+            runtimeInitialized_ = false;
         }
 
         // Start new worker (will create new runtime on worker thread)
-        shouldStop_ = false;
-        runtimeInitialized_ = false;
         workerThread_ = std::thread(&QueuedExecutionHelper::workerLoop, this);
         SCE_LOG_DEBUG("PlatformExecutionHelper: Worker thread restarted");
     }
@@ -268,7 +290,7 @@ public:
     void waitForRuntimeInitialization() override {
         // Wait for worker thread to create runtime
         std::unique_lock<std::mutex> lock(queueMutex_);
-        runtimeInitCondition_.wait(lock, [this] { return runtimeInitialized_.load(); });
+        runtimeInitCondition_.wait(lock, [this] { return runtimeInitialized_; });
     }
 };
 

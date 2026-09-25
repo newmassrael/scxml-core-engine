@@ -15,6 +15,7 @@
 // Source: {{ model.scxml_source_path }}
 // Generator: SCE Kotlin Code Generator v1.0
 {% import '_macros/sce_map_marker.jinja2' as sce_map %}
+{% import '_macros/kotlin_entry_target.jinja2' as et %}
 {# SCE Protocol-Synthesis RFC §synth-5-O: SCE-MAP marker anchoring the
    generated Kotlin file to the `<scxml>` root element's source. #}
 {{ sce_map.source_marker(model.source_location, "kotlin", module_level=true, symbol_artifact=sce_artifact.machine) }}
@@ -224,7 +225,14 @@ class {{ machine_name }}StateMachine(
     }
 {% endif %}
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
 {% if parent_map %}
+
     // W3C SCXML 3.3: State hierarchy parent mapping
     override fun parentOf(state: {{ machine_name }}State): {{ machine_name }}State? = when (state) {
 {% for child_id, parent_id in parent_map | dictsort %}
@@ -233,16 +241,145 @@ class {{ machine_name }}StateMachine(
         else -> null
     }
 {% endif %}
-
-{% if leaf_map %}
-    // W3C SCXML 3.3/3.4: Resolve compound/parallel state to initial leaf state
-    override fun resolveLeafState(state: {{ machine_name }}State): {{ machine_name }}State = when (state) {
-{% for compound_id, leaf_id in leaf_map | dictsort %}
-        is {{ machine_name }}State.{{ compound_id | to_state_class_name }} -> {{ machine_name }}State.{{ leaf_id | to_state_class_name }}
+{% set ns_doc = namespace(compound=[], parallel=[], final=[], parents=[]) %}
+{% for state_id, state in model.states | dictsort %}
+{% if state.initial_targets %}{% set ns_doc.compound = ns_doc.compound + [state_id] %}{% endif %}
+{% if state.is_parallel %}{% set ns_doc.parallel = ns_doc.parallel + [state_id] %}{% endif %}
+{% if state.is_final %}{% set ns_doc.final = ns_doc.final + [state_id] %}{% endif %}
+{% if state.children %}{% set ns_doc.parents = ns_doc.parents + [state_id] %}{% endif %}
 {% endfor %}
-        else -> state
+{% if ns_doc.compound %}
+
+    // W3C SCXML 3.3: a <state> with child states — exactly the states that
+    // have an initial transition. A <parallel> is not compound.
+    override fun isCompoundState(state: {{ machine_name }}State): Boolean = when (state) {
+        {%+ for state_id in ns_doc.compound %}is {{ machine_name }}State.{{ state_id | to_state_class_name }}{{ ", " if not loop.last }}{% endfor %} -> true
+        else -> false
     }
 {% endif %}
+{% if ns_doc.parallel %}
+
+    // W3C SCXML 3.4: Check if state is a parallel state
+    override fun isParallelState(state: {{ machine_name }}State): Boolean = when (state) {
+        {%+ for state_id in ns_doc.parallel %}is {{ machine_name }}State.{{ state_id | to_state_class_name }}{{ ", " if not loop.last }}{% endfor %} -> true
+        else -> false
+    }
+{% endif %}
+{% if ns_doc.final %}
+
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: {{ machine_name }}State): Boolean = when (state) {
+        {%+ for state_id in ns_doc.final %}is {{ machine_name }}State.{{ state_id | to_state_class_name }}{{ ", " if not loop.last }}{% endfor %} -> true
+{# A document whose every state is a <final> (an invoked child that only
+   finishes) leaves the `when` exhaustive, and Kotlin rejects the redundant
+   `else` under -Werror. A compound or <parallel> state always has a child that
+   is neither, so the two predicates above always need theirs. #}
+{% if ns_doc.final | length < model.states | length %}
+        else -> false
+{% endif %}
+    }
+{% endif %}
+{% if ns_doc.parents %}
+
+    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+    // children, in document order — for a <parallel>, its regions.
+    override fun childStatesOf(state: {{ machine_name }}State): List<{{ machine_name }}State> =
+        childStates[state] ?: emptyList()
+{% endif %}
+{% if ns_doc.compound %}
+
+    // W3C SCXML 3.3: a compound state's initial transition target, as written.
+    override fun initialTargetsOf(state: {{ machine_name }}State): List<EntryTarget<{{ machine_name }}State, HistoryId>> =
+        initialTargets[state] ?: emptyList()
+{% endif %}
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<{{ machine_name }}State, HistoryId>>
+        get() = documentInitialTargetList
+{% if model.history_states %}
+
+    // W3C SCXML 3.10: the state a <history> is declared in.
+    override fun historyParentOf(history: HistoryId): {{ machine_name }}State = historyParents.getValue(history)
+
+    // W3C SCXML 3.10.2: a <history>'s default transition target, as written.
+    override fun historyDefaultTargetsOf(history: HistoryId): List<EntryTarget<{{ machine_name }}State, HistoryId>> =
+        historyDefaultTargets.getValue(history)
+
+    // W3C SCXML 3.10: a state's <history> children, each with whether it is
+    // deep — what the runtime records as the state is exited.
+    override fun historiesOf(state: {{ machine_name }}State): List<Pair<HistoryId, Boolean>> =
+        historiesByParent[state] ?: emptyList()
+{% endif %}
+
+    private companion object {
+{% for history_id, info in model.history_states | dictsort %}
+        /** W3C SCXML 3.10: the `{{ history_id }}` <history> ({{ info.type }}). */
+        val history{{ history_id | to_state_class_name }} = HistoryId({{ loop.index0 }})
+
+{% endfor %}
+{% if ns_doc.parents %}
+        val childStates: Map<{{ machine_name }}State, List<{{ machine_name }}State>> = mapOf(
+{% for state_id, state in model.states | dictsort %}
+{% if state.children %}
+            {{ machine_name }}State.{{ state_id | to_state_class_name }} to listOf({% for child in state.children %}{{ machine_name }}State.{{ child | to_state_class_name }}{{ ", " if not loop.last }}{% endfor %}),
+{% endif %}
+{% endfor %}
+        )
+
+{% endif %}
+{% if ns_doc.compound %}
+        val initialTargets: Map<{{ machine_name }}State, List<EntryTarget<{{ machine_name }}State, HistoryId>>> = mapOf(
+{% for state_id, state in model.states | dictsort %}
+{% if state.initial_targets %}
+            {{ machine_name }}State.{{ state_id | to_state_class_name }} to {{ et.entry_targets(state.initial_targets, model.history_states, machine_name) }},
+{% endif %}
+{% endfor %}
+        )
+
+{% endif %}
+        val documentInitialTargetList: List<EntryTarget<{{ machine_name }}State, HistoryId>> =
+            {{ et.entry_targets(model.initial_targets, model.history_states, machine_name) }}
+{% if model.history_states %}
+
+        val historyParents: Map<HistoryId, {{ machine_name }}State> = mapOf(
+{% for history_id, info in model.history_states | dictsort %}
+            history{{ history_id | to_state_class_name }} to {{ machine_name }}State.{{ info.parent | to_state_class_name }},
+{% endfor %}
+        )
+
+        val historyDefaultTargets: Map<HistoryId, List<EntryTarget<{{ machine_name }}State, HistoryId>>> = mapOf(
+{% for history_id, info in model.history_states | dictsort %}
+            history{{ history_id | to_state_class_name }} to {{ et.entry_targets(info.default_targets, model.history_states, machine_name) }},
+{% endfor %}
+        )
+
+        val historiesByParent: Map<{{ machine_name }}State, List<Pair<HistoryId, Boolean>>> = mapOf(
+{% for state_id, state in model.states | dictsort %}
+{% set ns_hist = namespace(entries=[]) %}
+{% for history_id, info in model.history_states | dictsort %}
+{% if info.parent == state_id %}{% set ns_hist.entries = ns_hist.entries + ["history" ~ (history_id | to_state_class_name) ~ " to " ~ ('true' if info.type == 'deep' else 'false')] %}{% endif %}
+{% endfor %}
+{% if ns_hist.entries %}
+            {{ machine_name }}State.{{ state_id | to_state_class_name }} to listOf({{ ns_hist.entries | join(", ") }}),
+{% endif %}
+{% endfor %}
+        )
+{% endif %}
+{% for state_id, state in model.states | dictsort %}
+{% for trans in state.transitions %}
+
+        // W3C SCXML 3.13: {{ state_id }}'s transition {{ trans.transition_index }}, as the microstep reads it.
+        val transition{{ state_id | to_state_class_name }}At{{ trans.transition_index }} = EnabledTransition<{{ machine_name }}State, HistoryId>(
+            {{ machine_name }}State.{{ state_id | to_state_class_name }},
+            {%+ if trans.targets %}{{ et.entry_targets(trans.targets, model.history_states, machine_name) }}{% else %}emptyList(){% endif %},
+            {{ trans.transition_index }},
+            hasActions = {{ 'true' if trans.actions else 'false' }},
+            isInternal = {{ 'true' if trans.type == 'internal' else 'false' }},
+        )
+{% endfor %}
+{% endfor %}
+    }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): {{ machine_name }}State? = when (stateId) {
@@ -259,39 +396,7 @@ class {{ machine_name }}StateMachine(
 {% endfor %}
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: {{ machine_name }}State): Boolean = when (state) {
-{% for state_id in model.states | sort %}
-{% set state = model.states[state_id] %}
-{% if state.is_parallel or state.initial or (state_id in model.parallel_regions) %}
-        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> false
-{% endif %}
-{% endfor %}
-        else -> true
-    }
-
-{% if model.parallel_regions %}
-    // W3C SCXML 3.4: Check if state is a parallel state
-    override fun isParallelState(state: {{ machine_name }}State): Boolean = when (state) {
-{% for state_id in model.states | sort %}
-{% set state = model.states[state_id] %}
-{% if state.is_parallel %}
-        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> true
-{% endif %}
-{% endfor %}
-        else -> false
-    }
-
-    // W3C SCXML 3.4: Get child regions of a parallel state (C++ getParallelRegions pattern)
-    override fun getParallelRegions(state: {{ machine_name }}State): List<{{ machine_name }}State> = when (state) {
-{% for parallel_id, regions in model.parallel_regions | dictsort %}
-        is {{ machine_name }}State.{{ parallel_id | to_state_class_name }} -> listOf({% for region in regions %}{{ machine_name }}State.{{ region | to_state_class_name }}{% if not loop.last %}, {% endif %}{% endfor %})
-{% endfor %}
-        else -> emptyList()
-    }
-{% endif %}
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: {{ machine_name }}State): Int = when (state) {
 {% for state_id in model.states | sort %}
         is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {{ model.states[state_id].document_order }}

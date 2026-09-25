@@ -25,7 +25,6 @@ package parallel_regions_take_own_transitions
 import (
 	"fmt"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -36,7 +35,6 @@ import (
 var (
 	_ = fmt.Sprintf
 	_ = filepath.Join
-	_ = sort.Slice
 	_ = strings.HasPrefix
 	_ = time.Duration(0)
 )
@@ -136,6 +134,55 @@ var ParallelRegionsTakeOwnTransitionsAllStates = []ParallelRegionsTakeOwnTransit
 	ParallelRegionsTakeOwnTransitionsStateWorking,
 }
 
+// ParallelRegionsTakeOwnTransitionsTarget is one token of a target list, as the document wrote
+// it (W3C SCXML 3.13): a state, or a <history> the engine dereferences.
+type ParallelRegionsTakeOwnTransitionsTarget = sce.EntryTarget[ParallelRegionsTakeOwnTransitionsState, sce.HistoryID]
+
+// ======================================================================
+// Document structure (W3C SCXML 3.2-3.4, 3.10)
+//
+// Package-level tables, because the structure is a fact about the document
+// and not about a run: the engine's Appendix D procedures read them through
+// the policy methods below, and a transition's target list is handed out as
+// a slice of them rather than rebuilt on every selection.
+// ======================================================================
+
+// childStatesOfParallelRegionsTakeOwnTransitions is §scxml-D-getChildStates per state: its
+// <state>, <parallel> and <final> children, in document order.
+var childStatesOfParallelRegionsTakeOwnTransitions = [8][]ParallelRegionsTakeOwnTransitionsState{
+	ParallelRegionsTakeOwnTransitionsStateBudget: {ParallelRegionsTakeOwnTransitionsStateWithin},
+	ParallelRegionsTakeOwnTransitionsStateDrive: {ParallelRegionsTakeOwnTransitionsStateRunning},
+	ParallelRegionsTakeOwnTransitionsStateRun: {ParallelRegionsTakeOwnTransitionsStateDrive, ParallelRegionsTakeOwnTransitionsStateBudget},
+	ParallelRegionsTakeOwnTransitionsStateRunning: {ParallelRegionsTakeOwnTransitionsStateWorking, ParallelRegionsTakeOwnTransitionsStateJudging},
+}
+
+// initialTargetsOfParallelRegionsTakeOwnTransitions is each compound state's initial transition
+// target, as written (§scxml-3.3).
+var initialTargetsOfParallelRegionsTakeOwnTransitions = [8][]ParallelRegionsTakeOwnTransitionsTarget{
+	ParallelRegionsTakeOwnTransitionsStateBudget: {sce.StateTarget[ParallelRegionsTakeOwnTransitionsState, sce.HistoryID](ParallelRegionsTakeOwnTransitionsStateWithin)},
+	ParallelRegionsTakeOwnTransitionsStateDrive: {sce.StateTarget[ParallelRegionsTakeOwnTransitionsState, sce.HistoryID](ParallelRegionsTakeOwnTransitionsStateRunning)},
+	ParallelRegionsTakeOwnTransitionsStateRunning: {sce.StateTarget[ParallelRegionsTakeOwnTransitionsState, sce.HistoryID](ParallelRegionsTakeOwnTransitionsStateWorking)},
+}
+
+// documentInitialTargetsOfParallelRegionsTakeOwnTransitions is the target of the document's own
+// initial transition, as written (§scxml-3.2).
+var documentInitialTargetsOfParallelRegionsTakeOwnTransitions = []ParallelRegionsTakeOwnTransitionsTarget{sce.StateTarget[ParallelRegionsTakeOwnTransitionsState, sce.HistoryID](ParallelRegionsTakeOwnTransitionsStateRun)}
+
+// transitionTargetsOfParallelRegionsTakeOwnTransitions is each transition's target list, as
+// written (§scxml-3.13), by source state and the transition's index among its
+// source's own transitions. A targetless transition's entry is empty.
+var transitionTargetsOfParallelRegionsTakeOwnTransitions = [8][][]ParallelRegionsTakeOwnTransitionsTarget{
+	ParallelRegionsTakeOwnTransitionsStateJudging: {
+		0: {sce.StateTarget[ParallelRegionsTakeOwnTransitionsState, sce.HistoryID](ParallelRegionsTakeOwnTransitionsStateSettled)},
+	},
+	ParallelRegionsTakeOwnTransitionsStateWithin: {
+		0: {sce.StateTarget[ParallelRegionsTakeOwnTransitionsState, sce.HistoryID](ParallelRegionsTakeOwnTransitionsStateWithin)},
+	},
+	ParallelRegionsTakeOwnTransitionsStateWorking: {
+		0: {sce.StateTarget[ParallelRegionsTakeOwnTransitionsState, sce.HistoryID](ParallelRegionsTakeOwnTransitionsStateJudging)},
+	},
+}
+
 // ======================================================================
 // Event type (W3C SCXML 3.12)
 // ======================================================================
@@ -169,13 +216,6 @@ func (e ParallelRegionsTakeOwnTransitionsEvent) String() string {
 // ======================================================================
 
 type ParallelRegionsTakeOwnTransitionsPolicy struct {
-	// W3C SCXML 3.13: Last transition metadata
-	lastTransitionIsInternal  bool
-	lastTransitionIsTargetless bool
-	lastTransitionSourceState ParallelRegionsTakeOwnTransitionsState
-	// W3C SCXML 3.13: Transition action tracking
-	lastTransitionIndex   int
-	hasTransitionActions   bool
 	// W3C SCXML 3.4: Active state configuration for parallel states / In() predicate
 	activeStates []ParallelRegionsTakeOwnTransitionsState
 	// W3C SCXML 5.10.1: External event flag
@@ -211,7 +251,6 @@ type ParallelRegionsTakeOwnTransitionsPolicy struct {
 // NewParallelRegionsTakeOwnTransitionsPolicy creates a new policy with default values.
 func NewParallelRegionsTakeOwnTransitionsPolicy() ParallelRegionsTakeOwnTransitionsPolicy {
 	return ParallelRegionsTakeOwnTransitionsPolicy{
-		lastTransitionSourceState: ParallelRegionsTakeOwnTransitionsStateWorking,
 		activeStates: make([]ParallelRegionsTakeOwnTransitionsState, 0),
 	}
 }
@@ -487,17 +526,11 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) GetParent(state ParallelRegion
 	return 0, false
 }
 
-// IsCompoundState returns true if state has children (W3C SCXML 3.3).
+// IsCompoundState returns true if state is a <state> with child states — exactly
+// the states that have an initial transition. A <parallel> is not compound
+// (W3C SCXML 3.3).
 func (p *ParallelRegionsTakeOwnTransitionsPolicy) IsCompoundState(state ParallelRegionsTakeOwnTransitionsState) bool {
-	switch state {
-	case ParallelRegionsTakeOwnTransitionsStateBudget:
-		return true
-	case ParallelRegionsTakeOwnTransitionsStateDrive:
-		return true
-	case ParallelRegionsTakeOwnTransitionsStateRunning:
-		return true
-	}
-	return false
+	return len(initialTargetsOfParallelRegionsTakeOwnTransitions[state]) > 0
 }
 
 // IsParallelState returns true if state is a <parallel> state (W3C SCXML 3.4).
@@ -509,31 +542,37 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) IsParallelState(state Parallel
 	return false
 }
 
-// GetParallelRegions returns child regions of a parallel state (W3C SCXML 3.4).
-func (p *ParallelRegionsTakeOwnTransitionsPolicy) GetParallelRegions(state ParallelRegionsTakeOwnTransitionsState) []ParallelRegionsTakeOwnTransitionsState {
-	switch state {
-	case ParallelRegionsTakeOwnTransitionsStateRun:
-		return []ParallelRegionsTakeOwnTransitionsState{
-			ParallelRegionsTakeOwnTransitionsStateDrive,
-			ParallelRegionsTakeOwnTransitionsStateBudget,
-		}
-	}
-	return nil
+
+// GetChildStates returns state's <state>, <parallel> and <final> children, in
+// document order — for a <parallel>, its regions (§scxml-D-getChildStates).
+func (p *ParallelRegionsTakeOwnTransitionsPolicy) GetChildStates(state ParallelRegionsTakeOwnTransitionsState) []ParallelRegionsTakeOwnTransitionsState {
+	return childStatesOfParallelRegionsTakeOwnTransitions[state]
 }
 
-// IsDescendantOf returns true if desc is a descendant of anc (W3C SCXML 3.12).
-func (p *ParallelRegionsTakeOwnTransitionsPolicy) IsDescendantOf(desc, anc ParallelRegionsTakeOwnTransitionsState) bool {
-	current := desc
-	for {
-		parent, ok := p.GetParent(current)
-		if !ok {
-			return false
-		}
-		if parent == anc {
-			return true
-		}
-		current = parent
-	}
+// GetInitialTargets returns a compound state's initial transition target, as
+// written; the engine's entry procedures dereference a <history> among them
+// (W3C SCXML 3.3).
+func (p *ParallelRegionsTakeOwnTransitionsPolicy) GetInitialTargets(state ParallelRegionsTakeOwnTransitionsState) []ParallelRegionsTakeOwnTransitionsTarget {
+	return initialTargetsOfParallelRegionsTakeOwnTransitions[state]
+}
+
+// GetDocumentInitialTargets returns the target of the document's own initial
+// transition, as written (W3C SCXML 3.2).
+func (p *ParallelRegionsTakeOwnTransitionsPolicy) GetDocumentInitialTargets() []ParallelRegionsTakeOwnTransitionsTarget {
+	return documentInitialTargetsOfParallelRegionsTakeOwnTransitions
+}
+
+// W3C SCXML 3.10: this document declares no <history>, so no target list names
+// one and the engine never asks the two below; answering would mean inventing
+// one.
+func (p *ParallelRegionsTakeOwnTransitionsPolicy) GetHistoryParent(history sce.HistoryID) ParallelRegionsTakeOwnTransitionsState {
+	panic(fmt.Sprintf("ParallelRegionsTakeOwnTransitionsPolicy declares no <history>; asked for %d", history))
+}
+func (p *ParallelRegionsTakeOwnTransitionsPolicy) GetHistoryDefaultTargets(history sce.HistoryID) []ParallelRegionsTakeOwnTransitionsTarget {
+	panic(fmt.Sprintf("ParallelRegionsTakeOwnTransitionsPolicy declares no <history>; asked for %d", history))
+}
+func (p *ParallelRegionsTakeOwnTransitionsPolicy) HistoryValue(_ sce.HistoryID) ([]ParallelRegionsTakeOwnTransitionsState, bool) {
+	return nil, false
 }
 
 // GetDocumentOrder returns the document order index (W3C SCXML Appendix D).
@@ -594,55 +633,6 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) NullEvent() ParallelRegionsTak
 	return ParallelRegionsTakeOwnTransitionsEventNull
 }
 
-// GetInitialChildren returns initial children of a compound state (W3C SCXML 3.6).
-func (p *ParallelRegionsTakeOwnTransitionsPolicy) GetInitialChildren(state ParallelRegionsTakeOwnTransitionsState) []ParallelRegionsTakeOwnTransitionsState {
-	switch state {
-	case ParallelRegionsTakeOwnTransitionsStateBudget:
-		return []ParallelRegionsTakeOwnTransitionsState{
-			ParallelRegionsTakeOwnTransitionsStateWithin,
-		}
-	case ParallelRegionsTakeOwnTransitionsStateDrive:
-		return []ParallelRegionsTakeOwnTransitionsState{
-			ParallelRegionsTakeOwnTransitionsStateRunning,
-		}
-	case ParallelRegionsTakeOwnTransitionsStateRunning:
-		return []ParallelRegionsTakeOwnTransitionsState{
-			ParallelRegionsTakeOwnTransitionsStateWorking,
-		}
-	}
-	return nil
-}
-
-// LastTransitionIsInternal returns the internal transition flag (W3C SCXML 3.13).
-func (p *ParallelRegionsTakeOwnTransitionsPolicy) LastTransitionIsInternal() bool {
-	return p.lastTransitionIsInternal
-}
-
-// SetLastTransitionIsInternal sets the internal transition flag.
-func (p *ParallelRegionsTakeOwnTransitionsPolicy) SetLastTransitionIsInternal(value bool) {
-	p.lastTransitionIsInternal = value
-}
-
-// LastTransitionIsTargetless returns the targetless transition flag (W3C SCXML 3.13).
-func (p *ParallelRegionsTakeOwnTransitionsPolicy) LastTransitionIsTargetless() bool {
-	return p.lastTransitionIsTargetless
-}
-
-// SetLastTransitionIsTargetless sets the targetless transition flag.
-func (p *ParallelRegionsTakeOwnTransitionsPolicy) SetLastTransitionIsTargetless(value bool) {
-	p.lastTransitionIsTargetless = value
-}
-
-// LastTransitionSourceState returns the source state of the last transition.
-func (p *ParallelRegionsTakeOwnTransitionsPolicy) LastTransitionSourceState() ParallelRegionsTakeOwnTransitionsState {
-	return p.lastTransitionSourceState
-}
-
-// SetLastTransitionSourceState sets the source state of the last transition.
-func (p *ParallelRegionsTakeOwnTransitionsPolicy) SetLastTransitionSourceState(state ParallelRegionsTakeOwnTransitionsState) {
-	p.lastTransitionSourceState = state
-}
-
 // GetActiveStates returns the active state configuration (W3C SCXML 3.4).
 func (p *ParallelRegionsTakeOwnTransitionsPolicy) GetActiveStates() []ParallelRegionsTakeOwnTransitionsState {
 	return p.activeStates
@@ -694,14 +684,6 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) HasFinalize() bool { return fa
 func (p *ParallelRegionsTakeOwnTransitionsPolicy) HasAutoforward() bool { return false }
 func (p *ParallelRegionsTakeOwnTransitionsPolicy) HasActiveStates() bool { return true }
 func (p *ParallelRegionsTakeOwnTransitionsPolicy) HasExternalEventFlag() bool { return true }
-// GetInitialOrHistoryChild returns the initial child considering history (W3C SCXML 3.11).
-func (p *ParallelRegionsTakeOwnTransitionsPolicy) GetInitialOrHistoryChild(state ParallelRegionsTakeOwnTransitionsState) ParallelRegionsTakeOwnTransitionsState {
-	children := p.GetInitialChildren(state)
-	if len(children) > 0 {
-		return children[0]
-	}
-	return state
-}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *ParallelRegionsTakeOwnTransitionsPolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[ParallelRegionsTakeOwnTransitionsEvent], _ *sce.Engine[ParallelRegionsTakeOwnTransitionsState, ParallelRegionsTakeOwnTransitionsEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).
@@ -745,10 +727,11 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) ClearEventMetadata() {
 
 
 
-
-// ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
+// ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
+// configuration, runs its <onentry>, and its <initial> transition's content when
+// its initial state is entered by default.
 //line parallel_regions_take_own_transitions.scxml:24
-func (p *ParallelRegionsTakeOwnTransitionsPolicy) ExecuteEntryActions(state ParallelRegionsTakeOwnTransitionsState, engine *sce.Engine[ParallelRegionsTakeOwnTransitionsState, ParallelRegionsTakeOwnTransitionsEvent], pathChild *ParallelRegionsTakeOwnTransitionsState) {
+func (p *ParallelRegionsTakeOwnTransitionsPolicy) ExecuteEntryActions(state ParallelRegionsTakeOwnTransitionsState, engine *sce.Engine[ParallelRegionsTakeOwnTransitionsState, ParallelRegionsTakeOwnTransitionsEvent], isDefaultEntry bool) {
 	p.ensureScriptEngine()
 	// W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel states and In() predicate
 	for _, s := range p.activeStates {
@@ -761,92 +744,24 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) ExecuteEntryActions(state Para
 	default:
 		// No entry actions
 	}
-
-	// W3C SCXML 3.4: If entering parallel state, enter all child regions
-	//
-	// §scxml-D-addDescendantStatesToEnter: a <parallel> hands out defaults even
-	// when it is only an ancestor — Appendix D's one exception to the ancestor
-	// rule. The exception has its own exception: not the region the entry set is
-	// already descending into. pathChild names it, and giving that one its
-	// default too is what leaves two children of it active at once.
-	if p.IsParallelState(state) {
-		regions := p.GetParallelRegions(state)
-		for _, region := range regions {
-			if pathChild != nil && *pathChild == region {
-				continue
-			}
-			p.ExecuteEntryActions(region, engine, nil)
-
-			// W3C SCXML 3.3: If region is compound, enter initial child
-			if p.IsCompoundState(region) {
-				initialChild := p.GetInitialOrHistoryChild(region)
-				if initialChild != region {
-					p.ExecuteEntryActions(initialChild, engine, nil)
-				}
-			}
-		}
-	}
-
-	// W3C SCXML 3.3: If entering compound state (non-parallel), enter initial child
-	//
-	// §scxml-D-addAncestorStatesToEnter: not when `state` is merely on the way
-	// to a deeper target. The entry set already holds pathChild, and a compound
-	// state holds one child at a time.
-	if p.IsCompoundState(state) && !p.IsParallelState(state) && pathChild == nil {
-		initialChildren := p.GetInitialChildren(state)
-		if len(initialChildren) > 0 {
-			// W3C SCXML 3.6: Enter through hierarchy to reach initial target(s)
-			for _, target := range initialChildren {
-				var chain []ParallelRegionsTakeOwnTransitionsState
-				current := target
-				for current != state {
-					chain = append([]ParallelRegionsTakeOwnTransitionsState{current}, chain...)
-					parent, hasParent := p.GetParent(current)
-					if !hasParent {
-						break
-					}
-					current = parent
-				}
-				// Each link but the last is an ancestor of the initial target,
-				// so it takes no default of its own — the chain already names
-				// the child that is entering.
-				for i := range chain {
-					var next *ParallelRegionsTakeOwnTransitionsState
-					if i+1 < len(chain) {
-						next = &chain[i+1]
-					}
-					p.ExecuteEntryActions(chain[i], engine, next)
-				}
-			}
-		} else {
-			initialChild := p.GetInitialOrHistoryChild(state)
-			if initialChild != state {
-				p.ExecuteEntryActions(initialChild, engine, nil)
-			}
-		}
-	}
 }
 
-// ExecuteExitActions executes onexit actions for a state (W3C SCXML 3.9).
+// ExecuteHistoryDefaultContent runs a <history>'s default transition content
+// (W3C SCXML 3.10.2), after its parent's onentry (and after the parent's own
+// <initial> content) when the history was taken with nothing recorded. The
+// engine asks for it by the entry set's defaultHistoryContent answer; a history
+// that restored what it recorded runs nothing.
 //line parallel_regions_take_own_transitions.scxml:24
-func (p *ParallelRegionsTakeOwnTransitionsPolicy) ExecuteExitActions(state ParallelRegionsTakeOwnTransitionsState, engine *sce.Engine[ParallelRegionsTakeOwnTransitionsState, ParallelRegionsTakeOwnTransitionsEvent], preTransitionActive []ParallelRegionsTakeOwnTransitionsState) {
+func (p *ParallelRegionsTakeOwnTransitionsPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[ParallelRegionsTakeOwnTransitionsState, ParallelRegionsTakeOwnTransitionsEvent]) {
+	// W3C SCXML 3.10.2: no <history> in this document has default content.
+}
+
+// ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
+// removes it from the configuration, cancels its invocations and runs its
+// <onexit>.
+//line parallel_regions_take_own_transitions.scxml:24
+func (p *ParallelRegionsTakeOwnTransitionsPolicy) ExecuteExitActions(state ParallelRegionsTakeOwnTransitionsState, engine *sce.Engine[ParallelRegionsTakeOwnTransitionsState, ParallelRegionsTakeOwnTransitionsEvent], configurationBeforeExit []ParallelRegionsTakeOwnTransitionsState) {
 	p.ensureScriptEngine()
-	// W3C SCXML 3.4 + 3.13: Parallel state exit order — exit all active descendants first
-	if p.IsParallelState(state) {
-		var descendantsToExit []ParallelRegionsTakeOwnTransitionsState
-		for _, s := range p.activeStates {
-			if s != state && p.IsDescendantOf(s, state) {
-				descendantsToExit = append(descendantsToExit, s)
-			}
-		}
-		// W3C SCXML 3.13: Sort descendants by reverse document order (deepest first)
-		sort.Slice(descendantsToExit, func(i, j int) bool {
-			return p.GetDocumentOrder(descendantsToExit[i]) > p.GetDocumentOrder(descendantsToExit[j])
-		})
-		for _, descendant := range descendantsToExit {
-			p.ExecuteExitActions(descendant, engine, preTransitionActive)
-		}
-	}
 	// W3C SCXML 3.4/3.12.1: Remove state from active configuration
 	p.activeStates = func() []ParallelRegionsTakeOwnTransitionsState {
 		var result []ParallelRegionsTakeOwnTransitionsState
@@ -863,546 +778,96 @@ func (p *ParallelRegionsTakeOwnTransitionsPolicy) ExecuteExitActions(state Paral
 	}
 }
 
-// ProcessTransition evaluates guards and takes a matching transition (W3C SCXML 3.13).
-// Returns true if a transition was taken.
+
+
+// BindCurrentEvent binds the event whose transitions are about to be selected as
+// the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
+// and not for an eventless selection, which has no event of its own.
 //line parallel_regions_take_own_transitions.scxml:24
-func (p *ParallelRegionsTakeOwnTransitionsPolicy) ProcessTransition(currentState *ParallelRegionsTakeOwnTransitionsState, event ParallelRegionsTakeOwnTransitionsEvent, engine *sce.Engine[ParallelRegionsTakeOwnTransitionsState, ParallelRegionsTakeOwnTransitionsEvent]) bool {
-	// W3C SCXML 5.10: Bind _event system variable for guard evaluation
+func (p *ParallelRegionsTakeOwnTransitionsPolicy) BindCurrentEvent(event ParallelRegionsTakeOwnTransitionsEvent, engine *sce.Engine[ParallelRegionsTakeOwnTransitionsState, ParallelRegionsTakeOwnTransitionsEvent]) {
 	if event != ParallelRegionsTakeOwnTransitionsEventNull {
 		// §scxml-B-2-8-1: the rung the payload got, handed to the engine
 		// rather than dropped. This is the only frame that has both the
 		// reading and the event it belongs to.
 		engine.NotePayloadReading(event, p.setCurrentEvent(p.GetEventName(event)))
 	}
-
-	// W3C SCXML 3.4 + 3.12 + Appendix D: Parallel state transition handling
-	if event == ParallelRegionsTakeOwnTransitionsEventNull {
-		// W3C SCXML Appendix D: Eventless transitions - collect from all active states
-		var enabledTransitions []transitionInfo
-		statesToCheck := make([]ParallelRegionsTakeOwnTransitionsState, len(p.activeStates))
-		copy(statesToCheck, p.activeStates)
-
-		// Sort by document order for consistent processing
-		sort.Slice(statesToCheck, func(i, j int) bool {
-			return p.GetDocumentOrder(statesToCheck[i]) < p.GetDocumentOrder(statesToCheck[j])
-		})
-
-		for _, activeState := range statesToCheck {
-			// W3C SCXML 3.13: Eventless transitions do NOT bubble to parent states
-			if trans := p.tryCollectTransition(activeState, event, engine); trans != nil {
-				enabledTransitions = append(enabledTransitions, *trans)
-			}
-		}
-
-		// Appendix D removeConflictingTransitions: Remove conflicting transitions
-		if len(enabledTransitions) > 0 {
-			enabledTransitions = p.selectOptimalTransitions(enabledTransitions)
-		}
-
-		// W3C SCXML Appendix D Steps 2-5: Execute as atomic microstep
-		if len(enabledTransitions) > 0 {
-			p.executeMicrostep(enabledTransitions, currentState, engine)
-			return true
-		}
-	} else {
-		// W3C SCXML Appendix D: External events - collect from active leaf states
-		var enabledTransitions []transitionInfo
-
-		for _, activeState := range p.activeStates {
-			isNonAtomic := p.IsCompoundState(activeState) || p.IsParallelState(activeState)
-
-			// W3C SCXML 3.13: Check if this is a done.state event
-			eventName := p.GetEventName(event)
-			isDoneStateEvent := event != ParallelRegionsTakeOwnTransitionsEventNull && strings.HasPrefix(eventName, "done.state.")
-
-			// Skip non-atomic states UNLESS processing done.state event
-			if isNonAtomic && !isDoneStateEvent {
-				continue
-			}
-
-			// W3C SCXML 3.12: Hierarchical event bubbling
-			checkState := activeState
-			for {
-				if trans := p.tryCollectTransition(checkState, event, engine); trans != nil {
-					enabledTransitions = append(enabledTransitions, *trans)
-					break
-				}
-				parent, hasParent := p.GetParent(checkState)
-				if !hasParent {
-					break
-				}
-				checkState = parent
-			}
-		}
-
-		// W3C SCXML 3.13: Deduplicate transitions from multiple descendants
-		seen := make(map[[2]int]bool)
-		var deduped []transitionInfo
-		for _, t := range enabledTransitions {
-			key := [2]int{int(t.source), t.transitionIndex}
-			if !seen[key] {
-				seen[key] = true
-				deduped = append(deduped, t)
-			}
-		}
-		enabledTransitions = deduped
-
-		// Appendix D removeConflictingTransitions: Remove conflicting transitions
-		if len(enabledTransitions) > 0 {
-			enabledTransitions = p.selectOptimalTransitions(enabledTransitions)
-		}
-
-		// W3C SCXML Appendix D Steps 2-5: Execute as atomic microstep
-		if len(enabledTransitions) > 0 {
-			p.executeMicrostep(enabledTransitions, currentState, engine)
-			return true
-		}
-	}
-
-	return false
 }
 
-// tryCollectTransition checks if a state has a matching transition and returns it as transitionInfo.
+// FirstEnabledTransition is Appendix D selectTransitions, the half only this
+// document can answer: the first of state's own transitions, in document order,
+// that event enables and whose guard holds. The engine walks the atomic states
+// and their ancestors and keeps the ordered set; the null event asks for
+// eventless transitions.
 //line parallel_regions_take_own_transitions.scxml:24
-func (p *ParallelRegionsTakeOwnTransitionsPolicy) tryCollectTransition(checkState ParallelRegionsTakeOwnTransitionsState, event ParallelRegionsTakeOwnTransitionsEvent, engine *sce.Engine[ParallelRegionsTakeOwnTransitionsState, ParallelRegionsTakeOwnTransitionsEvent]) *transitionInfo {
-	switch checkState {
+func (p *ParallelRegionsTakeOwnTransitionsPolicy) FirstEnabledTransition(state ParallelRegionsTakeOwnTransitionsState, event ParallelRegionsTakeOwnTransitionsEvent, engine *sce.Engine[ParallelRegionsTakeOwnTransitionsState, ParallelRegionsTakeOwnTransitionsEvent]) (sce.EnabledTransition[ParallelRegionsTakeOwnTransitionsState, sce.HistoryID], bool) {
+	switch state {
 	case ParallelRegionsTakeOwnTransitionsStateJudging:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == ParallelRegionsTakeOwnTransitionsEventCheck {
 			if p.evaluateGuard(`(_scxml_eq(n, 1) and _scxml_eq(m, 1))`, engine) {
-			return &transitionInfo{
-				source:          ParallelRegionsTakeOwnTransitionsStateJudging,
-				target:          ParallelRegionsTakeOwnTransitionsStateSettled,
-				transitionIndex: 0,
-				hasActions:      false,
-				isInternal:      false,
-				isTargetless:    false,
-			}
+				return sce.EnabledTransition[ParallelRegionsTakeOwnTransitionsState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfParallelRegionsTakeOwnTransitions[state][0],
+					TransitionIndex: 0,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
 			}
 		}
 	case ParallelRegionsTakeOwnTransitionsStateWithin:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == ParallelRegionsTakeOwnTransitionsEventE {
-			return &transitionInfo{
-				source:          ParallelRegionsTakeOwnTransitionsStateWithin,
-				target:          ParallelRegionsTakeOwnTransitionsStateWithin,
-				transitionIndex: 0,
-				hasActions:      true,
-				isInternal:      false,
-				isTargetless:    false,
+			{
+				return sce.EnabledTransition[ParallelRegionsTakeOwnTransitionsState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfParallelRegionsTakeOwnTransitions[state][0],
+					TransitionIndex: 0,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
 			}
 		}
 	case ParallelRegionsTakeOwnTransitionsStateWorking:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == ParallelRegionsTakeOwnTransitionsEventE {
-			return &transitionInfo{
-				source:          ParallelRegionsTakeOwnTransitionsStateWorking,
-				target:          ParallelRegionsTakeOwnTransitionsStateJudging,
-				transitionIndex: 0,
-				hasActions:      true,
-				isInternal:      false,
-				isTargetless:    false,
+			{
+				return sce.EnabledTransition[ParallelRegionsTakeOwnTransitionsState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfParallelRegionsTakeOwnTransitions[state][0],
+					TransitionIndex: 0,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
 			}
 		}
 	}
-	return nil
+	return sce.EnabledTransition[ParallelRegionsTakeOwnTransitionsState, sce.HistoryID]{}, false
 }
 
-// tryTransitionInState checks transitions for a single state.
+// ExecuteTransitionContent runs one transition's executable content (W3C SCXML
+// 3.13), between the microstep's exits and its entries.
 //line parallel_regions_take_own_transitions.scxml:24
-func (p *ParallelRegionsTakeOwnTransitionsPolicy) tryTransitionInState(checkState ParallelRegionsTakeOwnTransitionsState, event ParallelRegionsTakeOwnTransitionsEvent, currentState *ParallelRegionsTakeOwnTransitionsState, engine *sce.Engine[ParallelRegionsTakeOwnTransitionsState, ParallelRegionsTakeOwnTransitionsEvent]) bool {
-	switch checkState {
-	case ParallelRegionsTakeOwnTransitionsStateJudging:
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == ParallelRegionsTakeOwnTransitionsEventCheck {
-			if p.evaluateGuard(`(_scxml_eq(n, 1) and _scxml_eq(m, 1))`, engine) {
-			*currentState = ParallelRegionsTakeOwnTransitionsStateSettled
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = ParallelRegionsTakeOwnTransitionsStateJudging
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = false
-			return true
-			}
-		}
-	case ParallelRegionsTakeOwnTransitionsStateWithin:
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == ParallelRegionsTakeOwnTransitionsEventE {
-			*currentState = ParallelRegionsTakeOwnTransitionsStateWithin
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = ParallelRegionsTakeOwnTransitionsStateWithin
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = true
-			return true
-		}
-	case ParallelRegionsTakeOwnTransitionsStateWorking:
-		// W3C SCXML 5.9.3: Direct enum comparison
-		if event == ParallelRegionsTakeOwnTransitionsEventE {
-			*currentState = ParallelRegionsTakeOwnTransitionsStateJudging
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = ParallelRegionsTakeOwnTransitionsStateWorking
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = true
-			return true
-		}
-	}
-	return false
-}
-
-// ExecuteTransitionActions executes actions for the last taken transition (W3C SCXML 3.13).
-//line parallel_regions_take_own_transitions.scxml:24
-func (p *ParallelRegionsTakeOwnTransitionsPolicy) ExecuteTransitionActions(engine *sce.Engine[ParallelRegionsTakeOwnTransitionsState, ParallelRegionsTakeOwnTransitionsEvent]) {
+func (p *ParallelRegionsTakeOwnTransitionsPolicy) ExecuteTransitionContent(source ParallelRegionsTakeOwnTransitionsState, transitionIndex int, engine *sce.Engine[ParallelRegionsTakeOwnTransitionsState, ParallelRegionsTakeOwnTransitionsEvent]) {
 	p.ensureScriptEngine()
-	if !p.hasTransitionActions {
-		return
-	}
-	source := p.lastTransitionSourceState
-	idx := p.lastTransitionIndex
-	if source == ParallelRegionsTakeOwnTransitionsStateWithin && idx == 0 {
-		//line parallel_regions_take_own_transitions.scxml:62
+	switch source {
+	case ParallelRegionsTakeOwnTransitionsStateWithin:
+		switch transitionIndex {
+		case 0:
+			//line parallel_regions_take_own_transitions.scxml:62
 
 	// W3C SCXML 5.3: <assign location="m" expr="m + 1">
 	if err := p.assignVariable(`m`, `_scxml_add(m, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(ParallelRegionsTakeOwnTransitionsEventErrorExecution, "<assign> to 'm' failed"))
 	}
 
-		return
-	}
-	if source == ParallelRegionsTakeOwnTransitionsStateWorking && idx == 0 {
-		//line parallel_regions_take_own_transitions.scxml:38
+		}
+	case ParallelRegionsTakeOwnTransitionsStateWorking:
+		switch transitionIndex {
+		case 0:
+			//line parallel_regions_take_own_transitions.scxml:38
 
 	// W3C SCXML 5.3: <assign location="n" expr="n + 1">
 	if err := p.assignVariable(`n`, `_scxml_add(n, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(ParallelRegionsTakeOwnTransitionsEventErrorExecution, "<assign> to 'n' failed"))
 	}
 
-		return
-	}
-}
-
-// transitionInfo describes a transition for conflict resolution (W3C SCXML Appendix D).
-type transitionInfo struct {
-	source          ParallelRegionsTakeOwnTransitionsState
-	target          ParallelRegionsTakeOwnTransitionsState
-	transitionIndex int
-	hasActions      bool
-	isInternal      bool
-	isTargetless    bool
-}
-
-// selectOptimalTransitions resolves conflicts between parallel transitions (Appendix D removeConflictingTransitions).
-// Port of Rust remove_conflicting_transitions().
-func (p *ParallelRegionsTakeOwnTransitionsPolicy) selectOptimalTransitions(transitions []transitionInfo) []transitionInfo {
-	if len(transitions) <= 1 {
-		return transitions
-	}
-	var filtered []transitionInfo
-
-	for _, t1 := range transitions {
-		// Appendix D selectTransitions: the enabled set is an ORDERED SET, and
-		// the same transition reached from two different region leaves is ONE
-		// element of it, not two. A transition written on a <parallel>, or on an
-		// ancestor above one, is selected once per region by the bubbling walk —
-		// W3C test 403b turns on a <parallel>-level <assign> running exactly
-		// once. Selection stops at the first enabled transition of a state, so
-		// within one microstep a source contributes at most one transition and
-		// (source, target) identifies it.
-		//
-		// This is what the removed target/source criterion stood in for: a
-		// targetless duplicate is spelled source -> source, so that check
-		// happened to fire on it. Stated here it is the set semantics
-		// themselves, independent of how a targetless transition is spelled.
-		alreadySelected := false
-		for _, seen := range filtered {
-			if seen.source == t1.source && seen.target == t1.target {
-				alreadySelected = true
-				break
-			}
-		}
-		if alreadySelected {
-			continue
-		}
-
-		dominated := false
-		var toRemove []int
-
-		for idx, t2 := range filtered {
-			// Appendix D removeConflictingTransitions: Check if exit sets intersect
-			t1Exits := p.computeExitSetForConflict(t1)
-			t2Exits := p.computeExitSetForConflict(t2)
-
-			// Appendix D removeConflictingTransitions: two transitions conflict
-			// when their EXIT SETS intersect. That is the whole test the appendix
-			// states, and it is now the whole test made here.
-			//
-			// Three rules used to sit beside it — a target/source equality check
-			// and a <parallel>-ancestor check in each direction — and none is in
-			// the appendix. They stood in for an exit set this generator could
-			// not compute: assembled from the source's own ancestor chain, a set
-			// could not name the sibling regions a transition leaving the
-			// <parallel> exits, so the intersection came back empty for
-			// transitions that plainly conflict. Appendix D computeExitSet reads
-			// p.activeStates now, so the intersection answers on its own.
-			//
-			// A transition that exits nothing still conflicts with nothing and
-			// can never be preempted — that is a targetless transition, which
-			// the appendix gives an empty exit set, and it is what W3C test 403c
-			// means by "this transition never gets preempted, should fire twice".
-			// The removed rules each read a targetless transition as a
-			// self-transition on its own source, which is why they needed the
-			// empty-exit-set gate and the isTargetless guards that stood here.
-			hasConflict := false
-			for _, s1 := range t1Exits {
-				for _, s2 := range t2Exits {
-					if s1 == s2 {
-						hasConflict = true
-						break
-					}
-				}
-				if hasConflict {
-					break
-				}
-			}
-			if !hasConflict {
-				continue
-			}
-
-			// Appendix D removeConflictingTransitions: the descendant source wins
-			if p.IsDescendantOf(t1.source, t2.source) {
-				toRemove = append(toRemove, idx)
-			} else {
-				dominated = true
-				break
-			}
-		}
-
-		if !dominated {
-			// Remove preempted transitions in reverse order
-			for i := len(toRemove) - 1; i >= 0; i-- {
-				idx := toRemove[i]
-				filtered = append(filtered[:idx], filtered[idx+1:]...)
-			}
-			filtered = append(filtered, t1)
-		}
-	}
-
-	return filtered
-}
-
-// transitionDomain is Appendix D getTransitionDomain — the state every exited
-// and entered state descends from. A nil answer is the <scxml> element, which
-// has no State constant here; callers read it as "every active state is below".
-func (p *ParallelRegionsTakeOwnTransitionsPolicy) transitionDomain(source, target ParallelRegionsTakeOwnTransitionsState, isInternal bool) *ParallelRegionsTakeOwnTransitionsState {
-	// W3C SCXML 3.13: Internal transition to a compound descendant — the SOURCE
-	// is the domain, so it stays active while its active descendants are exited.
-	if isInternal &&
-		p.IsCompoundState(source) && !p.IsParallelState(source) &&
-		p.IsDescendantOf(target, source) && target != source {
-		d := source
-		return &d
-	}
-
-	// Appendix D findLCCA: walk up from source for the lowest CANDIDATE ancestor
-	// that contains target. The candidates are the ones
-	// isCompoundStateOrScxmlElement admits, so a <parallel> is skipped.
-	//
-	// If no candidate contains target (top-level siblings, or a region root's
-	// external transition whose only non-candidate ancestor is the <parallel>),
-	// the domain is the <scxml> element.
-	current := source
-	for {
-		parent, hasParent := p.GetParent(current)
-		if !hasParent {
-			return nil
-		}
-		isDomainCandidate := p.IsCompoundState(parent) && !p.IsParallelState(parent)
-		if isDomainCandidate && (p.IsDescendantOf(target, parent) || target == parent) {
-			return &parent
-		}
-		current = parent
-	}
-}
-
-// computeExitSetForConflict is Appendix D computeExitSet: the ACTIVE states that
-// are proper descendants of the transition's domain.
-//
-// It reads p.activeStates, because that is what the appendix computes over.
-// Walking the source's own ancestor chain instead — what stood here — names the
-// same states only while no <parallel> is active below the domain: a sibling
-// region descends from the domain and is not on that chain. It left this
-// generator with TWO exit sets, one for conflict resolution and one for
-// executeMicrostep, which now share this procedure and cannot disagree.
-func (p *ParallelRegionsTakeOwnTransitionsPolicy) computeExitSetForConflict(t transitionInfo) []ParallelRegionsTakeOwnTransitionsState {
-	// Appendix D computeExitSet guards the whole computation with `if t.target`:
-	// a transition without one exits nothing and conflicts with nothing.
-	if t.isTargetless {
-		return nil
-	}
-
-	domain := p.transitionDomain(t.source, t.target, t.isInternal)
-
-	var exitSet []ParallelRegionsTakeOwnTransitionsState
-	for _, activeState := range p.activeStates {
-		exits := true
-		if domain != nil {
-			// The domain itself is not exited; everything active below it is.
-			exits = activeState != *domain && p.IsDescendantOf(activeState, *domain)
-		}
-		if exits {
-			exitSet = append(exitSet, activeState)
-		}
-	}
-	return exitSet
-}
-
-// executeMicrostep performs a complete microstep for the given transitions
-// (Appendix D microstepProcedure Steps 1-5: compute exit set, exit, actions, enter).
-func (p *ParallelRegionsTakeOwnTransitionsPolicy) executeMicrostep(transitions []transitionInfo, currentState *ParallelRegionsTakeOwnTransitionsState, engine *sce.Engine[ParallelRegionsTakeOwnTransitionsState, ParallelRegionsTakeOwnTransitionsEvent]) {
-	if len(transitions) == 0 {
-		return
-	}
-
-	// Appendix D computeExitSet Step 1-2: Compute states to exit
-	var statesToExit []ParallelRegionsTakeOwnTransitionsState
-	for _, trans := range transitions {
-		if trans.isTargetless {
-			continue
-		}
-		// Appendix D computeExitSet: the SAME procedure selectOptimalTransitions
-		// intersects. A microstep that exits a different set from the one the
-		// resolver judged cannot be reasoned about, and this walked the
-		// configuration while computeExitSetForConflict walked source's chain.
-		for _, activeState := range p.computeExitSetForConflict(trans) {
-			found := false
-			for _, s := range statesToExit {
-				if s == activeState {
-					found = true
-					break
-				}
-			}
-			if !found {
-				statesToExit = append(statesToExit, activeState)
-			}
-		}
-	}
-
-	// Sort by reverse document order (deepest first)
-	sort.Slice(statesToExit, func(i, j int) bool {
-		return p.GetDocumentOrder(statesToExit[i]) > p.GetDocumentOrder(statesToExit[j])
-	})
-
-	// Snapshot active states for history recording
-	activeSnapshot := make([]ParallelRegionsTakeOwnTransitionsState, len(p.activeStates))
-	copy(activeSnapshot, p.activeStates)
-
-	// Appendix D exitStates Step 2: Exit states
-	for _, state := range statesToExit {
-		p.ExecuteExitActions(state, engine, activeSnapshot)
-	}
-
-	// Appendix D executeTransitionContent Step 3: Execute transition content
-	// Sort transitions by source document order
-	sortedTransitions := make([]transitionInfo, len(transitions))
-	copy(sortedTransitions, transitions)
-	sort.Slice(sortedTransitions, func(i, j int) bool {
-		return p.GetDocumentOrder(sortedTransitions[i].source) < p.GetDocumentOrder(sortedTransitions[j].source)
-	})
-
-	for _, trans := range sortedTransitions {
-		if trans.hasActions {
-			p.lastTransitionSourceState = trans.source
-			p.lastTransitionIndex = trans.transitionIndex
-			p.hasTransitionActions = true
-			p.ExecuteTransitionActions(engine)
-			p.hasTransitionActions = false
-		}
-	}
-
-	// Appendix D enterStates Step 4-5: Enter target states
-	sort.Slice(sortedTransitions, func(i, j int) bool {
-		return p.GetDocumentOrder(sortedTransitions[i].target) < p.GetDocumentOrder(sortedTransitions[j].target)
-	})
-
-	for _, trans := range sortedTransitions {
-		if trans.isTargetless {
-			continue
-		}
-
-		target := trans.target
-		*currentState = target
-
-		// W3C SCXML 3.13: Build hierarchical entry chain from root to target
-		var entryChain []ParallelRegionsTakeOwnTransitionsState
-		{
-			current := target
-			for {
-				entryChain = append([]ParallelRegionsTakeOwnTransitionsState{current}, entryChain...)
-				parent, hasParent := p.GetParent(current)
-				if !hasParent {
-					break
-				}
-				current = parent
-			}
-		}
-
-		// §scxml-D: every link but the last is an ANCESTOR of the target, and
-		// addAncestorStatesToEnter adds an ancestor WITHOUT its default initial
-		// child — the entry set already holds the next link. Only the target
-		// itself goes through addDescendantStatesToEnter. Passing the next link
-		// as pathChild is what expresses that, and it is also what stops a
-		// <parallel> ancestor from handing a default to the very region the
-		// chain is descending into.
-		for chainIdx := range entryChain {
-			state := entryChain[chainIdx]
-			var pathChild *ParallelRegionsTakeOwnTransitionsState
-			if chainIdx+1 < len(entryChain) {
-				pathChild = &entryChain[chainIdx+1]
-			}
-			alreadyActive := false
-			for _, as := range p.activeStates {
-				if as == state {
-					alreadyActive = true
-					break
-				}
-			}
-			if alreadyActive {
-				// W3C SCXML 3.13: Already active - handle parallel region re-entry
-				if p.IsParallelState(state) {
-					regions := p.GetParallelRegions(state)
-					for _, region := range regions {
-						if pathChild != nil && *pathChild == region {
-							continue
-						}
-						regionActive := false
-						for _, as := range p.activeStates {
-							if as == region {
-								regionActive = true
-								break
-							}
-						}
-						if !regionActive {
-							p.ExecuteEntryActions(region, engine, nil)
-							if p.IsCompoundState(region) {
-								initialChild := p.GetInitialOrHistoryChild(region)
-								if initialChild != region {
-									p.ExecuteEntryActions(initialChild, engine, nil)
-								}
-							}
-						}
-					}
-				}
-				continue
-			}
-			p.ExecuteEntryActions(state, engine, pathChild)
-		}
-
-		// W3C SCXML 3.4: For parallel states, maintain currentState at parallel level
-		if parent, hasParent := p.GetParent(target); hasParent {
-			if p.IsParallelState(parent) {
-				*currentState = parent
-			}
 		}
 	}
 }

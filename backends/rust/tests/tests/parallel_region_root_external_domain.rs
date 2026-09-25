@@ -13,9 +13,11 @@
 // one's.
 //
 // The engine answered the enclosing `<parallel>` here instead, because both
-// the runtime's `handle_hierarchical_transition` and the generated conflict
-// resolver asked for a plain lowest-common-ancestor -- the first common
-// ancestor, whatever its kind. That is the `findLCA` the appendix
+// the runtime's hierarchical-transition walk and the generated conflict
+// resolver it then had asked for a plain lowest-common-ancestor -- the first
+// common ancestor, whatever its kind. (Both have since given way to the
+// runtime's transcription of the appendix, `helpers::microstep`, whose
+// `find_lcca` applies the filter.) That is the `findLCA` the appendix
 // distinguishes from `findLCCA`, and the difference is invisible until a
 // `<parallel>` sits between the source and the first compound `<state>` above
 // it, which is exactly a region root.

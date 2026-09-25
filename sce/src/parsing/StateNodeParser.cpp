@@ -11,6 +11,7 @@
 #include "parsing/InvokeParser.h"
 #include "parsing/ParsingCommon.h"
 #include "parsing/TransitionParser.h"
+#include <algorithm>
 
 SCE::StateNodeParser::StateNodeParser(std::shared_ptr<SCE::NodeFactory> nodeFactory) : nodeFactory_(nodeFactory) {
     SCE_LOG_DEBUG("Creating state node parser");
@@ -147,10 +148,20 @@ std::shared_ptr<SCE::IStateNode> SCE::StateNodeParser::parseStateNode(const std:
                 std::string initialAttr = stateElement->getAttribute("initial");
                 stateNode->setInitialState(initialAttr);
                 SCE_LOG_DEBUG("StateNodeParser: State '{}' initial attribute='{}'", stateId, initialAttr);
-            } else if (!stateNode->getChildren().empty()) {
-                // Use first child if initial state is not specified
-                stateNode->setInitialState(stateNode->getChildren().front()->getId());
-                SCE_LOG_DEBUG("Set default initial state: {}", stateNode->getChildren().front()->getId());
+            } else {
+                // The first child STATE: a `<history>` listed ahead of the
+                // states is a pseudo-state, and a default naming it would
+                // enter whatever it recorded rather than the parent's own
+                // default.
+                const auto &children = stateNode->getChildren();
+                const auto firstState =
+                    std::find_if(children.begin(), children.end(), [](const std::shared_ptr<IStateNode> &child) {
+                        return child && child->getType() != Type::HISTORY && child->getType() != Type::INITIAL;
+                    });
+                if (firstState != children.end()) {
+                    stateNode->setInitialState((*firstState)->getId());
+                    SCE_LOG_DEBUG("Set default initial state: {}", (*firstState)->getId());
+                }
             }
         }
     }
@@ -224,8 +235,8 @@ void SCE::StateNodeParser::parseChildStates(const std::shared_ptr<IXMLElement> &
     // enters <parallel> regions in `getChildStates` order, so the order of
     // this list is observable behaviour, not an implementation detail.
     // <history> is included because it is a legal child that transitions
-    // target by id; ConcurrentStateNode::addChild filters it out of the
-    // region set per §scxml-D-getChildStates.
+    // target by id; the Interpreter's document leaves it out of a state's
+    // child states per §scxml-D-getChildStates.
     auto childStateElements =
         SCE::ParsingCommon::findChildElementsAnyOf(stateElement, {"state", "parallel", "final", "history"});
 

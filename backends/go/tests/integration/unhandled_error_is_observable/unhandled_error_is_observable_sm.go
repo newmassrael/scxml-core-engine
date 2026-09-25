@@ -98,6 +98,49 @@ var UnhandledErrorIsObservableAllStates = []UnhandledErrorIsObservableState{
 	UnhandledErrorIsObservableStateIdle,
 }
 
+// UnhandledErrorIsObservableTarget is one token of a target list, as the document wrote
+// it (W3C SCXML 3.13): a state, or a <history> the engine dereferences.
+type UnhandledErrorIsObservableTarget = sce.EntryTarget[UnhandledErrorIsObservableState, sce.HistoryID]
+
+// ======================================================================
+// Document structure (W3C SCXML 3.2-3.4, 3.10)
+//
+// Package-level tables, because the structure is a fact about the document
+// and not about a run: the engine's Appendix D procedures read them through
+// the policy methods below, and a transition's target list is handed out as
+// a slice of them rather than rebuilt on every selection.
+// ======================================================================
+
+// childStatesOfUnhandledErrorIsObservable is §scxml-D-getChildStates per state: its
+// <state>, <parallel> and <final> children, in document order.
+var childStatesOfUnhandledErrorIsObservable = [2][]UnhandledErrorIsObservableState{
+}
+
+// initialTargetsOfUnhandledErrorIsObservable is each compound state's initial transition
+// target, as written (§scxml-3.3).
+var initialTargetsOfUnhandledErrorIsObservable = [2][]UnhandledErrorIsObservableTarget{
+}
+
+// documentInitialTargetsOfUnhandledErrorIsObservable is the target of the document's own
+// initial transition, as written (§scxml-3.2).
+var documentInitialTargetsOfUnhandledErrorIsObservable = []UnhandledErrorIsObservableTarget{sce.StateTarget[UnhandledErrorIsObservableState, sce.HistoryID](UnhandledErrorIsObservableStateIdle)}
+
+// transitionTargetsOfUnhandledErrorIsObservable is each transition's target list, as
+// written (§scxml-3.13), by source state and the transition's index among its
+// source's own transitions. A targetless transition's entry is empty.
+var transitionTargetsOfUnhandledErrorIsObservable = [2][][]UnhandledErrorIsObservableTarget{
+	UnhandledErrorIsObservableStateGuarded: {
+		0: {sce.StateTarget[UnhandledErrorIsObservableState, sce.HistoryID](UnhandledErrorIsObservableStateGuarded)},
+		1: {sce.StateTarget[UnhandledErrorIsObservableState, sce.HistoryID](UnhandledErrorIsObservableStateGuarded)},
+	},
+	UnhandledErrorIsObservableStateIdle: {
+		0: {sce.StateTarget[UnhandledErrorIsObservableState, sce.HistoryID](UnhandledErrorIsObservableStateIdle)},
+		1: {sce.StateTarget[UnhandledErrorIsObservableState, sce.HistoryID](UnhandledErrorIsObservableStateIdle)},
+		3: {sce.StateTarget[UnhandledErrorIsObservableState, sce.HistoryID](UnhandledErrorIsObservableStateIdle)},
+		4: {sce.StateTarget[UnhandledErrorIsObservableState, sce.HistoryID](UnhandledErrorIsObservableStateGuarded)},
+	},
+}
+
 // ======================================================================
 // Event type (W3C SCXML 3.12)
 // ======================================================================
@@ -146,13 +189,6 @@ func (e UnhandledErrorIsObservableEvent) String() string {
 // ======================================================================
 
 type UnhandledErrorIsObservablePolicy struct {
-	// W3C SCXML 3.13: Last transition metadata
-	lastTransitionIsInternal  bool
-	lastTransitionIsTargetless bool
-	lastTransitionSourceState UnhandledErrorIsObservableState
-	// W3C SCXML 3.13: Transition action tracking
-	lastTransitionIndex   int
-	hasTransitionActions   bool
 	// W3C SCXML 5.10.1: External event flag
 	nextEventIsExternal bool
 	pendingEventName string
@@ -185,7 +221,6 @@ type UnhandledErrorIsObservablePolicy struct {
 // NewUnhandledErrorIsObservablePolicy creates a new policy with default values.
 func NewUnhandledErrorIsObservablePolicy() UnhandledErrorIsObservablePolicy {
 	return UnhandledErrorIsObservablePolicy{
-		lastTransitionSourceState: UnhandledErrorIsObservableStateIdle,
 	}
 }
 
@@ -498,29 +533,45 @@ func (p *UnhandledErrorIsObservablePolicy) GetParent(state UnhandledErrorIsObser
 	return 0, false
 }
 
-// IsCompoundState returns true if state has children (W3C SCXML 3.3).
+// IsCompoundState returns true if state is a <state> with child states — exactly
+// the states that have an initial transition. A <parallel> is not compound
+// (W3C SCXML 3.3).
 func (p *UnhandledErrorIsObservablePolicy) IsCompoundState(state UnhandledErrorIsObservableState) bool {
-	switch state {
-	}
-	return false
+	return len(initialTargetsOfUnhandledErrorIsObservable[state]) > 0
 }
 
 func (p *UnhandledErrorIsObservablePolicy) IsParallelState(_ UnhandledErrorIsObservableState) bool { return false }
-func (p *UnhandledErrorIsObservablePolicy) GetParallelRegions(_ UnhandledErrorIsObservableState) []UnhandledErrorIsObservableState { return nil }
 
-// IsDescendantOf returns true if desc is a descendant of anc (W3C SCXML 3.12).
-func (p *UnhandledErrorIsObservablePolicy) IsDescendantOf(desc, anc UnhandledErrorIsObservableState) bool {
-	current := desc
-	for {
-		parent, ok := p.GetParent(current)
-		if !ok {
-			return false
-		}
-		if parent == anc {
-			return true
-		}
-		current = parent
-	}
+// GetChildStates returns state's <state>, <parallel> and <final> children, in
+// document order — for a <parallel>, its regions (§scxml-D-getChildStates).
+func (p *UnhandledErrorIsObservablePolicy) GetChildStates(state UnhandledErrorIsObservableState) []UnhandledErrorIsObservableState {
+	return childStatesOfUnhandledErrorIsObservable[state]
+}
+
+// GetInitialTargets returns a compound state's initial transition target, as
+// written; the engine's entry procedures dereference a <history> among them
+// (W3C SCXML 3.3).
+func (p *UnhandledErrorIsObservablePolicy) GetInitialTargets(state UnhandledErrorIsObservableState) []UnhandledErrorIsObservableTarget {
+	return initialTargetsOfUnhandledErrorIsObservable[state]
+}
+
+// GetDocumentInitialTargets returns the target of the document's own initial
+// transition, as written (W3C SCXML 3.2).
+func (p *UnhandledErrorIsObservablePolicy) GetDocumentInitialTargets() []UnhandledErrorIsObservableTarget {
+	return documentInitialTargetsOfUnhandledErrorIsObservable
+}
+
+// W3C SCXML 3.10: this document declares no <history>, so no target list names
+// one and the engine never asks the two below; answering would mean inventing
+// one.
+func (p *UnhandledErrorIsObservablePolicy) GetHistoryParent(history sce.HistoryID) UnhandledErrorIsObservableState {
+	panic(fmt.Sprintf("UnhandledErrorIsObservablePolicy declares no <history>; asked for %d", history))
+}
+func (p *UnhandledErrorIsObservablePolicy) GetHistoryDefaultTargets(history sce.HistoryID) []UnhandledErrorIsObservableTarget {
+	panic(fmt.Sprintf("UnhandledErrorIsObservablePolicy declares no <history>; asked for %d", history))
+}
+func (p *UnhandledErrorIsObservablePolicy) HistoryValue(_ sce.HistoryID) ([]UnhandledErrorIsObservableState, bool) {
+	return nil, false
 }
 
 // GetDocumentOrder returns the document order index (W3C SCXML Appendix D).
@@ -579,43 +630,6 @@ func (p *UnhandledErrorIsObservablePolicy) NullEvent() UnhandledErrorIsObservabl
 	return UnhandledErrorIsObservableEventNull
 }
 
-// GetInitialChildren returns initial children of a compound state (W3C SCXML 3.6).
-func (p *UnhandledErrorIsObservablePolicy) GetInitialChildren(state UnhandledErrorIsObservableState) []UnhandledErrorIsObservableState {
-	switch state {
-	}
-	return nil
-}
-
-// LastTransitionIsInternal returns the internal transition flag (W3C SCXML 3.13).
-func (p *UnhandledErrorIsObservablePolicy) LastTransitionIsInternal() bool {
-	return p.lastTransitionIsInternal
-}
-
-// SetLastTransitionIsInternal sets the internal transition flag.
-func (p *UnhandledErrorIsObservablePolicy) SetLastTransitionIsInternal(value bool) {
-	p.lastTransitionIsInternal = value
-}
-
-// LastTransitionIsTargetless returns the targetless transition flag (W3C SCXML 3.13).
-func (p *UnhandledErrorIsObservablePolicy) LastTransitionIsTargetless() bool {
-	return p.lastTransitionIsTargetless
-}
-
-// SetLastTransitionIsTargetless sets the targetless transition flag.
-func (p *UnhandledErrorIsObservablePolicy) SetLastTransitionIsTargetless(value bool) {
-	p.lastTransitionIsTargetless = value
-}
-
-// LastTransitionSourceState returns the source state of the last transition.
-func (p *UnhandledErrorIsObservablePolicy) LastTransitionSourceState() UnhandledErrorIsObservableState {
-	return p.lastTransitionSourceState
-}
-
-// SetLastTransitionSourceState sets the source state of the last transition.
-func (p *UnhandledErrorIsObservablePolicy) SetLastTransitionSourceState(state UnhandledErrorIsObservableState) {
-	p.lastTransitionSourceState = state
-}
-
 
 // SetNextEventIsExternal sets the external event flag (W3C SCXML 5.10.1).
 func (p *UnhandledErrorIsObservablePolicy) SetNextEventIsExternal(value bool) {
@@ -660,14 +674,6 @@ func (p *UnhandledErrorIsObservablePolicy) GetActiveStates() []UnhandledErrorIsO
 // which is false above; the method exists because the interface is one contract.
 func (p *UnhandledErrorIsObservablePolicy) SetActiveStates(_ []UnhandledErrorIsObservableState) {}
 func (p *UnhandledErrorIsObservablePolicy) HasExternalEventFlag() bool { return true }
-// GetInitialOrHistoryChild returns the initial child considering history (W3C SCXML 3.11).
-func (p *UnhandledErrorIsObservablePolicy) GetInitialOrHistoryChild(state UnhandledErrorIsObservableState) UnhandledErrorIsObservableState {
-	children := p.GetInitialChildren(state)
-	if len(children) > 0 {
-		return children[0]
-	}
-	return state
-}
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *UnhandledErrorIsObservablePolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[UnhandledErrorIsObservableEvent], _ *sce.Engine[UnhandledErrorIsObservableState, UnhandledErrorIsObservableEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).
@@ -711,13 +717,11 @@ func (p *UnhandledErrorIsObservablePolicy) ClearEventMetadata() {
 
 
 
-
-// ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
+// ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
+// configuration, runs its <onentry>, and its <initial> transition's content when
+// its initial state is entered by default.
 //line unhandled_error_is_observable.scxml:40
-func (p *UnhandledErrorIsObservablePolicy) ExecuteEntryActions(state UnhandledErrorIsObservableState, engine *sce.Engine[UnhandledErrorIsObservableState, UnhandledErrorIsObservableEvent], pathChild *UnhandledErrorIsObservableState) {
-	// Only a `<parallel>` machine descends into defaults here, so a machine
-	// without one has nothing to tell an ancestor entry from a target entry.
-	_ = pathChild
+func (p *UnhandledErrorIsObservablePolicy) ExecuteEntryActions(state UnhandledErrorIsObservableState, engine *sce.Engine[UnhandledErrorIsObservableState, UnhandledErrorIsObservableEvent], isDefaultEntry bool) {
 	p.ensureScriptEngine()
 	switch state {
 	default:
@@ -725,9 +729,21 @@ func (p *UnhandledErrorIsObservablePolicy) ExecuteEntryActions(state UnhandledEr
 	}
 }
 
-// ExecuteExitActions executes onexit actions for a state (W3C SCXML 3.9).
+// ExecuteHistoryDefaultContent runs a <history>'s default transition content
+// (W3C SCXML 3.10.2), after its parent's onentry (and after the parent's own
+// <initial> content) when the history was taken with nothing recorded. The
+// engine asks for it by the entry set's defaultHistoryContent answer; a history
+// that restored what it recorded runs nothing.
 //line unhandled_error_is_observable.scxml:40
-func (p *UnhandledErrorIsObservablePolicy) ExecuteExitActions(state UnhandledErrorIsObservableState, engine *sce.Engine[UnhandledErrorIsObservableState, UnhandledErrorIsObservableEvent], preTransitionActive []UnhandledErrorIsObservableState) {
+func (p *UnhandledErrorIsObservablePolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[UnhandledErrorIsObservableState, UnhandledErrorIsObservableEvent]) {
+	// W3C SCXML 3.10.2: no <history> in this document has default content.
+}
+
+// ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
+// removes it from the configuration, cancels its invocations and runs its
+// <onexit>.
+//line unhandled_error_is_observable.scxml:40
+func (p *UnhandledErrorIsObservablePolicy) ExecuteExitActions(state UnhandledErrorIsObservableState, engine *sce.Engine[UnhandledErrorIsObservableState, UnhandledErrorIsObservableEvent], configurationBeforeExit []UnhandledErrorIsObservableState) {
 	p.ensureScriptEngine()
 	switch state {
 	default:
@@ -735,118 +751,121 @@ func (p *UnhandledErrorIsObservablePolicy) ExecuteExitActions(state UnhandledErr
 	}
 }
 
-// ProcessTransition evaluates guards and takes a matching transition (W3C SCXML 3.13).
-// Returns true if a transition was taken.
+
+
+// BindCurrentEvent binds the event whose transitions are about to be selected as
+// the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
+// and not for an eventless selection, which has no event of its own.
 //line unhandled_error_is_observable.scxml:40
-func (p *UnhandledErrorIsObservablePolicy) ProcessTransition(currentState *UnhandledErrorIsObservableState, event UnhandledErrorIsObservableEvent, engine *sce.Engine[UnhandledErrorIsObservableState, UnhandledErrorIsObservableEvent]) bool {
-	// W3C SCXML 5.10: Bind _event system variable for guard evaluation
+func (p *UnhandledErrorIsObservablePolicy) BindCurrentEvent(event UnhandledErrorIsObservableEvent, engine *sce.Engine[UnhandledErrorIsObservableState, UnhandledErrorIsObservableEvent]) {
 	if event != UnhandledErrorIsObservableEventNull {
 		// §scxml-B-2-8-1: the rung the payload got, handed to the engine
 		// rather than dropped. This is the only frame that has both the
 		// reading and the event it belongs to.
 		engine.NotePayloadReading(event, p.setCurrentEvent(p.GetEventName(event)))
 	}
-
-	// W3C SCXML 3.12: Try transitions in current state first
-	if p.tryTransitionInState(*currentState, event, currentState, engine) {
-		return true
-	}
-
-
-	return false
 }
 
-
-// tryTransitionInState checks transitions for a single state.
+// FirstEnabledTransition is Appendix D selectTransitions, the half only this
+// document can answer: the first of state's own transitions, in document order,
+// that event enables and whose guard holds. The engine walks the atomic states
+// and their ancestors and keeps the ordered set; the null event asks for
+// eventless transitions.
 //line unhandled_error_is_observable.scxml:40
-func (p *UnhandledErrorIsObservablePolicy) tryTransitionInState(checkState UnhandledErrorIsObservableState, event UnhandledErrorIsObservableEvent, currentState *UnhandledErrorIsObservableState, engine *sce.Engine[UnhandledErrorIsObservableState, UnhandledErrorIsObservableEvent]) bool {
-	switch checkState {
+func (p *UnhandledErrorIsObservablePolicy) FirstEnabledTransition(state UnhandledErrorIsObservableState, event UnhandledErrorIsObservableEvent, engine *sce.Engine[UnhandledErrorIsObservableState, UnhandledErrorIsObservableEvent]) (sce.EnabledTransition[UnhandledErrorIsObservableState, sce.HistoryID], bool) {
+	switch state {
 	case UnhandledErrorIsObservableStateGuarded:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == UnhandledErrorIsObservableEventBoom {
-			*currentState = UnhandledErrorIsObservableStateGuarded
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = UnhandledErrorIsObservableStateGuarded
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[UnhandledErrorIsObservableState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfUnhandledErrorIsObservable[state][0],
+					TransitionIndex: 0,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == UnhandledErrorIsObservableEventErrorExecution {
-			*currentState = UnhandledErrorIsObservableStateGuarded
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = UnhandledErrorIsObservableStateGuarded
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[UnhandledErrorIsObservableState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfUnhandledErrorIsObservable[state][1],
+					TransitionIndex: 1,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	case UnhandledErrorIsObservableStateIdle:
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == UnhandledErrorIsObservableEventPoke {
-			*currentState = UnhandledErrorIsObservableStateIdle
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = UnhandledErrorIsObservableStateIdle
-			p.lastTransitionIndex = 0
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[UnhandledErrorIsObservableState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfUnhandledErrorIsObservable[state][0],
+					TransitionIndex: 0,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == UnhandledErrorIsObservableEventWhisper {
-			*currentState = UnhandledErrorIsObservableStateIdle
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = UnhandledErrorIsObservableStateIdle
-			p.lastTransitionIndex = 1
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[UnhandledErrorIsObservableState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfUnhandledErrorIsObservable[state][1],
+					TransitionIndex: 1,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == UnhandledErrorIsObservableEventHeard {
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = true
-			p.lastTransitionSourceState = UnhandledErrorIsObservableStateIdle
-			p.lastTransitionIndex = 2
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[UnhandledErrorIsObservableState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 2,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == UnhandledErrorIsObservableEventBoom {
-			*currentState = UnhandledErrorIsObservableStateIdle
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = UnhandledErrorIsObservableStateIdle
-			p.lastTransitionIndex = 3
-			p.hasTransitionActions = true
-			return true
+			{
+				return sce.EnabledTransition[UnhandledErrorIsObservableState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfUnhandledErrorIsObservable[state][3],
+					TransitionIndex: 3,
+					HasActions:      true,
+					IsInternal:      false,
+				}, true
+			}
 		}
-		// W3C SCXML 5.9.3: Direct enum comparison
 		if event == UnhandledErrorIsObservableEventGo {
-			*currentState = UnhandledErrorIsObservableStateGuarded
-			p.lastTransitionIsInternal = false
-			p.lastTransitionIsTargetless = false
-			p.lastTransitionSourceState = UnhandledErrorIsObservableStateIdle
-			p.lastTransitionIndex = 4
-			p.hasTransitionActions = false
-			return true
+			{
+				return sce.EnabledTransition[UnhandledErrorIsObservableState, sce.HistoryID]{
+					Source:          state,
+					Targets:         transitionTargetsOfUnhandledErrorIsObservable[state][4],
+					TransitionIndex: 4,
+					HasActions:      false,
+					IsInternal:      false,
+				}, true
+			}
 		}
 	}
-	return false
+	return sce.EnabledTransition[UnhandledErrorIsObservableState, sce.HistoryID]{}, false
 }
 
-// ExecuteTransitionActions executes actions for the last taken transition (W3C SCXML 3.13).
+// ExecuteTransitionContent runs one transition's executable content (W3C SCXML
+// 3.13), between the microstep's exits and its entries.
 //line unhandled_error_is_observable.scxml:40
-func (p *UnhandledErrorIsObservablePolicy) ExecuteTransitionActions(engine *sce.Engine[UnhandledErrorIsObservableState, UnhandledErrorIsObservableEvent]) {
+func (p *UnhandledErrorIsObservablePolicy) ExecuteTransitionContent(source UnhandledErrorIsObservableState, transitionIndex int, engine *sce.Engine[UnhandledErrorIsObservableState, UnhandledErrorIsObservableEvent]) {
 	p.ensureScriptEngine()
-	if !p.hasTransitionActions {
-		return
-	}
-	source := p.lastTransitionSourceState
-	idx := p.lastTransitionIndex
-	if source == UnhandledErrorIsObservableStateGuarded && idx == 0 {
-		//line unhandled_error_is_observable.scxml:90
+	switch source {
+	case UnhandledErrorIsObservableStateGuarded:
+		switch transitionIndex {
+		case 0:
+			//line unhandled_error_is_observable.scxml:90
 
 	// W3C SCXML 5.3: <assign location="booms" expr="booms + 1">
 	if err := p.assignVariable(`booms`, `_scxml_add(booms, 1)`); err != nil {
@@ -857,10 +876,8 @@ func (p *UnhandledErrorIsObservablePolicy) ExecuteTransitionActions(engine *sce.
 	// W3C SCXML 5.3/B.2: Invalid or read-only location ""
 	engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<assign> has an invalid or read-only location ''"))
 
-		return
-	}
-	if source == UnhandledErrorIsObservableStateGuarded && idx == 1 {
-		//line unhandled_error_is_observable.scxml:94
+		case 1:
+			//line unhandled_error_is_observable.scxml:94
 
 	// W3C SCXML 5.3: <assign location="caught" expr="caught + 1">
 	if err := p.assignVariable(`caught`, `_scxml_add(caught, 1)`); err != nil {
@@ -873,20 +890,19 @@ func (p *UnhandledErrorIsObservablePolicy) ExecuteTransitionActions(engine *sce.
 		engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<assign> to 'detail' failed"))
 	}
 
-		return
-	}
-	if source == UnhandledErrorIsObservableStateIdle && idx == 0 {
-		//line unhandled_error_is_observable.scxml:55
+		}
+	case UnhandledErrorIsObservableStateIdle:
+		switch transitionIndex {
+		case 0:
+			//line unhandled_error_is_observable.scxml:55
 
 	// W3C SCXML 5.3: <assign location="pokes" expr="pokes + 1">
 	if err := p.assignVariable(`pokes`, `_scxml_add(pokes, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<assign> to 'pokes' failed"))
 	}
 
-		return
-	}
-	if source == UnhandledErrorIsObservableStateIdle && idx == 1 {
-		//line unhandled_error_is_observable.scxml:58
+		case 1:
+			//line unhandled_error_is_observable.scxml:58
 
 	engine.Raise(sce.NewEventWithMetadata(UnhandledErrorIsObservableEventUnheard))
 
@@ -896,20 +912,16 @@ func (p *UnhandledErrorIsObservablePolicy) ExecuteTransitionActions(engine *sce.
 
 	engine.Raise(sce.NewEventWithMetadata(UnhandledErrorIsObservableEventHeard))
 
-		return
-	}
-	if source == UnhandledErrorIsObservableStateIdle && idx == 2 {
-		//line unhandled_error_is_observable.scxml:80
+		case 2:
+			//line unhandled_error_is_observable.scxml:80
 
 	// W3C SCXML 5.3: <assign location="heards" expr="heards + 1">
 	if err := p.assignVariable(`heards`, `_scxml_add(heards, 1)`); err != nil {
 		engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<assign> to 'heards' failed"))
 	}
 
-		return
-	}
-	if source == UnhandledErrorIsObservableStateIdle && idx == 3 {
-		//line unhandled_error_is_observable.scxml:83
+		case 3:
+			//line unhandled_error_is_observable.scxml:83
 
 	// W3C SCXML 5.3: <assign location="booms" expr="booms + 1">
 	if err := p.assignVariable(`booms`, `_scxml_add(booms, 1)`); err != nil {
@@ -920,6 +932,6 @@ func (p *UnhandledErrorIsObservablePolicy) ExecuteTransitionActions(engine *sce.
 	// W3C SCXML 5.3/B.2: Invalid or read-only location ""
 	engine.Raise(sce.NewPlatformError(UnhandledErrorIsObservableEventErrorExecution, "<assign> has an invalid or read-only location ''"))
 
-		return
+		}
 	}
 }

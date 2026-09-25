@@ -45,7 +45,37 @@ class InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeStateMachine(
         super.enterInitialConfiguration()
     }
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
 
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState): Boolean = when (state) {
+        is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Done -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val documentInitialTargetList: List<EntryTarget<InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState, HistoryId>> =
+            listOf(StateTarget(InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Report))
+
+        // W3C SCXML 3.13: report's transition 0, as the microstep reads it.
+        val transitionReportAt0 = EnabledTransition<InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState, HistoryId>(
+            InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Report,
+            listOf(StateTarget(InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Done)),
+            0,
+            hasActions = true,
+            isInternal = false,
+        )
+    }
 
     // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState? = when (stateId) {
@@ -60,13 +90,7 @@ class InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeStateMachine(
         is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Report -> "report"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState): Boolean = when (state) {
-        else -> true
-    }
-
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState): Int = when (state) {
         is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Done -> 1
         is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Report -> 0
@@ -288,53 +312,42 @@ class InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeStateMachine(
     }
 
 
-    // W3C SCXML 3.12: Event processing with script engine condition evaluation
-    override fun processEvent(
-        state: InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState,
-        event: InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent
-    ): TransitionResult<InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState> {
-        // W3C SCXML 5.10: Set _event before guard evaluation
+
+    // W3C SCXML 5.10: bind the event as the `_event` its transitions' guards
+    // read — once, before the first guard runs, and not for an eventless
+    // selection, which has no event of its own.
+    override fun bindCurrentEvent(event: InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent) {
         setCurrentEventInScriptEngine(event)
-        return when (state) {
-        else -> TransitionResult.Ignored
-    }
     }
 
-    // W3C SCXML Appendix D: Eventless (null) transition check
-    override fun processNullEvent(
-        state: InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState
-    ): TransitionResult<InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState> = when (state) {
-        is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Report -> processNullReport()
-        else -> TransitionResult.Ignored
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
+        state: InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState,
+        event: InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent?
+    ): EnabledTransition<InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState, HistoryId>? = when (state) {
+        is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Report -> when {
+            event == null -> transitionReportAt0
+            else -> null
+        }
+        else -> null
     }
-
-    // --- Per-State Null (Eventless) Handlers ---
-
-    private fun processNullReport(
-    ): TransitionResult<InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState> = when {
-        // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Done, InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Report, 0)
-    }
-
-    // --- Per-State Event Handlers ---
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe.scxml:3 :: _machine
-    override fun onEntry(state: InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState, pathChild: InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState?) {
+    override fun onEntry(state: InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState, isDefaultEntry: Boolean) {
         when (state) {
             is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Done -> {
                 // SCE-MAP: invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe.scxml:33 :: done :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("done")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Report -> {
                 // SCE-MAP: invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe.scxml:25 :: report :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("report")) return
             }
         }
     }
@@ -345,23 +358,17 @@ class InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeStateMachine(
         when (state) {
             is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Done -> {
                 // SCE-MAP: invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe.scxml:33 :: done :: _state_body
-                activeStateIds.remove("done")
             }
             is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Report -> {
                 // SCE-MAP: invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe.scxml:25 :: report :: _state_body
-                activeStateIds.remove("report")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: invoke_param_error_starts_the_child__sce_synth_invoke__inv_probe.scxml:3 :: _machine
-    override fun executeTransitionActions(
-        source: InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState,
-        event: InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeEvent?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState, transitionIndex: Int) {
         when (source) {
         is InvokeParamErrorStartsTheChildSceSynthInvokeInvProbeState.Report -> when (transitionIndex) {
             0 -> {

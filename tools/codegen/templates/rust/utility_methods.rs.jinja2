@@ -6,7 +6,9 @@
 
     Generates helper methods on the Policy impl block:
     - is_state_active() for In() predicate support
-    - get_state_name() for state name lookup (parallel states)
+    - activate() / deactivate(): the only writers of the configuration this
+      machine keeps, and so the only places the script engine's copy of it is
+      republished
 #}
 {% if model.has_parallel_states or model.uses_in_predicate %}
 
@@ -14,4 +16,40 @@
     fn is_state_active(&self, state_id: &str) -> bool {
         self.active_states.iter().any(|&s| Self::get_state_name(s) == state_id)
     }
+
+    // §scxml-3.4: add `state` to the configuration this machine keeps; false
+    // when it was already there.
+    fn activate(&mut self, state: {{ machine_name }}State) -> bool {
+        if self.active_states.contains(&state) {
+            return false;
+        }
+        ::sce_rust_runtime::helpers::hierarchy::push_chain(&mut self.active_states, state);
+{% if model.needs_script_engine %}
+        self.publish_in_predicate_states();
+{% endif %}
+        true
+    }
+
+    // §scxml-3.4: remove `state` from the configuration this machine keeps.
+    fn deactivate(&mut self, state: {{ machine_name }}State) {
+        self.active_states.retain(|&s| s != state);
+{% if model.needs_script_engine %}
+        self.publish_in_predicate_states();
+{% endif %}
+    }
+{% if model.needs_script_engine %}
+
+    // W3C SCXML 5.9.2: the script engine's In() reads a copy of the
+    // configuration, so the copy is refreshed on every change to it rather than
+    // once per selection. In() is asked inside executable content as well as in
+    // guards — `<if cond="In('s')">` in an <onentry> runs halfway through a
+    // microstep — and must see the configuration as it stands at that point.
+    fn publish_in_predicate_states(&self) {
+        if let Some(ref shared) = self.in_predicate_states {
+            let mut states = shared.lock().unwrap();
+            states.clear();
+            states.extend(self.active_states.iter().map(|&s| Self::get_state_name(s).to_string()));
+        }
+    }
+{% endif %}
 {% endif %}

@@ -23,7 +23,24 @@
 // the `entries` counter is the same claim read from the inside.
 
 use sce_rust_runtime::helpers::hierarchy::{push_chain, state_chain_from_slice, StateChain};
-use sce_rust_runtime::{ConfigurationRejection, Engine, EventWithMetadata, StatePolicy};
+use sce_rust_runtime::{
+    ConfigurationRejection, EnabledTransition, Engine, EntryTarget, EventWithMetadata, NoHistory,
+    StatePolicy,
+};
+
+/// One targeted transition of `source`, as a policy reports it.
+fn to<S: Copy + 'static>(
+    source: S,
+    target: &'static [EntryTarget<S, NoHistory>],
+) -> EnabledTransition<S, NoHistory> {
+    EnabledTransition {
+        source,
+        targets: target,
+        transition_index: 0,
+        has_actions: false,
+        is_internal: false,
+    }
+}
 
 // ══════════════════════════════════════════════════════════════════
 // A <parallel> document
@@ -52,9 +69,6 @@ enum PEvent {
 }
 
 struct ParallelPolicy {
-    last_internal: bool,
-    last_targetless: bool,
-    last_source: PState,
     active_states: StateChain<PState>,
     /// How many states this policy has run entry actions for. The inside view
     /// of the onentry contract.
@@ -64,9 +78,6 @@ struct ParallelPolicy {
 impl ParallelPolicy {
     fn new() -> Self {
         Self {
-            last_internal: false,
-            last_targetless: false,
-            last_source: PState::P,
             active_states: sce_rust_runtime::helpers::hierarchy::new_chain(),
             entries: 0,
         }
@@ -76,6 +87,7 @@ impl ParallelPolicy {
 impl StatePolicy for ParallelPolicy {
     type State = PState;
     type Event = PEvent;
+    type History = NoHistory;
     type Payload = ();
     type Hal = sce_rust_runtime::StdHal;
     type EventQueue = sce_rust_runtime::EventQueueManager<
@@ -104,30 +116,46 @@ impl StatePolicy for ParallelPolicy {
         }
     }
 
+    // A <parallel> is not compound: Appendix D's isCompoundState.
     fn is_compound_state(state: Self::State) -> bool {
-        matches!(state, PState::P | PState::Ra | PState::Rb)
+        matches!(state, PState::Ra | PState::Rb)
     }
 
     fn is_parallel_state(state: Self::State) -> bool {
         matches!(state, PState::P)
     }
 
-    fn get_parallel_regions(state: Self::State) -> &'static [Self::State] {
+    fn get_child_states(state: Self::State) -> &'static [Self::State] {
         match state {
             PState::P => &[PState::Ra, PState::Rb],
+            PState::Ra => &[PState::A1, PState::A2],
+            PState::Rb => &[PState::B1],
             _ => &[],
         }
     }
 
-    fn is_descendant_of(desc: Self::State, anc: Self::State) -> bool {
-        let mut cur = Self::get_parent(desc);
-        while let Some(s) = cur {
-            if s == anc {
-                return true;
-            }
-            cur = Self::get_parent(s);
+    fn get_initial_targets(
+        state: Self::State,
+    ) -> &'static [EntryTarget<Self::State, Self::History>] {
+        match state {
+            PState::Ra => &[EntryTarget::State(PState::A1)],
+            PState::Rb => &[EntryTarget::State(PState::B1)],
+            _ => &[],
         }
-        false
+    }
+
+    fn get_document_initial_targets() -> &'static [EntryTarget<Self::State, Self::History>] {
+        &[EntryTarget::State(PState::P)]
+    }
+
+    fn get_history_parent(history: Self::History) -> Self::State {
+        match history {}
+    }
+
+    fn get_history_default_targets(
+        history: Self::History,
+    ) -> &'static [EntryTarget<Self::State, Self::History>] {
+        match history {}
     }
 
     fn get_document_order(state: Self::State) -> u32 {
@@ -182,58 +210,26 @@ impl StatePolicy for ParallelPolicy {
         PEvent::None
     }
 
-    fn get_initial_or_history_child(&self, state: Self::State) -> Self::State {
-        match state {
-            PState::P => PState::Ra,
-            PState::Ra => PState::A1,
-            PState::Rb => PState::B1,
-            other => other,
-        }
+    fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
+        match history {}
     }
 
-    fn last_transition_is_internal(&self) -> bool {
-        self.last_internal
-    }
-    fn set_last_transition_is_internal(&mut self, v: bool) {
-        self.last_internal = v;
-    }
-    fn last_transition_is_targetless(&self) -> bool {
-        self.last_targetless
-    }
-    fn set_last_transition_is_targetless(&mut self, v: bool) {
-        self.last_targetless = v;
-    }
-    fn last_transition_source_state(&self) -> Self::State {
-        self.last_source
-    }
-    fn set_last_transition_source_state(&mut self, s: Self::State) {
-        self.last_source = s;
-    }
-
-    // Mirrors the generated parallel shape: the entered state joins the active
-    // set, and a parallel/compound state recurses into its regions or initial
-    // child (which is why `Engine::resolve_current_state_to_leaf` does not
-    // enter anything for a parallel machine).
+    // Mirrors the generated shape: the entered state joins the active set, and
+    // nothing below it is entered here — the engine's Appendix D entry set
+    // enters every region and initial child, one state at a time.
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
         engine: &mut Engine<Self>,
-        _path_child: Option<Self::State>,
+        _is_default_entry: bool,
     ) {
         self.entries += 1;
         if !self.active_states.contains(&state) {
             push_chain(&mut self.active_states, state);
         }
-        match state {
-            PState::P => {
-                self.execute_entry_actions(PState::Ra, engine, None);
-                self.execute_entry_actions(PState::Rb, engine, None);
-            }
-            PState::Ra => self.execute_entry_actions(PState::A1, engine, None),
-            PState::Rb => self.execute_entry_actions(PState::B1, engine, None),
-            // The onentry that separates a resume from a replay.
-            PState::A1 => engine.raise(EventWithMetadata::new(PEvent::Advance)),
-            PState::A2 | PState::B1 => {}
+        // The onentry that separates a resume from a replay.
+        if state == PState::A1 {
+            engine.raise(EventWithMetadata::new(PEvent::Advance));
         }
     }
 
@@ -241,37 +237,30 @@ impl StatePolicy for ParallelPolicy {
         &mut self,
         state: Self::State,
         _engine: &mut Engine<Self>,
-        _pre: &[Self::State],
+        _before: &[Self::State],
     ) {
         self.active_states.retain(|&s| s != state);
     }
 
-    fn process_transition(
+    fn first_enabled_transition(
         &mut self,
-        current_state: &mut Self::State,
+        state: Self::State,
         event: Self::Event,
-        engine: &mut Engine<Self>,
-    ) -> bool {
-        self.last_source = *current_state;
-        match (*current_state, event) {
-            (PState::A1, PEvent::Advance) => {
-                self.last_internal = false;
-                self.last_targetless = false;
-                // A parallel machine owns its own microstep. `Engine` says so
-                // where it decides not to call `handle_hierarchical_transition`
-                // for `HAS_PARALLEL_STATES`: doing so would double-run the
-                // exit/entry blocks the policy already ran. So the region-local
-                // exit and entry happen here, as the generated policy does them.
-                self.execute_exit_actions(PState::A1, engine, &[]);
-                self.execute_entry_actions(PState::A2, engine, None);
-                *current_state = PState::A2;
-                true
-            }
-            _ => false,
+        _engine: &mut Engine<Self>,
+    ) -> Option<EnabledTransition<Self::State, Self::History>> {
+        match (state, event) {
+            (PState::A1, PEvent::Advance) => Some(to(state, &[EntryTarget::State(PState::A2)])),
+            _ => None,
         }
     }
 
-    fn execute_transition_actions(&mut self, _engine: &mut Engine<Self>) {}
+    fn execute_transition_content(
+        &mut self,
+        _source: Self::State,
+        _index: usize,
+        _engine: &mut Engine<Self>,
+    ) {
+    }
 
     fn get_active_states(&self) -> StateChain<Self::State> {
         self.active_states.clone()
@@ -303,26 +292,19 @@ enum LEvent {
 }
 
 struct LinearPolicy {
-    last_internal: bool,
-    last_targetless: bool,
-    last_source: LState,
     entries: u32,
 }
 
 impl LinearPolicy {
     fn new() -> Self {
-        Self {
-            last_internal: false,
-            last_targetless: false,
-            last_source: LState::Root,
-            entries: 0,
-        }
+        Self { entries: 0 }
     }
 }
 
 impl StatePolicy for LinearPolicy {
     type State = LState;
     type Event = LEvent;
+    type History = NoHistory;
     type Payload = ();
     type Hal = sce_rust_runtime::StdHal;
     type EventQueue = sce_rust_runtime::EventQueueManager<
@@ -352,8 +334,34 @@ impl StatePolicy for LinearPolicy {
         matches!(state, LState::Root)
     }
 
-    fn is_descendant_of(desc: Self::State, anc: Self::State) -> bool {
-        Self::get_parent(desc) == Some(anc)
+    fn get_child_states(state: Self::State) -> &'static [Self::State] {
+        match state {
+            LState::Root => &[LState::X1, LState::X2],
+            _ => &[],
+        }
+    }
+
+    fn get_initial_targets(
+        state: Self::State,
+    ) -> &'static [EntryTarget<Self::State, Self::History>] {
+        match state {
+            LState::Root => &[EntryTarget::State(LState::X1)],
+            _ => &[],
+        }
+    }
+
+    fn get_document_initial_targets() -> &'static [EntryTarget<Self::State, Self::History>] {
+        &[EntryTarget::State(LState::Root)]
+    }
+
+    fn get_history_parent(history: Self::History) -> Self::State {
+        match history {}
+    }
+
+    fn get_history_default_targets(
+        history: Self::History,
+    ) -> &'static [EntryTarget<Self::State, Self::History>] {
+        match history {}
     }
 
     fn get_document_order(state: Self::State) -> u32 {
@@ -399,37 +407,15 @@ impl StatePolicy for LinearPolicy {
         LEvent::None
     }
 
-    fn get_initial_or_history_child(&self, state: Self::State) -> Self::State {
-        match state {
-            LState::Root => LState::X1,
-            other => other,
-        }
-    }
-
-    fn last_transition_is_internal(&self) -> bool {
-        self.last_internal
-    }
-    fn set_last_transition_is_internal(&mut self, v: bool) {
-        self.last_internal = v;
-    }
-    fn last_transition_is_targetless(&self) -> bool {
-        self.last_targetless
-    }
-    fn set_last_transition_is_targetless(&mut self, v: bool) {
-        self.last_targetless = v;
-    }
-    fn last_transition_source_state(&self) -> Self::State {
-        self.last_source
-    }
-    fn set_last_transition_source_state(&mut self, s: Self::State) {
-        self.last_source = s;
+    fn history_value(&self, history: Self::History) -> Option<&[Self::State]> {
+        match history {}
     }
 
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
         engine: &mut Engine<Self>,
-        _path_child: Option<Self::State>,
+        _is_default_entry: bool,
     ) {
         self.entries += 1;
         if let LState::X1 = state {
@@ -441,29 +427,29 @@ impl StatePolicy for LinearPolicy {
         &mut self,
         _state: Self::State,
         _engine: &mut Engine<Self>,
-        _pre: &[Self::State],
+        _before: &[Self::State],
     ) {
     }
 
-    fn process_transition(
+    fn first_enabled_transition(
         &mut self,
-        current_state: &mut Self::State,
+        state: Self::State,
         event: Self::Event,
         _engine: &mut Engine<Self>,
-    ) -> bool {
-        self.last_source = *current_state;
-        match (*current_state, event) {
-            (LState::X1, LEvent::Go) => {
-                self.last_internal = false;
-                self.last_targetless = false;
-                *current_state = LState::X2;
-                true
-            }
-            _ => false,
+    ) -> Option<EnabledTransition<Self::State, Self::History>> {
+        match (state, event) {
+            (LState::X1, LEvent::Go) => Some(to(state, &[EntryTarget::State(LState::X2)])),
+            _ => None,
         }
     }
 
-    fn execute_transition_actions(&mut self, _engine: &mut Engine<Self>) {}
+    fn execute_transition_content(
+        &mut self,
+        _source: Self::State,
+        _index: usize,
+        _engine: &mut Engine<Self>,
+    ) {
+    }
 }
 
 // ══════════════════════════════════════════════════════════════════

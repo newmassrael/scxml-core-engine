@@ -29,13 +29,13 @@
 //! `state_derives_attr`), and the template renders the result verbatim
 //! — templates carry no policy of their own.
 //!
-//! Deliberately NOT centralized: purely-internal types whose derive
-//! set is a local concern with no cross-boundary contract — the
-//! private `TransitionInfo` helper in `state_machine.rs.jinja2` and
-//! the zero-sized `Slot<S>` phantom-marker structs in
-//! `buffer_pool.rs.jinja2`. Centralizing a private helper's `Debug`
-//! into a global policy would trade locality for uniformity with no
-//! drift-contract to protect. Their derives stay inline by design.
+//! Deliberately NOT centralized: types whose derive set is a local
+//! concern with no cross-boundary contract — the `History` enum in
+//! `state_machine.rs.jinja2`, which only the runtime's Appendix D entry
+//! procedures read (a host never holds one), and the zero-sized `Slot<S>`
+//! phantom-marker structs in `buffer_pool.rs.jinja2`. Centralizing their
+//! derives into a global policy would trade locality for uniformity with
+//! no drift-contract to protect. Their derives stay inline by design.
 //!
 //! Callers may APPEND extra derives to a category without changing the
 //! SSOT default via [`render_derives_attr`] (defaults + caller extras,

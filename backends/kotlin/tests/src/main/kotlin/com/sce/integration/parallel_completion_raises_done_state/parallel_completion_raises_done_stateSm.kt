@@ -49,6 +49,13 @@ class ParallelCompletionRaisesDoneStateStateMachine(
     // as `needs_event_scheduler`.
     override val needsEventScheduler: Boolean = false
 
+    // --- Document structure (W3C SCXML 3.2-3.4, 3.10) ---
+    //
+    // What the runtime's Appendix D procedures (com.sce.runtime.Microstep)
+    // read of this document. The tables are built once, in the companion
+    // object below, because the structure is a fact about the document and
+    // not about a run.
+
     // W3C SCXML 3.3: State hierarchy parent mapping
     override fun parentOf(state: ParallelCompletionRaisesDoneStateState): ParallelCompletionRaisesDoneStateState? = when (state) {
         is ParallelCompletionRaisesDoneStateState.A -> ParallelCompletionRaisesDoneStateState.Run
@@ -60,12 +67,80 @@ class ParallelCompletionRaisesDoneStateStateMachine(
         else -> null
     }
 
-    // W3C SCXML 3.3/3.4: Resolve compound/parallel state to initial leaf state
-    override fun resolveLeafState(state: ParallelCompletionRaisesDoneStateState): ParallelCompletionRaisesDoneStateState = when (state) {
-        is ParallelCompletionRaisesDoneStateState.A -> ParallelCompletionRaisesDoneStateState.A1
-        is ParallelCompletionRaisesDoneStateState.B -> ParallelCompletionRaisesDoneStateState.B1
-        is ParallelCompletionRaisesDoneStateState.Run -> ParallelCompletionRaisesDoneStateState.A1
-        else -> state
+    // W3C SCXML 3.3: a <state> with child states — exactly the states that
+    // have an initial transition. A <parallel> is not compound.
+    override fun isCompoundState(state: ParallelCompletionRaisesDoneStateState): Boolean = when (state) {
+        is ParallelCompletionRaisesDoneStateState.A, is ParallelCompletionRaisesDoneStateState.B -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.4: Check if state is a parallel state
+    override fun isParallelState(state: ParallelCompletionRaisesDoneStateState): Boolean = when (state) {
+        is ParallelCompletionRaisesDoneStateState.Run -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.7: Check if state is a <final> element
+    override fun isFinalState(state: ParallelCompletionRaisesDoneStateState): Boolean = when (state) {
+        is ParallelCompletionRaisesDoneStateState.A2, is ParallelCompletionRaisesDoneStateState.B2, is ParallelCompletionRaisesDoneStateState.Stopped -> true
+        else -> false
+    }
+
+    // §scxml-D-getChildStates: a state's <state>, <parallel> and <final>
+    // children, in document order — for a <parallel>, its regions.
+    override fun childStatesOf(state: ParallelCompletionRaisesDoneStateState): List<ParallelCompletionRaisesDoneStateState> =
+        childStates[state] ?: emptyList()
+
+    // W3C SCXML 3.3: a compound state's initial transition target, as written.
+    override fun initialTargetsOf(state: ParallelCompletionRaisesDoneStateState): List<EntryTarget<ParallelCompletionRaisesDoneStateState, HistoryId>> =
+        initialTargets[state] ?: emptyList()
+
+    // W3C SCXML 3.2: the target of the document's own initial transition, as
+    // written.
+    override val documentInitialTargets: List<EntryTarget<ParallelCompletionRaisesDoneStateState, HistoryId>>
+        get() = documentInitialTargetList
+
+    private companion object {
+        val childStates: Map<ParallelCompletionRaisesDoneStateState, List<ParallelCompletionRaisesDoneStateState>> = mapOf(
+            ParallelCompletionRaisesDoneStateState.A to listOf(ParallelCompletionRaisesDoneStateState.A1, ParallelCompletionRaisesDoneStateState.A2),
+            ParallelCompletionRaisesDoneStateState.B to listOf(ParallelCompletionRaisesDoneStateState.B1, ParallelCompletionRaisesDoneStateState.B2),
+            ParallelCompletionRaisesDoneStateState.Run to listOf(ParallelCompletionRaisesDoneStateState.A, ParallelCompletionRaisesDoneStateState.B),
+        )
+
+        val initialTargets: Map<ParallelCompletionRaisesDoneStateState, List<EntryTarget<ParallelCompletionRaisesDoneStateState, HistoryId>>> = mapOf(
+            ParallelCompletionRaisesDoneStateState.A to listOf(StateTarget(ParallelCompletionRaisesDoneStateState.A1)),
+            ParallelCompletionRaisesDoneStateState.B to listOf(StateTarget(ParallelCompletionRaisesDoneStateState.B1)),
+        )
+
+        val documentInitialTargetList: List<EntryTarget<ParallelCompletionRaisesDoneStateState, HistoryId>> =
+            listOf(StateTarget(ParallelCompletionRaisesDoneStateState.Run))
+
+        // W3C SCXML 3.13: a1's transition 0, as the microstep reads it.
+        val transitionA1At0 = EnabledTransition<ParallelCompletionRaisesDoneStateState, HistoryId>(
+            ParallelCompletionRaisesDoneStateState.A1,
+            listOf(StateTarget(ParallelCompletionRaisesDoneStateState.A2)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: b1's transition 0, as the microstep reads it.
+        val transitionB1At0 = EnabledTransition<ParallelCompletionRaisesDoneStateState, HistoryId>(
+            ParallelCompletionRaisesDoneStateState.B1,
+            listOf(StateTarget(ParallelCompletionRaisesDoneStateState.B2)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
+
+        // W3C SCXML 3.13: run's transition 0, as the microstep reads it.
+        val transitionRunAt0 = EnabledTransition<ParallelCompletionRaisesDoneStateState, HistoryId>(
+            ParallelCompletionRaisesDoneStateState.Run,
+            listOf(StateTarget(ParallelCompletionRaisesDoneStateState.Stopped)),
+            0,
+            hasActions = false,
+            isInternal = false,
+        )
     }
 
     // W3C SCXML: Resolve state ID string to State object
@@ -93,27 +168,7 @@ class ParallelCompletionRaisesDoneStateStateMachine(
         is ParallelCompletionRaisesDoneStateState.Stopped -> "stopped"
     }
 
-    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: ParallelCompletionRaisesDoneStateState): Boolean = when (state) {
-        is ParallelCompletionRaisesDoneStateState.A -> false
-        is ParallelCompletionRaisesDoneStateState.B -> false
-        is ParallelCompletionRaisesDoneStateState.Run -> false
-        else -> true
-    }
-
-    // W3C SCXML 3.4: Check if state is a parallel state
-    override fun isParallelState(state: ParallelCompletionRaisesDoneStateState): Boolean = when (state) {
-        is ParallelCompletionRaisesDoneStateState.Run -> true
-        else -> false
-    }
-
-    // W3C SCXML 3.4: Get child regions of a parallel state (C++ getParallelRegions pattern)
-    override fun getParallelRegions(state: ParallelCompletionRaisesDoneStateState): List<ParallelCompletionRaisesDoneStateState> = when (state) {
-        is ParallelCompletionRaisesDoneStateState.Run -> listOf(ParallelCompletionRaisesDoneStateState.A, ParallelCompletionRaisesDoneStateState.B)
-        else -> emptyList()
-    }
-
-    // W3C SCXML 3.13: Document order for exit ordering
+    // W3C SCXML 3.13: Document order — entry order, and in reverse exit order
     override fun documentOrderOf(state: ParallelCompletionRaisesDoneStateState): Int = when (state) {
         is ParallelCompletionRaisesDoneStateState.A -> 1
         is ParallelCompletionRaisesDoneStateState.A1 -> 2
@@ -129,162 +184,77 @@ class ParallelCompletionRaisesDoneStateStateMachine(
 
 
 
-    // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
-    override fun processEvent(
+
+    // W3C SCXML Appendix D selectTransitions, the half only this document can
+    // answer: the first of `state`'s own transitions, in document order, that
+    // `event` enables and whose guard holds; for `null`, its first eventless
+    // transition whose guard holds. The runtime walks the atomic states and
+    // their ancestors and keeps the ordered set.
+    override fun firstEnabledTransition(
         state: ParallelCompletionRaisesDoneStateState,
-        event: ParallelCompletionRaisesDoneStateEvent
-    ): TransitionResult<ParallelCompletionRaisesDoneStateState> = when (state) {
-        // W3C SCXML 3.13: Ancestor-only routing (a has no own event transitions)
-        is ParallelCompletionRaisesDoneStateState.A -> {
-            val anc1 = processRun(event)
-            if (anc1 !is TransitionResult.Ignored) anc1
-            else TransitionResult.Ignored
+        event: ParallelCompletionRaisesDoneStateEvent?
+    ): EnabledTransition<ParallelCompletionRaisesDoneStateState, HistoryId>? = when (state) {
+        is ParallelCompletionRaisesDoneStateState.A1 -> when {
+            event is ParallelCompletionRaisesDoneStateEvent.Go -> transitionA1At0
+            else -> null
         }
-        is ParallelCompletionRaisesDoneStateState.A1 -> {
-            val result = processA1(event)
-            // W3C SCXML 3.13: Ancestor transition routing
-            if (result !is TransitionResult.Ignored) result
-            else {
-                val anc1 = processRun(event)
-                if (anc1 !is TransitionResult.Ignored) anc1
-            else TransitionResult.Ignored
-            }
+        is ParallelCompletionRaisesDoneStateState.B1 -> when {
+            event is ParallelCompletionRaisesDoneStateEvent.Go -> transitionB1At0
+            else -> null
         }
-        // W3C SCXML 3.13: Ancestor-only routing (a2 has no own event transitions)
-        is ParallelCompletionRaisesDoneStateState.A2 -> {
-            val anc1 = processRun(event)
-            if (anc1 !is TransitionResult.Ignored) anc1
-            else TransitionResult.Ignored
+        is ParallelCompletionRaisesDoneStateState.Run -> when {
+            event is ParallelCompletionRaisesDoneStateEvent.Bail -> transitionRunAt0
+            else -> null
         }
-        // W3C SCXML 3.13: Ancestor-only routing (b has no own event transitions)
-        is ParallelCompletionRaisesDoneStateState.B -> {
-            val anc1 = processRun(event)
-            if (anc1 !is TransitionResult.Ignored) anc1
-            else TransitionResult.Ignored
-        }
-        is ParallelCompletionRaisesDoneStateState.B1 -> {
-            val result = processB1(event)
-            // W3C SCXML 3.13: Ancestor transition routing
-            if (result !is TransitionResult.Ignored) result
-            else {
-                val anc1 = processRun(event)
-                if (anc1 !is TransitionResult.Ignored) anc1
-            else TransitionResult.Ignored
-            }
-        }
-        // W3C SCXML 3.13: Ancestor-only routing (b2 has no own event transitions)
-        is ParallelCompletionRaisesDoneStateState.B2 -> {
-            val anc1 = processRun(event)
-            if (anc1 !is TransitionResult.Ignored) anc1
-            else TransitionResult.Ignored
-        }
-        else -> TransitionResult.Ignored
+        else -> null
     }
-
-
-    // --- Per-State Event Handlers ---
-
-    private fun processA1(
-        event: ParallelCompletionRaisesDoneStateEvent
-    ): TransitionResult<ParallelCompletionRaisesDoneStateState> = when {
-        event is ParallelCompletionRaisesDoneStateEvent.Go -> TransitionResult.External(ParallelCompletionRaisesDoneStateState.A2, ParallelCompletionRaisesDoneStateState.A1, 0)
-
-        else -> TransitionResult.Ignored
-    }
-
-    private fun processB1(
-        event: ParallelCompletionRaisesDoneStateEvent
-    ): TransitionResult<ParallelCompletionRaisesDoneStateState> = when {
-        event is ParallelCompletionRaisesDoneStateEvent.Go -> TransitionResult.External(ParallelCompletionRaisesDoneStateState.B2, ParallelCompletionRaisesDoneStateState.B1, 1)
-
-        else -> TransitionResult.Ignored
-    }
-
-    private fun processRun(
-        event: ParallelCompletionRaisesDoneStateEvent
-    ): TransitionResult<ParallelCompletionRaisesDoneStateState> = when {
-        event is ParallelCompletionRaisesDoneStateEvent.Bail -> TransitionResult.External(ParallelCompletionRaisesDoneStateState.Stopped, ParallelCompletionRaisesDoneStateState.Run, 2)
-
-        else -> TransitionResult.Ignored
-    }
-
 
 
     // Entry Actions (W3C SCXML 3.8)
     // SCE-MAP: parallel_completion_raises_done_state.scxml:21 :: _machine
-    override fun onEntry(state: ParallelCompletionRaisesDoneStateState, pathChild: ParallelCompletionRaisesDoneStateState?) {
+    override fun onEntry(state: ParallelCompletionRaisesDoneStateState, isDefaultEntry: Boolean) {
         when (state) {
             is ParallelCompletionRaisesDoneStateState.A -> {
                 // SCE-MAP: parallel_completion_raises_done_state.scxml:26 :: a :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("a")) return
-                if (pathChild == null) {
-                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                    onEntry(ParallelCompletionRaisesDoneStateState.A1)
-                }
             }
             is ParallelCompletionRaisesDoneStateState.A1 -> {
                 // SCE-MAP: parallel_completion_raises_done_state.scxml:27 :: a1 :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("a1")) return
             }
             is ParallelCompletionRaisesDoneStateState.A2 -> {
                 // SCE-MAP: parallel_completion_raises_done_state.scxml:30 :: a2 :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("a2")) return
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
                 raiseInternal(ParallelCompletionRaisesDoneStateEvent.Done.State.A, EventMetadata.platform())
-                // W3C SCXML 3.7.1: Check if all regions of parallel grandparent are complete
-                if ((activeStateIds.contains("a2")) && (activeStateIds.contains("b2"))) {
+                // W3C SCXML 3.7.1: this <final> may have completed the
+                // <parallel> grandparent — Appendix D's isInFinalState, which
+                // counts a region that is itself a <parallel> only once all
+                // of ITS regions are final.
+                if (isStateInFinalState(ParallelCompletionRaisesDoneStateState.Run)) {
                     raiseInternal(ParallelCompletionRaisesDoneStateEvent.Done.State.Run)
                 }
             }
             is ParallelCompletionRaisesDoneStateState.B -> {
                 // SCE-MAP: parallel_completion_raises_done_state.scxml:33 :: b :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("b")) return
-                if (pathChild == null) {
-                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                    onEntry(ParallelCompletionRaisesDoneStateState.B1)
-                }
             }
             is ParallelCompletionRaisesDoneStateState.B1 -> {
                 // SCE-MAP: parallel_completion_raises_done_state.scxml:34 :: b1 :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("b1")) return
             }
             is ParallelCompletionRaisesDoneStateState.B2 -> {
                 // SCE-MAP: parallel_completion_raises_done_state.scxml:37 :: b2 :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("b2")) return
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
                 raiseInternal(ParallelCompletionRaisesDoneStateEvent.Done.State.B, EventMetadata.platform())
-                // W3C SCXML 3.7.1: Check if all regions of parallel grandparent are complete
-                if ((activeStateIds.contains("a2")) && (activeStateIds.contains("b2"))) {
+                // W3C SCXML 3.7.1: this <final> may have completed the
+                // <parallel> grandparent — Appendix D's isInFinalState, which
+                // counts a region that is itself a <parallel> only once all
+                // of ITS regions are final.
+                if (isStateInFinalState(ParallelCompletionRaisesDoneStateState.Run)) {
                     raiseInternal(ParallelCompletionRaisesDoneStateEvent.Done.State.Run)
                 }
             }
             is ParallelCompletionRaisesDoneStateState.Run -> {
                 // SCE-MAP: parallel_completion_raises_done_state.scxml:24 :: run :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("run")) return
-                // W3C SCXML 3.4 + §scxml-D-addDescendantStatesToEnter: a
-                // `<parallel>` hands out defaults even when it is only an
-                // ancestor — Appendix D's one exception to the ancestor rule.
-                // The exception has its own exception: not the region the entry
-                // set is already descending into, which `pathChild` names and
-                // which the caller enters with the target's own path.
-                if (pathChild != ParallelCompletionRaisesDoneStateState.A) {
-                    onEntry(ParallelCompletionRaisesDoneStateState.A)
-                }
-                if (pathChild != ParallelCompletionRaisesDoneStateState.B) {
-                    onEntry(ParallelCompletionRaisesDoneStateState.B)
-                }
             }
             is ParallelCompletionRaisesDoneStateState.Stopped -> {
                 // SCE-MAP: parallel_completion_raises_done_state.scxml:54 :: stopped :: _state_body
-                // W3C SCXML 3.8: Track active state, skip duplicate entry
-                if (!activeStateIds.add("stopped")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
@@ -297,75 +267,35 @@ class ParallelCompletionRaisesDoneStateStateMachine(
         when (state) {
             is ParallelCompletionRaisesDoneStateState.A -> {
                 // SCE-MAP: parallel_completion_raises_done_state.scxml:26 :: a :: _state_body
-                activeStateIds.remove("a")
             }
             is ParallelCompletionRaisesDoneStateState.A1 -> {
                 // SCE-MAP: parallel_completion_raises_done_state.scxml:27 :: a1 :: _state_body
-                activeStateIds.remove("a1")
             }
             is ParallelCompletionRaisesDoneStateState.A2 -> {
                 // SCE-MAP: parallel_completion_raises_done_state.scxml:30 :: a2 :: _state_body
-                activeStateIds.remove("a2")
             }
             is ParallelCompletionRaisesDoneStateState.B -> {
                 // SCE-MAP: parallel_completion_raises_done_state.scxml:33 :: b :: _state_body
-                activeStateIds.remove("b")
             }
             is ParallelCompletionRaisesDoneStateState.B1 -> {
                 // SCE-MAP: parallel_completion_raises_done_state.scxml:34 :: b1 :: _state_body
-                activeStateIds.remove("b1")
             }
             is ParallelCompletionRaisesDoneStateState.B2 -> {
                 // SCE-MAP: parallel_completion_raises_done_state.scxml:37 :: b2 :: _state_body
-                activeStateIds.remove("b2")
             }
             is ParallelCompletionRaisesDoneStateState.Run -> {
                 // SCE-MAP: parallel_completion_raises_done_state.scxml:24 :: run :: _state_body
-                // W3C SCXML 3.4/3.13: Exit active descendants of parallel state
-                // in reverse document order (deepest states exit first).
-                // Defensive: when called from exitHierarchy, descendants are already
-                // exited and removed from activeStateIds — the contains() checks below
-                // prevent double-exit. This code is needed for direct onExit() calls.
-                val toExit = mutableListOf<Pair<ParallelCompletionRaisesDoneStateState, Int>>()
-                if (activeStateIds.contains("a")) {
-                    toExit.add(ParallelCompletionRaisesDoneStateState.A to 1)
-                }
-                if (activeStateIds.contains("a1")) {
-                    toExit.add(ParallelCompletionRaisesDoneStateState.A1 to 2)
-                }
-                if (activeStateIds.contains("a2")) {
-                    toExit.add(ParallelCompletionRaisesDoneStateState.A2 to 3)
-                }
-                if (activeStateIds.contains("b")) {
-                    toExit.add(ParallelCompletionRaisesDoneStateState.B to 4)
-                }
-                if (activeStateIds.contains("b1")) {
-                    toExit.add(ParallelCompletionRaisesDoneStateState.B1 to 5)
-                }
-                if (activeStateIds.contains("b2")) {
-                    toExit.add(ParallelCompletionRaisesDoneStateState.B2 to 6)
-                }
-                toExit.sortByDescending { it.second }
-                for ((desc, _) in toExit) {
-                    onExit(desc)
-                }
-                activeStateIds.remove("run")
             }
             is ParallelCompletionRaisesDoneStateState.Stopped -> {
                 // SCE-MAP: parallel_completion_raises_done_state.scxml:54 :: stopped :: _state_body
-                activeStateIds.remove("stopped")
             }
         }
     }
 
 
-    // Transition Actions (W3C SCXML 3.13)
+    // Transition Content (W3C SCXML 3.13)
     // SCE-MAP: parallel_completion_raises_done_state.scxml:21 :: _machine
-    override fun executeTransitionActions(
-        source: ParallelCompletionRaisesDoneStateState,
-        event: ParallelCompletionRaisesDoneStateEvent?,
-        transitionIndex: Int
-    ) {
+    override fun executeTransitionContent(source: ParallelCompletionRaisesDoneStateState, transitionIndex: Int) {
         when (source) {
         else -> {}
         }
