@@ -867,3 +867,30 @@ fn those_backends_accept_the_same_document_undeclared() {
         );
     }
 }
+
+/// C11 holds the started invocations in fixed storage, so the header pins
+/// that storage to the most the machine can run at once (§scxml-6.4). The
+/// invoker fixture has five host sites in two sibling states, three in the
+/// larger — so 3, not 5: a count of sites would refuse documents whose
+/// invocations never overlap, and no assertion would let a cancel be lost.
+#[test]
+fn the_c11_header_holds_the_started_set_to_the_machines_peak() {
+    let out = out_dir("c11-invocation-peak");
+    let r = run(&[
+        "generate",
+        invoker_fixture().to_str().unwrap(),
+        "-l",
+        "c11",
+        "-o",
+        out.to_str().unwrap(),
+        "--host-invoker",
+        "x-sce-host",
+    ]);
+    assert_eq!(r.exit, Some(0), "generation must succeed: {}", r.stderr);
+    let header = std::fs::read_to_string(out.join("statechart_host_invoker_sm.h"))
+        .expect("the generator wrote the header");
+    assert!(
+        header.contains("SCE_STATIC_ASSERT(3u <= (unsigned)SCE_MAX_HOST_INVOCATIONS,"),
+        "the header does not hold the started set to the machine's peak of 3"
+    );
+}

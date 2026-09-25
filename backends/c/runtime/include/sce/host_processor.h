@@ -313,7 +313,8 @@ static inline const sce_host_processor_entry_t *sce_host_registry_find(const sce
 #define SCE_MAX_HOST_INVOKERS 4
 #endif
 
-/** How many host-run invocations may be in flight at once. */
+/** How many host-run invocations may be in flight at once. Each generated
+    machine asserts it covers the most its own configurations can hold. */
 #ifndef SCE_MAX_HOST_INVOCATIONS
 #define SCE_MAX_HOST_INVOCATIONS 4
 #endif
@@ -477,9 +478,13 @@ typedef struct sce_host_invocation_set_s {
     int count;
 } sce_host_invocation_set_t;
 
-/** Record that `(type, invoke_id)` started. Full is a silent no-op: the
-    ceiling is a deployment's to raise, and refusing the START would be a
-    worse answer than losing the cancel bookkeeping for one. */
+/** Record that `(type, invoke_id)` started.
+
+    A generated machine cannot reach the full case: its header asserts at
+    compile time that `SCE_MAX_HOST_INVOCATIONS` covers the most invocations
+    its configurations hold at once (§scxml-6.4), so a ceiling too small is a
+    build error rather than a cancel the host never receives. The guard stays
+    for a hand-written caller, where it keeps the bound. */
 static inline void sce_host_invocation_mark(sce_host_invocation_set_t *set, const char *type, const char *invoke_id) {
     if (set == NULL || set->count >= (int)SCE_MAX_HOST_INVOCATIONS) {
         return;

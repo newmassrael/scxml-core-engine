@@ -2768,6 +2768,7 @@ fn render_c11(
         native_actions_interface => &native.interface_name,
         native_action_ops => &native.operation_names,
         csym_prefix => &csym_prefix,
+        host_invocation_peak => crate::host_processor_analyzer::host_invocation_peak(model),
     };
     let source_ctx = minijinja::context! {
         model => &model_val,

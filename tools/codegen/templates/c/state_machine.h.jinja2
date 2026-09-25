@@ -1367,6 +1367,14 @@ SCE_STATIC_ASSERT(SCE_MAX_EVENTS >= 1u, "SCE_MAX_EVENTS must be >= 1");
 SCE_STATIC_ASSERT(SCE_MAX_ID_LEN >= 16u, "SCE_MAX_ID_LEN too small for W3C event names");
 SCE_STATIC_ASSERT((unsigned){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_COUNT <= 32u,
                   "Configuration bitmap is uint32_t; multi-word array lands when a fixture exceeds 32 states");
+{% if model.host_invoker_types %}
+/* §scxml-6.4: the started set remembers every host-run invocation so its
+   state's exit can cancel it. {{ host_invocation_peak }} is the most this
+   machine's configurations hold at once (`host_invocation_peak`), so a set
+   smaller than that would lose the cancel for one and say nothing. */
+SCE_STATIC_ASSERT({{ host_invocation_peak }}u <= (unsigned)SCE_MAX_HOST_INVOCATIONS,
+                  "this machine can run {{ host_invocation_peak }} host invocations at once; define SCE_MAX_HOST_INVOCATIONS to at least that");
+{% endif %}
 
 #ifdef __cplusplus
 }

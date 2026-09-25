@@ -308,6 +308,46 @@ pub fn declare_host_surfaces(
     record_delayed_host_sends(model);
 }
 
+/// The most host-run invocations this machine can have in flight at once.
+///
+/// §scxml-6.4: an `<invoke>` runs while its state is active and is cancelled
+/// when the state exits, and a state is in the configuration at most once, so
+/// one element is at most one invocation. The count that can be live together
+/// is therefore the configuration's: a state's own host-served invokes plus,
+/// below it, the SUM over a `<parallel>`'s regions (all active together) or
+/// the MAX over a compound state's children (one at a time). The document's
+/// top level is exclusive like a compound state.
+///
+/// A backend holding the started set in fixed storage sizes it against this,
+/// so a ceiling too small for the document is a build error instead of a
+/// cancel that silently never reaches the host. Counting every site instead
+/// would refuse documents whose invocations can never overlap.
+pub fn host_invocation_peak(model: &SCXMLModel) -> usize {
+    fn peak(model: &SCXMLModel, state_id: &str) -> usize {
+        let Some(state) = model.states.get(state_id) else {
+            return 0;
+        };
+        let own = state
+            .invokes
+            .iter()
+            .filter(|i| matches!(i, Invoke::Unsupported(info) if info.host_served))
+            .count();
+        let children = state.children.iter().map(|c| peak(model, c));
+        own + if state.is_parallel {
+            children.sum()
+        } else {
+            children.max().unwrap_or(0)
+        }
+    }
+    model
+        .states
+        .iter()
+        .filter(|(_, s)| s.parent.is_none())
+        .map(|(id, _)| peak(model, id))
+        .max()
+        .unwrap_or(0)
+}
+
 /// Whether `action` is a host-served `<send>` the engine must WAIT before
 /// performing (§scxml-6.2.4).
 ///
@@ -482,6 +522,35 @@ mod tests {
         format!(
             r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">{body}</scxml>"#
         )
+    }
+
+    /// The peak is the configuration's, not the document's: regions of a
+    /// `<parallel>` add up, siblings of a compound state do not, and an
+    /// invoke the host does not serve is not counted at all. Five host sites
+    /// here, of which at most three are live together.
+    #[test]
+    fn the_host_invocation_peak_is_the_largest_configuration() {
+        let mut model = parse(&doc(r#"<state id="s" initial="p">
+                 <invoke id="top" type="x-host"/>
+                 <parallel id="p">
+                   <state id="a"><invoke id="a1" type="x-host"/></state>
+                   <state id="b"><invoke id="b1" type="x-host"/></state>
+                 </parallel>
+                 <state id="q">
+                   <invoke id="q1" type="x-host"/>
+                   <invoke id="q2" type="x-other"/>
+                 </state>
+               </state>
+               <state id="t"><invoke id="t1" type="x-host"/></state>"#));
+        assert_eq!(
+            host_invocation_peak(&model),
+            0,
+            "nothing is host-served yet"
+        );
+        declare_host_surfaces(&mut model, &[], &["x-host".to_string()]);
+        // `s` + both regions of `p` = 3; `s` + `q` = 2 (q2 is not served);
+        // `t` = 1.
+        assert_eq!(host_invocation_peak(&model), 3);
     }
 
     #[test]

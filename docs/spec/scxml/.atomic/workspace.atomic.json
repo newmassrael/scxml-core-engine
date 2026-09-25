@@ -9819,6 +9819,16 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "onExit",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/host_processor_analyzer.rs",
+          "symbol": "host_invocation_peak",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/host_processor.h",
+          "symbol": "sce_host_invocation_mark",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
