@@ -431,6 +431,10 @@ pub mod http;
 /// Mirrors `helpers::invoke_processing` whole-module gate (same atomic).
 #[cfg(not(feature = "no_std"))]
 pub mod invoke;
+/// The runtime's one JSON reader and writer, shared by the typed payload lift
+/// and a machine's saved state. `std` only, like both of them.
+#[cfg(not(feature = "no_std"))]
+pub mod json;
 /// Which reading `§scxml-B-2-8-1` gave a delivered payload.
 ///
 /// Deliberately NOT under `scripting`, which is gated out of `no_std`: the

@@ -56,19 +56,12 @@ impl fmt::Display for PayloadRefusal {
     }
 }
 
-/// One field's value, in the spelling it was written in, so a whole number
-/// stays exact until it is read at the width its schema declares.
-#[derive(Clone, Debug, PartialEq)]
-enum Value {
-    Number(String),
-    Text(String),
-    Truth(bool),
-    /// A nested value this document's schema does not name. It is kept so a
-    /// payload carrying more than the schema does still reads.
-    Other,
-}
+use crate::json::{JsonError, Value};
 
-/// The fields an event's data names.
+/// The fields an event's data names, each in the spelling it was written in
+/// ([`crate::json`]), so a whole number stays exact until it is read at the
+/// width its schema declares. A nested value this document's schema does not
+/// name is kept, so a payload carrying more than the schema does still reads.
 #[derive(Clone, Debug, Default)]
 pub struct PayloadFields {
     fields: Vec<(String, Value)>,
@@ -78,20 +71,29 @@ impl PayloadFields {
     /// Read an event's data as the fields it names.
     ///
     /// The JSON read is §scxml-B-2-8-1's second rung, the same one the
-    /// script engine takes for the same string.
+    /// script engine takes for the same string — through the runtime's one
+    /// JSON reader.
     pub fn decode(data: &str) -> Result<Self, PayloadRefusal> {
         let trimmed = data.trim();
         if trimmed.is_empty() {
             return Err(PayloadRefusal::new("the event carries no data"));
         }
-        let mut reader = Reader::new(trimmed);
-        let fields = reader.read_object()?;
-        reader.skip_whitespace();
-        if !reader.at_end() {
+        if !trimmed.starts_with('{') {
             return Err(PayloadRefusal::new(
-                "the event's data carries more than one JSON value",
+                "the event's data is a bare value, and this event's schema declares named fields",
             ));
         }
+        let value = crate::json::parse(trimmed).map_err(|e| match e {
+            JsonError::Trailing => {
+                PayloadRefusal::new("the event's data carries more than one JSON value")
+            }
+            JsonError::Malformed(what) => {
+                PayloadRefusal::new(format!("the event's data is not JSON ({what})"))
+            }
+        })?;
+        let Value::Object(fields) = value else {
+            unreachable!("a text that starts with '{{' and parses is an object")
+        };
         Ok(Self { fields })
     }
 
@@ -170,7 +172,7 @@ impl PayloadFields {
     /// A truth-value field.
     pub fn truth(&self, name: &str) -> Result<bool, PayloadRefusal> {
         match self.find(name)? {
-            Value::Truth(b) => Ok(*b),
+            Value::Bool(b) => Ok(*b),
             _ => Err(PayloadRefusal::new(format!(
                 "'{name}' is not a truth value"
             ))),
@@ -228,216 +230,8 @@ pub fn bytes_as_payload_text(bytes: &[u8]) -> String {
     bytes.iter().map(|b| *b as char).collect()
 }
 
-/// The JSON spelling of one text, for the inject seam's `data`.
+/// The JSON spelling of one text, for the inject seam's `data` — the
+/// runtime's one writer ([`crate::json::quote`]).
 pub fn quote(text: &str) -> String {
-    let mut out = String::with_capacity(text.len() + 2);
-    out.push('"');
-    for c in text.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => {
-                out.push_str(&format!("\\u{:04x}", c as u32));
-            }
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-    out
-}
-
-/// A JSON reader over one payload.
-///
-/// It reads the whole grammar rather than only an object of scalars: a payload
-/// may carry fields this document's schema does not name, and a nested one
-/// still has to be walked past to reach the fields that follow.
-struct Reader<'a> {
-    text: &'a str,
-    at: usize,
-}
-
-impl<'a> Reader<'a> {
-    fn new(text: &'a str) -> Self {
-        Self { text, at: 0 }
-    }
-
-    fn at_end(&self) -> bool {
-        self.at >= self.text.len()
-    }
-
-    fn peek(&self) -> Option<char> {
-        self.text[self.at..].chars().next()
-    }
-
-    fn bump(&mut self) -> Option<char> {
-        let c = self.peek()?;
-        self.at += c.len_utf8();
-        Some(c)
-    }
-
-    fn skip_whitespace(&mut self) {
-        while let Some(c) = self.peek() {
-            if c.is_whitespace() {
-                self.at += c.len_utf8();
-            } else {
-                break;
-            }
-        }
-    }
-
-    fn refuse(what: &str) -> PayloadRefusal {
-        PayloadRefusal::new(format!("the event's data is not JSON ({what})"))
-    }
-
-    fn read_object(&mut self) -> Result<Vec<(String, Value)>, PayloadRefusal> {
-        self.skip_whitespace();
-        if self.peek() != Some('{') {
-            return Err(PayloadRefusal::new(
-                "the event's data is a bare value, and this event's schema declares named fields",
-            ));
-        }
-        self.bump();
-        let mut out = Vec::new();
-        self.skip_whitespace();
-        if self.peek() == Some('}') {
-            self.bump();
-            return Ok(out);
-        }
-        loop {
-            self.skip_whitespace();
-            if self.peek() != Some('"') {
-                return Err(Self::refuse("a field name was expected"));
-            }
-            let key = self.read_string()?;
-            self.skip_whitespace();
-            if self.peek() != Some(':') {
-                return Err(Self::refuse("a ':' was expected"));
-            }
-            self.bump();
-            let value = self.read_value()?;
-            out.push((key, value));
-            self.skip_whitespace();
-            match self.bump() {
-                Some(',') => continue,
-                Some('}') => return Ok(out),
-                _ => return Err(Self::refuse("a ',' or '}' was expected")),
-            }
-        }
-    }
-
-    fn read_value(&mut self) -> Result<Value, PayloadRefusal> {
-        self.skip_whitespace();
-        match self.peek() {
-            None => Err(Self::refuse("it ends where a value was expected")),
-            Some('{') => {
-                self.read_object()?;
-                Ok(Value::Other)
-            }
-            Some('[') => {
-                self.read_array()?;
-                Ok(Value::Other)
-            }
-            Some('"') => Ok(Value::Text(self.read_string()?)),
-            Some('t') => self.read_keyword("true").map(|()| Value::Truth(true)),
-            Some('f') => self.read_keyword("false").map(|()| Value::Truth(false)),
-            Some('n') => self.read_keyword("null").map(|()| Value::Other),
-            Some(c) if c == '-' || c.is_ascii_digit() => Ok(Value::Number(self.read_number()?)),
-            Some(c) => Err(Self::refuse(&format!("unexpected '{c}'"))),
-        }
-    }
-
-    fn read_array(&mut self) -> Result<(), PayloadRefusal> {
-        self.bump(); // '['
-        self.skip_whitespace();
-        if self.peek() == Some(']') {
-            self.bump();
-            return Ok(());
-        }
-        loop {
-            self.read_value()?;
-            self.skip_whitespace();
-            match self.bump() {
-                Some(',') => continue,
-                Some(']') => return Ok(()),
-                _ => return Err(Self::refuse("a ',' or ']' was expected")),
-            }
-        }
-    }
-
-    fn read_string(&mut self) -> Result<String, PayloadRefusal> {
-        self.bump(); // '"'
-        let mut out = String::new();
-        loop {
-            match self.bump() {
-                None => return Err(Self::refuse("a text ends unclosed")),
-                Some('"') => return Ok(out),
-                Some('\\') => match self.bump() {
-                    None => return Err(Self::refuse("an escape ends the text")),
-                    Some('"') => out.push('"'),
-                    Some('\\') => out.push('\\'),
-                    Some('/') => out.push('/'),
-                    Some('b') => out.push('\u{8}'),
-                    Some('f') => out.push('\u{c}'),
-                    Some('n') => out.push('\n'),
-                    Some('r') => out.push('\r'),
-                    Some('t') => out.push('\t'),
-                    Some('u') => {
-                        if self.at + 4 > self.text.len() {
-                            return Err(Self::refuse("a \\u escape is short"));
-                        }
-                        let hex = &self.text[self.at..self.at + 4];
-                        let code = u32::from_str_radix(hex, 16)
-                            .map_err(|_| Self::refuse("a \\u escape is not hex"))?;
-                        out.push(char::from_u32(code).unwrap_or('\u{fffd}'));
-                        self.at += 4;
-                    }
-                    Some(e) => {
-                        return Err(Self::refuse(&format!("unknown escape '\\{e}'")));
-                    }
-                },
-                Some(c) => out.push(c),
-            }
-        }
-    }
-
-    fn read_number(&mut self) -> Result<String, PayloadRefusal> {
-        let start = self.at;
-        if self.peek() == Some('-') {
-            self.bump();
-        }
-        while matches!(self.peek(), Some(c) if c.is_ascii_digit()) {
-            self.bump();
-        }
-        if self.peek() == Some('.') {
-            self.bump();
-            while matches!(self.peek(), Some(c) if c.is_ascii_digit()) {
-                self.bump();
-            }
-        }
-        if matches!(self.peek(), Some('e') | Some('E')) {
-            self.bump();
-            if matches!(self.peek(), Some('+') | Some('-')) {
-                self.bump();
-            }
-            while matches!(self.peek(), Some(c) if c.is_ascii_digit()) {
-                self.bump();
-            }
-        }
-        let slice = &self.text[start..self.at];
-        if slice.is_empty() || slice == "-" {
-            return Err(Self::refuse("a number has no digits"));
-        }
-        Ok(slice.to_string())
-    }
-
-    fn read_keyword(&mut self, word: &str) -> Result<(), PayloadRefusal> {
-        if !self.text[self.at..].starts_with(word) {
-            return Err(Self::refuse(&format!("expected '{word}'")));
-        }
-        self.at += word.len();
-        Ok(())
-    }
+    crate::json::quote(text)
 }
