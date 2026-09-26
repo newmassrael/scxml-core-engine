@@ -464,18 +464,16 @@ class Test488StateMachine(
                     var doneEventData = ""
                     // W3C SCXML 5.5: Evaluate <param> elements (C++ DoneDataHelper::evaluateParams pattern)
                     val doneParams = mutableMapOf<String, Any?>()
-                    var doneParamStructuralError = false
                     try {
                         doneParams["someParam"] = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.lua("nil.invalidProperty", "undefined.invalidProperty"))
                     } catch (_: Exception) {
-                        // W3C SCXML 5.7: Runtime param error — raise error.execution but continue
+                        // §scxml-5.7: error.execution, and this pair is ignored.
                         raisePlatformError(Test488Event.Error.Execution, "<donedata> <param name='someParam'> failed to evaluate")
                     }
-                    // C++ DoneDataHelper pattern: if (!success) break — skip done.state on structural error only
-                    if (doneParamStructuralError) return@run
-                    if (doneParams.isNotEmpty()) {
-                        doneEventData = buildJsonFromParams(doneParams)
-                    }
+                    // §scxml-5.5: the pairs that survived, `{}` when none did
+                    // (C++ DoneDataHelper::evaluateParams). Not left to
+                    // buildJsonFromParams, whose empty answer is a <send>'s.
+                    doneEventData = if (doneParams.isEmpty()) "{}" else buildJsonFromParams(doneParams)
                     // W3C SCXML 3.7: Final child state reached, raise done.state with data
                     raiseInternal(Test488Event.Done.State.S0, EventMetadata.platform(doneEventData))
                 }

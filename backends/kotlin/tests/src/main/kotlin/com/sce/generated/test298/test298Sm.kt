@@ -454,15 +454,13 @@ class Test298StateMachine(
                     var doneEventData = ""
                     // W3C SCXML 5.5: Evaluate <param> elements (C++ DoneDataHelper::evaluateParams pattern)
                     val doneParams = mutableMapOf<String, Any?>()
-                    var doneParamStructuralError = false
-                    // W3C SCXML 5.7: Empty location — structural error (C++ DoneDataHelper returns false)
+                    // §scxml-5.7: an empty location names no location —
+                    // error.execution, and this pair is ignored.
                     raisePlatformError(Test298Event.Error.Execution, "<donedata> <param name='Var3'> has an empty location")
-                    doneParamStructuralError = true
-                    // C++ DoneDataHelper pattern: if (!success) break — skip done.state on structural error only
-                    if (doneParamStructuralError) return@run
-                    if (doneParams.isNotEmpty()) {
-                        doneEventData = buildJsonFromParams(doneParams)
-                    }
+                    // §scxml-5.5: the pairs that survived, `{}` when none did
+                    // (C++ DoneDataHelper::evaluateParams). Not left to
+                    // buildJsonFromParams, whose empty answer is a <send>'s.
+                    doneEventData = if (doneParams.isEmpty()) "{}" else buildJsonFromParams(doneParams)
                     // W3C SCXML 3.7: Final child state reached, raise done.state with data
                     raiseInternal(Test298Event.Done.State.S0, EventMetadata.platform(doneEventData))
                 }

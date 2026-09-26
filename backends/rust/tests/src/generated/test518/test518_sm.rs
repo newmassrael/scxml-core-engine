@@ -40,12 +40,11 @@
 // by fixtures that actually exercise the corresponding W3C feature.
 #![allow(dead_code)]
 #![allow(unused_variables)]
-// Bindings emitted `mut` for the documents that write them: `done_data_ok` in
-// `<donedata>` evaluation is cleared only by a param that fails (test294,
-// test343), `json_parts` is pushed only by a param that evaluates (test298),
-// and a send's `err_meta` gets a `send_id` only when the document has a
-// datamodel (test194, test199). Measured 2026-09-24: removing this allow
-// reds those fixtures under `-D warnings`.
+// Bindings emitted `mut` for the documents that write them: `json_parts` in
+// `<donedata>` evaluation is pushed only by a param that evaluates (test298
+// pushes nothing), and a send's `err_meta` gets a `send_id` only when the
+// document has a datamodel (test194, test199). Measured 2026-09-24: removing
+// this allow reds those fixtures under `-D warnings`.
 #![allow(unused_mut)]
 // `'action_block:` early-exit label wraps every onentry block but is only
 // `break`-ed to from fixtures that emit error-on-action sequences.
@@ -55,10 +54,10 @@
 // variant is handled.
 #![allow(unreachable_patterns)]
 #![allow(unreachable_code)]
-// W3C SCXML 5.7 donedata pattern: `let mut done_data_ok = true;` then
-// per-param `done_data_ok = false;` on failure. Fixtures whose params
-// always fail structurally (test298, test343 — empty `location=""`) never
-// read the initial `true`.
+// W3C SCXML 5.5 donedata pattern: `let mut done_event_data = String::new();`
+// is declared once for every kind of `<donedata>`, and a `<param>` list
+// always overwrites it with the surviving pairs, so those documents never
+// read the initial empty string.
 #![allow(unused_assignments)]
 // Generated code is uniform across 200+ fixtures and intentionally avoids
 // per-fixture style optimisation passes. The `clippy::style` and

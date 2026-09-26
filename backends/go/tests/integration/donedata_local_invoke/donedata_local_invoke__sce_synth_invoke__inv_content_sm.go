@@ -560,7 +560,6 @@ func (p *DonedataLocalInvokeSceSynthInvokeInvContentPolicy) ExecuteEntryActions(
 		//line donedata_local_invoke__sce_synth_invoke__inv_content.scxml:5
 		// W3C SCXML 5.5: Evaluate donedata for final state
 		doneEventData := ""
-		doneDataOk := true
 		{
 			// W3C SCXML 5.5: <content expr="..."/> MUST be evaluated against the datamodel.
 			p.ensureScriptEngine()
@@ -576,15 +575,12 @@ func (p *DonedataLocalInvokeSceSynthInvokeInvContentPolicy) ExecuteEntryActions(
 			}
 		}
 		_ = doneEventData
-		_ = doneDataOk
 		// W3C SCXML 5.5 + 6.3.1: Top-level <final> — stash donedata so the
 		// invoking parent's RaiseDoneInvoke can lift it onto
 		// done.invoke.<id>._event.data. Mirrors the C++ AOT
 		// stashDonedataAtFinal contract and Rust
 		// Engine::stash_donedata_at_final.
-		if doneDataOk {
-			engine.StashDonedataAtFinal(doneEventData)
-		}
+		engine.StashDonedataAtFinal(doneEventData)
 	default:
 		// No entry actions
 	}

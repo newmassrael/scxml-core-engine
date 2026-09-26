@@ -344,18 +344,16 @@ class DonedataLateCompletionSceSynthInvokeInvLateStateMachine(
                     var doneEventData = ""
                     // W3C SCXML 5.5: Evaluate <param> elements (C++ DoneDataHelper::evaluateParams pattern)
                     val doneParams = mutableMapOf<String, Any?>()
-                    var doneParamStructuralError = false
                     try {
                         doneParams["result"] = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.lua("42", "42"))
                     } catch (_: Exception) {
-                        // W3C SCXML 5.7: Runtime param error — raise error.execution but continue
+                        // §scxml-5.7: error.execution, and this pair is ignored.
                         raisePlatformError(DonedataLateCompletionSceSynthInvokeInvLateEvent.Error.Execution, "<donedata> <param name='result'> failed to evaluate")
                     }
-                    // C++ DoneDataHelper pattern: if (!success) break — skip done.state on structural error only
-                    if (doneParamStructuralError) return@run
-                    if (doneParams.isNotEmpty()) {
-                        doneEventData = buildJsonFromParams(doneParams)
-                    }
+                    // §scxml-5.5: the pairs that survived, `{}` when none did
+                    // (C++ DoneDataHelper::evaluateParams). Not left to
+                    // buildJsonFromParams, whose empty answer is a <send>'s.
+                    doneEventData = if (doneParams.isEmpty()) "{}" else buildJsonFromParams(doneParams)
                     // W3C SCXML 5.5 + 6.3.1: stash onto the engine so the invoking parent's
                     // startInvoke completion callback can lift the payload onto
                     // done.invoke.<id>._event.data. Mirrors C++ AOT stashDonedataAtFinal.

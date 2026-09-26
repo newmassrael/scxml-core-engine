@@ -464,19 +464,16 @@ class Test343StateMachine(
                     var doneEventData = ""
                     // W3C SCXML 5.5: Evaluate <param> elements (C++ DoneDataHelper::evaluateParams pattern)
                     val doneParams = mutableMapOf<String, Any?>()
-                    var doneParamStructuralError = false
                     try {
-                        val locVal = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.lua("error(\"SCXML expr is not valid ECMAScript: foo: foo is not declared by this document\")", "foo"))
-                        doneParams["someParam"] = locVal
+                        doneParams["someParam"] = engineDD.evaluateExpr(sidDD, com.sce.runtime.ScriptSource.lua("error(\"SCXML expr is not valid ECMAScript: foo: foo is not declared by this document\")", "foo"))
                     } catch (_: Exception) {
-                        // W3C SCXML 5.7: Runtime location error — raise error.execution but continue
-                        raisePlatformError(Test343Event.Error.Execution, "<donedata> <param name='someParam'> location could not be read")
+                        // §scxml-5.7: error.execution, and this pair is ignored.
+                        raisePlatformError(Test343Event.Error.Execution, "<donedata> <param name='someParam'> failed to evaluate")
                     }
-                    // C++ DoneDataHelper pattern: if (!success) break — skip done.state on structural error only
-                    if (doneParamStructuralError) return@run
-                    if (doneParams.isNotEmpty()) {
-                        doneEventData = buildJsonFromParams(doneParams)
-                    }
+                    // §scxml-5.5: the pairs that survived, `{}` when none did
+                    // (C++ DoneDataHelper::evaluateParams). Not left to
+                    // buildJsonFromParams, whose empty answer is a <send>'s.
+                    doneEventData = if (doneParams.isEmpty()) "{}" else buildJsonFromParams(doneParams)
                     // W3C SCXML 3.7: Final child state reached, raise done.state with data
                     raiseInternal(Test343Event.Done.State.S0, EventMetadata.platform(doneEventData))
                 }

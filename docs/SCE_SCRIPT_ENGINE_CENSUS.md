@@ -98,18 +98,18 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 241
+engine-documents 242
 native-prefix-documents 2
-datamodel-variable-init 296
-transition-guard 220
-assign-action 250
+datamodel-variable-init 299
+transition-guard 221
+assign-action 253
 child-invoke-needs-script-engine 46
 log-expr 45
 send-param-expr 33
 send-dynamic-attr 32
 foreach-action 15
 static-invoke-namelist 9
-donedata-param 9
+donedata-param 10
 donedata-content 9
 inline-script-action 2
 send-namelist 5
@@ -188,6 +188,11 @@ never spelled correctly.
   `an_invoke_left_before_it_starts_raises_nothing.scxml` (one engine
   document: one counter and the assign that bumps it) raised
   `engine-documents`, `datamodel-variable-init` and `assign-action` by one.
+  Then `a_bad_donedata_pair_is_ignored.scxml` (one engine document: three
+  data items, three assigns, one guard that reads the done event's shape,
+  and a `<donedata>` of `<param>`s) raised `engine-documents`,
+  `datamodel-variable-init` and `assign-action` by three, `transition-guard`
+  and `donedata-param` by one.
   A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.

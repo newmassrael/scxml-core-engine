@@ -581,7 +581,6 @@ func (p *DonedataLateCompletionSceSynthInvokeInvLatePolicy) ExecuteEntryActions(
 		//line donedata_late_completion__sce_synth_invoke__inv_late.scxml:11
 		// W3C SCXML 5.5: Evaluate donedata for final state
 		doneEventData := ""
-		doneDataOk := true
 		{
 			p.ensureScriptEngine()
 			se := p.ScriptEngine
@@ -595,21 +594,17 @@ func (p *DonedataLateCompletionSceSynthInvokeInvLatePolicy) ExecuteEntryActions(
 				} else {
 					engine.Raise(sce.NewPlatformError(DonedataLateCompletionSceSynthInvokeInvLateEventErrorExecution, "<donedata> <param name='result'> failed to evaluate"))
 				}
-				if doneDataOk {
-					doneEventData = "{" + strings.Join(jsonParts, ",") + "}"
-				}
+				// §scxml-5.5: the pairs that survived, `{}` when none did.
+				doneEventData = "{" + strings.Join(jsonParts, ",") + "}"
 			}
 		}
 		_ = doneEventData
-		_ = doneDataOk
 		// W3C SCXML 5.5 + 6.3.1: Top-level <final> — stash donedata so the
 		// invoking parent's RaiseDoneInvoke can lift it onto
 		// done.invoke.<id>._event.data. Mirrors the C++ AOT
 		// stashDonedataAtFinal contract and Rust
 		// Engine::stash_donedata_at_final.
-		if doneDataOk {
-			engine.StashDonedataAtFinal(doneEventData)
-		}
+		engine.StashDonedataAtFinal(doneEventData)
 	case DonedataLateCompletionSceSynthInvokeInvLateStateWaiting:
 		//line donedata_late_completion__sce_synth_invoke__inv_late.scxml:5
 		// W3C SCXML 3.8: onentry block 0 (break on error stops subsequent actions)
