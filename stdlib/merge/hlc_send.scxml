@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/hlc_send.scxml — the timestamp a node stamps a local or
+  outgoing event with, after `prev`, when its wall clock reads `now`
+  (Kulkarni et al. 2014, "send or local event"): the wall time never goes
+  backwards, and when it does not advance the counter does.
+
+  A counter already at its uint32 maximum cannot advance: wrapping it to 0
+  would issue a timestamp that sorts before the one it follows — the clock
+  running backwards, the one thing an HLC exists to prevent — so it fails
+  `overflow` (SCE_FORGE.md §3.4.1) and the caller decides.
+
+  prev {100, 3, 7}, now 150, node 7 → {150, 0, 7} · now 90 → {100, 4, 7}.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="hlc_send" version="1.0">
+  <sce:import kind="event-schema" src="hlc_timestamp.scxml" as="Hlc"/>
+  <sce:signature>
+    <sce:param name="prev" type="record:Hlc"/>
+    <sce:param name="now" type="int64"/>
+    <sce:param name="node" type="uint64"/>
+    <sce:return type="record:Hlc" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="next" type="record:Hlc">
+      <sce:set name="wallTime" expr="now &gt; prev.wallTime ? now : prev.wallTime"/>
+      <sce:set name="counter" expr="0"/>
+      <sce:set name="nodeId" expr="node"/>
+    </sce:var>
+    <sce:if cond="next.wallTime === prev.wallTime">
+      <sce:assign target="next.counter" expr="prev.counter + 1"/>
+    </sce:if>
+    <sce:return expr="next"/>
+  </sce:body>
+</scxml>

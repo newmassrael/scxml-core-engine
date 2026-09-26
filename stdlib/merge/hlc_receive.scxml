@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/hlc_receive.scxml — the timestamp a node moves to on
+  receiving a message stamped `msg`, after its own `prev`, when its wall
+  clock reads `now` (Kulkarni et al. 2014, "receive event of message m"):
+  the wall time is the largest of the three readings, and the counter
+  continues whichever timestamps share it — both, one, or neither.
+
+  The result sorts after both `prev` and `msg`, so every event the message
+  caused is ordered after the event that sent it. A counter already at its
+  uint32 maximum cannot advance past it and fails `overflow` (SCE_FORGE.md
+  §3.4.1), for the reason hlc_send gives.
+
+  prev {100, 3, 7}, msg {100, 5, 9}, now 90, node 7 → {100, 6, 7} ·
+  msg {120, 2, 9} → {120, 3, 7} · now 200 → {200, 0, 7}.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="hlc_receive" version="1.0">
+  <sce:import kind="event-schema" src="hlc_timestamp.scxml" as="Hlc"/>
+  <sce:signature>
+    <sce:param name="prev" type="record:Hlc"/>
+    <sce:param name="msg" type="record:Hlc"/>
+    <sce:param name="now" type="int64"/>
+    <sce:param name="node" type="uint64"/>
+    <sce:return type="record:Hlc" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="seen" type="int64" init="prev.wallTime &gt; msg.wallTime ? prev.wallTime : msg.wallTime"/>
+    <sce:var name="next" type="record:Hlc">
+      <sce:set name="wallTime" expr="now &gt; seen ? now : seen"/>
+      <sce:set name="counter" expr="0"/>
+      <sce:set name="nodeId" expr="node"/>
+    </sce:var>
+    <sce:if cond="next.wallTime === prev.wallTime &amp;&amp; next.wallTime === msg.wallTime">
+      <sce:assign target="next.counter" expr="(prev.counter &gt; msg.counter ? prev.counter : msg.counter) + 1"/>
+      <sce:else>
+        <sce:if cond="next.wallTime === prev.wallTime">
+          <sce:assign target="next.counter" expr="prev.counter + 1"/>
+          <sce:else>
+            <sce:if cond="next.wallTime === msg.wallTime">
+              <sce:assign target="next.counter" expr="msg.counter + 1"/>
+            </sce:if>
+          </sce:else>
+        </sce:if>
+      </sce:else>
+    </sce:if>
+    <sce:return expr="next"/>
+  </sce:body>
+</scxml>

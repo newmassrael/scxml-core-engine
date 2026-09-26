@@ -1260,6 +1260,52 @@
       }
     },
     {
+      "name": "hlc_compare",
+      "document": "sce:std/merge/hlc_compare.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "hlc_compare",
+      "args": [
+        { "record": "hlc_timestamp" },
+        { "record": "hlc_timestamp" }
+      ],
+      "output": {
+        "type": "i32",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "hlc_receive",
+      "document": "sce:std/merge/hlc_receive.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "hlc_receive",
+      "args": [
+        { "record": "hlc_timestamp" },
+        { "record": "hlc_timestamp" },
+        "i64",
+        "u64"
+      ],
+      "output": {
+        "record": "hlc_timestamp"
+      }
+    },
+    {
+      "name": "hlc_send",
+      "document": "sce:std/merge/hlc_send.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "hlc_send",
+      "args": [
+        { "record": "hlc_timestamp" },
+        "i64",
+        "u64"
+      ],
+      "output": {
+        "record": "hlc_timestamp"
+      }
+    },
+    {
       "name": "is_leap_year",
       "document": "sce:std/time/is_leap_year.scxml",
       "kind": "algorithm",
@@ -1870,6 +1916,18 @@
       "kind": "event-schema",
       "ref_section": "event_schemas",
       "event_name": "hlc.stamp",
+      "fields": [
+        { "name": "wallTime", "value": 1727000000400, "sce_type": "int64" },
+        { "name": "counter", "value": 3, "sce_type": "uint32" },
+        { "name": "nodeId", "value": 7, "sce_type": "uint64" }
+      ]
+    },
+    {
+      "name": "hlc_timestamp",
+      "document": "sce:std/merge/hlc_timestamp.scxml",
+      "kind": "event-schema",
+      "ref_section": "event_schemas",
+      "event_name": "merge.hlc_timestamp",
       "fields": [
         { "name": "wallTime", "value": 1727000000400, "sce_type": "int64" },
         { "name": "counter", "value": 3, "sce_type": "uint32" },

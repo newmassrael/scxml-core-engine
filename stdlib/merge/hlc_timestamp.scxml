@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/hlc_timestamp.scxml — a hybrid logical clock timestamp
+  (Kulkarni et al., "Logical Physical Clocks", 2014): the largest wall-clock
+  reading its node has seen, in milliseconds; a counter that orders events
+  within one reading; and the node that issued it, which breaks the last
+  tie so the order is total. The record type hlc_send, hlc_receive and
+  hlc_compare take and return (SCE_FORGE.md §4.12).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="hlc_timestamp"
+       sce:event-name="merge.hlc_timestamp">
+  <datamodel>
+    <data id="wallTime" sce:type="int64" sce:direction="in"/>
+    <data id="counter" sce:type="uint32" sce:direction="in"/>
+    <data id="nodeId" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

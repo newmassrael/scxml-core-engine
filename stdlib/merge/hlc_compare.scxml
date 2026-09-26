@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/merge/hlc_compare.scxml — the order of two hybrid logical clock
+  timestamps: -1 when `a` is earlier, 1 when it is later, 0 when they are
+  the same timestamp — an int32, as a comparator's result is on every host
+  (`compareTo`, `strcmp`, `cmp`). Wall time first, then the counter, then the node id,
+  so two different nodes never tie and the order is total.
+
+  This is the merge rule of a last-writer-wins register: of two writes to
+  one value, the one whose timestamp compares later is kept, on every node
+  and every backend alike — which is why it is written once, here.
+
+  {100, 3, 7} vs {100, 3, 9} → -1 · {101, 0, 1} vs {100, 9, 9} → 1 ·
+  {100, 3, 7} vs itself → 0.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="hlc_compare" version="1.0">
+  <sce:import kind="event-schema" src="hlc_timestamp.scxml" as="Hlc"/>
+  <sce:signature>
+    <sce:param name="a" type="record:Hlc"/>
+    <sce:param name="b" type="record:Hlc"/>
+    <sce:return type="int32"/>
+  </sce:signature>
+  <sce:body>
+    <sce:if cond="a.wallTime !== b.wallTime">
+      <sce:return expr="a.wallTime &lt; b.wallTime ? -1 : 1"/>
+    </sce:if>
+    <sce:if cond="a.counter !== b.counter">
+      <sce:return expr="a.counter &lt; b.counter ? -1 : 1"/>
+    </sce:if>
+    <sce:if cond="a.nodeId !== b.nodeId">
+      <sce:return expr="a.nodeId &lt; b.nodeId ? -1 : 1"/>
+    </sce:if>
+    <sce:return expr="0"/>
+  </sce:body>
+</scxml>
