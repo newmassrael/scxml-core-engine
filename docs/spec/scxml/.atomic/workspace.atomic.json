@@ -10495,6 +10495,11 @@
           "file": "backends/python/runtime/sce_runtime/host_invoke_request.py",
           "symbol": "request_field_wire",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/TypedHostInvokeRequest.h",
+          "symbol": "requestFieldWire",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",

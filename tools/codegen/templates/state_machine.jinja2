@@ -35,6 +35,14 @@
    `validateConfiguration` is what `enterAt` refuses with. Unconditional
    because both halves of the name pair are. #}
 #include "core/ConfigurationHelper.h"
+{% if host_invoker_defs %}
+{# SCE Accepted Subset 2.12: a typed host-run invoke's records spell their
+   JSON with the payload channel's writer, and its adapter reads the request
+   back with the typed-request reader; both are header-only. #}
+#include <optional>
+#include "common/EventPayloadLift.h"
+#include "core/TypedHostInvokeRequest.h"
+{% endif %}
 {% if model.invokes | scxml or model.invokes | hybrid %}
 
 // W3C SCXML 6.4: Child state machine headers (all pure AOT)
@@ -270,6 +278,10 @@ enum class History : uint8_t {
 {% if has_native_actions %}
 // ── W3C SCXML G.7: `<sce:action>` host dispatch ───────────────────────
 {{ native_actions_defs }}
+{% endif %}
+{% if host_invoker_defs %}
+// ── SCE Accepted Subset 2.12: typed host-run invoke interface ─────────
+{{ host_invoker_defs }}
 {% endif %}
 {# Policy class #}
 // State policy for {{ model.name }}
@@ -721,6 +733,11 @@ public:
     // name↔type pairing cannot be constructed inconsistently. The watching-
     // zenoh MCU consumer is C11/Rust; this is the AP-side C++ parity.
 {{ event_payload_inject_methods }}
+{% endif %}
+{% if host_invoker_members %}
+    // ── SCE Accepted Subset 2.12: typed host-run invoke registration and
+    // completion ──
+{{ host_invoker_members }}
 {% endif %}
 {# W3C SCXML G.7: a document that declares `<sce:action>`s cannot run without
    a host, and the initial state's `<onentry>` may already perform one — so the

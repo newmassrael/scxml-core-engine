@@ -33,7 +33,9 @@
 #include "statechart_host_invoker_sm.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <fstream>
 #include <gtest/gtest.h>
 #include <map>
@@ -41,6 +43,7 @@
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "common/SceClock.h"
@@ -623,6 +626,130 @@ TEST_F(HostInvokerAotTest, ADeadlineIsReadByTheSharedTable) {
     for (const auto &value : refused) {
         const auto written = value.get<std::string>();
         EXPECT_FALSE(SCE::parseHostInvokeDeadlineMs(written).has_value()) << '"' << written << "\" was accepted";
+    }
+}
+
+namespace {
+
+using PermRequest = SCE::Generated::statechart_host_invoker::PermRequest;
+using PermResult = SCE::Generated::statechart_host_invoker::PermResult;
+
+/// A host implementing the generated interface; its work outlives the call.
+struct PermHost : SCE::Generated::statechart_host_invoker::XSceHostInvoker {
+    std::vector<std::pair<PermRequest, uint64_t>> starts;
+    std::vector<uint64_t> cancels;
+
+    std::optional<PermResult> startPerm(const PermRequest &request, uint64_t token) override {
+        starts.emplace_back(request, token);
+        return std::nullopt;
+    }
+
+    void cancelPerm(uint64_t token) override {
+        cancels.push_back(token);
+    }
+};
+
+}  // namespace
+
+// SCE Accepted Subset §2.12: through the generated interface a host is handed
+// `perm`'s request as its `PermRequest` record — the datamodel's values at
+// their declared types — and completes it with a `PermResult`, which the
+// document reads as that record. An invoke of the same type the document does
+// not type still reaches the host, through the fallback.
+TEST_F(HostInvokerAotTest, ATypedRequestReachesItsInvokerAsItsRecord) {
+    Machine sm;
+    auto host = std::make_shared<PermHost>();
+    sm.registerXSceHostInvoker(host, [this](const SCE::HostInvokeEvent &ev) {
+        if (ev.start.has_value()) {
+            log.push_back("START id=" + ev.start->invokeId);
+        }
+        return std::optional<SCE::HostInvokeResponse>();
+    });
+    boot(sm);
+    sm.processEvent(Event::Type);
+    ASSERT_EQ(host->starts.size(), 1U) << "perm started once";
+    PermRequest expected;
+    expected.scope = "calendar";
+    expected.level = 2;
+    EXPECT_EQ(host->starts[0].first, expected);
+    EXPECT_NE(std::find(log.begin(), log.end(), "START id=probe"), log.end())
+        << "the untyped `probe` never reached the fallback";
+    const uint64_t token = host->starts[0].second;
+    PermResult granted;
+    granted.granted = true;
+    EXPECT_TRUE(sm.completePerm(token, granted));
+    sm.step();
+    EXPECT_EQ(sm.getPolicy().granted(), std::optional<int64_t>(1));
+    EXPECT_EQ(sm.getPolicy().unreadable(), std::optional<int64_t>(0));
+    // A completion is accepted once: the token now names nothing running.
+    EXPECT_FALSE(sm.completePerm(token, granted));
+}
+
+// SCE Accepted Subset §2.12, W3C SCXML 6.4.1: a request value its record's
+// field cannot hold is an argument that cannot be evaluated. `retype` sets
+// `level` to a text and re-enters `typed`: the running start is cancelled, and
+// the new one raises error.execution and is never handed to the host.
+TEST_F(HostInvokerAotTest, ARequestThatDoesNotFitItsRecordStartsNothing) {
+    Machine sm;
+    auto host = std::make_shared<PermHost>();
+    sm.registerXSceHostInvoker(host,
+                               [](const SCE::HostInvokeEvent &) { return std::optional<SCE::HostInvokeResponse>(); });
+    boot(sm);
+    sm.processEvent(Event::Type);
+    ASSERT_EQ(host->starts.size(), 1U);
+    const uint64_t first = host->starts[0].second;
+    sm.processEvent(Event::Retype);
+    EXPECT_EQ(host->cancels, std::vector<uint64_t>{first}) << "the running start was cancelled";
+    EXPECT_EQ(host->starts.size(), 1U) << "the misfit request was started";
+    EXPECT_EQ(sm.getPolicy().unreadable(), std::optional<int64_t>(1));
+}
+
+// The start site's check and the adapter's reading are one rule: every value
+// the check accepts is spelled as text its field's type parses back to the
+// same value, and a value the field cannot hold is refused rather than
+// narrowed.
+TEST_F(HostInvokerAotTest, ARequestFieldIsCheckedAndReadBackByOneRule) {
+    const auto fractional = [](double d) {
+        char buffer[32];
+        std::snprintf(buffer, sizeof(buffer), "%.17g", d);
+        return std::string(buffer);
+    };
+    const auto type = [](SCE::RequestFieldKind kind, std::size_t cap = 0) { return SCE::RequestFieldType{kind, cap}; };
+    const auto roundTrip = [&](const ::ScriptValue &value, SCE::RequestFieldType ty) {
+        std::string refusal;
+        const auto text = SCE::requestFieldWire(value, "f", ty, fractional, refusal);
+        EXPECT_TRUE(text.has_value()) << refusal;
+        SCE::HostInvokeRequest request;
+        request.invokeId = "perm";
+        request.params["f"] = {text.value_or("")};
+        return request;
+    };
+    using K = SCE::RequestFieldKind;
+    EXPECT_EQ(SCE::requestField<uint8_t>(roundTrip(int64_t{255}, type(K::Uint8)), "f"), 255);
+    EXPECT_EQ(SCE::requestField<int16_t>(roundTrip(-3.0, type(K::Int16)), "f"), -3);
+    EXPECT_EQ(SCE::requestField<double>(roundTrip(0.1, type(K::Float64)), "f"), 0.1);
+    EXPECT_EQ(SCE::requestField<float>(roundTrip(0.1, type(K::Float32)), "f"), 0.1f);
+    EXPECT_EQ(SCE::requestField<bool>(roundTrip(false, type(K::Bool)), "f"), false);
+    EXPECT_EQ(SCE::requestField<std::string>(roundTrip(std::string("a b"), type(K::String)), "f"), "a b");
+    EXPECT_EQ(SCE::requestField<uint64_t>(roundTrip(18446744073709549568.0, type(K::Uint64)), "f"),
+              18446744073709549568ULL);
+
+    const std::vector<std::tuple<::ScriptValue, SCE::RequestFieldType, const char *>> refused = {
+        {int64_t{256}, type(K::Uint8), "past the width"},
+        {int64_t{-1}, type(K::Uint32), "below zero"},
+        {1.5, type(K::Int32), "not whole"},
+        {18446744073709551616.0, type(K::Uint64), "past every width"},
+        {std::nan(""), type(K::Float64), "not finite"},
+        {1e39, type(K::Float32), "past float"},
+        {std::string("2"), type(K::Uint8), "a text"},
+        {int64_t{1}, type(K::Bool), "a number"},
+        {int64_t{1}, type(K::String), "a number"},
+        {std::string("abc"), type(K::Bytes, 2), "past cap"},
+        {std::string("\xC4\x80"), type(K::Bytes, 8), "no byte"},
+    };
+    for (const auto &[value, ty, why] : refused) {
+        std::string refusal;
+        EXPECT_FALSE(SCE::requestFieldWire(value, "f", ty, fractional, refusal).has_value()) << why;
     }
 }
 

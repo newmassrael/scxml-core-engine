@@ -891,6 +891,192 @@ when (cancel.invokeId) {{\n{cancel_arms}                    else -> {rest}\n    
     KotlinHostInvokerInterface { defs, members }
 }
 
+/// [`request_checks`] spelled as the C++ runtime's `RequestFieldType`.
+pub fn cpp_request_checks(model: &SCXMLModel) -> BTreeMap<String, BTreeMap<String, String>> {
+    request_checks(model, |spelling| match spelling {
+        RequestFieldSpelling::Scalar(variant) => {
+            format!("::SCE::RequestFieldType{{::SCE::RequestFieldKind::{variant}}}")
+        }
+        RequestFieldSpelling::Bytes(cap) => {
+            format!("::SCE::RequestFieldType{{::SCE::RequestFieldKind::Bytes, {cap}}}")
+        }
+    })
+}
+
+/// The C++ host interface: what goes before the machine class (`defs` — the
+/// records and one abstract invoker per declared `type`) and what goes inside
+/// it (`members` — registration and typed completion, which reach the
+/// engine's own `registerInvoker` / `completeHostInvoke`). Both empty when the
+/// document has no typed host-run invoke.
+pub struct CppHostInvokerInterface {
+    pub defs: String,
+    pub members: String,
+}
+
+/// The C++ host interface for `model`'s typed host-run invokes.
+///
+/// Header-only like the payload channel beside it: the records' JSON is
+/// spelled by `EventPayloadLift.h`, and the adapter's reading by
+/// `core/TypedHostInvokeRequest.h`.
+pub fn render_cpp(model: &SCXMLModel) -> CppHostInvokerInterface {
+    let mut defs = String::new();
+    let mut members = String::new();
+    let typed = typed_host_invokes(model);
+    if typed.is_empty() {
+        return CppHostInvokerInterface { defs, members };
+    }
+    let cpp_type = |f: &ForgeField| crate::forge::generator::cpp_type(&f.sce_type);
+    for invoke in &typed {
+        let pascal = filters::to_pascal_case(invoke.invoke_id.to_string());
+        for (record, what, role) in records_of(invoke) {
+            let Some(schema) = record else { continue };
+            let fields: String = schema
+                .fields
+                .iter()
+                .map(|f| format!("    {} {}{{}};\n", cpp_type(f), f.id))
+                .collect();
+            let wire = if what == "Result" {
+                let items: Vec<String> = schema
+                    .fields
+                    .iter()
+                    .map(|f| {
+                        format!(
+                            "::SCE::Common::EventPayloadFields::field(\"{0}\", {0})",
+                            f.id
+                        )
+                    })
+                    .collect();
+                format!(
+                    "\n    /// The JSON `done.invoke.{id}` carries this record as.\n    \
+std::string wire() const {{\n        \
+return ::SCE::Common::EventPayloadFields::wire({{{}}});\n    }}\n",
+                    items.join(", "),
+                    id = invoke.invoke_id,
+                )
+            } else {
+                String::new()
+            };
+            defs.push_str(&format!(
+                "/// {role} `<invoke id=\"{id}\">` with (SCE Accepted Subset \u{a7}2.12).\n\
+struct {pascal}{what} {{\n{fields}{wire}\n    bool operator==(const {pascal}{what} &) const = default;\n}};\n\n",
+                id = invoke.invoke_id,
+            ));
+        }
+    }
+    for (invoke_type, invokes) in &by_type(&typed) {
+        let type_pascal = filters::to_pascal_case(invoke_type.to_string());
+        let interface = format!("{type_pascal}Invoker");
+        let fallback = has_untyped_invoke_of(model, invoke_type);
+        let mut methods = String::new();
+        let mut start_arms = String::new();
+        let mut cancel_arms = String::new();
+        for invoke in invokes {
+            let id = invoke.invoke_id;
+            let pascal = filters::to_pascal_case(id.to_string());
+            let request_param = invoke
+                .request
+                .map(|_| format!("const {pascal}Request &request, "))
+                .unwrap_or_default();
+            let returns = if invoke.result.is_some() {
+                format!("std::optional<{pascal}Result>")
+            } else {
+                "std::optional<::SCE::HostInvokeResponse>".to_string()
+            };
+            methods.push_str(&format!(
+                "    /// \u{a7}scxml-6.4: begin `<invoke id=\"{id}\">`. `token` names this start; a\n    \
+/// host that finishes later hands it back to `complete{pascal}` (or\n    \
+/// `completeHostInvoke`). A value completes the invocation now.\n    \
+virtual {returns} start{pascal}({request_param}uint64_t token) = 0;\n    \
+/// \u{a7}scxml-6.4: `<invoke id=\"{id}\">`'s state exited while the start `token`\n    \
+/// names was still running. Stop it.\n    \
+virtual void cancel{pascal}(uint64_t token) = 0;\n"
+            ));
+            let (read_request, typed_arg) = match invoke.request {
+                Some(schema) => {
+                    let fields: String = schema
+                        .fields
+                        .iter()
+                        .map(|f| {
+                            format!(
+                                "                    typed.{0} = ::SCE::requestField<{1}>(start, \"{0}\");\n",
+                                f.id,
+                                cpp_type(f)
+                            )
+                        })
+                        .collect();
+                    (
+                        format!("                    {pascal}Request typed;\n{fields}"),
+                        "typed, ",
+                    )
+                }
+                None => (String::new(), ""),
+            };
+            let start = if invoke.result.is_some() {
+                format!(
+                    "                    const auto result = invoker->start{pascal}({typed_arg}start.token);\n                    \
+if (!result) {{\n                        return std::nullopt;\n                    }}\n                    \
+return ::SCE::HostInvokeResponse{{result->wire()}};\n"
+                )
+            } else {
+                format!(
+                    "                    return invoker->start{pascal}({typed_arg}start.token);\n"
+                )
+            };
+            start_arms.push_str(&format!(
+                "                if (start.invokeId == \"{id}\") {{\n{read_request}{start}                }}\n"
+            ));
+            cancel_arms.push_str(&format!(
+                "                if (cancel.invokeId == \"{id}\") {{\n                    \
+invoker->cancel{pascal}(cancel.token);\n                    return std::nullopt;\n                }}\n"
+            ));
+            if invoke.result.is_some() {
+                members.push_str(&format!(
+                    "    /// Complete `<invoke id=\"{id}\">`'s start `token` with its record —\n    \
+/// `completeHostInvoke` with the record's JSON, so a stale or unknown token\n    \
+/// is refused the same way (`false`).\n    \
+bool complete{pascal}(uint64_t token, const {pascal}Result &result) {{\n        \
+return this->completeHostInvoke(\"{invoke_type}\", \"{id}\", token, result.wire());\n    }}\n\n"
+                ));
+            }
+        }
+        // An invoke of this type the document does not type still needs a
+        // handler; without one the adapter could only drop it, and a start
+        // nobody performed must read as error.execution, not as running.
+        let (fallback_param, fallback_doc, rest) = if fallback {
+            (
+                ", ::SCE::HostInvokeHandler fallback",
+                "\n    /// `fallback` serves the invokes of this type the document does not type.",
+                "fallback(event)",
+            )
+        } else {
+            // Every invoke of this type is typed, so no other id reaches this
+            // handler.
+            ("", "", "std::nullopt")
+        };
+        let capture = if fallback {
+            "invoker, fallback = std::move(fallback)"
+        } else {
+            "invoker"
+        };
+        defs.push_str(&format!(
+            "/// The host side of this document's typed `<invoke type=\"{invoke_type}\">`s\n\
+/// (SCE Accepted Subset \u{a7}2.12). Register it with `register{type_pascal}Invoker`.\n\
+class {interface} {{\npublic:\n    virtual ~{interface}() = default;\n{methods}}};\n\n"
+        ));
+        members.push_str(&format!(
+            "    /// Register `invoker` as the handler for `type=\"{invoke_type}\"`; the\n    \
+/// engine shares its ownership.{fallback_doc}\n    \
+void register{type_pascal}Invoker(std::shared_ptr<{interface}> invoker{fallback_param}) {{\n        \
+this->registerInvoker(\"{invoke_type}\", [{capture}](const ::SCE::HostInvokeEvent &event)\n                                      \
+-> std::optional<::SCE::HostInvokeResponse> {{\n            \
+if (event.start) {{\n                const auto &start = *event.start;\n{start_arms}                return {rest};\n            }}\n            \
+if (event.cancel) {{\n                const auto &cancel = *event.cancel;\n{cancel_arms}                return {rest};\n            }}\n            \
+return std::nullopt;\n        }});\n    }}\n\n"
+        ));
+    }
+    CppHostInvokerInterface { defs, members }
+}
+
 /// The `TypedRequest` reader for a field of type `ty`.
 fn kotlin_request_reader(ty: &SceType) -> &'static str {
     match ty {

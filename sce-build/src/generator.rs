@@ -2587,6 +2587,11 @@ fn render_cpp(
     );
     let payload = crate::forge::generator::build_cpp_event_payload(model, &native.payload_events);
     crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
+    // SCE Accepted Subset §2.12: the typed host-run invoke interface and what
+    // the start site holds each request field to; all empty without one.
+    let host_invoker = crate::forge::host_invoker_interface::render_cpp(model);
+    let host_invoke_request_checks =
+        crate::forge::host_invoker_interface::cpp_request_checks(model);
 
     let header_tmpl = env
         .get_template("state_machine.jinja2")
@@ -2622,6 +2627,8 @@ fn render_cpp(
         event_payload_active => payload.active,
         event_payload_policy_members => &payload.policy_members,
         event_payload_inject_methods => &payload.inject_methods,
+        host_invoker_defs => &host_invoker.defs,
+        host_invoker_members => &host_invoker.members,
         has_native_actions => native.any,
         native_actions_defs => &native.interface_def,
         native_actions_interface => &native.interface_name,
@@ -2631,6 +2638,7 @@ fn render_cpp(
         model => &model_val,
         base_path => &base_path,
         license_config => &license_val,
+        host_invoke_request_checks => &host_invoke_request_checks,
         has_native_actions => native.any,
         native_actions_interface => &native.interface_name,
         // Mirrored from the .h context: the `.inl` carries no namespace of

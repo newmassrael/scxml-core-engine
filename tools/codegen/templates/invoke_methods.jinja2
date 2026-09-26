@@ -530,18 +530,46 @@
                             }
                         }
 {% endif %}
+{% set request_checks = host_invoke_request_checks[invoke_info.invoke_id] if invoke_info.invoke_id in host_invoke_request_checks else none %}
                         {% for param in invoke_info.params %}
                         {% if param.is_static_literal %}
                         hostInvoke.params["{{ param.name | escape_cpp }}"].push_back("{{ param.static_value | escape_cpp }}");
+                        {% elif request_checks and param.name in request_checks %}
+                        {
+                            // SCE Accepted Subset 2.12: `sce:request` makes the
+                            // params a record, so this value is held to its
+                            // field here, where the invocation starts; one that
+                            // cannot be evaluated or does not fit starts nothing.
+                            auto paramResult = hostScript.evaluateExpression(sessionId_.value(), {% if param.expr %}{{ param.expr | to_script_source_expr }}{% else %}{{ param.location | to_script_source_expr }}{% endif %}).get();
+                            std::string refusal = "the value could not be evaluated";
+                            std::optional<std::string> text;
+                            if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
+                                text = ::SCE::requestFieldWire(
+                                    paramResult.getInternalValue(), "{{ param.name | escape_cpp }}", {{ request_checks[param.name] }},
+                                    [](double fraction) {
+                                        return ::SCE::ScriptResultUtils::resultToString(::SCE::ScriptResult::createSuccess(fraction));
+                                    },
+                                    refusal);
+                            }
+                            if (!text) {
+                                engine.raise(typename Engine::EventWithMetadata(
+                                    Event::Error_execution,
+                                    "<invoke> <param name='{{ param.name | escape_cpp }}'> cannot be its request field: " + refusal));
+                                return;
+                            }
+                            hostInvoke.params["{{ param.name | escape_cpp }}"].push_back(*text);
+                        }
                         {% else %}
                         {
-                            auto paramResult = hostScript.evaluateExpression(sessionId_.value(), {{ param.expr | to_script_source_expr }}).get();
+                            // W3C SCXML 5.7: a `<param>` names its value by
+                            // `expr` or by `location`, and either is read here.
+                            auto paramResult = hostScript.evaluateExpression(sessionId_.value(), {% if param.expr %}{{ param.expr | to_script_source_expr }}{% else %}{{ param.location | to_script_source_expr }}{% endif %}).get();
                             if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
                                 hostInvoke.params["{{ param.name | escape_cpp }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
                             } else {
                                 engine.raise(typename Engine::EventWithMetadata(
                                     Event::Error_execution,
-                                    "<invoke> <param name='{{ param.name | escape_cpp }}'> expr failed to evaluate"));
+                                    "<invoke> <param name='{{ param.name | escape_cpp }}'> {% if param.expr %}expr failed to evaluate{% else %}location could not be read{% endif %}"));
                             }
                         }
                         {% endif %}
