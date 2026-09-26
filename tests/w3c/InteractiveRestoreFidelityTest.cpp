@@ -142,7 +142,7 @@ TEST_F(InteractiveRestoreFidelityTest, AChildThatHadEndedIsRestoredEnded) {
     ASSERT_TRUE(runner.initialize());
 
     ASSERT_EQ(stepToRest(runner), StepResult::FINAL_STATE) << "the recorded run reaches `reached`";
-    ASSERT_TRUE(isActive(runner, "reached"));
+    ASSERT_EQ(runner.getTerminalState(), "reached");
 
     while (runner.stepBackward()) {
     }
@@ -153,7 +153,7 @@ TEST_F(InteractiveRestoreFidelityTest, AChildThatHadEndedIsRestoredEnded) {
         << "the child had ended when the recorded run was here, so leaving `invoking` cancels a session with "
            "nothing left to stop and done.invoke survives it; a child revived as running is purged instead, and "
            "the branch is left in `left` with nothing to take";
-    EXPECT_TRUE(isActive(runner, "reached"));
+    EXPECT_EQ(runner.getTerminalState(), "reached");
 }
 
 /// The order: the recorded queue goes back after the teardown, so tearing down
@@ -175,7 +175,7 @@ TEST_F(InteractiveRestoreFidelityTest, ARestoreKeepsWhatARunningChildHadSent) {
     EXPECT_EQ(stepToRest(runner), StepResult::FINAL_STATE)
         << "`hello` was queued when the recorded run was here; a restore that put the queue back first and "
            "then tore the running child down purged it, and the branch had nothing to take";
-    EXPECT_TRUE(isActive(runner, "reached"));
+    EXPECT_EQ(runner.getTerminalState(), "reached");
 }
 
 /// The teardown: a step that recorded no invocations restores to none, so a

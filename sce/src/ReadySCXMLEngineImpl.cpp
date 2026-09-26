@@ -238,6 +238,13 @@ public:
         return scxmlEngine_->getActiveStatesSync(sessionId_);
     }
 
+    std::string getTerminalState() const override {
+        if (!initialized_ || !scxmlEngine_) {
+            return "";
+        }
+        return scxmlEngine_->getTerminalStateSync(sessionId_);
+    }
+
     bool setVariable(const std::string &name, const std::string &value) override {
         return setVariableImpl(name, value);
     }

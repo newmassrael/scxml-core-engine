@@ -463,6 +463,13 @@ std::vector<std::string> SCXMLEngineImpl::getActiveStatesSync([[maybe_unused]] c
     return stateMachine_->getActiveStates();
 }
 
+std::string SCXMLEngineImpl::getTerminalStateSync([[maybe_unused]] const std::string &sessionId) const {
+    if (!stateMachine_) {
+        return "";
+    }
+    return stateMachine_->terminalState().value_or("");
+}
+
 // Private helper for all setVariableSync overloads (Zero Duplication)
 bool SCXMLEngineImpl::setVariableSyncImpl(const std::string &name, const ScriptValue &value,
                                           const std::string &sessionId) {

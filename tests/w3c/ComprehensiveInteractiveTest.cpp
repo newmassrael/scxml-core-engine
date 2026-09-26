@@ -191,6 +191,12 @@ StateSnapshot captureCurrentSnapshot(InteractiveTestRunner &runner) {
     // Capture activeStates (W3C SCXML 3.13: preserve document order for time-travel debugging)
     snapshot.activeStates = runner.getActiveStates();
 
+    // Where the run ended, if it has: its activeStates are empty once it has
+    // (W3C SCXML Appendix D exitInterpreter)
+    if (const std::string ended = runner.getTerminalState(); !ended.empty()) {
+        snapshot.terminalState = ended;
+    }
+
     // Capture stepNumber
     snapshot.stepNumber = runner.getCurrentStep();
 

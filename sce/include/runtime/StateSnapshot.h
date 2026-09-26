@@ -150,6 +150,12 @@ struct StateSnapshot {
     // cancel treats the two apart (see StateMachine::restoreActiveStatesDirectly).
     bool running;
 
+    // The top-level <final> the run had ended in, if it had. Recorded rather
+    // than read back from `activeStates`: an ended run's configuration is
+    // empty (§scxml-D-exitInterpreter), so the states cannot say where it
+    // ended (see StateMachine::terminalState).
+    std::optional<std::string> terminalState;
+
     // Execution metadata
     int stepNumber;
     std::string lastEventName;
@@ -196,18 +202,21 @@ public:
      * @param activeInvokes Active invocations
      * @param executedEvents Event execution history
      * @param running Whether the machine was still running (see StateSnapshot::running)
+     * @param terminalState The final the run had ended in (see StateSnapshot::terminalState)
      * @param stepNumber Current execution step number
      * @param lastEvent Last processed event name
      * @param transitionSource Source state of last transition
      * @param transitionTarget Target state of last transition
      */
-    void captureSnapshot(
-        const std::vector<std::string> &activeStates, const std::map<std::string, std::string> &dataModel,
-        const std::vector<EventSnapshot> &internalQueue, const std::vector<EventSnapshot> &externalQueue,
-        const std::vector<EventSnapshot> &pendingUIEvents, const std::vector<ScheduledEventSnapshot> &scheduledEvents,
-        const std::vector<InvokeSnapshot> &activeInvokes, const std::vector<EventSnapshot> &executedEvents,
-        bool running, int stepNumber, const std::string &lastEvent = "", const std::string &transitionSource = "",
-        const std::string &transitionTarget = "", int64_t schedulerLogicalTimeMs = 0);
+    void
+    captureSnapshot(const std::vector<std::string> &activeStates, const std::map<std::string, std::string> &dataModel,
+                    const std::vector<EventSnapshot> &internalQueue, const std::vector<EventSnapshot> &externalQueue,
+                    const std::vector<EventSnapshot> &pendingUIEvents,
+                    const std::vector<ScheduledEventSnapshot> &scheduledEvents,
+                    const std::vector<InvokeSnapshot> &activeInvokes, const std::vector<EventSnapshot> &executedEvents,
+                    bool running, const std::optional<std::string> &terminalState, int stepNumber,
+                    const std::string &lastEvent = "", const std::string &transitionSource = "",
+                    const std::string &transitionTarget = "", int64_t schedulerLogicalTimeMs = 0);
 
     /**
      * @brief Get snapshot at specific step number

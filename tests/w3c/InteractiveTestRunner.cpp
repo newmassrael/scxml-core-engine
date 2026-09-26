@@ -654,6 +654,10 @@ bool InteractiveTestRunner::isInFinalState() const {
     return stateMachine_->isInFinalState();
 }
 
+std::string InteractiveTestRunner::getTerminalState() const {
+    return stateMachine_->terminalState().value_or("");
+}
+
 void InteractiveTestRunner::captureSnapshot() {
     auto activeStates = stateMachine_->getActiveStates();
     auto dataModel = extractDataModel();
@@ -727,10 +731,10 @@ void InteractiveTestRunner::captureSnapshot() {
     SCE_LOG_DEBUG("[SNAPSHOT CAPTURE] Storing snapshot at index {} with states: [{}], lastEventName: '{}'",
                   currentStep_, statesStr, lastEventName_);
 
-    snapshotManager_.captureSnapshot(activeStates, dataModel, internalQueue, externalQueue, pendingUIEvents,
-                                     scheduledEventsSnapshots, activeInvokes, executedEvents_,
-                                     stateMachine_->isRunning(), currentStep_, lastEventName_, lastTransitionSource_,
-                                     lastTransitionTarget_, schedulerLogicalTimeMs);
+    snapshotManager_.captureSnapshot(
+        activeStates, dataModel, internalQueue, externalQueue, pendingUIEvents, scheduledEventsSnapshots, activeInvokes,
+        executedEvents_, stateMachine_->isRunning(), stateMachine_->terminalState(), currentStep_, lastEventName_,
+        lastTransitionSource_, lastTransitionTarget_, schedulerLogicalTimeMs);
 }
 
 bool InteractiveTestRunner::restoreSnapshot(const StateSnapshot &snapshot) {
@@ -764,7 +768,7 @@ bool InteractiveTestRunner::restoreSnapshot(const StateSnapshot &snapshot) {
 
     // W3C SCXML 3.13: Restore state configuration using existing method
     // No instance recreation, no start() call - direct restoration only
-    if (!stateMachine_->restoreFromSnapshot(snapshot.activeStates, snapshot.running)) {
+    if (!stateMachine_->restoreFromSnapshot(snapshot.activeStates, snapshot.running, snapshot.terminalState)) {
         SCE_LOG_ERROR("InteractiveTestRunner: Failed to restore snapshot states");
         return false;  // RAII guard automatically disables restoration mode
     }
@@ -1311,6 +1315,9 @@ emscripten::val InteractiveTestRunner::getInvokedChildren() const {
         // Basic child info
         childObj.set("sessionId", child->getSessionId());
         childObj.set("isInFinalState", child->isInFinalState());
+        // An ended child's active states are empty (§scxml-D-exitInterpreter);
+        // this is where it ended, "" while it has not.
+        childObj.set("terminalState", child->terminalState().value_or(""));
 
         // Active states
         auto activeStatesArray = emscripten::val::array();

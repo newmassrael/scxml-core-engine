@@ -18,7 +18,9 @@ std::string StateHierarchyManager::getCurrentState() const {
     std::lock_guard<std::mutex> lock(configurationMutex_);
 
     if (activeStates_.empty()) {
-        SCE_LOG_WARN("No active states");
+        // Not started, or ended: W3C SCXML Appendix D exitInterpreter leaves an
+        // ended run with no active states, so this is an ordinary answer.
+        SCE_LOG_DEBUG("No active states");
         return "";
     }
 

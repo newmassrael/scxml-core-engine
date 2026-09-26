@@ -50,6 +50,18 @@ SnapshotDiff SnapshotComparator::compare(const StateSnapshot &expected, const St
         result.isIdentical = false;
     }
 
+    // Compare terminalState: an ended run's activeStates are empty
+    // (W3C SCXML Appendix D exitInterpreter), so two ended runs agree there
+    // whichever final they ended in; this is the field that tells them apart.
+    if (expected.terminalState != actual.terminalState) {
+        result.terminalStateMismatch = true;
+        result.isIdentical = false;
+        std::ostringstream oss;
+        oss << "terminalState differs: expected '" << expected.terminalState.value_or("(none)") << "', got '"
+            << actual.terminalState.value_or("(none)") << "'";
+        result.differences.push_back(oss.str());
+    }
+
     // Compare dataModel
     if (!compareDataModel(expected.dataModel, actual.dataModel, result.differences)) {
         result.dataModelMismatch = true;

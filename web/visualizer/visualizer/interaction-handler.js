@@ -185,15 +185,20 @@ class InteractionHandler {
         this.visualizer.updateLinks(false); // useGreedy=false
     }
 
-    highlightActiveStates(activeStateIds) {
-        logger.debug(`[highlightActiveStates] Called with:`, activeStateIds);
+    highlightActiveStates(activeStateIds, terminalStateId = '') {
+        logger.debug(`[highlightActiveStates] Called with:`, activeStateIds, `terminal: '${terminalStateId}'`);
 
         // Check if states actually changed (skip redundant center/zoom operations)
         const newStatesStr = [...activeStateIds].sort().join(',');
         const oldStatesStr = this.visualizer.activeStates ? [...this.visualizer.activeStates].sort().join(',') : '';
-        const statesChanged = newStatesStr !== oldStatesStr;
+        const statesChanged = newStatesStr !== oldStatesStr || terminalStateId !== this.visualizer.terminalState;
 
         this.visualizer.activeStates = new Set(activeStateIds);
+        this.visualizer.terminalState = terminalStateId;
+
+        // An ended run has no active states to center on; the final it ended
+        // in is where the eye belongs (§scxml-D-exitInterpreter).
+        const focusIds = activeStateIds.length === 0 && terminalStateId ? [terminalStateId] : activeStateIds;
 
         // Auto-expand compound/parallel states that are active or have active children
         let needsReLayout = false;
@@ -220,7 +225,7 @@ class InteractionHandler {
                 this.visualizer.highlightActiveStatesVisual();
                 // Auto-center on active states (only if states changed)
                 if (statesChanged) {
-                    this.visualizer.focusManager.centerDiagram(activeStateIds);
+                    this.visualizer.focusManager.centerDiagram(focusIds);
                 }
             });
             return;
@@ -229,7 +234,7 @@ class InteractionHandler {
         this.visualizer.highlightActiveStatesVisual();
         // Auto-center on active states (only if states changed)
         if (statesChanged) {
-            this.visualizer.focusManager.centerDiagram(activeStateIds);
+            this.visualizer.focusManager.centerDiagram(focusIds);
         }
     }
 
@@ -237,6 +242,11 @@ class InteractionHandler {
         if (this.visualizer.nodeElements) {
             this.visualizer.nodeElements.classed('active', d => {
                 return this.visualizer.activeStates.has(d.id);
+            });
+            // A top-level <final> is a node, never a compound or a collapsed
+            // one, so only the node elements carry where the run ended.
+            this.visualizer.nodeElements.classed('terminal', d => {
+                return d.id === this.visualizer.terminalState;
             });
         }
 

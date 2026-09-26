@@ -88,6 +88,8 @@ EMSCRIPTEN_BINDINGS(interactive_test_runner) {
 
         .function("isInFinalState", &InteractiveTestRunner::isInFinalState)
 
+        .function("getTerminalState", &InteractiveTestRunner::getTerminalState)
+
         .function("getLastTransition", &InteractiveTestRunner::getLastTransition)
 
         // §scxml-D-removeConflictingTransitions: Conflict resolution visualization

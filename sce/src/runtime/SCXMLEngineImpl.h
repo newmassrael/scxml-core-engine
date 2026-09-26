@@ -71,6 +71,7 @@ public:
     std::string getCurrentStateSync(const std::string &sessionId = "") const override;
     bool isInStateSync(const std::string &stateId, const std::string &sessionId = "") const override;
     std::vector<std::string> getActiveStatesSync(const std::string &sessionId = "") const override;
+    std::string getTerminalStateSync(const std::string &sessionId = "") const override;
     bool setVariableSync(const std::string &name, const std::string &value, const std::string &sessionId = "") override;
     bool setVariableSync(const std::string &name, bool value, const std::string &sessionId = "") override;
     bool setVariableSync(const std::string &name, double value, const std::string &sessionId = "") override;

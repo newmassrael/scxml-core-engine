@@ -385,8 +385,11 @@ public:
      * @param states Vector of state IDs to activate (document order preserved)
      * @param running Whether the machine was still running when the states
      *        were recorded; it becomes the running flag as recorded
+     * @param terminalState The top-level final the recorded run had ended in;
+     *        it becomes `terminalState()` as recorded
      */
-    void restoreActiveStatesDirectly(const std::vector<std::string> &states, bool running);
+    void restoreActiveStatesDirectly(const std::vector<std::string> &states, bool running,
+                                     const std::optional<std::string> &terminalState);
 
     /**
      * @brief Check if the initial state of the SCXML model is a final state
@@ -652,6 +655,10 @@ public:
      * @param running Whether the machine was still running when the snapshot
      *        was recorded. There is no default: a restore that assumed
      *        "running" revived invoked children whose sessions had ended.
+     * @param terminalState The top-level final the recorded run had ended in,
+     *        or nullopt if it had not ended there. It is recorded rather than
+     *        derived from `states`: an ended run's configuration is empty
+     *        (§scxml-D-exitInterpreter), so the states cannot say where it ended.
      * @return true if restoration succeeded, false on failure
      *
      * @note Thread Safety: NOT thread-safe. Caller must ensure no concurrent
@@ -661,7 +668,8 @@ public:
      * @note JS Environment: Idempotent - safe to call even if JS environment
      *       already initialized (e.g., after start()).
      */
-    bool restoreFromSnapshot(const std::vector<std::string> &states, bool running);
+    bool restoreFromSnapshot(const std::vector<std::string> &states, bool running,
+                             const std::optional<std::string> &terminalState);
 
 private:
     /// A transition a selection enabled — one member of Appendix D's

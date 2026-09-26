@@ -122,6 +122,16 @@ public:
      */
     virtual std::vector<std::string> getActiveStates() const = 0;
 
+    /**
+     * @brief Get the top-level final state the run ended in
+     *
+     * A run that has ended has no active states (W3C SCXML Appendix D
+     * exitInterpreter), so this is how a host learns where it stopped.
+     *
+     * @return The final state's ID, empty while the run has not ended in one
+     */
+    virtual std::string getTerminalState() const = 0;
+
     // === Simple Variable Access ===
 
     /**

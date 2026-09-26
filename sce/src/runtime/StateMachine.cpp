@@ -1099,16 +1099,13 @@ std::vector<std::string> StateMachine::configurationInExitOrder() const {
 void StateMachine::finishAtTopLevelFinal() {
     topLevelFinalReached_ = false;
     // §scxml-D-exitInterpreter: the machine has entered a top-level `<final>`,
-    // so the interpretation is over — every active state's onexit runs and
-    // its invocations are cancelled, then the parent session is told
-    // (§scxml-6.4.3: done.invoke only after the onexit handlers). The
-    // configuration itself is kept: it is what a host reads to learn where
-    // the machine stopped.
+    // so the interpretation is over — every active state is exited as
+    // exitStates exits one (onexit, cancel its invocations, leave the
+    // configuration), then the parent session is told (§scxml-6.4.3:
+    // done.invoke only after the onexit handlers). The configuration ends
+    // empty; where the run ended is `terminalState()`.
     for (const auto &state : configurationInExitOrder()) {
-        if (!executeExitActions(state)) {
-            SCE_LOG_WARN("StateMachine: Failed to execute onexit for final state: {}", state);
-        }
-        cancelInvokesOf(state);
+        exitState(state);
     }
     recordUnseenQueuedEvents();
 
@@ -1228,7 +1225,8 @@ std::vector<TransitionDescriptorString> StateMachine::getLastOptimalTransitions(
     return lastOptimalTransitions_;
 }
 
-bool StateMachine::restoreFromSnapshot(const std::vector<std::string> &states, bool running) {
+bool StateMachine::restoreFromSnapshot(const std::vector<std::string> &states, bool running,
+                                       const std::optional<std::string> &terminalState) {
     // Complete state machine restoration for time-travel debugging
     // ARCHITECTURE.md: Template Method pattern - encapsulates restoration lifecycle
     // to prevent temporal coupling and maintain Single Source of Truth
@@ -1252,7 +1250,7 @@ bool StateMachine::restoreFromSnapshot(const std::vector<std::string> &states, b
 
     // Step 2: Restore state configuration (delegates to internal method)
     // This sets isRunning_ to the recorded flag internally
-    restoreActiveStatesDirectly(states, running);
+    restoreActiveStatesDirectly(states, running, terminalState);
 
     // Verify restoration
     auto restoredStates = getActiveStates();
@@ -1269,7 +1267,8 @@ bool StateMachine::restoreFromSnapshot(const std::vector<std::string> &states, b
     return true;
 }
 
-void StateMachine::restoreActiveStatesDirectly(const std::vector<std::string> &states, bool running) {
+void StateMachine::restoreActiveStatesDirectly(const std::vector<std::string> &states, bool running,
+                                               const std::optional<std::string> &terminalState) {
     // Time-travel debugging - restore configuration without side effects: the
     // states are written into the configuration and no <onentry> runs.
     // INTERNAL USE ONLY: Called by restoreFromSnapshot() after JS environment initialization
@@ -1309,19 +1308,10 @@ void StateMachine::restoreActiveStatesDirectly(const std::vector<std::string> &s
         isRunning_ = running;
         SCE_LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: running restored as {}, mutex will release", running);
 
-        // An ended run comes back ended where it ended: a restored step that is
-        // not running and holds a top-level <final> is a run whose terminal
-        // state is that final (§scxml-D-enterStates).
-        terminalState_.reset();
-        if (!running && model_) {
-            for (const auto &stateId : states) {
-                auto state = model_->findStateById(stateId);
-                if (state && state->getType() == Type::FINAL && !state->getParent()) {
-                    terminalState_ = stateId;
-                    break;
-                }
-            }
-        }
+        // An ended run comes back ended where it ended (§scxml-D-enterStates).
+        // The step records that final itself: its configuration is empty
+        // (§scxml-D-exitInterpreter), so nothing in `states` could name it.
+        terminalState_ = terminalState;
 
         // The configuration is the whole of the run state: a `<parallel>`'s
         // regions are its child states in that configuration, read by the

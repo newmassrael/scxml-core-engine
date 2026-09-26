@@ -14413,6 +14413,21 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "stop",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/runtime/StateMachine.h",
+          "symbol": "restoreFromSnapshot",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/runtime/StateSnapshot.h",
+          "symbol": "terminalState",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::restoreActiveStatesDirectly",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

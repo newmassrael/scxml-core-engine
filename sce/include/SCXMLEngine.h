@@ -228,6 +228,17 @@ public:
     virtual std::vector<std::string> getActiveStatesSync(const std::string &sessionId = "") const = 0;
 
     /**
+     * @brief Get the top-level final state the run ended in (synchronous)
+     *
+     * A run that has ended has no active states (W3C SCXML Appendix D
+     * exitInterpreter), so this is how a host learns where it stopped.
+     *
+     * @param sessionId Target session (uses default if empty)
+     * @return The final state's ID, empty while the run has not ended in one
+     */
+    virtual std::string getTerminalStateSync(const std::string &sessionId = "") const = 0;
+
+    /**
      * @brief Set a variable in the state machine's data model (synchronous)
      * @param name Variable name
      * @param value Variable value (string)

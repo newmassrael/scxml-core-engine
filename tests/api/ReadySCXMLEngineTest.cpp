@@ -437,4 +437,23 @@ TEST_F(ReadySCXMLEngineTest, MultipleTransitions_CounterIncreases_Success) {
     EXPECT_TRUE(engine->isInState("running"));
 }
 
+TEST_F(ReadySCXMLEngineTest, EndedRun_TerminalStateNamesTheFinal_ConfigurationEmpty) {
+    std::string filePath = createSimpleTestFile();
+    auto engine = ReadySCXMLEngine::fromFile(filePath);
+    ASSERT_NE(engine, nullptr);
+    ASSERT_TRUE(engine->start());
+    EXPECT_EQ(engine->getTerminalState(), "") << "a run that has not ended names no final";
+
+    ASSERT_TRUE(engine->sendEvent("start"));
+    ASSERT_TRUE(engine->sendEvent("stop"));
+
+    // W3C SCXML Appendix D exitInterpreter: reaching the top-level final exits
+    // every state, so the configuration is empty and the final the run ended
+    // in is what the host reads instead.
+    EXPECT_FALSE(engine->isRunning());
+    EXPECT_EQ(engine->getTerminalState(), "stopped");
+    EXPECT_TRUE(engine->getActiveStates().empty());
+    EXPECT_FALSE(engine->isInState("stopped"));
+}
+
 }  // namespace SCE

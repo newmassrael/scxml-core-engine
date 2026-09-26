@@ -22,6 +22,7 @@ struct SnapshotDiff {
 
     // Field-specific mismatch flags
     bool activeStatesMismatch;
+    bool terminalStateMismatch;
     bool dataModelMismatch;
     bool internalQueueMismatch;
     bool externalQueueMismatch;
@@ -35,10 +36,11 @@ struct SnapshotDiff {
     bool outgoingTransitionMismatch;
 
     SnapshotDiff()
-        : isIdentical(true), activeStatesMismatch(false), dataModelMismatch(false), internalQueueMismatch(false),
-          externalQueueMismatch(false), pendingUIEventsMismatch(false), scheduledEventsMismatch(false),
-          executedEventsMismatch(false), activeInvokesMismatch(false), stepNumberMismatch(false),
-          lastEventNameMismatch(false), incomingTransitionMismatch(false), outgoingTransitionMismatch(false) {}
+        : isIdentical(true), activeStatesMismatch(false), terminalStateMismatch(false), dataModelMismatch(false),
+          internalQueueMismatch(false), externalQueueMismatch(false), pendingUIEventsMismatch(false),
+          scheduledEventsMismatch(false), executedEventsMismatch(false), activeInvokesMismatch(false),
+          stepNumberMismatch(false), lastEventNameMismatch(false), incomingTransitionMismatch(false),
+          outgoingTransitionMismatch(false) {}
 
     /**
      * @brief Get formatted diff report for logging

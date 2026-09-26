@@ -198,6 +198,15 @@ public:
     bool isInFinalState() const;
 
     /**
+     * @brief The top-level final the run ended in, or "" while it has not ended
+     *
+     * An ended run's active states are empty (§scxml-D-exitInterpreter), so
+     * this is what the diagram marks as where the run ended. A string rather
+     * than an optional because it crosses the embind boundary.
+     */
+    std::string getTerminalState() const;
+
+    /**
      * @brief Get last transition information
      *
      * Returns JavaScript object with:
@@ -377,7 +386,8 @@ public:
      *       sessionId: "child_session_id",
      *       activeStates: ["state1", "state2"],
      *       structure: { states: [...], transitions: [...] },
-     *       isInFinalState: false
+     *       isInFinalState: false,
+     *       terminalState: ""
      *     }
      *   ]
      * }
