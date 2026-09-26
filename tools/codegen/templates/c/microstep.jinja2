@@ -701,6 +701,14 @@ SCE_SM_FN static void enter_states({{ _t }}_t *sm, const {{ _t }}_entry_transiti
            default content owed to it. */
         sm->active |= state_bit(s);
         execute_entry_actions(sm, s);
+        /* §scxml-D-enterStates: a <final> whose parent is the <scxml> element
+           ends the run, and entering one records it as the run's terminal
+           state — a fact the machine keeps rather than a reading of the
+           configuration. */
+        if ((state_bit(s) & {{ _u }}_FINAL_MASK) != 0u) {
+            sm->terminal_state = s;
+            sm->has_terminal_state = true;
+        }
         if ((entry.states_for_default_entry & state_bit(s)) != 0u) {
             execute_initial_transition_content(sm, s);
         }

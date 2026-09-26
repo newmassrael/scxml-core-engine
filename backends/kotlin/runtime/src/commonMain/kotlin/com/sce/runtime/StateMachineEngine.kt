@@ -1096,6 +1096,19 @@ abstract class StateMachineEngine<S : State, E : Event>(
         private set
 
     /**
+     * §scxml-D-enterStates: the top-level `<final>` the run ended in, or null
+     * while it is still running, after a host [stop], or before it started.
+     *
+     * The one answer to "where did this run end". It is recorded when the run
+     * ends, so it does not depend on what the configuration holds afterwards —
+     * the exit that ends the run leaves the configuration empty, as Appendix
+     * D's exitInterpreter does. Non-null exactly when [isInFinalState] is true.
+     */
+    @Volatile
+    var terminalState: S? = null
+        private set
+
+    /**
      * Pending final state flag, set by generated onEntry() code via
      * [markFinalStateReached]. Flushed to [isInFinalState] once the microstep
      * that entered the final state has updated _currentState.value.
@@ -1667,6 +1680,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
         this.configuration.clear()
         this.configuration.addAll(configuration)
         _currentState.value = current
+        // A configuration restored AT a top-level <final> is a run that has
+        // already ended there; any other is still running.
+        val endedHere = isFinalState(current) && parentOf(current) == null
+        terminalState = if (endedHere) current else null
+        isInFinalState = endedHere
 
         return ConfigurationRejection.NONE
     }
@@ -2297,6 +2315,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         configuration.clear()
         historyValues.clear()
         isInFinalState = false
+        terminalState = null
         pendingFinalState = false
         internalEventQueue.clear()
         externalEventQueue.clear()
@@ -3000,6 +3019,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // stopped. Published before [isInFinalState] is set, which is
             // what then stops [macrostepSettled] publishing the emptied one.
             onMacrostepComplete(macrostepTruncated)
+            terminalState = _currentState.value
             isInFinalState = true
 
             // §scxml-3.8: Execute onexit actions for the final state before

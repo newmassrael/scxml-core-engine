@@ -188,7 +188,9 @@ class Engine(Generic[S, E]):
         self._internal_queue: "deque[EventWithMetadata[E]]" = deque()
         self._external_queue: "deque[EventWithMetadata[E]]" = deque()
         self._is_running: bool = False
-        self._reached_final: bool = False
+        # §scxml-D-enterStates — the top-level `<final>` the run ended in, set
+        # on entering it. See `terminal_state`.
+        self._terminal_state: Optional[S] = None
         # §scxml-3.1.2 — events taken off the external queue that no
         # transition matched, and the most recent of them. See
         # `discarded_external_events`.
@@ -436,6 +438,13 @@ class Engine(Generic[S, E]):
         # is stored in document order, which is the order the entry
         # procedures would have added its members in.
         self._configuration = sorted(configuration, key=self._policy.get_document_order)
+        # A configuration restored AT a top-level `<final>` is a run that has
+        # already ended there; any other is still running.
+        self._terminal_state = (
+            current
+            if self._policy.is_final_state(current) and self._policy.get_parent(current) is None
+            else None
+        )
 
         self._is_running = True
         return ConfigurationRejection.NONE
@@ -501,7 +510,24 @@ class Engine(Generic[S, E]):
 
     @property
     def reached_final(self) -> bool:
+        """Whether the run has ended at a top-level `<final>` — the same
+        answer as ``terminal_state is not None``."""
         return self._reached_final
+
+    @property
+    def _reached_final(self) -> bool:
+        return self._terminal_state is not None
+
+    @property
+    def terminal_state(self) -> Optional[S]:
+        """§scxml-D-enterStates — the top-level `<final>` the run ended in, or
+        ``None`` while it is still running or when it was never started.
+
+        The one answer to "where did this run end". It is recorded when the
+        final is entered, so it does not depend on what the configuration
+        holds afterwards — Appendix D's exitInterpreter leaves the
+        configuration empty."""
+        return self._terminal_state
 
     @property
     def policy(self) -> StatePolicy[S, E]:
@@ -1634,7 +1660,7 @@ class Engine(Generic[S, E]):
         parent = self._policy.get_parent(final_state)
         if parent is None:
             self._policy.execute_exit_actions(final_state, self)
-            self._reached_final = True
+            self._terminal_state = final_state
             self._is_running = False
 
     # ── Invoke drivers (W3C SCXML 6.4) ────────────────────────────

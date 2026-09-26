@@ -413,6 +413,13 @@ private:
 
         void enterState(const State &s, bool isDefaultEntry) {
             engine.policy_.executeEntryActions(s, engine, isDefaultEntry);
+            // §scxml-D-enterStates: a <final> whose parent is the <scxml>
+            // element ends the run. Recorded as the run's terminal state, so
+            // "where did it end" is a fact the engine keeps rather than a
+            // reading of the configuration.
+            if (StatePolicy::isFinalState(s) && !StatePolicy::getParent(s).has_value()) {
+                engine.terminalState_ = s;
+            }
         }
 
         void executeHistoryDefaultContent(const History &h) {
@@ -702,6 +709,9 @@ private:
     }
 
     State currentState_;
+    // §scxml-D-enterStates: the top-level <final> the run ended in; set by
+    // MicrostepHost::enterState, cleared when a run starts.
+    std::optional<State> terminalState_;
     SCE::Core::EventQueueManager<EventWithMetadata>
         internalQueue_;  // §scxml-3.13: Internal event queue (high priority)
     SCE::Core::EventQueueManager<EventWithMetadata> externalQueue_;  // §scxml-3.13: External event queue (low priority)
@@ -2101,6 +2111,7 @@ public:
         TurnGuard turn(*this);
 
         isRunning_ = true;
+        terminalState_.reset();
 
         // §scxml-5.3: Initialize datamodel before any state entry
         // This ensures error.execution events are raised immediately if initialization fails
@@ -2213,6 +2224,13 @@ public:
         }
 
         currentState_ = current;
+        // A configuration restored AT a top-level <final> is a run that has
+        // already ended there; any other is still running.
+        if (StatePolicy::isFinalState(current) && !StatePolicy::getParent(current).has_value()) {
+            terminalState_ = current;
+        } else {
+            terminalState_.reset();
+        }
 
         // §scxml-3.4: a machine that keeps its own active set is handed it
         // back. The condition is the one the generator emits `setActiveStates`
@@ -2393,8 +2411,9 @@ public:
     /**
      * @brief Check whether this session has ended (§scxml-3.7 / §scxml-6.4)
      *
-     * True only when `currentState_` is a `<final>` **and** has no parent,
-     * i.e. its parent is the `<scxml>` element. §scxml-D-enterStates sets
+     * True only once the run has entered a `<final>` that has no parent,
+     * i.e. whose parent is the `<scxml>` element — the same answer as
+     * `terminalState().has_value()`. §scxml-D-enterStates sets
      * `running = false` for a `<final>` only when `isSCXMLElement(s.parent)`;
      * a nested one queues `done.state.<parent>` and the machine carries on.
      * The structural question — "is this state a `<final>` element" — is
@@ -2411,10 +2430,24 @@ public:
      * regional `<final>` ahead of a remote sibling's wire-21 arrival still
      * needs the scheduler pumped so the barrier-timeout event can fire.
      *
-     * @return true if `currentState_` is a top-level `<final>`
+     * @return true once the run has entered a top-level `<final>`
      */
     bool isInFinalState() const {
-        return StatePolicy::isFinalState(currentState_) && !StatePolicy::getParent(currentState_).has_value();
+        return terminalState_.has_value();
+    }
+
+    /**
+     * @brief The top-level `<final>` the run ended in (§scxml-D-enterStates),
+     *        or `std::nullopt` while it is still running or when it was never
+     *        started.
+     *
+     * The one answer to "where did this run end". It is recorded when the
+     * final is entered, so it does not depend on what the configuration holds
+     * afterwards — Appendix D's exitInterpreter leaves the configuration
+     * empty.
+     */
+    std::optional<State> terminalState() const {
+        return terminalState_;
     }
 
     /**

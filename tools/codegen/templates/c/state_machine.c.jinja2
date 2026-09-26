@@ -2363,10 +2363,12 @@ SCE_SM_FN {{ csym_prefix }}{{ model.name }}_configuration_rejection_t {{ csym_pr
     return {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_NONE;
 }
 
-/* W3C SCXML 3.7: codegen-time bitmask of every TOP-LEVEL <final> state.
-   `{{ csym_prefix }}{{ model.name }}_is_in_final_state` returns true only when the
-   machine reaches a final whose parent is the SCXML root — the spec's
-   "machine completion" criterion. Compound `<final>` states (those with
+/* W3C SCXML 3.7: codegen-time bitmask of every TOP-LEVEL <final> state —
+   the states whose entry ends the run and is recorded as its terminal state
+   (`enter_states`, and `_init_at` for a restored configuration), which is
+   what `{{ csym_prefix }}{{ model.name }}_is_in_final_state` answers from. Only a
+   final whose parent is the SCXML root is the spec's "machine completion"
+   criterion. Compound `<final>` states (those with
    a `state.parent`) are NOT terminal: their entry raises
    `done.state.<parent>` (W3C SCXML 3.7) and the surrounding compound
    carries on. Mirrors cpp `static/StaticExecutionEngine.h::isInFinalState`,
@@ -4848,6 +4850,16 @@ SCE_SM_FN {{ csym_prefix }}{{ model.name }}_configuration_rejection_t {{ csym_pr
         sm->active |= state_bit(configuration[i]);
     }
 
+    /* A configuration restored AT a top-level <final> is a run that has
+       already ended there; a legal configuration holds at most one. */
+    for (size_t i = 0u; i < count; ++i) {
+        if ((state_bit(configuration[i]) & {{ csym_prefix | upper }}{{ model.name | upper }}_FINAL_MASK) != 0u) {
+            sm->terminal_state = configuration[i];
+            sm->has_terminal_state = true;
+            break;
+        }
+    }
+
     return {{ csym_prefix | upper }}{{ model.name | upper }}_CONFIG_NONE;
 }
 
@@ -5514,7 +5526,16 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_in_state(const {{ csym_prefix }
 }
 
 SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_is_in_final_state(const {{ csym_prefix }}{{ model.name }}_t *sm) {
-    return (sm->active & {{ csym_prefix | upper }}{{ model.name | upper }}_FINAL_MASK) != 0u;
+    return sm->has_terminal_state;
+}
+
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_terminal_state(const {{ csym_prefix }}{{ model.name }}_t *sm,
+                                                   {{ csym_prefix }}{{ model.name }}_state_t *out) {
+    if (!sm->has_terminal_state) {
+        return false;
+    }
+    *out = sm->terminal_state;
+    return true;
 }
 {% if model.on_sample_links %}
 

@@ -54,6 +54,12 @@ type Engine[S comparable, E comparable] struct {
 	// isRunning tracks whether the engine is currently running.
 	isRunning bool
 
+	// terminalState is the §scxml-D-enterStates top-level <final> the run
+	// ended in, valid when hasTerminalState — set on entering it, cleared
+	// when a run starts. See TerminalState.
+	terminalState    S
+	hasTerminalState bool
+
 	// completionCallback is the §scxml-6.4 callback invoked when reaching a final state.
 	completionCallback func()
 
@@ -226,6 +232,7 @@ func (e *Engine[S, E]) Initialize() {
 	defer e.endTurn(opened)
 
 	e.isRunning = true
+	e.clearTerminalState()
 
 	// §scxml-5.3: Initialize datamodel before any state entry
 	if e.policy.NeedsDataModelInit() {
@@ -324,6 +331,10 @@ func (e *Engine[S, E]) EnterAt(configuration []S, current S) ConfigurationReject
 	}
 
 	e.currentState = current
+	// A configuration restored AT a top-level <final> is a run that has
+	// already ended there; any other is still running.
+	e.clearTerminalState()
+	e.recordTerminalState(current)
 
 	// §scxml-3.4: a machine that keeps its own active set is handed it back.
 	// The condition is the one the generator emits SetActiveStates under, so a
@@ -486,8 +497,7 @@ func (e *Engine[S, E]) liftTypedPayload(event E, meta *EventMetadata) {
 }
 
 // isInFinalState reports whether this session has ended — that is, whether the
-// current state is a <final> whose parent is the <scxml> element
-// (§scxml-3.7).
+// run has entered a <final> whose parent is the <scxml> element (§scxml-3.7).
 //
 // Appendix D enterStates sets running = false for a <final> only when
 // isSCXMLElement(s.parent); a nested one queues done.state.<parent> and the
@@ -495,18 +505,46 @@ func (e *Engine[S, E]) liftTypedPayload(event E, meta *EventMetadata) {
 // element" — is StatePolicy.IsFinalState, and it is not the completion
 // criterion on its own. Everything that means "the machine is done" keys on
 // this method: RunUntilCompletion, the completion callback, and the
-// done.invoke.<id> a parent emits for an invoked child.
+// done.invoke.<id> a parent emits for an invoked child. The same answer as
+// TerminalState's second result.
 func (e *Engine[S, E]) isInFinalState() bool {
-	if !e.policy.IsFinalState(e.currentState) {
-		return false
-	}
-	_, hasParent := e.policy.GetParent(e.currentState)
-	return !hasParent
+	return e.hasTerminalState
 }
 
 // IsInFinalState is the exported version for external callers.
 func (e *Engine[S, E]) IsInFinalState() bool {
 	return e.isInFinalState()
+}
+
+// TerminalState reports the top-level <final> the run ended in
+// (§scxml-D-enterStates), and false while it is still running or when it was
+// never started.
+//
+// The one answer to "where did this run end". It is recorded when the final
+// is entered, so it does not depend on what the configuration holds afterwards
+// — Appendix D's exitInterpreter leaves the configuration empty.
+func (e *Engine[S, E]) TerminalState() (S, bool) {
+	return e.terminalState, e.hasTerminalState
+}
+
+// recordTerminalState records state as the run's terminal state when it is a
+// <final> whose parent is the <scxml> element — the one kind of state whose
+// entry ends the run (§scxml-D-enterStates).
+func (e *Engine[S, E]) recordTerminalState(state S) {
+	if !e.policy.IsFinalState(state) {
+		return
+	}
+	if _, hasParent := e.policy.GetParent(state); hasParent {
+		return
+	}
+	e.terminalState = state
+	e.hasTerminalState = true
+}
+
+func (e *Engine[S, E]) clearTerminalState() {
+	var zero S
+	e.terminalState = zero
+	e.hasTerminalState = false
 }
 
 // Policy returns the inner policy (read-only access).
@@ -1734,6 +1772,9 @@ func (h engineHost[S, E]) ExecuteTransitionContent(transition EnabledTransition[
 // EnterState implements Run.
 func (h engineHost[S, E]) EnterState(state S, isDefaultEntry bool) {
 	h.engine.policy.ExecuteEntryActions(state, h.engine, isDefaultEntry)
+	// §scxml-D-enterStates: a top-level <final> ends the run, and entering one
+	// is where the run's terminal state is recorded.
+	h.engine.recordTerminalState(state)
 }
 
 // ExecuteHistoryDefaultContent implements Run.

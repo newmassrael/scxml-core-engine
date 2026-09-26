@@ -288,6 +288,7 @@ bool StateMachine::start(bool autoProcessQueuedEvents) {
     // run the global <script>, then enter the initial configuration and set running.
     isRunning_ = true;
     topLevelFinalReached_ = false;
+    terminalState_.reset();
     macrostepTruncated_ = false;
     macrostepMicrostepsTaken_ = 0;
 
@@ -1009,6 +1010,7 @@ void StateMachine::enterFinalState(const std::string &finalState) {
         pendingTypedDonedataAtFinal_.reset();
         (void)evaluateDoneData(finalState, pendingDonedataAtFinal_, pendingTypedDonedataAtFinal_);
         topLevelFinalReached_ = true;
+        terminalState_ = finalState;
         isRunning_ = false;
         SCE_LOG_INFO("StateMachine: Reached top-level final state: {}, halting processing", finalState);
         return;
@@ -1194,32 +1196,15 @@ bool StateMachine::isStateInFinalState(const std::string &stateId) const {
 }
 
 bool StateMachine::isInFinalState() const {
-    if (!isRunning_) {
-        SCE_LOG_DEBUG("StateMachine::isInFinalState: State machine is not running");
-        return false;
-    }
+    // §scxml-3.7 / §scxml-D-enterStates: only a top-level <final> ends the
+    // run — a compound state's <final> child (test294) and a <parallel> whose
+    // regions have all completed (test570) do not. Entering one records it as
+    // the terminal state, which is the whole of this answer.
+    return terminalState_.has_value();
+}
 
-    // §scxml-3.7: Check only top-level final states, not child final states of compound states
-    // Bug fix: Compound state children (e.g., s02 in test294) should NOT make the machine final
-    // §scxml-3.4 & test570: Complete parallel states should NOT halt execution - only <final/> elements
-    auto activeStates = hierarchyManager_->getActiveStates();
-    for (const auto &stateId : activeStates) {
-        auto state = model_->findStateById(stateId);
-        if (!state) {
-            continue;
-        }
-
-        // §scxml-3.4 & 3.7: only a top-level <final> element halts execution. A
-        // <parallel> whose regions have all completed has raised done.state, and
-        // that event still has to be processed (test 570).
-        if (state->getType() == Type::FINAL && !state->getParent()) {
-            SCE_LOG_DEBUG("StateMachine::isInFinalState: Found top-level final state '{}'", stateId);
-            return true;
-        }
-    }
-
-    SCE_LOG_DEBUG("StateMachine::isInFinalState: No top-level final states active");
-    return false;
+std::optional<std::string> StateMachine::terminalState() const {
+    return terminalState_;
 }
 
 int StateMachine::getLastTransitionIndex() const {
@@ -1322,6 +1307,20 @@ void StateMachine::restoreActiveStatesDirectly(const std::vector<std::string> &s
         // the restored step.
         isRunning_ = running;
         SCE_LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: running restored as {}, mutex will release", running);
+
+        // An ended run comes back ended where it ended: a restored step that is
+        // not running and holds a top-level <final> is a run whose terminal
+        // state is that final (§scxml-D-enterStates).
+        terminalState_.reset();
+        if (!running && model_) {
+            for (const auto &stateId : states) {
+                auto state = model_->findStateById(stateId);
+                if (state && state->getType() == Type::FINAL && !state->getParent()) {
+                    terminalState_ = stateId;
+                    break;
+                }
+            }
+        }
 
         // The configuration is the whole of the run state: a `<parallel>`'s
         // regions are its child states in that configuration, read by the

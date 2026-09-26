@@ -442,6 +442,11 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
 {% endif %}
     {{ csym_prefix }}{{ model.name }}_policy_t policy;
     bool is_running;
+    /* §scxml-D-enterStates: the top-level <final> the run ended in, valid
+       when `has_terminal_state` — set on entering it, zero when a run starts.
+       Read through `_terminal_state`. */
+    {{ csym_prefix }}{{ model.name }}_state_t terminal_state;
+    bool has_terminal_state;
     bool transition_taken;
     /* W3C SCXML 3.1.2: external events no transition matched, and the most
        recent of them. `has_discarded_event` is separate because the event
@@ -1223,7 +1228,18 @@ void {{ csym_prefix }}{{ model.name }}_finalize_session({{ csym_prefix }}{{ mode
    configuration spans multiple leaves simultaneously. */
 uint32_t {{ csym_prefix }}{{ model.name }}_active_states(const {{ csym_prefix }}{{ model.name }}_t *sm);
 bool {{ csym_prefix }}{{ model.name }}_in_state(const {{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s);
+/* §scxml-3.7: whether the run has ended at a top-level <final> — the same
+   answer as `_terminal_state` returning true. */
 bool {{ csym_prefix }}{{ model.name }}_is_in_final_state(const {{ csym_prefix }}{{ model.name }}_t *sm);
+
+/* §scxml-D-enterStates: the top-level <final> the run ended in. Returns true
+   and writes it to `*out` once the run has ended; false while it is still
+   running or before it started. The one answer to "where did this run end":
+   it is recorded when the final is entered, so it does not depend on what the
+   configuration holds afterwards — Appendix D's exitInterpreter leaves the
+   configuration empty. */
+bool {{ csym_prefix }}{{ model.name }}_terminal_state(const {{ csym_prefix }}{{ model.name }}_t *sm,
+                                        {{ csym_prefix }}{{ model.name }}_state_t *out);
 
 /* W3C SCXML 3.3: the document's own name for `s`, or "" for a value outside
    this document's enumeration.

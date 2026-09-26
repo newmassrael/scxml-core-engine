@@ -300,10 +300,24 @@ public:
     bool isStateActive(const std::string &stateId) const;
 
     /**
-     * @brief Check if the state machine is currently in a final state
-     * @return true if current state is a final state
+     * @brief Whether the run has ended at a top-level `<final>`
+     *        (§scxml-D-enterStates)
+     * @return true once a top-level `<final>` has been entered — the same
+     *         answer as `terminalState().has_value()`
      */
     bool isInFinalState() const;
+
+    /**
+     * @brief The top-level `<final>` the run ended in, or `std::nullopt` while
+     *        it is still running, when it was stopped by the host, or when it
+     *        was never started.
+     *
+     * The one answer to "where did this run end". It is recorded when the
+     * final is entered, so it does not depend on what the configuration holds
+     * afterwards — Appendix D's exitInterpreter leaves the configuration
+     * empty.
+     */
+    std::optional<std::string> terminalState() const;
 
     /**
      * @brief Get source state of last executed transition
@@ -695,6 +709,10 @@ private:
     /// Set on entering a top-level `<final>`. The entry point that owns the
     /// macrostep finishes the session once the microstep is over.
     bool topLevelFinalReached_ = false;
+
+    /// §scxml-D-enterStates: the top-level `<final>` the run ended in; set on
+    /// entering it, cleared when a run starts.
+    std::optional<std::string> terminalState_;
 
     // Last executed transition tracking (for interactive visualizer)
     std::string lastTransitionSource_{};

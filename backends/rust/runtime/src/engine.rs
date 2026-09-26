@@ -544,6 +544,10 @@ pub struct Engine<P: StatePolicy> {
     pub(crate) external_queue: P::EventQueue,
     /// Whether the engine is currently running (set false by `stop()` and final state).
     pub(crate) is_running: bool,
+    /// §scxml-D-enterStates: the top-level `<final>` the run ended in — set
+    /// on entering it, cleared when a run starts. See
+    /// [`terminal_state`](Self::terminal_state).
+    pub(crate) terminal_state: Option<P::State>,
     /// §scxml-6.4: Completion callback invoked when reaching a final state.
     ///
     /// SCE Protocol-Synthesis RFC §synth-5-J-2: `Box<dyn FnMut>` is alloc-coupled and gated to
@@ -711,6 +715,7 @@ impl<P: StatePolicy> Engine<P> {
             internal_queue: P::EventQueue::default(),
             external_queue: P::EventQueue::default(),
             is_running: false,
+            terminal_state: None,
             #[cfg(not(feature = "no_std"))]
             completion_callback: None,
             #[cfg(not(feature = "no_std"))]
@@ -943,6 +948,7 @@ impl<P: StatePolicy> Engine<P> {
 
     fn initialize_in_turn(&mut self) {
         self.is_running = true;
+        self.terminal_state = None;
 
         // §scxml-5.3: Initialize datamodel before any state entry
         if concepts::has_data_model_init::<P>() {
@@ -1056,6 +1062,13 @@ impl<P: StatePolicy> Engine<P> {
         }
 
         self.current_state = current;
+        // A configuration restored AT a top-level `<final>` is a run that has
+        // already ended there; any other is still running.
+        self.terminal_state = if P::is_final_state(current) && P::get_parent(current).is_none() {
+            Some(current)
+        } else {
+            None
+        };
 
         // §scxml-3.4: a machine that keeps its own active set is handed it back.
         // The condition is the one the generator emits `set_active_states`
@@ -1608,8 +1621,8 @@ impl<P: StatePolicy> Engine<P> {
         active
     }
 
-    /// §scxml-3.7: Whether this session has ended — that is, whether the
-    /// current state is a `<final>` whose parent is the `<scxml>` element.
+    /// §scxml-3.7: Whether this session has ended — that is, whether the run
+    /// has entered a `<final>` whose parent is the `<scxml>` element.
     ///
     /// §scxml-D-enterStates sets `running = false` for a `<final>` only when
     /// `isSCXMLElement(s.parent)`; a nested one queues `done.state.<parent>`
@@ -1618,9 +1631,21 @@ impl<P: StatePolicy> Engine<P> {
     /// it is not the completion criterion on its own. Everything that means
     /// "the machine is done" keys on this method: `run_until_completion`, the
     /// completion callback, and the `done.invoke.<id>` a parent emits for an
-    /// invoked child.
+    /// invoked child. The same answer as
+    /// [`terminal_state`](Self::terminal_state)`().is_some()`.
     pub fn is_in_final_state(&self) -> bool {
-        P::is_final_state(self.current_state) && P::get_parent(self.current_state).is_none()
+        self.terminal_state.is_some()
+    }
+
+    /// The top-level `<final>` the run ended in (§scxml-D-enterStates), or
+    /// `None` while it is still running or when it was never started.
+    ///
+    /// The one answer to "where did this run end". It is recorded when the
+    /// final is entered, so it does not depend on what the configuration
+    /// holds afterwards — Appendix D's exitInterpreter leaves the
+    /// configuration empty.
+    pub fn terminal_state(&self) -> Option<P::State> {
+        self.terminal_state
     }
 
     /// §scxml-5.5 + 6.3.1: Stash the donedata payload evaluated on a
@@ -3109,6 +3134,13 @@ impl<P: StatePolicy> microstep::Run for EngineHost<'_, P> {
         self.engine.with_policy(|policy, engine| {
             policy.execute_entry_actions(state, engine, is_default_entry)
         });
+        // §scxml-D-enterStates: a `<final>` whose parent is the `<scxml>`
+        // element ends the run. Recorded as the run's terminal state, so
+        // "where did it end" is a fact the engine keeps rather than a reading
+        // of the configuration.
+        if P::is_final_state(state) && P::get_parent(state).is_none() {
+            self.engine.terminal_state = Some(state);
+        }
     }
 
     fn execute_history_default_content(&mut self, history: P::History) {
