@@ -323,7 +323,7 @@
                             // Interpreter sends done.invoke in completion callback, not deferred
                             AOT_DEBUG("Child state machine {{ invoke_info.invoke_id }} completed, sending done.invoke");
 
-                            // Mark as completed (for Cancel_invoke logic - test 236)
+                            // Mark as completed (test 236)
                             pendingDoneInvoke_{{ invoke_info.invoke_id }}_ = true;
 
                             // W3C SCXML 5.5 + 6.3.1: lift the child's donedata payload onto

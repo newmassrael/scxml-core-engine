@@ -457,12 +457,10 @@
 {% for invoke_info in state.invokes | scxml %}
                 // W3C SCXML 6.4: Cleanup running static child '{{ invoke_info.invoke_id }}'
                 if self.child_{{ invoke_info.field_suffix }}.is_some() {
-                    if !self.pending_done_invoke_{{ invoke_info.field_suffix }} {
-{% if 'cancel.invoke' in model.events %}
-                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
-                            {{ machine_name }}Event::{{ 'cancel.invoke' | to_event_variant }}));
-{% endif %}
-                    }
+                    // §scxml-6.4: cancelling raises nothing in this session —
+                    // the spec defines no `cancel.invoke` event, and a document
+                    // that named one used to receive it here.
+                    //
                     // §scxml-D-exitInterpreter: a cancelled session is exited —
                     // its states' `<onexit>` run — before it is dropped. What
                     // that exit sends to `#_parent` lands in the child's own

@@ -2474,8 +2474,8 @@ pub struct SCXMLModel {
     /// Derived external-ingress event set: the event descriptors that
     /// appear as `<transition event="...">` triggers, with engine-
     /// reserved families excluded (`error.*`, `done.invoke*`,
-    /// `done.state*`, `cancel.invoke`, the wildcard sentinels
-    /// `*`/`.*`/`_*`, and the eventless empty token).
+    /// `done.state*`, the wildcard sentinels `*`/`.*`/`_*`, and the
+    /// eventless empty token).
     ///
     /// This is the contract a transport switchboard (e.g. a pub/sub
     /// key -> domain-event router) validates its injection targets

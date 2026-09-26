@@ -744,12 +744,10 @@
 {% endfor %}
 {% if state.invokes | scxml or state.invokes | hybrid %}
                 {% for invoke_info in state.invokes | scxml %}
+                // §scxml-6.4: cancelling raises nothing in this session —
+                // the spec defines no `cancel.invoke` event, and a document
+                // that named one used to receive it here.
                 if (child_{{ invoke_info.field_suffix }}_) {
-{% if 'cancel.invoke' in model.events %}
-                    if (!pendingDoneInvoke_{{ invoke_info.invoke_id }}_) {
-                        engine.raise(typename Engine::EventWithMetadata(Event::Cancel_invoke));
-                    }
-{% endif %}
                     child_{{ invoke_info.field_suffix }}_.reset();
                 }
                 // SCE_MESH.md §16.7 row 5 sub-atomic C — erase is shared
@@ -766,21 +764,11 @@
    single-slot shape used. #}
 {% for candidate in invoke_info.candidates %}
                 if (child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_) {
-{% if 'cancel.invoke' in model.events %}
-                    if (!pendingDoneInvoke_{{ invoke_info.invoke_id }}_) {
-                        engine.raise(typename Engine::EventWithMetadata(Event::Cancel_invoke));
-                    }
-{% endif %}
                     child_{{ invoke_info.field_suffix }}_{{ candidate.stem }}_.reset();
                 }
 {% endfor %}
 {% else %}
                 if (child_{{ invoke_info.field_suffix }}_) {
-{% if 'cancel.invoke' in model.events %}
-                    if (!pendingDoneInvoke_{{ invoke_info.invoke_id }}_) {
-                        engine.raise(typename Engine::EventWithMetadata(Event::Cancel_invoke));
-                    }
-{% endif %}
                     child_{{ invoke_info.field_suffix }}_.reset();
                 }
 {% endif %}

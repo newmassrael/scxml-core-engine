@@ -40,11 +40,11 @@
 // `<send target="#_parent" event="eventReceived"/>`. Parent's next
 // `_step` pops `eventReceived` from its external queue → s0 → pass.
 //
-// Forwarder filters: platform events (done.*, error.*, cancel.invoke)
-// are NOT forwarded, mirroring cpp `StateMachine::processEvent`'s
-// `isPlatformEvent` guard. Child SMs whose enum doesn't contain the
-// forwarded name silently fall through inside their shim — no link or
-// runtime error.
+// The forwarder tests no event name: W3C SCXML Appendix D forwards
+// whatever the external queue yielded, and `error.*` / `done.state.*`
+// never reach it because they ride the internal queue. Child SMs whose
+// enum doesn't contain the forwarded name silently fall through inside
+// their shim — no link or runtime error.
 //
 // Failure modes: if the forwarder were absent the child would never
 // receive `childToParent` back; the child's 3 s `timeout` would fire

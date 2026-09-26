@@ -382,8 +382,8 @@ Two top-level event sets serve different consumers:
 * **`events`** is the kitchen-sink union of *every* event token the
   document references — transition triggers, the events it emits via
   `<send>`/`<raise>`, and engine-synthesized platform events
-  (`error.*`, `done.invoke.*`, `done.state.*`, `cancel.invoke`, the
-  `Wildcard` marker). It exists for codegen (enum population) and is
+  (`error.*`, `done.invoke.*`, `done.state.*`, the `Wildcard`
+  marker). It exists for codegen (enum population) and is
   **not** a statement of what the machine accepts from outside.
 * **`external_ingress_events`** is the precise set of event
   descriptors that appear as `<transition event="...">` triggers with

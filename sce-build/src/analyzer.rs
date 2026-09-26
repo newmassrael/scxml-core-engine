@@ -788,15 +788,16 @@ fn add_system_events(model: &mut SCXMLModel) {
         model.events.insert("Wildcard".to_string());
     }
 
+    // §scxml-6.4: cancelling an invocation raises nothing in the invoking
+    // session, so no cancel event belongs to this set — a document that
+    // names `cancel.invoke` gets it as one of its own events.
     if model.has_scxml_invoke() {
         model.events.insert("done.invoke".to_string());
-        model.events.insert("cancel.invoke".to_string());
         model.events.insert("error.execution".to_string());
     }
     // SCE_MESH.md §9.5: mesh-rpc invokes raise done.invoke.<id> on reply
-    // and error.invoke.<id> on timeout or non-Ok status. cancel.invoke is
-    // scxml-specific (§scxml-6.4 child-session cancel) and not raised for
-    // mesh-rpc — cancellation erases the correlation entry silently.
+    // and error.invoke.<id> on timeout or non-Ok status; cancellation
+    // erases the correlation entry silently.
     // error.execution (§scxml-6.4.1) is raised when `performMeshInvoke`
     // returns false — i.e. the document was rendered without a
     // TransportRouter installing the mesh-invoke callback. Same error
@@ -810,7 +811,7 @@ fn add_system_events(model: &mut SCXMLModel) {
     }
     // §scxml-6.4.1: an `<invoke>` naming an unsupported processor raises
     // error.execution and nothing else — no session starts, so neither
-    // done.invoke nor cancel.invoke can ever follow. Registering the event
+    // done.invoke can ever follow. Registering the event
     // here keeps `Event::Error_execution` resolvable in the generated enum
     // whether or not the author wrote an explicit handler, exactly as the
     // mesh-rpc arm above does.
@@ -893,7 +894,6 @@ fn is_reserved_ingress_event(event: &str) -> bool {
         || event.starts_with("error.")
         || event.starts_with("done.invoke")
         || event.starts_with("done.state")
-        || event == "cancel.invoke"
 }
 
 /// §scxml-3.12.1: Build prefix matching for event transitions.
@@ -1230,11 +1230,12 @@ mod tests {
     /// `external_ingress_events` keeps only non-reserved `<transition
     /// event>` triggers — the set a transport switchboard validates its
     /// injection targets against. Reserved W3C platform families
-    /// (`error.*` / `done.invoke*` / `done.state*` / `cancel.invoke`),
-    /// the wildcard sentinels, and the eventless token are excluded, and
-    /// the §scxml-3.12.1 space-separated descriptor list is split per
-    /// token so a reserved token never masks an app token sharing its
-    /// transition.
+    /// (`error.*` / `done.invoke*` / `done.state*`), the wildcard
+    /// sentinels, and the eventless token are excluded, and the
+    /// §scxml-3.12.1 space-separated descriptor list is split per token so
+    /// a reserved token never masks an app token sharing its transition.
+    /// `cancel.invoke` is kept: §scxml-6.4 raises no cancel event, so a
+    /// document naming it can only receive it from outside.
     #[test]
     fn external_ingress_events_excludes_reserved_and_wildcard() {
         let mut model = empty_model();
@@ -1286,7 +1287,7 @@ mod tests {
             .iter()
             .map(String::as_str)
             .collect();
-        assert_eq!(got, vec!["humidity_update", "temp_update"]);
+        assert_eq!(got, vec!["cancel.invoke", "humidity_update", "temp_update"]);
     }
 
     /// The externally-drivable surface is the machine's trust boundary:
