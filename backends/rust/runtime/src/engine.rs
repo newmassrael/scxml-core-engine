@@ -647,6 +647,14 @@ pub struct Engine<P: StatePolicy> {
     /// type has no "none"), so [`get_active_states`](Self::get_active_states)
     /// answers from this flag rather than from it.
     pub(crate) interpreter_exited: bool,
+    /// §scxml-D-enterStates, late binding: the states whose `<data>` this run
+    /// has already bound — `s.isFirstEntry` is false for exactly these. The
+    /// rule lives here, once, and the generated entry code asks it
+    /// ([`claim_late_binding_first_entry`](Self::claim_late_binding_first_entry)).
+    /// `!no_std` like the script engine it serves: without one there is no
+    /// `<data>` to bind late.
+    #[cfg(not(feature = "no_std"))]
+    pub(crate) late_bound_states: std::collections::HashSet<P::State>,
     /// §scxml-6.4: Completion callback invoked when reaching a final state.
     ///
     /// SCE Protocol-Synthesis RFC §synth-5-J-2: `Box<dyn FnMut>` is alloc-coupled and gated to
@@ -816,6 +824,8 @@ impl<P: StatePolicy> Engine<P> {
             is_running: false,
             terminal_state: None,
             interpreter_exited: false,
+            #[cfg(not(feature = "no_std"))]
+            late_bound_states: std::collections::HashSet::new(),
             #[cfg(not(feature = "no_std"))]
             completion_callback: None,
             #[cfg(not(feature = "no_std"))]
@@ -1067,6 +1077,8 @@ impl<P: StatePolicy> Engine<P> {
         self.is_running = true;
         self.terminal_state = None;
         self.interpreter_exited = false;
+        #[cfg(not(feature = "no_std"))]
+        self.late_bound_states.clear();
 
         // §scxml-5.3: Initialize datamodel before any state entry
         if concepts::has_data_model_init::<P>() {
@@ -1180,6 +1192,13 @@ impl<P: StatePolicy> Engine<P> {
 
         self.current_state = current;
         self.interpreter_exited = false;
+        // The restored states were entered by the run being resumed, so their
+        // late-bound `<data>` is that run's — the host restores it, and a later
+        // re-entry must not bind it again (§scxml-D-enterStates isFirstEntry).
+        #[cfg(not(feature = "no_std"))]
+        {
+            self.late_bound_states = configuration.iter().copied().collect();
+        }
         // A configuration restored AT a top-level `<final>` is a run that has
         // already ended there; any other is still running.
         self.terminal_state = if P::is_final_state(current) && P::get_parent(current).is_none() {
@@ -1785,6 +1804,17 @@ impl<P: StatePolicy> Engine<P> {
     /// configuration empty.
     pub fn terminal_state(&self) -> Option<P::State> {
         self.terminal_state
+    }
+
+    /// Appendix D's `s.isFirstEntry`, taken (§scxml-D-enterStates).
+    ///
+    /// True exactly once per run for `state` — the entry on which a
+    /// late-binding document binds that state's `<data>` — and false on every
+    /// entry after it. The generated entry code asks this rather than keeping
+    /// its own flag, so the rule is written once for every machine.
+    #[cfg(not(feature = "no_std"))]
+    pub fn claim_late_binding_first_entry(&mut self, state: P::State) -> bool {
+        self.late_bound_states.insert(state)
     }
 
     /// §scxml-5.5 + 6.3.1: Stash the donedata payload evaluated on a

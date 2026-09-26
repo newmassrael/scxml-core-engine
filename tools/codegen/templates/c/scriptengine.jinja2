@@ -467,11 +467,12 @@
    `datamodel_macros.jinja2::initialize_state_datamodel` invoked from
    `entry_exit_actions.jinja2:79-90`.
 
-   First-entry-only vs idempotent re-init: cpp's helper (and the lua-direct
-   emit here) re-initialises on every entry. The cpp side has no
-   first-entry flag in `DataModelInitHelper.h`, and `executeEntryActions`
-   is called every time the state is entered. C11 mirrors that — re-entry
-   to a state with a `<datamodel>` re-evaluates the init expressions.
+   First entry only: §scxml-D-enterStates binds a state's <data> when
+   `binding == "late" and s.isFirstEntry`. The caller guards this block with
+   the machine's `late_bound` bitmap, so re-entering a state does not
+   re-evaluate its init expressions — the rule the other six channels keep in
+   their runtime (measured 2026-09-26: C11, C++ AOT, Rust and Kotlin used to
+   re-bind on every entry, and Go never bound at all).
 
    Init-failure semantics: rc-checked, mirrors cpp
    `DataModelInitHelper::initializeVariableFromExpr` errorCallback

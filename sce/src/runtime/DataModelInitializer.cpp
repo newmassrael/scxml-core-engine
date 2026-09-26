@@ -281,6 +281,11 @@ void DataModelInitializer::initializeAllDataItems(const std::string &binding) {
         return;
     }
 
+    // §scxml-D-enterStates: a datamodel created afresh belongs to a run in
+    // which no state has been entered yet, so every state's `isFirstEntry` is
+    // true again. A restarted machine reaches here with its new session.
+    initializedStates_.clear();
+
     const auto allDataItems = collectAllDataItems();
     SCE_LOG_INFO("DataModelInitializer: Initializing {} total data items (global scope with {} binding)",
                  allDataItems.size(), binding.empty() ? "early (default)" : binding);
@@ -294,8 +299,12 @@ void DataModelInitializer::initializeAllDataItems(const std::string &binding) {
 
     for (const auto &dataInfo : allDataItems) {
         // Always call initializeDataItem (handles expr/src/content/undefined)
-        // The assignValue flag controls whether to evaluate expr/src/content or use undefined
-        initializeDataItem(dataInfo.dataItem, shouldAssignValue);
+        // The assignValue flag controls whether to evaluate expr/src/content or use undefined.
+        // A top-level item (empty stateId) belongs to the <scxml> element, which
+        // is entered as the run initialises — so under late binding too its
+        // value is bound now; only a state's <data> waits for that state's
+        // first entry (§scxml-5.3.3, §scxml-D-enterStates).
+        initializeDataItem(dataInfo.dataItem, shouldAssignValue || dataInfo.stateId.empty());
     }
 
     if (BindingHelper::isLateBinding(binding)) {
@@ -326,10 +335,14 @@ void DataModelInitializer::initializeStateDataOnEntry(const std::string &stateId
                 // §scxml-5.3.3: under late binding the initial value is assigned the
                 // first time the containing state is entered, before any <onentry>.
                 for (const auto &item : stateDataItems) {
-                    bool hasExpr = !item->getExpr().empty();
+                    // `expr`, `src` or inline content: any of the three is the
+                    // value late binding assigns (§scxml-5.3.3). Asking for
+                    // `expr` alone left a `src` or content item unassigned.
+                    bool hasInitializer = !item->getExpr().empty() || !item->getSrc().empty() ||
+                                          !item->getContent().empty() || !item->getContentItems().empty();
 
                     // Use BindingHelper to determine if value should be assigned on state entry
-                    if (BindingHelper::shouldAssignValueOnStateEntry(binding, isFirstEntry, hasExpr)) {
+                    if (BindingHelper::shouldAssignValueOnStateEntry(binding, isFirstEntry, hasInitializer)) {
                         // Late binding: assign value now
                         initializeDataItem(item, true);  // assignValue=true
                     }

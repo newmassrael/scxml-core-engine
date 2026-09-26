@@ -276,6 +276,7 @@ func (p *DiscardedEventIsObservablePolicy) ensureScriptEngine() {
 	p.scriptEngineInitialized = true
 }
 
+
 // InitializeDataModel sets up datamodel via script engine (W3C SCXML 5.3).
 func (p *DiscardedEventIsObservablePolicy) InitializeDataModel(eng *sce.Engine[DiscardedEventIsObservableState, DiscardedEventIsObservableEvent]) {
 	p.ensureScriptEngine()

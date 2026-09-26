@@ -2492,11 +2492,14 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
     {% if state.on_entry_blocks or has_late_init or is_compound_final or has_donedata or has_scxml_invoke or has_hybrid_invoke or has_unsupported_invoke %}
     case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | upper | replace('-', '_') | replace('.', '_') }}: {
         {% if has_late_init %}
-        /* W3C SCXML 5.3: late-binding state-local <datamodel> init runs
-           before any onentry markup. Mirrors cpp
-           `entry_exit_actions.jinja2:79-90` (dm.initialize_state_datamodel
-           invoked at the top of the switch case before on_entry_blocks). */
+        /* §scxml-D-enterStates, late binding: the state's <data> is bound on
+           its FIRST entry only (`s.isFirstEntry`), before any onentry markup.
+           `late_bound` is the first-entry rule, kept on the machine; this is
+           only what binding means for this state. */
+        if ((sm->late_bound & state_bit(s)) == 0u) {
+            sm->late_bound |= state_bit(s);
         {{ se.lua_init_state_datamodel(state, state_id) }}
+        }
         {% endif %}
         {% for block in state.on_entry_blocks %}
         /* Onentry block {{ loop.index }}/{{ state.on_entry_blocks | length }} —
@@ -4855,6 +4858,10 @@ SCE_SM_FN {{ csym_prefix }}{{ model.name }}_configuration_rejection_t {{ csym_pr
     for (size_t i = 0u; i < count; ++i) {
         sm->active |= state_bit(configuration[i]);
     }
+    /* The restored states were entered by the run being resumed, so their
+       late-bound <data> is that run's — the host restores it, and a later
+       re-entry must not bind it again (§scxml-D-enterStates isFirstEntry). */
+    sm->late_bound = sm->active;
 
     /* A configuration restored AT a top-level <final> is a run that has
        already ended there; a legal configuration holds at most one. */

@@ -715,6 +715,11 @@ private:
     // §scxml-D-exitInterpreter has run for this run: the configuration is
     // empty. Cleared when a run starts.
     bool interpreterExited_ = false;
+    // §scxml-D-enterStates, late binding: the states whose `<data>` this run
+    // has already bound — `s.isFirstEntry` is false for exactly these. The
+    // rule lives here, once, and the generated entry code asks it
+    // (claimLateBindingFirstEntry); cleared when a run starts.
+    std::set<State> lateBoundStates_;
     SCE::Core::EventQueueManager<EventWithMetadata>
         internalQueue_;  // §scxml-3.13: Internal event queue (high priority)
     SCE::Core::EventQueueManager<EventWithMetadata> externalQueue_;  // §scxml-3.13: External event queue (low priority)
@@ -2144,6 +2149,7 @@ public:
         isRunning_ = true;
         terminalState_.reset();
         interpreterExited_ = false;
+        lateBoundStates_.clear();
 
         // §scxml-5.3: Initialize datamodel before any state entry
         // This ensures error.execution events are raised immediately if initialization fails
@@ -2264,6 +2270,10 @@ public:
             terminalState_.reset();
         }
         interpreterExited_ = false;
+        // The restored states were entered by the run being resumed, so their
+        // late-bound `<data>` is that run's — the host restores it, and a later
+        // re-entry must not bind it again (§scxml-D-enterStates isFirstEntry).
+        lateBoundStates_ = std::set<State>(configuration.begin(), configuration.end());
 
         // §scxml-3.4: a machine that keeps its own active set is handed it
         // back. The condition is the one the generator emits `setActiveStates`
@@ -2489,6 +2499,18 @@ public:
      */
     std::optional<State> terminalState() const {
         return terminalState_;
+    }
+
+    /**
+     * @brief Appendix D's `s.isFirstEntry`, taken (§scxml-D-enterStates)
+     *
+     * True exactly once per run for @p s — the entry on which a late-binding
+     * document binds that state's `<data>` — and false on every entry after
+     * it. The generated entry code asks this rather than keeping its own flag,
+     * so the rule is written once for every machine.
+     */
+    bool claimLateBindingFirstEntry(State s) {
+        return lateBoundStates_.insert(s).second;
     }
 
     /**

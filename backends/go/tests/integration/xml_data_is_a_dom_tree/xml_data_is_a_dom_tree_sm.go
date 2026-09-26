@@ -269,6 +269,7 @@ func (p *XmlDataIsADomTreePolicy) ensureScriptEngine() {
 	p.scriptEngineInitialized = true
 }
 
+
 // InitializeDataModel sets up datamodel via script engine (W3C SCXML 5.3).
 func (p *XmlDataIsADomTreePolicy) InitializeDataModel(eng *sce.Engine[XmlDataIsADomTreeState, XmlDataIsADomTreeEvent]) {
 	p.ensureScriptEngine()

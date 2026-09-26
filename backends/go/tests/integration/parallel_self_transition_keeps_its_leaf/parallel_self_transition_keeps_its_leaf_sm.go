@@ -327,6 +327,7 @@ func (p *ParallelSelfTransitionKeepsItsLeafPolicy) ensureScriptEngine() {
 	p.scriptEngineInitialized = true
 }
 
+
 // InitializeDataModel sets up datamodel via script engine (W3C SCXML 5.3).
 func (p *ParallelSelfTransitionKeepsItsLeafPolicy) InitializeDataModel(eng *sce.Engine[ParallelSelfTransitionKeepsItsLeafState, ParallelSelfTransitionKeepsItsLeafEvent]) {
 	p.ensureScriptEngine()

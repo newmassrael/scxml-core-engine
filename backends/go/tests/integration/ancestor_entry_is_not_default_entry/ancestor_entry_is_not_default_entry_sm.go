@@ -398,6 +398,7 @@ func (p *AncestorEntryIsNotDefaultEntryPolicy) ensureScriptEngine() {
 	p.scriptEngineInitialized = true
 }
 
+
 // InitializeDataModel sets up datamodel via script engine (W3C SCXML 5.3).
 func (p *AncestorEntryIsNotDefaultEntryPolicy) InitializeDataModel(eng *sce.Engine[AncestorEntryIsNotDefaultEntryState, AncestorEntryIsNotDefaultEntryEvent]) {
 	p.ensureScriptEngine()

@@ -67,6 +67,13 @@ type Engine[S comparable, E comparable] struct {
 	// rather than from it.
 	interpreterExited bool
 
+	// lateBoundStates holds the states whose <data> this run has already
+	// bound under late binding — s.isFirstEntry (§scxml-D-enterStates) is
+	// false for exactly these. The rule lives here, once, and the generated
+	// entry code asks it (ClaimLateBindingFirstEntry). Cleared when a run
+	// starts; nil until the first claim.
+	lateBoundStates map[S]struct{}
+
 	// completionCallback is the §scxml-6.4 callback invoked when reaching a final state.
 	completionCallback func()
 
@@ -241,6 +248,7 @@ func (e *Engine[S, E]) Initialize() {
 	e.isRunning = true
 	e.clearTerminalState()
 	e.interpreterExited = false
+	e.lateBoundStates = nil
 
 	// §scxml-5.3: Initialize datamodel before any state entry
 	if e.policy.NeedsDataModelInit() {
@@ -339,6 +347,13 @@ func (e *Engine[S, E]) EnterAt(configuration []S, current S) ConfigurationReject
 
 	e.currentState = current
 	e.interpreterExited = false
+	// The restored states were entered by the run being resumed, so their
+	// late-bound <data> is that run's — the host restores it, and a later
+	// re-entry must not bind it again (§scxml-D-enterStates isFirstEntry).
+	e.lateBoundStates = make(map[S]struct{}, len(configuration))
+	for _, s := range configuration {
+		e.lateBoundStates[s] = struct{}{}
+	}
 	// A configuration restored AT a top-level <final> is a run that has
 	// already ended there; any other is still running.
 	e.clearTerminalState()
@@ -574,6 +589,22 @@ func (e *Engine[S, E]) IsInFinalState() bool {
 // — Appendix D's exitInterpreter leaves the configuration empty.
 func (e *Engine[S, E]) TerminalState() (S, bool) {
 	return e.terminalState, e.hasTerminalState
+}
+
+// ClaimLateBindingFirstEntry is Appendix D's s.isFirstEntry, taken
+// (§scxml-D-enterStates): true exactly once per run for state — the entry on
+// which a late-binding document binds that state's <data> — and false on every
+// entry after it. The generated entry code asks this rather than keeping its
+// own flag, so the rule is written once for every machine.
+func (e *Engine[S, E]) ClaimLateBindingFirstEntry(state S) bool {
+	if _, bound := e.lateBoundStates[state]; bound {
+		return false
+	}
+	if e.lateBoundStates == nil {
+		e.lateBoundStates = make(map[S]struct{})
+	}
+	e.lateBoundStates[state] = struct{}{}
+	return true
 }
 
 // recordTerminalState records state as the run's terminal state when it is a

@@ -248,6 +248,7 @@ func (p *UnseenEventIsReportedPolicy) ensureScriptEngine() {
 	p.scriptEngineInitialized = true
 }
 
+
 // InitializeDataModel sets up datamodel via script engine (W3C SCXML 5.3).
 func (p *UnseenEventIsReportedPolicy) InitializeDataModel(eng *sce.Engine[UnseenEventIsReportedState, UnseenEventIsReportedEvent]) {
 	p.ensureScriptEngine()

@@ -312,6 +312,7 @@ func (p *EventlessMacrostepIsBoundedPolicy) ensureScriptEngine() {
 	p.scriptEngineInitialized = true
 }
 
+
 // InitializeDataModel sets up datamodel via script engine (W3C SCXML 5.3).
 func (p *EventlessMacrostepIsBoundedPolicy) InitializeDataModel(eng *sce.Engine[EventlessMacrostepIsBoundedState, EventlessMacrostepIsBoundedEvent]) {
 	p.ensureScriptEngine()

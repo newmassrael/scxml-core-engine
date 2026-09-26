@@ -1827,6 +1827,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
         this.configuration.clear()
         this.configuration.addAll(configuration)
+        // The restored states were entered by the run being resumed, so their
+        // late-bound <data> is that run's — the host restores it, and a later
+        // re-entry must not bind it again (§scxml-D-enterStates isFirstEntry).
+        lateBoundStates.clear()
+        lateBoundStates.addAll(configuration)
         _currentState.value = current
         // A configuration restored AT a top-level <final> is a run that has
         // already ended there; any other is still running.
@@ -3237,10 +3242,28 @@ abstract class StateMachineEngine<S : State, E : Event>(
             scriptSessionId = null
         }
         sessionUsedByARun = true
+        lateBoundStates.clear()
     }
 
     /** A run has started on this engine since its script session was last released. */
     private var sessionUsedByARun = false
+
+    /**
+     * §scxml-D-enterStates, late binding: the states whose `<data>` this run
+     * has already bound — `s.isFirstEntry` is false for exactly these. Cleared
+     * when a run starts ([beginRun]); seeded from the configuration [enterAt]
+     * restores.
+     */
+    private val lateBoundStates: MutableSet<S> = HashSet()
+
+    /**
+     * Appendix D's `s.isFirstEntry`, taken (§scxml-D-enterStates): true exactly
+     * once per run for [state] — the entry on which a late-binding document
+     * binds that state's `<data>` — and false on every entry after it. The
+     * generated entry code asks this rather than keeping its own flag, so the
+     * rule is written once for every machine.
+     */
+    protected fun claimLateBindingFirstEntry(state: S): Boolean = lateBoundStates.add(state)
 
     /**
      * Appendix D's exitInterpreter (§scxml-D-exitInterpreter): exit every

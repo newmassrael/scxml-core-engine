@@ -327,6 +327,7 @@ func (p *TargetlessTransitionCompletesMacrostepPolicy) ensureScriptEngine() {
 	p.scriptEngineInitialized = true
 }
 
+
 // InitializeDataModel sets up datamodel via script engine (W3C SCXML 5.3).
 func (p *TargetlessTransitionCompletesMacrostepPolicy) InitializeDataModel(eng *sce.Engine[TargetlessTransitionCompletesMacrostepState, TargetlessTransitionCompletesMacrostepEvent]) {
 	p.ensureScriptEngine()

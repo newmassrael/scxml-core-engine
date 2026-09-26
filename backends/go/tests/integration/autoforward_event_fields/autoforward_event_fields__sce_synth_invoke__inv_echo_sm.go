@@ -240,6 +240,7 @@ func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) ensureScriptEngine()
 	p.scriptEngineInitialized = true
 }
 
+
 // InitializeDataModel sets up datamodel via script engine (W3C SCXML 5.3).
 func (p *AutoforwardEventFieldsSceSynthInvokeInvEchoPolicy) InitializeDataModel(eng *sce.Engine[AutoforwardEventFieldsSceSynthInvokeInvEchoState, AutoforwardEventFieldsSceSynthInvokeInvEchoEvent]) {
 	p.ensureScriptEngine()

@@ -260,6 +260,7 @@ func (p *UndecodablePayloadIsReportedPolicy) ensureScriptEngine() {
 	p.scriptEngineInitialized = true
 }
 
+
 // InitializeDataModel sets up datamodel via script engine (W3C SCXML 5.3).
 func (p *UndecodablePayloadIsReportedPolicy) InitializeDataModel(eng *sce.Engine[UndecodablePayloadIsReportedState, UndecodablePayloadIsReportedEvent]) {
 	p.ensureScriptEngine()

@@ -311,6 +311,7 @@ func (p *ErrorCascadeIsBoundedPolicy) ensureScriptEngine() {
 	p.scriptEngineInitialized = true
 }
 
+
 // InitializeDataModel sets up datamodel via script engine (W3C SCXML 5.3).
 func (p *ErrorCascadeIsBoundedPolicy) InitializeDataModel(eng *sce.Engine[ErrorCascadeIsBoundedState, ErrorCascadeIsBoundedEvent]) {
 	p.ensureScriptEngine()

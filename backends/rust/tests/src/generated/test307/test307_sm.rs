@@ -638,8 +638,11 @@ impl StatePolicy for Test307Policy {
             }
             Test307State::S1 => {
                 // SCE-MAP: test307.scxml:21 :: s1 :: _state_body
-                // W3C SCXML 5.9: Late binding - initialize datamodel on state entry
-                {
+                // §scxml-D-enterStates, late binding: the state's `<data>` is
+                // bound on its FIRST entry only (`s.isFirstEntry`), before its
+                // <onentry>. The engine owns the first-entry rule; this is only
+                // what binding means for this state.
+                if engine.claim_late_binding_first_entry(Test307State::S1) {
                     self.ensure_script_engine();
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();

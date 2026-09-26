@@ -318,6 +318,7 @@ func (p *UnhandledErrorIsObservablePolicy) ensureScriptEngine() {
 	p.scriptEngineInitialized = true
 }
 
+
 // InitializeDataModel sets up datamodel via script engine (W3C SCXML 5.3).
 func (p *UnhandledErrorIsObservablePolicy) InitializeDataModel(eng *sce.Engine[UnhandledErrorIsObservableState, UnhandledErrorIsObservableEvent]) {
 	p.ensureScriptEngine()

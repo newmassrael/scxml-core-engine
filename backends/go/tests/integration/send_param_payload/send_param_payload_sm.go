@@ -361,6 +361,7 @@ func (p *SendParamPayloadPolicy) ensureScriptEngine() {
 	p.scriptEngineInitialized = true
 }
 
+
 // InitializeDataModel sets up datamodel via script engine (W3C SCXML 5.3).
 func (p *SendParamPayloadPolicy) InitializeDataModel(eng *sce.Engine[SendParamPayloadState, SendParamPayloadEvent]) {
 	p.ensureScriptEngine()
@@ -405,6 +406,7 @@ func (p *SendParamPayloadPolicy) InitializeDataModel(eng *sce.Engine[SendParamPa
 			_ = engine.SetVariable(sessionID, "tag", nil)
 		}
 	}
+
 
 
 	// §scxml-6.4.3: apply the invoke params the parent staged — overriding the

@@ -95,10 +95,11 @@ public:
      *
      * @param bindingMode Binding mode ("early", "late", or empty for default)
      * @param isFirstEntry true if this is the first time entering the state
-     * @param hasExpr true if <data> element has expr attribute
+     * @param hasInitializer true if the <data> element carries a value to
+     *        assign — an `expr`, a `src` or inline content
      * @return true if variable should be assigned value on state entry
      */
-    static bool shouldAssignValueOnStateEntry(const std::string &bindingMode, bool isFirstEntry, bool hasExpr) {
+    static bool shouldAssignValueOnStateEntry(const std::string &bindingMode, bool isFirstEntry, bool hasInitializer) {
         // Early binding: never assign on state entry (already done at load)
         if (isEarlyBinding(bindingMode)) {
             return false;
@@ -106,7 +107,7 @@ public:
 
         // Late binding: assign values on first entry only
         // §scxml-B-2-2: "only when the state containing them is first entered"
-        return isLateBinding(bindingMode) && isFirstEntry && hasExpr;
+        return isLateBinding(bindingMode) && isFirstEntry && hasInitializer;
     }
 
     /**

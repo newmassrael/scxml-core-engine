@@ -259,6 +259,7 @@ func (p *DonedataLateCompletionPolicy) ensureScriptEngine() {
 	p.scriptEngineInitialized = true
 }
 
+
 // InitializeDataModel sets up datamodel via script engine (W3C SCXML 5.3).
 func (p *DonedataLateCompletionPolicy) InitializeDataModel(eng *sce.Engine[DonedataLateCompletionState, DonedataLateCompletionEvent]) {
 	p.ensureScriptEngine()

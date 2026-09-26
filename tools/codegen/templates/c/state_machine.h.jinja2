@@ -459,6 +459,11 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
        Read through `_terminal_state`. */
     {{ csym_prefix }}{{ model.name }}_state_t terminal_state;
     bool has_terminal_state;
+    /* §scxml-D-enterStates, late binding: the states (one bit each, as the
+       configuration) whose <data> this run has already bound —
+       `s.isFirstEntry` is false for exactly these. Zero when a run starts;
+       `_init_at` seeds it with the configuration it restores. */
+    uint32_t late_bound;
     bool transition_taken;
     /* W3C SCXML 3.1.2: external events no transition matched, and the most
        recent of them. `has_discarded_event` is separate because the event

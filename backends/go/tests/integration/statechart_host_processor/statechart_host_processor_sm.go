@@ -266,6 +266,7 @@ func (p *StatechartHostProcessorPolicy) ensureScriptEngine() {
 	p.scriptEngineInitialized = true
 }
 
+
 // InitializeDataModel sets up datamodel via script engine (W3C SCXML 5.3).
 func (p *StatechartHostProcessorPolicy) InitializeDataModel(eng *sce.Engine[StatechartHostProcessorState, StatechartHostProcessorEvent]) {
 	p.ensureScriptEngine()

@@ -249,6 +249,7 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistPolicy) ensur
 	p.scriptEngineInitialized = true
 }
 
+
 // InitializeDataModel sets up datamodel via script engine (W3C SCXML 5.3).
 func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistPolicy) InitializeDataModel(eng *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvNamelistEvent]) {
 	p.ensureScriptEngine()

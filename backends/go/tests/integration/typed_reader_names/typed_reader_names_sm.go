@@ -296,6 +296,7 @@ func (p *TypedReaderNamesPolicy) ensureScriptEngine() {
 	p.scriptEngineInitialized = true
 }
 
+
 // InitializeDataModel sets up datamodel via script engine (W3C SCXML 5.3).
 func (p *TypedReaderNamesPolicy) InitializeDataModel(eng *sce.Engine[TypedReaderNamesState, TypedReaderNamesEvent]) {
 	p.ensureScriptEngine()

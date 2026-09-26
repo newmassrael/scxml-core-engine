@@ -386,6 +386,7 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ensureScriptEngine() {
 	p.scriptEngineInitialized = true
 }
 
+
 // InitializeDataModel sets up datamodel via script engine (W3C SCXML 5.3).
 func (p *InvokeParamSeedsDeclaredChildDataPolicy) InitializeDataModel(eng *sce.Engine[InvokeParamSeedsDeclaredChildDataState, InvokeParamSeedsDeclaredChildDataEvent]) {
 	p.ensureScriptEngine()

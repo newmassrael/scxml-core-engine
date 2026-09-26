@@ -75,8 +75,11 @@
                 {{ sce_map.source_marker(state.source_location, "rust", stmt_level=true, symbol_state=state_id, symbol_artifact=sce_artifact.state_body) | trim }}
 {% endif %}
 {% if state.datamodel and model.binding == 'late' %}
-                // W3C SCXML 5.9: Late binding - initialize datamodel on state entry
-                {
+                // §scxml-D-enterStates, late binding: the state's `<data>` is
+                // bound on its FIRST entry only (`s.isFirstEntry`), before its
+                // <onentry>. The engine owns the first-entry rule; this is only
+                // what binding means for this state.
+                if engine.claim_late_binding_first_entry({{ machine_name }}State::{{ state_id | to_state_variant }}) {
                     self.ensure_script_engine();
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();

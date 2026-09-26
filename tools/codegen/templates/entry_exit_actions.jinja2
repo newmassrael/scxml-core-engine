@@ -114,15 +114,17 @@
 {% if state.datamodel or state.on_entry_blocks or state.invokes | scxml or state.invokes | scxml_remote or state.invokes | hybrid or state.invokes | mesh_rpc or state.invokes | unsupported or (state.is_final and state.donedata) or (state.is_final and state.parent) %}
                 {
 {% if state.datamodel and model.binding == 'late' %}
-                // ============================================================
-                // W3C SCXML 5.9: LATE BINDING - Initialize datamodel on state entry
-                // ARCHITECTURE.md Zero Duplication: DataModelInitHelper shared with Interpreter
-                // ARCHITECTURE.md DRY Principle: Uses datamodel_macros.jinja2
-                // ============================================================
+                // §scxml-D-enterStates, late binding: the state's `<data>` is
+                // bound on its FIRST entry only (`s.isFirstEntry`), after it
+                // joins the configuration and before its <onentry>. The engine
+                // owns the first-entry rule; this is only what binding means
+                // for this state.
+                if (engine.claimLateBindingFirstEntry(State::{{ state_id | capitalize }})) {
                 ensureScriptEngine();
                 auto& scriptEngine = getScriptEngine();
 {% import 'datamodel_macros.jinja2' as dm %}
 {{ dm.initialize_state_datamodel(state, state_id, "AOT executeEntryActions: Late binding initialized", base_path) }}
+                }
 
 {% endif %}
 {% if state.invokes | unsupported %}

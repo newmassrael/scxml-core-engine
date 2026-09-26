@@ -249,6 +249,7 @@ func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSolePolicy) ensureScr
 	p.scriptEngineInitialized = true
 }
 
+
 // InitializeDataModel sets up datamodel via script engine (W3C SCXML 5.3).
 func (p *InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSolePolicy) InitializeDataModel(eng *sce.Engine[InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleState, InvokeParamSeedsDeclaredChildDataSceSynthInvokeInvSoleEvent]) {
 	p.ensureScriptEngine()

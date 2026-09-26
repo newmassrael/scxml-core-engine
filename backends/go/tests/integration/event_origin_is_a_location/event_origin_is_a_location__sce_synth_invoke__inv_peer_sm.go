@@ -239,6 +239,7 @@ func (p *EventOriginIsALocationSceSynthInvokeInvPeerPolicy) ensureScriptEngine()
 	p.scriptEngineInitialized = true
 }
 
+
 // InitializeDataModel sets up datamodel via script engine (W3C SCXML 5.3).
 func (p *EventOriginIsALocationSceSynthInvokeInvPeerPolicy) InitializeDataModel(eng *sce.Engine[EventOriginIsALocationSceSynthInvokeInvPeerState, EventOriginIsALocationSceSynthInvokeInvPeerEvent]) {
 	p.ensureScriptEngine()

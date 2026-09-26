@@ -224,6 +224,7 @@ func (p *SessionIdsAreDistinctSceSynthInvokeInvAPolicy) ensureScriptEngine() {
 	p.scriptEngineInitialized = true
 }
 
+
 // InitializeDataModel sets up datamodel via script engine (W3C SCXML 5.3).
 func (p *SessionIdsAreDistinctSceSynthInvokeInvAPolicy) InitializeDataModel(eng *sce.Engine[SessionIdsAreDistinctSceSynthInvokeInvAState, SessionIdsAreDistinctSceSynthInvokeInvAEvent]) {
 	p.ensureScriptEngine()

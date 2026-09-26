@@ -402,8 +402,11 @@ class Test280StateMachine(
             }
             is Test280State.S1 -> {
                 // SCE-MAP: test280.scxml:20 :: s1 :: _state_body
-                // W3C SCXML 5.3: Late binding — initialize state-level datamodel on entry
-                run {
+                // §scxml-D-enterStates, late binding: the state's <data> is bound
+                // on its FIRST entry only (s.isFirstEntry), before its <onentry>.
+                // The engine owns the first-entry rule; this is only what binding
+                // means for this state.
+                if (claimLateBindingFirstEntry(state)) {
                     ensureScriptEngine()
                     val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
                     val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
