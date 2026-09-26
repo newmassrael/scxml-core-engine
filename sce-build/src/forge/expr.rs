@@ -6666,8 +6666,9 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         // records an out-of-range failure and yields 0 instead of reading:
         // `(inside ? xs[i] : 0)`. The index is written twice — algorithm
         // expressions have no side effects — so an index outside is never
-        // read, an empty collection's included. A `bytes` view carries its
-        // length; a build-time array's is its `sizeof`.
+        // read, an empty collection's included. A `bytes` view and a
+        // `list<T>` parameter's view carry their length; a build-time
+        // array's is its `sizeof`.
         ExprKind::Checked {
             op: CheckedOp::Index,
             left,
@@ -6675,7 +6676,8 @@ fn c_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         } => {
             let object = wrap_postfix(left, emit_c(left, InferredType::Unknown)?);
             let idx = emit_c(index, InferredType::Unknown)?;
-            let (accessor, len) = if matches!(left.ty, InferredType::Bytes) {
+            let (accessor, len) = if matches!(left.ty, InferredType::Bytes | InferredType::List(_))
+            {
                 (".data", format!("({object}).len"))
             } else {
                 ("", format!("(sizeof({object}) / sizeof(({object})[0]))"))
