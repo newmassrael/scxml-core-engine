@@ -1,4 +1,4 @@
-// SCE-MAP: algorithm_cobs_encode:39 :: _forge_body
+// SCE-MAP: algorithm_cobs_encode:42 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
 // Runtime: none
@@ -17,29 +17,29 @@ package com.sce.generated.algorithm_cobs_encode
 import com.sce.forge.runtime.SceByteBuf
 
 fun algorithmCobsEncode(data: ByteArray): ByteArray {
-    var n: UShort = (data).size.toUShort()
+    var n: UInt = (data).size.toUInt()
     val out = SceByteBuf(32)
-    var p: UShort = 0.toUShort()
+    var p: UInt = 0.toUInt()
     var done: Boolean = false
     while (done == false) {
-        var q: UShort = p
+        var q: UInt = p
         var run: UShort = 0.toUShort()
         while (q < n && run < 254.toUShort() && data[(q).toInt()].toUByte() != 0.toUByte()) {
-            q = (q.toUInt() + 1.toUInt()).toUShort()
+            q = q + 1.toUInt()
             run = (run.toUInt() + 1.toUInt()).toUShort()
         }
         var code: UByte = (run.toUInt() + 1.toUInt()).toUByte()
         out.add((code).toByte())
-        var k: UShort = p
+        var k: UInt = p
         while (k < q) {
             out.add((data[(k).toInt()].toUByte()).toByte())
-            k = (k.toUInt() + 1.toUInt()).toUShort()
+            k = k + 1.toUInt()
         }
         if (q >= n) {
             done = true
         } else {
             if (run < 254.toUShort()) {
-                p = (q.toUInt() + 1.toUInt()).toUShort()
+                p = q + 1.toUInt()
                 if (p >= n) {
                     var last: UByte = 1.toUByte()
                     out.add((last).toByte())

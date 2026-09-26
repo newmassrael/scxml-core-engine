@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: algorithm_cobs_encode:39 :: _forge_body"]
-// SCE-MAP: algorithm_cobs_encode:39 :: _forge_body
+#![doc = "SCE-MAP: algorithm_cobs_encode:42 :: _forge_body"]
+// SCE-MAP: algorithm_cobs_encode:42 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
 // Runtime: none
@@ -14,12 +14,12 @@ use sce_portable_bytes::{SceBytes, CapacityExceeded};
 #[allow(clippy::all)]
 #[allow(unused_assignments)]
 pub fn algorithm_cobs_encode(data: &[u8]) -> Result<SceBytes<32>, CapacityExceeded> {
-    let n: u16 = (data).len() as u16;
+    let n: u32 = (data).len() as u32;
     let mut out: SceBytes<32> = SceBytes::new();
-    let mut p: u16 = 0;
+    let mut p: u32 = 0;
     let mut done: bool = false;
     while done == false {
-        let mut q: u16 = p;
+        let mut q: u32 = p;
         let mut run: u16 = 0;
         while q < n && run < 254 && data[(q) as usize] != 0 {
             q = q + 1;
@@ -27,7 +27,7 @@ pub fn algorithm_cobs_encode(data: &[u8]) -> Result<SceBytes<32>, CapacityExceed
         }
         let code: u8 = (run + 1) as u8;
         out.push(code)?;
-        let mut k: u16 = p;
+        let mut k: u32 = p;
         while k < q {
             out.push(data[(k) as usize])?;
             k = k + 1;

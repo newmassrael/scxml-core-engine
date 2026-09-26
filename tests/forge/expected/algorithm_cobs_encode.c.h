@@ -1,4 +1,4 @@
-// SCE-MAP: algorithm_cobs_encode:39 :: _forge_body
+// SCE-MAP: algorithm_cobs_encode:42 :: _forge_body
 
 /* SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm") */
 /* Runtime: none */
@@ -22,12 +22,12 @@ typedef struct {
 } algorithm_cobs_encode_result_t;
 
 static inline algorithm_cobs_encode_result_t algorithm_cobs_encode(sce_forge_bytes_view_t data) {
-    uint16_t n = (data).len;
+    uint32_t n = (data).len;
     algorithm_cobs_encode_result_t out = { .len = 0u, .ok = true };
-    uint16_t p = 0;
+    uint32_t p = 0;
     bool done = false;
     while (done == false) {
-        uint16_t q = p;
+        uint32_t q = p;
         uint16_t run = 0;
         while (q < n && run < 254 && data.data[q] != 0) {
             q = q + 1;
@@ -35,7 +35,7 @@ static inline algorithm_cobs_encode_result_t algorithm_cobs_encode(sce_forge_byt
         }
         uint8_t code = run + 1;
         if (out.len < 32u) { out.bytes[out.len++] = (uint8_t)(code); } else { out.ok = false; return out; }
-        uint16_t k = p;
+        uint32_t k = p;
         while (k < q) {
             if (out.len < 32u) { out.bytes[out.len++] = (uint8_t)(data.data[k]); } else { out.ok = false; return out; }
             k = k + 1;

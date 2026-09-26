@@ -31,6 +31,9 @@
   §3.4.1) refuses an operation it cannot prove safe unless the algorithm
   declares may-fail. Counted, every operation here is bounded by a
   condition that guards it, so the encoder keeps an API that cannot fail.
+  The positions are uint32 because `len(data)` is (the length contract,
+  SCE_FORGE.md §3.4.1): held in a uint16 they wrapped past 65535 bytes of
+  input, and the contract refuses a value stored where it does not fit.
 
   `forge_rust_algorithm_cobs_encode_runtime` runs the Rust emit against these;
   the goldens pin the emitted source per backend. And `<sce:test-vector>` is
@@ -47,14 +50,14 @@
     <sce:return type="bytes" returns-max-size="32"/>
   </sce:signature>
   <sce:body>
-    <sce:var name="n" type="uint16" init="len(data)"/>
+    <sce:var name="n" type="uint32" init="len(data)"/>
     <sce:var name="out" type="bytes" capacity="32"/>
-    <sce:var name="p" type="uint16" init="0"/>
+    <sce:var name="p" type="uint32" init="0"/>
     <sce:var name="done" type="bool" init="false"/>
     <sce:while cond="done === false">
       <!-- Scan a group: q advances over up to 254 non-zero bytes from p, and
            run counts them. -->
-      <sce:var name="q" type="uint16" init="p"/>
+      <sce:var name="q" type="uint32" init="p"/>
       <sce:var name="run" type="uint16" init="0"/>
       <sce:while cond="(q &lt; n) &amp;&amp; (run &lt; 254) &amp;&amp; (data[q] !== 0)">
         <sce:assign target="q" expr="q + 1"/>
@@ -63,7 +66,7 @@
       <!-- Emit the code byte then the group's bytes. -->
       <sce:var name="code" type="uint8" init="run + 1"/>
       <sce:append target="out" expr="code"/>
-      <sce:var name="k" type="uint16" init="p"/>
+      <sce:var name="k" type="uint32" init="p"/>
       <sce:while cond="k &lt; q">
         <sce:append target="out" expr="data[k]"/>
         <sce:assign target="k" expr="k + 1"/>
