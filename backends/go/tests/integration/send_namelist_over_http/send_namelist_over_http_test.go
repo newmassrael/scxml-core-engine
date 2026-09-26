@@ -56,7 +56,12 @@ func TestSendNamelistReachesTheFormAndABrokenItemDiscardsTheMessage(t *testing.T
 			"its verdict never fired, so the machine is not being ticked")
 	}
 
-	switch got := engine.GetCurrentState(); got {
+	got, ended := engine.TerminalState()
+	if !ended {
+		t.Fatalf("send_namelist_over_http did not end in a top-level <final> "+
+			"(parked in %v)", engine.GetCurrentState())
+	}
+	switch got {
 	case SendNamelistOverHttpStatePass:
 	case SendNamelistOverHttpStateFailNamelistNeverArrived:
 		t.Fatalf("the BasicHTTP send never came back at all — the harness server did " +
@@ -74,6 +79,6 @@ func TestSendNamelistReachesTheFormAndABrokenItemDiscardsTheMessage(t *testing.T
 			"it when a location expression yields no valid location, and the wire the " +
 			"send would have crossed does not change the answer.")
 	default:
-		t.Fatalf("send_namelist_over_http settled in %v, which is not a verdict state", got)
+		t.Fatalf("send_namelist_over_http ended in %v, which is not a verdict state", got)
 	}
 }

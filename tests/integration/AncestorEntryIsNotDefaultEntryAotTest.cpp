@@ -104,14 +104,15 @@ TEST(AncestorEntryIsNotDefaultEntryAotTest, AnAncestorEnteredOnTheWayToATargetTa
 
     sm.processEvent(SM::Event::Check);
 
-    EXPECT_EQ(sm.getCurrentState(), SM::State::Settled)
+    EXPECT_EQ(sm.terminalState(), SM::State::Settled)
         << "`check` did not carry the machine to the top-level `settled`. The document checks "
            "its four clauses in document order and lands each in a `<final>` of its own, so the "
-           "configuration below names which one broke: `failDefaulted` (a default nobody "
+           "final it ended in names which one broke: `failDefaulted` (a default nobody "
            "targeted), `failLobbied` (`drive`'s default taken while it was only an ancestor), "
            "`failIdled` (the untouched region did not get its default, or got it twice), "
-           "`failTargeted` (a pass never reached the target). active: "
-        << describe(sm);
+           "`failTargeted` (a pass never reached the target). ended in: "
+        << (sm.terminalState() ? sm.getPolicy().getStateName(*sm.terminalState()) : "(still running)")
+        << ", active: " << describe(sm);
 }
 
 }  // namespace SCE::Tests

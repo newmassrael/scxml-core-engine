@@ -42,10 +42,10 @@ fn an_invoke_param_carries_the_invoking_sessions_value_to_a_declared_child_data(
         "invoke_param_seeds_declared_child_data timed out before reaching a final state"
     );
 
-    let reached = engine.get_current_state();
+    let reached = engine.terminal_state();
     assert_eq!(
         reached,
-        InvokeParamSeedsDeclaredChildDataState::Pass,
+        Some(InvokeParamSeedsDeclaredChildDataState::Pass),
         "reached {reached:?}. \
          FailChildEvaluatedTheExpression: the child evaluated the author's \
          `<param expr>` text in its own data model and found its own `token` \

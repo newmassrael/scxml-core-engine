@@ -41,7 +41,7 @@ TEST(AutoforwardDoneInvokeAotTest, DoneInvokeFromASiblingReachesTheAutoforwardCh
     EXPECT_TRUE(reachedFinal) << "parent did not reach a final state within timeout — the watcher child "
                                  "reported neither verdict, so `done.invoke.inv_short` never reached the "
                                  "parent's external queue at all";
-    EXPECT_EQ(sm.getCurrentState(), SM::State::Pass)
+    EXPECT_EQ(sm.terminalState(), SM::State::Pass)
         << "the watcher saw only `probe`: `done.invoke.inv_short` was withheld from a live "
            "`autoforward` child. W3C Appendix D `mainEventLoop` forwards every event dequeued "
            "from the external queue and excludes only the cancel event, and §6.4.2 places "

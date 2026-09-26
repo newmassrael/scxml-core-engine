@@ -43,8 +43,8 @@ fn an_unsupported_invoke_type_raises_error_execution() {
         engine.get_current_state()
     );
     assert_eq!(
-        engine.get_current_state(),
-        InvokeUnsupportedTypeState::Pass,
+        engine.terminal_state(),
+        Some(InvokeUnsupportedTypeState::Pass),
         "the machine completed somewhere other than the `error.execution` target"
     );
 }

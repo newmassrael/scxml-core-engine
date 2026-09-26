@@ -129,7 +129,7 @@ TEST_F(SCXMLParallelComplianceTest, W3C_DoneStateEvent_Generation_ShouldProcessD
 
     // W3C SCXML 3.4 compliance: When all parallel regions immediately reach final states,
     // the done.state event is generated and processed automatically, transitioning to completed
-    ASSERT_EQ(sm->getCurrentState(), "completed")
+    ASSERT_EQ(sm->terminalState().value_or(""), "completed")
         << "SCXML W3C compliance: parallel state should automatically transition to completed when all regions "
            "immediately reach final states";
 
@@ -143,7 +143,7 @@ TEST_F(SCXMLParallelComplianceTest, W3C_DoneStateEvent_Generation_ShouldProcessD
     // Verify final state compliance - the state machine should be in completed state
     // because all parallel regions immediately reached final states, triggering automatic
     // done.state.parallel1 event generation and transition to completed
-    ASSERT_EQ(sm->getCurrentState(), "completed")
+    ASSERT_EQ(sm->terminalState().value_or(""), "completed")
         << "StateMachine must transition to completed state per W3C SCXML 3.4 specification";
 }
 
@@ -208,7 +208,8 @@ TEST_F(SCXMLParallelComplianceTest, W3C_Parallel_DoneStateEvent_Generation) {
         // W3C SCXML 3.4: Verify done.state event automatic generation
         if (doneEventResult.getValueAsString() == "true" && parallelCompletedResult.getValueAsString() == "true") {
             // Also verify transition to final state
-            EXPECT_EQ(sm->getCurrentState(), "completed") << "Transition due to done.state event not completed";
+            EXPECT_EQ(sm->terminalState().value_or(""), "completed")
+                << "Transition due to done.state event not completed";
 
             Logger::info("W3C COMPLIANCE VERIFIED: done.state event automatically generated and processed");
             SUCCEED() << "SCXML W3C 3.4 specification compliance: Successfully auto-generated and processed "

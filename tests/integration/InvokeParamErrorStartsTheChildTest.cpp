@@ -106,7 +106,7 @@ TEST_F(InvokeParamErrorStartsTheChildTest, AnInvokeParamThatWillNotEvaluateCosts
     ASSERT_FALSE(sm->isRunning()) << "parent did not halt within 10s — neither the child's `childUp` "
                                   << "nor the delayed `timeout` that judges a never-started child arrived";
 
-    const std::string reached = sm->getCurrentState();
+    const std::string reached = sm->terminalState().value_or("");
     EXPECT_NE(reached, "failNoParamError")
         << "`childUp` arrived with no `error.execution` before it: §scxml-5.7.1 puts that error on "
         << "the internal queue while the `<invoke>` is being evaluated, so it is dequeued before "

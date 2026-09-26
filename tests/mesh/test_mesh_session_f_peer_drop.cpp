@@ -20,7 +20,7 @@
 //        "target":"worker_session_f_peer_drop"}`.
 //   3. The parent's `<transition event="error.communication" target="lost"/>`
 //      fires on the next macrostep — observable via
-//      `parent.getCurrentState() == State::Lost`.
+//      `parent.terminalState() == State::Lost`.
 //   4. A second `failScxmlRemoteInvokesForPeer` call on the same peer
 //      is a silent no-op (no second event, no state churn), because
 //      step 1 already removed the entry.
@@ -91,13 +91,13 @@ int main() {
         worker_router.pumpScxmlInvokeRequests();
         parent_router.pumpScxmlInvokeReplies();
         parent.step();
-        if (parent.getCurrentState() == ParentState::Lost) {
+        if (parent.terminalState() == ParentState::Lost) {
             break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
-    if (parent.getCurrentState() != ParentState::Lost) {
+    if (parent.terminalState() != ParentState::Lost) {
         std::fprintf(stderr,
                      "FAIL: parent did not reach State::Lost after "
                      "failScxmlRemoteInvokesForPeer(worker_session_f_peer_drop). "
@@ -117,7 +117,7 @@ int main() {
     parent.getPolicy().failScxmlRemoteInvokesForPeer("worker_session_f_peer_drop", parent);
     parent.step();
 
-    if (parent.getCurrentState() != ParentState::Lost) {
+    if (parent.terminalState() != ParentState::Lost) {
         std::fprintf(stderr,
                      "FAIL: second peer-down call disturbed parent state. "
                      "Current parent state=%d. Expected silent no-op "

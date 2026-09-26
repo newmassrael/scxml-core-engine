@@ -164,7 +164,9 @@ void sce_sm_reset_all_enemies(bool notify_dead) {
         if (g_enemies[i].active) {
             const char *state_name = "UNKNOWN";
             if (g_enemies[i].sm) {
-                state_name = notify_dead ? "DEAD" : get_enemy_state_name(g_enemies[i].sm->getCurrentState());
+                state_name = notify_dead ? "DEAD"
+                                         : get_enemy_state_name(g_enemies[i].sm->terminalState().value_or(
+                                               g_enemies[i].sm->getCurrentState()));
             }
             js_notify_enemy_update(i, g_enemies[i].type_name, state_name, g_enemies[i].instance_id, false);
             g_enemies[i].sm.reset();
@@ -243,7 +245,8 @@ const char *sce_get_enemy_info(int slot) {
 
     const char *state_name = "UNKNOWN";
     if (g_enemies[slot].sm) {
-        state_name = get_enemy_state_name(g_enemies[slot].sm->getCurrentState());
+        state_name =
+            get_enemy_state_name(g_enemies[slot].sm->terminalState().value_or(g_enemies[slot].sm->getCurrentState()));
     }
 
     snprintf(buffer, sizeof(buffer), "%ld,%.31s,%.31s,%d", (long)(intptr_t)g_enemies[slot].mobj_ptr,
@@ -322,12 +325,15 @@ void sce_enemy_remove(void *mobj) {
 
     const char *state_name = "UNKNOWN";
     if (g_enemies[slot].sm) {
-        state_name = get_enemy_state_name(g_enemies[slot].sm->getCurrentState());
+        // W3C SCXML Appendix D: a killed enemy has ended in its top-level
+        // `dead` final, and exitInterpreter leaves no configuration to read.
+        state_name =
+            get_enemy_state_name(g_enemies[slot].sm->terminalState().value_or(g_enemies[slot].sm->getCurrentState()));
     }
 
     js_notify_enemy_update(slot, g_enemies[slot].type_name, state_name, g_enemies[slot].instance_id, false);
 
-    bool was_killed = g_enemies[slot].sm && g_enemies[slot].sm->getCurrentState() == EnemyState::Dead;
+    bool was_killed = g_enemies[slot].sm && g_enemies[slot].sm->terminalState() == EnemyState::Dead;
 
     g_enemies[slot].sm.reset();
     g_enemies[slot].active = false;

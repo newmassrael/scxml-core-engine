@@ -52,8 +52,9 @@ fn a_state_is_still_active_while_its_own_onexit_runs() {
         p.child_in_outer(),
         p.exits()
     );
-    assert!(
-        settled.contains(&State::Settled),
+    assert_eq!(
+        e.terminal_state(),
+        Some(State::Settled),
         "`leave` did not carry the machine to `settled` (active: {settled:?}; {records}). The document \
          checks its clauses in document order and lands each in a `<final>` of its own: \
          `failExits` (a handler did not run), `failSelfInInner` / `failSelfInOuter` (a state \

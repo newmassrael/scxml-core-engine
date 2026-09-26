@@ -255,7 +255,7 @@ fn full_lifecycle_stopped_running_done() {
     assert_eq!(engine.get_current_state(), HwState::Running);
 
     engine.process_event(HwEvent::End);
-    assert_eq!(engine.get_current_state(), HwState::Done);
+    assert_eq!(engine.terminal_state(), Some(HwState::Done));
     assert!(engine.is_in_final_state());
 }
 

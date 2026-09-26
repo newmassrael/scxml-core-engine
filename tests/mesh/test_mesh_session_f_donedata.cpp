@@ -96,11 +96,11 @@ int main() {
         worker_nested_router.pumpScxmlInvokeRequests();
         parent_router.pumpScxmlInvokeReplies();
         parent.step();
-        if (parent.getCurrentState() == ParentState::Pass) {
+        if (parent.terminalState() == ParentState::Pass) {
             std::printf("SCE Mesh §9.6.2 wire-18 donedata verification: PASS\n");
             return 0;
         }
-        if (parent.getCurrentState() == ParentState::Fail) {
+        if (parent.terminalState() == ParentState::Fail) {
             std::fprintf(stderr, "FAIL: parent reached `fail`. Check the conds "
                                  "`_event.data.result == 42` (param branch), "
                                  "`_event.data == 'hello_content'` (content "

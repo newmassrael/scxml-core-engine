@@ -148,10 +148,10 @@ TEST_F(AncestorEntryIsNotDefaultEntryTest, AnAncestorEnteredOnTheWayToATargetTak
     ASSERT_TRUE(sm->raiseExternalEvent("check", ""));
     eventRaiser->processQueuedEvents();
 
-    EXPECT_TRUE(sm->isStateActive("settled"))
+    EXPECT_EQ(sm->terminalState().value_or(""), "settled")
         << "`check` did not carry the machine to `settled`. The document checks its four "
            "clauses in document order and lands each in a `<final>` of its own, so the "
-           "configuration below names which one broke: `failDefaulted` (a default nobody "
+           "final it ended in names which one broke: `failDefaulted` (a default nobody "
            "targeted), `failLobbied` (`drive`'s default taken while it was only an ancestor), "
            "`failIdled` (the untouched region did not get its default, or got it twice), "
            "`failTargeted` (a pass never reached the target). active:"

@@ -67,7 +67,7 @@ def test_cancel_survives_one_coarse_time_step() -> None:
 
     engine.advance_time(PAST_BOTH_DEADLINES)
 
-    assert str(engine.current_state) != "cancelLost", (
+    assert str(engine.terminal_state) != "cancelLost", (
         "`settle` was delivered even though `active`'s <cancel sendid=\"s1\"> ran "
         "first. Both entries were due when this step started, so the drain "
         "appended them to the external queue together and the cancel found "
@@ -82,9 +82,9 @@ def test_cancel_survives_one_coarse_time_step() -> None:
     while not engine.reached_final and elapsed < 1000:
         engine.advance_time(20)
         elapsed += 20
-    assert str(engine.current_state) == "pass", (
+    assert str(engine.terminal_state) == "pass", (
         f"the machine did not reach `pass` after the cancel; it is in "
-        f"{engine.current_state!s}"
+        f"{engine.terminal_state!s}"
     )
 
 
@@ -97,9 +97,9 @@ def test_a_fine_step_reaches_the_same_verdict() -> None:
     while not engine.reached_final and elapsed < 1000:
         engine.advance_time(10)
         elapsed += 10
-    assert str(engine.current_state) == "pass", (
+    assert str(engine.terminal_state) == "pass", (
         "a 10 ms step, which lands between the 100 ms and 200 ms due times, "
-        f"must reach `pass`; it reached {engine.current_state!s}"
+        f"must reach `pass`; it reached {engine.terminal_state!s}"
     )
 
 
@@ -126,9 +126,9 @@ def test_engine_says_how_far_time_must_move() -> None:
         )
         engine.advance_time(max(step, 1))
 
-    assert str(engine.current_state) == "pass", (
+    assert str(engine.terminal_state) == "pass", (
         f"deadline-driven stepping did not reach `pass`; it reached "
-        f"{engine.current_state!s}"
+        f"{engine.terminal_state!s}"
     )
     assert engine.time_until_next_scheduled_ms() is None, (
         "nothing is scheduled once the machine is finished, so no clock "

@@ -85,7 +85,7 @@ TEST_F(ParallelWithAHistoryChildCompletesTest, EveryRegionFinalRaisesTheParallel
     ASSERT_TRUE(sm->loadSCXMLFromString(DOCUMENT));
     ASSERT_TRUE(sm->start());
 
-    EXPECT_EQ(sm->getCurrentState(), "pass")
+    EXPECT_EQ(sm->terminalState().value_or(""), "pass")
         << "both regions of `p` reached their <final>, so done.state.p fires and takes the machine to `pass`. "
            "Stuck in `p` means the <history> child was counted as a child state that has to finish too — "
            "Appendix D's getChildStates leaves pseudo-states out";

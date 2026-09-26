@@ -63,7 +63,7 @@ func TestCompletionCarriesTheMachineToATopLevelFinal(t *testing.T) {
 	// The remaining states tell the two apart: A1/B1 means `go` moved nothing;
 	// A2/B2 means the parallel completed and the event went nowhere.
 	after := engine.GetActiveStates()
-	if !active(after, ParallelDoneStateIsDeliveredStateSettled) {
+	if ended, ok := engine.TerminalState(); !ok || ended != ParallelDoneStateIsDeliveredStateSettled {
 		t.Errorf("every region reaching its <final> completes the parallel, so "+
 			"done.state.run had to be raised AND selected — `settled` is reachable "+
 			"by nothing else (active: %v)", after)

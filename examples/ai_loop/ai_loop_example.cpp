@@ -175,9 +175,10 @@ public:
     /// as a `<send>` this host serves (§scxml-6.2.5) — so what drives the run
     /// is the machine reaching a state, not this function noticing that it
     /// did. `step()` drains the events the acts produced; reaching a terminal
-    /// is the only thing still read off the configuration, and a terminal is
-    /// an OUTCOME the document enumerates rather than an internal it happens
-    /// to be in.
+    /// is the only thing still read off the machine, and a terminal is an
+    /// OUTCOME the document enumerates rather than an internal it happens to
+    /// be in. It is read as the final the run ended in (`terminalState()`),
+    /// not off the configuration, which Appendix D empties on exit.
     ///
     /// The session starts before `initialize()`: entering `priming` performs
     /// the first act immediately, and there has to be something to prompt.
@@ -243,11 +244,6 @@ public:
     }
 
 private:
-    bool active(State s) const {
-        const auto states = m_.getPolicy().getActiveStates();
-        return std::find(states.begin(), states.end(), s) != states.end();
-    }
-
     /// A value the document owns, or a phrase saying it could not be read.
     ///
     /// The prompts belong to whoever edited the SCXML, so the host never
@@ -469,20 +465,27 @@ private:
         return out;
     }
 
+    /// The outcome the run ended in, or nullptr while it is still running.
+    ///
+    /// W3C SCXML Appendix D (enterStates / exitInterpreter): the outcomes are
+    /// the document's top-level `<final>`s, and reaching one ends the session
+    /// and leaves the configuration empty. So the answer is the final the run
+    /// recorded on entry, never a read of the active set afterwards.
     const char *terminal() const {
-        if (active(State::Converged)) {
+        const std::optional<State> ended = m_.terminalState();
+        if (ended == State::Converged) {
             return "converged";
         }
-        if (active(State::Exhausted)) {
+        if (ended == State::Exhausted) {
             return "exhausted";
         }
-        if (active(State::Blocked)) {
+        if (ended == State::Blocked) {
             return "blocked";
         }
-        if (active(State::Failed)) {
+        if (ended == State::Failed) {
             return "failed";
         }
-        if (active(State::Cancelled)) {
+        if (ended == State::Cancelled) {
             return "cancelled";
         }
         return nullptr;

@@ -34,14 +34,13 @@ int main() {
     sm.initialize();
 
     using State = SCE::Generated::parent_session_f::State;
-    const auto state = sm.getCurrentState();
-    if (state != State::Pass) {
+    if (sm.terminalState() != State::Pass) {
         std::fprintf(stderr,
                      "FAIL: parent did not reach 'pass' after initialize(); state=%d. "
                      "Expected: remote <invoke type=\"scxml\"> with no transport binding "
                      "raises error.execution locally (SESSION_F_TRANSPORT_UNAVAILABLE per "
                      "SCE_MESH.md §9.6/§10.7.1), parent transitions to final.\n",
-                     static_cast<int>(state));
+                     static_cast<int>(sm.getCurrentState()));
         return 1;
     }
 

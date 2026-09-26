@@ -42,8 +42,8 @@ fn an_internal_queue_event_is_never_autoforwarded() {
     );
 
     assert_eq!(
-        engine.get_current_state(),
-        AutoforwardInternalQueueState::Pass,
+        engine.terminal_state(),
+        Some(AutoforwardInternalQueueState::Pass),
         "the watcher saw `error.execution`: an internal-queue event was autoforwarded. \
          W3C Appendix D `mainEventLoop` forwards only what it dequeues from the external \
          queue, and §6.2 raises `error.execution` onto the internal one — check that the \

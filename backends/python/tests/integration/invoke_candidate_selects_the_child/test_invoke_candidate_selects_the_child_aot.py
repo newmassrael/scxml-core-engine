@@ -52,7 +52,7 @@ def test_invoke_candidate_selects_the_child_aot() -> None:
         f"{engine.current_state!s}. Parking means no child spoke: a stub ran, "
         "or nothing did"
     )
-    assert str(engine.current_state) == "pass", (
+    assert str(engine.terminal_state) == "pass", (
         "`wrongChild` means the value selected the other candidate, `noChild` "
-        f"means nothing was loaded at all; the machine reached {engine.current_state!s}"
+        f"means nothing was loaded at all; the machine reached {engine.terminal_state!s}"
     )

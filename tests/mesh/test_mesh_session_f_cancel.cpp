@@ -57,11 +57,11 @@ int main() {
         worker_router.pumpScxmlInvokeRequests();
         parent_router.pumpScxmlInvokeReplies();
         parent.step();
-        if (parent.getCurrentState() == ParentState::Cancelled) {
+        if (parent.terminalState() == ParentState::Cancelled) {
             std::printf("SCE Mesh §9.6 wire-19 cancel verification: PASS\n");
             return 0;
         }
-        if (parent.getCurrentState() == ParentState::Fail) {
+        if (parent.terminalState() == ParentState::Fail) {
             std::fprintf(stderr, "FAIL: parent hit `error.execution` before reaching "
                                  "`cancelled`. Likely the onexit wire-19 emit raised an "
                                  "error path back onto the parent (check performScxmlInvokeCancel "

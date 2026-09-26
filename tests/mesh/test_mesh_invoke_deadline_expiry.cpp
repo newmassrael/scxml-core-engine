@@ -60,7 +60,7 @@ int main() {
     // Computing → Failed.
     brake.step();
 
-    if (brake.getCurrentState() != SCE::Generated::brake_invoke::State::Failed) {
+    if (brake.terminalState() != SCE::Generated::brake_invoke::State::Failed) {
         std::printf("FAIL: brake did not reach Failed after deadline (state=%d). "
                     "MeshDeadlineScheduler or InvokeCorrelation::handleDeadline "
                     "likely regressed.\n",

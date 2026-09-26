@@ -35,16 +35,18 @@ namespace {
 
 using SM = SCE::Generated::xml_data_is_a_dom_tree::xml_data_is_a_dom_tree;
 
-/// The fixture is a flat machine, so its configuration IS the current state —
-/// `getActiveStates` is emitted only for machines that carry a `<parallel>`.
-bool isActive(SM &sm, SM::State state) {
-    return sm.getCurrentState() == state;
+/// Every verdict is a top-level `<final>`, so the answer is the one the run
+/// ended in — `terminalState()` — not what the configuration holds afterwards
+/// (Appendix D exitInterpreter leaves it empty).
+bool endedIn(SM &sm, SM::State state) {
+    return sm.terminalState() == state;
 }
 
 /// Rendered into every failure message: the fixture lands each way of failing
-/// in a `<final>` of its own, so the state names which claim broke.
+/// in a `<final>` of its own, so the state names which claim broke. A run that
+/// has not ended shows the flat machine's current state instead.
 std::string describe(SM &sm) {
-    return std::string("[") + sm.getPolicy().getStateName(sm.getCurrentState()) + "]";
+    return std::string("[") + sm.getPolicy().getStateName(sm.terminalState().value_or(sm.getCurrentState())) + "]";
 }
 
 }  // namespace
@@ -60,21 +62,21 @@ TEST(XmlDataIsADomTreeAotTest, ADataElementsXmlIsADomTreeTheDocumentCanWalk) {
     // verdict; no event is needed to ask the question.
     sm.initialize();
 
-    EXPECT_FALSE(isActive(sm, SM::State::NotADocument))
+    EXPECT_FALSE(endedIn(sm, SM::State::NotADocument))
         << "the variable did not hold a document: `doc.nodeType === 9`, `doc.nodeName === "
            "'#document'`, `doc.documentElement.tagName === 'books'` or `doc.hasAttribute('count')` "
            "did not hold. active: "
         << describe(sm);
-    EXPECT_FALSE(isActive(sm, SM::State::WrongTree))
+    EXPECT_FALSE(endedIn(sm, SM::State::WrongTree))
         << "the document element's children are not the two `<book>` elements in document order — "
            "the whitespace between them may have become nodes, or a sibling/parent link is "
            "missing. active: "
         << describe(sm);
-    EXPECT_FALSE(isActive(sm, SM::State::NoText))
+    EXPECT_FALSE(endedIn(sm, SM::State::NoText))
         << "character data did not report itself as a text node, or `textContent` did not read the "
            "text below the element. active: "
         << describe(sm);
-    EXPECT_TRUE(isActive(sm, SM::State::Settled))
+    EXPECT_TRUE(endedIn(sm, SM::State::Settled))
         << "the machine reached none of its four verdicts, so the guards did not evaluate at all. "
            "active: "
         << describe(sm);

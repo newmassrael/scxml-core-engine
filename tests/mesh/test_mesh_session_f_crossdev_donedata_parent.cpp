@@ -71,7 +71,7 @@ TEST(CrossdevDonedata, ThreeShapesSurviveWire18OverCustomTcp) {
         router.pumpScxmlInvokeReplies();
         parent.step();
 
-        const auto state = parent.getCurrentState();
+        const auto state = parent.terminalState();
         if (state == ParentState::Pass) {
             SUCCEED();
             return;

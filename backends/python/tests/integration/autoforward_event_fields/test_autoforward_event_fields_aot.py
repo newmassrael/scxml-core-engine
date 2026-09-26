@@ -43,7 +43,7 @@ def test_autoforward_event_fields_aot() -> None:
         f"100 ms; last leaf={engine.current_state} — the child never received "
         "the forwarded `childToParent`, so no done.invoke.inv_echo was emitted"
     )
-    actual = str(engine.current_state)
+    actual = str(engine.terminal_state)
     assert actual == "pass", (
         f"autoforward_event_fields reached <final id={actual!r}>; expected 'pass' "
         "— the child reported `stripped`, so the autoforwarded copy of "

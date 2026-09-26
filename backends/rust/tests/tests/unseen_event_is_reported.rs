@@ -170,9 +170,13 @@ fn the_refusal_is_not_derivable_from_any_other_accessor() {
     let (mut engine, se) = started();
     deliver(&mut engine, Event::Finish);
 
+    // Once the run has ended its configuration is empty (Appendix D's
+    // exitInterpreter), so the final it ended in is what a host reads instead
+    // — and it must not move either.
     let before = (
         engine.get_current_state(),
         engine.get_active_states().to_vec(),
+        engine.terminal_state(),
         engine.is_running(),
         engine.is_in_final_state(),
         engine.discarded_external_events(),
@@ -184,6 +188,7 @@ fn the_refusal_is_not_derivable_from_any_other_accessor() {
     let after = (
         engine.get_current_state(),
         engine.get_active_states().to_vec(),
+        engine.terminal_state(),
         engine.is_running(),
         engine.is_in_final_state(),
         engine.discarded_external_events(),

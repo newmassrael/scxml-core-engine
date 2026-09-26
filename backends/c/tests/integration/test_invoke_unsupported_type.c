@@ -37,7 +37,7 @@ int main(void) {
     invoke_unsupported_type_run(&sm);
 
     int rc = 0;
-    if (!invoke_unsupported_type_in_state(&sm, INVOKE_UNSUPPORTED_TYPE_STATE_PASS)) {
+    if (!invoke_unsupported_type_ended_in(&sm, INVOKE_UNSUPPORTED_TYPE_STATE_PASS)) {
         fprintf(stderr, "invoke_unsupported_type: FAIL - the machine did not reach `pass`. "
                         "W3C SCXML 6.4.1 requires an <invoke> whose `type` names no supported "
                         "processor to place error.execution on the internal event queue; "

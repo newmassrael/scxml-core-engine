@@ -241,7 +241,7 @@ TEST_F(StateMachineTest, MultipleTransitions) {
     sm->processEvent("start");
     auto result3 = sm->processEvent("finish");
     EXPECT_TRUE(result3.success);
-    EXPECT_EQ(sm->getCurrentState(), "done");
+    EXPECT_EQ(sm->terminalState().value_or(""), "done");
 }
 
 TEST_F(StateMachineTest, StopStateMachine) {
@@ -314,7 +314,7 @@ TEST_F(StateMachineTest, JavaScriptDatamodel) {
     // 6th increment should go to finished (counter will be 5, so counter >= 5 condition triggers)
     auto result = sm->processEvent("increment");
     EXPECT_TRUE(result.success);
-    EXPECT_EQ(sm->getCurrentState(), "finished");
+    EXPECT_EQ(sm->terminalState().value_or(""), "finished");
 }
 
 // C++ binding tests
@@ -438,7 +438,7 @@ TEST_F(StateMachineTest, FinalStateReached) {
     auto result2 = sm->processEvent("finish");
     EXPECT_TRUE(result2.success);
     EXPECT_EQ(result2.toState, "done");
-    EXPECT_EQ(sm->getCurrentState(), "done");
+    EXPECT_EQ(sm->terminalState().value_or(""), "done");
 
     // Critical: Verify final state stops execution
     // Note: When top-level final state is reached, state machine stops automatically
@@ -487,7 +487,7 @@ TEST_F(StateMachineTest, CompletionCallback) {
 
     // Callback should be invoked when final state is reached
     EXPECT_TRUE(callbackInvoked);
-    EXPECT_EQ(sm->getCurrentState(), "done");
+    EXPECT_EQ(sm->terminalState().value_or(""), "done");
     EXPECT_FALSE(sm->isRunning());
 }
 

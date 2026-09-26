@@ -81,6 +81,10 @@ TEST(UnseenEventIsReportedAotTest, TheRefusalIsNotDerivableFromAnyOtherAccessor)
 
     const auto beforeState = sm->getCurrentState();
     const auto beforeActive = sm->getActiveStates();
+    // Once the run has ended its configuration is empty (Appendix D's
+    // exitInterpreter), so the final it ended in is what a host reads instead
+    // — and it must not move either.
+    const auto beforeEnded = sm->terminalState();
     const bool beforeRunning = sm->isRunning();
     const bool beforeFinal = sm->isInFinalState();
     const uint32_t beforeDiscarded = sm->discardedExternalEvents();
@@ -90,6 +94,7 @@ TEST(UnseenEventIsReportedAotTest, TheRefusalIsNotDerivableFromAnyOtherAccessor)
 
     EXPECT_EQ(sm->getCurrentState(), beforeState);
     EXPECT_EQ(sm->getActiveStates(), beforeActive);
+    EXPECT_EQ(sm->terminalState(), beforeEnded);
     EXPECT_EQ(sm->isRunning(), beforeRunning);
     EXPECT_EQ(sm->isInFinalState(), beforeFinal);
     EXPECT_EQ(sm->discardedExternalEvents(), beforeDiscarded);

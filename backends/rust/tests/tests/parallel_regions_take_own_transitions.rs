@@ -67,8 +67,9 @@ fn every_region_takes_its_own_transition() {
     engine.step();
 
     let settled = engine.get_active_states();
-    assert!(
-        settled.contains(&State::Settled),
+    assert_eq!(
+        engine.terminal_state(),
+        Some(State::Settled),
         "`check` did not carry the machine to `settled` (active: {settled:?}), which the \
          document guards on both regions' assignments having run. Reaching `judging` \
          without `n == 1 && m == 1` means a region changed state while its transition \

@@ -52,7 +52,7 @@ class InvokeUnsupportedTypeTest {
         )
         assertEquals(
             InvokeUnsupportedTypeState.Pass,
-            sm.currentState.value,
+            sm.terminalState,
             "the machine completed somewhere other than the error.execution target"
         )
     }

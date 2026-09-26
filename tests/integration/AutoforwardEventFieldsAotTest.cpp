@@ -40,7 +40,7 @@ TEST(AutoforwardEventFieldsAotTest, ForwardedCopyKeepsDataOriginAndInvokeid) {
 
     EXPECT_TRUE(reachedFinal) << "parent did not reach a final state within timeout — the child never "
                                  "received the forwarded `childToParent`, so no done.invoke.inv_echo fired";
-    EXPECT_EQ(sm.getCurrentState(), SM::State::Pass)
+    EXPECT_EQ(sm.terminalState(), SM::State::Pass)
         << "the child reported `stripped`: the autoforwarded copy of `childToParent` lost "
            "`_event.data.value`, `_event.origin` or `_event.invokeid`. W3C §6.4 requires an "
            "exact copy — `forwardToAutoforwardChildren` must carry the source event's metadata, "

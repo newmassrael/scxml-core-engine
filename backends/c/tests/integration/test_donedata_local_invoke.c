@@ -37,7 +37,7 @@ int main(void) {
     // No scheduler / polling needed.
     donedata_local_invoke_run(&sm);
 
-    int rc = donedata_local_invoke_in_state(&sm, DONEDATA_LOCAL_INVOKE_STATE_PASS) ? 0 : 1;
+    int rc = donedata_local_invoke_ended_in(&sm, DONEDATA_LOCAL_INVOKE_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr,
                 "donedata_local_invoke: FAIL — current state is not "
@@ -45,8 +45,8 @@ int main(void) {
                 "round-trip regressed on the C11 AOT engine). "
                 "Diagnostic: in_PASS=%d in_FAIL=%d in_phase_param=%d "
                 "in_phase_content=%d\n",
-                donedata_local_invoke_in_state(&sm, DONEDATA_LOCAL_INVOKE_STATE_PASS),
-                donedata_local_invoke_in_state(&sm, DONEDATA_LOCAL_INVOKE_STATE_FAIL),
+                donedata_local_invoke_ended_in(&sm, DONEDATA_LOCAL_INVOKE_STATE_PASS),
+                donedata_local_invoke_ended_in(&sm, DONEDATA_LOCAL_INVOKE_STATE_FAIL),
                 donedata_local_invoke_in_state(&sm, DONEDATA_LOCAL_INVOKE_STATE_PHASE_PARAM),
                 donedata_local_invoke_in_state(&sm, DONEDATA_LOCAL_INVOKE_STATE_PHASE_CONTENT));
     }

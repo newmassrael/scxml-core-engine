@@ -69,7 +69,7 @@ class HostEventReachesTheChildTest {
 
         assertEquals(
             HostEventReachesTheChildState.Pass,
-            sm.currentState.value,
+            sm.terminalState,
             "the probe child answered `sawMarkerOnly`, so the event the host handed to " +
                 "`send` was never forwarded to it and the child only ever saw the `marker` " +
                 "the parent's own transition body sent. W3C Appendix D `mainEventLoop` runs " +

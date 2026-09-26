@@ -56,7 +56,7 @@ TEST(NestedFinalNotTerminalAotTest, ANestedFinalDoesNotEndTheSession) {
     const bool completed = sm.runUntilCompletion(std::chrono::seconds(3));
 
     EXPECT_TRUE(completed) << "the machine did not complete after `resume`";
-    EXPECT_EQ(sm.getCurrentState(), SM::State::Pass)
+    EXPECT_EQ(sm.terminalState(), SM::State::Pass)
         << "`resume` did not carry the machine out of the nested final to the top-level one";
 }
 

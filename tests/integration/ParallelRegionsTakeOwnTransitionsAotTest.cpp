@@ -81,7 +81,7 @@ TEST(ParallelRegionsTakeOwnTransitionsAotTest, EveryRegionTakesItsOwnTransition)
 
     sm.processEvent(SM::Event::Check);
 
-    EXPECT_EQ(sm.getCurrentState(), SM::State::Settled)
+    EXPECT_EQ(sm.terminalState(), SM::State::Settled)
         << "`check` did not carry the machine to the top-level `settled`, which the document "
            "guards on both regions' assignments having run. Reaching `judging` without "
            "`n == 1 && m == 1` means a region changed state while its transition content was "

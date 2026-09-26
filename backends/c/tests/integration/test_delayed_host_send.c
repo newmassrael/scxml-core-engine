@@ -187,14 +187,14 @@ static int a_cancel_drops_a_pending_host_served_send(void) {
                       rec.count);
         bad = 1;
     }
-    if (statechart_delayed_host_send_in_state(&sm, STATECHART_DELAYED_HOST_SEND_STATE_CANCELLOST)) {
+    if (statechart_delayed_host_send_ended_in(&sm, STATECHART_DELAYED_HOST_SEND_STATE_CANCELLOST)) {
         bad |= fail("cancel", "`turn.done` arrived for the cancelled send");
     }
 
     // 500 ms: `finish`. The verdict is itself scheduled, so a channel whose
     // tick loop stopped working fails here rather than passing by not moving.
     statechart_delayed_host_send_advance_time_ms(&sm, 100u);
-    if (!statechart_delayed_host_send_in_state(&sm, STATECHART_DELAYED_HOST_SEND_STATE_PASS)) {
+    if (!statechart_delayed_host_send_ended_in(&sm, STATECHART_DELAYED_HOST_SEND_STATE_PASS)) {
         bad |= fail("cancel", "the machine did not reach `pass`");
     }
 
@@ -232,7 +232,7 @@ static int a_deferred_send_with_no_handler_reports_it_when_it_comes_due(void) {
     if (statechart_delayed_host_send_in_state(&sm, STATECHART_DELAYED_HOST_SEND_STATE_CANCELLING)) {
         bad |= fail("unserved", "nothing was registered to perform the act, yet `turn.done` arrived");
     }
-    if (!statechart_delayed_host_send_in_state(&sm, STATECHART_DELAYED_HOST_SEND_STATE_UNSERVED)) {
+    if (!statechart_delayed_host_send_ended_in(&sm, STATECHART_DELAYED_HOST_SEND_STATE_UNSERVED)) {
         bad |= fail("unserved", "the deadline passed with no handler registered and nothing was reported. "
                                 "The send site that raises this for an immediate send returned when the "
                                 "send was armed, so whatever holds the deferred act owes the report");

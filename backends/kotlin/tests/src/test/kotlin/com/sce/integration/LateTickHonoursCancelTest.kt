@@ -116,7 +116,7 @@ class LateTickHonoursCancelTest {
 
         assertNotEquals(
             LateTickHonoursCancelState.CancelLost,
-            sm.currentState.value,
+            sm.terminalState,
             "`settle` was delivered even though `active`'s <cancel sendid=\"s1\"> ran " +
                 "first. Both entries were past due when this tick started, so the " +
                 "scheduler drain queued them together and the cancel found nothing " +
@@ -142,7 +142,7 @@ class LateTickHonoursCancelTest {
         }
         assertEquals(
             LateTickHonoursCancelState.Pass,
-            sm.currentState.value,
+            sm.terminalState,
             "the machine did not reach `pass` after the cancel"
         )
         sm.cleanup()
@@ -166,7 +166,7 @@ class LateTickHonoursCancelTest {
             sm.tick()
             assertNotEquals(
                 LateTickHonoursCancelState.CancelLost,
-                sm.currentState.value,
+                sm.terminalState,
                 "whatever this loop's tick happened to straddle, `settle` must never " +
                     "be delivered after `active`'s <cancel sendid=\"s1\"> ran. W3C SCXML " +
                     "6.3 cancels a send that has not been dispatched, and dispatch is " +
@@ -176,7 +176,7 @@ class LateTickHonoursCancelTest {
         }
         assertEquals(
             LateTickHonoursCancelState.Pass,
-            sm.currentState.value,
+            sm.terminalState,
             "a host that keeps ticking must reach `pass`, whichever side of the two " +
                 "deadlines its wake-ups fell on"
         )
@@ -228,7 +228,7 @@ class LateTickHonoursCancelTest {
         }
         assertEquals(
             LateTickHonoursCancelState.Pass,
-            sm.currentState.value,
+            sm.terminalState,
             "deadline-driven ticking did not reach `pass`"
         )
         assertNull(
@@ -274,7 +274,7 @@ class LateTickHonoursCancelTest {
                 sm.tick()
                 assertNotEquals(
                     LateTickHonoursCancelState.CancelLost,
-                    sm.currentState.value,
+                    sm.terminalState,
                     "stall ${stallMs}ms: the clock moved that far between arming " +
                         "`settle` (200 ms) and arming `poke` (100 ms), and the engine " +
                         "gave `settle` the earlier deadline. Both sends are executed by " +
@@ -287,7 +287,7 @@ class LateTickHonoursCancelTest {
             }
             assertEquals(
                 LateTickHonoursCancelState.Pass,
-                sm.currentState.value,
+                sm.terminalState,
                 "stall ${stallMs}ms: a machine whose clock stalls must still reach " +
                     "`pass` — a stall changes when events arrive, never which ones do"
             )
@@ -368,7 +368,7 @@ class LateTickHonoursCancelTest {
         sm.tick()
         assertEquals(
             LateTickHonoursCancelState.Pass,
-            sm.currentState.value,
+            sm.terminalState,
             "the next turn is a later instant, and `finish` is due in it"
         )
         sm.cleanup()
@@ -405,7 +405,7 @@ class LateTickHonoursCancelTest {
 
         assertNotEquals(
             LateTickHonoursCancelState.CancelLost,
-            sm.currentState.value,
+            sm.terminalState,
             "`settle` was delivered even though `active`'s <cancel sendid=\"s1\"> ran " +
                 "first. Both entries were due when this move started; dispatch is one " +
                 "entry per macrostep, not one queue-flush per move"
@@ -428,7 +428,7 @@ class LateTickHonoursCancelTest {
         sm.advanceTimeMs(100L)
         assertEquals(
             LateTickHonoursCancelState.Pass,
-            sm.currentState.value,
+            sm.terminalState,
             "moving exactly onto `finish`'s deadline must deliver it"
         )
         assertNull(
@@ -468,7 +468,7 @@ class LateTickHonoursCancelTest {
 
         assertEquals(
             LateTickHonoursCancelState.Pass,
-            sm.currentState.value,
+            sm.terminalState,
             "deadline-driven stepping did not reach `pass`"
         )
         // 100 ms to `poke`, then 100 ms to `finish`: the run took exactly the
@@ -523,15 +523,15 @@ class LateTickHonoursCancelTest {
         }
 
         assertEquals(
-            onTheWall.currentState.value,
-            hostOwned.currentState.value,
+            onTheWall.terminalState,
+            hostOwned.terminalState,
             "the same generated machine must reach the same configuration whether the " +
                 "clock is the host's or the wall's — a clock decides WHEN events arrive " +
                 "and must never decide WHICH ones do"
         )
         assertEquals(
             LateTickHonoursCancelState.Pass,
-            hostOwned.currentState.value,
+            hostOwned.terminalState,
             "and that configuration is the one the document specifies"
         )
         onTheWall.cleanup()

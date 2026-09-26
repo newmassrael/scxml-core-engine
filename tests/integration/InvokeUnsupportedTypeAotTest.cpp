@@ -49,7 +49,7 @@ TEST(InvokeUnsupportedTypeAotTest, UnsupportedTypeRaisesErrorExecutionOnTheInter
     EXPECT_TRUE(completed) << "the machine never completed. §scxml-6.4.1 requires an `<invoke>` whose `type` "
                               "names no supported processor to place `error.execution` on the internal queue; "
                               "parking in `probe` means the `<invoke>` was dropped rather than lowered.";
-    EXPECT_EQ(sm.getCurrentState(), SM::State::Pass)
+    EXPECT_EQ(sm.terminalState(), SM::State::Pass)
         << "the machine completed somewhere other than the `error.execution` target";
 }
 

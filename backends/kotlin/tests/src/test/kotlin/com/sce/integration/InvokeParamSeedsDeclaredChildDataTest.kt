@@ -49,7 +49,7 @@ class InvokeParamSeedsDeclaredChildDataTest {
         try {
             assertEquals(
                 InvokeParamSeedsDeclaredChildDataState.Pass,
-                sm.currentState.value,
+                sm.terminalState,
                 "FailChildEvaluatedTheExpression: the child evaluated the author's " +
                     "`<param expr>` text in its own data model and found its own `token` " +
                     "— §scxml-6.4.3 says the value of the param element, which only the " +

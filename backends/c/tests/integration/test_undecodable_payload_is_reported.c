@@ -179,7 +179,7 @@ int main(void) {
         }
 
         deliver(&sm, UNDECODABLE_PAYLOAD_IS_REPORTED_EVENT_ANSWER, INTACT_OBJECT);
-        if (!undecodable_payload_is_reported_in_state(&sm, UNDECODABLE_PAYLOAD_IS_REPORTED_STATE_ACCEPTED)) {
+        if (!undecodable_payload_is_reported_ended_in(&sm, UNDECODABLE_PAYLOAD_IS_REPORTED_STATE_ACCEPTED)) {
             fprintf(stderr, "undecodable_payload_is_reported: FAIL - the guard "
                             "`_event.data.done` did not hold for `" INTACT_OBJECT "`, so "
                             "the structured reading did not happen and the check below "
@@ -259,7 +259,7 @@ int main(void) {
         }
 
         deliver(&sm, UNDECODABLE_PAYLOAD_IS_REPORTED_EVENT_ANSWER, INTACT_OBJECT);
-        if (!undecodable_payload_is_reported_in_state(&sm, UNDECODABLE_PAYLOAD_IS_REPORTED_STATE_ACCEPTED)) {
+        if (!undecodable_payload_is_reported_ended_in(&sm, UNDECODABLE_PAYLOAD_IS_REPORTED_STATE_ACCEPTED)) {
             fprintf(stderr, "undecodable_payload_is_reported: FAIL - the intact payload did "
                             "not take the guarded transition, so the two checks below are "
                             "not measuring a successful delivery.\n");

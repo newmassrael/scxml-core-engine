@@ -152,8 +152,8 @@ fn ticking_the_same_machine_delivers_both_delayed_events() {
 
     assert!(completed, "the delayed events must arrive and end the run");
     assert_eq!(
-        e.get_current_state(),
-        Test175State::Pass,
+        e.terminal_state(),
+        Some(Test175State::Pass),
         "`event1` (0.5s) before `event2` (1s) is what test175 asserts, and both need the scheduler",
     );
     assert_eq!(

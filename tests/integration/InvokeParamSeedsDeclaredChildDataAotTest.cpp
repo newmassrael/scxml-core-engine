@@ -50,30 +50,30 @@ TEST(InvokeParamSeedsDeclaredChildDataAotTest, InvokeParamCarriesTheInvokingSess
 
     EXPECT_TRUE(reachedFinal) << "parent did not reach a final state within timeout — one of the "
                                  "four invokes never produced its `done.invoke.<id>`";
-    EXPECT_NE(sm.getCurrentState(), SM::State::FailChildEvaluatedTheExpression)
+    EXPECT_NE(sm.terminalState(), SM::State::FailChildEvaluatedTheExpression)
         << "the child evaluated the author's `<param expr>` text in its own data model and found "
            "its own `token`: §scxml-6.4.3 says the VALUE of the param element, and only the "
            "invoking session can produce it. The Interpreter already does this in "
            "`InvokeExecutor.cpp` — evaluate in the parent, pass the value.";
-    EXPECT_NE(sm.getCurrentState(), SM::State::FailParentOnlyExprLost)
+    EXPECT_NE(sm.terminalState(), SM::State::FailParentOnlyExprLost)
         << "a `<param expr>` naming a variable only the parent declares arrived as nothing: the "
            "same defect as above where the child has no shadow to find.";
-    EXPECT_NE(sm.getCurrentState(), SM::State::FailUnmatchedParamEnteredTheChild)
+    EXPECT_NE(sm.terminalState(), SM::State::FailUnmatchedParamEnteredTheChild)
         << "a `<param>` naming no top-level `<data>` of the child became a variable there: "
            "§scxml-6.4.3 says the Processor MUST NOT add it to the invoked session's data model. "
            "The namelist arm of the same template already filters on "
            "`DatamodelValidationHelper::isVariableDeclaredInChild`.";
-    EXPECT_NE(sm.getCurrentState(), SM::State::FailNamelistValueLost)
+    EXPECT_NE(sm.terminalState(), SM::State::FailNamelistValueLost)
         << "the `namelist` value did not arrive: §scxml-6.4.1 says the value stored at the "
            "location is the value, so forwarding the rendered string as an expression turns a "
            "string value into an identifier lookup in the child.";
-    EXPECT_NE(sm.getCurrentState(), SM::State::FailShadowSeedLost)
+    EXPECT_NE(sm.terminalState(), SM::State::FailShadowSeedLost)
         << "the child saw neither the parent's value nor its own shadow, so its `<data>` default "
            "stood: nothing was seeded at all.";
-    EXPECT_NE(sm.getCurrentState(), SM::State::FailDeclaredParamLost)
+    EXPECT_NE(sm.terminalState(), SM::State::FailDeclaredParamLost)
         << "the param that DOES name a declared `<data>` of the child did not arrive, so the "
            "filter for the unmatched one took the declared one with it.";
-    EXPECT_EQ(sm.getCurrentState(), SM::State::Pass);
+    EXPECT_EQ(sm.terminalState(), SM::State::Pass);
 }
 
 }  // namespace SCE::Tests

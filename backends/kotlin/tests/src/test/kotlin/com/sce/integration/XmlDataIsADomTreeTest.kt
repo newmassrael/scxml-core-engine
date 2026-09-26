@@ -48,27 +48,27 @@ class XmlDataIsADomTreeTest {
 
         assertNotEquals(
             XmlDataIsADomTreeState.NotADocument,
-            sm.currentState.value,
+            sm.terminalState,
             "the variable did not hold a document: nodeType === 9, nodeName === " +
                 "'#document', documentElement.tagName === 'books' or hasAttribute('count') " +
                 "did not hold",
         )
         assertNotEquals(
             XmlDataIsADomTreeState.WrongTree,
-            sm.currentState.value,
+            sm.terminalState,
             "the document element's children are not the two <book> elements in document " +
                 "order — the whitespace between them may have become nodes, or a " +
                 "sibling/parent link is missing",
         )
         assertNotEquals(
             XmlDataIsADomTreeState.NoText,
-            sm.currentState.value,
+            sm.terminalState,
             "character data did not report itself as a text node, or textContent did not " +
                 "read the text below the element",
         )
         assertEquals(
             XmlDataIsADomTreeState.Settled,
-            sm.currentState.value,
+            sm.terminalState,
             "the machine reached none of its four verdicts, so the guards did not " +
                 "evaluate at all",
         )

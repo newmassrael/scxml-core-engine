@@ -42,6 +42,14 @@ func started() *sce.Engine[LateTickHonoursCancelState, LateTickHonoursCancelEven
 	return engine
 }
 
+// endedIn reports whether the run ended in the top-level <final> s. The
+// verdict is read from the terminal accessor rather than the configuration:
+// §scxml-D-exitInterpreter leaves the configuration empty once it ends.
+func endedIn(engine *sce.Engine[LateTickHonoursCancelState, LateTickHonoursCancelEvent], s LateTickHonoursCancelState) bool {
+	ended, ok := engine.TerminalState()
+	return ok && ended == s
+}
+
 // The fixture is only meaningful on a scheduler-driven machine, and the policy
 // is where a consumer reads that without running anything.
 func TestFixtureIsSchedulerDriven(t *testing.T) {
@@ -65,7 +73,7 @@ func TestCancelSurvivesATickAfterBothDeadlines(t *testing.T) {
 	time.Sleep(pastBothDeadlines)
 	engine.Tick()
 
-	if engine.GetCurrentState() == LateTickHonoursCancelStateCancelLost {
+	if endedIn(engine, LateTickHonoursCancelStateCancelLost) {
 		t.Fatal("`settle` was delivered even though `active`'s <cancel sendid=\"s1\"> ran " +
 			"first. Both entries were past due when this tick started, so the scheduler " +
 			"drain put them on the external queue together and the cancel found nothing " +
@@ -80,7 +88,7 @@ func TestCancelSurvivesATickAfterBothDeadlines(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 		engine.Tick()
 	}
-	if engine.GetCurrentState() != LateTickHonoursCancelStatePass {
+	if !endedIn(engine, LateTickHonoursCancelStatePass) {
 		t.Fatalf("the machine did not reach `pass` after the cancel; it is in %v",
 			engine.GetCurrentState())
 	}
@@ -96,7 +104,7 @@ func TestPunctualHostReachesTheSameVerdict(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 		engine.Tick()
 	}
-	if engine.GetCurrentState() != LateTickHonoursCancelStatePass {
+	if !endedIn(engine, LateTickHonoursCancelStatePass) {
 		t.Fatalf("a 10 ms tick loop, which wakes between the 100 ms and 200 ms deadlines, "+
 			"must reach `pass`; got %v", engine.GetCurrentState())
 	}
@@ -130,7 +138,7 @@ func TestEngineSaysWhenItIsNextDue(t *testing.T) {
 		t.Fatal("the machine did not complete within 3 s")
 	}
 	took := time.Since(startedAt)
-	if engine.GetCurrentState() != LateTickHonoursCancelStatePass {
+	if !endedIn(engine, LateTickHonoursCancelStatePass) {
 		t.Fatalf("a 500 ms poll interval decided the verdict (%v) — the wait must be "+
 			"shortened to the scheduler's own next deadline, or a coarse interval "+
 			"silently steps over the deadlines the document distinguishes between",
@@ -204,7 +212,7 @@ func TestAHostDescheduledBetweenTwoSendsKeepsTheirOrder(t *testing.T) {
 		clock := &steppingClock{stepMs: stallMs}
 		engine := startedOn(clock)
 
-		if engine.GetCurrentState() == LateTickHonoursCancelStateCancelLost {
+		if endedIn(engine, LateTickHonoursCancelStateCancelLost) {
 			t.Fatalf("a host stalled %d ms between the two <send delay>s of one "+
 				"<onentry> reordered them: `settle` (200 ms) came due before `poke` "+
 				"(100 ms) because each send took its own reading. §scxml-6.2.2 makes "+
@@ -218,10 +226,10 @@ func TestAHostDescheduledBetweenTwoSendsKeepsTheirOrder(t *testing.T) {
 		for i := 0; i < 4096 && !engine.IsInFinalState(); i++ {
 			engine.Tick()
 		}
-		if engine.GetCurrentState() != LateTickHonoursCancelStatePass {
-			t.Fatalf("with a %d ms stall per clock reading the machine ended in %v; "+
+		if ended, ok := engine.TerminalState(); !ok || ended != LateTickHonoursCancelStatePass {
+			t.Fatalf("with a %d ms stall per clock reading the machine ended in %v (ended: %v); "+
 				"the document's <cancel sendid=\"s1\"> must still drop `settle`",
-				stallMs, engine.GetCurrentState())
+				stallMs, ended, ok)
 		}
 	}
 }
@@ -263,14 +271,14 @@ func TestAManualClockDrivesTheMachineToTheSameVerdict(t *testing.T) {
 
 	// Past both deadlines in one move — the late wake-up the fixture is about.
 	engine.AdvanceTimeMs(400)
-	if engine.GetCurrentState() == LateTickHonoursCancelStateCancelLost {
+	if endedIn(engine, LateTickHonoursCancelStateCancelLost) {
 		t.Fatal("a single 400 ms advance stepped over both deadlines; `poke` must " +
 			"still be dispatched first so `active`'s <cancel sendid=\"s1\"> can drop " +
 			"`settle`")
 	}
 
 	engine.AdvanceTimeMs(100)
-	if engine.GetCurrentState() != LateTickHonoursCancelStatePass {
+	if !endedIn(engine, LateTickHonoursCancelStatePass) {
 		t.Fatalf("`finish` is armed for 100 ms after `active` is entered, so the "+
 			"machine should be done; it is in %v", engine.GetCurrentState())
 	}
@@ -287,36 +295,47 @@ func TestAManualClockDrivesTheMachineToTheSameVerdict(t *testing.T) {
 // re-measuring the load on the build machine, which is exactly the dependency
 // this seam removes.
 func TestAManualClockRunRepeatsExactly(t *testing.T) {
-	trace := func() []LateTickHonoursCancelState {
+	// The configuration after each advance, and the top-level <final> the run
+	// ended in. The verdict is read from the terminal accessor:
+	// §scxml-D-exitInterpreter leaves the configuration empty once it ends.
+	type run struct {
+		seen  []LateTickHonoursCancelState
+		ended LateTickHonoursCancelState
+		ok    bool
+	}
+	trace := func() run {
 		engine := startedOn(sce.NewManualClock(0))
 		seen := []LateTickHonoursCancelState{engine.GetCurrentState()}
 		for i := 0; i < 6; i++ {
 			engine.AdvanceTimeMs(100)
 			seen = append(seen, engine.GetCurrentState())
 		}
-		return seen
+		ended, ok := engine.TerminalState()
+		return run{seen: seen, ended: ended, ok: ok}
 	}
 
-	first, second := trace(), trace()
+	firstRun, secondRun := trace(), trace()
+	first, second := firstRun.seen, secondRun.seen
 	if len(first) != len(second) {
 		t.Fatalf("two identical sequences produced traces of different lengths: %v vs %v",
 			first, second)
 	}
-	sawPass := false
 	for i := range first {
 		if first[i] != second[i] {
 			t.Fatalf("two identical sequences of AdvanceTimeMs produced different "+
 				"traces: %v vs %v. A host-owned clock that is not reproducible is not "+
 				"host-owned", first, second)
 		}
-		if first[i] == LateTickHonoursCancelStateCancelLost {
-			t.Fatalf("the trace reached `cancelLost`: %v", first)
-		}
-		if first[i] == LateTickHonoursCancelStatePass {
-			sawPass = true
-		}
 	}
-	if !sawPass {
+	if firstRun.ended != secondRun.ended || firstRun.ok != secondRun.ok {
+		t.Fatalf("two identical sequences of AdvanceTimeMs ended differently: %v (%v) vs "+
+			"%v (%v). A host-owned clock that is not reproducible is not host-owned",
+			firstRun.ended, firstRun.ok, secondRun.ended, secondRun.ok)
+	}
+	if firstRun.ok && firstRun.ended == LateTickHonoursCancelStateCancelLost {
+		t.Fatalf("the trace reached `cancelLost`: %v", first)
+	}
+	if !firstRun.ok || firstRun.ended != LateTickHonoursCancelStatePass {
 		t.Fatalf("the trace never reached `pass`: %v", first)
 	}
 }
@@ -336,13 +355,15 @@ func TestOneGeneratedMachineServesBothKindsOfHost(t *testing.T) {
 		hostOwned.AdvanceTimeMs(100)
 	}
 
-	if wall.GetCurrentState() != hostOwned.GetCurrentState() {
+	wallEnded, wallOk := wall.TerminalState()
+	hostEnded, hostOk := hostOwned.TerminalState()
+	if wallEnded != hostEnded || wallOk != hostOk {
 		t.Fatalf("the same generated machine reached different configurations on the "+
-			"wall clock (%v) and on a host-owned clock (%v)",
-			wall.GetCurrentState(), hostOwned.GetCurrentState())
+			"wall clock (%v, ended: %v) and on a host-owned clock (%v, ended: %v)",
+			wallEnded, wallOk, hostEnded, hostOk)
 	}
-	if hostOwned.GetCurrentState() != LateTickHonoursCancelStatePass {
-		t.Fatalf("both hosts should reach `pass`; got %v", hostOwned.GetCurrentState())
+	if !endedIn(hostOwned, LateTickHonoursCancelStatePass) {
+		t.Fatalf("both hosts should reach `pass`; got %v (ended: %v)", hostEnded, hostOk)
 	}
 }
 

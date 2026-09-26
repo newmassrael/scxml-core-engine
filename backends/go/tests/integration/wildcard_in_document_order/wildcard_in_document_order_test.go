@@ -49,7 +49,7 @@ func TestAWildcardKeepsItsGuardAndItsType(t *testing.T) {
 	//   FailGuardNeverFired           a wildcard did not fire with its guard true
 	//   FailGuardedInternalReentered  a guarded internal wildcard exited its source
 	//   FailSealedInternalReentered   an unguarded internal wildcard exited its source
-	if got := engine.GetCurrentState(); got != WildcardInDocumentOrderStatePass {
+	if got, ended := engine.TerminalState(); !ended || got != WildcardInDocumentOrderStatePass {
 		t.Fatalf("the machine rested in %v: a wildcard is enabled only when its guard is "+
 			"true, and an internal wildcard targeting a descendant of its compound source "+
 			"must not exit and re-enter that source", got)

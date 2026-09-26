@@ -47,8 +47,8 @@ int main(void) {
     // the same drain, so the macrostep loop in `_run` decides the verdict.
     event_origin_is_a_location_run(&sm);
 
-    const int pass = event_origin_is_a_location_in_state(&sm, EVENT_ORIGIN_IS_A_LOCATION_STATE_PASS);
-    const int fail = event_origin_is_a_location_in_state(&sm, EVENT_ORIGIN_IS_A_LOCATION_STATE_FAIL);
+    const int pass = event_origin_is_a_location_ended_in(&sm, EVENT_ORIGIN_IS_A_LOCATION_STATE_PASS);
+    const int fail = event_origin_is_a_location_ended_in(&sm, EVENT_ORIGIN_IS_A_LOCATION_STATE_FAIL);
     const int parked = event_origin_is_a_location_in_state(&sm, EVENT_ORIGIN_IS_A_LOCATION_STATE_AWAIT_REPLY);
 
     if (!pass) {

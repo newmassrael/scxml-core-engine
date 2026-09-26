@@ -102,7 +102,7 @@ TEST_F(EventDataArrivesAsSentTest, AHostsJsonPayloadIsAddressableAndItsTextStays
     ASSERT_TRUE(sm->raiseExternalEvent("payload", R"({"milestone":"refined","turns":2})"));
     eventRaiser->processQueuedEvents();
 
-    EXPECT_FALSE(sm->isStateActive("mangled"))
+    EXPECT_NE(sm->terminalState().value_or(""), "mangled")
         << "the host sent a JSON object and the guard `_event.data.milestone === 'refined' && "
            "_event.data.turns === 2` did not hold, so the payload did not arrive as an object "
            "with those properties. active:"
@@ -118,7 +118,7 @@ TEST_F(EventDataArrivesAsSentTest, AHostsJsonPayloadIsAddressableAndItsTextStays
     ASSERT_TRUE(sm->raiseExternalEvent("note", "hold the line"));
     eventRaiser->processQueuedEvents();
 
-    EXPECT_FALSE(sm->isStateActive("garbled"))
+    EXPECT_NE(sm->terminalState().value_or(""), "garbled")
         << "the host sent the text `hold the line` and `_event.data === 'hold the line'` did not "
            "hold, so a payload that is not JSON did not arrive as the string it was sent as. "
            "active:"
@@ -131,7 +131,7 @@ TEST_F(EventDataArrivesAsSentTest, AHostsJsonPayloadIsAddressableAndItsTextStays
     ASSERT_TRUE(sm->raiseExternalEvent("arith", "2 + 3"));
     eventRaiser->processQueuedEvents();
 
-    EXPECT_FALSE(sm->isStateActive("evaluated"))
+    EXPECT_NE(sm->terminalState().value_or(""), "evaluated")
         << "the host sent the text `2 + 3` and it arrived as 5 — the payload was run rather than "
            "read. active:"
         << describe();
@@ -148,7 +148,7 @@ TEST_F(EventDataArrivesAsSentTest, AHostsJsonPayloadIsAddressableAndItsTextStays
                                               R"(<books xmlns=""><book title="t1"/></books>)"));
     eventRaiser->processQueuedEvents();
 
-    EXPECT_FALSE(sm->isStateActive("flattened"))
+    EXPECT_NE(sm->terminalState().value_or(""), "flattened")
         << "the host sent a well-formed XML document and "
            "`_event.data.documentElement.nodeName === 'books'` did not hold, so the payload did "
            "not become the DOM structure the clause requires. active:"
@@ -163,12 +163,12 @@ TEST_F(EventDataArrivesAsSentTest, AHostsJsonPayloadIsAddressableAndItsTextStays
     ASSERT_TRUE(sm->raiseExternalEvent("broken", "<assign>  to  detail failed"));
     eventRaiser->processQueuedEvents();
 
-    EXPECT_FALSE(sm->isStateActive("swallowed"))
+    EXPECT_NE(sm->terminalState().value_or(""), "swallowed")
         << "the host sent `<assign>  to  detail failed`, which opens with `<` and is not a valid "
            "XML document, so §scxml-B-2-8-1's closing MUST applies and the reading is the "
            "space-normalized string. active:"
         << describe();
-    EXPECT_TRUE(sm->isStateActive("settled"))
+    EXPECT_EQ(sm->terminalState().value_or(""), "settled")
         << "the malformed-XML payload neither matched nor mismatched. active:" << describe();
 }
 

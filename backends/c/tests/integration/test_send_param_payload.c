@@ -40,15 +40,15 @@ int main(void) {
     // macrostep that consumes it.
     send_param_payload_run(&sm);
 
-    const int pass = send_param_payload_in_state(&sm, SEND_PARAM_PAYLOAD_STATE_PASS);
-    const int fail_child = send_param_payload_in_state(&sm, SEND_PARAM_PAYLOAD_STATE_FAILCHILDPAYLOAD);
-    const int fail_internal = send_param_payload_in_state(&sm, SEND_PARAM_PAYLOAD_STATE_FAILINTERNALPAYLOAD);
-    const int fail_number = send_param_payload_in_state(&sm, SEND_PARAM_PAYLOAD_STATE_FAILNUMBERTYPE);
-    const int fail_string = send_param_payload_in_state(&sm, SEND_PARAM_PAYLOAD_STATE_FAILSTRINGTYPE);
-    const int fail_dup = send_param_payload_in_state(&sm, SEND_PARAM_PAYLOAD_STATE_FAILDUPLICATEPARAMS);
-    const int fail_no_error = send_param_payload_in_state(&sm, SEND_PARAM_PAYLOAD_STATE_FAILNOPARAMERROR);
-    const int fail_broken_sent = send_param_payload_in_state(&sm, SEND_PARAM_PAYLOAD_STATE_FAILBROKENPARAMDELIVERED);
-    const int fail_sibling = send_param_payload_in_state(&sm, SEND_PARAM_PAYLOAD_STATE_FAILSIBLINGPARAMLOST);
+    const int pass = send_param_payload_ended_in(&sm, SEND_PARAM_PAYLOAD_STATE_PASS);
+    const int fail_child = send_param_payload_ended_in(&sm, SEND_PARAM_PAYLOAD_STATE_FAILCHILDPAYLOAD);
+    const int fail_internal = send_param_payload_ended_in(&sm, SEND_PARAM_PAYLOAD_STATE_FAILINTERNALPAYLOAD);
+    const int fail_number = send_param_payload_ended_in(&sm, SEND_PARAM_PAYLOAD_STATE_FAILNUMBERTYPE);
+    const int fail_string = send_param_payload_ended_in(&sm, SEND_PARAM_PAYLOAD_STATE_FAILSTRINGTYPE);
+    const int fail_dup = send_param_payload_ended_in(&sm, SEND_PARAM_PAYLOAD_STATE_FAILDUPLICATEPARAMS);
+    const int fail_no_error = send_param_payload_ended_in(&sm, SEND_PARAM_PAYLOAD_STATE_FAILNOPARAMERROR);
+    const int fail_broken_sent = send_param_payload_ended_in(&sm, SEND_PARAM_PAYLOAD_STATE_FAILBROKENPARAMDELIVERED);
+    const int fail_sibling = send_param_payload_ended_in(&sm, SEND_PARAM_PAYLOAD_STATE_FAILSIBLINGPARAMLOST);
 
     if (!pass) {
         if (fail_child) {

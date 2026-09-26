@@ -84,25 +84,25 @@ int main(void) {
         return 1;
     }
 
-    if (send_namelist_over_http_in_state(&sm, SEND_NAMELIST_OVER_HTTP_STATE_PASS)) {
+    if (send_namelist_over_http_ended_in(&sm, SEND_NAMELIST_OVER_HTTP_STATE_PASS)) {
         printf("PASS: namelist reached the form and a broken item discarded the "
                "message\n");
-    } else if (send_namelist_over_http_in_state(&sm, SEND_NAMELIST_OVER_HTTP_STATE_FAILNAMELISTNEVERARRIVED)) {
+    } else if (send_namelist_over_http_ended_in(&sm, SEND_NAMELIST_OVER_HTTP_STATE_FAILNAMELISTNEVERARRIVED)) {
         printf("FAIL: the BasicHTTP send never came back — the harness server did "
                "not answer, which is a different failure from posting the wrong "
                "form\n");
         rc = 1;
-    } else if (send_namelist_over_http_in_state(&sm, SEND_NAMELIST_OVER_HTTP_STATE_FAILNAMELISTNOTPOSTED)) {
+    } else if (send_namelist_over_http_ended_in(&sm, SEND_NAMELIST_OVER_HTTP_STATE_FAILNAMELISTNOTPOSTED)) {
         printf("FAIL: `mapped` arrived without `Var1` in its data — W3C SCXML C.2 "
                "requires a namelist's variable names and values to be mapped to "
                "HTTP POST parameters\n");
         rc = 1;
-    } else if (send_namelist_over_http_in_state(&sm, SEND_NAMELIST_OVER_HTTP_STATE_FAILMESSAGENOTDISCARDED)) {
+    } else if (send_namelist_over_http_ended_in(&sm, SEND_NAMELIST_OVER_HTTP_STATE_FAILMESSAGENOTDISCARDED)) {
         printf("FAIL: `shouldNotArrive` was delivered — W3C SCXML 6.2.3 discards "
                "the message when the evaluation of a <send>'s arguments produces "
                "an error\n");
         rc = 1;
-    } else if (send_namelist_over_http_in_state(&sm, SEND_NAMELIST_OVER_HTTP_STATE_FAILNONAMELISTERROR)) {
+    } else if (send_namelist_over_http_ended_in(&sm, SEND_NAMELIST_OVER_HTTP_STATE_FAILNONAMELISTERROR)) {
         printf("FAIL: no `error.execution` preceded the timeout — W3C SCXML 5.9.2 "
                "requires it when a location expression yields no valid location\n");
         rc = 1;

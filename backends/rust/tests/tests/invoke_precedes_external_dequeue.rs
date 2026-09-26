@@ -47,8 +47,8 @@ fn pending_invokes_start_before_the_external_dequeue() {
     );
 
     assert_eq!(
-        engine.get_current_state(),
-        InvokePrecedesExternalDequeueState::Pass,
+        engine.terminal_state(),
+        Some(InvokePrecedesExternalDequeueState::Pass),
         "the watching child answered `probe` from `waiting`, so it never saw `kick`: \
          the parent drained its external queue before starting the invoke, and the \
          event `<onentry>` had queued for itself was consumed while no child existed. \

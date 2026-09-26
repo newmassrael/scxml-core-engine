@@ -61,7 +61,7 @@ def test_event_origin_is_a_location_aot() -> None:
         "requires the published location to be a usable <send> target, so an origin "
         "that routes nowhere fails the half a self-addressed test cannot exercise."
     )
-    actual = str(engine.current_state)
+    actual = str(engine.terminal_state)
     assert actual == "pass", (
         f"event_origin_is_a_location reached <final id={actual!r}>; expected 'pass'. "
         "`_event.origin` did not carry the sender's published `_ioprocessors` "

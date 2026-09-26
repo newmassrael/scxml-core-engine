@@ -51,12 +51,12 @@ int main(void) {
         resume.event = NESTED_FINAL_NOT_TERMINAL_EVENT_RESUME;
         nested_final_not_terminal_raise_external(&sm, &resume);
         nested_final_not_terminal_run(&sm);
-        if (!nested_final_not_terminal_in_state(&sm, NESTED_FINAL_NOT_TERMINAL_STATE_PASS)) {
+        if (!nested_final_not_terminal_ended_in(&sm, NESTED_FINAL_NOT_TERMINAL_STATE_PASS)) {
             fprintf(stderr,
                     "nested_final_not_terminal: FAIL - `resume` did not carry "
                     "the machine out of the nested final to the top-level one. "
                     "Diagnostic: in_PASS=%d in_phaseDone=%d\n",
-                    nested_final_not_terminal_in_state(&sm, NESTED_FINAL_NOT_TERMINAL_STATE_PASS),
+                    nested_final_not_terminal_ended_in(&sm, NESTED_FINAL_NOT_TERMINAL_STATE_PASS),
                     nested_final_not_terminal_in_state(&sm, NESTED_FINAL_NOT_TERMINAL_STATE_PHASEDONE));
             rc = 1;
         }

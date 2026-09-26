@@ -49,7 +49,7 @@ int main() {
     // removes the correlation entry and the armed deadline.
     brake.processEvent(SCE::Generated::brake_invoke::Event::Abort);
 
-    if (brake.getCurrentState() != SCE::Generated::brake_invoke::State::Aborted) {
+    if (brake.terminalState() != SCE::Generated::brake_invoke::State::Aborted) {
         std::printf("FAIL: brake did not reach Aborted (state=%d)\n", static_cast<int>(brake.getCurrentState()));
         return 2;
     }
@@ -65,7 +65,7 @@ int main() {
     // was enqueued by the late reply (the correlation was cancelled).
     brake.step();
 
-    if (brake.getCurrentState() != SCE::Generated::brake_invoke::State::Aborted) {
+    if (brake.terminalState() != SCE::Generated::brake_invoke::State::Aborted) {
         std::printf("FAIL: brake left Aborted after late reply (state=%d). "
                     "cancelMeshRpc did not erase the correlation entry.\n",
                     static_cast<int>(brake.getCurrentState()));

@@ -67,11 +67,11 @@ int main() {
         // cond-guarded transition on the next macrostep.
         parent_router.pumpScxmlInvokeReplies();
         parent.step();
-        if (parent.getCurrentState() == State::Pass) {
+        if (parent.terminalState() == State::Pass) {
             std::printf("SCE Mesh §9.6 eventful+finalize verification: PASS\n");
             return 0;
         }
-        if (parent.getCurrentState() == State::Fail) {
+        if (parent.terminalState() == State::Fail) {
             std::fprintf(stderr, "FAIL: parent observed `ping` but either (a) `<finalize>` "
                                  "did not run before transition selection so the cond "
                                  "evaluated against the initial `finalized=false`, or "

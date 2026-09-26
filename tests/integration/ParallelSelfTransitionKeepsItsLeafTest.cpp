@@ -126,7 +126,7 @@ TEST_F(ParallelSelfTransitionKeepsItsLeafTest, TheSelfTransitionedRegionAnswersT
     ASSERT_TRUE(sm->raiseExternalEvent("check", ""));
     eventRaiser->processQueuedEvents();
 
-    EXPECT_TRUE(sm->isStateActive("settled"))
+    EXPECT_EQ(sm->terminalState().value_or(""), "settled")
         << "`check` did not carry the machine to `settled`, which the document guards on "
            "`n == 1 && m == 2`. `m` reaches 2 only if the self-transitioning region still had a "
            "leaf to transition from when the second `e` arrived. active:"

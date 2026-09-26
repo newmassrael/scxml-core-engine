@@ -67,7 +67,7 @@ TEST(ParallelDoneStateIsDeliveredAotTest, CompletionCarriesTheMachineToATopLevel
     // The configuration tells the two apart instead. `[run | a | a1 | b | b1]`
     // means `go` moved nothing and the parallel never completed;
     // `[run | a | a2 | b | b2]` means it completed and the event went nowhere.
-    EXPECT_TRUE(active(SM::State::Settled))
+    EXPECT_EQ(sm.terminalState(), SM::State::Settled)
         << "every region reaching its `<final>` completes the parallel, so `done.state.run` "
            "had to be raised AND selected — `settled` is reachable by nothing else; active: "
         << describe(sm);

@@ -97,7 +97,7 @@ TEST_F(SessionIdsAreDistinctTest, TwoLiveSessionsAreIssuedDifferentIds) {
     ASSERT_FALSE(sm->isRunning()) << "parent never halted: only one child reported its `_sessionid`, so the "
                                   << "two ids were never compared. Current state is " << sm->getCurrentState();
 
-    EXPECT_EQ(sm->getCurrentState(), "pass")
+    EXPECT_EQ(sm->terminalState().value_or(""), "pass")
         << "two live sessions reported the same `_sessionid`. The clause binds it to the id of "
         << "the current session, and the published `_ioprocessors` location is derived from it, "
         << "so one id for two sessions is one address for two sessions. Current state is " << sm->getCurrentState();

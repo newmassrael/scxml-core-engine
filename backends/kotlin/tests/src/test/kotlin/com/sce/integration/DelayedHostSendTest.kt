@@ -157,7 +157,7 @@ class DelayedHostSendTest {
                     "the side effect is the point of the act, and the document cannot take it back"
             )
             assertNotEquals(
-                StatechartDelayedHostSendState.CancelLost, h.sm.currentState.value,
+                StatechartDelayedHostSendState.CancelLost, h.sm.terminalState,
                 "`turn.done` arrived for the cancelled send"
             )
 
@@ -166,7 +166,7 @@ class DelayedHostSendTest {
             // not moving.
             h.sm.advanceTimeMs(100)
             assertEquals(
-                StatechartDelayedHostSendState.Pass, h.sm.currentState.value,
+                StatechartDelayedHostSendState.Pass, h.sm.terminalState,
                 "the machine did not reach `pass`"
             )
         } finally {
@@ -205,7 +205,7 @@ class DelayedHostSendTest {
                 "nothing was registered to perform the act, yet `turn.done` arrived"
             )
             assertEquals(
-                StatechartDelayedHostSendState.Unserved, h.sm.currentState.value,
+                StatechartDelayedHostSendState.Unserved, h.sm.terminalState,
                 "the deadline passed with no handler registered and nothing was reported. The send " +
                     "site that raises this for an immediate send returned when the send was armed, " +
                     "so whatever holds the deferred act owes the report — without it a wiring " +

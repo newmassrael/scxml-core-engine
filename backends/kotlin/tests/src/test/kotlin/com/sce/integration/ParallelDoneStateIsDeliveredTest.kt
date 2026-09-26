@@ -52,7 +52,7 @@ class ParallelDoneStateIsDeliveredTest {
 
         assertEquals(
             ParallelDoneStateIsDeliveredState.Settled,
-            sm.currentState.value,
+            sm.terminalState,
             "every region reaching its `<final>` completes the parallel, so " +
                 "done.state.run had to be raised AND selected — `settled` is " +
                 "reachable by nothing else",

@@ -26,19 +26,19 @@
 // Each failure final names the case it belongs to, so the diagnostic below
 // says which property of the wildcard was lost rather than only that one was.
 static const char *failure_case(const wildcard_in_document_order_t *sm) {
-    if (wildcard_in_document_order_in_state(sm, WILDCARD_IN_DOCUMENT_ORDER_STATE_FAILGUARDIGNORED)) {
+    if (wildcard_in_document_order_ended_in(sm, WILDCARD_IN_DOCUMENT_ORDER_STATE_FAILGUARDIGNORED)) {
         return "a wildcard fired with its guard false, instead of leaving the event "
                "to its ancestor's transition";
     }
-    if (wildcard_in_document_order_in_state(sm, WILDCARD_IN_DOCUMENT_ORDER_STATE_FAILGUARDNEVERFIRED)) {
+    if (wildcard_in_document_order_ended_in(sm, WILDCARD_IN_DOCUMENT_ORDER_STATE_FAILGUARDNEVERFIRED)) {
         return "a wildcard did not fire with its guard true, so the ancestor's "
                "transition was reached instead";
     }
-    if (wildcard_in_document_order_in_state(sm, WILDCARD_IN_DOCUMENT_ORDER_STATE_FAILGUARDEDINTERNALREENTERED)) {
+    if (wildcard_in_document_order_ended_in(sm, WILDCARD_IN_DOCUMENT_ORDER_STATE_FAILGUARDEDINTERNALREENTERED)) {
         return "a guarded internal wildcard exited and re-entered its compound "
                "source, running its <onentry> twice";
     }
-    if (wildcard_in_document_order_in_state(sm, WILDCARD_IN_DOCUMENT_ORDER_STATE_FAILSEALEDINTERNALREENTERED)) {
+    if (wildcard_in_document_order_ended_in(sm, WILDCARD_IN_DOCUMENT_ORDER_STATE_FAILSEALEDINTERNALREENTERED)) {
         return "an unguarded internal wildcard exited and re-entered its compound "
                "source, running its <onentry> twice";
     }
@@ -52,7 +52,7 @@ int main(void) {
     wildcard_in_document_order_run(&sm);
 
     int rc = 0;
-    if (!wildcard_in_document_order_in_state(&sm, WILDCARD_IN_DOCUMENT_ORDER_STATE_PASS)) {
+    if (!wildcard_in_document_order_ended_in(&sm, WILDCARD_IN_DOCUMENT_ORDER_STATE_PASS)) {
         fprintf(stderr, "wildcard_in_document_order: FAIL - %s\n", failure_case(&sm));
         rc = 1;
     }

@@ -55,7 +55,7 @@ int main(void) {
     //
     // The remaining states tell the two apart: a1/b1 means `go` moved
     // nothing; a2/b2 means the parallel completed and the event went nowhere.
-    if (!parallel_done_state_is_delivered_in_state(&sm, PARALLEL_DONE_STATE_IS_DELIVERED_STATE_SETTLED)) {
+    if (!parallel_done_state_is_delivered_ended_in(&sm, PARALLEL_DONE_STATE_IS_DELIVERED_STATE_SETTLED)) {
         fprintf(stderr,
                 "FAIL: every region reaching its <final> completes the parallel, so "
                 "done.state.run had to be raised AND selected — `settled` is reachable by "

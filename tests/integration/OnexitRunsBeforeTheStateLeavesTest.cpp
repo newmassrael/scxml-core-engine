@@ -88,6 +88,7 @@ TEST_F(OnexitRunsBeforeTheStateLeavesTest, AStateIsStillActiveWhileItsOwnOnexitR
         for (const auto &s : sm->getActiveStates()) {
             out += " " + s;
         }
+        out += ", ended in " + sm->terminalState().value_or("<running>");
         auto &engine = ScriptEngineProvider::getScriptEngine();
         const auto read = [&](const char *name) {
             auto result = engine.evaluateExpression(sm->getSessionId(), name).get();
@@ -105,7 +106,7 @@ TEST_F(OnexitRunsBeforeTheStateLeavesTest, AStateIsStillActiveWhileItsOwnOnexitR
     ASSERT_TRUE(sm->raiseExternalEvent("leave", ""));
     eventRaiser->processQueuedEvents();
 
-    EXPECT_TRUE(sm->isStateActive("settled"))
+    EXPECT_EQ(sm->terminalState().value_or(""), "settled")
         << "`leave` did not carry the machine to `settled`. The document checks its clauses in "
            "document order and lands each in a `<final>` of its own: `failExits` (a handler did "
            "not run), `failSelfInInner` / `failSelfInOuter` (a state was already out of the "

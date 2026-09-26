@@ -29,7 +29,7 @@ int main(void) {
     invoke_expression_failure_is_reported_run(&sm);
 
     int rc = 0;
-    if (!invoke_expression_failure_is_reported_in_state(&sm, INVOKE_EXPRESSION_FAILURE_IS_REPORTED_STATE_PASS)) {
+    if (!invoke_expression_failure_is_reported_ended_in(&sm, INVOKE_EXPRESSION_FAILURE_IS_REPORTED_STATE_PASS)) {
         fprintf(stderr, "invoke_expression_failure_is_reported: FAIL - the machine did not reach "
                         "`pass`. W3C SCXML 6.4.3 requires the expression to be evaluated when the "
                         "<invoke> fires and error.execution raised when it cannot be; reaching "

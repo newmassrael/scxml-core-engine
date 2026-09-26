@@ -58,7 +58,7 @@ def test_nested_final_not_terminal_aot() -> None:
         "the machine did not complete after `resume`; last leaf="
         f"{engine.current_state!s}"
     )
-    assert str(engine.current_state) == "pass", (
+    assert str(engine.terminal_state) == "pass", (
         "`resume` did not carry the machine out of the nested final to the "
-        f"top-level one; it reached {engine.current_state!s}"
+        f"top-level one; it reached {engine.terminal_state!s}"
     )

@@ -55,7 +55,7 @@ class InvokeParamErrorStartsTheChildTest {
         try {
             assertEquals(
                 InvokeParamErrorStartsTheChildState.Pass,
-                sm.currentState.value,
+                sm.terminalState,
                 "FailNoParamError: `childUp` arrived with no `error.execution` " +
                     "before it — §scxml-5.7.1 puts that error on the internal queue " +
                     "while the `<invoke>` is being evaluated, so it is dequeued " +

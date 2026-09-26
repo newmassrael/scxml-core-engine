@@ -98,6 +98,10 @@ class UnseenEventIsReportedTest {
         deliver(sm, UnseenEventIsReportedEvent.Finish)
 
         val beforeState = sm.currentState.value
+        // Once the run has ended its configuration is empty (Appendix D's
+        // exitInterpreter), so the final it ended in is what a host reads
+        // instead — and it must not move either.
+        val beforeEnded = sm.terminalState
         val beforeFinal = sm.isInFinalState
         val beforeDiscarded = sm.discardedExternalEvents()
         val beforePokes = sm.pokes()
@@ -111,6 +115,7 @@ class UnseenEventIsReportedTest {
                 "accessors a host had; if they ever differ, the fixture stopped measuring " +
                 "what it claims"
         )
+        assertEquals(beforeEnded, sm.terminalState)
         assertEquals(beforeFinal, sm.isInFinalState)
         assertEquals(beforeDiscarded, sm.discardedExternalEvents())
         assertEquals(beforePokes, sm.pokes())

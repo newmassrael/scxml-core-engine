@@ -41,8 +41,12 @@ using SM = SCE::Generated::host_event_reaches_the_child::host_event_reaches_the_
 using State = SCE::Generated::host_event_reaches_the_child::State;
 using Event = SCE::Generated::host_event_reaches_the_child::Event;
 
-bool isVerdict(State state) {
-    return state == State::Pass || state == State::Fail;
+/// Pass and Fail are the fixture's top-level finals, so the verdict is the one
+/// the run ended in — `terminalState()` — not what the configuration still
+/// holds afterwards.
+bool isVerdict(const SM &sm) {
+    const auto ended = sm.terminalState();
+    return ended == State::Pass || ended == State::Fail;
 }
 
 /// Drive the machine until the child's handshake has moved it to `armed`, the
@@ -50,13 +54,13 @@ bool isVerdict(State state) {
 /// timed: every tick here is the machine's own work, so a machine that has not
 /// arrived after this many is not slow, it is not going to.
 void driveToArmed(SM &sm) {
-    for (int i = 0; i < 50 && sm.getCurrentState() != State::Armed && !isVerdict(sm.getCurrentState()); ++i) {
+    for (int i = 0; i < 50 && sm.getCurrentState() != State::Armed && !isVerdict(sm); ++i) {
         sm.tick();
     }
 }
 
 void drain(SM &sm) {
-    for (int i = 0; i < 50 && !isVerdict(sm.getCurrentState()); ++i) {
+    for (int i = 0; i < 50 && !isVerdict(sm); ++i) {
         sm.tick();
     }
 }
@@ -83,11 +87,10 @@ TEST(HostEventReachesTheChildAotTest, AnEventTheHostHandsOverReachesTheAutoforwa
     sm.processEvent(Event::HostPing);
 
     drain(sm);
-    ASSERT_TRUE(isVerdict(sm.getCurrentState()))
-        << "the machine reached no verdict — the probe child answered neither, so neither "
-           "`hostPing` nor `marker` reached it";
+    ASSERT_TRUE(isVerdict(sm)) << "the machine reached no verdict — the probe child answered neither, so neither "
+                                  "`hostPing` nor `marker` reached it";
 
-    EXPECT_EQ(sm.getCurrentState(), State::Pass)
+    EXPECT_EQ(sm.terminalState(), State::Pass)
         << "the probe child answered `sawMarkerOnly`, so the event the host handed to "
            "`processEvent` was never forwarded to it: the child only ever saw the `marker` the "
            "parent's own transition body sent. W3C Appendix D `mainEventLoop` runs the autoforward "

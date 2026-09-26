@@ -45,9 +45,9 @@ fn two_live_sessions_are_issued_different_ids() {
         engine.get_current_state()
     );
 
-    match engine.get_current_state() {
-        SessionIdsAreDistinctState::Pass => {}
-        SessionIdsAreDistinctState::Fail => panic!("two live sessions reported the same `_sessionid`. W3C SCXML 5.10 binds it to the id of the current session, and C.1.1 publishes an address derived from it, so one id for two sessions is one address for two sessions"),
-        other => panic!("session_ids_are_distinct settled in {other:?}, which is not a verdict state"),
+    match engine.terminal_state() {
+        Some(SessionIdsAreDistinctState::Pass) => {}
+        Some(SessionIdsAreDistinctState::Fail) => panic!("two live sessions reported the same `_sessionid`. W3C SCXML 5.10 binds it to the id of the current session, and C.1.1 publishes an address derived from it, so one id for two sessions is one address for two sessions"),
+        other => panic!("session_ids_are_distinct ended in {other:?}, which is not a verdict state"),
     }
 }

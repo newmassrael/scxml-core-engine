@@ -8,7 +8,7 @@
     deployments) a `ParallelRegionDone` envelope (wire 21, §16.5).
     The Root partition aggregates local + remote completions and
     raises `done.state.root`, which the parallel-level transition
-    routes to `<final id="all_done">` so a single `getCurrentState()`
+    routes to `<final id="all_done">` so a single `terminalState()`
     check on the Root SM proves the wire-21 round-trip.
 
     `<donedata>` is intentionally omitted on every `<final>`: the
@@ -48,7 +48,7 @@
     The handler routes to a dedicated `<final id="timeout_failed">`
     so E2E fixtures can distinguish the timeout path from the
     normal `<final id="all_done">` convergence by asserting on
-    `getCurrentState()` alone.
+    `terminalState()` alone.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
        datamodel="null" name="motor_partition" initial="root">

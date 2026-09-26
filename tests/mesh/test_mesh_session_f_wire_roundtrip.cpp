@@ -65,11 +65,11 @@ int main() {
         parent_router.pumpScxmlInvokeReplies();
         // Consume the parent's external queue — fires `done.invoke.*`.
         parent.step();
-        if (parent.getCurrentState() == State::Pass) {
+        if (parent.terminalState() == State::Pass) {
             std::printf("SCE Mesh §9.6 full lifecycle verification: PASS\n");
             return 0;
         }
-        if (parent.getCurrentState() == State::Fail) {
+        if (parent.terminalState() == State::Fail) {
             std::fprintf(stderr, "FAIL: parent observed error.execution instead of "
                                  "done.invoke — transport is wired but the wire-15/18 "
                                  "success path did not complete.\n");

@@ -53,22 +53,22 @@ TEST(InvokeParamErrorStartsTheChildAotTest, AnInvokeParamThatWillNotEvaluateCost
     EXPECT_TRUE(reachedFinal) << "parent did not reach a final state within timeout — neither the "
                                  "child's `childUp` nor the delayed `timeout` that judges a "
                                  "never-started child arrived";
-    EXPECT_NE(sm.getCurrentState(), SM::State::FailNoParamError)
+    EXPECT_NE(sm.terminalState(), SM::State::FailNoParamError)
         << "`childUp` arrived with no `error.execution` before it: §scxml-5.7.1 puts that error on "
            "the internal queue while the `<invoke>` is being evaluated, so it is dequeued before "
            "the child's first word. A log line is not a queue.";
-    EXPECT_NE(sm.getCurrentState(), SM::State::FailInvokeNotStarted)
+    EXPECT_NE(sm.terminalState(), SM::State::FailInvokeNotStarted)
         << "the child never started: this engine read §scxml-6.4.2's \"terminate the processing of "
            "the element\" over 5.7.1's per-item rule. One `<param>` that will not evaluate costs "
            "its own pair, not the session.";
-    EXPECT_NE(sm.getCurrentState(), SM::State::FailGoodParamLost)
+    EXPECT_NE(sm.terminalState(), SM::State::FailGoodParamLost)
         << "the child's `kept` did not arrive as 'here': §scxml-6.4.3 seeds the child's matching "
            "`<data>` from the param's value, and one sibling that failed does not cost the others.";
-    EXPECT_NE(sm.getCurrentState(), SM::State::FailBrokenParamSeeded)
+    EXPECT_NE(sm.terminalState(), SM::State::FailBrokenParamSeeded)
         << "the child found the empty string under `broken`: 5.7.1 says ignore the name AND the "
            "value, so the child must find its own declaration untouched rather than a placeholder "
            "the author never wrote.";
-    EXPECT_EQ(sm.getCurrentState(), SM::State::Pass);
+    EXPECT_EQ(sm.terminalState(), SM::State::Pass);
 }
 
 }  // namespace SCE::Tests

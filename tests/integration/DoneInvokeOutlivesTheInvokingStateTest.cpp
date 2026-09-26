@@ -133,7 +133,7 @@ TEST_F(DoneInvokeOutlivesTheInvokingStateTest, TheDoneInvokeOfAChildThatEndedFir
     }
     ASSERT_FALSE(sm->isRunning()) << "the parent reached no verdict within 5s, not even its own timeout";
 
-    const std::string reached = sm->getCurrentState();
+    const std::string reached = sm->terminalState().value_or("");
     EXPECT_NE(reached, "failDoneInvokeDiscarded")
         << "done.invoke never arrived after the parent left the invoking state: cancelling an "
         << "invocation whose session had already ended discarded the event that session sent last "

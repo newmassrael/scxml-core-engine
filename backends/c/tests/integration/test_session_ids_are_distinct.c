@@ -180,8 +180,8 @@ int main(void) {
         return 1;
     }
 
-    const int pass = session_ids_are_distinct_in_state(&sm, SESSION_IDS_ARE_DISTINCT_STATE_PASS);
-    const int fail = session_ids_are_distinct_in_state(&sm, SESSION_IDS_ARE_DISTINCT_STATE_FAIL);
+    const int pass = session_ids_are_distinct_ended_in(&sm, SESSION_IDS_ARE_DISTINCT_STATE_PASS);
+    const int fail = session_ids_are_distinct_ended_in(&sm, SESSION_IDS_ARE_DISTINCT_STATE_FAIL);
     const int parked = session_ids_are_distinct_in_state(&sm, SESSION_IDS_ARE_DISTINCT_STATE_ONE_SEEN);
 
     if (!pass) {

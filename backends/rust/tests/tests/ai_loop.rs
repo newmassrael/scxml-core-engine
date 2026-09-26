@@ -62,6 +62,13 @@ fn holds(e: &Engine<AiLoopPolicy>, s: AiLoopState) -> bool {
     active(e).contains(&s)
 }
 
+/// Whether the run ended in the top-level `<final>` `s`. Asked of the
+/// terminal accessor rather than the configuration, because
+/// §scxml-D-exitInterpreter leaves the configuration empty once it ends.
+fn ended_in(e: &Engine<AiLoopPolicy>, s: AiLoopState) -> bool {
+    e.terminal_state() == Some(s)
+}
+
 fn step(e: &mut Engine<AiLoopPolicy>, ev: AiLoopEvent) {
     e.process_event(ev);
     e.step();
@@ -171,13 +178,13 @@ fn the_budget_ends_the_run_from_wherever_the_cycle_is() {
         if holds(&e, AiLoopState::Reflecting) {
             step(&mut e, AiLoopEvent::ReflectNone);
         }
-        if holds(&e, AiLoopState::Exhausted) {
+        if ended_in(&e, AiLoopState::Exhausted) {
             break;
         }
         turn(&mut e);
     }
     assert!(
-        holds(&e, AiLoopState::Exhausted),
+        ended_in(&e, AiLoopState::Exhausted),
         "the budget is its own region precisely so the turn count is not something \
          `judging` has to remember to check; active: {:?}",
         active(&e)
@@ -352,7 +359,7 @@ fn nobody_comes() {
     step(&mut e, AiLoopEvent::ScreenNone);
     step(&mut e, AiLoopEvent::Unattended);
     assert!(
-        holds(&e, AiLoopState::Blocked),
+        ended_in(&e, AiLoopState::Blocked),
         "a question nobody answers ends the run in an outcome the document names, \
          rather than leaving it prompting into the dark; active: {:?}",
         active(&e)
@@ -437,7 +444,7 @@ fn one_cancel_reaches_every_region() {
 
     step(&mut e, AiLoopEvent::Cancel);
     assert!(
-        holds(&e, AiLoopState::Cancelled),
+        ended_in(&e, AiLoopState::Cancelled),
         "cancel is one transition on the `<parallel>` itself rather than one per \
          region, so a single event ends all three; active: {:?}",
         active(&e)
@@ -770,7 +777,7 @@ fn the_run_converges_through_a_closing_report() {
     step(&mut e, AiLoopEvent::TurnDone);
 
     assert!(
-        holds(&e, AiLoopState::Converged),
+        ended_in(&e, AiLoopState::Converged),
         "the turn that answers the closing report reaches `reported`, whose `<raise>` is \
          what takes all three regions out at once; active: {:?}",
         active(&e)
@@ -892,7 +899,7 @@ fn a_session_replaced_past_its_budget_reports_stuck() {
     step(&mut e, AiLoopEvent::SessionReady);
 
     assert!(
-        holds(&e, AiLoopState::Exhausted),
+        ended_in(&e, AiLoopState::Exhausted),
         "the replacement past `max_restarts` reaches `stuck`, which reports the run as \
          exhausted rather than failed; active: {:?}",
         active(&e)
@@ -967,7 +974,7 @@ fn a_failure_ends_the_whole_run() {
     step(&mut e, AiLoopEvent::Fail);
 
     assert!(
-        holds(&e, AiLoopState::Failed),
+        ended_in(&e, AiLoopState::Failed),
         "`fail` is written on the `<parallel>` itself, so one event takes all three regions \
          to `failed` — a different outcome from `cancelled`, which is what tells a broken \
          run from a stopped one; active: {:?}",
@@ -1080,10 +1087,17 @@ fn a_run_journalled_as_names_resumes_where_it_stopped() {
 #[test]
 fn every_state_a_run_reaches_reads_back_from_its_own_name() {
     let mut seen: Vec<AiLoopState> = Vec::new();
+    // The top-level `<final>` a run ended in is read from the terminal
+    // accessor: §scxml-D-exitInterpreter leaves the configuration empty.
     let mut record = |e: &Engine<AiLoopPolicy>| {
-        for s in e.get_active_states().iter() {
-            if !seen.contains(s) {
-                seen.push(*s);
+        for s in e
+            .get_active_states()
+            .iter()
+            .copied()
+            .chain(e.terminal_state())
+        {
+            if !seen.contains(&s) {
+                seen.push(s);
             }
         }
     };
@@ -1100,7 +1114,7 @@ fn every_state_a_run_reaches_reads_back_from_its_own_name() {
             record(&e);
             step(&mut e, AiLoopEvent::SessionReady);
         }
-        if holds(&e, AiLoopState::Exhausted) {
+        if ended_in(&e, AiLoopState::Exhausted) {
             break;
         }
         turn(&mut e);

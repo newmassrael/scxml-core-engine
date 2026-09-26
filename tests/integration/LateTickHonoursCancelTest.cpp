@@ -92,10 +92,10 @@ TEST_F(LateTickHonoursCancelTest, ACancelledSettleTimerIsNeverDelivered) {
         eventRaiser->processQueuedEvents();
     }
 
-    EXPECT_NE(sm->getCurrentState(), "cancelLost")
+    EXPECT_NE(sm->terminalState().value_or(""), "cancelLost")
         << "`settle` was delivered even though `active`'s `<cancel sendid=\"s1\">` ran "
            "first. W3C SCXML 6.3 cancels a send that has not been dispatched yet";
-    EXPECT_EQ(sm->getCurrentState(), "pass")
+    EXPECT_EQ(sm->terminalState().value_or(""), "pass")
         << "the machine did not reach `pass`; the settle timer was armed, cancelled by "
            "the earlier `poke`, and `finish` should have carried it home";
 }

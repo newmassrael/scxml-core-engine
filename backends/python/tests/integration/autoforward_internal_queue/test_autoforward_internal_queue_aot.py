@@ -45,7 +45,7 @@ def test_autoforward_internal_queue_aot() -> None:
         f"100 ms; last leaf={engine.current_state} — the watcher child reported "
         "neither verdict, so neither `error.execution` nor `probe` reached it"
     )
-    actual = str(engine.current_state)
+    actual = str(engine.terminal_state)
     assert actual == "pass", (
         f"autoforward_internal_queue reached <final id={actual!r}>; expected 'pass' "
         "— the watcher saw `error.execution`, so an internal-queue event was "

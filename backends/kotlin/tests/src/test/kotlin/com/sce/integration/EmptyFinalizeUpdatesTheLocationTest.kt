@@ -54,7 +54,7 @@ class EmptyFinalizeUpdatesTheLocationTest {
         try {
             assertEquals(
                 EmptyFinalizeUpdatesTheLocationState.Pass,
-                sm.currentState.value,
+                sm.terminalState,
                 "FailNotUpdated: the empty <finalize/> left `tally` at its old " +
                     "value — §scxml-6.5.2 makes an empty element mean the automatic " +
                     "update, writing each namelist item's location as if by " +

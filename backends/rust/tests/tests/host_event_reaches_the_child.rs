@@ -70,8 +70,8 @@ fn an_event_the_host_hands_over_reaches_the_autoforward_child() {
     );
 
     assert_eq!(
-        engine.get_current_state(),
-        HostEventReachesTheChildState::Pass,
+        engine.terminal_state(),
+        Some(HostEventReachesTheChildState::Pass),
         "the probe child answered `sawMarkerOnly`, so the event the host handed to \
          `process_event` was never forwarded to it: the child only ever saw the `marker` the \
          parent's own transition body sent. W3C Appendix D `mainEventLoop` runs the \

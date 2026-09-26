@@ -102,7 +102,7 @@ TEST_F(AutoforwardDequeuePointTest, AnExternalEventIsForwardedAtTheDequeueNotThe
     ASSERT_FALSE(sm->isRunning()) << "parent did not halt within 5s — the probe child reported neither "
                                   << "verdict, so `second` never reached it";
 
-    EXPECT_EQ(sm->getCurrentState(), "pass")
+    EXPECT_EQ(sm->terminalState().value_or(""), "pass")
         << "the probe child saw `second` before `mark`, so both events were handed over while "
         << "the parent was still executing the transition that queued them. W3C Appendix D "
         << "`mainEventLoop` forwards one statement after `externalQueue.dequeue()`, and §6.4.2 "

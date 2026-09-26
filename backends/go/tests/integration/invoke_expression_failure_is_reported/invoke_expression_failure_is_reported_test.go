@@ -45,7 +45,7 @@ func TestAnInvokeExpressionThatCannotBeEvaluatedRaisesErrorExecution(t *testing.
 			"the expression to be evaluated when the <invoke> fires; parking means "+
 			"neither the raise nor the child arrived", engine.GetCurrentState())
 	}
-	if got := engine.GetCurrentState(); got != InvokeExpressionFailureIsReportedStatePass {
+	if got, ended := engine.TerminalState(); !ended || got != InvokeExpressionFailureIsReportedStatePass {
 		t.Fatalf("machine reached %v, want Pass: reaching fail means the child started "+
 			"on an expression that cannot be evaluated, so nothing evaluated it", got)
 	}

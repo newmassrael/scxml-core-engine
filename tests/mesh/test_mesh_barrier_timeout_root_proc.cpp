@@ -92,7 +92,7 @@ int main(int argc, char *argv[]) {
         // exactly the window the §16.5 barrier timer needs.
         sm.tick();
 
-        if (sm.isInFinalState() && sm.getCurrentState() == expected_state) {
+        if (sm.terminalState() == expected_state) {
             std::printf("barrier_timeout root (%s): PASS — reached <final id=\"%s\">\n", mode.c_str(), expected_label);
             return 0;
         }

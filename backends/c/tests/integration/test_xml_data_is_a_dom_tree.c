@@ -35,24 +35,24 @@ int main(void) {
     // event; no payload path is involved.
     xml_data_is_a_dom_tree_run(&sm);
 
-    if (xml_data_is_a_dom_tree_in_state(&sm, XML_DATA_IS_A_DOM_TREE_STATE_NOTADOCUMENT)) {
+    if (xml_data_is_a_dom_tree_ended_in(&sm, XML_DATA_IS_A_DOM_TREE_STATE_NOTADOCUMENT)) {
         fprintf(stderr, "FAIL: the variable did not hold a document — nodeType === 9, nodeName === "
                         "'#document', documentElement.tagName === 'books' or hasAttribute('count') "
                         "did not hold\n");
         return 1;
     }
-    if (xml_data_is_a_dom_tree_in_state(&sm, XML_DATA_IS_A_DOM_TREE_STATE_WRONGTREE)) {
+    if (xml_data_is_a_dom_tree_ended_in(&sm, XML_DATA_IS_A_DOM_TREE_STATE_WRONGTREE)) {
         fprintf(stderr, "FAIL: the document element's children are not the two <book> elements in "
                         "document order — the whitespace between them may have become nodes, or a "
                         "sibling/parent link is missing\n");
         return 1;
     }
-    if (xml_data_is_a_dom_tree_in_state(&sm, XML_DATA_IS_A_DOM_TREE_STATE_NOTEXT)) {
+    if (xml_data_is_a_dom_tree_ended_in(&sm, XML_DATA_IS_A_DOM_TREE_STATE_NOTEXT)) {
         fprintf(stderr, "FAIL: character data did not report itself as a text node, or textContent "
                         "did not read the text below the element\n");
         return 1;
     }
-    if (!xml_data_is_a_dom_tree_in_state(&sm, XML_DATA_IS_A_DOM_TREE_STATE_SETTLED)) {
+    if (!xml_data_is_a_dom_tree_ended_in(&sm, XML_DATA_IS_A_DOM_TREE_STATE_SETTLED)) {
         fprintf(stderr, "FAIL: the machine reached none of its four verdicts, so the guards did not "
                         "evaluate at all\n");
         return 1;

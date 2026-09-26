@@ -86,7 +86,7 @@ int main() {
     // Macrostep brake: consume done.invoke.<id> and reach the Ok final.
     brake.step();
 
-    if (brake.getCurrentState() != SCE::Generated::brake_invoke::State::Ok) {
+    if (brake.terminalState() != SCE::Generated::brake_invoke::State::Ok) {
         std::printf("FAIL: brake did not reach Ok on reply (state=%d). "
                     "Mesh-rpc correlation or auto-propagated invoke_id "
                     "likely regressed.\n",

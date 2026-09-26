@@ -53,7 +53,7 @@ class InvokeCandidateSelectsTheChildTest {
         )
         assertEquals(
             InvokeCandidateSelectsTheChildState.Pass,
-            sm.currentState.value,
+            sm.terminalState,
             "WrongChild means the value selected the other candidate; NoChild means " +
                 "nothing was loaded at all"
         )

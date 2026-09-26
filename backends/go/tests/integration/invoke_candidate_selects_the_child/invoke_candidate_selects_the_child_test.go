@@ -42,7 +42,7 @@ func TestTheEvaluatedValueSelectsWhichCandidateRuns(t *testing.T) {
 		t.Fatalf("the machine never completed (parked in %v). Parking means no child "+
 			"spoke: a stub ran, or nothing did", engine.GetCurrentState())
 	}
-	if got := engine.GetCurrentState(); got != InvokeCandidateSelectsTheChildStatePass {
+	if got, ended := engine.TerminalState(); !ended || got != InvokeCandidateSelectsTheChildStatePass {
 		t.Fatalf("machine reached %v, want Pass: WrongChild means the value selected "+
 			"the other candidate, NoChild means nothing was loaded at all", got)
 	}

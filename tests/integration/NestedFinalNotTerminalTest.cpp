@@ -103,7 +103,7 @@ TEST_F(NestedFinalNotTerminalTest, ANestedFinalDoesNotEndTheSession) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
-    EXPECT_EQ(sm->getCurrentState(), "pass")
+    EXPECT_EQ(sm->terminalState().value_or(""), "pass")
         << "`resume` did not carry the machine out of the nested final to the top-level one";
 }
 

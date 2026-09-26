@@ -54,8 +54,8 @@ fn donedata_rides_a_completion_that_happens_after_the_invoke_started() {
     );
 
     assert_eq!(
-        engine.get_current_state(),
-        DonedataLateCompletionState::Pass,
+        engine.terminal_state(),
+        Some(DonedataLateCompletionState::Pass),
         "the parent's `done.invoke.inv_late` guard did not see \
          `_event.data.result === 42`, so the child's `<donedata>` was dropped on \
          a completion that happened after the invoke was started. W3C SCXML 6.3.1 \

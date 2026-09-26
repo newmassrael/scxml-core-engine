@@ -44,32 +44,32 @@ fn an_invoke_param_that_will_not_evaluate_costs_its_pair_and_nothing_else() {
          fired, so the machine is not being ticked"
     );
 
-    match engine.get_current_state() {
-        InvokeParamErrorStartsTheChildState::Pass => {}
-        InvokeParamErrorStartsTheChildState::FailNoParamError => panic!(
+    match engine.terminal_state() {
+        Some(InvokeParamErrorStartsTheChildState::Pass) => {}
+        Some(InvokeParamErrorStartsTheChildState::FailNoParamError) => panic!(
             "`childUp` arrived with no `error.execution` before it — W3C SCXML \
              5.7.1 puts that error on the internal queue while the `<invoke>` is \
              being evaluated, so it is dequeued before the child's first word"
         ),
-        InvokeParamErrorStartsTheChildState::FailInvokeNotStarted => panic!(
+        Some(InvokeParamErrorStartsTheChildState::FailInvokeNotStarted) => panic!(
             "the child never started — this channel read W3C SCXML 6.4.2's \
              \"terminate the processing of the element\" over 5.7.1's per-item \
              rule. 5.7.1 handles the failure itself and delegates only the \
              successful name and value to the context, so one `<param>` that \
              will not evaluate costs its own pair, not the session"
         ),
-        InvokeParamErrorStartsTheChildState::FailGoodParamLost => panic!(
+        Some(InvokeParamErrorStartsTheChildState::FailGoodParamLost) => panic!(
             "the child's `kept` did not arrive as 'here' — W3C SCXML 6.4.3 seeds \
              the child's matching `<data>` from the param's value, and one \
              sibling that failed does not cost the others"
         ),
-        InvokeParamErrorStartsTheChildState::FailBrokenParamSeeded => panic!(
+        Some(InvokeParamErrorStartsTheChildState::FailBrokenParamSeeded) => panic!(
             "the child found the empty string under `broken` — 5.7.1 says ignore \
              the name AND the value, so the child must find its own declaration \
              untouched rather than a placeholder the author never wrote"
         ),
         other => panic!(
-            "invoke_param_error_starts_the_child settled in {other:?}, which is \
+            "invoke_param_error_starts_the_child ended in {other:?}, which is \
              not a verdict state"
         ),
     }

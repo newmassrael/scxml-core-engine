@@ -99,7 +99,7 @@ TEST_F(EventOriginIsALocationTest, OriginIsTheSendersPublishedLocationAndRoutesB
                                   << "location to be a usable <send> target; current state is "
                                   << sm->getCurrentState();
 
-    EXPECT_EQ(sm->getCurrentState(), "pass")
+    EXPECT_EQ(sm->terminalState().value_or(""), "pass")
         << "`_event.origin` did not carry the sender's published `_ioprocessors` location. "
         << "§scxml-C-1 requires the origin to match that location, which is what makes it "
         << "an address a peer can answer; a bare session id matches nothing the sender "

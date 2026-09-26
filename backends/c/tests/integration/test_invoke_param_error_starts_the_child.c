@@ -64,26 +64,26 @@ int main(void) {
         return 1;
     }
 
-    if (invoke_param_error_starts_the_child_in_state(&sm, INVOKE_PARAM_ERROR_STARTS_THE_CHILD_STATE_PASS)) {
+    if (invoke_param_error_starts_the_child_ended_in(&sm, INVOKE_PARAM_ERROR_STARTS_THE_CHILD_STATE_PASS)) {
         printf("PASS: the failed param cost its own pair and nothing else\n");
-    } else if (invoke_param_error_starts_the_child_in_state(
+    } else if (invoke_param_error_starts_the_child_ended_in(
                    &sm, INVOKE_PARAM_ERROR_STARTS_THE_CHILD_STATE_FAILNOPARAMERROR)) {
         printf("FAIL: `childUp` arrived with no `error.execution` before it — W3C "
                "SCXML 5.7.1 puts that error on the internal queue while the "
                "<invoke> is being evaluated\n");
         rc = 1;
-    } else if (invoke_param_error_starts_the_child_in_state(
+    } else if (invoke_param_error_starts_the_child_ended_in(
                    &sm, INVOKE_PARAM_ERROR_STARTS_THE_CHILD_STATE_FAILINVOKENOTSTARTED)) {
         printf("FAIL: the child never started — this backend read W3C SCXML "
                "6.4.2's \"terminate the processing of the element\" over 5.7.1's "
                "per-item rule\n");
         rc = 1;
-    } else if (invoke_param_error_starts_the_child_in_state(
+    } else if (invoke_param_error_starts_the_child_ended_in(
                    &sm, INVOKE_PARAM_ERROR_STARTS_THE_CHILD_STATE_FAILGOODPARAMLOST)) {
         printf("FAIL: the child's `kept` did not arrive as 'here' — one sibling "
                "that failed does not cost the others (W3C SCXML 6.4.3)\n");
         rc = 1;
-    } else if (invoke_param_error_starts_the_child_in_state(
+    } else if (invoke_param_error_starts_the_child_ended_in(
                    &sm, INVOKE_PARAM_ERROR_STARTS_THE_CHILD_STATE_FAILBROKENPARAMSEEDED)) {
         printf("FAIL: the child found the empty string under `broken` — 5.7.1 says "
                "ignore the name AND the value\n");

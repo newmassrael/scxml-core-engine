@@ -41,7 +41,7 @@ class SessionIdsAreDistinctTest {
             }
         }
 
-        val reached = sm.currentState.value
+        val reached = sm.terminalState
         val why = when (reached) {
             SessionIdsAreDistinctState.Fail ->
                 "two live sessions reported the same `_sessionid`. The clause binds it " +
@@ -49,7 +49,7 @@ class SessionIdsAreDistinctTest {
                     "derived from it, so one id for two sessions is one address for two."
             SessionIdsAreDistinctState.Pass -> ""
             else ->
-                "parked in $reached rather than a verdict state: only one child reported " +
+                "parked in ${sm.currentState.value} rather than a verdict state: only one child reported " +
                     "its `_sessionid`, so the two ids were never compared."
         }
 

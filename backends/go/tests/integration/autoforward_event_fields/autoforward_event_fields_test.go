@@ -39,8 +39,8 @@ func TestForwardedCopyKeepsDataOriginAndInvokeid(t *testing.T) {
 			"done.invoke.inv_echo was emitted")
 	}
 
-	got := engine.GetCurrentState()
-	if got != AutoforwardEventFieldsStatePass {
+	got, ended := engine.TerminalState()
+	if !ended || got != AutoforwardEventFieldsStatePass {
 		t.Fatalf(
 			"parent reached %v, want Pass: the child reported `stripped`, so the "+
 				"autoforwarded copy of `childToParent` lost `_event.data.value`, "+

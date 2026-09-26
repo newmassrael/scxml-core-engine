@@ -61,7 +61,7 @@ class InvokePrecedesDequeueMidrunTest {
 
         assertEquals(
             InvokePrecedesDequeueMidrunState.Pass,
-            sm.currentState.value,
+            sm.terminalState,
             "the watching child answered `probe` from `waiting`, so it never saw `kick`. " +
                 "The parent drained its external queue before starting the invoke, and the " +
                 "event `<onentry>` had queued for itself was consumed while no child " +

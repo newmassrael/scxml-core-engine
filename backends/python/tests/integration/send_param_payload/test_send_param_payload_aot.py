@@ -93,7 +93,7 @@ def test_send_param_payload_aot() -> None:
         "saw its own `loopback`, or discarded a whole <send> because one <param> "
         "would not evaluate (W3C SCXML 5.7.1 drops the pair, not the message)"
     )
-    actual = str(engine.current_state)
+    actual = str(engine.terminal_state)
     assert actual == "pass", (
         f"send_param_payload reached <final id={actual!r}>; expected 'pass'. "
         + _WHY.get(actual, "That is not a verdict state — neither send was judged.")

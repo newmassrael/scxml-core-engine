@@ -27,18 +27,18 @@
 // Each failure final names the case it belongs to, so the diagnostic below
 // says which spelling disagreed with the clause rather than only that one did.
 static const char *failure_case(const event_descriptor_spellings_agree_t *sm) {
-    if (event_descriptor_spellings_agree_in_state(sm, EVENT_DESCRIPTOR_SPELLINGS_AGREE_STATE_FAILSUFFIXED)) {
+    if (event_descriptor_spellings_agree_ended_in(sm, EVENT_DESCRIPTOR_SPELLINGS_AGREE_STATE_FAILSUFFIXED)) {
         return "`wild.*` did not catch bare `wild`, though the clause calls the "
                "spellings functionally equivalent";
     }
-    if (event_descriptor_spellings_agree_in_state(sm, EVENT_DESCRIPTOR_SPELLINGS_AGREE_STATE_FAILDOTTED)) {
+    if (event_descriptor_spellings_agree_ended_in(sm, EVENT_DESCRIPTOR_SPELLINGS_AGREE_STATE_FAILDOTTED)) {
         return "`dot.` did not catch bare `dot`, though the clause calls the "
                "spellings functionally equivalent";
     }
-    if (event_descriptor_spellings_agree_in_state(sm, EVENT_DESCRIPTOR_SPELLINGS_AGREE_STATE_FAILBOUNDED)) {
+    if (event_descriptor_spellings_agree_ended_in(sm, EVENT_DESCRIPTOR_SPELLINGS_AGREE_STATE_FAILBOUNDED)) {
         return "`wild.*` caught `wilder`; the prefix is a whole token, so it must not";
     }
-    if (event_descriptor_spellings_agree_in_state(sm, EVENT_DESCRIPTOR_SPELLINGS_AGREE_STATE_FAILUNIVERSAL)) {
+    if (event_descriptor_spellings_agree_ended_in(sm, EVENT_DESCRIPTOR_SPELLINGS_AGREE_STATE_FAILUNIVERSAL)) {
         return "a bare `.*` did not catch `any.token.sequence`; an empty token "
                "prefix is a prefix of every event name";
     }
@@ -53,7 +53,7 @@ int main(void) {
     event_descriptor_spellings_agree_run(&sm);
 
     int rc = 0;
-    if (!event_descriptor_spellings_agree_in_state(&sm, EVENT_DESCRIPTOR_SPELLINGS_AGREE_STATE_PASS)) {
+    if (!event_descriptor_spellings_agree_ended_in(&sm, EVENT_DESCRIPTOR_SPELLINGS_AGREE_STATE_PASS)) {
         fprintf(stderr, "event_descriptor_spellings_agree: FAIL - %s\n", failure_case(&sm));
         rc = 1;
     }

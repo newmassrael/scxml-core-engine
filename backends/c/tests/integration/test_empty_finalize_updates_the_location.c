@@ -63,36 +63,36 @@ int main(void) {
         return 1;
     }
 
-    if (empty_finalize_updates_the_location_in_state(&sm, EMPTY_FINALIZE_UPDATES_THE_LOCATION_STATE_PASS)) {
+    if (empty_finalize_updates_the_location_ended_in(&sm, EMPTY_FINALIZE_UPDATES_THE_LOCATION_STATE_PASS)) {
         printf("PASS: the empty <finalize/> updated the location and the absent one "
                "did not\n");
-    } else if (empty_finalize_updates_the_location_in_state(&sm,
+    } else if (empty_finalize_updates_the_location_ended_in(&sm,
                                                             EMPTY_FINALIZE_UPDATES_THE_LOCATION_STATE_FAILNOTUPDATED)) {
         printf("FAIL: the empty <finalize/> left `tally` at its old value — W3C "
                "SCXML 6.5.2 makes an empty element mean the automatic update\n");
         rc = 1;
-    } else if (empty_finalize_updates_the_location_in_state(
+    } else if (empty_finalize_updates_the_location_ended_in(
                    &sm, EMPTY_FINALIZE_UPDATES_THE_LOCATION_STATE_FAILUPDATEDWITHOUTFINALIZE)) {
         printf("FAIL: `guard` moved with no <finalize> element at all — the clause's "
                "note is a prohibition, not an omission\n");
         rc = 1;
-    } else if (empty_finalize_updates_the_location_in_state(
+    } else if (empty_finalize_updates_the_location_ended_in(
                    &sm, EMPTY_FINALIZE_UPDATES_THE_LOCATION_STATE_FAILUNMATCHEDNAMEWROTE)) {
         printf("FAIL: an event carrying no matching name still wrote `keeper` — W3C "
                "SCXML 6.5.2 says \"with ANY return value that has a name that "
                "matches\", so the write has to be guarded\n");
         rc = 1;
-    } else if (empty_finalize_updates_the_location_in_state(
+    } else if (empty_finalize_updates_the_location_ended_in(
                    &sm, EMPTY_FINALIZE_UPDATES_THE_LOCATION_STATE_FAILUNMATCHEDCHILDSILENT)) {
         printf("FAIL: the third child never answered, so the guarded-write half was "
                "never exercised\n");
         rc = 1;
-    } else if (empty_finalize_updates_the_location_in_state(
+    } else if (empty_finalize_updates_the_location_ended_in(
                    &sm, EMPTY_FINALIZE_UPDATES_THE_LOCATION_STATE_FAILEMPTYCHILDSILENT)) {
         printf("FAIL: the first child never answered, so the empty-<finalize> half "
                "was never exercised\n");
         rc = 1;
-    } else if (empty_finalize_updates_the_location_in_state(
+    } else if (empty_finalize_updates_the_location_ended_in(
                    &sm, EMPTY_FINALIZE_UPDATES_THE_LOCATION_STATE_FAILABSENTCHILDSILENT)) {
         printf("FAIL: the second child never answered, so the absent-<finalize> half "
                "was never exercised\n");

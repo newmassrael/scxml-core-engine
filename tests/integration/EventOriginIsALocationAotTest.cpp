@@ -41,7 +41,7 @@ TEST(EventOriginIsALocationAotTest, OriginIsTheSendersPublishedLocationAndRoutes
                                  "`_event.origin` as an address and sent `reply` to it, and nothing came "
                                  "back. §scxml-C-1 requires the published location to be a usable <send> "
                                  "target.";
-    EXPECT_EQ(sm.getCurrentState(), SM::State::Pass)
+    EXPECT_EQ(sm.terminalState(), SM::State::Pass)
         << "`_event.origin` did not carry the sender's published `_ioprocessors` location. "
            "§scxml-C-1 requires the origin to match that location; a bare session id matches "
            "nothing the sender published, and cannot be answered.";

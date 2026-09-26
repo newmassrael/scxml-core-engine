@@ -102,7 +102,7 @@ protected:
         ASSERT_FALSE(sm_->isRunning()) << "parent did not halt within 5s — the watcher child reported neither "
                                        << "verdict, so neither `error.execution` nor `probe` reached it";
 
-        EXPECT_EQ(sm_->getCurrentState(), "pass")
+        EXPECT_EQ(sm_->terminalState().value_or(""), "pass")
             << "the watcher saw `error.execution`: an internal-queue event was autoforwarded. "
             << "W3C Appendix D `mainEventLoop` forwards only what it dequeues from the external "
             << "queue, and §6.2 raises `error.execution` onto the internal one — check that the "

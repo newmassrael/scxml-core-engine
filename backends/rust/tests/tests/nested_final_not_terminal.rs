@@ -57,8 +57,8 @@ fn a_nested_final_does_not_end_the_session() {
         engine.get_current_state()
     );
     assert_eq!(
-        engine.get_current_state(),
-        NestedFinalNotTerminalState::Pass,
+        engine.terminal_state(),
+        Some(NestedFinalNotTerminalState::Pass),
         "`resume` did not carry the machine out of the nested final to the top-level one"
     );
 }

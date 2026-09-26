@@ -129,7 +129,7 @@ TEST_F(DonedataLocalInvokeTest, ParentObservesDonedataOnDoneInvoke) {
     ASSERT_FALSE(sm->isRunning()) << "parent did not halt within 5s — done.invoke was not emitted or "
                                   << "the parent is stuck in phase_param/phase_content";
 
-    EXPECT_EQ(sm->getCurrentState(), "pass")
+    EXPECT_EQ(sm->terminalState().value_or(""), "pass")
         << "parent reached `fail`: `_event.data.result === 42` (param branch) or "
         << "`_event.data === 'hello_content'` (content branch) failed. Empty `_event.data` "
         << "means the Interpreter's InvokeExecutor completion callback dropped the "

@@ -54,7 +54,7 @@ class WildcardInDocumentOrderTest {
         // wildcard at all.
         assertEquals(
             WildcardInDocumentOrderState.Pass,
-            sm.currentState.value,
+            sm.terminalState,
             "the machine did not reach pass: a wildcard is enabled only when its guard " +
                 "is true, and an internal wildcard targeting a descendant of its compound " +
                 "source must not exit and re-enter that source"

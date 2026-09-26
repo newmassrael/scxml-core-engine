@@ -76,7 +76,7 @@ TEST(LateTickHonoursCancelAotTest, ACancelSurvivesATickThatArrivesAfterBothDeadl
     std::this_thread::sleep_for(PAST_BOTH_DEADLINES);
     sm->tick();
 
-    EXPECT_NE(sm->getCurrentState(), SM::State::CancelLost)
+    EXPECT_NE(sm->terminalState(), SM::State::CancelLost)
         << "`settle` was delivered even though `active`'s `<cancel sendid=\"s1\">` ran "
            "first. Both entries were past due when this tick started, so the scheduler "
            "drain raised them together and the cancel found nothing left to drop. W3C "
@@ -87,7 +87,7 @@ TEST(LateTickHonoursCancelAotTest, ACancelSurvivesATickThatArrivesAfterBothDeadl
     // stopped working fails here rather than passing by never moving.
     const bool completed = sm->runUntilCompletion(std::chrono::seconds(2));
     EXPECT_TRUE(completed) << "the machine did not complete after the cancel";
-    EXPECT_EQ(sm->getCurrentState(), SM::State::Pass) << "the machine did not reach `pass` after the cancel";
+    EXPECT_EQ(sm->terminalState(), SM::State::Pass) << "the machine did not reach `pass` after the cancel";
 }
 
 /// A host that wakes between the two deadlines is the easy case, and it must
@@ -97,7 +97,7 @@ TEST(LateTickHonoursCancelAotTest, APunctualHostReachesTheSameVerdict) {
     auto sm = started();
     const bool completed = sm->runUntilCompletion(std::chrono::seconds(2), std::chrono::milliseconds(10));
     EXPECT_TRUE(completed) << "a 10 ms poll loop did not complete the machine";
-    EXPECT_EQ(sm->getCurrentState(), SM::State::Pass)
+    EXPECT_EQ(sm->terminalState(), SM::State::Pass)
         << "a 10 ms poll interval, which wakes between the 100 ms and 200 ms deadlines, "
            "must reach `pass`";
 }
@@ -124,7 +124,7 @@ TEST(LateTickHonoursCancelAotTest, TheEngineSaysWhenItIsNextDue) {
     const auto took =
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - startedAt);
     EXPECT_TRUE(completed) << "the machine did not complete within 3 s";
-    EXPECT_EQ(sm->getCurrentState(), SM::State::Pass)
+    EXPECT_EQ(sm->terminalState(), SM::State::Pass)
         << "a 500 ms poll interval decided the verdict — the wait must be shortened to "
            "the scheduler's own next deadline, or a coarse interval silently steps over "
            "the deadlines the document distinguishes between";
@@ -208,7 +208,7 @@ TEST(LateTickHonoursCancelAotTest, AHostDescheduledBetweenTwoSendsKeepsTheirOrde
     for (uint64_t stallMs : {1U, 50U, 99U, 100U, 101U, 150U, 1000U}) {
         auto sm = startedOn(std::make_shared<SteppingClock>(stallMs));
 
-        ASSERT_NE(sm->getCurrentState(), SM::State::CancelLost)
+        ASSERT_NE(sm->terminalState(), SM::State::CancelLost)
             << "a host stalled " << stallMs
             << " ms between the two `<send delay>`s of one `<onentry>` reordered them: "
                "`settle` (200 ms) came due before `poke` (100 ms) because each send took "
@@ -221,7 +221,7 @@ TEST(LateTickHonoursCancelAotTest, AHostDescheduledBetweenTwoSendsKeepsTheirOrde
         for (int i = 0; i < 4096 && !sm->isInFinalState(); ++i) {
             sm->tick();
         }
-        ASSERT_EQ(sm->getCurrentState(), SM::State::Pass)
+        ASSERT_EQ(sm->terminalState(), SM::State::Pass)
             << "with a " << stallMs
             << " ms stall per clock reading the machine did not reach `pass`; the "
                "document's `<cancel sendid=\"s1\">` must still drop `settle`";
@@ -262,12 +262,12 @@ TEST(LateTickHonoursCancelAotTest, AManualClockDrivesTheMachineToTheSameVerdict)
 
     // Past both deadlines in one move — the late wake-up the fixture is about.
     sm->advanceTimeMs(400);
-    EXPECT_NE(sm->getCurrentState(), SM::State::CancelLost)
+    EXPECT_NE(sm->terminalState(), SM::State::CancelLost)
         << "a single 400 ms advance stepped over both deadlines; `poke` must still be "
            "dispatched first so `active`'s `<cancel sendid=\"s1\">` can drop `settle`";
 
     sm->advanceTimeMs(100);
-    EXPECT_EQ(sm->getCurrentState(), SM::State::Pass)
+    EXPECT_EQ(sm->terminalState(), SM::State::Pass)
         << "`finish` is armed for 100 ms after `active` is entered, so the machine "
            "should be done";
     EXPECT_EQ(sm->nowMs(), 500u) << "the host moved this clock 400 + 100 ms and nothing else may move it";
@@ -282,10 +282,13 @@ TEST(LateTickHonoursCancelAotTest, AManualClockDrivesTheMachineToTheSameVerdict)
 TEST(LateTickHonoursCancelAotTest, AManualClockRunRepeatsExactly) {
     auto trace = []() {
         auto sm = startedOn(std::make_shared<::SCE::ManualClock>(0));
-        std::vector<typename SM::State> seen{sm->getCurrentState()};
+        // A run that has ended is recorded by the top-level final it ended in
+        // (Appendix D exitInterpreter leaves no configuration to read).
+        const auto where = [&sm]() { return sm->terminalState().value_or(sm->getCurrentState()); };
+        std::vector<typename SM::State> seen{where()};
         for (int i = 0; i < 6; ++i) {
             sm->advanceTimeMs(100);
-            seen.push_back(sm->getCurrentState());
+            seen.push_back(where());
         }
         return seen;
     };
@@ -314,10 +317,10 @@ TEST(LateTickHonoursCancelAotTest, OneGeneratedMachineServesBothKindsOfHost) {
         hostOwned->advanceTimeMs(100);
     }
 
-    EXPECT_EQ(wall->getCurrentState(), hostOwned->getCurrentState())
-        << "the same generated machine reached different configurations on the wall "
+    EXPECT_EQ(wall->terminalState(), hostOwned->terminalState())
+        << "the same generated machine ended in different final states on the wall "
            "clock and on a host-owned clock";
-    EXPECT_EQ(hostOwned->getCurrentState(), SM::State::Pass) << "both hosts should reach `pass`";
+    EXPECT_EQ(hostOwned->terminalState(), SM::State::Pass) << "both hosts should reach `pass`";
 }
 
 /// `advanceTimeMs` on a clock the host does not own is a programming error, not

@@ -52,29 +52,29 @@ fn send_namelist_reaches_the_form_and_a_broken_item_discards_the_message() {
          verdict never fired, so the machine is not being ticked"
     );
 
-    match engine.get_current_state() {
-        SendNamelistOverHttpState::Pass => {}
-        SendNamelistOverHttpState::FailNamelistNeverArrived => panic!(
+    match engine.terminal_state() {
+        Some(SendNamelistOverHttpState::Pass) => {}
+        Some(SendNamelistOverHttpState::FailNamelistNeverArrived) => panic!(
             "the BasicHTTP send never came back at all — the harness server did not \
              answer, which is a different failure from posting the wrong form"
         ),
-        SendNamelistOverHttpState::FailNamelistNotPosted => panic!(
+        Some(SendNamelistOverHttpState::FailNamelistNotPosted) => panic!(
             "`mapped` arrived without `Var1` in its data — W3C SCXML C.2 requires a \
              namelist's variable names and values to be mapped to HTTP POST \
              parameters, and this channel posted a form built from `<param>` alone"
         ),
-        SendNamelistOverHttpState::FailMessageNotDiscarded => panic!(
+        Some(SendNamelistOverHttpState::FailMessageNotDiscarded) => panic!(
             "`shouldNotArrive` was delivered — W3C SCXML 6.2.3 discards the message \
              when the evaluation of a `<send>`'s arguments produces an error. \
              `<param>`'s per-item rule (5.7.1) does not reach a namelist item"
         ),
-        SendNamelistOverHttpState::FailNoNamelistError => panic!(
+        Some(SendNamelistOverHttpState::FailNoNamelistError) => panic!(
             "no `error.execution` preceded the timeout — W3C SCXML 5.9.2 requires it \
              when a location expression yields no valid location, and the wire the \
              send would have crossed does not change the answer"
         ),
         other => {
-            panic!("send_namelist_over_http settled in {other:?}, which is not a verdict state")
+            panic!("send_namelist_over_http ended in {other:?}, which is not a verdict state")
         }
     }
 }

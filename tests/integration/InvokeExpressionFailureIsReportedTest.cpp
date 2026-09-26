@@ -101,7 +101,7 @@ TEST_F(InvokeExpressionFailureIsReportedTest, AnUnevaluatableInvokeExpressionRai
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
-    EXPECT_EQ(sm->getCurrentState(), "pass")
+    EXPECT_EQ(sm->terminalState().value_or(""), "pass")
         << "the machine did not reach the `error.execution` handler. §scxml-6.4.3 requires the "
            "Processor to evaluate a `srcexpr` when the `<invoke>` fires and to raise "
            "error.execution when it cannot; resting in `probe` means the failure was swallowed, "
@@ -164,7 +164,7 @@ TEST_F(InvokeExpressionFailureIsReportedTest, TheRaisedErrorNamesTheExpressionIn
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
-    ASSERT_EQ(sm->getCurrentState(), "pass") << "the handler never fired, so there is no message to read";
+    ASSERT_EQ(sm->terminalState().value_or(""), "pass") << "the handler never fired, so there is no message to read";
 
     const std::string expected = "<invoke srcexpr='target.path'> could not be evaluated";
     const auto seen = engine_->evaluateExpression(sm->getSessionId(), "seen").get();
@@ -233,7 +233,7 @@ TEST_F(InvokeExpressionFailureIsReportedTest, ADocumentThatCannotBeLoadedIsRepor
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
-    EXPECT_EQ(sm->getCurrentState(), "pass")
+    EXPECT_EQ(sm->terminalState().value_or(""), "pass")
         << "resting in `probe` means the missing document was swallowed; §scxml-6.4.1 requires "
            "error.execution when the source is invalid, and a machine that cannot see the failure "
            "waits for a `done.invoke` that will never arrive.";

@@ -60,9 +60,9 @@ def test_parallel_regions_take_own_transitions_aot() -> None:
 
     engine.send_event(_Event.CHECK)
 
-    settled = engine.active_configuration()
-    assert _State.SETTLED in settled, (
-        f"`check` did not carry the machine to `settled` (active: {settled}), which the "
+    settled = engine.terminal_state
+    assert settled == _State.SETTLED, (
+        f"`check` did not carry the machine to `settled` (ended in: {settled}), which the "
         "document guards on both regions' assignments having run. Reaching `judging` "
         "without `n == 1 && m == 1` means a region changed state while its transition "
         "content was skipped"

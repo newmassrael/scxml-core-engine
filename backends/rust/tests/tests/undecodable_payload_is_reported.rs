@@ -130,8 +130,8 @@ fn prose_and_a_payload_that_parsed_are_not_counted() {
 
     deliver(&mut engine, Event::Answer, INTACT_OBJECT);
     assert_eq!(
-        engine.get_current_state(),
-        State::Accepted,
+        engine.terminal_state(),
+        Some(State::Accepted),
         "the guard `_event.data.done` did not hold for `{INTACT_OBJECT}`, so the \
          structured reading did not happen and the zero below would be proving \
          nothing"
@@ -215,8 +215,8 @@ fn the_engine_names_the_delivery_that_lost_its_payload() {
     // name would drift to whatever arrived most recently.
     deliver(&mut engine, Event::Answer, INTACT_OBJECT);
     assert_eq!(
-        engine.get_current_state(),
-        State::Accepted,
+        engine.terminal_state(),
+        Some(State::Accepted),
         "the intact payload did not take the guarded transition, so the two \
          assertions below are not measuring a successful delivery"
     );

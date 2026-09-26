@@ -46,7 +46,7 @@ TEST(InvokeExpressionFailureIsReportedAotTest, AnUnevaluatableInvokeExpressionRa
     EXPECT_TRUE(completed) << "the machine never completed. §scxml-6.4.3 requires the expression to be "
                               "evaluated when the `<invoke>` fires; parking means neither the raise nor "
                               "the child arrived.";
-    EXPECT_EQ(sm.getCurrentState(), SM::State::Pass)
+    EXPECT_EQ(sm.terminalState(), SM::State::Pass)
         << "reaching `fail` means the child started on an expression that cannot be evaluated, "
            "so nothing evaluated it";
 }

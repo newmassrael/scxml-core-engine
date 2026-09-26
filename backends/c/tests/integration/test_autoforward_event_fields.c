@@ -32,7 +32,7 @@ int main(void) {
     // back, and the child's verdict rides home on `done.invoke.inv_echo`.
     autoforward_event_fields_run(&sm);
 
-    int rc = autoforward_event_fields_in_state(&sm, AUTOFORWARD_EVENT_FIELDS_STATE_PASS) ? 0 : 1;
+    int rc = autoforward_event_fields_ended_in(&sm, AUTOFORWARD_EVENT_FIELDS_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr,
                 "autoforward_event_fields: FAIL — the child reported "
@@ -43,8 +43,8 @@ int main(void) {
                 "event's fields through `sce_forwarded_event_t`, not just "
                 "the event name. Diagnostic: in_PASS=%d in_FAIL=%d "
                 "in_phase=%d\n",
-                autoforward_event_fields_in_state(&sm, AUTOFORWARD_EVENT_FIELDS_STATE_PASS),
-                autoforward_event_fields_in_state(&sm, AUTOFORWARD_EVENT_FIELDS_STATE_FAIL),
+                autoforward_event_fields_ended_in(&sm, AUTOFORWARD_EVENT_FIELDS_STATE_PASS),
+                autoforward_event_fields_ended_in(&sm, AUTOFORWARD_EVENT_FIELDS_STATE_FAIL),
                 autoforward_event_fields_in_state(&sm, AUTOFORWARD_EVENT_FIELDS_STATE_PHASE));
     }
     autoforward_event_fields_destroy(&sm);

@@ -73,7 +73,7 @@ func TestEveryRegionTakesItsOwnTransition(t *testing.T) {
 	engine.Step()
 
 	settled := engine.GetActiveStates()
-	if !active(settled, ParallelRegionsTakeOwnTransitionsStateSettled) {
+	if ended, ok := engine.TerminalState(); !ok || ended != ParallelRegionsTakeOwnTransitionsStateSettled {
 		t.Errorf("`check` did not carry the machine to `settled` (active: %v), which the "+
 			"document guards on both regions' assignments having run. Reaching "+
 			"`judging` without `n == 1 && m == 1` means a region changed state while "+

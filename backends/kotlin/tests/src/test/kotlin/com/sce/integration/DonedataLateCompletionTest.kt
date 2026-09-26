@@ -57,7 +57,7 @@ class DonedataLateCompletionTest {
 
         assertEquals(
             DonedataLateCompletionState.Pass,
-            sm.currentState.value,
+            sm.terminalState,
             "the parent's `done.invoke.inv_late` guard did not see " +
                 "`_event.data.result === 42`, so the child's `<donedata>` was dropped " +
                 "on a completion that happened after the invoke was started. W3C SCXML " +

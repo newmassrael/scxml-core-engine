@@ -43,6 +43,13 @@ func TestAHostsJSONPayloadIsAddressableAndItsTextStaysText(t *testing.T) {
 	engine := sce.NewEngine[EventDataArrivesAsSentState, EventDataArrivesAsSentEvent](&policy)
 	engine.Initialize()
 
+	// Every verdict is a top-level <final>, read from the terminal accessor:
+	// §scxml-D-exitInterpreter leaves the configuration empty once it ends.
+	endedIn := func(s EventDataArrivesAsSentState) bool {
+		ended, ok := engine.TerminalState()
+		return ok && ended == s
+	}
+
 	if entry := engine.GetActiveStates(); !active(entry, EventDataArrivesAsSentStateWaiting) {
 		t.Fatalf("fixture came up as %v; it is supposed to start in `waiting`, so "+
 			"nothing below is testing what it claims", entry)
@@ -54,7 +61,7 @@ func TestAHostsJSONPayloadIsAddressableAndItsTextStaysText(t *testing.T) {
 	engine.Step()
 
 	afterPayload := engine.GetActiveStates()
-	if active(afterPayload, EventDataArrivesAsSentStateMangled) {
+	if endedIn(EventDataArrivesAsSentStateMangled) {
 		t.Fatalf("the host sent a JSON object and the guard "+
 			"`_event.data.milestone === 'refined' && _event.data.turns === 2` did not "+
 			"hold, so the payload did not arrive as an object with those properties "+
@@ -72,7 +79,7 @@ func TestAHostsJSONPayloadIsAddressableAndItsTextStaysText(t *testing.T) {
 	engine.Step()
 
 	afterNote := engine.GetActiveStates()
-	if active(afterNote, EventDataArrivesAsSentStateGarbled) {
+	if endedIn(EventDataArrivesAsSentStateGarbled) {
 		t.Errorf("the host sent the text `hold the line` and "+
 			"`_event.data === 'hold the line'` did not hold, so a payload that is not "+
 			"JSON did not arrive as the string it was sent as (active: %v)", afterNote)
@@ -86,7 +93,7 @@ func TestAHostsJSONPayloadIsAddressableAndItsTextStaysText(t *testing.T) {
 	engine.Step()
 
 	afterArith := engine.GetActiveStates()
-	if active(afterArith, EventDataArrivesAsSentStateEvaluated) {
+	if endedIn(EventDataArrivesAsSentStateEvaluated) {
 		t.Errorf("the host sent the text `2 + 3` and it arrived as 5 — the payload "+
 			"was run rather than read (active: %v)", afterArith)
 	}
@@ -105,7 +112,7 @@ func TestAHostsJSONPayloadIsAddressableAndItsTextStaysText(t *testing.T) {
 	engine.Step()
 
 	afterDoc := engine.GetActiveStates()
-	if active(afterDoc, EventDataArrivesAsSentStateFlattened) {
+	if endedIn(EventDataArrivesAsSentStateFlattened) {
 		t.Errorf("the host sent a well-formed XML document and "+
 			"`_event.data.documentElement.nodeName === 'books'` did not hold, so the "+
 			"payload did not become the DOM structure the clause requires (active: %v)", afterDoc)
@@ -118,13 +125,13 @@ func TestAHostsJSONPayloadIsAddressableAndItsTextStaysText(t *testing.T) {
 	engine.Step()
 
 	afterBroken := engine.GetActiveStates()
-	if active(afterBroken, EventDataArrivesAsSentStateSwallowed) {
+	if endedIn(EventDataArrivesAsSentStateSwallowed) {
 		t.Errorf("the host sent `<assign>  to  detail failed`, which opens with `<` and "+
 			"is not a valid XML document, so §scxml-B-2-8-1's closing MUST applies and "+
 			"the reading is the space-normalized string. This backend answered nil until "+
 			"2026-08-19 (active: %v)", afterBroken)
 	}
-	if !active(afterBroken, EventDataArrivesAsSentStateSettled) {
+	if !endedIn(EventDataArrivesAsSentStateSettled) {
 		t.Errorf("the malformed-XML payload neither matched nor mismatched "+
 			"(active: %v)", afterBroken)
 	}

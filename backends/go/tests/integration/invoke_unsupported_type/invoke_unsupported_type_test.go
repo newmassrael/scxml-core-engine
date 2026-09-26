@@ -42,7 +42,7 @@ func TestAnUnsupportedInvokeTypeRaisesErrorExecution(t *testing.T) {
 			"error.execution on the internal queue; parking in `probe` means the "+
 			"<invoke> was dropped rather than lowered", engine.GetCurrentState())
 	}
-	if got := engine.GetCurrentState(); got != InvokeUnsupportedTypeStatePass {
+	if got, ended := engine.TerminalState(); !ended || got != InvokeUnsupportedTypeStatePass {
 		t.Fatalf("machine reached %v, want Pass: it completed somewhere other than the "+
 			"error.execution target", got)
 	}

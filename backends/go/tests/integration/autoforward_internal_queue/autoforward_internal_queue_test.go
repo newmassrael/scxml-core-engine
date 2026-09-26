@@ -39,8 +39,8 @@ func TestAnInternalQueueEventIsNeverAutoforwarded(t *testing.T) {
 			"`probe` reached it")
 	}
 
-	got := engine.GetCurrentState()
-	if got != AutoforwardInternalQueueStatePass {
+	got, ended := engine.TerminalState()
+	if !ended || got != AutoforwardInternalQueueStatePass {
 		t.Fatalf(
 			"parent reached %v, want Pass: the watcher saw `error.execution`, so an "+
 				"internal-queue event was autoforwarded. W3C Appendix D `mainEventLoop` "+

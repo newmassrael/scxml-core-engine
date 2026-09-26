@@ -73,7 +73,7 @@ def test_invoke_param_seeds_declared_child_data_aot() -> None:
         "invoke_param_seeds_declared_child_data did not reach a top-level "
         f"<final> within 200 ms; last leaf={engine.current_state}"
     )
-    actual = str(engine.current_state)
+    actual = str(engine.terminal_state)
     assert actual == "pass", (
         f"reached <final id={actual!r}>: {_WHY.get(actual, 'unknown verdict state')}"
     )

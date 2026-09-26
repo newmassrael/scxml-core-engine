@@ -122,7 +122,7 @@ TEST_F(HostEventReachesTheChildTest, AnEventTheHostHandsOverReachesTheAutoforwar
     ASSERT_FALSE(sm->isRunning()) << "parent did not halt — the probe child answered neither "
                                   << "verdict, so neither `hostPing` nor `marker` reached it";
 
-    EXPECT_EQ(sm->getCurrentState(), "pass")
+    EXPECT_EQ(sm->terminalState().value_or(""), "pass")
         << "the probe child answered `sawMarkerOnly`, so the event the host handed to "
         << "`processEvent` was never forwarded to it: the child only ever saw the `marker` the "
         << "parent's own transition body sent. W3C Appendix D `mainEventLoop` runs the autoforward "

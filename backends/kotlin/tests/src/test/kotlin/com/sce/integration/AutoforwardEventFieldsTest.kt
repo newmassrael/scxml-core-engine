@@ -43,7 +43,7 @@ class AutoforwardEventFieldsTest {
 
         assertEquals(
             AutoforwardEventFieldsState.Pass,
-            sm.currentState.value,
+            sm.terminalState,
             "the child reported `stripped`: the autoforwarded copy of `childToParent` lost " +
                 "`_event.data.value`, `_event.origin` or `_event.invokeid`. W3C §6.4 requires " +
                 "an exact copy — StateMachineEngine.autoForwardEvent must carry the source " +

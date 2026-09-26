@@ -107,7 +107,7 @@ TEST(ParallelSelfTransitionKeepsItsLeafAotTest, TheSelfTransitionedRegionAnswers
 
     sm.processEvent(SM::Event::Check);
 
-    EXPECT_EQ(sm.getCurrentState(), SM::State::Settled)
+    EXPECT_EQ(sm.terminalState(), SM::State::Settled)
         << "`check` did not carry the machine to the top-level `settled`, which the document "
            "guards on `n == 1 && m == 2`. `m` reaches 2 only if the self-transitioning region "
            "still had a leaf to transition from when the second `e` arrived — a region that kept "

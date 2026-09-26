@@ -73,7 +73,7 @@ TEST_F(WildcardInDocumentOrderTest, AWildcardKeepsItsGuardAndItsType) {
     //   failSealedInternalReentered   an unguarded internal wildcard exited its source
     // A machine resting in `guardedFrom` or `sealedFrom` took no internal
     // wildcard at all.
-    EXPECT_EQ(sm->getCurrentState(), "pass")
+    EXPECT_EQ(sm->terminalState().value_or(""), "pass")
         << "the machine did not reach pass: a wildcard is enabled only when its guard is true, and an "
            "internal wildcard targeting a descendant of its compound source must not exit and re-enter "
            "that source";

@@ -55,7 +55,7 @@ func TestANestedFinalDoesNotEndTheSession(t *testing.T) {
 		t.Fatalf("the machine did not complete after `resume` (parked in %v)",
 			engine.GetCurrentState())
 	}
-	if got := engine.GetCurrentState(); got != NestedFinalNotTerminalStatePass {
+	if got, ended := engine.TerminalState(); !ended || got != NestedFinalNotTerminalStatePass {
 		t.Fatalf("machine reached %v, want Pass: `resume` did not carry it out of the "+
 			"nested final to the top-level one", got)
 	}

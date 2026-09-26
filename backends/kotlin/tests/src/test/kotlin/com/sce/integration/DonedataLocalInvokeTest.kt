@@ -48,7 +48,7 @@ class DonedataLocalInvokeTest {
         try {
             assertEquals(
                 DonedataLocalInvokeState.Pass,
-                sm.currentState.value,
+                sm.terminalState,
                 "parent reached Fail: `_event.data.result === 42` (param branch) or " +
                     "`_event.data === 'hello_content'` (content branch) failed. An empty " +
                     "`_event.data` means `StateMachineEngine.startInvoke`'s completion " +

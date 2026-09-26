@@ -39,27 +39,30 @@ fn a_data_elements_xml_is_a_dom_tree_the_document_can_walk() {
     // macrostep and no event is needed to ask the question.
     engine.step();
 
+    // The verdict is the top-level `<final>` the run ended in, read from the
+    // terminal accessor: §scxml-D-exitInterpreter empties the configuration.
     let active = engine.get_active_states();
+    let ended = engine.terminal_state();
     assert!(
-        !active.contains(&State::NotADocument),
+        ended != Some(State::NotADocument),
         "the variable did not hold a document: `doc.nodeType === 9`, \
          `doc.nodeName === '#document'`, `doc.documentElement.tagName === 'books'` \
          or `doc.hasAttribute('count')` did not hold (active: {active:?})"
     );
     assert!(
-        !active.contains(&State::WrongTree),
+        ended != Some(State::WrongTree),
         "the document element's children are not the two `<book>` elements in \
          document order — the whitespace between them may have become nodes, or \
          a sibling/parent link is missing (active: {active:?})"
     );
     assert!(
-        !active.contains(&State::NoText),
+        ended != Some(State::NoText),
         "character data did not report itself as a text node, or `textContent` \
          did not read the text below the element (active: {active:?})"
     );
     assert!(
-        active.contains(&State::Settled),
+        ended == Some(State::Settled),
         "the machine reached none of its four verdicts, so the guards did not \
-         evaluate at all (active: {active:?})"
+         evaluate at all (active: {active:?}, ended in: {ended:?})"
     );
 }

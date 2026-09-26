@@ -66,7 +66,7 @@ class AncestorEntryIsNotDefaultEntryTest {
         // broke rather than saying only "not settled".
         assertEquals(
             AncestorEntryIsNotDefaultEntryState.Settled,
-            sm.currentState.value,
+            sm.terminalState,
             "`check` did not carry the machine to `settled`: `failDefaulted` is a default " +
                 "child nobody targeted, `failLobbied` is `drive`'s default taken while it " +
                 "was only an ancestor, `failIdled` is the untouched region not getting its " +

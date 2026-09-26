@@ -69,9 +69,9 @@ def test_parallel_self_transition_keeps_its_leaf_aot() -> None:
 
     engine.send_event(_Event.CHECK)
 
-    settled = engine.active_configuration()
-    assert _State.SETTLED in settled, (
-        f"`check` did not carry the machine to `settled` (active: {settled}), which the "
+    settled = engine.terminal_state
+    assert settled == _State.SETTLED, (
+        f"`check` did not carry the machine to `settled` (ended in: {settled}), which the "
         "document guards on `n == 1 && m == 2`. `m` reaches 2 only if the self-transitioning "
         "region still had a leaf to transition from when the second `e` arrived"
     )

@@ -63,11 +63,11 @@ int main() {
         // Kept for symmetry with the 1-process fixture.
         parent_router.pumpScxmlInvokeReplies();
         parent.step();
-        if (parent.getCurrentState() == State::Pass) {
+        if (parent.terminalState() == State::Pass) {
             std::printf("SCE Mesh §9.6 Session 5c Zenoh donedata crossdev: PASS\n");
             return 0;
         }
-        if (parent.getCurrentState() == State::Fail) {
+        if (parent.terminalState() == State::Fail) {
             std::fprintf(stderr, "FAIL: parent took the fail transition. One of the "
                                  "three donedata conds did not match the wire-18 "
                                  "payload over Zenoh — either the param shape lost "

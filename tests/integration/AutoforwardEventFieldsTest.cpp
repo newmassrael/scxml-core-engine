@@ -99,7 +99,7 @@ TEST_F(AutoforwardEventFieldsTest, ForwardedCopyKeepsDataOriginAndInvokeid) {
     ASSERT_FALSE(sm->isRunning()) << "parent did not halt within 5s — the child never received the "
                                   << "forwarded `childToParent`, so no done.invoke.inv_echo was emitted";
 
-    EXPECT_EQ(sm->getCurrentState(), "pass")
+    EXPECT_EQ(sm->terminalState().value_or(""), "pass")
         << "the child reported `stripped`: the autoforwarded copy of `childToParent` "
         << "lost `_event.data.value`, `_event.origin` or `_event.invokeid`. W3C §6.4 "
         << "requires an exact copy — forward the source event's metadata rather than "

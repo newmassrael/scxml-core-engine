@@ -49,7 +49,12 @@ func TestSendParamsReachEventDataFromChildAndInternalQueue(t *testing.T) {
 			"5.7.1 drops the pair, not the message)")
 	}
 
-	switch got := engine.GetCurrentState(); got {
+	got, ended := engine.TerminalState()
+	if !ended {
+		t.Fatalf("send_param_payload did not end in a top-level <final> (parked in %v)",
+			engine.GetCurrentState())
+	}
+	switch got {
 	case SendParamPayloadStatePass:
 	case SendParamPayloadStateFailChildPayload:
 		t.Fatalf("`fromChild` arrived without `_event.data.value`: a `datamodel=\"null\"` " +
@@ -83,6 +88,6 @@ func TestSendParamsReachEventDataFromChildAndInternalQueue(t *testing.T) {
 		t.Fatalf("`_event.data.kept` did not survive alongside the failed param: one " +
 			"`<param>` that will not evaluate costs its own pair and nothing else.")
 	default:
-		t.Fatalf("send_param_payload settled in %v, which is not a verdict state", got)
+		t.Fatalf("send_param_payload ended in %v, which is not a verdict state", got)
 	}
 }

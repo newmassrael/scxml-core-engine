@@ -101,10 +101,10 @@ def test_prose_and_a_payload_that_parsed_are_not_counted() -> None:
     )
 
     _deliver(engine, _Event.ANSWER, INTACT_OBJECT)
-    assert str(engine.current_state) == "accepted", (
+    assert str(engine.terminal_state) == "accepted", (
         f"the guard `_event.data.done` did not hold for `{INTACT_OBJECT}`, so the "
         "structured reading did not happen and the zero below would be proving "
-        f"nothing (machine is in {engine.current_state!s})"
+        f"nothing (machine is in {engine.terminal_state!s})"
     )
     assert engine.undecodable_payloads() == 0, (
         "a payload that parsed was counted as one that did not"
@@ -164,7 +164,7 @@ def test_the_engine_names_the_delivery_that_lost_its_payload() -> None:
     # And a delivery that succeeds must leave both alone — otherwise the last
     # name would drift to whatever arrived most recently.
     _deliver(engine, _Event.ANSWER, INTACT_OBJECT)
-    assert str(engine.current_state) == "accepted", (
+    assert str(engine.terminal_state) == "accepted", (
         "the intact payload did not take the guarded transition, so the check "
         "below is not measuring a successful delivery"
     )

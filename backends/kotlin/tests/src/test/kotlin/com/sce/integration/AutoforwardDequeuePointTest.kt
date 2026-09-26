@@ -46,7 +46,7 @@ class AutoforwardDequeuePointTest {
 
         assertEquals(
             AutoforwardDequeuePointState.Pass,
-            sm.currentState.value,
+            sm.terminalState,
             "the probe child saw `second` before `mark`, so both events were handed over " +
                 "while the parent was still executing the transition that queued them. " +
                 "W3C Appendix D `mainEventLoop` forwards one statement after " +

@@ -13,8 +13,7 @@
 // per-`<parallel>` threshold is reached. The `<transition event=
 // "done.state.root" target="all_done"/>` on `<parallel id="root">`
 // then drives the SM into `<final id="all_done">`, which the
-// assertion below observes via `isInFinalState() &&
-// getCurrentState() == State::All_done`.
+// assertion below observes via `terminalState() == State::All_done`.
 //
 // Exits 0 on success; non-zero on timeout or SCXML state mismatch. The
 // driver process treats any non-zero exit as a hard failure and prints
@@ -66,7 +65,7 @@ int main() {
             // id="all_done">`.
             sm.step();
         }
-        if (sm.isInFinalState() && sm.getCurrentState() == gen::State::All_done) {
+        if (sm.terminalState() == gen::State::All_done) {
             std::printf("rule12 left (Root): PASS — done.state.root raised, SM in <final id=\"all_done\">\n");
             return 0;
         }

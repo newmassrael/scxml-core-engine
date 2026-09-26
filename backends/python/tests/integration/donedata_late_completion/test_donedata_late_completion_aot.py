@@ -52,7 +52,7 @@ def test_donedata_late_completion_aot() -> None:
         f"last leaf={engine.current_state} — the parent never saw "
         "`done.invoke.inv_late` at all, so the child was not driven to its `<final>`"
     )
-    actual = str(engine.current_state)
+    actual = str(engine.terminal_state)
     assert actual == "pass", (
         f"donedata_late_completion reached <final id={actual!r}>; expected 'pass' — "
         "the parent's `done.invoke.inv_late` guard did not see "

@@ -40,8 +40,8 @@ func TestAnExternalEventIsForwardedAtTheDequeueNotTheEnqueue(t *testing.T) {
 			"the probe child reported neither verdict, so `second` never reached it")
 	}
 
-	got := engine.GetCurrentState()
-	if got != AutoforwardDequeuePointStatePass {
+	got, ended := engine.TerminalState()
+	if !ended || got != AutoforwardDequeuePointStatePass {
 		t.Fatalf(
 			"parent reached %v, want Pass: the probe child saw `second` before `mark`, "+
 				"so both events were handed over while the parent was still executing "+

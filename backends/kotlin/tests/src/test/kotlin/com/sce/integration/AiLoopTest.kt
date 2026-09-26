@@ -136,22 +136,26 @@ class AiLoopTest {
     /// way a run ended, and this is where this engine answers that. W3C SCXML
     /// Appendix D `exitInterpreter` empties the configuration as a top-level
     /// <final> is entered, so `activeConfiguration` is already empty by the
-    /// time anyone can look; the outcome is in `currentState`. That is not a
-    /// concession made here — `integration_resources/
-    /// parallel_regions_take_own_transitions` puts its own verdict in a
-    /// top-level final for the same reason, and says so in its comment.
+    /// time anyone can look; the outcome is in `terminalState`, which the
+    /// engine records as the final is entered. That is not a concession made
+    /// here — `integration_resources/parallel_regions_take_own_transitions`
+    /// puts its own verdict in a top-level final for the same reason, and says
+    /// so in its comment.
     ///
-    /// `isInFinalState` is asserted alongside rather than trusted from the
-    /// state alone: `currentState` names a leaf whether the run ended there or
-    /// merely passed through it, and "the run ended in `cancelled`" is the
-    /// claim every terminal scenario below is making.
+    /// `currentState` is not asked: it is derived from the configuration, so
+    /// it names a leaf the run merely passed through as readily as one it
+    /// ended in, and it says nothing once the configuration is empty.
+    /// `terminalState` is null until the run has ended, which is what makes
+    /// "the run ended in `cancelled`" — the claim every terminal scenario below
+    /// is making — a single comparison.
     private fun AiLoopStateMachine.endedIn(state: AiLoopState): Boolean =
-        isInFinalState && currentState.value == state
+        terminalState == state
 
     /// What a terminal failure prints: where the machine is, whichever half of
     /// the answer is populated.
     private fun AiLoopStateMachine.outcome(): String =
-        "active ${where()}, current `${nameOfState(currentState.value)}`, final $isInFinalState"
+        "active ${where()}, current `${nameOfState(currentState.value)}`, " +
+            "ended in `${terminalState?.let { nameOfState(it) }}`, final $isInFinalState"
 
     // The active set in the document's own words, for a failure a reader can
     // act on: `[working, alive, within]` says where the machine is, the state
@@ -1004,14 +1008,14 @@ class AiLoopTest {
     fun everyStateARunReachesReadsBackFromItsOwnName() {
         val seen = linkedSetOf<AiLoopState>()
 
-        // The configuration AND the current state, because a run that ended is
+        // The configuration AND the terminal state, because a run that ended is
         // where half the document's states live: Appendix D `exitInterpreter`
         // empties the configuration on the way into a top-level <final>, so a
         // walk that read only `activeConfiguration` would never record one of
         // the five outcomes this document exists to name. See `endedIn`.
         fun record(machine: AiLoopStateMachine) {
             seen.addAll(machine.activeConfiguration)
-            seen.add(machine.currentState.value)
+            machine.terminalState?.let { seen.add(it) }
         }
 
         // Every outcome the document names, walked rather than listed: a state

@@ -113,11 +113,11 @@ int main() {
         // symmetry with shm/custom_tcp/someip §9.6 fixtures.
         parent_router.pumpScxmlInvokeReplies();
         parent.step();
-        if (parent.getCurrentState() == State::Pass) {
+        if (parent.terminalState() == State::Pass) {
             std::printf("SCE Mesh §9.6 Session 5 Zenoh scxml-invoke roundtrip: PASS\n");
             return 0;
         }
-        if (parent.getCurrentState() == State::Fail) {
+        if (parent.terminalState() == State::Fail) {
             std::fprintf(stderr, "FAIL: parent observed error.execution — the wire "
                                  "is present but the wire-15/18 success path did "
                                  "not complete over Zenoh.\n");

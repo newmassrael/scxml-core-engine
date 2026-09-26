@@ -40,22 +40,22 @@ def test_xml_data_is_a_dom_tree_aot() -> None:
     # needed to ask the question.
     engine.initialize()
 
-    active = engine.active_configuration()
-    assert _State.NOT_ADOCUMENT not in active, (
+    ended = engine.terminal_state
+    assert ended != _State.NOT_ADOCUMENT, (
         f"the variable did not hold a document: nodeType === 9, "
         f"nodeName === '#document', documentElement.tagName === 'books' or "
-        f"hasAttribute('count') did not hold (active: {active})"
+        f"hasAttribute('count') did not hold (ended in: {ended})"
     )
-    assert _State.WRONG_TREE not in active, (
+    assert ended != _State.WRONG_TREE, (
         f"the document element's children are not the two <book> elements in "
         f"document order — the whitespace between them may have become nodes, "
-        f"or a sibling/parent link is missing (active: {active})"
+        f"or a sibling/parent link is missing (ended in: {ended})"
     )
-    assert _State.NO_TEXT not in active, (
+    assert ended != _State.NO_TEXT, (
         f"character data did not report itself as a text node, or textContent "
-        f"did not read the text below the element (active: {active})"
+        f"did not read the text below the element (ended in: {ended})"
     )
-    assert _State.SETTLED in active, (
+    assert ended == _State.SETTLED, (
         f"the machine reached none of its four verdicts, so the guards did not "
-        f"evaluate at all (active: {active})"
+        f"evaluate at all (ended in: {ended})"
     )

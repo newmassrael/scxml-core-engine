@@ -104,7 +104,7 @@ TEST(UndecodablePayloadIsReportedAotTest, ProseAndAPayloadThatParsedAreNotCounte
            "requires. A diagnostic that fires when nothing is wrong is one nobody reads";
 
     deliver(*sm, SM::Event::Answer, "answer", INTACT_OBJECT);
-    ASSERT_EQ(sm->getCurrentState(), SM::State::Accepted)
+    ASSERT_EQ(sm->terminalState(), SM::State::Accepted)
         << "the guard `_event.data.done` did not hold for `" << INTACT_OBJECT
         << "`, so the structured reading did not happen and the zero below would be proving nothing";
     EXPECT_EQ(sm->undecodablePayloads(), 0u) << "a payload that parsed was counted as one that did not";
@@ -157,7 +157,7 @@ TEST(UndecodablePayloadIsReportedAotTest, TheEngineNamesTheDeliveryThatLostItsPa
     // And a delivery that succeeds must leave both alone — otherwise the last
     // name would drift to whatever arrived most recently.
     deliver(*sm, SM::Event::Answer, "answer", INTACT_OBJECT);
-    ASSERT_EQ(sm->getCurrentState(), SM::State::Accepted)
+    ASSERT_EQ(sm->terminalState(), SM::State::Accepted)
         << "the intact payload did not take the guarded transition, so the two assertions below "
            "are not measuring a successful delivery";
     EXPECT_EQ(sm->undecodablePayloads(), 2u)

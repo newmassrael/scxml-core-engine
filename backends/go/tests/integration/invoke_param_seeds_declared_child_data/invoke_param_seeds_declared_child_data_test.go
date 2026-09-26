@@ -43,8 +43,8 @@ func TestAnInvokeParamCarriesTheInvokingSessionsValue(t *testing.T) {
 		t.Fatalf("invoke_param_seeds_declared_child_data timed out before reaching a final state")
 	}
 
-	got := engine.GetCurrentState()
-	if got != InvokeParamSeedsDeclaredChildDataStatePass {
+	got, ended := engine.TerminalState()
+	if !ended || got != InvokeParamSeedsDeclaredChildDataStatePass {
 		t.Fatalf(
 			"reached %v, want Pass. "+
 				"FailChildEvaluatedTheExpression: the child evaluated the author's "+

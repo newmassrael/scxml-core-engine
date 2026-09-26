@@ -71,7 +71,7 @@ def test_invoke_param_error_starts_the_child_aot() -> None:
         "invoke_param_error_starts_the_child did not reach a top-level <final> "
         f"within 10 s; last leaf={engine.current_state}"
     )
-    actual = str(engine.current_state)
+    actual = str(engine.terminal_state)
     assert actual == "pass", (
         f"invoke_param_error_starts_the_child reached <final id={actual!r}>; "
         "expected 'pass'. " + _WHY.get(actual, "That is not a verdict state.")

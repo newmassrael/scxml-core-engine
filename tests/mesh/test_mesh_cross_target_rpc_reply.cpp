@@ -103,7 +103,7 @@ ArmResult run_arm(const std::string &source_name, bool use_captured_invoke_id) {
     const bool dispatched = router.dispatchToSession(reply, 0);
     brake.step();
 
-    return {brake.getCurrentState() == BrakeState::Ok, dispatched, brake.getCurrentState() == BrakeState::Rejected};
+    return {brake.terminalState() == BrakeState::Ok, dispatched, brake.terminalState() == BrakeState::Rejected};
 }
 
 int run_test() {

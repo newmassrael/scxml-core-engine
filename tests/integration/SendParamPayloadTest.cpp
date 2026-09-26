@@ -100,7 +100,7 @@ TEST_F(SendParamPayloadTest, SendParamsReachEventDataFromChildAndInternalQueue) 
                                   << "because one `<param>` would not evaluate (W3C SCXML 5.7.1 "
                                   << "drops the pair, not the message)";
 
-    const std::string reached = sm->getCurrentState();
+    const std::string reached = sm->terminalState().value_or("");
     EXPECT_NE(reached, "failChildPayload")
         << "`fromChild` arrived without `_event.data.value`: a `datamodel=\"null\"` child needs no "
         << "script engine, but its `<send>` still has to carry the params it declares.";

@@ -47,42 +47,42 @@ fn an_empty_finalize_updates_the_location_and_an_absent_one_does_not() {
          silent child never fired, so the machine is not being ticked"
     );
 
-    match engine.get_current_state() {
-        EmptyFinalizeUpdatesTheLocationState::Pass => {}
-        EmptyFinalizeUpdatesTheLocationState::FailNotUpdated => panic!(
+    match engine.terminal_state() {
+        Some(EmptyFinalizeUpdatesTheLocationState::Pass) => {}
+        Some(EmptyFinalizeUpdatesTheLocationState::FailNotUpdated) => panic!(
             "the empty `<finalize/>` left `tally` at its old value — W3C SCXML \
              6.5.2 makes an empty element mean the automatic update: for each \
              `namelist` item the Processor updates the location as if by \
              `<assign>` with the matching return value. Treating it as an absent \
              element is the defect the clause's own note names"
         ),
-        EmptyFinalizeUpdatesTheLocationState::FailUpdatedWithoutFinalize => panic!(
+        Some(EmptyFinalizeUpdatesTheLocationState::FailUpdatedWithoutFinalize) => panic!(
             "`guard` moved with no `<finalize>` element at all — the note is a \
              prohibition: \"the automatic update does not take place if the \
              <finalize> element is absent as opposed to empty\". Wiring the \
              update to the `namelist` rather than to the empty element is what \
              this state names"
         ),
-        EmptyFinalizeUpdatesTheLocationState::FailUnmatchedNameWrote => panic!(
+        Some(EmptyFinalizeUpdatesTheLocationState::FailUnmatchedNameWrote) => panic!(
             "an event carrying no matching name still wrote `keeper` — W3C SCXML \
              6.5.2 says \"with ANY return value that has a name that matches\", so \
              an unconditional write blanks the parent's data model on every \
              unrelated answer the child sends"
         ),
-        EmptyFinalizeUpdatesTheLocationState::FailUnmatchedChildSilent => panic!(
+        Some(EmptyFinalizeUpdatesTheLocationState::FailUnmatchedChildSilent) => panic!(
             "the third child never answered, so the guarded-write half was never \
              exercised"
         ),
-        EmptyFinalizeUpdatesTheLocationState::FailEmptyChildSilent => panic!(
+        Some(EmptyFinalizeUpdatesTheLocationState::FailEmptyChildSilent) => panic!(
             "the first child never answered, so the empty-`<finalize>` half was \
              never exercised — a different failure from getting its verdict wrong"
         ),
-        EmptyFinalizeUpdatesTheLocationState::FailAbsentChildSilent => panic!(
+        Some(EmptyFinalizeUpdatesTheLocationState::FailAbsentChildSilent) => panic!(
             "the second child never answered, so the absent-`<finalize>` half was \
              never exercised"
         ),
         other => panic!(
-            "empty_finalize_updates_the_location settled in {other:?}, which is \
+            "empty_finalize_updates_the_location ended in {other:?}, which is \
              not a verdict state"
         ),
     }

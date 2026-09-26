@@ -30,15 +30,6 @@ import (
 	scegotest "github.com/newmassrael/sce-go-tests/harness"
 )
 
-func active(states []XmlDataIsADomTreeState, want XmlDataIsADomTreeState) bool {
-	for _, s := range states {
-		if s == want {
-			return true
-		}
-	}
-	return false
-}
-
 func TestADataElementsXMLIsADomTreeTheDocumentCanWalk(t *testing.T) {
 	policy := NewXmlDataIsADomTreePolicy()
 	policy.SessionID = sce.GenerateSessionID()
@@ -52,23 +43,26 @@ func TestADataElementsXMLIsADomTreeTheDocumentCanWalk(t *testing.T) {
 	// macrostep and no event is needed to ask the question.
 	engine.Step()
 
+	// The verdict is the top-level <final> the run ended in, read from the
+	// terminal accessor: §scxml-D-exitInterpreter empties the configuration.
 	states := engine.GetActiveStates()
-	if active(states, XmlDataIsADomTreeStateNotADocument) {
+	ended, ok := engine.TerminalState()
+	if ok && ended == XmlDataIsADomTreeStateNotADocument {
 		t.Fatalf("the variable did not hold a document: nodeType === 9, "+
 			"nodeName === '#document', documentElement.tagName === 'books' or "+
 			"hasAttribute('count') did not hold (active: %v)", states)
 	}
-	if active(states, XmlDataIsADomTreeStateWrongTree) {
+	if ok && ended == XmlDataIsADomTreeStateWrongTree {
 		t.Fatalf("the document element's children are not the two <book> elements in "+
 			"document order — the whitespace between them may have become nodes, or a "+
 			"sibling/parent link is missing (active: %v)", states)
 	}
-	if active(states, XmlDataIsADomTreeStateNoText) {
+	if ok && ended == XmlDataIsADomTreeStateNoText {
 		t.Fatalf("character data did not report itself as a text node, or textContent "+
 			"did not read the text below the element (active: %v)", states)
 	}
-	if !active(states, XmlDataIsADomTreeStateSettled) {
+	if !ok || ended != XmlDataIsADomTreeStateSettled {
 		t.Fatalf("the machine reached none of its four verdicts, so the guards did not "+
-			"evaluate at all (active: %v)", states)
+			"evaluate at all (active: %v, ended in: %v, ended: %v)", states, ended, ok)
 	}
 }

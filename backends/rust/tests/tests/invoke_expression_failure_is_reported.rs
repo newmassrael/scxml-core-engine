@@ -50,8 +50,8 @@ fn an_invoke_expression_that_cannot_be_evaluated_raises_error_execution() {
         engine.get_current_state()
     );
     assert_eq!(
-        engine.get_current_state(),
-        InvokeExpressionFailureIsReportedState::Pass,
+        engine.terminal_state(),
+        Some(InvokeExpressionFailureIsReportedState::Pass),
         "reaching `fail` means the child started on an expression that cannot be \
          evaluated, so nothing evaluated it"
     );

@@ -81,6 +81,10 @@ def test_the_refusal_is_not_derivable_from_any_other_accessor() -> None:
         return (
             str(engine.current_state),
             sorted(str(s) for s in engine.active_configuration()),
+            # Once the run has ended its configuration is empty (Appendix
+            # D's exitInterpreter), so the final it ended in is what a host
+            # reads instead — and it must not move either.
+            str(engine.terminal_state),
             engine.is_running,
             engine.reached_final,
             engine.discarded_external_events(),

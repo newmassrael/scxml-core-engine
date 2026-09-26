@@ -39,7 +39,7 @@ TEST(InvokePrecedesDequeueMidrunAotTest, PendingInvokesStartBeforeTheDequeueMidR
 
     EXPECT_TRUE(reachedFinal) << "parent did not reach a final state within timeout — the watching child "
                                  "answered neither verdict, so `probe` never reached it";
-    EXPECT_EQ(sm.getCurrentState(), SM::State::Pass)
+    EXPECT_EQ(sm.terminalState(), SM::State::Pass)
         << "the watching child answered `probe` from `waiting`, so it never saw `kick`. The parent "
            "drained its external queue before starting the invoke, and the event `<onentry>` had "
            "queued for itself was consumed while no child existed. W3C Appendix D `mainEventLoop` "

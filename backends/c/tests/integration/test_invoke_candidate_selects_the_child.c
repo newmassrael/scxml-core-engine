@@ -30,7 +30,7 @@ int main(void) {
     invoke_candidate_selects_the_child_run(&sm);
 
     int rc = 0;
-    if (!invoke_candidate_selects_the_child_in_state(&sm, INVOKE_CANDIDATE_SELECTS_THE_CHILD_STATE_PASS)) {
+    if (!invoke_candidate_selects_the_child_ended_in(&sm, INVOKE_CANDIDATE_SELECTS_THE_CHILD_STATE_PASS)) {
         fprintf(stderr, "invoke_candidate_selects_the_child: FAIL - the machine did not reach "
                         "`pass`. W3C SCXML 6.4.3 makes the evaluated value name the child that "
                         "runs; `wrongChild` means the other candidate ran, `noChild` means "

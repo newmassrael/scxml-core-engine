@@ -45,8 +45,8 @@ func TestPendingInvokesStartBeforeTheExternalDequeue(t *testing.T) {
 			"the watching child answered neither verdict, so `probe` never reached it")
 	}
 
-	got := engine.GetCurrentState()
-	if got != InvokePrecedesExternalDequeueStatePass {
+	got, ended := engine.TerminalState()
+	if !ended || got != InvokePrecedesExternalDequeueStatePass {
 		t.Fatalf(
 			"parent reached %v, want Pass: the watching child answered `probe` from "+
 				"`waiting`, so it never saw `kick`. The parent drained its external "+

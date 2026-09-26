@@ -133,15 +133,15 @@ def test_a_cancel_drops_a_pending_host_served_send() -> None:
         "not reach the host: the side effect is the point of the act, and the document "
         "cannot take it back"
     )
-    assert engine.current_state != State.CANCEL_LOST, (
+    assert engine.terminal_state != State.CANCEL_LOST, (
         "`turn.done` arrived for the cancelled send"
     )
 
     # 500 ms: `finish`. The verdict is itself scheduled, so a channel whose tick
     # loop stopped working fails here rather than passing by not moving.
     engine.advance_time(100)
-    assert engine.current_state == State.PASS, (
-        f"the machine did not reach `pass`; it is in {engine.current_state}"
+    assert engine.terminal_state == State.PASS, (
+        f"the machine did not reach `pass`; it is in {engine.terminal_state}"
     )
 
 
@@ -172,9 +172,9 @@ def test_a_deferred_send_with_no_handler_reports_it_when_it_comes_due() -> None:
     assert engine.current_state != State.CANCELLING, (
         "nothing was registered to perform the act, yet `turn.done` arrived"
     )
-    assert engine.current_state == State.UNSERVED, (
+    assert engine.terminal_state == State.UNSERVED, (
         "the deadline passed with no handler registered and nothing was reported (the "
-        f"machine is in {engine.current_state}). The send site that raises this for an "
+        f"machine is in {engine.terminal_state}). The send site that raises this for an "
         "immediate send returned when the send was armed, so whatever holds the deferred "
         "act owes the report — without it a wiring mistake on a delayed send is perfect "
         "silence"

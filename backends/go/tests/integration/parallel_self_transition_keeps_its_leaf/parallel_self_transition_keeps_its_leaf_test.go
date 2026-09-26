@@ -84,7 +84,7 @@ func TestTheSelfTransitionedRegionAnswersTheNextEvent(t *testing.T) {
 	engine.Step()
 
 	settled := engine.GetActiveStates()
-	if !active(settled, ParallelSelfTransitionKeepsItsLeafStateSettled) {
+	if ended, ok := engine.TerminalState(); !ok || ended != ParallelSelfTransitionKeepsItsLeafStateSettled {
 		t.Errorf("`check` did not carry the machine to `settled` (active: %v), which the "+
 			"document guards on `n == 1 && m == 2`. `m` reaches 2 only if the "+
 			"self-transitioning region still had a leaf to transition from when the "+

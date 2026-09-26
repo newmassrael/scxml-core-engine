@@ -47,8 +47,8 @@ func TestParentObservesDonedataOnDoneInvoke(t *testing.T) {
 		t.Fatalf("donedata_local_invoke timed out before reaching a final state")
 	}
 
-	got := engine.GetCurrentState()
-	if got != DonedataLocalInvokeStatePass {
+	got, ended := engine.TerminalState()
+	if !ended || got != DonedataLocalInvokeStatePass {
 		t.Fatalf(
 			"parent reached %v, want Pass: `_event.data.result == 42` (param branch) "+
 				"or `_event.data == 'hello_content'` (content branch) failed. An empty "+

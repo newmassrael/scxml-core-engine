@@ -45,7 +45,7 @@ func TestEverySpellingOfOneDescriptorCatchesTheSameEvents(t *testing.T) {
 	//   FailDotted     "dot." did not catch bare "dot"
 	//   FailBounded    "wild.*" caught "wilder", across a token boundary
 	//   FailUniversal  a bare ".*" did not catch "any.token.sequence"
-	if got := engine.GetCurrentState(); got != EventDescriptorSpellingsAgreeStatePass {
+	if got, ended := engine.TerminalState(); !ended || got != EventDescriptorSpellingsAgreeStatePass {
 		t.Fatalf("the machine rested in %v: \"wild.*\" must catch bare \"wild\" and "+
 			"\"dot.\" must catch bare \"dot\" (the clause calls the spellings "+
 			"functionally equivalent), a bare \".*\" must catch every event, and "+

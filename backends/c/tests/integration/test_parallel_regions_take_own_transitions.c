@@ -63,7 +63,7 @@ int main(void) {
     parallel_regions_take_own_transitions_raise_external(&sm, &check);
     parallel_regions_take_own_transitions_run(&sm);
 
-    if (!parallel_regions_take_own_transitions_in_state(&sm, PARALLEL_REGIONS_TAKE_OWN_TRANSITIONS_STATE_SETTLED)) {
+    if (!parallel_regions_take_own_transitions_ended_in(&sm, PARALLEL_REGIONS_TAKE_OWN_TRANSITIONS_STATE_SETTLED)) {
         fprintf(stderr, "FAIL: `check` did not carry the machine to `settled`, which the document "
                         "guards on both regions' assignments having run. Reaching `judging` "
                         "without `n == 1 && m == 1` means a region changed state while its "

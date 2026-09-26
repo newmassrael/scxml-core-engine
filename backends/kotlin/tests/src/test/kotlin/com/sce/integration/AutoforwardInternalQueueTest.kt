@@ -44,7 +44,7 @@ class AutoforwardInternalQueueTest {
 
         assertEquals(
             AutoforwardInternalQueueState.Pass,
-            sm.currentState.value,
+            sm.terminalState,
             "the watcher saw `error.execution`: an internal-queue event was autoforwarded. " +
                 "W3C Appendix D `mainEventLoop` forwards only what it dequeues from the " +
                 "external queue, and §6.2 raises `error.execution` onto the internal one — " +

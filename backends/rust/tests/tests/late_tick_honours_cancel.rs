@@ -68,8 +68,8 @@ fn a_cancel_survives_a_tick_that_arrives_after_both_deadlines() {
     engine.tick();
 
     assert_ne!(
-        engine.get_current_state(),
-        LateTickHonoursCancelState::CancelLost,
+        engine.terminal_state(),
+        Some(LateTickHonoursCancelState::CancelLost),
         "`settle` was delivered even though `active`'s `<cancel sendid=\"s1\">` ran \
          first. Both entries were past due when this tick started, so the scheduler \
          drain put them on the external queue together and the cancel found nothing \
@@ -85,8 +85,8 @@ fn a_cancel_survives_a_tick_that_arrives_after_both_deadlines() {
         engine.tick();
     }
     assert_eq!(
-        engine.get_current_state(),
-        LateTickHonoursCancelState::Pass,
+        engine.terminal_state(),
+        Some(LateTickHonoursCancelState::Pass),
         "the machine did not reach `pass` after the cancel; it is in {:?}",
         engine.get_current_state()
     );
@@ -104,8 +104,8 @@ fn a_punctual_host_reaches_the_same_verdict() {
         engine.tick();
     }
     assert_eq!(
-        engine.get_current_state(),
-        LateTickHonoursCancelState::Pass,
+        engine.terminal_state(),
+        Some(LateTickHonoursCancelState::Pass),
         "a 10 ms tick loop, which wakes between the 100 ms and 200 ms deadlines, \
          must reach `pass`"
     );
@@ -142,8 +142,8 @@ fn the_engine_says_when_it_is_next_due() {
     let took = started_at.elapsed();
     assert!(completed, "the machine did not complete within 3 s");
     assert_eq!(
-        engine.get_current_state(),
-        LateTickHonoursCancelState::Pass,
+        engine.terminal_state(),
+        Some(LateTickHonoursCancelState::Pass),
         "a 500 ms poll interval decided the verdict — the wait must be shortened to \
          the scheduler's own next deadline, or a coarse interval silently steps over \
          the deadlines the document distinguishes between"
@@ -235,8 +235,8 @@ fn a_host_descheduled_between_two_sends_keeps_their_order() {
         let mut engine = started_on(SceClock::Source(stepping_now));
 
         assert_ne!(
-            engine.get_current_state(),
-            LateTickHonoursCancelState::CancelLost,
+            engine.terminal_state(),
+            Some(LateTickHonoursCancelState::CancelLost),
             "a host stalled {stall_ms} ms between the two <send delay>s of one \
              <onentry> reordered them: `settle` (200 ms) came due before `poke` \
              (100 ms) because each send took its own reading. §scxml-6.2.2 makes a \
@@ -254,11 +254,11 @@ fn a_host_descheduled_between_two_sends_keeps_their_order() {
             engine.tick();
         }
         assert_eq!(
-            engine.get_current_state(),
-            LateTickHonoursCancelState::Pass,
+            engine.terminal_state(),
+            Some(LateTickHonoursCancelState::Pass),
             "with a {stall_ms} ms stall per clock reading the machine ended in {:?}; \
              the document's `<cancel sendid=\"s1\">` must still drop `settle`",
-            engine.get_current_state()
+            engine.terminal_state()
         );
     }
 }
@@ -309,16 +309,16 @@ fn a_manual_clock_drives_the_machine_to_the_same_verdict() {
     // Past both deadlines in one move — the late wake-up the fixture is about.
     engine.advance_time_ms(400);
     assert_ne!(
-        engine.get_current_state(),
-        LateTickHonoursCancelState::CancelLost,
+        engine.terminal_state(),
+        Some(LateTickHonoursCancelState::CancelLost),
         "a single 400 ms advance stepped over both deadlines; `poke` must still be \
          dispatched first so `active`'s <cancel sendid=\"s1\"> can drop `settle`"
     );
 
     engine.advance_time_ms(100);
     assert_eq!(
-        engine.get_current_state(),
-        LateTickHonoursCancelState::Pass,
+        engine.terminal_state(),
+        Some(LateTickHonoursCancelState::Pass),
         "`finish` is armed for 100 ms after `active` is entered, so the machine \
          should be done; it is in {:?}",
         engine.get_current_state()
@@ -338,29 +338,38 @@ fn a_manual_clock_drives_the_machine_to_the_same_verdict() {
 /// this seam removes.
 #[test]
 fn a_manual_clock_run_repeats_exactly() {
-    fn trace() -> Vec<LateTickHonoursCancelState> {
+    // The configuration after each advance, and the top-level `<final>` the
+    // run ended in. The verdict is read from the terminal accessor:
+    // §scxml-D-exitInterpreter leaves the configuration empty once it ends.
+    fn trace() -> (
+        Vec<LateTickHonoursCancelState>,
+        Option<LateTickHonoursCancelState>,
+    ) {
         let mut engine = started_on(SceClock::Manual(0));
         let mut seen = vec![engine.get_current_state()];
         for _ in 0..6 {
             engine.advance_time_ms(100);
             seen.push(engine.get_current_state());
         }
-        seen
+        (seen, engine.terminal_state())
     }
 
-    let first = trace();
-    let second = trace();
+    let (first, first_ended) = trace();
+    let (second, second_ended) = trace();
     assert_eq!(
-        first, second,
+        (&first, first_ended),
+        (&second, second_ended),
         "two identical sequences of advance_time_ms produced different traces; a \
          host-owned clock that is not reproducible is not host-owned"
     );
-    assert!(
-        first.contains(&LateTickHonoursCancelState::Pass),
+    assert_eq!(
+        first_ended,
+        Some(LateTickHonoursCancelState::Pass),
         "the trace never reached `pass`: {first:?}"
     );
-    assert!(
-        !first.contains(&LateTickHonoursCancelState::CancelLost),
+    assert_ne!(
+        first_ended,
+        Some(LateTickHonoursCancelState::CancelLost),
         "the trace reached `cancelLost`: {first:?}"
     );
 }
@@ -390,14 +399,14 @@ fn one_generated_machine_serves_both_kinds_of_host() {
     }
 
     assert_eq!(
-        wall.get_current_state(),
-        host_owned.get_current_state(),
+        wall.terminal_state(),
+        host_owned.terminal_state(),
         "the same generated machine reached different configurations on the wall \
          clock and on a host-owned clock"
     );
     assert_eq!(
-        host_owned.get_current_state(),
-        LateTickHonoursCancelState::Pass,
+        host_owned.terminal_state(),
+        Some(LateTickHonoursCancelState::Pass),
         "both hosts should reach `pass`"
     );
 }

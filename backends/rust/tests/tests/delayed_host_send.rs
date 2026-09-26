@@ -185,8 +185,8 @@ fn a_cancel_drops_a_pending_host_served_send() {
          way to take it back",
     );
     assert_ne!(
-        engine.get_current_state(),
-        State::CancelLost,
+        engine.terminal_state(),
+        Some(State::CancelLost),
         "`turn.done` arrived for the cancelled send",
     );
 
@@ -194,10 +194,11 @@ fn a_cancel_drops_a_pending_host_served_send() {
     // tick loop stopped working fails here rather than passing by not moving.
     advance_to(&mut engine, &now, 500);
     assert_eq!(
+        engine.terminal_state(),
+        Some(State::Pass),
+        "the machine did not reach `pass`; it is in {:?} and ended in {:?}",
         engine.get_current_state(),
-        State::Pass,
-        "the machine did not reach `pass`; it is in {:?}",
-        engine.get_current_state()
+        engine.terminal_state()
     );
 }
 
@@ -266,8 +267,8 @@ fn a_deferred_send_with_no_handler_reports_it_when_it_comes_due() {
          unwired host processor read as a served one",
     );
     assert_eq!(
-        engine.get_current_state(),
-        State::Unserved,
+        engine.terminal_state(),
+        Some(State::Unserved),
         "the deadline passed with no handler registered and nothing was reported. \
          The send site that raises this for an immediate send returned when the \
          send was armed, so whatever holds the deferred act owes the report — \

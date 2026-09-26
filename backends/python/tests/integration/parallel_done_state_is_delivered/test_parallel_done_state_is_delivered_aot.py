@@ -54,7 +54,7 @@ def test_parallel_done_state_is_delivered_aot() -> None:
     # The remaining states tell the two apart: A1/B1 means `go` moved nothing;
     # A2/B2 means the parallel completed and the event went nowhere.
     after = engine.active_configuration()
-    assert _State.SETTLED in after, (
+    assert engine.terminal_state == _State.SETTLED, (
         "every region reaching its <final> completes the parallel, so done.state.run "
         f"had to be raised AND selected — `settled` is reachable by nothing else (active: {after})"
     )

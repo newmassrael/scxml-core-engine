@@ -90,7 +90,7 @@ TEST(ParallelDoneStateIsDeliveredTest, CompletionCarriesTheMachineToATopLevelFin
     // What tells the two apart is which states ARE active: `a1`/`b1` means
     // `go` moved nothing, `a2`/`b2` means the parallel completed and the
     // completion event went nowhere.
-    EXPECT_TRUE(sm->isStateActive("settled"))
+    EXPECT_EQ(sm->terminalState().value_or(""), "settled")
         << "every region reaching its `<final>` completes the parallel, so `done.state.run` "
            "had to be raised AND selected — `settled` is reachable by nothing else. Still "
            "inside the parallel: a1="

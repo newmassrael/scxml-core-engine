@@ -119,7 +119,7 @@ TEST_F(EventBindingAcrossAMacrostepTest, TheDoneEventIsTakenInsideTheHostsMacros
     const auto result = sm_->processEvent(HOST_EVENT, TRUNCATED_OBJECT);
     ASSERT_TRUE(result.success) << "the host's event matched `waiting`'s transition";
 
-    ASSERT_EQ(sm_->getCurrentState(), "settled")
+    ASSERT_EQ(sm_->terminalState().value_or(""), "settled")
         << "the macrostep must have gone waiting -> wrapper -> (done.state.wrapper) -> settled";
 }
 
@@ -143,7 +143,7 @@ TEST_F(EventBindingAcrossAMacrostepTest, TheHostPayloadReportSurvivesALaterBindi
 /// took: the done event, not the host's.
 TEST_F(EventBindingAcrossAMacrostepTest, TheLastEventTakenStaysBound) {
     ASSERT_TRUE(sm_->processEvent(HOST_EVENT, TRUNCATED_OBJECT).success);
-    ASSERT_EQ(sm_->getCurrentState(), "settled") << "the done event has to have been taken";
+    ASSERT_EQ(sm_->terminalState().value_or(""), "settled") << "the done event has to have been taken";
 
     EXPECT_EQ(readInSession("_event.name"), DONE_EVENT)
         << "the macrostep's last event was `" << DONE_EVENT << "`, and `_event` reads `" << readInSession("_event.name")

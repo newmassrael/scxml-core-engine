@@ -52,22 +52,22 @@ int main(void) {
     onexit_runs_before_the_state_leaves_raise_external(&sm, &carrier);
     onexit_runs_before_the_state_leaves_run(&sm);
 
-    if (!onexit_runs_before_the_state_leaves_in_state(&sm, ONEXIT_RUNS_BEFORE_THE_STATE_LEAVES_STATE_SETTLED)) {
+    if (!onexit_runs_before_the_state_leaves_ended_in(&sm, ONEXIT_RUNS_BEFORE_THE_STATE_LEAVES_STATE_SETTLED)) {
         // The document checks its clauses in document order and lands each in a
         // `<final>` of its own, so which one it stopped at names the defect.
         const char *stopped = "no final at all — `leave` was not answered";
-        if (onexit_runs_before_the_state_leaves_in_state(&sm, ONEXIT_RUNS_BEFORE_THE_STATE_LEAVES_STATE_FAILEXITS)) {
+        if (onexit_runs_before_the_state_leaves_ended_in(&sm, ONEXIT_RUNS_BEFORE_THE_STATE_LEAVES_STATE_FAILEXITS)) {
             stopped = "failExits — a handler did not run";
-        } else if (onexit_runs_before_the_state_leaves_in_state(
+        } else if (onexit_runs_before_the_state_leaves_ended_in(
                        &sm, ONEXIT_RUNS_BEFORE_THE_STATE_LEAVES_STATE_FAILSELFININNER)) {
             stopped = "failSelfInInner — `inner` was out of the configuration during its own <onexit>";
-        } else if (onexit_runs_before_the_state_leaves_in_state(
+        } else if (onexit_runs_before_the_state_leaves_ended_in(
                        &sm, ONEXIT_RUNS_BEFORE_THE_STATE_LEAVES_STATE_FAILPARENTININNER)) {
             stopped = "failParentInInner — `outer` left before `inner`'s <onexit> ran";
-        } else if (onexit_runs_before_the_state_leaves_in_state(
+        } else if (onexit_runs_before_the_state_leaves_ended_in(
                        &sm, ONEXIT_RUNS_BEFORE_THE_STATE_LEAVES_STATE_FAILSELFINOUTER)) {
             stopped = "failSelfInOuter — `outer` was out of the configuration during its own <onexit>";
-        } else if (onexit_runs_before_the_state_leaves_in_state(
+        } else if (onexit_runs_before_the_state_leaves_ended_in(
                        &sm, ONEXIT_RUNS_BEFORE_THE_STATE_LEAVES_STATE_FAILCHILDINOUTER)) {
             stopped = "failChildInOuter — `inner` was still active during `outer`'s <onexit>";
         }

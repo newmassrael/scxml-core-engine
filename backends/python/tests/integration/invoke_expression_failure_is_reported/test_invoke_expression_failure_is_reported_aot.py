@@ -48,7 +48,7 @@ def test_invoke_expression_failure_is_reported_aot() -> None:
         "evaluated when the <invoke> fires; parking means neither the raise nor "
         "the child arrived"
     )
-    assert str(engine.current_state) == "pass", (
+    assert str(engine.terminal_state) == "pass", (
         "reaching `fail` means the child started on an expression that cannot be "
-        f"evaluated, so nothing evaluated it; it reached {engine.current_state!s}"
+        f"evaluated, so nothing evaluated it; it reached {engine.terminal_state!s}"
     )

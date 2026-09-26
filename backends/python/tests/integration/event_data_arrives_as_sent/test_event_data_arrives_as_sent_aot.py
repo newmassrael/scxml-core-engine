@@ -48,7 +48,7 @@ def test_event_data_arrives_as_sent_aot() -> None:
     )
 
     after_payload = engine.active_configuration()
-    assert _State.MANGLED not in after_payload, (
+    assert engine.terminal_state != _State.MANGLED, (
         "the host sent a JSON object and the guard `_event.data.milestone === "
         "'refined' && _event.data.turns === 2` did not hold, so the payload did not "
         f"arrive as an object with those properties (active: {after_payload})"
@@ -64,7 +64,7 @@ def test_event_data_arrives_as_sent_aot() -> None:
     engine.send_event(_Event.NOTE, EventMetadata(data="hold the line"))
 
     after_note = engine.active_configuration()
-    assert _State.GARBLED not in after_note, (
+    assert engine.terminal_state != _State.GARBLED, (
         "the host sent the text `hold the line` and `_event.data === 'hold the line'` "
         "did not hold, so a payload that is not JSON did not arrive as the string it "
         f"was sent as (active: {after_note})"
@@ -77,7 +77,7 @@ def test_event_data_arrives_as_sent_aot() -> None:
     engine.send_event(_Event.ARITH, EventMetadata(data="2 + 3"))
 
     after_arith = engine.active_configuration()
-    assert _State.EVALUATED not in after_arith, (
+    assert engine.terminal_state != _State.EVALUATED, (
         "the host sent the text `2 + 3` and it arrived as 5 — the payload was run "
         f"rather than read (active: {after_arith})"
     )
@@ -98,7 +98,7 @@ def test_event_data_arrives_as_sent_aot() -> None:
     )
 
     after_doc = engine.active_configuration()
-    assert _State.FLATTENED not in after_doc, (
+    assert engine.terminal_state != _State.FLATTENED, (
         "the host sent a well-formed XML document and "
         "`_event.data.documentElement.nodeName === 'books'` did not hold, so the "
         f"payload did not become the DOM structure the clause requires (active: {after_doc})"
@@ -110,12 +110,12 @@ def test_event_data_arrives_as_sent_aot() -> None:
     engine.send_event(_Event.BROKEN, EventMetadata(data="<assign>  to  detail failed"))
 
     after_broken = engine.active_configuration()
-    assert _State.SWALLOWED not in after_broken, (
+    assert engine.terminal_state != _State.SWALLOWED, (
         "the host sent `<assign>  to  detail failed`, which opens with `<` and is not "
         "a valid XML document, so §scxml-B-2-8-1's closing MUST applies and the "
         f"reading is the space-normalized string (active: {after_broken})"
     )
-    assert _State.SETTLED in after_broken, (
+    assert engine.terminal_state == _State.SETTLED, (
         "the malformed-XML payload neither matched nor mismatched "
         f"(active: {after_broken})"
     )

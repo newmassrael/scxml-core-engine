@@ -77,11 +77,11 @@ int main() {
         // contract on vsomeip's RM thread).
         parent_router.pumpScxmlInvokeReplies();
         parent.step();
-        if (parent.getCurrentState() == State::Pass) {
+        if (parent.terminalState() == State::Pass) {
             std::printf("SCE Mesh §9.6 Session 5c SOME/IP donedata crossdev: PASS\n");
             return 0;
         }
-        if (parent.getCurrentState() == State::Fail) {
+        if (parent.terminalState() == State::Fail) {
             std::fprintf(stderr, "FAIL: parent took the fail transition. One of the "
                                  "three donedata conds did not match the wire-18 "
                                  "payload over SOME/IP — either the param shape "

@@ -62,8 +62,8 @@ func TestAnEventTheHostHandsOverReachesTheAutoforwardChild(t *testing.T) {
 			"reached it")
 	}
 
-	got := engine.GetCurrentState()
-	if got != HostEventReachesTheChildStatePass {
+	got, ended := engine.TerminalState()
+	if !ended || got != HostEventReachesTheChildStatePass {
 		t.Fatalf(
 			"parent reached %v, want Pass: the probe child answered `sawMarkerOnly`, so the "+
 				"event the host handed to ProcessEvent was never forwarded to it — the child "+

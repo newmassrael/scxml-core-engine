@@ -50,7 +50,7 @@ int main(void) {
     // and no wall-clock delay is involved.
     invoke_precedes_dequeue_midrun_run(&sm);
 
-    int rc = invoke_precedes_dequeue_midrun_in_state(&sm, INVOKE_PRECEDES_DEQUEUE_MIDRUN_STATE_PASS) ? 0 : 1;
+    int rc = invoke_precedes_dequeue_midrun_ended_in(&sm, INVOKE_PRECEDES_DEQUEUE_MIDRUN_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr,
                 "invoke_precedes_dequeue_midrun: FAIL — the watching child "
@@ -62,8 +62,8 @@ int main(void) {
                 "before it reaches `externalQueue.dequeue()`, so an "
                 "autoforward child is live for the whole external queue. "
                 "Diagnostic: in_PASS=%d in_FAIL=%d in_phase=%d\n",
-                invoke_precedes_dequeue_midrun_in_state(&sm, INVOKE_PRECEDES_DEQUEUE_MIDRUN_STATE_PASS),
-                invoke_precedes_dequeue_midrun_in_state(&sm, INVOKE_PRECEDES_DEQUEUE_MIDRUN_STATE_FAIL),
+                invoke_precedes_dequeue_midrun_ended_in(&sm, INVOKE_PRECEDES_DEQUEUE_MIDRUN_STATE_PASS),
+                invoke_precedes_dequeue_midrun_ended_in(&sm, INVOKE_PRECEDES_DEQUEUE_MIDRUN_STATE_FAIL),
                 invoke_precedes_dequeue_midrun_in_state(&sm, INVOKE_PRECEDES_DEQUEUE_MIDRUN_STATE_PHASE));
     }
     invoke_precedes_dequeue_midrun_destroy(&sm);

@@ -56,7 +56,7 @@ class ParallelSelfTransitionKeepsItsLeafTest {
         // why the document decides its own verdict.
         assertEquals(
             ParallelSelfTransitionKeepsItsLeafState.Settled,
-            sm.currentState.value,
+            sm.terminalState,
             "`check` did not carry the machine to `settled`, which the document guards on " +
                 "`n == 1 && m == 2`; `m` reaches 2 only if the self-transitioning region " +
                 "still had a leaf to transition from when the second `e` arrived",

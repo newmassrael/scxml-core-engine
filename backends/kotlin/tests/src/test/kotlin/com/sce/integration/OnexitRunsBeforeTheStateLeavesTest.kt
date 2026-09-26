@@ -52,7 +52,7 @@ class OnexitRunsBeforeTheStateLeavesTest {
             "wanted 1 / 1 / 1 / 0 / 2"
         assertEquals(
             OnexitRunsBeforeTheStateLeavesState.Settled,
-            sm.currentState.value,
+            sm.terminalState,
             "($records) `leave` did not carry the machine to `settled`: `failExits` is a handler that did " +
                 "not run, `failSelfInInner` / `failSelfInOuter` a state already out of the " +
                 "configuration during its own `<onexit>`, `failParentInInner` the parent " +

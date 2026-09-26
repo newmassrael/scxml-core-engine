@@ -38,7 +38,7 @@ int main(void) {
     invoke_param_seeds_declared_child_data_run(&sm);
 
     const int pass =
-        invoke_param_seeds_declared_child_data_in_state(&sm, INVOKE_PARAM_SEEDS_DECLARED_CHILD_DATA_STATE_PASS);
+        invoke_param_seeds_declared_child_data_ended_in(&sm, INVOKE_PARAM_SEEDS_DECLARED_CHILD_DATA_STATE_PASS);
     if (!pass) {
         fprintf(stderr,
                 "invoke_param_seeds_declared_child_data: FAIL — §scxml-6.4.3 is not held on the "
@@ -51,17 +51,17 @@ int main(void) {
                 "not arrive) shadow_seed_lost=%d declared_param_lost=%d (the child saw neither "
                 "the parent's value nor a shadow, so its own `<data>` default stood — nothing "
                 "was seeded at all)\n",
-                invoke_param_seeds_declared_child_data_in_state(
+                invoke_param_seeds_declared_child_data_ended_in(
                     &sm, INVOKE_PARAM_SEEDS_DECLARED_CHILD_DATA_STATE_FAILCHILDEVALUATEDTHEEXPRESSION),
-                invoke_param_seeds_declared_child_data_in_state(
+                invoke_param_seeds_declared_child_data_ended_in(
                     &sm, INVOKE_PARAM_SEEDS_DECLARED_CHILD_DATA_STATE_FAILPARENTONLYEXPRLOST),
-                invoke_param_seeds_declared_child_data_in_state(
+                invoke_param_seeds_declared_child_data_ended_in(
                     &sm, INVOKE_PARAM_SEEDS_DECLARED_CHILD_DATA_STATE_FAILUNMATCHEDPARAMENTEREDTHECHILD),
-                invoke_param_seeds_declared_child_data_in_state(
+                invoke_param_seeds_declared_child_data_ended_in(
                     &sm, INVOKE_PARAM_SEEDS_DECLARED_CHILD_DATA_STATE_FAILNAMELISTVALUELOST),
-                invoke_param_seeds_declared_child_data_in_state(
+                invoke_param_seeds_declared_child_data_ended_in(
                     &sm, INVOKE_PARAM_SEEDS_DECLARED_CHILD_DATA_STATE_FAILSHADOWSEEDLOST),
-                invoke_param_seeds_declared_child_data_in_state(
+                invoke_param_seeds_declared_child_data_ended_in(
                     &sm, INVOKE_PARAM_SEEDS_DECLARED_CHILD_DATA_STATE_FAILDECLAREDPARAMLOST));
     }
     invoke_param_seeds_declared_child_data_destroy(&sm);

@@ -106,20 +106,20 @@ int main(void) {
 
     send(&sm, ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_EVENT_CHECK);
 
-    if (!ancestor_entry_is_not_default_entry_in_state(&sm, ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_STATE_SETTLED)) {
+    if (!ancestor_entry_is_not_default_entry_ended_in(&sm, ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_STATE_SETTLED)) {
         // The document checks its four clauses in document order and lands each
         // in a `<final>` of its own, so which one it stopped at names the defect.
         const char *stopped = "no final at all — `check` was not answered";
-        if (ancestor_entry_is_not_default_entry_in_state(&sm,
+        if (ancestor_entry_is_not_default_entry_ended_in(&sm,
                                                          ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_STATE_FAILDEFAULTED)) {
             stopped = "failDefaulted — a default child nobody targeted was entered";
-        } else if (ancestor_entry_is_not_default_entry_in_state(
+        } else if (ancestor_entry_is_not_default_entry_ended_in(
                        &sm, ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_STATE_FAILLOBBIED)) {
             stopped = "failLobbied — `drive`'s default was taken while it was only an ancestor";
-        } else if (ancestor_entry_is_not_default_entry_in_state(&sm,
+        } else if (ancestor_entry_is_not_default_entry_ended_in(&sm,
                                                                 ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_STATE_FAILIDLED)) {
             stopped = "failIdled — the untouched region did not get its default, or got it twice";
-        } else if (ancestor_entry_is_not_default_entry_in_state(
+        } else if (ancestor_entry_is_not_default_entry_ended_in(
                        &sm, ANCESTOR_ENTRY_IS_NOT_DEFAULT_ENTRY_STATE_FAILTARGETED)) {
             stopped = "failTargeted — a pass never reached the target";
         }

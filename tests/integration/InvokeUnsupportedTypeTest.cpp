@@ -137,7 +137,7 @@ TEST_F(InvokeUnsupportedTypeTest, UnsupportedTypeRaisesErrorExecutionOnTheIntern
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
-    EXPECT_EQ(sm->getCurrentState(), "pass")
+    EXPECT_EQ(sm->terminalState().value_or(""), "pass")
         << "the machine stayed in `probe`, so `<invoke type=\"" << UNSUPPORTED_TYPE << "\">` produced no "
         << "error.execution. §scxml-6.4.1 requires an unsupported type to place error.execution on the "
         << "internal event queue; a processor that instead substitutes the SCXML handler leaves the "
@@ -201,7 +201,7 @@ TEST_F(InvokeUnsupportedTypeTest, TheRaisedErrorNamesTheTypeInTheOneSharedWordin
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
-    ASSERT_EQ(sm->getCurrentState(), "pass") << "the handler never fired, so there is no message to read";
+    ASSERT_EQ(sm->terminalState().value_or(""), "pass") << "the handler never fired, so there is no message to read";
 
     const std::string expected = std::string("<invoke type='") + UNSUPPORTED_TYPE +
                                  "'> names an external service this platform does not support";

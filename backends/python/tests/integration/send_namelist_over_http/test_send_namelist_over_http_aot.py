@@ -76,7 +76,7 @@ def test_send_namelist_over_http_aot(setup_http) -> None:
         f"last leaf={engine.current_state} — the delayed `timeoutMap` / "
         "`timeoutDiscard` sends that give each phase its verdict never fired"
     )
-    actual = str(engine.current_state)
+    actual = str(engine.terminal_state)
     assert actual == "pass", (
         f"send_namelist_over_http reached <final id={actual!r}>; expected 'pass'. "
         + _WHY.get(actual, "That is not a verdict state — neither claim was judged.")

@@ -45,7 +45,7 @@ def test_autoforward_dequeue_point_aot() -> None:
         f"100 ms; last leaf={engine.current_state} — the probe child reported "
         "neither verdict, so `second` never reached it"
     )
-    actual = str(engine.current_state)
+    actual = str(engine.terminal_state)
     assert actual == "pass", (
         f"autoforward_dequeue_point reached <final id={actual!r}>; expected 'pass' "
         "— the probe child saw `second` before `mark`, so both events were handed "

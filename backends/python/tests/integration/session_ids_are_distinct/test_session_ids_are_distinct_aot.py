@@ -46,7 +46,7 @@ def test_session_ids_are_distinct_aot() -> None:
         "session_ids_are_distinct did not reach a top-level <final> within 2 s; "
         f"last leaf={engine.current_state}. only one child reported its `_sessionid`, so the two ids were never compared."
     )
-    actual = str(engine.current_state)
+    actual = str(engine.terminal_state)
     assert actual == "pass", (
         f"session_ids_are_distinct reached <final id={actual!r}>; expected 'pass'. "
         "two live sessions reported the same `_sessionid`. W3C SCXML 5.10 binds it to the id of the current session, and C.1.1 publishes an address derived from it, so one id for two sessions is one address for two sessions."

@@ -101,7 +101,7 @@ TEST_F(EmptyFinalizeUpdatesTheLocationTest, AnEmptyFinalizeUpdatesTheLocationAnd
     ASSERT_FALSE(sm->isRunning()) << "parent did not halt within 20s — neither child answered and "
                                   << "neither delayed timeout fired";
 
-    const std::string reached = sm->getCurrentState();
+    const std::string reached = sm->terminalState().value_or("");
     EXPECT_NE(reached, "failNotUpdated")
         << "the empty `<finalize/>` left `tally` at its old value: §scxml-6.5.2 makes an empty "
         << "element mean the automatic update — for each `namelist` item the Processor updates the "

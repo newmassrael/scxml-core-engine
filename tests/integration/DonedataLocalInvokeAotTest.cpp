@@ -47,8 +47,8 @@ TEST(DonedataLocalInvokeAotTest, ParentObservesDonedataOnDoneInvoke) {
 
     EXPECT_TRUE(reachedFinal) << "parent did not reach a final state within timeout — invoke "
                                  "macrostep loop regressed on the AOT engine";
-    EXPECT_EQ(sm.getCurrentState(), SM::State::Pass) << "parent reached a final state other than Pass — donedata "
-                                                        "envelope round-trip regressed on the AOT engine";
+    EXPECT_EQ(sm.terminalState(), SM::State::Pass) << "parent reached a final state other than Pass — donedata "
+                                                      "envelope round-trip regressed on the AOT engine";
 }
 
 }  // namespace SCE::Tests

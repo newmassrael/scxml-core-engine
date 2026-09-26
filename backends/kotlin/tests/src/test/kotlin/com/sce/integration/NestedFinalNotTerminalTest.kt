@@ -63,7 +63,7 @@ class NestedFinalNotTerminalTest {
 
         assertEquals(
             NestedFinalNotTerminalState.Pass,
-            sm.currentState.value,
+            sm.terminalState,
             "`resume` did not carry the machine out of the nested final to the " +
                 "top-level one"
         )

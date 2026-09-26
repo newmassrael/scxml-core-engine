@@ -81,10 +81,10 @@ def test_ancestor_entry_is_not_default_entry_aot() -> None:
 
     engine.send_event(_Event.CHECK)
 
-    settled = engine.active_configuration()
-    assert _State.SETTLED in settled, (
-        f"`check` did not carry the machine to `settled` (active: {settled}). The document "
+    settled = engine.terminal_state
+    assert settled == _State.SETTLED, (
+        f"`check` did not carry the machine to `settled` (ended in: {settled}). The document "
         "checks its four clauses in document order and lands each in a `<final>` of its own, "
-        "so the configuration above names which one broke: failDefaulted, failLobbied, "
+        "so the final above names which one broke: failDefaulted, failLobbied, "
         "failIdled, failTargeted"
     )

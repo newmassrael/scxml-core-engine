@@ -410,7 +410,7 @@ TEST_F(ActionIntegrationTest, OnEntryForeachExecution) {
 
     // According to SCXML W3C specification, start() should complete the entire macrostep
     // including onentry actions and automatic transitions, ending in a stable configuration
-    std::string currentState = stateMachine_->getCurrentState();
+    std::string currentState = stateMachine_->terminalState().value_or(stateMachine_->getCurrentState());
 
     // The test passes if we reach 'pass' state, indicating:
     // 1. onentry foreach action executed successfully
@@ -462,7 +462,7 @@ TEST_F(ActionIntegrationTest, OnEntryActionExecutionOrder) {
     // Give time for state transitions and action execution
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
 
-    std::string currentState = stateMachine_->getCurrentState();
+    std::string currentState = stateMachine_->terminalState().value_or(stateMachine_->getCurrentState());
 
     if (currentState == "pass") {
         SUCCEED() << "OnEntry actions executed in correct document order (1-2-3)";
@@ -520,7 +520,7 @@ TEST_F(ActionIntegrationTest, ForeachErrorHandling) {
     // Give time for error handling and state transitions
     std::this_thread::sleep_for(std::chrono::milliseconds(25));
 
-    std::string currentState = stateMachine_->getCurrentState();
+    std::string currentState = stateMachine_->terminalState().value_or(stateMachine_->getCurrentState());
 
     if (currentState == "pass") {
         SUCCEED() << "Foreach error handling works correctly - error.execution generated and valid foreach executed";
@@ -575,7 +575,7 @@ TEST_F(ActionIntegrationTest, IfElseIfElseExecution) {
 
     std::this_thread::sleep_for(SCE::Test::Utils::STANDARD_WAIT_MS);
 
-    std::string currentState = stateMachine_->getCurrentState();
+    std::string currentState = stateMachine_->terminalState().value_or(stateMachine_->getCurrentState());
 
     if (currentState == "pass") {
         SUCCEED() << "If-ElseIf-Else executed correctly - elseif branch taken, counter=1, result='elseif_branch'";
@@ -626,7 +626,7 @@ TEST_F(ActionIntegrationTest, IfElseIfElseElseBranchExecution) {
 
     std::this_thread::sleep_for(SCE::Test::Utils::STANDARD_WAIT_MS);
 
-    std::string currentState = stateMachine_->getCurrentState();
+    std::string currentState = stateMachine_->terminalState().value_or(stateMachine_->getCurrentState());
 
     if (currentState == "pass") {
         SUCCEED() << "If-ElseIf-Else executed correctly - else branch taken, counter=100, result='else_branch'";

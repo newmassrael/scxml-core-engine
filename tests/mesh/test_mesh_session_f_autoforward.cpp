@@ -81,11 +81,11 @@ int main() {
         worker_router.pumpScxmlInvokeRequests();
         parent_router.pumpScxmlInvokeReplies();
         parent.step();
-        if (parent.getCurrentState() == ParentState::Pass) {
+        if (parent.terminalState() == ParentState::Pass) {
             std::printf("SCE Mesh §9.6.5 autoforward verification: PASS\n");
             return 0;
         }
-        if (parent.getCurrentState() == ParentState::Fail) {
+        if (parent.terminalState() == ParentState::Fail) {
             std::fprintf(stderr, "FAIL: parent reached `fail`. Expected autoforward "
                                  "to forward `trigger` to child → child reaches "
                                  "`done` → wire-18 → done.invoke.* → pass. Likely "

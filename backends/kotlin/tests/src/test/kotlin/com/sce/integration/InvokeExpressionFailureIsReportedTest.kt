@@ -52,7 +52,7 @@ class InvokeExpressionFailureIsReportedTest {
         )
         assertEquals(
             InvokeExpressionFailureIsReportedState.Pass,
-            sm.currentState.value,
+            sm.terminalState,
             "reaching `fail` means the child started on an expression that cannot be " +
                 "evaluated, so nothing evaluated it"
         )

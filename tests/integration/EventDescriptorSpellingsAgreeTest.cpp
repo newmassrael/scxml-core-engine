@@ -73,7 +73,7 @@ TEST_F(EventDescriptorSpellingsAgreeTest, EverySpellingOfOneDescriptorCatchesThe
     //   failDotted     `dot.` did not catch bare `dot`
     //   failBounded    `wild.*` caught `wilder`, across a token boundary
     //   failUniversal  a bare `.*` did not catch `any.token.sequence`
-    EXPECT_EQ(sm->getCurrentState(), "pass")
+    EXPECT_EQ(sm->terminalState().value_or(""), "pass")
         << "the machine rested in a failure final: `wild.*` must catch bare `wild` and `dot.` must catch "
            "bare `dot` (the clause calls the spellings functionally equivalent), a bare `.*` must catch "
            "every event, and `wild.*` must NOT catch `wilder` because the prefix is a whole token";

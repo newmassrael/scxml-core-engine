@@ -40,8 +40,8 @@ fn done_invoke_from_a_sibling_reaches_the_autoforward_child() {
     );
 
     assert_eq!(
-        engine.get_current_state(),
-        AutoforwardDoneInvokeState::Pass,
+        engine.terminal_state(),
+        Some(AutoforwardDoneInvokeState::Pass),
         "the watcher saw only `probe`: `done.invoke.inv_short` was withheld from a \
          live `autoforward` child. W3C Appendix D `mainEventLoop` forwards every \
          event dequeued from the external queue and excludes only the cancel event, \

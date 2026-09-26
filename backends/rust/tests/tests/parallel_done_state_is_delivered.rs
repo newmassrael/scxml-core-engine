@@ -53,8 +53,9 @@ fn completion_carries_the_machine_to_a_top_level_final() {
     // nothing; `A2`/`B2` means the parallel completed and the event went
     // nowhere.
     let after = engine.get_active_states();
-    assert!(
-        after.contains(&State::Settled),
+    assert_eq!(
+        engine.terminal_state(),
+        Some(State::Settled),
         "every region reaching its `<final>` completes the parallel, so `done.state.run` \
          had to be raised AND selected — `settled` is reachable by nothing else \
          (active: {after:?})"

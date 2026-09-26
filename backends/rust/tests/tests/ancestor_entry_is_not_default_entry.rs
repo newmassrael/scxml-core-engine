@@ -99,12 +99,13 @@ fn an_ancestor_entered_on_the_way_to_a_target_takes_no_default_child() {
 
     send(&mut e, Event::Check);
 
-    let settled = e.get_active_states();
-    assert!(
-        settled.contains(&State::Settled),
-        "`check` did not carry the machine to `settled` (active: {settled:?}). The document \
+    let ended = e.terminal_state();
+    assert_eq!(
+        ended,
+        Some(State::Settled),
+        "`check` did not carry the machine to `settled` (ended in: {ended:?}). The document \
          checks its four clauses in document order and lands each in a `<final>` of its own, \
-         so the configuration above names which one broke: `failDefaulted` (a default nobody \
+         so the final above names which one broke: `failDefaulted` (a default nobody \
          targeted), `failLobbied` (`drive`'s default taken while it was only an ancestor), \
          `failIdled` (the untouched region did not get its default, or got it twice), \
          `failTargeted` (a pass never reached the target)"

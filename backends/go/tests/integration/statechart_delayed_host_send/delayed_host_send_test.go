@@ -138,15 +138,16 @@ func TestACancelDropsAPendingHostServedSend(t *testing.T) {
 			"(calls = %v). A host-served act that a document cancelled must not reach the host: the side "+
 			"effect is the point of the act, and the document cannot take it back", h.calls)
 	}
-	if got := h.engine.GetCurrentState(); got == StatechartDelayedHostSendStateCancelLost {
+	if got, ended := h.engine.TerminalState(); ended && got == StatechartDelayedHostSendStateCancelLost {
 		t.Fatal("`turn.done` arrived for the cancelled send")
 	}
 
 	// 500 ms: `finish`. The verdict is itself scheduled, so a channel whose
 	// tick loop stopped working fails here rather than passing by not moving.
 	h.engine.AdvanceTimeMs(100)
-	if got := h.engine.GetCurrentState(); got != StatechartDelayedHostSendStatePass {
-		t.Fatalf("the machine did not reach `pass`; it is in %v", got)
+	if got, ended := h.engine.TerminalState(); !ended || got != StatechartDelayedHostSendStatePass {
+		t.Fatalf("the machine did not reach `pass`; it is in %v and ended in %v (ended: %v)",
+			h.engine.GetCurrentState(), got, ended)
 	}
 }
 
@@ -177,7 +178,7 @@ func TestADeferredSendWithNoHandlerReportsItWhenItComesDue(t *testing.T) {
 	if got := h.engine.GetCurrentState(); got == StatechartDelayedHostSendStateCancelling {
 		t.Fatal("nothing was registered to perform the act, yet `turn.done` arrived")
 	}
-	if got := h.engine.GetCurrentState(); got != StatechartDelayedHostSendStateUnserved {
+	if got, ended := h.engine.TerminalState(); !ended || got != StatechartDelayedHostSendStateUnserved {
 		t.Fatalf("the deadline passed with no handler registered and nothing was reported (the machine is "+
 			"in %v). The send site that raises this for an immediate send returned when the send was "+
 			"armed, so whatever holds the deferred act owes the report — without it a wiring mistake on "+

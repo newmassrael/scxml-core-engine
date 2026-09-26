@@ -37,8 +37,8 @@ func TestDoneInvokeFromASiblingReachesTheAutoforwardChild(t *testing.T) {
 			"reached the parent's external queue at all")
 	}
 
-	got := engine.GetCurrentState()
-	if got != AutoforwardDoneInvokeStatePass {
+	got, ended := engine.TerminalState()
+	if !ended || got != AutoforwardDoneInvokeStatePass {
 		t.Fatalf(
 			"parent reached %v, want Pass: the watcher saw only `probe`, so "+
 				"`done.invoke.inv_short` was withheld from a live `autoforward` child. "+

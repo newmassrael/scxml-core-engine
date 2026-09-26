@@ -42,7 +42,7 @@ class AutoforwardDoneInvokeTest {
 
         assertEquals(
             AutoforwardDoneInvokeState.Pass,
-            sm.currentState.value,
+            sm.terminalState,
             "the watcher saw only `probe`: `done.invoke.inv_short` was withheld from a live " +
                 "`autoforward` child. W3C Appendix D `mainEventLoop` forwards every event " +
                 "dequeued from the external queue and excludes only the cancel event, and " +

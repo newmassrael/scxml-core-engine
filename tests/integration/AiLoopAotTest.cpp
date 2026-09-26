@@ -194,7 +194,7 @@ TEST_F(AiLoopAotTest, TheBudgetEndsTheRunFromWhereverTheCycleIs) {
         if (holds(sm, Machine::State::Reflecting)) {
             sm.processEvent(Machine::Event::Reflect_none);
         }
-        if (holds(sm, Machine::State::Exhausted)) {
+        if (sm.terminalState() == Machine::State::Exhausted) {
             break;
         }
         // W3C SCXML 3.4: a region of an active `<parallel>` always holds an
@@ -208,7 +208,7 @@ TEST_F(AiLoopAotTest, TheBudgetEndsTheRunFromWhereverTheCycleIs) {
         turn(sm);
     }
 
-    EXPECT_TRUE(holds(sm, Machine::State::Exhausted))
+    EXPECT_EQ(sm.terminalState(), Machine::State::Exhausted)
         << "the budget is its own region precisely so the turn count is not something `judging` "
            "has to remember to check; active: "
         << describe(sm);
@@ -349,7 +349,7 @@ TEST_F(AiLoopAotTest, NobodyComes) {
     sm.processEvent(Machine::Event::Screen_none);
     sm.processEvent(Machine::Event::Unattended);
 
-    EXPECT_TRUE(holds(sm, Machine::State::Blocked))
+    EXPECT_EQ(sm.terminalState(), Machine::State::Blocked)
         << "a question nobody answers ends the run in an outcome the document names, rather than "
            "leaving it prompting into the dark; active: "
         << describe(sm);
@@ -421,7 +421,7 @@ TEST_F(AiLoopAotTest, OneCancelReachesEveryRegion) {
     start(sm);
 
     sm.processEvent(Machine::Event::Cancel);
-    EXPECT_TRUE(holds(sm, Machine::State::Cancelled))
+    EXPECT_EQ(sm.terminalState(), Machine::State::Cancelled)
         << "cancel is one transition on the `<parallel>` itself rather than one per region, so a "
            "single event ends all three; active: "
         << describe(sm);
@@ -684,7 +684,7 @@ TEST_F(AiLoopAotTest, TheRunConvergesThroughAClosingReport) {
 
     sm.processEvent(Machine::Event::Turn_done);
 
-    EXPECT_TRUE(holds(sm, Machine::State::Converged))
+    EXPECT_EQ(sm.terminalState(), Machine::State::Converged)
         << "the turn that answers the closing report reaches `reported`, whose `<raise>` is what "
            "takes all three regions out at once; active: "
         << describe(sm);
@@ -787,7 +787,7 @@ TEST_F(AiLoopAotTest, ASessionReplacedPastItsBudgetReportsStuck) {
     sm.processEvent(Machine::Event::Session_lost);
     sm.processEvent(Machine::Event::Session_ready);
 
-    EXPECT_TRUE(holds(sm, Machine::State::Exhausted))
+    EXPECT_EQ(sm.terminalState(), Machine::State::Exhausted)
         << "the replacement past `max_restarts` reaches `stuck`, which reports the run as exhausted "
            "rather than failed; active: "
         << describe(sm);
@@ -840,7 +840,7 @@ TEST_F(AiLoopAotTest, AFailureEndsTheWholeRun) {
 
     sm.processEvent(Machine::Event::Fail);
 
-    EXPECT_TRUE(holds(sm, Machine::State::Failed))
+    EXPECT_EQ(sm.terminalState(), Machine::State::Failed)
         << "`fail` is written on the `<parallel>` itself, so one event takes all three regions to "
            "`failed` — a different outcome from `cancelled`, which is what tells a broken run from "
            "a stopped one; active: "
@@ -936,10 +936,19 @@ TEST_F(AiLoopAotTest, ARunJournalledAsNamesResumesWhereItStopped) {
 TEST_F(AiLoopAotTest, EveryStateARunReachesReadsBackFromItsOwnName) {
     std::vector<Machine::State> seen;
     const auto record = [&seen](Machine &sm) {
-        for (const auto state : sm.getPolicy().getActiveStates()) {
+        const auto note = [&seen](Machine::State state) {
             if (std::find(seen.begin(), seen.end(), state) == seen.end()) {
                 seen.push_back(state);
             }
+        };
+        for (const auto state : sm.getPolicy().getActiveStates()) {
+            note(state);
+        }
+        // §scxml-D-exitInterpreter leaves the configuration empty once a
+        // top-level `<final>` is reached, so the one a run ended in is read
+        // from where it is recorded rather than from the active set.
+        if (const auto ended = sm.terminalState()) {
+            note(*ended);
         }
     };
 
@@ -954,7 +963,7 @@ TEST_F(AiLoopAotTest, EveryStateARunReachesReadsBackFromItsOwnName) {
                 record(sm);
                 sm.processEvent(Machine::Event::Session_ready);
             }
-            if (holds(sm, Machine::State::Exhausted)) {
+            if (sm.terminalState() == Machine::State::Exhausted) {
                 break;
             }
             turn(sm);

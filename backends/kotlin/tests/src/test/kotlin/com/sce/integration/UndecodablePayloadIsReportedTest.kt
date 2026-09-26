@@ -129,7 +129,7 @@ class UndecodablePayloadIsReportedTest {
         deliver(sm, UndecodablePayloadIsReportedEvent.Answer, INTACT_OBJECT)
         assertEquals(
             UndecodablePayloadIsReportedState.Accepted,
-            sm.currentState.value,
+            sm.terminalState,
             "the guard `_event.data.done` did not hold for `$INTACT_OBJECT`, so the structured " +
                 "reading did not happen and the zero below would be proving nothing"
         )
@@ -199,7 +199,7 @@ class UndecodablePayloadIsReportedTest {
         deliver(sm, UndecodablePayloadIsReportedEvent.Answer, INTACT_OBJECT)
         assertEquals(
             UndecodablePayloadIsReportedState.Accepted,
-            sm.currentState.value,
+            sm.terminalState,
             "the intact payload did not take the guarded transition, so the two assertions " +
                 "below are not measuring a successful delivery"
         )

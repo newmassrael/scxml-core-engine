@@ -113,6 +113,14 @@ func (l loop) holds(s AiLoopState) bool {
 	return false
 }
 
+// Whether the run ended in the top-level <final> s. Asked of the terminal
+// accessor rather than the configuration, because §scxml-D-exitInterpreter
+// leaves the configuration empty once it ends.
+func (l loop) endedIn(s AiLoopState) bool {
+	ended, ok := l.engine.TerminalState()
+	return ok && ended == s
+}
+
 // The active set in the document's own words, for a failure a reader can act
 // on: `[working alive within]` says where the machine is, `[24 1 23]` does not.
 func (l loop) where() []string {
@@ -212,12 +220,12 @@ func TestTheBudgetEndsTheRunFromWhereverTheCycleIs(t *testing.T) {
 		if l.holds(AiLoopStateReflecting) {
 			l.step(AiLoopEventReflectNone)
 		}
-		if l.holds(AiLoopStateExhausted) {
+		if l.endedIn(AiLoopStateExhausted) {
 			break
 		}
 		l.turn()
 	}
-	if !l.holds(AiLoopStateExhausted) {
+	if !l.endedIn(AiLoopStateExhausted) {
 		t.Fatalf("the budget is its own region precisely so the turn count is not something "+
 			"`judging` has to remember to check; active: %v", l.where())
 	}
@@ -357,7 +365,7 @@ func TestNobodyComes(t *testing.T) {
 	l.step(AiLoopEventTurnBlocked)
 	l.step(AiLoopEventScreenNone)
 	l.step(AiLoopEventUnattended)
-	if !l.holds(AiLoopStateBlocked) {
+	if !l.endedIn(AiLoopStateBlocked) {
 		t.Fatalf("a question nobody answers ends the run in an outcome the document names, "+
 			"rather than leaving it prompting into the dark; active: %v", l.where())
 	}
@@ -426,7 +434,7 @@ func TestOneCancelReachesEveryRegion(t *testing.T) {
 	l := started()
 
 	l.step(AiLoopEventCancel)
-	if !l.holds(AiLoopStateCancelled) {
+	if !l.endedIn(AiLoopStateCancelled) {
 		t.Fatalf("cancel is one transition on the `<parallel>` itself rather than one per "+
 			"region, so a single event ends all three; active: %v", l.where())
 	}
@@ -692,7 +700,7 @@ func TestTheRunConvergesThroughAClosingReport(t *testing.T) {
 
 	l.step(AiLoopEventTurnDone)
 
-	if !l.holds(AiLoopStateConverged) {
+	if !l.endedIn(AiLoopStateConverged) {
 		t.Fatalf("the turn that answers the closing report reaches `reported`, whose "+
 			"<raise> is what takes all three regions out at once; active: %v", l.where())
 	}
@@ -803,7 +811,7 @@ func TestASessionReplacedPastItsBudgetReportsStuck(t *testing.T) {
 	l.step(AiLoopEventSessionLost)
 	l.step(AiLoopEventSessionReady)
 
-	if !l.holds(AiLoopStateExhausted) {
+	if !l.endedIn(AiLoopStateExhausted) {
 		t.Fatalf("the replacement past `max_restarts` reaches `stuck`, which reports the "+
 			"run as exhausted rather than failed; active: %v", l.where())
 	}
@@ -865,7 +873,7 @@ func TestAFailureEndsTheWholeRun(t *testing.T) {
 
 	l.step(AiLoopEventFail)
 
-	if !l.holds(AiLoopStateFailed) {
+	if !l.endedIn(AiLoopStateFailed) {
 		t.Fatalf("`fail` is written on the `<parallel>` itself, so one event takes all "+
 			"three regions to `failed` — a different outcome from `cancelled`, which is "+
 			"what tells a broken run from a stopped one; active: %v", l.where())
@@ -949,11 +957,19 @@ func TestARunJournalledAsNamesResumesWhereItStopped(t *testing.T) {
 
 func TestEveryStateARunReachesReadsBackFromItsOwnName(t *testing.T) {
 	var seen []AiLoopState
+	// The top-level <final> a run ended in is read from the terminal
+	// accessor: §scxml-D-exitInterpreter leaves the configuration empty.
+	note := func(s AiLoopState) {
+		if !holdsState(seen, s) {
+			seen = append(seen, s)
+		}
+	}
 	record := func(l loop) {
 		for _, s := range l.active() {
-			if !holdsState(seen, s) {
-				seen = append(seen, s)
-			}
+			note(s)
+		}
+		if ended, ok := l.engine.TerminalState(); ok {
+			note(ended)
 		}
 	}
 
@@ -969,7 +985,7 @@ func TestEveryStateARunReachesReadsBackFromItsOwnName(t *testing.T) {
 			record(l)
 			l.step(AiLoopEventSessionReady)
 		}
-		if l.holds(AiLoopStateExhausted) {
+		if l.endedIn(AiLoopStateExhausted) {
 			break
 		}
 		l.turn()

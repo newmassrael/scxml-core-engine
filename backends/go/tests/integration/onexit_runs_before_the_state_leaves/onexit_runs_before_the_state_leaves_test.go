@@ -52,7 +52,7 @@ func TestAStateIsStillActiveWhileItsOwnOnexitRuns(t *testing.T) {
 	engine.Step()
 
 	settled := engine.GetActiveStates()
-	if !active(settled, OnexitRunsBeforeTheStateLeavesStateSettled) {
+	if ended, ok := engine.TerminalState(); !ok || ended != OnexitRunsBeforeTheStateLeavesStateSettled {
 		// What the handlers recorded (W3C SCXML 5.3 readers): the final says
 		// which clause broke, these say what the handler actually saw.
 		read := func(v int64, ok bool) string {

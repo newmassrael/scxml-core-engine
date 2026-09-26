@@ -33,7 +33,7 @@ int main(void) {
     // two events the watcher can see without any wall-clock delay.
     autoforward_done_invoke_run(&sm);
 
-    int rc = autoforward_done_invoke_in_state(&sm, AUTOFORWARD_DONE_INVOKE_STATE_PASS) ? 0 : 1;
+    int rc = autoforward_done_invoke_ended_in(&sm, AUTOFORWARD_DONE_INVOKE_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr,
                 "autoforward_done_invoke: FAIL — the watcher saw only `probe`, "
@@ -44,8 +44,8 @@ int main(void) {
                 "that queue: `_forward_to_autoforward_children` must emit a "
                 "switch arm for every event, not skip the `done.`/`error.` "
                 "names. Diagnostic: in_PASS=%d in_FAIL=%d in_phase=%d\n",
-                autoforward_done_invoke_in_state(&sm, AUTOFORWARD_DONE_INVOKE_STATE_PASS),
-                autoforward_done_invoke_in_state(&sm, AUTOFORWARD_DONE_INVOKE_STATE_FAIL),
+                autoforward_done_invoke_ended_in(&sm, AUTOFORWARD_DONE_INVOKE_STATE_PASS),
+                autoforward_done_invoke_ended_in(&sm, AUTOFORWARD_DONE_INVOKE_STATE_FAIL),
                 autoforward_done_invoke_in_state(&sm, AUTOFORWARD_DONE_INVOKE_STATE_PHASE));
     }
     autoforward_done_invoke_destroy(&sm);

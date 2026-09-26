@@ -47,8 +47,8 @@ fn a_wildcard_keeps_its_guard_and_its_type() {
     //   FailGuardedInternalReentered  a guarded internal wildcard exited its source
     //   FailSealedInternalReentered   an unguarded internal wildcard exited its source
     assert_eq!(
-        engine.get_current_state(),
-        State::Pass,
+        engine.terminal_state(),
+        Some(State::Pass),
         "the machine rested in a failure final: a wildcard is enabled only when its \
          guard is true, and an internal wildcard targeting a descendant of its \
          compound source must not exit and re-enter that source"

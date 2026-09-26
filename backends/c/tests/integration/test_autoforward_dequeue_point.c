@@ -36,7 +36,7 @@ int main(void) {
     // the external drain.
     autoforward_dequeue_point_run(&sm);
 
-    int rc = autoforward_dequeue_point_in_state(&sm, AUTOFORWARD_DEQUEUE_POINT_STATE_PASS) ? 0 : 1;
+    int rc = autoforward_dequeue_point_ended_in(&sm, AUTOFORWARD_DEQUEUE_POINT_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr,
                 "autoforward_dequeue_point: FAIL — the probe child saw "
@@ -48,8 +48,8 @@ int main(void) {
                 "the external event queue: forwarding at the enqueue lets "
                 "the child run ahead of the parent by a whole event. "
                 "Diagnostic: in_PASS=%d in_FAIL=%d in_phase=%d\n",
-                autoforward_dequeue_point_in_state(&sm, AUTOFORWARD_DEQUEUE_POINT_STATE_PASS),
-                autoforward_dequeue_point_in_state(&sm, AUTOFORWARD_DEQUEUE_POINT_STATE_FAIL),
+                autoforward_dequeue_point_ended_in(&sm, AUTOFORWARD_DEQUEUE_POINT_STATE_PASS),
+                autoforward_dequeue_point_ended_in(&sm, AUTOFORWARD_DEQUEUE_POINT_STATE_FAIL),
                 autoforward_dequeue_point_in_state(&sm, AUTOFORWARD_DEQUEUE_POINT_STATE_PHASE));
     }
     autoforward_dequeue_point_destroy(&sm);

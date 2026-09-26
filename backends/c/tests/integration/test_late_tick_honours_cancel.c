@@ -109,7 +109,7 @@ int main(void) {
         sleep_ms(PAST_BOTH_DEADLINES_MS);
         late_tick_honours_cancel_tick(&sm);
 
-        if (late_tick_honours_cancel_in_state(&sm, LATE_TICK_HONOURS_CANCEL_STATE_CANCELLOST)) {
+        if (late_tick_honours_cancel_ended_in(&sm, LATE_TICK_HONOURS_CANCEL_STATE_CANCELLOST)) {
             fprintf(stderr, "late_tick_honours_cancel: FAIL - `settle` was delivered even "
                             "though `active`'s <cancel sendid=\"s1\"> ran first. Both "
                             "entries were past due when this tick started, so the "
@@ -120,7 +120,7 @@ int main(void) {
             rc = 1;
         } else {
             drive_to_final(&sm, 2000L, 20L);
-            if (!late_tick_honours_cancel_in_state(&sm, LATE_TICK_HONOURS_CANCEL_STATE_PASS)) {
+            if (!late_tick_honours_cancel_ended_in(&sm, LATE_TICK_HONOURS_CANCEL_STATE_PASS)) {
                 fprintf(stderr, "late_tick_honours_cancel: FAIL - the machine did not "
                                 "reach `pass` after the cancel.\n");
                 rc = 1;
@@ -135,7 +135,7 @@ int main(void) {
         late_tick_honours_cancel_t sm;
         late_tick_honours_cancel_init(&sm);
         drive_to_final(&sm, 2000L, 10L);
-        if (!late_tick_honours_cancel_in_state(&sm, LATE_TICK_HONOURS_CANCEL_STATE_PASS)) {
+        if (!late_tick_honours_cancel_ended_in(&sm, LATE_TICK_HONOURS_CANCEL_STATE_PASS)) {
             fprintf(stderr, "late_tick_honours_cancel: FAIL - a 10 ms tick loop, which "
                             "wakes between the 100 ms and 200 ms deadlines, must reach "
                             "`pass`.\n");
@@ -182,7 +182,7 @@ int main(void) {
             budget -= (long)wait;
             late_tick_honours_cancel_tick(&sm);
         }
-        if (!late_tick_honours_cancel_in_state(&sm, LATE_TICK_HONOURS_CANCEL_STATE_PASS)) {
+        if (!late_tick_honours_cancel_ended_in(&sm, LATE_TICK_HONOURS_CANCEL_STATE_PASS)) {
             fprintf(stderr, "late_tick_honours_cancel: FAIL - deadline-driven ticking did "
                             "not reach `pass`.\n");
             rc = 1;
@@ -221,7 +221,7 @@ int main(void) {
             stepping_reset(stalls[i]);
             late_tick_honours_cancel_init_with_clock(&sm, sce_clock_source(stepping_now, NULL));
 
-            if (late_tick_honours_cancel_in_state(&sm, LATE_TICK_HONOURS_CANCEL_STATE_CANCELLOST)) {
+            if (late_tick_honours_cancel_ended_in(&sm, LATE_TICK_HONOURS_CANCEL_STATE_CANCELLOST)) {
                 fprintf(stderr,
                         "late_tick_honours_cancel: FAIL - a host stalled %llu ms between "
                         "the two <send delay>s of one <onentry> reordered them: `settle` "
@@ -239,7 +239,7 @@ int main(void) {
             for (int n = 0; n < 4096 && !late_tick_honours_cancel_is_in_final_state(&sm); ++n) {
                 late_tick_honours_cancel_tick(&sm);
             }
-            if (!late_tick_honours_cancel_in_state(&sm, LATE_TICK_HONOURS_CANCEL_STATE_PASS)) {
+            if (!late_tick_honours_cancel_ended_in(&sm, LATE_TICK_HONOURS_CANCEL_STATE_PASS)) {
                 fprintf(stderr,
                         "late_tick_honours_cancel: FAIL - with a %llu ms stall per clock "
                         "reading the machine did not reach `pass`; the document's "
@@ -294,7 +294,7 @@ int main(void) {
 
         // Past both deadlines in one move — the late wake-up this file is about.
         late_tick_honours_cancel_advance_time_ms(&sm, 400u);
-        if (late_tick_honours_cancel_in_state(&sm, LATE_TICK_HONOURS_CANCEL_STATE_CANCELLOST)) {
+        if (late_tick_honours_cancel_ended_in(&sm, LATE_TICK_HONOURS_CANCEL_STATE_CANCELLOST)) {
             fprintf(stderr, "late_tick_honours_cancel: FAIL - a single 400 ms advance "
                             "stepped over both deadlines; `poke` must still be dispatched "
                             "first so `active`'s <cancel sendid=\"s1\"> can drop "
@@ -303,7 +303,7 @@ int main(void) {
         }
 
         late_tick_honours_cancel_advance_time_ms(&sm, 100u);
-        if (!late_tick_honours_cancel_in_state(&sm, LATE_TICK_HONOURS_CANCEL_STATE_PASS)) {
+        if (!late_tick_honours_cancel_ended_in(&sm, LATE_TICK_HONOURS_CANCEL_STATE_PASS)) {
             fprintf(stderr, "late_tick_honours_cancel: FAIL - `finish` is armed for 100 ms "
                             "after `active` is entered, so the machine should be done.\n");
             rc = 1;

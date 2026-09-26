@@ -66,7 +66,7 @@ def test_host_event_reaches_the_child_aot() -> None:
         f"100 ms; last leaf={engine.current_state} — the probe child answered "
         "neither verdict, so neither `hostPing` nor `marker` reached it"
     )
-    actual = str(engine.current_state)
+    actual = str(engine.terminal_state)
     assert actual == "pass", (
         f"host_event_reaches_the_child reached <final id={actual!r}>; expected 'pass' "
         "— the probe child answered `sawMarkerOnly`, so the event the host handed to "

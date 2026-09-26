@@ -54,16 +54,16 @@ fn origin_is_the_senders_published_location_and_routes_back() {
         engine.get_current_state()
     );
 
-    match engine.get_current_state() {
-        EventOriginIsALocationState::Pass => {}
-        EventOriginIsALocationState::Fail => panic!(
+    match engine.terminal_state() {
+        Some(EventOriginIsALocationState::Pass) => {}
+        Some(EventOriginIsALocationState::Fail) => panic!(
             "`_event.origin` did not carry the sender's published `_ioprocessors` \
              location. Appendix C.1 requires the origin to match that location, \
              which is what makes it an address a peer can answer; a bare session \
              id matches nothing the sender published"
         ),
         other => {
-            panic!("event_origin_is_a_location settled in {other:?}, which is not a verdict state")
+            panic!("event_origin_is_a_location ended in {other:?}, which is not a verdict state")
         }
     }
 }

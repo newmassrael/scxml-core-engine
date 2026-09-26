@@ -102,7 +102,7 @@ class StaticDatamodelTest {
             ticks(sm, 5)
             sm.send(StaticCounterEvent.Go)
             sm.tick()
-            assertEquals(StaticCounterState.Done, sm.currentState.value, "ready is true after five ticks")
+            assertEquals(StaticCounterState.Done, sm.terminalState, "ready is true after five ticks")
         } finally {
             sm.cleanup()
         }

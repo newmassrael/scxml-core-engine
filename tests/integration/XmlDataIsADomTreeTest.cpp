@@ -95,24 +95,24 @@ TEST_F(XmlDataIsADomTreeTest, ADataElementsXmlIsADomTreeTheDocumentCanWalk) {
         for (const auto &s : sm->getActiveStates()) {
             out += " " + s;
         }
-        return out;
+        return out + ", ended in " + sm->terminalState().value_or("<running>");
     };
 
-    EXPECT_FALSE(sm->isStateActive("notADocument"))
+    EXPECT_NE(sm->terminalState().value_or(""), "notADocument")
         << "the variable did not hold a document: `doc.nodeType === 9`, `doc.nodeName === "
            "'#document'`, `doc.documentElement.tagName === 'books'` or `doc.hasAttribute('count')` "
            "did not hold. active:"
         << describe();
-    EXPECT_FALSE(sm->isStateActive("wrongTree"))
+    EXPECT_NE(sm->terminalState().value_or(""), "wrongTree")
         << "the document element's children are not the two `<book>` elements in document order — "
            "the whitespace between them may have become nodes, or a sibling/parent link is "
            "missing. active:"
         << describe();
-    EXPECT_FALSE(sm->isStateActive("noText"))
+    EXPECT_NE(sm->terminalState().value_or(""), "noText")
         << "character data did not report itself as a text node, or `textContent` did not read the "
            "text below the element. active:"
         << describe();
-    EXPECT_TRUE(sm->isStateActive("settled"))
+    EXPECT_EQ(sm->terminalState().value_or(""), "settled")
         << "the machine reached none of its four verdicts, so the guards did not evaluate at all. "
            "active:"
         << describe();

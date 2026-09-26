@@ -47,8 +47,8 @@ fn every_spelling_of_one_descriptor_catches_the_same_events() {
     //   FailBounded    `wild.*` caught `wilder`, across a token boundary
     //   FailUniversal  a bare `.*` did not catch `any.token.sequence`
     assert_eq!(
-        engine.get_current_state(),
-        EventDescriptorSpellingsAgreeState::Pass,
+        engine.terminal_state(),
+        Some(EventDescriptorSpellingsAgreeState::Pass),
         "the machine rested in a failure final: `wild.*` must catch bare `wild` \
          and `dot.` must catch bare `dot` (the clause calls the spellings \
          functionally equivalent), a bare `.*` must catch every event, and \

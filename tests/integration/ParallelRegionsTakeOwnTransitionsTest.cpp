@@ -125,7 +125,7 @@ TEST_F(ParallelRegionsTakeOwnTransitionsTest, EveryRegionTakesItsOwnTransition) 
     ASSERT_TRUE(sm->raiseExternalEvent("check", ""));
     eventRaiser->processQueuedEvents();
 
-    EXPECT_TRUE(sm->isStateActive("settled"))
+    EXPECT_EQ(sm->terminalState().value_or(""), "settled")
         << "`check` did not carry the machine to `settled`, which the document guards on both "
            "regions' assignments having run. Reaching `judging` without `n == 1 && m == 1` means a "
            "region changed state while its transition content was skipped.";

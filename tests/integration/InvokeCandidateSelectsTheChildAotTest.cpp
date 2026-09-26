@@ -45,7 +45,7 @@ TEST(InvokeCandidateSelectsTheChildAotTest, TheEvaluatedValueSelectsWhichCandida
 
     EXPECT_TRUE(completed) << "the machine never completed. Parking means no child spoke: a stub "
                               "ran, or nothing did.";
-    EXPECT_EQ(sm.getCurrentState(), SM::State::Pass)
+    EXPECT_EQ(sm.terminalState(), SM::State::Pass)
         << "`WrongChild` means the value selected the other candidate; `NoChild` means "
            "nothing was loaded at all";
 }

@@ -103,7 +103,7 @@ TEST_F(InvokeParamSeedsDeclaredChildDataTest, InvokeParamCarriesTheInvokingSessi
     ASSERT_FALSE(sm->isRunning()) << "parent did not halt within 5s — one of the four children never "
                                   << "reached its `<send target=\"#_parent\">`, so no verdict arrived";
 
-    const std::string reached = sm->getCurrentState();
+    const std::string reached = sm->terminalState().value_or("");
     EXPECT_NE(reached, "failChildEvaluatedTheExpression")
         << "the child evaluated the author's `<param expr>` text in its own data model and found "
         << "its own `token`: §scxml-6.4.3 says the VALUE of the param element, and only the "

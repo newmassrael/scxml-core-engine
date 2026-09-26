@@ -134,6 +134,10 @@ func TestTheRefusalIsNotDerivableFromAnyOtherAccessor(t *testing.T) {
 	deliver(engine, UnseenEventIsReportedEventFinish)
 
 	beforeState := engine.GetCurrentState()
+	// Once the run has ended its configuration is empty (Appendix D's
+	// exitInterpreter), so the final it ended in is what a host reads instead
+	// — and it must not move either.
+	beforeEnded, beforeHasEnded := engine.TerminalState()
 	beforeRunning := engine.IsRunning()
 	beforeFinal := engine.IsInFinalState()
 	beforeDiscarded := engine.DiscardedExternalEvents()
@@ -144,6 +148,9 @@ func TestTheRefusalIsNotDerivableFromAnyOtherAccessor(t *testing.T) {
 	if got := engine.GetCurrentState(); got != beforeState {
 		t.Fatalf("this fixture exists because a refused delivery is indistinguishable through "+
 			"the accessors a host had; the state moved (%v -> %v)", beforeState, got)
+	}
+	if ended, hasEnded := engine.TerminalState(); ended != beforeEnded || hasEnded != beforeHasEnded {
+		t.Fatalf("the final the run ended in moved across a refused delivery (%v -> %v)", beforeEnded, ended)
 	}
 	if engine.IsRunning() != beforeRunning || engine.IsInFinalState() != beforeFinal {
 		t.Fatalf("the run flags moved across a refused delivery")

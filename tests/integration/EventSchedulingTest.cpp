@@ -771,8 +771,8 @@ TEST_F(EventSchedulingTest, InvokeSessionEventIsolation_DelayedEventRouting) {
     std::this_thread::sleep_for(std::chrono::milliseconds(400));
 
     // High-level verification: Check state via SCXML datamodel
-    bool finalStateReached = (parentStateMachine->getCurrentState() == "parent_success" ||
-                              parentStateMachine->getCurrentState() == "parent_violation");
+    bool finalStateReached = (parentStateMachine->terminalState().value_or("") == "parent_success" ||
+                              parentStateMachine->terminalState().value_or("") == "parent_violation");
 
     // Verify session isolation
     EXPECT_TRUE(finalStateReached) << "StateMachine should reach final state";
@@ -781,7 +781,8 @@ TEST_F(EventSchedulingTest, InvokeSessionEventIsolation_DelayedEventRouting) {
     EXPECT_TRUE(child1ReceivedOwnEvent.load()) << "Child1 should receive its delayed event";
     EXPECT_TRUE(child2ReceivedOwnEvent.load()) << "Child2 should receive its delayed event";
     EXPECT_FALSE(sessionIsolationViolated.load()) << "No session isolation violations should occur";
-    EXPECT_EQ(parentStateMachine->getCurrentState(), "parent_success") << "Should reach success state, not violation";
+    EXPECT_EQ(parentStateMachine->terminalState().value_or(""), "parent_success")
+        << "Should reach success state, not violation";
 
     // Clean up StateMachine
     parentStateMachine->stop();
@@ -1215,7 +1216,7 @@ TEST_F(EventSchedulingTest, W3C_Test250_InvokeCancellationExecutesOnexitHandlers
     std::this_thread::sleep_for(SCE::Test::Utils::LONG_WAIT_MS);
 
     // Verify parent reached final state (invoke should be cancelled)
-    std::string finalState = parentStateMachine->getCurrentState();
+    std::string finalState = parentStateMachine->terminalState().value_or("");
     EXPECT_EQ(finalState, "final") << "Parent should reach final state (cancelling invoke)";
 
     // Get child session ID to verify onexit handler execution
@@ -1528,7 +1529,7 @@ with its illegal expression, it must raise an error -->
     std::string finalState;
     for (int i = 0; i < 50 && !completed; ++i) {
         std::this_thread::sleep_for(SCE::Test::Utils::STANDARD_WAIT_MS);
-        finalState = sm->getCurrentState();
+        finalState = sm->terminalState().value_or(sm->getCurrentState());
         completed = (finalState == "pass" || finalState == "fail" || finalState.empty() || !sm->isRunning());
     }
 
@@ -1655,7 +1656,7 @@ it should not raise an error until it gets to s03 and evaluates the illegal expr
     std::string finalState;
     for (int i = 0; i < 50 && !completed; ++i) {
         std::this_thread::sleep_for(SCE::Test::Utils::STANDARD_WAIT_MS);
-        finalState = sm->getCurrentState();
+        finalState = sm->terminalState().value_or(sm->getCurrentState());
         completed = (finalState == "pass" || finalState == "fail" || finalState.empty() || !sm->isRunning());
     }
 
@@ -1751,7 +1752,7 @@ processing "event1" which is raised in the final state's on-entry handler. -->
     std::this_thread::sleep_for(SCE::Test::Utils::STANDARD_WAIT_MS);
 
     // W3C SCXML 3.13: State machine MUST halt when entering top-level final state
-    std::string currentState = sm->getCurrentState();
+    std::string currentState = sm->terminalState().value_or("");
     bool isRunning = sm->isRunning();
 
     EXPECT_EQ(currentState, "final") << "State machine should be in final state";

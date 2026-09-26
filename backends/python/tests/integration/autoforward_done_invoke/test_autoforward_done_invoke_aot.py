@@ -43,7 +43,7 @@ def test_autoforward_done_invoke_aot() -> None:
         "neither verdict, so `done.invoke.inv_short` never reached the parent's "
         "external queue at all"
     )
-    actual = str(engine.current_state)
+    actual = str(engine.terminal_state)
     assert actual == "pass", (
         f"autoforward_done_invoke reached <final id={actual!r}>; expected 'pass' "
         "— the watcher saw only `probe`, so `done.invoke.inv_short` was withheld "

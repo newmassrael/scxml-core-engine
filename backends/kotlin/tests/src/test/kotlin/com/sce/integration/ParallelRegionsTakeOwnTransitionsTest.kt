@@ -54,7 +54,7 @@ class ParallelRegionsTakeOwnTransitionsTest {
         // stays inside the parallel.
         assertEquals(
             ParallelRegionsTakeOwnTransitionsState.Settled,
-            sm.currentState.value,
+            sm.terminalState,
             "`check` did not carry the machine to `settled`, which the document guards " +
                 "on both regions' assignments having run",
         )

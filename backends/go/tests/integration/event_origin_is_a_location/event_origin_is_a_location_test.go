@@ -59,7 +59,12 @@ func TestOriginIsTheSendersPublishedLocationAndRoutesBack(t *testing.T) {
 		)
 	}
 
-	switch got := engine.GetCurrentState(); got {
+	got, ended := engine.TerminalState()
+	if !ended {
+		t.Fatalf("event_origin_is_a_location did not end in a top-level <final> (parked in %v)",
+			engine.GetCurrentState())
+	}
+	switch got {
 	case EventOriginIsALocationStatePass:
 	case EventOriginIsALocationStateFail:
 		t.Fatalf("`_event.origin` did not carry the sender's published `_ioprocessors` " +
@@ -67,6 +72,6 @@ func TestOriginIsTheSendersPublishedLocationAndRoutesBack(t *testing.T) {
 			"is what makes it an address a peer can answer; a bare session id or an " +
 			"invoke-instance path matches nothing the sender published.")
 	default:
-		t.Fatalf("event_origin_is_a_location settled in %v, which is not a verdict state", got)
+		t.Fatalf("event_origin_is_a_location ended in %v, which is not a verdict state", got)
 	}
 }

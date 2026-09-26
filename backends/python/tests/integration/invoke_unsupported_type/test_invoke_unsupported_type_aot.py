@@ -46,7 +46,7 @@ def test_invoke_unsupported_type_aot() -> None:
         "internal queue; parking in `probe` means the <invoke> was dropped "
         "rather than lowered"
     )
-    assert str(engine.current_state) == "pass", (
+    assert str(engine.terminal_state) == "pass", (
         "the machine completed somewhere other than the error.execution target; "
-        f"it reached {engine.current_state!s}"
+        f"it reached {engine.terminal_state!s}"
     )

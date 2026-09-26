@@ -49,7 +49,7 @@ class EventDescriptorSpellingsAgreeTest {
         //   FailUniversal  a bare `.*` did not catch `any.token.sequence`
         assertEquals(
             EventDescriptorSpellingsAgreeState.Pass,
-            sm.currentState.value,
+            sm.terminalState,
             "the machine rested in a failure final: `wild.*` must catch bare `wild` " +
                 "and `dot.` must catch bare `dot` (the clause calls the spellings " +
                 "functionally equivalent), a bare `.*` must catch every event, and " +

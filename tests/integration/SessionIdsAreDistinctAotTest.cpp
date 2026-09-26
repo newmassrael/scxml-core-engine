@@ -37,7 +37,7 @@ TEST(SessionIdsAreDistinctAotTest, TwoLiveSessionsAreIssuedDifferentIds) {
 
     EXPECT_TRUE(reachedFinal) << "parent did not reach a final state within timeout: only one child "
                                  "reported its `_sessionid`, so the two ids were never compared.";
-    EXPECT_EQ(sm.getCurrentState(), SM::State::Pass)
+    EXPECT_EQ(sm.terminalState(), SM::State::Pass)
         << "two live sessions reported the same `_sessionid`. The clause binds it to the id "
            "of the current session, and the published `_ioprocessors` location is derived "
            "from it, so one id for two sessions is one address for two sessions.";

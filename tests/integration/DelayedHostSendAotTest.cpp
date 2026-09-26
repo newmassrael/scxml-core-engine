@@ -139,12 +139,12 @@ TEST_F(DelayedHostSendAotTest, ACancelDropsAPendingHostServedSend) {
     EXPECT_EQ(calls.size(), 1u) << "the handler was asked to perform `h2` at 400 ms after <cancel sendid=\"h2\"> ran "
                                    "at 300 ms. A host-served act that a document cancelled must not reach the host: "
                                    "the side effect is the point of the act, and the document cannot take it back";
-    EXPECT_NE(sm.getCurrentState(), State::CancelLost) << "`turn.done` arrived for the cancelled send";
+    EXPECT_NE(sm.terminalState(), State::CancelLost) << "`turn.done` arrived for the cancelled send";
 
     // 500 ms: `finish`. The verdict is itself scheduled, so a channel whose
     // tick loop stopped working fails here rather than passing by not moving.
     sm.advanceTimeMs(100);
-    EXPECT_EQ(sm.getCurrentState(), State::Pass) << "the machine did not reach `pass`";
+    EXPECT_EQ(sm.terminalState(), State::Pass) << "the machine did not reach `pass`";
 }
 
 // A deferred act whose handler was never registered is still an act nobody
@@ -173,7 +173,7 @@ TEST_F(DelayedHostSendAotTest, ADeferredSendWithNoHandlerReportsItWhenItComesDue
     sm.advanceTimeMs(100);
     EXPECT_NE(sm.getCurrentState(), State::Cancelling)
         << "nothing was registered to perform the act, yet `turn.done` arrived";
-    EXPECT_EQ(sm.getCurrentState(), State::Unserved)
+    EXPECT_EQ(sm.terminalState(), State::Unserved)
         << "the deadline passed with no handler registered and nothing was reported. The send site that raises this "
            "for an immediate send returned when the send was armed, so whatever holds the deferred act owes the "
            "report — without it a wiring mistake on a delayed send is perfect silence";

@@ -52,8 +52,8 @@ def test_event_descriptor_spellings_agree_aot() -> None:
     #   failDotted     `dot.` did not catch bare `dot`
     #   failBounded    `wild.*` caught `wilder`, across a token boundary
     #   failUniversal  a bare `.*` did not catch `any.token.sequence`
-    assert str(engine.current_state) == "pass", (
-        f"the machine rested in {engine.current_state!s}: `wild.*` must catch bare "
+    assert str(engine.terminal_state) == "pass", (
+        f"the machine rested in {engine.terminal_state!s}: `wild.*` must catch bare "
         "`wild` and `dot.` must catch bare `dot` (the clause calls the spellings "
         "functionally equivalent), a bare `.*` must catch every event, and "
         "`wild.*` must NOT catch `wilder` because the prefix is a whole token"

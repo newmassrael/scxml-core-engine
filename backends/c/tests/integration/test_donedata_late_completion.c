@@ -43,7 +43,7 @@ int main(void) {
     // scheduler, no polling.
     donedata_late_completion_run(&sm);
 
-    int rc = donedata_late_completion_in_state(&sm, DONEDATA_LATE_COMPLETION_STATE_PASS) ? 0 : 1;
+    int rc = donedata_late_completion_ended_in(&sm, DONEDATA_LATE_COMPLETION_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr,
                 "donedata_late_completion: FAIL — the parent's "
@@ -55,8 +55,8 @@ int main(void) {
                 "on the event; neither is scoped to children that finalise "
                 "during start-up. "
                 "Diagnostic: in_PASS=%d in_FAIL=%d in_phase=%d\n",
-                donedata_late_completion_in_state(&sm, DONEDATA_LATE_COMPLETION_STATE_PASS),
-                donedata_late_completion_in_state(&sm, DONEDATA_LATE_COMPLETION_STATE_FAIL),
+                donedata_late_completion_ended_in(&sm, DONEDATA_LATE_COMPLETION_STATE_PASS),
+                donedata_late_completion_ended_in(&sm, DONEDATA_LATE_COMPLETION_STATE_FAIL),
                 donedata_late_completion_in_state(&sm, DONEDATA_LATE_COMPLETION_STATE_PHASE));
     }
     donedata_late_completion_destroy(&sm);

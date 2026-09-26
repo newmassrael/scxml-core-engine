@@ -35,7 +35,7 @@ int main(void) {
     // the external drain.
     autoforward_internal_queue_run(&sm);
 
-    int rc = autoforward_internal_queue_in_state(&sm, AUTOFORWARD_INTERNAL_QUEUE_STATE_PASS) ? 0 : 1;
+    int rc = autoforward_internal_queue_ended_in(&sm, AUTOFORWARD_INTERNAL_QUEUE_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr,
                 "autoforward_internal_queue: FAIL — the watcher saw "
@@ -46,8 +46,8 @@ int main(void) {
                 "event was not routed onto the external queue for some "
                 "unrelated reason, which would leak it past any name-blind "
                 "forward. Diagnostic: in_PASS=%d in_FAIL=%d in_phase=%d\n",
-                autoforward_internal_queue_in_state(&sm, AUTOFORWARD_INTERNAL_QUEUE_STATE_PASS),
-                autoforward_internal_queue_in_state(&sm, AUTOFORWARD_INTERNAL_QUEUE_STATE_FAIL),
+                autoforward_internal_queue_ended_in(&sm, AUTOFORWARD_INTERNAL_QUEUE_STATE_PASS),
+                autoforward_internal_queue_ended_in(&sm, AUTOFORWARD_INTERNAL_QUEUE_STATE_FAIL),
                 autoforward_internal_queue_in_state(&sm, AUTOFORWARD_INTERNAL_QUEUE_STATE_PHASE));
     }
     autoforward_internal_queue_destroy(&sm);

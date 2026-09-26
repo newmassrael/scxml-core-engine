@@ -76,7 +76,7 @@ int main(void) {
     parallel_self_transition_keeps_its_leaf_raise_external(&sm, &check);
     parallel_self_transition_keeps_its_leaf_run(&sm);
 
-    if (!parallel_self_transition_keeps_its_leaf_in_state(&sm, PARALLEL_SELF_TRANSITION_KEEPS_ITS_LEAF_STATE_SETTLED)) {
+    if (!parallel_self_transition_keeps_its_leaf_ended_in(&sm, PARALLEL_SELF_TRANSITION_KEEPS_ITS_LEAF_STATE_SETTLED)) {
         fprintf(stderr, "FAIL: `check` did not carry the machine to `settled`, which the "
                         "document guards on `n == 1 && m == 2`. `m` reaches 2 only if the "
                         "self-transitioning region still had a leaf to transition from when "

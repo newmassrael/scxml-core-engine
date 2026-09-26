@@ -38,8 +38,8 @@ fn forwarded_copy_keeps_data_origin_and_invokeid() {
     );
 
     assert_eq!(
-        engine.get_current_state(),
-        AutoforwardEventFieldsState::Pass,
+        engine.terminal_state(),
+        Some(AutoforwardEventFieldsState::Pass),
         "the child reported `stripped`: the autoforwarded copy of `childToParent` lost \
          `_event.data.value`, `_event.origin` or `_event.invokeid`. W3C §6.4 requires an \
          exact copy — forward the source event's metadata, not just its name"

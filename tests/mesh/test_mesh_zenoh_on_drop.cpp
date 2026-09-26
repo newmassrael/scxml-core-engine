@@ -87,11 +87,11 @@ int scenario_no_peer() {
     const auto start = std::chrono::steady_clock::now();
     brake.processEvent(BrakeEvent::Go);
     while (std::chrono::steady_clock::now() - start < kZ3ObservationBudget) {
-        if (brake.getCurrentState() == BrakeState::Failed) {
+        if (brake.terminalState() == BrakeState::Failed) {
             break;
         }
         brake.step();
-        if (brake.getCurrentState() == BrakeState::Failed) {
+        if (brake.terminalState() == BrakeState::Failed) {
             break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -99,7 +99,7 @@ int scenario_no_peer() {
     const auto elapsed_ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
 
-    if (brake.getCurrentState() != BrakeState::Failed) {
+    if (brake.terminalState() != BrakeState::Failed) {
         std::fprintf(stderr, "FAIL [§1 no-peer]: brake stuck at state=%d after %lld ms.\n",
                      static_cast<int>(brake.getCurrentState()), static_cast<long long>(elapsed_ms));
         brake_router.shutdown();
@@ -180,11 +180,11 @@ int scenario_peer_silent() {
     const auto start = std::chrono::steady_clock::now();
     brake.processEvent(BrakeEvent::Go);
     while (std::chrono::steady_clock::now() - start < kZ3ObservationBudget) {
-        if (brake.getCurrentState() == BrakeState::Failed) {
+        if (brake.terminalState() == BrakeState::Failed) {
             break;
         }
         brake.step();
-        if (brake.getCurrentState() == BrakeState::Failed) {
+        if (brake.terminalState() == BrakeState::Failed) {
             break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -192,7 +192,7 @@ int scenario_peer_silent() {
     const auto elapsed_ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
 
-    if (brake.getCurrentState() != BrakeState::Failed) {
+    if (brake.terminalState() != BrakeState::Failed) {
         std::fprintf(stderr,
                      "FAIL [§2 peer-silent]: brake stuck at state=%d after "
                      "%lld ms (queryable hits=%d).\n",

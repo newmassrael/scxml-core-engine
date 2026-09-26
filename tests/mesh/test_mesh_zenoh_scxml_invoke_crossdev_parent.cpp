@@ -60,11 +60,11 @@ int main() {
         // Kept for symmetry with the 1-process fixture.
         parent_router.pumpScxmlInvokeReplies();
         parent.step();
-        if (parent.getCurrentState() == State::Pass) {
+        if (parent.terminalState() == State::Pass) {
             std::printf("SCE Mesh §9.6 Session 5b Zenoh scxml-invoke crossdev: PASS\n");
             return 0;
         }
-        if (parent.getCurrentState() == State::Fail) {
+        if (parent.terminalState() == State::Fail) {
             std::fprintf(stderr, "FAIL: parent observed error.execution — wire-14 "
                                  "reached the worker but the success path "
                                  "(wire-15 + wire-18) did not complete.\n");

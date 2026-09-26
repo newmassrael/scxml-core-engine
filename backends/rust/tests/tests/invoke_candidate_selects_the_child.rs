@@ -51,8 +51,8 @@ fn the_evaluated_value_selects_which_candidate_runs() {
         engine.get_current_state()
     );
     assert_eq!(
-        engine.get_current_state(),
-        InvokeCandidateSelectsTheChildState::Pass,
+        engine.terminal_state(),
+        Some(InvokeCandidateSelectsTheChildState::Pass),
         "`WrongChild` means the value selected the other candidate; `NoChild` \
          means nothing was loaded at all"
     );

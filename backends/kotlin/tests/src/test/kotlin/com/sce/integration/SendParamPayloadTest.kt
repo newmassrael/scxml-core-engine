@@ -50,7 +50,7 @@ class SendParamPayloadTest {
             }
         }
 
-        val reached = sm.currentState.value
+        val reached = sm.terminalState
         val why = when (reached) {
             SendParamPayloadState.FailChildPayload ->
                 "`fromChild` arrived without `_event.data.value`: a `datamodel=\"null\"` " +
@@ -86,7 +86,7 @@ class SendParamPayloadTest {
                     "`<param>` that will not evaluate costs its own pair and nothing else."
             SendParamPayloadState.Pass -> ""
             else ->
-                "settled in $reached, which is not a verdict state — the machine never " +
+                "settled in ${sm.currentState.value}, which is not a verdict state — the machine never " +
                     "got as far as a payload check, or it discarded a whole `<send>` " +
                     "because one `<param>` would not evaluate (W3C SCXML 5.7.1 drops " +
                     "the pair, not the message)."

@@ -55,8 +55,8 @@ def test_wildcard_in_document_order_aot() -> None:
     #   failGuardNeverFired           a wildcard did not fire with its guard true
     #   failGuardedInternalReentered  a guarded internal wildcard exited its source
     #   failSealedInternalReentered   an unguarded internal wildcard exited its source
-    assert str(engine.current_state) == "pass", (
-        f"the machine rested in {engine.current_state!s}: a wildcard is enabled only "
+    assert str(engine.terminal_state) == "pass", (
+        f"the machine rested in {engine.terminal_state!s}: a wildcard is enabled only "
         "when its guard is true, and an internal wildcard targeting a descendant of "
         "its compound source must not exit and re-enter that source"
     )

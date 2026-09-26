@@ -44,7 +44,12 @@ func TestAnInvokeParamThatWillNotEvaluateCostsItsPairAndNothingElse(t *testing.T
 			"never fired, so the machine is not being ticked")
 	}
 
-	switch got := engine.GetCurrentState(); got {
+	got, ended := engine.TerminalState()
+	if !ended {
+		t.Fatalf("invoke_param_error_starts_the_child did not end in a top-level "+
+			"<final> (parked in %v)", engine.GetCurrentState())
+	}
+	switch got {
 	case InvokeParamErrorStartsTheChildStatePass:
 	case InvokeParamErrorStartsTheChildStateFailNoParamError:
 		t.Fatalf("`childUp` arrived with no `error.execution` before it: W3C SCXML " +
@@ -64,7 +69,7 @@ func TestAnInvokeParamThatWillNotEvaluateCostsItsPairAndNothingElse(t *testing.T
 			"the name AND the value, so the child must find its own declaration " +
 			"untouched rather than a placeholder the author never wrote.")
 	default:
-		t.Fatalf("invoke_param_error_starts_the_child settled in %v, which is not a "+
+		t.Fatalf("invoke_param_error_starts_the_child ended in %v, which is not a "+
 			"verdict state", got)
 	}
 }

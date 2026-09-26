@@ -42,9 +42,10 @@ std::string describe(SM &sm) {
     const auto read = [](const std::optional<int64_t> &value) {
         return value ? std::to_string(*value) : std::string("<unreadable>");
     };
-    return std::string(sm.getPolicy().getStateName(sm.getCurrentState())) + "  (selfInInner=" + read(sm.selfInInner()) +
-           " parentInInner=" + read(sm.parentInInner()) + " selfInOuter=" + read(sm.selfInOuter()) +
-           " childInOuter=" + read(sm.childInOuter()) + " exits=" + read(sm.exits()) + "; wanted 1 / 1 / 1 / 0 / 2)";
+    return std::string(sm.getPolicy().getStateName(sm.terminalState().value_or(sm.getCurrentState()))) +
+           "  (selfInInner=" + read(sm.selfInInner()) + " parentInInner=" + read(sm.parentInInner()) +
+           " selfInOuter=" + read(sm.selfInOuter()) + " childInOuter=" + read(sm.childInOuter()) +
+           " exits=" + read(sm.exits()) + "; wanted 1 / 1 / 1 / 0 / 2)";
 }
 
 }  // namespace
@@ -64,7 +65,7 @@ TEST(OnexitRunsBeforeTheStateLeavesAotTest, AStateIsStillActiveWhileItsOwnOnexit
 
     // The document checks its clauses in document order and lands each in a
     // `<final>` of its own, so the final reached names which one broke.
-    EXPECT_EQ(sm.getCurrentState(), SM::State::Settled)
+    EXPECT_EQ(sm.terminalState(), SM::State::Settled)
         << "`leave` did not carry the machine to `settled`: `failExits` (a handler did not "
            "run), `failSelfInInner` / `failSelfInOuter` (a state was already out of the "
            "configuration during its own `<onexit>`), `failParentInInner` (the parent left "

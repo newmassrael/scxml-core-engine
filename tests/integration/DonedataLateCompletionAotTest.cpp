@@ -39,7 +39,7 @@ TEST(DonedataLateCompletionAotTest, DonedataRidesACompletionAfterTheInvokeStarte
 
     EXPECT_TRUE(reachedFinal) << "parent did not reach a final state within timeout — it never saw "
                                  "`done.invoke.inv_late` at all, so the child was not driven to its `<final>`";
-    EXPECT_EQ(sm.getCurrentState(), SM::State::Pass)
+    EXPECT_EQ(sm.terminalState(), SM::State::Pass)
         << "the parent's `done.invoke.inv_late` guard did not see `_event.data.result === 42`, so the "
            "child's `<donedata>` was dropped on a completion that happened after the invoke was "
            "started. W3C SCXML 6.3.1 raises `done.invoke.<id>` wherever the child reaches its final "

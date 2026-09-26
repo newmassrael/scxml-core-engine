@@ -49,7 +49,7 @@ def test_invoke_precedes_dequeue_midrun_aot() -> None:
         f"100 ms; last leaf={engine.current_state} — the watching child answered "
         "neither verdict, so `probe` never reached it"
     )
-    actual = str(engine.current_state)
+    actual = str(engine.terminal_state)
     assert actual == "pass", (
         f"invoke_precedes_dequeue_midrun reached <final id={actual!r}>; expected "
         "'pass' — the watching child answered `probe` from `waiting`, so it never saw "

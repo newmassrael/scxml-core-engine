@@ -252,14 +252,14 @@ static int the_budget_ends_the_run_from_wherever_the_cycle_is(void) {
         if (ai_loop_in_state(&sm, AI_LOOP_STATE_REFLECTING)) {
             step(&sm, AI_LOOP_EVENT_REFLECT_NONE);
         }
-        if (ai_loop_in_state(&sm, AI_LOOP_STATE_EXHAUSTED)) {
+        if (ai_loop_ended_in(&sm, AI_LOOP_STATE_EXHAUSTED)) {
             break;
         }
         turn(&sm);
     }
 
     int bad = 0;
-    if (!ai_loop_in_state(&sm, AI_LOOP_STATE_EXHAUSTED)) {
+    if (!ai_loop_ended_in(&sm, AI_LOOP_STATE_EXHAUSTED)) {
         bad = fail_where(
             "the_budget_ends_the_run_from_wherever_the_cycle_is",
             "the budget is its own region precisely so the turn count is not something `judging` has to check", &sm);
@@ -431,7 +431,7 @@ static int nobody_comes(void) {
     step(&sm, AI_LOOP_EVENT_UNATTENDED);
 
     int bad = 0;
-    if (!ai_loop_in_state(&sm, AI_LOOP_STATE_BLOCKED)) {
+    if (!ai_loop_ended_in(&sm, AI_LOOP_STATE_BLOCKED)) {
         bad =
             fail_where("nobody_comes", "a question nobody answers ends the run in an outcome the document names", &sm);
     }
@@ -524,7 +524,7 @@ static int one_cancel_reaches_every_region(void) {
     step(&sm, AI_LOOP_EVENT_CANCEL);
 
     int bad = 0;
-    if (!ai_loop_in_state(&sm, AI_LOOP_STATE_CANCELLED)) {
+    if (!ai_loop_ended_in(&sm, AI_LOOP_STATE_CANCELLED)) {
         bad = fail_where(
             "one_cancel_reaches_every_region",
             "cancel is one transition on the `<parallel>` itself, so a single event ends all three regions", &sm);
@@ -815,7 +815,7 @@ static int the_run_converges_through_a_closing_report(void) {
 
     step(&sm, AI_LOOP_EVENT_TURN_DONE);
 
-    if (!ai_loop_in_state(&sm, AI_LOOP_STATE_CONVERGED)) {
+    if (!ai_loop_ended_in(&sm, AI_LOOP_STATE_CONVERGED)) {
         bad |= fail_where(
             "the_run_converges_through_a_closing_report",
             "the turn that answers the closing report reaches `reported`, whose <raise> ends all three regions", &sm);
@@ -923,7 +923,7 @@ static int a_session_replaced_past_its_budget_reports_stuck(void) {
     step(&sm, AI_LOOP_EVENT_SESSION_LOST);
     step(&sm, AI_LOOP_EVENT_SESSION_READY);
 
-    if (!ai_loop_in_state(&sm, AI_LOOP_STATE_EXHAUSTED)) {
+    if (!ai_loop_ended_in(&sm, AI_LOOP_STATE_EXHAUSTED)) {
         bad |= fail_where(
             "a_session_replaced_past_its_budget_reports_stuck",
             "the replacement past `max_restarts` reaches `stuck`, which reports exhausted rather than failed", &sm);
@@ -983,7 +983,7 @@ static int a_failure_ends_the_whole_run(void) {
     step(&sm, AI_LOOP_EVENT_FAIL);
 
     int bad = 0;
-    if (!ai_loop_in_state(&sm, AI_LOOP_STATE_FAILED)) {
+    if (!ai_loop_ended_in(&sm, AI_LOOP_STATE_FAILED)) {
         bad = fail_where(
             "a_failure_ends_the_whole_run",
             "`fail` is written on the `<parallel>` itself, so one event takes all three regions to `failed`", &sm);
@@ -1115,7 +1115,7 @@ static int every_state_a_run_reaches_reads_back_from_its_own_name(void) {
             seen |= ai_loop_active_states(&sm);
             step(&sm, AI_LOOP_EVENT_SESSION_READY);
         }
-        if (ai_loop_in_state(&sm, AI_LOOP_STATE_EXHAUSTED)) {
+        if (ai_loop_ended_in(&sm, AI_LOOP_STATE_EXHAUSTED)) {
             break;
         }
         turn(&sm);

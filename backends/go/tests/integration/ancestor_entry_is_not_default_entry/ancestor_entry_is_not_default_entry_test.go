@@ -96,11 +96,10 @@ func TestAnAncestorEnteredOnTheWayToATargetTakesNoDefaultChild(t *testing.T) {
 	engine.RaiseExternal(AncestorEntryIsNotDefaultEntryEventCheck, "", "")
 	engine.Step()
 
-	settled := engine.GetActiveStates()
-	if !active(settled, AncestorEntryIsNotDefaultEntryStateSettled) {
-		t.Errorf("`check` did not carry the machine to `settled` (active: %v). The document "+
-			"checks its four clauses in document order and lands each in a <final> of its "+
-			"own, so the configuration above names which one broke: failDefaulted, "+
-			"failLobbied, failIdled, failTargeted", settled)
+	if ended, ok := engine.TerminalState(); !ok || ended != AncestorEntryIsNotDefaultEntryStateSettled {
+		t.Errorf("`check` did not carry the machine to `settled` (ended in: %v, ended: %v). The "+
+			"document checks its four clauses in document order and lands each in a <final> of "+
+			"its own, so the final above names which one broke: failDefaulted, "+
+			"failLobbied, failIdled, failTargeted", ended, ok)
 	}
 }

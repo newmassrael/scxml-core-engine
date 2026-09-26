@@ -273,8 +273,8 @@ fn test144_initialize_drains_internal_queue_and_reaches_pass() {
     //     - pop Bar → S1 → Pass transition
     //   - Pass is a final state; engine stops processing
     assert_eq!(
-        engine.get_current_state(),
-        Test144State::Pass,
+        engine.terminal_state(),
+        Some(Test144State::Pass),
         "W3C test144: happy path Foo→Bar should land at Pass"
     );
     assert!(engine.is_in_final_state());

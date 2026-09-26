@@ -183,16 +183,16 @@ int run_test() {
     using std::chrono::steady_clock;
     const auto deadline = steady_clock::now() + kDefaultTimeout;
     while (steady_clock::now() < deadline) {
-        if (client.getCurrentState() == Client::State::Ok) {
+        if (client.terminalState() == Client::State::Ok) {
             break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
-    MESH_TEST_REQUIRE(client.getCurrentState() == Client::State::Ok, "pool_zenoh_client did not reach State::Ok — "
-                                                                     "regression in the §14.4 runtime KeyExpr "
-                                                                     "substitution, pool dispatch, or "
-                                                                     "admitZenohInbound → handleReply chain");
+    MESH_TEST_REQUIRE(client.terminalState() == Client::State::Ok, "pool_zenoh_client did not reach State::Ok — "
+                                                                   "regression in the §14.4 runtime KeyExpr "
+                                                                   "substitution, pool dispatch, or "
+                                                                   "admitZenohInbound → handleReply chain");
 
     pump.running.store(false, std::memory_order_release);
     pump.t.join();

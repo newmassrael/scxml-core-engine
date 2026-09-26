@@ -42,7 +42,7 @@ def test_donedata_local_invoke_aot() -> None:
         "donedata_local_invoke did not reach a top-level <final> within "
         f"100 ms; last leaf={engine.current_state}"
     )
-    actual = str(engine.current_state)
+    actual = str(engine.terminal_state)
     assert actual == "pass", (
         f"donedata_local_invoke reached <final id={actual!r}>; "
         "expected 'pass' — donedata envelope round-trip regressed on "

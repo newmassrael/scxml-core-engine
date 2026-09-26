@@ -77,7 +77,7 @@ def test_empty_finalize_updates_the_location_aot() -> None:
         "empty_finalize_updates_the_location did not reach a top-level <final> "
         f"within 15 s; last leaf={engine.current_state}"
     )
-    actual = str(engine.current_state)
+    actual = str(engine.terminal_state)
     assert actual == "pass", (
         f"empty_finalize_updates_the_location reached <final id={actual!r}>; "
         "expected 'pass'. " + _WHY.get(actual, "That is not a verdict state.")

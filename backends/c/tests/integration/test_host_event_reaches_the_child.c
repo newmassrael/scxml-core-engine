@@ -65,7 +65,7 @@ int main(void) {
         host_event_reaches_the_child_step(&sm);
     }
 
-    int rc = host_event_reaches_the_child_in_state(&sm, HOST_EVENT_REACHES_THE_CHILD_STATE_PASS) ? 0 : 1;
+    int rc = host_event_reaches_the_child_ended_in(&sm, HOST_EVENT_REACHES_THE_CHILD_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr,
                 "host_event_reaches_the_child: FAIL — the probe child answered "
@@ -78,8 +78,8 @@ int main(void) {
                 "only in its queue drain leaves an autoforward child blind to "
                 "everything its host delivers. "
                 "Diagnostic: in_PASS=%d in_FAIL=%d in_armed=%d\n",
-                host_event_reaches_the_child_in_state(&sm, HOST_EVENT_REACHES_THE_CHILD_STATE_PASS),
-                host_event_reaches_the_child_in_state(&sm, HOST_EVENT_REACHES_THE_CHILD_STATE_FAIL),
+                host_event_reaches_the_child_ended_in(&sm, HOST_EVENT_REACHES_THE_CHILD_STATE_PASS),
+                host_event_reaches_the_child_ended_in(&sm, HOST_EVENT_REACHES_THE_CHILD_STATE_FAIL),
                 host_event_reaches_the_child_in_state(&sm, HOST_EVENT_REACHES_THE_CHILD_STATE_ARMED));
     }
     host_event_reaches_the_child_destroy(&sm);

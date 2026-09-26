@@ -51,8 +51,8 @@ fn parent_observes_donedata_on_done_invoke() {
     );
 
     assert_eq!(
-        engine.get_current_state(),
-        DonedataLocalInvokeState::Pass,
+        engine.terminal_state(),
+        Some(DonedataLocalInvokeState::Pass),
         "parent reached Fail: `_event.data.result == 42` (param branch) or \
          `_event.data == 'hello_content'` (content branch) failed. An empty \
          `_event.data` means `raise_done_invoke` dropped the child's donedata \

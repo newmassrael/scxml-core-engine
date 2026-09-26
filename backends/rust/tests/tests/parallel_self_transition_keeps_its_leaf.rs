@@ -84,8 +84,9 @@ fn the_self_transitioned_region_answers_the_next_event() {
     engine.step();
 
     let settled = engine.get_active_states();
-    assert!(
-        settled.contains(&State::Settled),
+    assert_eq!(
+        engine.terminal_state(),
+        Some(State::Settled),
         "`check` did not carry the machine to `settled` (active: {settled:?}), which the \
          document guards on `n == 1 && m == 2`. `m` reaches 2 only if the self-transitioning \
          region still had a leaf to transition from when the second `e` arrived — a region \

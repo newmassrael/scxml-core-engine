@@ -56,7 +56,7 @@ class EventOriginIsALocationTest {
             }
         }
 
-        val reached = sm.currentState.value
+        val reached = sm.terminalState
         val why = when (reached) {
             EventOriginIsALocationState.Fail ->
                 "`_event.origin` did not carry the sender's published `_ioprocessors` " +
@@ -65,7 +65,7 @@ class EventOriginIsALocationTest {
                     "id or an invoke-instance path matches nothing the sender published."
             EventOriginIsALocationState.Pass -> ""
             else ->
-                "parked in $reached rather than a verdict state. The parent accepted " +
+                "parked in ${sm.currentState.value} rather than a verdict state. The parent accepted " +
                     "`_event.origin` as an address and sent `reply` to it, and nothing " +
                     "came back: C.1 requires the published location to be a usable " +
                     "<send> target, so an origin that routes nowhere fails the half a " +

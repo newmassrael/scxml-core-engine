@@ -52,25 +52,25 @@ TEST(EmptyFinalizeUpdatesTheLocationAotTest, AnEmptyFinalizeUpdatesTheLocationAn
 
     EXPECT_TRUE(reachedFinal) << "parent did not reach a final state within timeout — neither child "
                                  "answered and neither delayed timeout fired";
-    EXPECT_NE(sm.getCurrentState(), SM::State::FailNotUpdated)
+    EXPECT_NE(sm.terminalState(), SM::State::FailNotUpdated)
         << "the empty `<finalize/>` left `tally` at its old value: §scxml-6.5.2 makes an empty "
            "element mean the automatic update — for each `namelist` item the Processor updates the "
            "location as if by `<assign>` with the matching return value.";
-    EXPECT_NE(sm.getCurrentState(), SM::State::FailUpdatedWithoutFinalize)
+    EXPECT_NE(sm.terminalState(), SM::State::FailUpdatedWithoutFinalize)
         << "`guard` moved with no `<finalize>` element at all: the clause's note is a prohibition — "
            "\"the automatic update does not take place if the <finalize> element is absent as "
            "opposed to empty\".";
-    EXPECT_NE(sm.getCurrentState(), SM::State::FailUnmatchedNameWrote)
+    EXPECT_NE(sm.terminalState(), SM::State::FailUnmatchedNameWrote)
         << "an event carrying no matching name still wrote `keeper`: §scxml-6.5.2 says \"with ANY "
            "return value that has a name that matches\", so an unconditional write blanks the "
            "parent's data model on every unrelated answer the child sends.";
-    EXPECT_NE(sm.getCurrentState(), SM::State::FailUnmatchedChildSilent)
+    EXPECT_NE(sm.terminalState(), SM::State::FailUnmatchedChildSilent)
         << "the third child never answered, so the guarded-write half was never exercised.";
-    EXPECT_NE(sm.getCurrentState(), SM::State::FailEmptyChildSilent)
+    EXPECT_NE(sm.terminalState(), SM::State::FailEmptyChildSilent)
         << "the first child never answered, so the empty-`<finalize>` half was never exercised.";
-    EXPECT_NE(sm.getCurrentState(), SM::State::FailAbsentChildSilent)
+    EXPECT_NE(sm.terminalState(), SM::State::FailAbsentChildSilent)
         << "the second child never answered, so the absent-`<finalize>` half was never exercised.";
-    EXPECT_EQ(sm.getCurrentState(), SM::State::Pass);
+    EXPECT_EQ(sm.terminalState(), SM::State::Pass);
 }
 
 }  // namespace SCE::Tests

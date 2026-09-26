@@ -50,7 +50,7 @@ class EventDataArrivesAsSentTest {
 
         assertNotEquals(
             EventDataArrivesAsSentState.Mangled,
-            sm.currentState.value,
+            sm.terminalState,
             "the host sent a JSON object and the guard `_event.data.milestone === 'refined' " +
                 "&& _event.data.turns === 2` did not hold, so the payload did not arrive as " +
                 "an object with those properties",
@@ -69,7 +69,7 @@ class EventDataArrivesAsSentTest {
 
         assertNotEquals(
             EventDataArrivesAsSentState.Garbled,
-            sm.currentState.value,
+            sm.terminalState,
             "the host sent the text `hold the line` and `_event.data === 'hold the line'` did " +
                 "not hold, so a payload that is not JSON did not arrive as the string it was " +
                 "sent as",
@@ -85,7 +85,7 @@ class EventDataArrivesAsSentTest {
 
         assertNotEquals(
             EventDataArrivesAsSentState.Evaluated,
-            sm.currentState.value,
+            sm.terminalState,
             "the host sent the text `2 + 3` and it arrived as 5 — the payload was run rather " +
                 "than read",
         )
@@ -109,7 +109,7 @@ class EventDataArrivesAsSentTest {
 
         assertNotEquals(
             EventDataArrivesAsSentState.Flattened,
-            sm.currentState.value,
+            sm.terminalState,
             "the host sent a well-formed XML document and " +
                 "`_event.data.documentElement.nodeName === 'books'` did not hold, so the " +
                 "payload did not become the DOM structure the clause requires",
@@ -127,14 +127,14 @@ class EventDataArrivesAsSentTest {
 
         assertNotEquals(
             EventDataArrivesAsSentState.Swallowed,
-            sm.currentState.value,
+            sm.terminalState,
             "the host sent `<assign>  to  detail failed`, which opens with `<` and is not a " +
                 "valid XML document, so §scxml-B-2-8-1's closing MUST applies and the reading " +
                 "is the space-normalized string",
         )
         assertEquals(
             EventDataArrivesAsSentState.Settled,
-            sm.currentState.value,
+            sm.terminalState,
             "the malformed-XML payload neither matched nor mismatched",
         )
     }

@@ -57,8 +57,8 @@ fn pending_invokes_start_before_the_dequeue_mid_run() {
     );
 
     assert_eq!(
-        engine.get_current_state(),
-        InvokePrecedesDequeueMidrunState::Pass,
+        engine.terminal_state(),
+        Some(InvokePrecedesDequeueMidrunState::Pass),
         "the watching child answered `probe` from `waiting`, so it never saw `kick`: \
          the parent drained its external queue before starting the invoke, and the \
          event `<onentry>` had queued for itself was consumed while no child existed. \

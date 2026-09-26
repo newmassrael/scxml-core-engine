@@ -41,8 +41,8 @@ fn an_external_event_is_forwarded_at_the_dequeue_not_the_enqueue() {
     );
 
     assert_eq!(
-        engine.get_current_state(),
-        AutoforwardDequeuePointState::Pass,
+        engine.terminal_state(),
+        Some(AutoforwardDequeuePointState::Pass),
         "the probe child saw `second` before `mark`, so both events were handed over \
          while the parent was still executing the transition that queued them. W3C \
          Appendix D `mainEventLoop` forwards one statement after \

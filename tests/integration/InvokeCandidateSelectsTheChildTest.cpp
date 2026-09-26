@@ -78,7 +78,7 @@ TEST(InvokeCandidateSelectsTheChildTest, TheEvaluatedValueSelectsWhichCandidateR
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
-    EXPECT_EQ(sm->getCurrentState(), "pass")
+    EXPECT_EQ(sm->terminalState().value_or(""), "pass")
         << "this engine loads the document the value names: `wrongChild` means it loaded "
            "the other one, `noChild` means it could not load at all, and resting in "
            "`probe` means it started nothing — and whichever it is, the clause the AOT "

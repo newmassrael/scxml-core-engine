@@ -38,7 +38,7 @@ def test_onexit_runs_before_the_state_leaves_aot() -> None:
 
     engine.send_event(_Event.LEAVE)
 
-    settled = engine.active_configuration()
+    settled = engine.terminal_state
     # What the handlers recorded (W3C SCXML 5.3 readers): the final says which
     # clause broke, these say what the handler actually saw.
     p = engine.policy
@@ -47,8 +47,8 @@ def test_onexit_runs_before_the_state_leaves_aot() -> None:
         f"selfInOuter={p.self_in_outer()} childInOuter={p.child_in_outer()} "
         f"exits={p.exits()}; wanted 1 / 1 / 1 / 0 / 2"
     )
-    assert _State.SETTLED in settled, (
-        f"`leave` did not carry the machine to `settled` (active: {settled}; {records}). The document "
+    assert settled == _State.SETTLED, (
+        f"`leave` did not carry the machine to `settled` (ended in: {settled}; {records}). The document "
         "checks its clauses in document order and lands each in a `<final>` of its own: "
         "`failExits` (a handler did not run), `failSelfInInner` / `failSelfInOuter` (a state "
         "was already out of the configuration during its own `<onexit>`), `failParentInInner` "

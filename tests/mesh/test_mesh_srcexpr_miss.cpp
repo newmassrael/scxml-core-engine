@@ -60,14 +60,14 @@ int main() {
     machine.processEvent(SCE::Generated::srcexpr_miss::Event::Probe_go);
 
     const auto after_probe = machine.getCurrentState();
-    if (after_probe == SCE::Generated::srcexpr_miss::State::Double_raise_detected) {
+    if (machine.terminalState() == SCE::Generated::srcexpr_miss::State::Double_raise_detected) {
         std::printf("FAIL: srcexpr miss path raised error.execution twice. The "
                     "single-raise contract at entry_exit_actions.jinja2 L197-223 "
                     "regressed — inspect all three raise points on the srcexpr "
                     "branch for a newly added sibling raise.\n");
         return 2;
     }
-    if (after_probe == SCE::Generated::srcexpr_miss::State::Invoke_raise_regression) {
+    if (machine.terminalState() == SCE::Generated::srcexpr_miss::State::Invoke_raise_regression) {
         std::printf("FAIL: srcexpr miss routed through error.invoke.<id>. §9.5 "
                     "L1345-1350 pins the pre-envelope tier to error.execution; "
                     "a reply-tier raise on a pre-envelope fault violates the "
@@ -86,7 +86,7 @@ int main() {
     // expected; handled is the single-raise pass verdict.
     machine.processEvent(SCE::Generated::srcexpr_miss::Event::Settle);
 
-    if (machine.getCurrentState() != SCE::Generated::srcexpr_miss::State::Handled) {
+    if (machine.terminalState() != SCE::Generated::srcexpr_miss::State::Handled) {
         std::printf("FAIL: settle did not drive observe → handled (state=%d).\n",
                     static_cast<int>(machine.getCurrentState()));
         return 5;

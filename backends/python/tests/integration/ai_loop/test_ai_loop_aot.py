@@ -113,6 +113,15 @@ def _holds(engine, state: State) -> bool:
     return state in engine.active_configuration()
 
 
+def _ended_in(engine, state: State) -> bool:
+    """Whether the run ended in the top-level ``<final>`` ``state``.
+
+    Asked of ``terminal_state``, not of the configuration: W3C SCXML Appendix D's
+    exitInterpreter leaves the configuration empty once a top-level final is
+    reached, so a configuration read cannot say which one the run ended in."""
+    return engine.terminal_state == state
+
+
 def _where(engine) -> List[str]:
     """The active set in the document's own words, for a failure a reader can
     act on: ``['alive', 'within', 'working']`` says where the machine is and a
@@ -192,10 +201,10 @@ def test_the_budget_ends_the_run_from_wherever_the_cycle_is() -> None:
     for _ in range(60):
         if _holds(engine, State.REFLECTING):
             _step(engine, Event.REFLECT_NONE)
-        if _holds(engine, State.EXHAUSTED):
+        if _ended_in(engine, State.EXHAUSTED):
             break
         _turn(engine)
-    assert _holds(engine, State.EXHAUSTED), (
+    assert _ended_in(engine, State.EXHAUSTED), (
         "the budget is its own region precisely so the turn count is not something "
         f"`judging` has to remember to check; active: {_where(engine)}"
     )
@@ -335,7 +344,7 @@ def test_nobody_comes() -> None:
     _step(engine, Event.TURN_BLOCKED)
     _step(engine, Event.SCREEN_NONE)
     _step(engine, Event.UNATTENDED)
-    assert _holds(engine, State.BLOCKED), (
+    assert _ended_in(engine, State.BLOCKED), (
         "a question nobody answers ends the run in an outcome the document names, "
         f"rather than leaving it prompting into the dark; active: {_where(engine)}"
     )
@@ -407,7 +416,7 @@ def test_one_cancel_reaches_every_region() -> None:
     engine = _started()
 
     _step(engine, Event.CANCEL)
-    assert _holds(engine, State.CANCELLED), (
+    assert _ended_in(engine, State.CANCELLED), (
         "cancel is one transition on the `<parallel>` itself rather than one per "
         f"region, so a single event ends all three; active: {_where(engine)}"
     )
@@ -675,7 +684,7 @@ def test_the_run_converges_through_a_closing_report() -> None:
 
     _step(engine, Event.TURN_DONE)
 
-    assert _holds(engine, State.CONVERGED), (
+    assert _ended_in(engine, State.CONVERGED), (
         "the turn that answers the closing report reaches `reported`, whose "
         f"`<raise>` is what takes all three regions out at once; active: {_where(engine)}"
     )
@@ -786,7 +795,7 @@ def test_a_session_replaced_past_its_budget_reports_stuck() -> None:
     _step(engine, Event.SESSION_LOST)
     _step(engine, Event.SESSION_READY)
 
-    assert _holds(engine, State.EXHAUSTED), (
+    assert _ended_in(engine, State.EXHAUSTED), (
         "the replacement past `max_restarts` reaches `stuck`, which reports the run "
         f"as exhausted rather than failed; active: {_where(engine)}"
     )
@@ -841,7 +850,7 @@ def test_a_failure_ends_the_whole_run() -> None:
 
     _step(engine, Event.FAIL)
 
-    assert _holds(engine, State.FAILED), (
+    assert _ended_in(engine, State.FAILED), (
         "`fail` is written on the `<parallel>` itself, so one event takes all three "
         "regions to `failed` — a different outcome from `cancelled`, which is what "
         f"tells a broken run from a stopped one; active: {_where(engine)}"
@@ -933,6 +942,11 @@ def test_every_state_a_run_reaches_reads_back_from_its_own_name() -> None:
         for state in engine.active_configuration():
             if state not in seen:
                 seen.append(state)
+        # A top-level <final> is read from `terminal_state`: Appendix D's
+        # exitInterpreter leaves the configuration empty once the run ends there.
+        ended = engine.terminal_state
+        if ended is not None and ended not in seen:
+            seen.append(ended)
 
     # Every outcome the document names, walked rather than listed: a state is
     # recorded here only because a run actually stood in it, and a written-out list
@@ -945,7 +959,7 @@ def test_every_state_a_run_reaches_reads_back_from_its_own_name() -> None:
             _step(engine, Event.REFLECT_APPLIED)
             record(engine)
             _step(engine, Event.SESSION_READY)
-        if _holds(engine, State.EXHAUSTED):
+        if _ended_in(engine, State.EXHAUSTED):
             break
         _turn(engine)
         record(engine)

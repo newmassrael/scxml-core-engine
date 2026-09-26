@@ -50,7 +50,7 @@ fn a_hosts_json_payload_is_addressable_and_its_text_stays_text() {
 
     let after_payload = engine.get_active_states();
     assert!(
-        !after_payload.contains(&State::Mangled),
+        engine.terminal_state() != Some(State::Mangled),
         "the host sent `{{\"milestone\":\"refined\",\"turns\":2}}` and the guard \
          `_event.data.milestone === 'refined' && _event.data.turns === 2` did not \
          hold, so the payload did not arrive as an object with those properties \
@@ -70,7 +70,7 @@ fn a_hosts_json_payload_is_addressable_and_its_text_stays_text() {
 
     let after_note = engine.get_active_states();
     assert!(
-        !after_note.contains(&State::Garbled),
+        engine.terminal_state() != Some(State::Garbled),
         "the host sent the text `hold the line` and `_event.data === 'hold the line'` \
          did not hold, so a payload that is not JSON did not arrive as the string it \
          was sent as (active: {after_note:?})"
@@ -85,7 +85,7 @@ fn a_hosts_json_payload_is_addressable_and_its_text_stays_text() {
 
     let after_arith = engine.get_active_states();
     assert!(
-        !after_arith.contains(&State::Evaluated),
+        engine.terminal_state() != Some(State::Evaluated),
         "the host sent the text `2 + 3` and it arrived as 5 — the payload was run \
          rather than read (active: {after_arith:?})"
     );
@@ -110,7 +110,7 @@ fn a_hosts_json_payload_is_addressable_and_its_text_stays_text() {
 
     let after_doc = engine.get_active_states();
     assert!(
-        !after_doc.contains(&State::Flattened),
+        engine.terminal_state() != Some(State::Flattened),
         "the host sent a well-formed XML document and \
          `_event.data.documentElement.nodeName === 'books'` did not hold, so the \
          payload did not become the DOM structure the clause requires \
@@ -125,15 +125,16 @@ fn a_hosts_json_payload_is_addressable_and_its_text_stays_text() {
 
     let after_broken = engine.get_active_states();
     assert!(
-        !after_broken.contains(&State::Swallowed),
+        engine.terminal_state() != Some(State::Swallowed),
         "the host sent `<assign>  to  detail failed`, which opens with `<` and is \
          not a valid XML document, so §scxml-B-2-8-1's closing MUST applies and the \
          reading is the space-normalized string. This backend answered nil until \
          2026-08-19 (active: {after_broken:?})"
     );
     assert!(
-        after_broken.contains(&State::Settled),
+        engine.terminal_state() == Some(State::Settled),
         "the malformed-XML payload neither matched nor mismatched \
-         (active: {after_broken:?})"
+         (active: {after_broken:?}, ended in: {:?})",
+        engine.terminal_state()
     );
 }

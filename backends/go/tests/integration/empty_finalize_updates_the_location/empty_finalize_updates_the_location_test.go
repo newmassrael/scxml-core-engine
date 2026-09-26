@@ -45,7 +45,12 @@ func TestAnEmptyFinalizeUpdatesTheLocationAndAnAbsentOneDoesNot(t *testing.T) {
 			"never fired, so the machine is not being ticked")
 	}
 
-	switch got := engine.GetCurrentState(); got {
+	got, ended := engine.TerminalState()
+	if !ended {
+		t.Fatalf("empty_finalize_updates_the_location did not end in a top-level "+
+			"<final> (parked in %v)", engine.GetCurrentState())
+	}
+	switch got {
 	case EmptyFinalizeUpdatesTheLocationStatePass:
 	case EmptyFinalizeUpdatesTheLocationStateFailNotUpdated:
 		t.Fatalf("the empty `<finalize/>` left `tally` at its old value: W3C SCXML " +
@@ -71,7 +76,7 @@ func TestAnEmptyFinalizeUpdatesTheLocationAndAnAbsentOneDoesNot(t *testing.T) {
 		t.Fatalf("the second child never answered, so the absent-<finalize> half was " +
 			"never exercised.")
 	default:
-		t.Fatalf("empty_finalize_updates_the_location settled in %v, which is not a "+
+		t.Fatalf("empty_finalize_updates_the_location ended in %v, which is not a "+
 			"verdict state", got)
 	}
 }

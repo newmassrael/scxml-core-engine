@@ -121,7 +121,7 @@ TEST_F(UndecodablePayloadIsReportedTest, ProseAndAPayloadThatParsedAreNotReporte
            "requires. A diagnostic that fires when nothing is wrong is one nobody reads";
 
     ASSERT_TRUE(sm_->processEvent("answer", INTACT_OBJECT).success);
-    ASSERT_EQ(sm_->getCurrentState(), "accepted")
+    ASSERT_EQ(sm_->terminalState().value_or(""), "accepted")
         << "the guard `_event.data.done` did not hold for `" << INTACT_OBJECT
         << "`, so the structured reading did not happen and the zero below would be proving nothing";
     EXPECT_EQ(sm_->getStatistics().undecodablePayloads, 0u) << "a payload that parsed was counted as one that did not";
@@ -169,7 +169,7 @@ TEST_F(UndecodablePayloadIsReportedTest, TheEngineNamesTheDeliveryThatLostItsPay
     // And a delivery that succeeds must leave both alone — otherwise the last
     // name would drift to whatever arrived most recently.
     ASSERT_TRUE(sm_->processEvent("answer", INTACT_OBJECT).success);
-    ASSERT_EQ(sm_->getCurrentState(), "accepted")
+    ASSERT_EQ(sm_->terminalState().value_or(""), "accepted")
         << "the intact payload did not take the guarded transition, so the two assertions below "
            "are not measuring a successful delivery";
     EXPECT_EQ(sm_->getStatistics().undecodablePayloads, 2u)

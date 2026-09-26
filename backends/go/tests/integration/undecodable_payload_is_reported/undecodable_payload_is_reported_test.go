@@ -107,10 +107,10 @@ func TestProseAndAPayloadThatParsedAreNotCounted(t *testing.T) {
 	}
 
 	deliver(engine, UndecodablePayloadIsReportedEventAnswer, intactObject)
-	if got := engine.GetCurrentState(); got != UndecodablePayloadIsReportedStateAccepted {
+	if got, ended := engine.TerminalState(); !ended || got != UndecodablePayloadIsReportedStateAccepted {
 		t.Fatalf("the guard `_event.data.done` did not hold for `%s`, so the structured "+
 			"reading did not happen and the zero below would be proving nothing "+
-			"(now in %v)", intactObject, got)
+			"(ended: %v, in %v; current %v)", intactObject, ended, got, engine.GetCurrentState())
 	}
 	if got := engine.UndecodablePayloads(); got != 0 {
 		t.Fatalf("a payload that parsed was counted as one that did not, count = %d", got)
@@ -178,9 +178,10 @@ func TestTheEngineNamesTheDeliveryThatLostItsPayload(t *testing.T) {
 	// And a delivery that succeeds must leave both alone — otherwise the last
 	// name would drift to whatever arrived most recently.
 	deliver(engine, UndecodablePayloadIsReportedEventAnswer, intactObject)
-	if got := engine.GetCurrentState(); got != UndecodablePayloadIsReportedStateAccepted {
+	if got, ended := engine.TerminalState(); !ended || got != UndecodablePayloadIsReportedStateAccepted {
 		t.Fatalf("the intact payload did not take the guarded transition, so the two "+
-			"checks below are not measuring a successful delivery (now in %v)", got)
+			"checks below are not measuring a successful delivery (ended: %v, in %v; current %v)",
+			ended, got, engine.GetCurrentState())
 	}
 	if got := engine.UndecodablePayloads(); got != 2 {
 		t.Fatalf("a delivery that parsed moved a count that belongs to ones that did "+

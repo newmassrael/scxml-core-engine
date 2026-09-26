@@ -53,8 +53,8 @@ func TestDonedataRidesACompletionAfterTheInvokeStarted(t *testing.T) {
 			"not driven to its `<final>`")
 	}
 
-	got := engine.GetCurrentState()
-	if got != DonedataLateCompletionStatePass {
+	got, ended := engine.TerminalState()
+	if !ended || got != DonedataLateCompletionStatePass {
 		t.Fatalf(
 			"parent reached %v, want Pass: the `done.invoke.inv_late` guard did not "+
 				"see `_event.data.result === 42`, so the child's `<donedata>` was "+
