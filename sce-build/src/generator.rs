@@ -2670,6 +2670,8 @@ fn render_rust(
         static_published => minijinja::Value::from_serialize(&static_published),
         static_record_defs => static_lowering.record_defs.join("\n\n"),
         static_imports => &static_lowering.imports,
+        static_records => minijinja::Value::from_serialize(&static_lowering.records),
+        static_saved_shape => &static_lowering.saved_shape,
     };
     tmpl.render(ctx).map_err(render_error)
 }

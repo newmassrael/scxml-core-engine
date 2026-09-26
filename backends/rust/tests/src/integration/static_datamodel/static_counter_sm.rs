@@ -132,7 +132,8 @@ pub struct StaticCounterData {
 }
 
 /// What a host observes: the full active configuration — every active state,
-/// each region of a `<parallel>` included — and the published variables,/// taken together between two host calls, which is a macrostep boundary (W3C
+/// each region of a `<parallel>` included — and the published variables,
+/// taken together between two host calls, which is a macrostep boundary (W3C
 /// SCXML Appendix D). `truncated` is `true` when that macrostep was stopped at
 /// the microstep ceiling, so the configuration is not a stable one. Owned: a
 /// host holding one keeps what it saw whatever the machine does next.
@@ -162,6 +163,92 @@ impl StaticCounterObserve for Engine<StaticCounterPolicy> {
             },
             truncated: self.last_macrostep_truncated(),
         }
+    }
+}
+
+// ── SCE Accepted Subset §2.15: saving a sce-static machine and restoring it ──
+
+/// A running machine saved at a macrostep boundary, and restored into a new
+/// process in place of `initialize` — every variable, the machine's own
+/// included, and where the machine stands. The saved state is JSON
+/// (`SavedState::to_json`), the same on every backend.
+pub trait StaticCounterPersist: Sized {
+    /// The policy a restored machine is built around, constructed by the host
+    /// as it would be for `initialize`.
+    type Policy;
+
+    /// The shape a saved state of this document is bound to: a state saved
+    /// from a document that renamed, re-typed or moved a state or a variable
+    /// is refused, one saved before a guard or an action changed is not.
+    const SHAPE: &'static str;
+
+    /// The machine's whole state. Refused for a machine that is not running,
+    /// and for one whose last macrostep stopped at the microstep ceiling.
+    fn save(
+        &self,
+    ) -> Result<
+        ::sce_rust_runtime::saved_state::SavedState,
+        ::sce_rust_runtime::saved_state::StateRefusal,
+    >;
+
+    /// A machine of `policy` standing where `saved` left one. No `<onentry>`
+    /// runs and no `<data>` is evaluated: the saved run already did both.
+    fn restore(
+        policy: Self::Policy,
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal>;
+}
+
+impl StaticCounterPersist for Engine<StaticCounterPolicy> {
+    type Policy = StaticCounterPolicy;
+
+    const SHAPE: &'static str = "b1e55a5fb4149b2224d189f552488790e62394135415d7e93c3423ce7d4f4da6";
+
+    fn save(
+        &self,
+    ) -> Result<
+        ::sce_rust_runtime::saved_state::SavedState,
+        ::sce_rust_runtime::saved_state::StateRefusal,
+    > {
+        let policy = self.policy();
+        ::sce_rust_runtime::saved_state::save(
+            self,
+            Self::SHAPE,
+            vec![
+                (
+                    "count".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.count),
+                ),
+                (
+                    "ready".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.ready),
+                ),
+                (
+                    "step".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.step),
+                ),
+            ],
+        )
+    }
+
+    fn restore(
+        mut policy: StaticCounterPolicy,
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
+        ::sce_rust_runtime::saved_state::check_shape(saved, Self::SHAPE)?;
+        policy.count = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("count")?,
+            "count",
+        )?;
+        policy.ready = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("ready")?,
+            "ready",
+        )?;
+        policy.step = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("step")?,
+            "step",
+        )?;
+        ::sce_rust_runtime::saved_state::enter(policy, saved)
     }
 }
 

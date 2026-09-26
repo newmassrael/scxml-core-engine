@@ -47,6 +47,9 @@ pub struct StaticField {
     /// value itself — a Rust list as a slice of its elements. `None` where
     /// the field is read as it is.
     pub view: Option<String>,
+    /// The bound of a list or a byte string: the machine never holds more,
+    /// so neither may a restored value.
+    pub capacity: Option<u32>,
 }
 
 /// What lowering a `sce-static` machine produced beyond the rewritten model.
@@ -67,6 +70,32 @@ pub struct StaticLowering {
     /// forge kind importing the same algorithm writes, so the machine reaches
     /// the function where the algorithm's own generation put it.
     pub imports: Vec<String>,
+    /// The record types of [`Self::record_defs`], field by field — what a
+    /// saved state writes a record value as.
+    pub records: Vec<StaticRecord>,
+    /// The shape a saved state of this machine is bound to ([`saved_shape`]),
+    /// or `None` for a machine whose state a saved state cannot yet hold.
+    pub saved_shape: Option<String>,
+}
+
+/// A record type a `sce-static` machine declares, as a saved state writes it:
+/// one member per schema field, keyed by the field's id as the schema writes
+/// it, in the schema's order.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct StaticRecord {
+    /// The backend type ([`StaticTarget::record_type`]).
+    pub ty: String,
+    pub fields: Vec<StaticRecordField>,
+}
+
+/// One field of a [`StaticRecord`].
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct StaticRecordField {
+    /// The schema's id — the key a saved state writes it under, the same on
+    /// every backend.
+    pub id: String,
+    /// The backend identifier ([`StaticTarget::record_field`]).
+    pub name: String,
 }
 
 /// How one backend spells what a `sce-static` document says. The walk
@@ -523,7 +552,11 @@ pub fn lower(
     let no_payload = scope.paths(None);
     let mut fields = Vec::new();
     let mut record_defs = Vec::new();
+    let mut saved_records = Vec::new();
     let mut declared_types = BTreeSet::new();
+    // Taken before any expression is rewritten: the shape is the document's,
+    // and the same for every backend.
+    let saved_shape = saved_shape(model, &scope);
     {
         let ctx = scope.ctx(&no_payload, enums);
         let init_names: Vec<(String, String)> = variables
@@ -559,6 +592,17 @@ pub fn lower(
                 let ty = target.record_type(machine, alias);
                 if declared_types.insert(ty.clone()) {
                     record_defs.push(target.record_def(&ty, alias, schema));
+                    saved_records.push(StaticRecord {
+                        ty: ty.clone(),
+                        fields: schema
+                            .fields
+                            .iter()
+                            .map(|f| StaticRecordField {
+                                id: f.id.clone(),
+                                name: target.record_field(&f.id),
+                            })
+                            .collect(),
+                    });
                 }
                 let mut values = Vec::with_capacity(schema.fields.len());
                 for field in &schema.fields {
@@ -589,6 +633,7 @@ pub fn lower(
                     ty,
                     published,
                     view: None,
+                    capacity: None,
                 });
                 continue;
             }
@@ -606,6 +651,7 @@ pub fn lower(
                     init: target.list_empty(),
                     published,
                     view: target.list_view(elem),
+                    capacity: var.capacity,
                 });
                 continue;
             }
@@ -637,6 +683,9 @@ pub fn lower(
                 init,
                 published,
                 view: target.scalar_view(ty),
+                capacity: matches!(ty, SceType::Bytes)
+                    .then_some(var.capacity)
+                    .flatten(),
             });
         }
     }
@@ -733,7 +782,80 @@ pub fn lower(
         payload_events,
         record_defs,
         imports,
+        records: saved_records,
+        saved_shape,
     })
+}
+
+/// The shape a saved state of this machine is bound to (SCE Accepted Subset
+/// §2.15, "Saving and restoring"): a SHA-256 over every state with its kind
+/// and parent, in document order, and every variable with its type and bound,
+/// a record's fields included — what a saved state names, and nothing else.
+///
+/// Not the document's source hash: that one changes with a comment, and a
+/// saved state is data a user keeps across an app update. A guard or an
+/// action rewritten leaves a saved state restorable; a state or variable
+/// renamed, re-typed, re-parented or re-bounded refuses it.
+///
+/// `None` for a machine whose state lives partly in the runtime rather than
+/// in its fields — what a `<history>` recorded, a delayed `<send>` still
+/// pending, an invoked session — which this version of the saved state cannot
+/// hold. Such a machine is generated without the save API rather than with
+/// one that would silently drop part of its state.
+fn saved_shape(model: &SCXMLModel, scope: &StaticScope) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    use std::fmt::Write as _;
+
+    if model.has_history_states || model.needs_event_scheduler_driving() || model.has_invoke() {
+        return None;
+    }
+    let mut text = String::from("sce-saved-state-shape 1\n");
+    let mut states: Vec<_> = model.states.values().collect();
+    states.sort_by_key(|s| s.document_order);
+    for state in states {
+        let kind = if state.is_parallel {
+            "parallel"
+        } else if state.is_final {
+            "final"
+        } else if state.children.is_empty() {
+            "atomic"
+        } else {
+            "compound"
+        };
+        let _ = writeln!(
+            text,
+            "state {} {kind} {}",
+            state.id,
+            state.parent.as_deref().unwrap_or("-")
+        );
+    }
+    for var in &scope.variables {
+        let ty = var
+            .value_type
+            .as_ref()
+            .map_or_else(String::new, |t| t.as_attr());
+        let bound = var
+            .capacity
+            .map_or_else(|| "-".to_string(), |c| c.to_string());
+        let _ = writeln!(text, "variable {} {ty} {bound}", var.id);
+        if let Some(schema) = var
+            .value_type
+            .as_ref()
+            .and_then(|t| t.record_alias())
+            .and_then(|alias| model.imported_records.get(alias))
+        {
+            for field in &schema.fields {
+                let _ = writeln!(
+                    text,
+                    "field {}.{} {}",
+                    var.id,
+                    field.id,
+                    field.sce_type.as_attr()
+                );
+            }
+        }
+    }
+    Some(format!("{:x}", Sha256::digest(text.as_bytes())))
 }
 
 /// A variable's initial value. It is computed while the machine is being
@@ -1086,4 +1208,75 @@ fn lower_nested(
         reads_payload |= lower_actions(block, ctx, renames, rewrites)?;
     }
     Ok(reads_payload)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::SCXMLParser;
+
+    const COUNTER: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="counting" datamodel="sce-static" name="m">
+  <datamodel>
+    <data id="count" sce:type="uint32" expr="0"/>
+  </datamodel>
+  <state id="counting">
+    <transition event="tick" cond="count &lt; 10" type="internal">
+      <assign location="count" expr="count + 1"/>
+    </transition>
+    <transition event="go" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>"#;
+
+    fn shape(document: &str) -> Option<String> {
+        let mut model = SCXMLParser::new()
+            .parse_string(document, "m")
+            .expect("parses");
+        lower_rust(&mut model, "M", &[])
+            .expect("lowers")
+            .saved_shape
+    }
+
+    #[test]
+    fn the_saved_shape_follows_what_a_saved_state_names_and_nothing_else() {
+        let base = shape(COUNTER).expect("a machine of fields alone has a shape");
+        assert_eq!(
+            shape(&COUNTER.replace("count &lt; 10", "count &lt; 20")),
+            Some(base.clone()),
+            "a guard rewritten: a saved state still restores"
+        );
+        assert_eq!(
+            shape(&COUNTER.replace(r#"expr="0""#, r#"expr="3""#)),
+            Some(base.clone()),
+            "an initial value changed: a restore never evaluates it"
+        );
+        assert_ne!(
+            shape(&COUNTER.replace(r#"sce:type="uint32""#, r#"sce:type="uint16""#)),
+            Some(base.clone()),
+            "a variable re-typed"
+        );
+        assert_ne!(
+            shape(
+                &COUNTER
+                    .replace(r#"final id="done""#, r#"final id="finished""#)
+                    .replace(r#"target="done""#, r#"target="finished""#)
+            ),
+            Some(base),
+            "a state renamed"
+        );
+    }
+
+    #[test]
+    fn a_machine_with_a_history_has_no_saved_shape() {
+        // What a <history> recorded lives in the runtime, which this version
+        // of the saved state does not hold.
+        let with_history = COUNTER
+            .replace(
+                r#"<state id="counting">"#,
+                r#"<state id="outer" initial="counting"><history id="h"><transition target="counting"/></history><state id="counting">"#,
+            )
+            .replace(r#"<final id="done"/>"#, r#"</state><final id="done"/>"#);
+        assert_eq!(shape(&with_history), None);
+    }
 }

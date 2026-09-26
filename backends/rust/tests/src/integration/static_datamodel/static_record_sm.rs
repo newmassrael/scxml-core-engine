@@ -184,7 +184,8 @@ pub struct StaticRecordData {
 }
 
 /// What a host observes: the full active configuration — every active state,
-/// each region of a `<parallel>` included — and the published variables,/// taken together between two host calls, which is a macrostep boundary (W3C
+/// each region of a `<parallel>` included — and the published variables,
+/// taken together between two host calls, which is a macrostep boundary (W3C
 /// SCXML Appendix D). `truncated` is `true` when that macrostep was stopped at
 /// the microstep ceiling, so the configuration is not a stable one. Owned: a
 /// host holding one keeps what it saw whatever the machine does next.
@@ -214,6 +215,114 @@ impl StaticRecordObserve for Engine<StaticRecordPolicy> {
             },
             truncated: self.last_macrostep_truncated(),
         }
+    }
+}
+
+// ── SCE Accepted Subset §2.15: saving a sce-static machine and restoring it ──
+
+impl ::sce_rust_runtime::saved_state::SavedValue for StaticRecordDayRecord {
+    fn to_saved(&self) -> ::sce_rust_runtime::json::Value {
+        ::sce_rust_runtime::json::Value::Object(vec![
+            (
+                "year".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.year),
+            ),
+            (
+                "month".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.month),
+            ),
+            (
+                "dayOfMonth".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.dayOfMonth),
+            ),
+        ])
+    }
+
+    fn from_saved(
+        value: &::sce_rust_runtime::json::Value,
+        what: &str,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
+        Ok(Self {
+            year: ::sce_rust_runtime::saved_state::record_field(value, what, "year")?,
+            month: ::sce_rust_runtime::saved_state::record_field(value, what, "month")?,
+            dayOfMonth: ::sce_rust_runtime::saved_state::record_field(value, what, "dayOfMonth")?,
+        })
+    }
+}
+
+/// A running machine saved at a macrostep boundary, and restored into a new
+/// process in place of `initialize` — every variable, the machine's own
+/// included, and where the machine stands. The saved state is JSON
+/// (`SavedState::to_json`), the same on every backend.
+pub trait StaticRecordPersist: Sized {
+    /// The policy a restored machine is built around, constructed by the host
+    /// as it would be for `initialize`.
+    type Policy;
+
+    /// The shape a saved state of this document is bound to: a state saved
+    /// from a document that renamed, re-typed or moved a state or a variable
+    /// is refused, one saved before a guard or an action changed is not.
+    const SHAPE: &'static str;
+
+    /// The machine's whole state. Refused for a machine that is not running,
+    /// and for one whose last macrostep stopped at the microstep ceiling.
+    fn save(
+        &self,
+    ) -> Result<
+        ::sce_rust_runtime::saved_state::SavedState,
+        ::sce_rust_runtime::saved_state::StateRefusal,
+    >;
+
+    /// A machine of `policy` standing where `saved` left one. No `<onentry>`
+    /// runs and no `<data>` is evaluated: the saved run already did both.
+    fn restore(
+        policy: Self::Policy,
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal>;
+}
+
+impl StaticRecordPersist for Engine<StaticRecordPolicy> {
+    type Policy = StaticRecordPolicy;
+
+    const SHAPE: &'static str = "23e94bbee0f8862f1ad51a0f614fe3df492096ccaf6676d9eb8cd371639f9fba";
+
+    fn save(
+        &self,
+    ) -> Result<
+        ::sce_rust_runtime::saved_state::SavedState,
+        ::sce_rust_runtime::saved_state::StateRefusal,
+    > {
+        let policy = self.policy();
+        ::sce_rust_runtime::saved_state::save(
+            self,
+            Self::SHAPE,
+            vec![
+                (
+                    "shown".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.shown),
+                ),
+                (
+                    "refusals".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.refusals),
+                ),
+            ],
+        )
+    }
+
+    fn restore(
+        mut policy: StaticRecordPolicy,
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
+        ::sce_rust_runtime::saved_state::check_shape(saved, Self::SHAPE)?;
+        policy.shown = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("shown")?,
+            "shown",
+        )?;
+        policy.refusals = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("refusals")?,
+            "refusals",
+        )?;
+        ::sce_rust_runtime::saved_state::enter(policy, saved)
     }
 }
 

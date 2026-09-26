@@ -15,22 +15,24 @@
 // The assertions are the Kotlin test's: one document means one behaviour on
 // both backends.
 
+use sce_rust_runtime::saved_state::{SavedState, StateRefusal};
 use sce_rust_runtime::Engine;
 use sce_rust_tests::integration::static_datamodel::static_counter_sm::{
-    StaticCounterData, StaticCounterObserve, StaticCounterPolicy, StaticCounterState,
+    StaticCounterData, StaticCounterObserve, StaticCounterPersist, StaticCounterPolicy,
+    StaticCounterState,
 };
 use sce_rust_tests::integration::static_datamodel::static_host_call_sm::{
     RecordingStaticHostCallActions, StaticHostCallActionsCall, StaticHostCallObserve,
-    StaticHostCallPolicy, StaticHostCallState,
+    StaticHostCallPersist, StaticHostCallPolicy, StaticHostCallState,
 };
 use sce_rust_tests::integration::static_datamodel::static_list_sm::{
-    StaticListDayPickedPayload, StaticListInject, StaticListObserve, StaticListPolicy,
-    StaticListState,
+    StaticListDayPickedPayload, StaticListInject, StaticListObserve, StaticListPersist,
+    StaticListPolicy, StaticListState,
 };
 use sce_rust_tests::integration::static_datamodel::static_overflow_sm::StaticOverflowPolicy;
 use sce_rust_tests::integration::static_datamodel::static_record_sm::{
     StaticRecordDayPickedPayload, StaticRecordDayRecord, StaticRecordInject, StaticRecordObserve,
-    StaticRecordPolicy,
+    StaticRecordPersist, StaticRecordPolicy,
 };
 
 // ── static_counter: scalar variables, a typed guard, assignments ──────────
@@ -448,5 +450,173 @@ fn the_snapshot_names_the_state_a_guard_held_the_machine_in() {
         engine.snapshot().configuration.as_slice(),
         &[StaticListState::Collecting],
         "one of three picked: the guard holds `full` back"
+    );
+}
+
+// ── saving a machine and restoring it into a new process (E17) ───────────
+//
+// Each saved state goes through its JSON text and back before it is
+// restored, as one that crossed a process boundary would.
+
+fn through_json(saved: &SavedState) -> SavedState {
+    SavedState::from_json(&saved.to_json()).expect("a saved state reads back")
+}
+
+/// The refusal a restore answered with. An `Engine` has no `Debug`, so
+/// `expect_err` cannot print the machine it did not expect.
+fn refused<M>(restored: Result<M, StateRefusal>) -> StateRefusal {
+    match restored {
+        Ok(_) => panic!("the restore was expected to be refused"),
+        Err(refusal) => refusal,
+    }
+}
+
+#[test]
+fn a_restored_machine_carries_on_where_the_saved_one_stood() {
+    // Seven ticks: count 7, and `ready` set at 5 and not yet cleared (the
+    // <elseif count > 7> branch). `step` is the machine's own — it is saved
+    // though no snapshot publishes it.
+    let mut engine = counter();
+    ticks(&mut engine, 7);
+    let saved = through_json(&engine.save().expect("a running machine saves"));
+
+    let mut restored = Engine::<StaticCounterPolicy>::restore(StaticCounterPolicy::new(), &saved)
+        .expect("the same document restores");
+    assert_eq!(restored.snapshot(), engine.snapshot());
+
+    ticks(&mut engine, 2);
+    ticks(&mut restored, 2);
+    assert_eq!(
+        restored.snapshot(),
+        engine.snapshot(),
+        "both run on alike: count 9, and the <elseif> cleared ready"
+    );
+}
+
+#[test]
+fn a_restore_runs_no_onentry() {
+    // `idle`'s <onentry> calls the host. The saved run already made that
+    // call; the restored machine must not make it again.
+    let mut engine = Engine::new(StaticHostCallPolicy::new(
+        RecordingStaticHostCallActions::default(),
+    ));
+    engine.initialize();
+    engine.raise_external_by_name("retry", "");
+    engine.step();
+    let saved = through_json(&engine.save().expect("saves"));
+
+    let mut restored = Engine::<StaticHostCallPolicy<_>>::restore(
+        StaticHostCallPolicy::new(RecordingStaticHostCallActions::default()),
+        &saved,
+    )
+    .expect("restores");
+    assert!(
+        restored.policy().actions().calls().is_empty(),
+        "restoring entered nothing, so it called nothing"
+    );
+    restored.raise_external_by_name("retry", "");
+    restored.step();
+    assert_eq!(
+        restored.policy().actions().calls(),
+        &[StaticHostCallActionsCall::ShowAttempts {
+            count: 2,
+            exhausted: false
+        }],
+        "the next entry sees the attempts the saved run had made"
+    );
+}
+
+#[test]
+fn a_record_and_a_list_are_saved_whole() {
+    let mut engine = record();
+    pick_day(&mut engine, 2027, 2, 27);
+    let saved = through_json(&engine.save().expect("saves"));
+    let restored =
+        Engine::<StaticRecordPolicy>::restore(StaticRecordPolicy::new(), &saved).expect("restores");
+    assert_eq!(restored.policy().shown(), day(2027, 2, 27));
+
+    let mut engine = list();
+    pick(&mut engine, 4);
+    pick(&mut engine, 2);
+    let saved = through_json(&engine.save().expect("saves"));
+    let restored =
+        Engine::<StaticListPolicy>::restore(StaticListPolicy::new(), &saved).expect("restores");
+    assert_eq!(restored.policy().picked(), &[4, 2]);
+    assert_eq!(restored.snapshot(), engine.snapshot());
+}
+
+#[test]
+fn a_saved_state_names_each_variable_by_its_document_id() {
+    // The JSON is the cross-backend format: keys are the document's ids, not
+    // any backend's field names, and a record is an object of its schema's
+    // fields.
+    let mut engine = record();
+    pick_day(&mut engine, 2027, 1, 3);
+    let json = engine.save().expect("saves").to_json();
+    assert!(
+        json.contains(r#""shown":{"year":2027,"month":1,"dayOfMonth":3}"#),
+        "{json}"
+    );
+    assert!(json.contains(r#""configuration":["showing"]"#), "{json}");
+}
+
+#[test]
+fn a_state_saved_from_another_document_is_refused() {
+    let mut engine = list();
+    pick(&mut engine, 1);
+    let saved = engine.save().expect("saves");
+    let refusal = refused(Engine::<StaticCounterPolicy>::restore(
+        StaticCounterPolicy::new(),
+        &saved,
+    ));
+    assert!(refusal.reason().contains("shape"), "{refusal}");
+}
+
+#[test]
+fn a_list_longer_than_its_bound_is_refused() {
+    // A machine never holds more than sce:capacity="3"; a saved state that
+    // claims it did is not one this machine wrote.
+    let mut engine = list();
+    pick(&mut engine, 1);
+    let json = engine
+        .save()
+        .expect("saves")
+        .to_json()
+        .replace(r#""picked":[1]"#, r#""picked":[1,2,3,4]"#);
+    let refusal = refused(Engine::<StaticListPolicy>::restore(
+        StaticListPolicy::new(),
+        &SavedState::from_json(&json).expect("reads"),
+    ));
+    assert!(refusal.reason().contains("bounded by"), "{refusal}");
+}
+
+#[test]
+fn a_configuration_that_is_not_one_of_the_document_is_refused() {
+    let mut engine = list();
+    pick(&mut engine, 1);
+    let mut saved = engine.save().expect("saves");
+    saved.configuration = vec!["nowhere".to_string()];
+    let refusal = refused(Engine::<StaticListPolicy>::restore(
+        StaticListPolicy::new(),
+        &saved,
+    ));
+    assert!(refusal.reason().contains("nowhere"), "{refusal}");
+}
+
+#[test]
+fn a_machine_that_is_not_running_is_not_saved() {
+    let engine = Engine::new(StaticCounterPolicy::new());
+    assert!(engine.save().is_err(), "never started");
+
+    let mut engine = list();
+    for d in [1, 2, 3] {
+        pick(&mut engine, d);
+    }
+    engine.raise_external_by_name("full", "");
+    engine.step();
+    assert!(engine.is_in_final_state());
+    assert!(
+        engine.save().is_err(),
+        "ended at a top-level <final>: nothing left to resume"
     );
 }

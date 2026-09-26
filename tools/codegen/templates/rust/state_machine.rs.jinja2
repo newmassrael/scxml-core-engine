@@ -197,6 +197,7 @@ pub struct {{ machine_name }}Data {
 
 /// What a host observes: the full active configuration — every active state,
 /// each region of a `<parallel>` included —{% if static_published %} and the published variables,{% endif %}
+
 /// taken together between two host calls, which is a macrostep boundary (W3C
 /// SCXML Appendix D). `truncated` is `true` when that macrostep was stopped at
 /// the microstep ceiling, so the configuration is not a stable one. Owned: a
@@ -237,6 +238,99 @@ impl{{ policy_generics_decl }} {{ machine_name }}Observe for Engine<{{ machine_n
     }
 }
 
+{% if static_saved_shape and not no_std %}
+// ── SCE Accepted Subset §2.15: saving a sce-static machine and restoring it ──
+{% for record in static_records %}
+
+impl ::sce_rust_runtime::saved_state::SavedValue for {{ record.ty }} {
+    fn to_saved(&self) -> ::sce_rust_runtime::json::Value {
+        ::sce_rust_runtime::json::Value::Object(vec![
+{% for field in record.fields %}
+            ("{{ field.id }}".to_string(), ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.{{ field.name }})),
+{% endfor %}
+        ])
+    }
+
+    fn from_saved(
+        value: &::sce_rust_runtime::json::Value,
+        what: &str,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
+        Ok(Self {
+{% for field in record.fields %}
+            {{ field.name }}: ::sce_rust_runtime::saved_state::record_field(value, what, "{{ field.id }}")?,
+{% endfor %}
+        })
+    }
+}
+{% endfor %}
+
+/// A running machine saved at a macrostep boundary, and restored into a new
+/// process in place of `initialize` — every variable, the machine's own
+/// included, and where the machine stands. The saved state is JSON
+/// (`SavedState::to_json`), the same on every backend.
+pub trait {{ machine_name }}Persist: Sized {
+    /// The policy a restored machine is built around, constructed by the host
+    /// as it would be for `initialize`.
+    type Policy;
+
+    /// The shape a saved state of this document is bound to: a state saved
+    /// from a document that renamed, re-typed or moved a state or a variable
+    /// is refused, one saved before a guard or an action changed is not.
+    const SHAPE: &'static str;
+
+    /// The machine's whole state. Refused for a machine that is not running,
+    /// and for one whose last macrostep stopped at the microstep ceiling.
+    fn save(&self) -> Result<::sce_rust_runtime::saved_state::SavedState, ::sce_rust_runtime::saved_state::StateRefusal>;
+
+    /// A machine of `policy` standing where `saved` left one. No `<onentry>`
+    /// runs and no `<data>` is evaluated: the saved run already did both.
+    fn restore(
+        policy: Self::Policy,
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal>;
+}
+
+impl{{ policy_generics_decl }} {{ machine_name }}Persist for Engine<{{ machine_name }}Policy{{ policy_generics_use }}> {
+    type Policy = {{ machine_name }}Policy{{ policy_generics_use }};
+
+    const SHAPE: &'static str = "{{ static_saved_shape }}";
+
+    fn save(&self) -> Result<::sce_rust_runtime::saved_state::SavedState, ::sce_rust_runtime::saved_state::StateRefusal> {
+{% if static_fields %}
+        let policy = self.policy();
+{% endif %}
+        ::sce_rust_runtime::saved_state::save(
+            self,
+            Self::SHAPE,
+            vec![
+{% for field in static_fields %}
+                ("{{ field.id }}".to_string(), ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.{{ field.name }})),
+{% endfor %}
+            ],
+        )
+    }
+
+    fn restore(
+{% if static_fields %}
+        mut policy: {{ machine_name }}Policy{{ policy_generics_use }},
+{% else %}
+        policy: {{ machine_name }}Policy{{ policy_generics_use }},
+{% endif %}
+        saved: &::sce_rust_runtime::saved_state::SavedState,
+    ) -> Result<Self, ::sce_rust_runtime::saved_state::StateRefusal> {
+        ::sce_rust_runtime::saved_state::check_shape(saved, Self::SHAPE)?;
+{% for field in static_fields %}
+{% if field.capacity is not none %}
+        policy.{{ field.name }} = ::sce_rust_runtime::saved_state::bounded(saved.variable("{{ field.id }}")?, "{{ field.id }}", {{ field.capacity }})?;
+{% else %}
+        policy.{{ field.name }} = ::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("{{ field.id }}")?, "{{ field.id }}")?;
+{% endif %}
+{% endfor %}
+        ::sce_rust_runtime::saved_state::enter(policy, saved)
+    }
+}
+
+{% endif %}
 {% endif %}
 {% if has_native_actions %}
 // ── W3C SCXML G.7: <sce:action> host-dispatch trait ──
