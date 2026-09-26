@@ -3052,7 +3052,7 @@ SCE_SM_FN static bool first_enabled_transition({{ csym_prefix }}{{ model.name }}
         {% for trans in state.transitions %}
         {{ emit_transition_match_check(trans) }} {
         {% if trans.cond %}
-        {% set native_payload_guard_expr = trans.native_payload_guard %}
+        {% set native_guard_expr = trans.native_guard %}
         {% if trans.is_pure_in_predicate %}
             /* W3C SCXML 3.13 + 5.9.2: cond="{{ trans.cond }}" pure
                In() predicate — native C lower via `to_in_predicate_c11`
@@ -3065,7 +3065,7 @@ SCE_SM_FN static bool first_enabled_transition({{ csym_prefix }}{{ model.name }}
             if ({{ trans.cond | to_in_predicate_c11(model.name, model.history_states | list) }}) {
                 {{ emit_transition_body(trans) }}
             }
-        {% elif native_payload_guard_expr %}
+        {% elif native_guard_expr %}
             /* W3C SCXML 3.13 + NL→IR Item C1 Path A:
                cond="{{ trans.cond }}" reads a typed
                `_event.data.<field>` of an EventSchema-imported event —
@@ -3075,7 +3075,7 @@ SCE_SM_FN static bool first_enabled_transition({{ csym_prefix }}{{ model.name }}
                field comparison is `expr.rs::transpile_typed` over the
                live `pending_payload` member (twin of the Rust
                `matches!(&self.pending_payload, …)` guard). */
-            if ({{ native_payload_guard_expr }}) {
+            if ({{ native_guard_expr }}) {
                 {{ emit_transition_body(trans) }}
             }
         {% elif model.needs_script_engine %}

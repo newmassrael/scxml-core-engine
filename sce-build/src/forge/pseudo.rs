@@ -2192,9 +2192,9 @@ fn render_scxml_transition(t: &crate::model::Transition, out: &mut Out<'_>) {
         line.push(Part::Word(Word::When));
         line.push(Part::Text(text(&t.cond).into_owned()));
     }
-    if !t.native_payload_guard.is_empty() {
+    if !t.native_guard.is_empty() {
         line.push(Part::Word(Word::NativeGuard));
-        line.push(Part::Text(text(&t.native_payload_guard).into_owned()));
+        line.push(Part::Text(text(&t.native_guard).into_owned()));
     }
     out.line_of(line);
 

@@ -2737,7 +2737,7 @@ fn parse_scxml_transition(
         ),
     };
     // The two guards close the line, so they come off the end first.
-    let (rest, native_payload_guard) = match rest.split_once(" native-guard ") {
+    let (rest, native_guard) = match rest.split_once(" native-guard ") {
         Some((r, g)) => (r, undo(g, line.number)?),
         None => (rest, String::new()),
     };
@@ -2774,7 +2774,7 @@ fn parse_scxml_transition(
         },
         cond,
         transition_type,
-        native_payload_guard,
+        native_guard,
         req: requirements,
         actions: parse_action_list(&actions)?,
         ..Default::default()

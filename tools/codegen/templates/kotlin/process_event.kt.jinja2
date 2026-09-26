@@ -34,8 +34,8 @@
 {{ trans.cond_kt }}
 {%- elif trans.is_kt_condition -%}
 {{ trans.cond_kt }}
-{%- elif trans.native_payload_guard -%}
-{{ trans.native_payload_guard }}
+{%- elif trans.native_guard -%}
+{{ trans.native_guard }}
 {%- elif model.needs_script_engine and trans.cond and not trans.is_cpp_condition -%}
 safeEvaluateGuard({{ trans.cond | to_script_source_guard }})
 {%- elif trans.cond and not trans.is_cpp_condition -%}
@@ -116,7 +116,7 @@ safeEvaluateGuard({{ trans.cond | to_script_source_guard }})
 {% set arm.kind = 'eventless' if not trans.event else ('any' if trans.matches_any_event else 'named') %}
 {% if not trans.cond %}
 {% set arm.guard = 'none' %}
-{% elif trans.is_pure_in_predicate or trans.is_kt_condition or trans.native_payload_guard or trans.is_cpp_condition or model.needs_script_engine %}
+{% elif trans.is_pure_in_predicate or trans.is_kt_condition or trans.native_guard or trans.is_cpp_condition or model.needs_script_engine %}
 {% set arm.guard = 'runtime' %}
 {% elif trans.cond_constant %}
 {% set arm.guard = 'none' %}

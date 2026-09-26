@@ -11,7 +11,7 @@
 // machine-global guard map by that per-state index, so the alphabetically-last
 // state's guard (waiting → `elapsed_ms`) overwrote the other two and every
 // state matched on `elapsed_ms` — a silent miscompilation. The guard now
-// rides home on its owning `Transition::native_payload_guard`, where a
+// rides home on its owning `Transition::native_guard`, where a
 // per-state index cannot collide it.
 //
 // Each state's guard reads a DISTINCT field, so a collision is detectable by

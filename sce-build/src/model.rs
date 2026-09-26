@@ -126,14 +126,15 @@ pub struct Transition {
     pub matches_any_event: bool,
     /// Original index within parent state's transition list. This index is
     /// unique only WITHIN the parent state, never machine-wide — see
-    /// [`native_payload_guard`](Self::native_payload_guard) for why that
+    /// [`native_guard`](Self::native_guard) for why that
     /// distinction matters.
     pub transition_index: usize,
-    /// EventSchema native lowering: the native typed `_event.data` guard expression
-    /// for this transition, lowered at generate time from `cond` against the
-    /// imported EventSchema (see `forge::generator::build_*_event_payload`).
-    /// Empty when the guard stays on the script-engine / In() path or no
-    /// schema applies.
+    /// This transition's guard lowered to the rendering backend's own code at
+    /// generate time from `cond`: a typed `_event.data` comparison against an
+    /// imported EventSchema (see `forge::generator::build_*_event_payload`), or
+    /// a `sce-static` document's condition (`forge::static_lowering`). Empty
+    /// when the guard stays on the script-engine / In() path. Every backend's
+    /// guard macro reads it before falling back to the script engine.
     ///
     /// The guard is per-transition derived data, so its home is the
     /// transition that owns it — exactly like [`cond_cpp`](Self::cond_cpp).
@@ -155,7 +156,7 @@ pub struct Transition {
     /// schema.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     #[cfg_attr(test, schemars(skip))]
-    pub native_payload_guard: String,
+    pub native_guard: String,
     /// The canonical path of the
     /// state that OWNS this transition, paired with
     /// [`symbol_artifact`](Self::symbol_artifact) to form the identity
@@ -170,7 +171,7 @@ pub struct Transition {
     /// the arm is not the owner.
     ///
     /// Transient by design, exactly like
-    /// [`native_payload_guard`](Self::native_payload_guard): the parse
+    /// [`native_guard`](Self::native_guard): the parse
     /// model leaves it empty and each generate pass stamps its own
     /// clone, so the `--emit-ast` export stays the language-agnostic IR.
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -3536,7 +3537,7 @@ mod model_attribute_names {
     /// and finding that out cost a false accusation. `schema_for!` is
     /// authoritative for the schema but NOT for the struct: this file marks
     /// fields `#[cfg_attr(test, schemars(skip))]`, and five of them —
-    /// `symbol_state_path`, `symbol_artifact`, `native_payload_guard`,
+    /// `symbol_state_path`, `symbol_artifact`, `native_guard`,
     /// `native_action_rendered` and their kin — are real fields templates read
     /// every render. A gate built on the schema alone reported those as typos.
     ///

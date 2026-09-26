@@ -2221,7 +2221,7 @@ fn render_event_schema(
 /// transition that shares a local index with another state's transition. The
 /// owning transition is located unambiguously by `(state_id,
 /// transition_index)` and the rendered `guard` written onto its
-/// [`native_payload_guard`](crate::model::Transition::native_payload_guard)
+/// [`native_guard`](crate::model::Transition::native_guard)
 /// field, where it cannot collide. `guard` is language-specific; the write
 /// happens on the single-language clone of the model each generate pass owns.
 pub struct NativeGuardWrite {
@@ -2232,7 +2232,7 @@ pub struct NativeGuardWrite {
 
 /// Apply lowered native guards to a (cloned, single-language) model, writing
 /// each onto its owning transition's
-/// [`native_payload_guard`](crate::model::Transition::native_payload_guard).
+/// [`native_guard`](crate::model::Transition::native_guard).
 /// The `(state_id, transition_index)` pair is the machine-unique transition
 /// identity, so the lookup is exact; an entry whose target no longer exists
 /// is ignored (defensive — the selection derives from the same model).
@@ -2243,7 +2243,7 @@ pub fn apply_native_guard_writes(
     for w in writes {
         if let Some(state) = model.states.get_mut(&w.state_id) {
             if let Some(trans) = state.transitions.get_mut(w.transition_index) {
-                trans.native_payload_guard.clone_from(&w.guard);
+                trans.native_guard.clone_from(&w.guard);
             }
         }
     }

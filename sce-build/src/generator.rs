@@ -2528,7 +2528,7 @@ fn render_rust(
     // the per-transition native `matches!(…)` guards. The per-machine defs /
     // type / inject seams ride in the render context (no IR home); the
     // per-transition guards ride home on the transition's
-    // `native_payload_guard` via a single-language clone — co-located with
+    // `native_guard` via a single-language clone — co-located with
     // their owning transition so a per-state `transition_index` cannot
     // collide them across states.
     let mut model_lowered = model.clone();
@@ -2724,7 +2724,7 @@ fn render_cpp(
     // seams, and the per-transition native guard (`pendingPayloadTag_ == … &&
     // (…)`). The per-machine defs ride in the render context; the
     // per-transition guards ride home on the transition's
-    // `native_payload_guard` via a single-language clone (same SSOT guard
+    // `native_guard` via a single-language clone (same SSOT guard
     // selection as every backend).
     let mut model_lowered = model.clone();
     // Stamp each transition with the
@@ -2881,7 +2881,7 @@ fn render_c11(
     // the `event_with_meta`/`pending_payload` fields and the
     // `raise_external_typed` seam. The per-machine defs ride in the render
     // context; the per-transition guards ride home on the transition's
-    // `native_payload_guard` via a single-language clone (same SSOT guard
+    // `native_guard` via a single-language clone (same SSOT guard
     // selection as every backend).
     let mut model_lowered = model.clone();
     // Stamp each transition with the
@@ -3093,7 +3093,7 @@ fn render_kotlin(
     // inject seams, and the per-transition native guard (`pending<Event>Payload
     // != null && (…)`). The per-machine defs ride in the render context; the
     // per-transition guards ride home on the transition's
-    // `native_payload_guard` via a single-language clone (same SSOT guard
+    // `native_guard` via a single-language clone (same SSOT guard
     // selection as every backend).
     let mut model_lowered = model.clone();
     // Stamp each transition with the
@@ -3455,7 +3455,7 @@ fn render_python(env: &mut Environment, model: &SCXMLModel) -> Result<String, Ge
     // inject seams, and the per-transition native guard (`self._pending_<event>
     // _payload is not None and (…)`). The per-machine defs ride in the render
     // context; the per-transition guards ride home on the transition's
-    // `native_payload_guard` via a single-language clone (same SSOT selection
+    // `native_guard` via a single-language clone (same SSOT selection
     // as every backend).
     let mut model_lowered = model.clone();
     // Stamp each transition with the
@@ -3509,7 +3509,7 @@ fn render_go(env: &mut Environment, model: &SCXMLModel) -> Result<String, Genera
     // typed payload, the per-event `Raise<Event>` inject seams, and the
     // per-transition native guard (`p.pendingPayloadTag == … && (…)`). The
     // per-machine defs ride in the render context; the per-transition guards
-    // ride home on the transition's `native_payload_guard` via a
+    // ride home on the transition's `native_guard` via a
     // single-language clone (same SSOT guard selection as every backend).
     let mut model_lowered = model.clone();
     // Stamp each transition with the

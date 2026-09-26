@@ -331,9 +331,13 @@ pub fn lower_kotlin(
             let field = payload_field(&transition.event);
             let accessor = format!("{field}!!");
             let renames = renames(&names, schema.map(|_| accessor.as_str()));
+            // A pure `In()` predicate is already native on every backend, and
+            // each guard macro takes it first; lowering it again would write
+            // a second spelling of the same test that no macro reads.
             if !transition.cond.trim().is_empty()
                 && !transition.is_cpp_condition
                 && !transition.is_kt_condition
+                && !transition.is_pure_in_predicate
             {
                 let lowered = transpile_into(
                     &transition.cond,
@@ -345,8 +349,10 @@ pub fn lower_kotlin(
                 .map_err(|r| refused("the condition", &transition.cond, r))?;
                 // A condition that reads the payload holds only while the
                 // dequeued event carried one — the guard every typed
-                // payload read in this backend takes.
-                transition.cond_kt = if schema.is_some()
+                // payload read in this backend takes. It lands in the one
+                // slot every backend's guard macro reads for a guard lowered
+                // at generate time; `cond_kt` stays the author's `kt:` text.
+                transition.native_guard = if schema.is_some()
                     && crate::forge::expr::references_event_data_lexically(&transition.cond)
                 {
                     payload_events.insert(transition.event.clone());
@@ -354,7 +360,6 @@ pub fn lower_kotlin(
                 } else {
                     lowered
                 };
-                transition.is_kt_condition = true;
                 transition.cond_constant = None;
             }
             // Content that reads the payload cannot run for a delivery that

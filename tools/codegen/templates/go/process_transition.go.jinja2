@@ -35,7 +35,7 @@
    a value decided at build time (W3C SCXML 5.9). #}
 {% macro guard_expr(trans) -%}
 {%- if trans.is_pure_in_predicate -%}{{ trans.cond_cpp | to_in_predicate_go }}
-{%- elif trans.native_payload_guard -%}{{ trans.native_payload_guard }}
+{%- elif trans.native_guard -%}{{ trans.native_guard }}
 {%- elif model.needs_script_engine -%}p.evaluateGuard(`{{ trans.cond | to_lua_guard }}`, engine)
 {%- else -%}{{ 'true' if trans.cond_constant else 'false' }}
 {%- endif -%}
@@ -87,7 +87,7 @@ func (p *{{ machine_name }}Policy) FirstEnabledTransition(state {{ machine_name 
 {% for trans in state.transitions %}
 		if {{ event_match(trans) }} {
 {% if trans.cond %}
-{% if trans.native_payload_guard and not trans.is_pure_in_predicate %}
+{% if trans.native_guard and not trans.is_pure_in_predicate %}
 			// NL→IR Item C1 Path A: native typed `_event.data` guard — cond
 			// "{{ trans.cond }}" lowered to a tag-checked field comparison on
 			// the lifted `pending<Event>Payload` (no script engine).

@@ -36,7 +36,7 @@
    comparison, the script engine, or a value decided at build time. #}
 {% macro guard_expr(trans) -%}
 {%- if trans.is_pure_in_predicate -%}{{ trans.cond_cpp | replace('this->', '') | replace('isStateActive', 'self.is_state_active') }}
-{%- elif trans.native_payload_guard -%}{{ trans.native_payload_guard }}
+{%- elif trans.native_guard -%}{{ trans.native_guard }}
 {%- elif model.needs_script_engine -%}self.safe_evaluate_guard("{{ trans.cond | to_lua_guard | escape_rust }}", engine)
 {%- else -%}{{ 'true' if trans.cond_constant else 'false' }}
 {%- endif -%}
