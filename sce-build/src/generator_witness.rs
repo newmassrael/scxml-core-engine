@@ -230,6 +230,8 @@ mod tests {
         fs::write(dir.join("sce-build/build.rs"), b"fn main() {}\n").unwrap();
         fs::write(dir.join("sce-build/src/lib.rs"), b"pub mod forge;\n").unwrap();
         fs::write(dir.join("sce-build/src/forge/mod.rs"), b"// forge\n").unwrap();
+        fs::create_dir_all(dir.join("stdlib/calendar")).unwrap();
+        fs::write(dir.join("stdlib/calendar/a.scxml"), b"<scxml/>\n").unwrap();
     }
 
     #[test]
@@ -343,6 +345,7 @@ mod tests {
             "sce-build/build.rs",
             "sce-build/src/lib.rs",
             "sce-build/src/forge/mod.rs",
+            "stdlib/calendar/a.scxml",
         ]
         .iter()
         .map(|p| tmp.path().join(p))
@@ -367,6 +370,24 @@ mod tests {
             );
             fs::write(path, &original).unwrap();
         }
+    }
+
+    /// A standard document is resolved from the copy embedded in the
+    /// binary, so an edit to one must demand a rebuild the way an edit to
+    /// a generator source does.
+    #[test]
+    fn editing_a_standard_document_moves_the_digest() {
+        let tmp = tempfile::tempdir().unwrap();
+        fake_workspace(tmp.path());
+        let before = digest_hex(tmp.path()).unwrap();
+
+        fs::write(tmp.path().join("stdlib/calendar/a.scxml"), b"<scxml />\n").unwrap();
+
+        assert_ne!(
+            before,
+            digest_hex(tmp.path()).unwrap(),
+            "an edited standard document left the witness unmoved"
+        );
     }
 
     #[test]
