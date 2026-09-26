@@ -229,6 +229,18 @@ impl Analysis<'_, '_> {
 
     fn stmt(&mut self, stmt: &AlgorithmStmt, env: &mut Env) {
         match stmt {
+            // Past a precondition the body runs only where it held, which is
+            // what an `if` gives its then-branch.
+            AlgorithmStmt::Require {
+                cond,
+                cond_spelling,
+            } => {
+                let tree = self.typed(cond);
+                if let Some(tree) = &tree {
+                    self.eval(tree, cond, cond_spelling.as_ref(), env);
+                }
+                *env = self.narrowed(tree.as_ref(), env, true);
+            }
             AlgorithmStmt::Var {
                 name,
                 sce_type,

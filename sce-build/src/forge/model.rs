@@ -3812,6 +3812,16 @@ pub enum AlgorithmStmt {
         #[serde(skip)]
         args_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
     },
+    /// `<sce:require cond="..."/>` — a precondition of a `may-fail`
+    /// algorithm (SCE_FORGE.md §3.4.1): the body goes on only where `cond`
+    /// holds and fails `precondition` where it does not, so an input outside
+    /// the algorithm's domain is refused rather than answered. Every
+    /// statement after it is judged knowing `cond`.
+    Require {
+        cond: String,
+        #[serde(skip)]
+        cond_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
+    },
 }
 
 /// One argument of `<sce:call args>`, as the call's argument grammar
@@ -3908,11 +3918,12 @@ fn collect_algorithm_bindings<'a>(stmts: &'a [AlgorithmStmt], out: &mut Vec<Algo
             }
             AlgorithmStmt::While { body, .. } => collect_algorithm_bindings(body, out),
             // `<sce:append>` mutates an existing buffer; `<sce:assign>`,
-            // `<sce:return>` and `<sce:call>` bind nothing.
+            // `<sce:return>`, `<sce:call>` and `<sce:require>` bind nothing.
             AlgorithmStmt::Append { .. }
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Return { .. }
-            | AlgorithmStmt::Call { .. } => {}
+            | AlgorithmStmt::Call { .. }
+            | AlgorithmStmt::Require { .. } => {}
         }
     }
 }

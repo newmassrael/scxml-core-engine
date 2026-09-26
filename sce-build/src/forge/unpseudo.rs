@@ -1666,6 +1666,12 @@ fn parse_stmt(line: &Line<'_>, kids: &[&Line<'_>]) -> Result<AlgorithmStmt, Pars
             expr_spelling: None,
         });
     }
+    if let Some(rest) = t.strip_prefix("require ") {
+        return Ok(AlgorithmStmt::Require {
+            cond: undo(rest, line.number)?,
+            cond_spelling: None,
+        });
+    }
     if let Some(rest) = t.strip_prefix("call ") {
         let target = rest.trim_end_matches(':');
         let mut args = Vec::new();

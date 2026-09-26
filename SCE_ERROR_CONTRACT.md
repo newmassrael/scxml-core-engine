@@ -731,6 +731,7 @@ references against a real document and drift silently.
 | `algorithm/foreach-source-not-iterable` | `validation` | no | SCE Protocol-Synthesis RFC §5.A + §5.L |
 | `algorithm/local-shadows-param` | `validation` | no | SCE Protocol-Synthesis RFC §5.A |
 | `algorithm/lvalue-unsupported` | `validation` | no | SCE Protocol-Synthesis RFC §5.A |
+| `algorithm/require-without-may-fail` | `validation` | no | SCE Forge §3.4.1 |
 | `algorithm/return-missing` | `validation` | no | SCE Protocol-Synthesis RFC §5.A |
 | `algorithm/test-vector-unsupported-kind` | `validation` | no | SCE Protocol-Synthesis RFC §5.B |
 | `algorithm/undeclared-integer-failure` | `validation` | no | SCE Forge §3.4.1 |

@@ -803,6 +803,10 @@ pub enum DiagnosticCode {
     //    declare `may-fail`. ───────────────────────────────────────────────
     #[serde(rename = "algorithm/undeclared-integer-failure")]
     AlgorithmUndeclaredIntegerFailure,
+    // A `<sce:require>` precondition in an algorithm that does not declare
+    // `may-fail`, which has no failure to hand its caller.
+    #[serde(rename = "algorithm/require-without-may-fail")]
+    AlgorithmRequireWithoutMayFail,
 
     // ── SCXML semantic-validation (§wire-W5). Three of the four
     //    SCXML semantic failures fold into existing `validation/*`
@@ -3184,6 +3188,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         AlgorithmAppendTypeMismatch,
         // Integer arithmetic contract (SCE_FORGE.md §3.4.1)
         AlgorithmUndeclaredIntegerFailure,
+        AlgorithmRequireWithoutMayFail,
         // SCXML semantic (§wire-W5)
         ScxmlTopLevelScriptUnloaded,
         // §scxml-3.2 datamodel attribute + §scxml-B-1 Null data model
@@ -3867,9 +3872,9 @@ impl DiagnosticCode {
             }
 
             // ── The integer arithmetic contract (SCE_FORGE.md §3.4.1) ──
-            AlgorithmUndeclaredIntegerFailure | AlgorithmConstIntegerFailure => {
-                Some("SCE Forge §3.4.1")
-            }
+            AlgorithmUndeclaredIntegerFailure
+            | AlgorithmConstIntegerFailure
+            | AlgorithmRequireWithoutMayFail => Some("SCE Forge §3.4.1"),
 
             // ── Algorithm §synth-5-F build-time const-fold ─────────────
             AlgorithmConstNotFoldable
@@ -4539,6 +4544,7 @@ impl DiagnosticCode {
             AlgorithmAppendTargetNotBuffer => "algorithm/append-target-not-buffer",
             AlgorithmAppendTypeMismatch => "algorithm/append-type-mismatch",
             AlgorithmUndeclaredIntegerFailure => "algorithm/undeclared-integer-failure",
+            AlgorithmRequireWithoutMayFail => "algorithm/require-without-may-fail",
             ScxmlTopLevelScriptUnloaded => "scxml/top-level-script-unloaded",
             ScxmlUnsupportedDatamodel => "scxml/unsupported-datamodel",
             ScxmlNullDatamodelForbidsConstruct => "scxml/null-datamodel-forbids-construct",
@@ -6520,6 +6526,18 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             // operation — so the record names neither.
             fix: None,
             key_fragments: vec![algorithm.clone(), operation.clone(), hazard.clone(), ty.clone()],
+        },
+        ValidationError::AlgorithmRequireWithoutMayFail { algorithm, cond } => DiagnosticPayload {
+            code: DiagnosticCode::AlgorithmRequireWithoutMayFail,
+            stage: Stage::Validation,
+            expected: None,
+            // The precondition as written is what the author keeps or drops.
+            actual: Some(cond.clone()),
+            // Two repairs are right — declare `may-fail` so the failure
+            // reaches the caller, or drop the precondition — so the record
+            // names neither.
+            fix: None,
+            key_fragments: vec![algorithm.clone(), cond.clone()],
         },
         ValidationError::CodecVariantArmUnreachable {
             codec,
@@ -12245,6 +12263,15 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:1ae55df0f9123e20","code":"algorithm/undeclared-integer-failure","stage":"validation","spec":"SCE Forge §3.4.1","message":"algorithm 'tick': `prev + 1` can overflow (uint32), and the algorithm does not declare <sce:return may-fail=\"true\"> — declare it, or guard the operation so it cannot","actual":"prev + 1"}"#,
             ),
+            (
+                "forge/algorithm-require-without-may-fail",
+                ValidationError::AlgorithmRequireWithoutMayFail {
+                    algorithm: "days_in_month".into(),
+                    cond: "month >= 1".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:fcf5d2957a0327ef","code":"algorithm/require-without-may-fail","stage":"validation","spec":"SCE Forge §3.4.1","message":"algorithm 'days_in_month': <sce:require cond=\"month >= 1\"> fails to the caller, and the algorithm does not declare <sce:return may-fail=\"true\"> — declare it, or drop the precondition","actual":"month >= 1"}"#,
+            ),
             // ── §synth-5-F build-time const-fold (SCE Protocol-Synthesis RFC §synth-5-F) ─
             (
                 "forge/algorithm-const-not-foldable",
@@ -15267,6 +15294,7 @@ mod tests {
             // ── Deterministic fix or no fix; expected=None ────
             XmlParse
             | AlgorithmUndeclaredIntegerFailure
+            | AlgorithmRequireWithoutMayFail
             | XmlSchemaValidation
             | XmlFileNotFound
             | XmlXIncludeMissingHref
@@ -16170,6 +16198,7 @@ mod tests {
                 | AlgorithmAppendTargetNotBuffer
                 | AlgorithmAppendTypeMismatch
                 | AlgorithmUndeclaredIntegerFailure
+                | AlgorithmRequireWithoutMayFail
                 | ScxmlTopLevelScriptUnloaded
                 | ScxmlUnsupportedDatamodel
                 | ScxmlNullDatamodelForbidsConstruct
@@ -16472,9 +16501,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            395,
+            396,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 395 distinct variants to match the DiagnosticCode \
+             expected 396 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -17126,6 +17155,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | AlgorithmAppendTargetNotBuffer
             | AlgorithmAppendTypeMismatch
             | AlgorithmUndeclaredIntegerFailure
+            | AlgorithmRequireWithoutMayFail
             | ScxmlUnsupportedDatamodel
             | ScxmlNullDatamodelForbidsConstruct
             | ScxmlStaticDatamodelRule

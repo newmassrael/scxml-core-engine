@@ -1483,6 +1483,18 @@
   </xs:element>
 
   <!--
+    A precondition of a `may-fail` algorithm (SCE_FORGE.md §3.4.1): the body
+    goes on only where `cond` holds, and fails `precondition` where it does
+    not — an input outside the algorithm's domain is refused, never answered
+    with a value that looks like one. After it the analysis knows `cond`.
+  -->
+  <xs:element name="require">
+    <xs:complexType>
+      <xs:attribute name="cond" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!--
     SCE Protocol-Synthesis RFC §synth-5-C (item B6, MCU-class): byte-stream link
     endpoint declared via `<scxml sce:kind="link">`. This surface is
     the minimum vertical slice that exercises the rust codegen path:

@@ -16,24 +16,28 @@
 
   The year is an int32 — some four million times the span any calendar
   asks about — and every input is widened into an int64 local before it is
-  used, so each operation below is provably inside int64 and the function
-  cannot fail (the integer contract, SCE_FORGE.md §3.4.1, would otherwise
-  make every caller handle a failure no date can cause). A month or day out
-  of its range is not refused: the formula extends past it the way it does
-  for Hinnant's original, which is the caller's to validate.
+  used, so each operation below is provably inside int64: no date makes the
+  arithmetic fail. What does fail is a date that does not exist — a month
+  outside 1..12 or a day outside its month (2026-02-29, 2026-04-31) —
+  which is refused as `precondition` (SCE_FORGE.md §3.4.1) instead of being
+  extended into some other day the way Hinnant's original extends it.
 
-  (1970, 1, 1) = 0 · (2026, 9, 23) = 20719 · (-1, 12, 31) = -719529.
+  (1970, 1, 1) = 0 · (2026, 9, 23) = 20719 · (-1, 12, 31) = -719529 ·
+  (2026, 2, 29) → precondition.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="algorithm" name="days_from_civil" version="1.0">
+  <sce:import kind="algorithm" src="days_in_month.scxml" as="monthLength"/>
   <sce:signature>
     <sce:param name="year" type="int32"/>
     <sce:param name="month" type="uint8"/>
     <sce:param name="day" type="uint8"/>
-    <sce:return type="int64"/>
+    <sce:return type="int64" may-fail="true"/>
   </sce:signature>
   <sce:body>
+    <sce:require cond="month &gt;= 1 &amp;&amp; month &lt;= 12"/>
+    <sce:require cond="day &gt;= 1 &amp;&amp; day &lt;= monthLength(year, month)"/>
     <sce:var name="yr" type="int64" init="year"/>
     <sce:var name="mo" type="int64" init="month"/>
     <sce:var name="dy" type="int64" init="day"/>

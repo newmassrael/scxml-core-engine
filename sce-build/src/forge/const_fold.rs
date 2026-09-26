@@ -665,6 +665,11 @@ fn eval_stmt(
              (fold scope contains only scalar locals; building a runtime byte \
              buffer is not a fold-time value)"
         ))),
+        AlgorithmStmt::Require { cond, .. } => Err(ConstFoldKind::NotFoldable(format!(
+            "<sce:require cond=\"{cond}\"> is forbidden inside a fold body \
+             (a precondition hands its failure to an algorithm's caller, and a \
+             build-time fold has no caller to hand it to)"
+        ))),
     }
 }
 

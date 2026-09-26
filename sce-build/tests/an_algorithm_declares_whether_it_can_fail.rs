@@ -316,6 +316,109 @@ fn an_undeclared_algorithm_cannot_call_a_may_fail_algorithm() {
     );
 }
 
+/// An algorithm with a precondition on `month`: `attr` on its signature's
+/// return.
+fn precondition_document(attr: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_require" version="1.0">
+  <sce:signature>
+    <sce:param name="month" type="uint8"/>
+    <sce:return type="uint8"{attr}/>
+  </sce:signature>
+  <sce:body>
+    <sce:require cond="month &gt;= 1 &amp;&amp; month &lt;= 12"/>
+    <sce:return expr="month - 1"/>
+  </sce:body>
+</scxml>
+"#
+    )
+}
+
+/// A precondition fails to the caller, which only a `may-fail` algorithm
+/// has: without the declaration it is refused at its `cond`, on every
+/// backend alike.
+#[test]
+fn a_precondition_without_may_fail_is_refused_at_its_condition() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("probe_require.scxml");
+    std::fs::write(&path, precondition_document("")).expect("write document");
+    for &lang in Language::ALL {
+        let err = sce_build::compile_forge_file(&path, lang, &[], &ForgeCompileOptions::default())
+            .err()
+            .unwrap_or_else(|| panic!("{lang:?} accepted a precondition without may-fail"));
+        let text = err.to_string();
+        assert!(
+            text.contains("<sce:require") && text.contains("drop the precondition"),
+            "{lang:?}: {text}"
+        );
+        assert_eq!(
+            err.location.line,
+            Some(8),
+            "{lang:?}: placed at the <sce:require>: {text}"
+        );
+    }
+}
+
+/// The page shows the precondition and reads it back as the same statement.
+#[test]
+fn a_precondition_reads_back_from_the_page() {
+    let text = precondition_document(r#" may-fail="true""#);
+    let document = ForgeDocument::Algorithm(algorithm_named(&text, "probe_require"));
+    let rendered = sce_build::forge::pseudo::render(&document).expect("an algorithm renders");
+    assert!(
+        rendered
+            .lines()
+            .any(|l| l.trim() == "require month >= 1 && month <= 12"),
+        "the page shows the precondition:\n{rendered}"
+    );
+    let read_back = unpseudo::parse(&rendered).unwrap_or_else(|e| panic!("{e:?}\n{rendered}"));
+    assert_eq!(
+        unpseudo::ir_for_comparison(&document).expect("a model serialises"),
+        unpseudo::ir_for_comparison(&read_back).expect("a model serialises"),
+        "the precondition was lost between the renderer and the reader:\n{rendered}"
+    );
+}
+
+/// Each backend returns the `precondition` failure through its own failure
+/// channel when the condition does not hold.
+#[test]
+fn every_backend_returns_a_precondition_failure() {
+    let text = precondition_document(r#" may-fail="true""#);
+    for &lang in Language::ALL {
+        let out =
+            generate("probe_require", &text, &[], lang).unwrap_or_else(|e| panic!("{lang:?}: {e}"));
+        let failure = match lang {
+            Language::Rust => {
+                "return Err(sce_forge_runtime::algorithm::AlgorithmError::Precondition);"
+            }
+            Language::Kotlin => "com.sce.forge.runtime.AlgorithmError.Precondition",
+            Language::Cpp => "SCE::Forge::AlgorithmError::Precondition",
+            Language::C11 => "SCE_FORGE_ALGORITHM_PRECONDITION",
+            Language::Go => "scealgorithm.Precondition",
+            Language::Python => "sce_algorithm.AlgorithmError.PRECONDITION",
+        };
+        assert_eq!(
+            out.matches(failure).count(),
+            1,
+            "{lang:?}: one precondition failure:\n{out}"
+        );
+    }
+}
+
+fn algorithm_named(text: &str, name: &'static str) -> AlgorithmModel {
+    match parse_forge(
+        text,
+        DocumentLabel {
+            identifier: name,
+            diagnostic_label: name,
+        },
+    ) {
+        Ok(Some(ForgeDocument::Algorithm(m))) => m,
+        other => panic!("expected an algorithm, got {other:?}"),
+    }
+}
+
 /// A `may-fail` algorithm passes a callee's failure on from every place a
 /// call is written — a `<sce:call>` statement, an initializer, a condition —
 /// in each backend's own failure channel (SCE_FORGE.md §3.4.1). Conformance

@@ -80,6 +80,8 @@ pub enum Word {
     /// so its line must name the word a shape closes it with.
     Data,
     Call,
+    /// An algorithm's precondition: `require <cond>`.
+    Require,
     Send,
     Log,
     /// ⚠ These four are spelled with a space. The reader matches them
@@ -216,6 +218,7 @@ impl Word {
         Word::Var,
         Word::Data,
         Word::Call,
+        Word::Require,
         Word::Send,
         Word::Log,
         Word::OnEntry,
@@ -348,6 +351,7 @@ fn en_word(w: Word) -> &'static str {
         Word::Var => "var",
         Word::Data => "data",
         Word::Call => "call",
+        Word::Require => "require",
         Word::Send => "send",
         Word::Log => "log",
         Word::OnEntry => "on entry",
@@ -826,6 +830,7 @@ fn ko_word(w: Word) -> &'static str {
         Word::Var => "변수",
         Word::Data => "데이터",
         Word::Call => "호출",
+        Word::Require => "전제",
         Word::Send => "전송",
         Word::Log => "출력",
         Word::OnEntry => "진입 시",

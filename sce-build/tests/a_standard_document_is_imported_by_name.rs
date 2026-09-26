@@ -63,7 +63,9 @@ fn options_for(language: Language) -> ForgeCompileOptions {
     options
 }
 
-/// A caller in `dir` that imports `src` and calls it.
+/// A caller in `dir` that imports `src` and calls it. It declares
+/// `may-fail` because `days_from_civil` does: a date that does not exist is
+/// refused, and the caller hands that on.
 fn caller(dir: &Path, src: &str) -> PathBuf {
     let path = dir.join("epoch_day_of.scxml");
     std::fs::write(
@@ -76,7 +78,7 @@ fn caller(dir: &Path, src: &str) -> PathBuf {
     <sce:param name="year" type="int32"/>
     <sce:param name="month" type="uint8"/>
     <sce:param name="day" type="uint8"/>
-    <sce:return type="int64"/>
+    <sce:return type="int64" may-fail="true"/>
   </sce:signature>
   <sce:body>
     <sce:return expr="civil(year, month, day)"/>

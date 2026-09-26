@@ -26,6 +26,9 @@ pub enum AlgorithmError {
     DivideByZero,
     /// A buffer append past the buffer's declared capacity.
     CapacityExceeded,
+    /// A `<sce:require>` precondition that does not hold: an input outside
+    /// the algorithm's domain.
+    Precondition,
 }
 
 impl AlgorithmError {
@@ -36,6 +39,7 @@ impl AlgorithmError {
             AlgorithmError::Overflow => "overflow",
             AlgorithmError::DivideByZero => "divide-by-zero",
             AlgorithmError::CapacityExceeded => "capacity-exceeded",
+            AlgorithmError::Precondition => "precondition",
         }
     }
 }

@@ -1070,6 +1070,10 @@ fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out<'_>) {
             Some(e) => out.line(&format!("return {}", text(e))),
             None => out.line("return"),
         },
+        AlgorithmStmt::Require { cond, .. } => out.line_of(vec![
+            Part::Word(Word::Require),
+            Part::Text(text(cond).into_owned()),
+        ]),
         AlgorithmStmt::Call { target, args, .. } => {
             // One argument per line. Joined with `, ` they were several
             // free-text values on one line, and an argument containing

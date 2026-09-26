@@ -630,6 +630,25 @@
             "target"
           ],
           "type": "object"
+        },
+        {
+          "description": "`<sce:require cond=\"...\"/>` — a precondition of a `may-fail` algorithm (SCE_FORGE.md §3.4.1): the body goes on only where `cond` holds and fails `precondition` where it does not, so an input outside the algorithm's domain is refused rather than answered. Every statement after it is judged knowing `cond`.",
+          "properties": {
+            "cond": {
+              "type": "string"
+            },
+            "stmt": {
+              "enum": [
+                "require"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "cond",
+            "stmt"
+          ],
+          "type": "object"
         }
       ]
     },

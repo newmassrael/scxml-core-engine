@@ -32,6 +32,9 @@ enum class AlgorithmError : std::uint8_t {
     /// grow past their capacity (SCE_FORGE.md §4.12), so it never reports
     /// one; the case exists because the failure has one name everywhere.
     CapacityExceeded,
+    /// A `<sce:require>` precondition that does not hold: an input outside
+    /// the algorithm's domain.
+    Precondition,
 };
 
 /// The failure's name in the contract — the spelling every backend shares.
@@ -43,6 +46,8 @@ constexpr const char *contractName(AlgorithmError error) noexcept {
         return "divide-by-zero";
     case AlgorithmError::CapacityExceeded:
         return "capacity-exceeded";
+    case AlgorithmError::Precondition:
+        return "precondition";
     }
     return "overflow";
 }

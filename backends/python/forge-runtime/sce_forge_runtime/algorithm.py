@@ -29,6 +29,9 @@ class AlgorithmError(enum.Enum):
     # past their capacity (SCE_FORGE.md §4.12), so it never reports one; the
     # case exists because the failure has one name on every backend.
     CAPACITY_EXCEEDED = "capacity-exceeded"
+    # A `<sce:require>` precondition that does not hold: an input outside the
+    # algorithm's domain.
+    PRECONDITION = "precondition"
 
     @property
     def contract_name(self) -> str:

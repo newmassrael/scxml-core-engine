@@ -6754,6 +6754,11 @@ fn parse_algorithm(
         .attribute("name")
         .map_or_else(|| label.identifier.to_string(), |s| s.to_string());
 
+    // SCE_FORGE.md §3.4.1: a precondition fails to the caller, which only a
+    // `may-fail` algorithm has. Judged once here, so every backend and
+    // `check` refuse the same documents.
+    reject_require_without_may_fail(&body, &signature, &name, label.diagnostic_label)?;
+
     Ok(AlgorithmModel {
         name,
         signature,
@@ -7804,6 +7809,13 @@ fn parse_algorithm_stmt(
                 args_spelling,
             })
         }
+        "require" => {
+            let cond = require_attr(node, "cond", "<sce:require>", doc_name)?;
+            Ok(AlgorithmStmt::Require {
+                cond,
+                cond_spelling: AttributeSpelling::of(node, None, "cond"),
+            })
+        }
         other => Err(located(
             node,
             doc_name,
@@ -7884,7 +7896,8 @@ fn collect_append_buffers<'a>(stmts: &'a [AlgorithmStmt], buffers: &mut Vec<Appe
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
             | AlgorithmStmt::Return { .. }
-            | AlgorithmStmt::Call { .. } => {}
+            | AlgorithmStmt::Call { .. }
+            | AlgorithmStmt::Require { .. } => {}
         }
     }
 }
@@ -8032,6 +8045,60 @@ fn reject_param_assignment(
             }
             AlgorithmStmt::Var { .. }
             | AlgorithmStmt::RecordVar { .. }
+            | AlgorithmStmt::Return { .. }
+            | AlgorithmStmt::Call { .. }
+            | AlgorithmStmt::Require { .. } => {}
+        }
+    }
+    Ok(())
+}
+
+/// SCE_FORGE.md §3.4.1: a precondition hands its failure to the caller, and
+/// only an algorithm that declares `may-fail` has a failure to hand. Walks
+/// the body recursively and refuses the first `<sce:require>` of one that
+/// does not, at its `cond`.
+fn reject_require_without_may_fail(
+    stmts: &[AlgorithmStmt],
+    sig: &AlgorithmSignature,
+    algorithm: &str,
+    doc_name: &str,
+) -> Result<(), Located<ForgeError>> {
+    if sig.may_fail {
+        return Ok(());
+    }
+    for s in stmts {
+        match s {
+            AlgorithmStmt::Require {
+                cond,
+                cond_spelling,
+            } => {
+                let refusal: ForgeError = ValidationError::AlgorithmRequireWithoutMayFail {
+                    algorithm: algorithm.to_string(),
+                    cond: cond.clone(),
+                }
+                .into();
+                return Err(Located::in_file(
+                    WrittenAt::value(cond_spelling.as_ref()).place_reporting(refusal),
+                    doc_name,
+                ));
+            }
+            AlgorithmStmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                reject_require_without_may_fail(then_body, sig, algorithm, doc_name)?;
+                if let Some(eb) = else_body {
+                    reject_require_without_may_fail(eb, sig, algorithm, doc_name)?;
+                }
+            }
+            AlgorithmStmt::While { body, .. } | AlgorithmStmt::Foreach { body, .. } => {
+                reject_require_without_may_fail(body, sig, algorithm, doc_name)?;
+            }
+            AlgorithmStmt::Var { .. }
+            | AlgorithmStmt::RecordVar { .. }
+            | AlgorithmStmt::Assign { .. }
+            | AlgorithmStmt::Append { .. }
             | AlgorithmStmt::Return { .. }
             | AlgorithmStmt::Call { .. } => {}
         }

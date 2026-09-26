@@ -21337,7 +21337,8 @@ fn record_locals(
                 | AlgorithmStmt::Assign { .. }
                 | AlgorithmStmt::Append { .. }
                 | AlgorithmStmt::Return { .. }
-                | AlgorithmStmt::Call { .. } => {}
+                | AlgorithmStmt::Call { .. }
+                | AlgorithmStmt::Require { .. } => {}
             }
         }
     }
@@ -21427,7 +21428,8 @@ fn collect_bc_foreach_member_types(
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
             | AlgorithmStmt::Return { .. }
-            | AlgorithmStmt::Call { .. } => {}
+            | AlgorithmStmt::Call { .. }
+            | AlgorithmStmt::Require { .. } => {}
         }
     }
 }
@@ -21486,7 +21488,8 @@ fn collect_append_buffers(
             | AlgorithmStmt::Assign { .. }
             | AlgorithmStmt::Append { .. }
             | AlgorithmStmt::Return { .. }
-            | AlgorithmStmt::Call { .. } => {}
+            | AlgorithmStmt::Call { .. }
+            | AlgorithmStmt::Require { .. } => {}
         }
     }
 }
@@ -21752,7 +21755,8 @@ fn collect_algorithm_assigned_roots(
             AlgorithmStmt::Var { .. }
             | AlgorithmStmt::RecordVar { .. }
             | AlgorithmStmt::Return { .. }
-            | AlgorithmStmt::Call { .. } => {}
+            | AlgorithmStmt::Call { .. }
+            | AlgorithmStmt::Require { .. } => {}
         }
     }
 }
@@ -22333,27 +22337,9 @@ fn lower_algorithm_stmt(
                     }
                 }
                 _ => {
-                    // A C11 condition is computed in a block of its own
-                    // (`ReturnChannel::c11_if_header`), so its `if` sits one
-                    // level in and `block_close` closes the block after it.
-                    let c11_block = lang == Language::C11 && channel.checks_conditions();
-                    let if_indent = if c11_block { indent + 1 } else { indent };
+                    let (header_open, block_close, if_indent) =
+                        channel.braced_if_header(pad, &cond_lowered, indent);
                     let if_pad = "    ".repeat(if_indent);
-                    let (header_open, block_close) = match lang {
-                        Language::Rust => (format!("{pad}if {cond_lowered} {{\n"), String::new()),
-                        Language::Cpp if channel.checks_conditions() => (
-                            channel.cpp_if_header(pad, &cond_lowered, indent),
-                            String::new(),
-                        ),
-                        Language::C11 if c11_block => {
-                            channel.c11_if_header(pad, &cond_lowered, indent)
-                        }
-                        Language::Go if channel.checks_conditions() => (
-                            channel.go_if_header(pad, &cond_lowered, indent),
-                            String::new(),
-                        ),
-                        _ => (format!("{pad}if ({cond_lowered}) {{\n"), String::new()),
-                    };
                     out.push_str(&header_open);
                     let inner_pad = "    ".repeat(if_indent + 1);
                     for st in then_body {
@@ -22371,6 +22357,36 @@ fn lower_algorithm_stmt(
                             )?;
                         }
                     }
+                    out.push_str(&format!("{if_pad}}}\n"));
+                    out.push_str(&block_close);
+                }
+            }
+        }
+        // SCE_FORGE.md §3.4.1: an `if` on the negated condition whose one
+        // statement returns the `precondition` failure — the condition
+        // computed, and a failure in it returned, as an `if`'s is.
+        AlgorithmStmt::Require {
+            cond,
+            cond_spelling,
+        } => {
+            let site = ExpressionSite::new(cond, cond_spelling.as_ref());
+            let cond_lowered =
+                expr::transpile_into(cond, l.expr_target(), type_ctx, renames, InferredType::Bool)
+                    .map_err(|refusal| site.place(refusal))?;
+            match lang {
+                Language::Python => {
+                    let inner_pad = "    ".repeat(indent + 1);
+                    out.push_str(&format!("{pad}if not ({cond_lowered}):\n"));
+                    out.push_str(&channel.precondition_failed(&inner_pad));
+                }
+                _ => {
+                    let negated = format!("!({cond_lowered})");
+                    let (header_open, block_close, if_indent) =
+                        channel.braced_if_header(pad, &negated, indent);
+                    let if_pad = "    ".repeat(if_indent);
+                    let inner_pad = "    ".repeat(if_indent + 1);
+                    out.push_str(&header_open);
+                    out.push_str(&channel.precondition_failed(&inner_pad));
                     out.push_str(&format!("{if_pad}}}\n"));
                     out.push_str(&block_close);
                 }
@@ -23575,6 +23591,63 @@ impl ReturnChannel<'_> {
     /// so a failure in it is returned rather than taken as `false`.
     fn checks_conditions(&self) -> bool {
         self.records_failures()
+    }
+
+    /// The header of an `if` on `cond` for a brace-delimited backend — every
+    /// one but Python — the text that closes what the header opened beyond
+    /// the `if`'s own brace, and the depth the `if` sits at.
+    ///
+    /// Rust forbids the `if (cond)` paren wrap under `unused_parens`; the
+    /// other curly-brace targets keep the parens. Where a failure is recorded
+    /// rather than thrown, the condition is computed before the branch
+    /// ([`Self::cpp_if_header`]); C11 does that in a block of its own
+    /// ([`Self::c11_if_header`]), so its `if` sits one level in and the
+    /// returned close text closes that block after it.
+    fn braced_if_header(&self, pad: &str, cond: &str, indent: usize) -> (String, String, usize) {
+        use crate::generator::Language;
+        match self.lang {
+            Language::Rust => (format!("{pad}if {cond} {{\n"), String::new(), indent),
+            Language::Cpp if self.checks_conditions() => {
+                (self.cpp_if_header(pad, cond, indent), String::new(), indent)
+            }
+            Language::C11 if self.checks_conditions() => {
+                let (open, close) = self.c11_if_header(pad, cond, indent);
+                (open, close, indent + 1)
+            }
+            Language::Go if self.checks_conditions() => {
+                (self.go_if_header(pad, cond, indent), String::new(), indent)
+            }
+            _ => (format!("{pad}if ({cond}) {{\n"), String::new(), indent),
+        }
+    }
+
+    /// The statement that returns a `precondition` failure in place of a
+    /// value — a `<sce:require>` whose condition does not hold (§3.4.1).
+    /// Reached only in a `may-fail` body: the parser refuses a precondition
+    /// anywhere else.
+    fn precondition_failed(&self, pad: &str) -> String {
+        use crate::generator::Language;
+        match self.lang {
+            Language::Rust => format!(
+                "{pad}return Err(sce_forge_runtime::algorithm::AlgorithmError::Precondition);\n"
+            ),
+            Language::Kotlin => format!(
+                "{pad}return com.sce.forge.runtime.AlgorithmResult.Failed(\
+                 com.sce.forge.runtime.AlgorithmError.Precondition)\n"
+            ),
+            Language::Cpp => format!(
+                "{pad}return {}::failure(SCE::Forge::AlgorithmError::Precondition);\n",
+                self.cpp_result()
+            ),
+            Language::C11 => format!(
+                "{pad}return ({}){{ .ok = false, .why = SCE_FORGE_ALGORITHM_PRECONDITION }};\n",
+                self.c11_result
+            ),
+            Language::Go => format!("{pad}return sceValue, scealgorithm.Precondition\n"),
+            Language::Python => format!(
+                "{pad}raise sce_algorithm.AlgorithmFailure(sce_algorithm.AlgorithmError.PRECONDITION)\n"
+            ),
+        }
     }
 }
 

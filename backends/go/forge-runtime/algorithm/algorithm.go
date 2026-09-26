@@ -29,6 +29,9 @@ const (
 	// never reports one; the case exists because the failure has one name on
 	// every backend.
 	CapacityExceeded
+	// Precondition is a `<sce:require>` precondition that does not hold: an
+	// input outside the algorithm's domain.
+	Precondition
 )
 
 // ContractName is the failure's name in the contract — the spelling every
@@ -41,6 +44,8 @@ func (e Error) ContractName() string {
 		return "divide-by-zero"
 	case CapacityExceeded:
 		return "capacity-exceeded"
+	case Precondition:
+		return "precondition"
 	}
 	return "overflow"
 }

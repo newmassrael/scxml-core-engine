@@ -1233,6 +1233,20 @@ pub enum ValidationError {
         observed: Option<String>,
     },
 
+    /// SCE_FORGE.md §3.4.1: a `<sce:require>` precondition in an algorithm
+    /// that does not declare `<sce:return may-fail="true">`. A precondition
+    /// that does not hold fails to the caller, and without the declaration
+    /// the algorithm has no failure to hand it.
+    ///
+    /// No `fix`: two repairs are right — declare `may-fail`, or drop the
+    /// precondition — and the record cannot choose.
+    #[error(
+        "algorithm '{algorithm}': <sce:require cond=\"{cond}\"> fails to the caller, and the \
+         algorithm does not declare <sce:return may-fail=\"true\"> — declare it, or drop the \
+         precondition"
+    )]
+    AlgorithmRequireWithoutMayFail { algorithm: String, cond: String },
+
     /// RFC §synth-5-B variant primitive: the variant's enumerated
     /// arms don't cover the tag field's value domain AND no
     /// `<sce:default>` arm catches the unenumerated values. At least

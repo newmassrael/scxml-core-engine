@@ -38,6 +38,12 @@ public enum class AlgorithmError(
      * one; the case exists because the failure has one name on every backend.
      */
     CapacityExceeded("capacity-exceeded"),
+
+    /**
+     * A `<sce:require>` precondition that does not hold: an input outside the
+     * algorithm's domain.
+     */
+    Precondition("precondition"),
 }
 
 /** What a `may-fail` algorithm returns: its value, or why it has none. */

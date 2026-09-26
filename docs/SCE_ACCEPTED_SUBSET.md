@@ -3395,6 +3395,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `algorithm/append-target-not-buffer` | Validation |
 | `algorithm/append-type-mismatch` | Validation |
 | `algorithm/undeclared-integer-failure` | Validation |
+| `algorithm/require-without-may-fail` | Validation |
 | `algorithm/const-not-foldable` | Generate |
 | `algorithm/const-fold-budget-exceeded` | Generate |
 | `algorithm/const-yield-type-mismatch` | Generate |

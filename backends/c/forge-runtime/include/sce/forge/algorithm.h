@@ -29,7 +29,10 @@ typedef enum {
     /* An integer `/` or `%` by zero. */
     SCE_FORGE_ALGORITHM_DIVIDE_BY_ZERO = 1,
     /* A buffer append past its declared capacity. */
-    SCE_FORGE_ALGORITHM_CAPACITY_EXCEEDED = 2
+    SCE_FORGE_ALGORITHM_CAPACITY_EXCEEDED = 2,
+    /* A `<sce:require>` precondition that does not hold: an input outside
+     * the algorithm's domain. */
+    SCE_FORGE_ALGORITHM_PRECONDITION = 3
 } sce_forge_algorithm_error_t;
 
 /* The failure's name in the contract — the spelling every backend shares. */
@@ -41,6 +44,8 @@ static inline const char *sce_forge_algorithm_error_name(sce_forge_algorithm_err
         return "divide-by-zero";
     case SCE_FORGE_ALGORITHM_CAPACITY_EXCEEDED:
         return "capacity-exceeded";
+    case SCE_FORGE_ALGORITHM_PRECONDITION:
+        return "precondition";
     }
     return "overflow";
 }

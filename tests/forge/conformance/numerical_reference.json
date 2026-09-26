@@ -1534,9 +1534,15 @@
     },
     "days_from_civil": {
       "fixture": "days_from_civil",
-      "signature": "(year: i32, month: u8, day: u8) -> i64",
-      "formula": "days from 1970-01-01 to year-month-day in the proleptic Gregorian calendar, negative before it (the standard document sce:std/time/days_from_civil.scxml)",
+      "signature": "(year: i32, month: u8, day: u8) -> i64 may-fail",
+      "formula": "days from 1970-01-01 to year-month-day in the proleptic Gregorian calendar, negative before it; a date that does not exist fails 'precondition' (the standard document sce:std/time/days_from_civil.scxml)",
       "cases": [
+        { "args": [2026, 2, 29], "fails": "precondition", "note": "2026 is not a leap year" },
+        { "args": [1900, 2, 29], "fails": "precondition", "note": "a century not divisible by 400" },
+        { "args": [2026, 4, 31], "fails": "precondition", "note": "April has 30 days" },
+        { "args": [2026, 1, 0], "fails": "precondition", "note": "no day 0" },
+        { "args": [2026, 13, 1], "fails": "precondition", "note": "no month 13" },
+        { "args": [2026, 0, 1], "fails": "precondition", "note": "no month 0" },
         { "args": [1970, 1, 1], "expected": 0, "note": "the epoch" },
         { "args": [2024, 1, 1], "expected": 19723 },
         { "args": [2024, 2, 29], "expected": 19782, "note": "a leap day" },
@@ -1564,9 +1570,13 @@
     },
     "days_in_month": {
       "fixture": "days_in_month",
-      "signature": "(year: i32, month: u8) -> u8",
-      "formula": "the length of month 1..12 of year in the proleptic Gregorian calendar; a month outside 1..12 answers 31 (the standard document sce:std/time/days_in_month.scxml)",
+      "signature": "(year: i32, month: u8) -> u8 may-fail",
+      "formula": "the length of month 1..12 of year in the proleptic Gregorian calendar; a month outside 1..12 fails 'precondition' (the standard document sce:std/time/days_in_month.scxml)",
       "cases": [
+        { "args": [2026, 0], "fails": "precondition", "note": "no month 0" },
+        { "args": [2026, 13], "fails": "precondition", "note": "no month 13" },
+        { "args": [2026, 255], "fails": "precondition" },
+        { "args": [2026, 1], "expected": 31 },
         { "args": [2024, 2], "expected": 29, "note": "divisible by 4" },
         { "args": [2023, 2], "expected": 28 },
         { "args": [1900, 2], "expected": 28, "note": "a century not divisible by 400" },

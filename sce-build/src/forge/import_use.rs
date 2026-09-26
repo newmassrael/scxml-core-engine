@@ -229,6 +229,10 @@ impl Names {
                         self.expr(&arg.expr, arg.spelling.as_ref())?;
                     }
                 }
+                AlgorithmStmt::Require {
+                    cond,
+                    cond_spelling,
+                } => self.expr(cond, cond_spelling.as_ref())?,
             }
         }
         Ok(())
