@@ -86,7 +86,7 @@ fn row_of(invoke: &str, needle: &str) -> Option<u32> {
 }
 
 const TYPED: &str = r#"    <invoke type="x-app-host" id="perm" sce:request="PermRequest" sce:result="PermResult">
-      <param name="scope" expr="'calendar'"/>
+      <param name="scope" expr="'storage'"/>
       <param name="retries" expr="2"/>
       <param name="_sce_deadline_ms" expr="500"/>
     </invoke>"#;
@@ -137,7 +137,7 @@ fn an_alias_no_import_declares_is_refused_on_its_own_row() {
 #[test]
 fn a_param_the_schema_lacks_is_refused_on_the_params_row() {
     let invoke = r#"    <invoke type="x-app-host" id="perm" sce:request="PermRequest">
-      <param name="scope" expr="'calendar'"/>
+      <param name="scope" expr="'storage'"/>
       <param name="retries" expr="2"/>
       <param name="colour" expr="'red'"/>
     </invoke>"#;
@@ -154,7 +154,7 @@ fn a_param_the_schema_lacks_is_refused_on_the_params_row() {
 #[test]
 fn a_field_no_param_supplies_is_refused() {
     let invoke = r#"    <invoke type="x-app-host" id="perm" sce:request="PermRequest">
-      <param name="scope" expr="'calendar'"/>
+      <param name="scope" expr="'storage'"/>
     </invoke>"#;
     let (code, actual, line) = parse("missing_field", invoke).expect_err("refused");
     assert_eq!(code, "validation/typed-invoke-request");
@@ -169,7 +169,7 @@ fn a_field_no_param_supplies_is_refused() {
 #[test]
 fn a_field_given_twice_is_refused() {
     let invoke = r#"    <invoke type="x-app-host" id="perm" sce:request="PermRequest">
-      <param name="scope" expr="'calendar'"/>
+      <param name="scope" expr="'storage'"/>
       <param name="retries" expr="2"/>
       <param name="retries" expr="3"/>
     </invoke>"#;
@@ -181,7 +181,7 @@ fn a_field_given_twice_is_refused() {
 #[test]
 fn a_namelist_beside_a_typed_request_is_refused() {
     let invoke = r#"    <invoke type="x-app-host" id="perm" sce:request="PermRequest" namelist="scope">
-      <param name="scope" expr="'calendar'"/>
+      <param name="scope" expr="'storage'"/>
       <param name="retries" expr="2"/>
     </invoke>"#;
     let (code, _, _) = parse("namelist", invoke).expect_err("refused");
@@ -195,7 +195,7 @@ fn a_namelist_beside_a_typed_request_is_refused() {
 #[test]
 fn a_text_literal_for_a_field_that_is_not_text_is_refused_on_its_row() {
     let invoke = r#"    <invoke type="x-app-host" id="perm" sce:request="PermRequest">
-      <param name="scope" expr="'calendar'"/>
+      <param name="scope" expr="'storage'"/>
       <param name="retries" expr="'2'"/>
     </invoke>"#;
     let (code, actual, line) = parse("literal_misfit", invoke).expect_err("refused");

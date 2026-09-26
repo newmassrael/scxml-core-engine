@@ -619,7 +619,7 @@ def test_a_typed_request_reaches_its_invoker_as_its_record() -> None:
     engine, host, log = _typed_host()
     assert len(host.starts) == 1, f"perm started {len(host.starts)} times"
     request, token = host.starts[0]
-    assert request == _sm.PermRequest(scope="calendar", level=2)
+    assert request == _sm.PermRequest(scope="storage", level=2)
     assert "START id=probe" in log, f"the untyped `probe` never reached the fallback: {log}"
     assert _sm.complete_perm(engine, token, _sm.PermResult(granted=True))
     engine.advance_time(0)

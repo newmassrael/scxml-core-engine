@@ -6,7 +6,7 @@
 //
 // The Kotlin engine carried the registry (`registerInvoker`) and the template
 // lowered the start and the cancel, but no Kotlin test ran either, so the one
-// backend the calendar app ships on held the lifecycle on trust. This is the
+// backend an Android host builds on held the lifecycle on trust. This is the
 // channel the C++, Rust, Go and Python gates already are.
 //
 // An invoke is not a send: it has a LIFETIME. The cases hold the outcomes
@@ -730,7 +730,7 @@ class HostInvokerTest {
     fun aTypedRequestReachesItsInvokerAsItsRecord() = withTypedHost { sm, host, log ->
         assertEquals(1, host.starts.size, "perm started once")
         val (request, token) = host.starts[0]
-        assertEquals(StatechartHostInvokerPermRequest(scope = "calendar", level = 2u), request)
+        assertEquals(StatechartHostInvokerPermRequest(scope = "storage", level = 2u), request)
         assertTrue("START id=probe" in log, "the untyped `probe` never reached the fallback: $log")
         assertTrue(sm.completePerm(token, StatechartHostInvokerPermResult(granted = true)))
         sm.tick()

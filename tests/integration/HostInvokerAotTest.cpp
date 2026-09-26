@@ -669,7 +669,7 @@ TEST_F(HostInvokerAotTest, ATypedRequestReachesItsInvokerAsItsRecord) {
     sm.processEvent(Event::Type);
     ASSERT_EQ(host->starts.size(), 1U) << "perm started once";
     PermRequest expected;
-    expected.scope = "calendar";
+    expected.scope = "storage";
     expected.level = 2;
     EXPECT_EQ(host->starts[0].first, expected);
     EXPECT_NE(std::find(log.begin(), log.end(), "START id=probe"), log.end())

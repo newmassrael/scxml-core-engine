@@ -899,7 +899,7 @@ static int a_typed_request_reaches_its_invoker_as_its_record(void) {
 
     int bad = 0;
     bad |= check("typed-request", "perm starts", host.starts, 1);
-    bad |= expect("typed-request", "scope is the datamodel's", strcmp(host.scope, "calendar") == 0);
+    bad |= expect("typed-request", "scope is the datamodel's", strcmp(host.scope, "storage") == 0);
     bad |= check("typed-request", "level is the datamodel's", host.level, 2);
     bad |=
         expect("typed-request", "the untyped probe reached the fallback", count_lines(&run.rec, "START id=probe") == 1);

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: fcc36ca5ace7ff619d1d0a3cef283e3a12d9eaf17570ba300dc27c1de6383a2f
+// source-hash: 3afacaa0a23adb400f4a0aebcfc82fd33f663bac68bc56968f51d0bdc9d5b92d
 
 
 // SPDX-License-Identifier: MIT
@@ -923,9 +923,9 @@ func (p *StatechartHostInvokerPolicy) InitializeDataModel(eng *sce.Engine[Statec
 			_ = engine.SetVariable(sessionID, "unreadable", nil)
 		}
 	}
-	// W3C SCXML 5.2/5.3: Initialize scope from expr="'calendar'"
+	// W3C SCXML 5.2/5.3: Initialize scope from expr="'storage'"
 	{
-		result, err := engine.EvaluateExpression(sessionID, `"calendar"`)
+		result, err := engine.EvaluateExpression(sessionID, `"storage"`)
 		if err == nil {
 			_ = engine.SetVariable(sessionID, "scope", result)
 		} else {

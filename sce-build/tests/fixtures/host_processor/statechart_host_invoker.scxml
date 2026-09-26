@@ -136,7 +136,7 @@
     <data id="granted" expr="0"/>
     <data id="denied" expr="0"/>
     <data id="unreadable" expr="0"/>
-    <data id="scope" expr="'calendar'"/>
+    <data id="scope" expr="'storage'"/>
     <data id="level" expr="2"/>
   </datamodel>
 

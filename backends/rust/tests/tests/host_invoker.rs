@@ -917,7 +917,7 @@ fn a_typed_request_reaches_its_invoker_as_its_record() {
     assert_eq!(
         request,
         PermRequest {
-            scope: "calendar".into(),
+            scope: "storage".into(),
             level: 2,
         }
     );

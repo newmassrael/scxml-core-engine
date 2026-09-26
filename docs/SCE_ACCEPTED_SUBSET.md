@@ -2248,7 +2248,7 @@ carry, each an alias of an imported event schema:
 <sce:import kind="event-schema" src="perm_result.scxml" as="PermResult"/>
 ...
 <invoke type="x-app-host" id="perm" sce:request="PermRequest" sce:result="PermResult">
-  <param name="scope" expr="'calendar'"/>
+  <param name="scope" expr="'storage'"/>
   <param name="reason" expr="why"/>
 </invoke>
 ```

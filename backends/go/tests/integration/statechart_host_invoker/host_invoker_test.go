@@ -758,7 +758,7 @@ func TestATypedRequestReachesItsInvokerAsItsRecord(t *testing.T) {
 	if len(host.starts) != 1 {
 		t.Fatalf("perm started %d times, want 1", len(host.starts))
 	}
-	want := StatechartHostInvokerPermRequest{Scope: "calendar", Level: 2}
+	want := StatechartHostInvokerPermRequest{Scope: "storage", Level: 2}
 	if host.starts[0].request != want {
 		t.Errorf("perm was asked with %+v, want %+v", host.starts[0].request, want)
 	}

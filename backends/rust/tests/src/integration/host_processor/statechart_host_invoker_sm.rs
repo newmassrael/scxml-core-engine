@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: fcc36ca5ace7ff619d1d0a3cef283e3a12d9eaf17570ba300dc27c1de6383a2f
+// source-hash: 3afacaa0a23adb400f4a0aebcfc82fd33f663bac68bc56968f51d0bdc9d5b92d
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -907,7 +907,7 @@ impl StatechartHostInvokerPolicy {
             se,
             &sid,
             "scope",
-            "\"calendar\"",
+            "\"storage\"",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
         }
@@ -1189,7 +1189,7 @@ impl StatechartHostInvokerPolicy {
             se,
             &sid,
             "scope",
-            "\"calendar\"",
+            "\"storage\"",
         ) {
             ::sce_rust_runtime::sce_log_error!("global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
