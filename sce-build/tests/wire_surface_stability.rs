@@ -45,6 +45,7 @@ const JSON_SURFACES: &[&str] = &[
     "schemas/sce-sourcemap.v1.schema.json",
     "schemas/sce-manifest.v1.schema.json",
     "schemas/sce-symbol-lookup.v1.schema.json",
+    "schemas/sce-saved-state.v1.schema.json",
 ];
 
 const XSD_SURFACES: &[&str] = &["schemas/sce-forge.xsd", "schemas/sce-forge-ext.xsd"];
@@ -201,6 +202,11 @@ const INSTANCE_VALIDATION: &[(&str, &str, &str)] = &[
         "both_lookup_directions_validate_against_the_wire_schema",
         "sce-build/tests/sourcemap_addr2sce.rs",
     ),
+    (
+        "schemas/sce-saved-state.v1.schema.json",
+        "every_shared_saved_state_fixture_is_a_saved_state",
+        "sce-build/tests/saved_state_schema.rs",
+    ),
 ];
 
 /// Negative-case coverage: `(surface, test fn, file declaring it)`.
@@ -251,6 +257,11 @@ const NEGATIVE_VALIDATION: &[(&str, &str, &str)] = &[
         "lookup_schema_rejects_a_record_without_the_generator_stamp",
         "sce-build/tests/sourcemap_addr2sce.rs",
     ),
+    (
+        "schemas/sce-saved-state.v1.schema.json",
+        "the_schema_refuses_what_no_backend_writes",
+        "sce-build/tests/saved_state_schema.rs",
+    ),
 ];
 
 /// The field a surface carries the producing commit in.
@@ -270,21 +281,35 @@ const ATTRIBUTION_FIELD: &str = "generator";
 /// "nothing on its own" because it is frozen pre-1.0.
 const ATTRIBUTION_PATTERN: &str = "^([0-9a-f]{7,40}|unknown)$";
 
-/// Surfaces that deliberately do not carry the stamp, with the reason.
+/// Surfaces that deliberately do not carry the stamp: `(surface, reason,
+/// the sentence of SCE_WIRE_CONTRACTS.md that states the reason)`.
 ///
 /// An exemption is a claim, so it is registered rather than assumed,
 /// and the test below checks it in both directions: an exempt surface
 /// must NOT carry the field (otherwise this list is stale), and the
-/// registry must state the reason where consumers read it.
-const ATTRIBUTION_EXEMPT: &[(&str, &str)] = &[(
-    "schemas/sce-sourcemap.v1.schema.json",
-    "committed artifact: a commit stamp would be invalidated by the \
-     very commit that writes it, so every commit touching any tree \
-     would have to regenerate every sidecar. source_hash identifies \
-     the inputs instead, and a consumer needing the emitting commit \
-     reads it from the manifest of the run that produced the sidecar, \
-     or from a lookup record naming it.",
-)];
+/// registry must state the reason where consumers read it. Each exemption
+/// names its own sentence, so a second one cannot pass on the first's.
+const ATTRIBUTION_EXEMPT: &[(&str, &str, &str)] = &[
+    (
+        "schemas/sce-sourcemap.v1.schema.json",
+        "committed artifact: a commit stamp would be invalidated by the \
+         very commit that writes it, so every commit touching any tree \
+         would have to regenerate every sidecar. source_hash identifies \
+         the inputs instead, and a consumer needing the emitting commit \
+         reads it from the manifest of the run that produced the sidecar, \
+         or from a lookup record naming it.",
+        "sourcemap sidecar deliberately does",
+    ),
+    (
+        "schemas/sce-saved-state.v1.schema.json",
+        "written by generated code, which would have to embed the commit: \
+         every committed machine and every shared fixture would then change \
+         on every commit. What a saved state must identify is what it \
+         restores into, and its `shape` does that; the commit that built \
+         the machine is the build's to record.",
+        "saved state deliberately does",
+    ),
+];
 
 /// Lower bound on surfaces that must actually be checked for a stamp.
 /// Without it, an exemption list that grew to cover everything would
@@ -317,7 +342,7 @@ fn every_json_surface_names_the_commit_that_produced_it() {
             .get("properties")
             .and_then(|p| p.get(ATTRIBUTION_FIELD));
 
-        if let Some((_, reason)) = ATTRIBUTION_EXEMPT.iter().find(|(s, _)| s == rel) {
+        if let Some((_, reason, sentence)) = ATTRIBUTION_EXEMPT.iter().find(|(s, _, _)| s == rel) {
             assert!(
                 field.is_none(),
                 "{rel} is registered as exempt from the `{ATTRIBUTION_FIELD}` \
@@ -326,7 +351,7 @@ fn every_json_surface_names_the_commit_that_produced_it() {
                  the field. Reason on record: {reason}",
             );
             assert!(
-                registry.contains("sourcemap sidecar deliberately does"),
+                registry.contains(sentence),
                 "SCE_WIRE_CONTRACTS.md must state why {rel} carries no \
                  `{ATTRIBUTION_FIELD}` — an exemption a consumer cannot read \
                  is indistinguishable from an oversight.",

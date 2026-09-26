@@ -2658,6 +2658,42 @@ it can borrow the engine only between two of them — a macrostep boundary —
 so no snapshot is ever taken between two microsteps. A host holding one keeps
 what it saw, since it owns its copy.
 
+**Saving and restoring.** A host whose process can be killed saves the
+machine at a macrostep boundary and restores it into a new process in place
+of `initialize`: Kotlin `sm.save()` / `sm.restore(saved)` on a machine not
+yet started, Rust `engine.save()` / `Engine::<P>::restore(policy, &saved)`
+through the generated `<Machine>Persist` trait. A saved state holds every
+variable, the machine's own included, the configuration and the current leaf,
+as one JSON document (`SavedState::to_json` / `SavedState.toJson`, schema
+`schemas/sce-saved-state.v1.schema.json`, a `pre-release` surface in
+`SCE_WIRE_CONTRACTS.md`). The document is the same on every backend — keys are
+the document's ids, the configuration is in document order, a 64-bit integer
+is a text and a real that is not finite is `NaN` / `Infinity` / `-Infinity` —
+so what one backend saved another restores; both are held to the shared
+instances in `sce-build/tests/fixtures/static_datamodel/saved/`.
+
+A restore runs no `<onentry>` and evaluates no `<data>` (the saved run did
+both, and its host calls cannot be made twice), and it is refused, leaving
+the machine as it was, for a state saved from a document of another shape, a
+configuration that is not one of the document, or a value its variable's type
+or bound cannot hold. A save is refused for a machine that is not running and
+for one whose last macrostep was `truncated`.
+
+A saved state is bound to the document's SHAPE, not its source hash: a
+SHA-256 the generator computes over every state with its kind and parent and
+every variable with its type and bound (`static_lowering::saved_shape`). A
+guard, an action, an initial value or a comment changed leaves it restorable,
+so an app update does not lose its users' state; a state or variable renamed,
+re-typed, re-parented or re-bounded refuses it. What the shape cannot see — a
+variable of the same name and type whose meaning changed — is the author's to
+avoid until a document can declare a migration.
+
+A document with a `<history>`, a delayed `<send>` or an `<invoke>` has state
+the runtime holds rather than its fields, which this version of the format
+does not carry. Such a machine is generated WITHOUT `save` / `restore`, so a
+host finds out when it compiles rather than when a restore drops part of the
+state.
+
 **Host actions.** Under `sce-static` a `<sce:action>` argument (§2.11) is
 any typed expression over the same scope, not only a bare
 `_event.data.<field>`, and its type is the value's

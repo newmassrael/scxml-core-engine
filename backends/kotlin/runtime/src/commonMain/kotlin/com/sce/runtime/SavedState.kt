@@ -73,6 +73,14 @@ class SavedState(
         const val FORMAT: Int = 1
 
         /**
+         * The stability status of the saved-state wire surface, held in
+         * lockstep with `x-sce-schema-status` in
+         * `schemas/sce-saved-state.v1.schema.json` (`SCE_WIRE_CONTRACTS.md`).
+         * A flip to `"stable"` changes both in one commit.
+         */
+        const val SCHEMA_STATUS: String = "pre-release"
+
+        /**
          * Read `sce-saved-state` JSON. The shape is not judged here — the
          * machine that restores it knows its own.
          */

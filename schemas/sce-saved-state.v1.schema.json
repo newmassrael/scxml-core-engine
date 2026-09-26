@@ -1,0 +1,48 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-saved-state.v1.schema.json",
+  "x-sce-schema-status": "pre-release",
+  "title": "SCE saved state (wire schema v1)",
+  "description": "A datamodel=\"sce-static\" machine's whole state, saved at a macrostep boundary and restored into a new process in place of initialize (docs/SCE_ACCEPTED_SUBSET.md §2.15, \"Saving and restoring\"). The same document on every backend: what one backend saved, another restores. Producers and readers are the runtimes — sce_rust_runtime::saved_state (Rust) and com.sce.runtime.SavedState (Kotlin) — and the generated save/restore of each machine. The stability status of this surface lives in this header alone — see SCE_WIRE_CONTRACTS.md.",
+  "type": "object",
+  "required": ["format", "shape", "configuration", "current", "variables"],
+  "additionalProperties": false,
+  "properties": {
+    "format": {
+      "description": "The format version. Always 1 for this revision; a reader refuses any other.",
+      "const": 1
+    },
+    "shape": {
+      "description": "The SHA-256, as lowercase hex, of the document's shape as the generator computes it: every state with its kind and parent in document order, every variable with its type and bound, a record's fields with their types. A machine refuses a saved state of another shape. Not the document's source hash: a guard, an action, an initial value or a comment changed leaves the shape as it was.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "configuration": {
+      "description": "The active configuration as state ids, in document order. A restore refuses one that is not a configuration of the document.",
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "current": {
+      "description": "The current leaf as a state id — which of a <parallel>'s regions the machine last stood in, which the configuration alone cannot say.",
+      "type": "string"
+    },
+    "variables": {
+      "description": "Every variable, the machine's own included, keyed by its document id in declaration order.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/value" }
+    }
+  },
+  "definitions": {
+    "value": {
+      "description": "A value as its sce:type writes it. A whole number up to 32 bits is a JSON number; a 64-bit one (int64, uint64) is a text holding its decimal digits, so no reader that holds numbers as doubles loses its low bits. A real is a number, or one of the texts NaN, Infinity, -Infinity, which JSON has no number for. A bool is a JSON boolean, a string a text, bytes an array of numbers 0 to 255, a list an array of its elements, a record an object keyed by its schema's field ids. The document's types decide which applies; this schema admits their union.",
+      "oneOf": [
+        { "type": "number" },
+        { "type": "string" },
+        { "type": "boolean" },
+        { "type": "array", "items": { "$ref": "#/definitions/value" } },
+        { "type": "object", "additionalProperties": { "$ref": "#/definitions/value" } }
+      ]
+    }
+  }
+}

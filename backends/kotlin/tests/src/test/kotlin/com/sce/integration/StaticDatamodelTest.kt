@@ -469,13 +469,26 @@ class StaticDatamodelTest {
      * save after the same run and must restore from, which is what makes a
      * state saved by one backend a state another can read.
      */
-    private fun sharedFixture(machine: String): String {
-        // Found by walking up rather than by a fixed depth, because Gradle's
-        // working directory is the project's and that is a build detail.
-        val root = generateSequence(File(System.getProperty("user.dir")).absoluteFile) { it.parentFile }
+    private fun sharedFixture(machine: String): String =
+        File(repoRoot(), "sce-build/tests/fixtures/static_datamodel/saved/$machine.json").readText().trim()
+
+    // Found by walking up rather than by a fixed depth, because Gradle's
+    // working directory is the project's and that is a build detail.
+    private fun repoRoot(): File =
+        generateSequence(File(System.getProperty("user.dir")).absoluteFile) { it.parentFile }
             .firstOrNull { File(it, "sce-build").isDirectory }
             ?: error("no ancestor of ${System.getProperty("user.dir")} holds sce-build/")
-        return File(root, "sce-build/tests/fixtures/static_datamodel/saved/$machine.json").readText().trim()
+
+    @Test
+    fun theSavedStateSchemaFileDeclaresTheStatusThisRuntimeDoes() {
+        val schema = com.sce.runtime.Json.parse(
+            File(repoRoot(), "schemas/sce-saved-state.v1.schema.json").readText()
+        ) as Map<*, *>
+        assertEquals(
+            SavedState.SCHEMA_STATUS,
+            schema["x-sce-schema-status"],
+            "SCHEMA_STATUS and the schema header move together (SCE_WIRE_CONTRACTS.md)"
+        )
     }
 
     @Test

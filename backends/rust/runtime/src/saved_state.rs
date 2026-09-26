@@ -43,6 +43,11 @@ use crate::{Engine, StatePolicy};
 /// The format version this runtime writes and reads.
 pub const FORMAT: u32 = 1;
 
+/// The stability status of the saved-state wire surface, held in lockstep
+/// with `x-sce-schema-status` in `schemas/sce-saved-state.v1.schema.json`
+/// (`SCE_WIRE_CONTRACTS.md`). A flip to `"stable"` changes both in one commit.
+pub const SCHEMA_STATUS: &str = "pre-release";
+
 /// Why a saved state cannot be restored, or a machine cannot be saved.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StateRefusal(String);
@@ -491,6 +496,19 @@ mod tests {
             assert!(back == x || (back.is_nan() && x.is_nan()), "{back}");
         }
         assert_eq!(1.5f32.to_saved(), Value::Number("1.5".to_string()));
+    }
+
+    #[test]
+    fn schema_file_declares_status() {
+        let schema = json::parse(include_str!(
+            "../../../../schemas/sce-saved-state.v1.schema.json"
+        ))
+        .expect("the schema is JSON");
+        assert_eq!(
+            schema.member("x-sce-schema-status"),
+            Some(&Value::Text(SCHEMA_STATUS.to_string())),
+            "SCHEMA_STATUS and the schema header move together (SCE_WIRE_CONTRACTS.md)"
+        );
     }
 
     #[test]

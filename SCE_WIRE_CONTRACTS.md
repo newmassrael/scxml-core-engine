@@ -40,6 +40,7 @@ governance doc (linked below).
 | Authoring grammar (Extended SCXML) | SCE | `schemas/sce-forge.xsd`, `schemas/sce-forge-ext.xsd` | `<xs:documentation>x-sce-schema-status: …</xs:documentation>` (first child of `<xs:schema>`) | `pre-release` | `docs/SCE_ACCEPTED_SUBSET.md` |
 | Stdout manifest (`generate`, `check`, `orchestrate`) | SCE | `schemas/sce-manifest.v1.schema.json` | `MANIFEST_SCHEMA_STATUS` (`sce-build/src/manifest.rs`) ↔ `x-sce-schema-status` | `pre-release` | `SCE_ERROR_CONTRACT.md` §10 |
 | Symbol lookup (`addr2sce`, `sce2sym`) | SCE | `schemas/sce-symbol-lookup.v1.schema.json` | `SYMBOL_LOOKUP_SCHEMA_STATUS` (`sce-build/src/forge/sourcemap.rs`) ↔ `x-sce-schema-status` | `pre-release` | This doc + `sce-build/src/forge/sourcemap.rs` (producer) |
+| Saved state (a `sce-static` machine's `save()` / `restore()`) | SCE | `schemas/sce-saved-state.v1.schema.json` | `SCHEMA_STATUS` (`backends/rust/runtime/src/saved_state.rs`) and `SavedState.SCHEMA_STATUS` (`backends/kotlin/runtime/.../SavedState.kt`) ↔ `x-sce-schema-status`; each producer's own test reads the header | `pre-release` | `docs/SCE_ACCEPTED_SUBSET.md` §2.15 "Saving and restoring"; both backends are held to the shared instances in `sce-build/tests/fixtures/static_datamodel/saved/`, which `sce-build/tests/saved_state_schema.rs` validates against the schema |
 | Provenance roster (`sce-codegen provenance-roster`) — per `DiagnosticCode`, whether a diagnostic of that code carries a spec anchor, and the reason when it does not | SCE | none — a TSV stream, `<code>\t<verdict>\t<reason>`, with no checked-in schema file | `PROVENANCE_ROSTER_STATUS` (`sce-build/src/forge/diagnostic.rs`) ↔ this row, guarded by `the_registry_declares_the_rosters_status`; ⚠ it has no schema file, so the reverse walk over `schemas/` + `apis/` cannot reach it and the anchor is per-surface | `pre-release` | `SCE_ERROR_CONTRACT.md` §2.1.2, which directs a consumer to this command as the lookup that settles what an absent `spec_provenance` means; wire held to the producer by `sce-build/tests/cli_provenance_roster_wire.rs` (spawns the binary) |
 | W3C SCXML section mirror — the section set SCE's `§scxml-<id>` citations are checked against, each section carrying its normative excerpt, `coverage_expectation`, `decision_status` and its `implements` / `verifies` bindings | mnemosyne | `docs/spec/scxml/.atomic/workspace.atomic.json` | none — the store carries mnemosyne's own `schema_version`; declared to SCE by `[atomic].sidecar_path` in `docs/spec/scxml/mnemosyne.toml` | `registered` | mnemosyne (upstream tool); regenerated from the vendored snapshot by `tools/mnemosyne-adoption/scxml_toc_to_manifest.py`, read by `mnemosyne-cli` through `docs/spec/scxml/mnemosyne.toml` |
 | W3C SCXML verify bindings — which test file and symbol verifies which section | mnemosyne | `docs/spec/scxml/.atomic/verifies-catalog.json` | none — the file declares `format: verifies-catalog/v1`; pinned by `[verifies_catalog].sha256` in `docs/spec/scxml/mnemosyne.toml` | `registered` | mnemosyne takes the neutral `verifies-catalog/v1` contract only; the records are generated from each test's W3C `metadata.txt specnum` by `tools/mnemosyne-adoption/gen_verifies_catalog.py` |
@@ -63,7 +64,7 @@ The `Current status` column carries one of two vocabularies, and the
 
 - **`pre-release`** / **`stable`** — a wire stability promise, pinned by
   a machine check to both the producer-side constant and the schema-file
-  header (policy item 4 below). All six wire surfaces are currently
+  header (policy item 4 below). Every wire surface is currently
   `pre-release`; SCE has not yet made a stability promise on any of them.
 - **`registered`** — existence and content are on record here, and a gate
   holds this table to the tree. SCE makes **no** cross-version stability
@@ -175,6 +176,15 @@ promises it does not make and enforcement that does not exist.
    exemption is registered in the same test (`ATTRIBUTION_EXEMPT`, with
    its reason) and checked both ways: the sidecar must not carry the
    field, and this registry must state why.
+
+   The saved state deliberately does **not** carry it either. It is
+   written by generated code, which would have to embed the commit, so
+   every committed machine and every shared saved-state fixture would
+   change on every commit. What a saved state must identify is what it
+   restores into, and its `shape` does that — a digest of the states and
+   typed variables it names, which a machine checks before it reads
+   anything else; the commit that built the machine is the build's to
+   record (the `generate` manifest names it). Registered the same way.
 3. **Additive growth is compatible.** Adding a new optional field is
    compatible within the current version and does NOT bump it.
    Consumers MUST ignore unknown fields.
@@ -186,6 +196,9 @@ promises it does not make and enforcement that does not exist.
    - `sourcemap.rs::tests::schema_file_declares_status`
    - `manifest.rs::tests::schema_file_declares_status`
    - `sourcemap.rs::tests::symbol_lookup_schema_file_declares_status`
+   - `saved_state.rs::tests::schema_file_declares_status` (Rust runtime)
+     and `StaticDatamodelTest.theSavedStateSchemaFileDeclaresTheStatusThisRuntimeDoes`
+     (Kotlin) — one per producer
    - `sce-build/tests/wire_surface_stability.rs` (cross-surface: every
      surface declares a valid status, this registry lists every
      surface, and — walking the other way — every schema checked into
@@ -217,6 +230,9 @@ promises it does not make and enforcement that does not exist.
      `orchestrate_manifest_names_exactly_the_files_it_wrote` (which also
      pins the record against a walk of the directory it describes)
    - Symbol lookup — `both_lookup_directions_validate_against_the_wire_schema`
+   - Saved state — `every_shared_saved_state_fixture_is_a_saved_state`
+     (the shared fixtures, which the Rust and Kotlin static suites each
+     save byte for byte and restore from)
 
    The negative half is enforced separately, by
    `wire_surface_stability.rs::NEGATIVE_VALIDATION` and
@@ -234,6 +250,7 @@ promises it does not make and enforcement that does not exist.
    - Sourcemap sidecar — `sourcemap_schema_rejects_a_missing_required_field`
    - Stdout manifest — `schema_rejects_a_missing_required_field`
    - Symbol lookup — `lookup_schema_rejects_a_record_without_the_generator_stamp`
+   - Saved state — `the_schema_refuses_what_no_backend_writes`
 
    The authoring grammar is in neither table because it is not validated
    by a test: `forge::xsd_validator` validates input documents against
