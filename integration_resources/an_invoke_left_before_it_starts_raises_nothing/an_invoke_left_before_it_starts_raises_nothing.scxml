@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 6.4: an <invoke> runs only for a state that is still active when
+  its macrostep ends; a state exited within that macrostep cancels it before
+  it starts. §6.4.1's error.execution for a type the platform cannot run is
+  raised when the invocation is attempted, so a cancelled one raises nothing.
+
+  `s0` holds an invoke whose type no processor implements and leaves at once
+  on an eventless transition. `s1` counts any error.execution that reaches it
+  before the host sends `finish`.
+
+    errors  0 — a processor that attempts the invoke after `s0` has left
+                counts 1.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="an_invoke_left_before_it_starts_raises_nothing" datamodel="ecmascript"
+       initial="s0">
+
+  <datamodel>
+    <data id="errors" expr="0"/>
+  </datamodel>
+
+  <state id="s0">
+    <invoke id="never" type="http://example.invalid/unsupported"/>
+    <transition target="s1"/>
+  </state>
+
+  <state id="s1">
+    <transition event="error.execution">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+    <transition event="finish" target="done"/>
+  </state>
+
+  <final id="done"/>
+</scxml>

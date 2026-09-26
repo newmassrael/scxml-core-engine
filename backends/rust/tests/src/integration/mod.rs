@@ -31,6 +31,7 @@
 //! under `integration_resources/` when those engines are repaired.
 
 pub mod ai_loop;
+pub mod an_invoke_left_before_it_starts_raises_nothing;
 pub mod ancestor_entry_is_not_default_entry;
 pub mod autoforward_dequeue_point;
 pub mod autoforward_done_invoke;

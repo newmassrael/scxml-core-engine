@@ -1410,6 +1410,32 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML 6.4: an invoke whose state leaves within its macrostep is never attempted.
+    sce_generate_static_integration_c_test(an_invoke_left_before_it_starts_raises_nothing "${SCE_C_INTEGRATION_GENERATED_DIR}")
+
+    add_executable(sce_c_integration_an_invoke_left_before_it_starts_raises_nothing
+        integration/test_an_invoke_left_before_it_starts_raises_nothing.c
+        ${INTEGRATION_C_TEST_an_invoke_left_before_it_starts_raises_nothing_SOURCES}
+    )
+    target_link_libraries(sce_c_integration_an_invoke_left_before_it_starts_raises_nothing PRIVATE
+        sce_c_runtime sce_c_runtime_posix sce_c_base sce_c_scripting lua54
+    )
+    target_include_directories(sce_c_integration_an_invoke_left_before_it_starts_raises_nothing PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_an_invoke_left_before_it_starts_raises_nothing PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_an_invoke_left_before_it_starts_raises_nothing
+        COMMAND sce_c_integration_an_invoke_left_before_it_starts_raises_nothing
+    )
+    set_tests_properties(c11_integration_an_invoke_left_before_it_starts_raises_nothing PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 5.10 + B.2: the payload a HOST hands the machine has to reach
     # the datamodel as a value. Every other fixture here leaves the carrier's
     # `data` field zeroed, so this edge — the one a downstream MCU consumer

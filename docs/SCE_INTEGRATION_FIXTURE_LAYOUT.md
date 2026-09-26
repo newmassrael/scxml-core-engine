@@ -1172,6 +1172,21 @@ defines. C11 in turn refused to autoforward an external event of that name.
 The event is now an ordinary name everywhere: the analyzer no longer adds
 or reserves it, both raises are gone, and the C11 forwarder filters no name.
 
+`an_invoke_left_before_it_starts_raises_nothing` covers §scxml-6.4: an
+invoke runs only for a state still active when its macrostep ends, so one
+whose state has left is never attempted and its §scxml-6.4.1
+error.execution is never raised. `s0` holds only an invoke of a type no
+processor runs and leaves at once on an eventless transition; `s1` counts
+any error.execution that reaches it before the host sends `finish`.
+
+Measured 2026-09-26: Rust emitted no exit chain for a document whose only
+`<invoke>` was refused, and C11 dropped a pending invoke on exit only for
+the SCXML kinds, so in both the refused invoke outlived its state. C11 kept
+a host-served invoke pending the same way, which the `passing` state of
+`sce-build/tests/fixtures/host_processor/statechart_host_invoker.scxml`
+now holds in all six host-invoker drivers. Both now drop every kind of
+pending invoke when its state exits.
+
 ## Adding a new custom integration fixture
 
 When a future SCXML contract requires this layer:

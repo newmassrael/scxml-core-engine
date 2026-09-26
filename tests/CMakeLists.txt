@@ -1037,6 +1037,8 @@ add_executable(integration_tests
     integration/EventTypeNamesItsQueueAotTest.cpp
     integration/CancellingAnInvokeRaisesNothingTest.cpp
     integration/CancellingAnInvokeRaisesNothingAotTest.cpp
+    integration/AnInvokeLeftBeforeItStartsRaisesNothingTest.cpp
+    integration/AnInvokeLeftBeforeItStartsRaisesNothingAotTest.cpp
     integration/EventDataArrivesAsSentTest.cpp
     integration/EventDataArrivesAsSentAotTest.cpp
     integration/XmlDataIsADomTreeTest.cpp
@@ -1568,6 +1570,11 @@ sce_generate_static_integration_test(event_type_names_its_queue ${STATIC_INTEGRA
 sce_generate_static_integration_test(cancelling_an_invoke_raises_nothing ${STATIC_INTEGRATION_OUTPUT_DIR}
     SYNTH_INVOKE_CHILDREN child
 )
+
+# W3C SCXML 6.4: an invoke whose state leaves within its macrostep is never
+# attempted. The only invoke is one no processor runs, so an attempt would
+# raise §6.4.1 error.execution; the next state counts any that arrives.
+sce_generate_static_integration_test(an_invoke_left_before_it_starts_raises_nothing ${STATIC_INTEGRATION_OUTPUT_DIR})
 
 # W3C SCXML 5.10 + B.2: the payload a HOST hands the machine has to reach the
 # datamodel as a value. `raiseExternalEvent(name, data)` and
