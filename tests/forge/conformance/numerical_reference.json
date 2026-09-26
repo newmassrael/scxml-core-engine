@@ -1676,6 +1676,39 @@
         { "args": [9223372036854775807], "expected": 55807, "note": "int64 MAX" }
       ]
     },
+    "utc_from_local": {
+      "fixture": "utc_from_local",
+      "signature": "(starts: list<i64>, offsets: list<i32>, local: i64) -> i64 may-fail",
+      "formula": "the UTC instant a local reading names under the transition table; an overlap is the earlier instant and a gap is read with the offset before it (RFC 5545 §3.3.5, java.time's default); a table or reading the question cannot be answered from fails 'precondition' (the standard document sce:std/time/utc_from_local.scxml)",
+      "cases": [
+        { "args": [[0, 100], [0, 60], 50], "expected": 50 },
+        { "args": [[0, 100], [0, 60], 130], "expected": 130, "note": "in a forward gap: read with the offset before" },
+        { "args": [[0, 100], [0, 60], 170], "expected": 110 },
+        { "args": [[0, 100], [60, 0], 130], "expected": 70, "note": "in an overlap: the earlier instant" },
+        { "args": [[0, 100], [60, 0], 170], "expected": 170 },
+        { "args": [[1767225600, 1774746000, 1792890000], [3600, 7200, 3600], 1774751400], "expected": 1774747800, "note": "Europe/Berlin 2026-03-29 02:30, skipped by DST: 03:30 CEST" },
+        { "args": [[1767225600, 1774746000, 1792890000], [3600, 7200, 3600], 1792895400], "expected": 1792888200, "note": "Europe/Berlin 2026-10-25 02:30, repeated: the CEST one" },
+        { "args": [[0, 100], [0, 60], -1], "fails": "precondition", "note": "before the table's first transition" },
+        { "args": [[0, 100], [0], 50], "fails": "precondition", "note": "the lists differ in length" }
+      ]
+    },
+    "utc_offset_at": {
+      "fixture": "utc_offset_at",
+      "signature": "(starts: list<i64>, offsets: list<i32>, t: i64) -> i32 may-fail",
+      "formula": "the offset of the last transition at or before t; a table the question cannot be answered from fails 'precondition' (the standard document sce:std/time/utc_offset_at.scxml)",
+      "cases": [
+        { "args": [[0, 100, 200], [3600, 7200, 3600], 0], "expected": 3600 },
+        { "args": [[0, 100, 200], [3600, 7200, 3600], 99], "expected": 3600 },
+        { "args": [[0, 100, 200], [3600, 7200, 3600], 100], "expected": 7200, "note": "a transition takes effect at its own instant" },
+        { "args": [[0, 100, 200], [3600, 7200, 3600], 250], "expected": 3600 },
+        { "args": [[1767225600, 1774746000, 1792890000], [3600, 7200, 3600], 1774745999], "expected": 3600, "note": "Europe/Berlin, the last CET second" },
+        { "args": [[1767225600, 1774746000, 1792890000], [3600, 7200, 3600], 1774746000], "expected": 7200, "note": "Europe/Berlin, the first CEST second" },
+        { "args": [[0, 100, 200], [3600, 7200, 3600], -1], "fails": "precondition", "note": "before the table's first transition" },
+        { "args": [[], [], 0], "fails": "precondition", "note": "an empty table" },
+        { "args": [[0, 100], [3600], 50], "fails": "precondition", "note": "the lists differ in length" },
+        { "args": [[0, 100, 50], [0, 0, 0], 10], "fails": "precondition", "note": "starts not ascending" }
+      ]
+    },
     "weekday_from_days": {
       "fixture": "weekday_from_days",
       "signature": "(days: i64) -> u8",

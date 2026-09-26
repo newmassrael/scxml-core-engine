@@ -1288,6 +1288,38 @@
       }
     },
     {
+      "name": "utc_from_local",
+      "document": "sce:std/time/utc_from_local.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "utc_from_local",
+      "args": [
+        { "list_of": "i64" },
+        { "list_of": "i32" },
+        "i64"
+      ],
+      "output": {
+        "type": "i64",
+        "compare": "equality"
+      }
+    },
+    {
+      "name": "utc_offset_at",
+      "document": "sce:std/time/utc_offset_at.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "utc_offset_at",
+      "args": [
+        { "list_of": "i64" },
+        { "list_of": "i32" },
+        "i64"
+      ],
+      "output": {
+        "type": "i32",
+        "compare": "equality"
+      }
+    },
+    {
       "name": "weekday_from_days",
       "document": "sce:std/time/weekday_from_days.scxml",
       "kind": "algorithm",

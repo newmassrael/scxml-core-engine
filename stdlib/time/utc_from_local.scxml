@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/time/utc_from_local.scxml — the instant (UTC seconds) a local
+  wall-clock reading `local` (seconds since 1970-01-01T00:00:00, local time)
+  names under a time zone's transition table, in the table's shape
+  utc_offset_at.scxml documents.
+
+  A local reading names one instant, none, or two. When a transition moves
+  the clock forward, the readings it skips name none (a gap); when it moves
+  the clock back, the readings it repeats name two (an overlap). Both are
+  resolved as RFC 5545 §3.3.5 resolves them, which is also what
+  `java.time`'s `ZonedDateTime.ofLocal` does by default:
+    - an overlap is the first occurrence — the earlier instant;
+    - a gap is read with the offset in force before it, which lands the
+      same distance past the transition as the reading is past its start
+      (02:30 in a 02:00→03:00 gap is 03:30 by the new offset).
+  One rule, on every backend, rather than each platform's own.
+
+  A table the question cannot be answered from fails `precondition`, as
+  for utc_offset_at; so does a reading before the table's first transition.
+
+  starts [0, 100], offsets [0, 60] (forward 60 s at 100):
+  local 50 → 50 · 130 → 130 (in the gap 100..159, read with the offset
+  before, 0) · 170 → 110.
+  starts [0, 100], offsets [60, 0] (back 60 s at 100):
+  local 130 → 70 (the first of 70 and 130) · 170 → 170.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="utc_from_local" version="1.0">
+  <sce:signature>
+    <sce:param name="starts" type="list&lt;int64&gt;"/>
+    <sce:param name="offsets" type="list&lt;int32&gt;"/>
+    <sce:param name="local" type="int64"/>
+    <sce:return type="int64" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:require cond="len(starts) === len(offsets) &amp;&amp; len(starts) &gt; 0"/>
+    <sce:require cond="local - offsets[0] &gt;= starts[0]"/>
+    <sce:var name="n" type="uint32" init="len(starts)"/>
+    <!-- The earliest transition under whose offset the reading falls in
+         that transition's own span: the one instant, or an overlap's
+         first. -->
+    <sce:var name="k" type="uint32" init="0"/>
+    <sce:while cond="k &lt; n">
+      <sce:if cond="k &gt; 0">
+        <sce:require cond="starts[k] &gt; starts[k - 1]"/>
+      </sce:if>
+      <sce:var name="u" type="int64" init="local - offsets[k]"/>
+      <sce:if cond="u &gt;= starts[k] &amp;&amp; (k + 1 === n || u &lt; starts[k + 1])">
+        <sce:return expr="u"/>
+      </sce:if>
+      <sce:assign target="k" expr="k + 1"/>
+    </sce:while>
+    <!-- No transition's span holds it: a gap. The one it falls in is the
+         transition it reaches under the offset before, but not under the
+         new one; it is read with the offset before. -->
+    <sce:var name="g" type="uint32" init="1"/>
+    <sce:while cond="g &lt; n">
+      <sce:var name="before" type="int64" init="local - offsets[g - 1]"/>
+      <sce:if cond="before &gt;= starts[g] &amp;&amp; local - offsets[g] &lt; starts[g]">
+        <sce:return expr="before"/>
+      </sce:if>
+      <sce:assign target="g" expr="g + 1"/>
+    </sce:while>
+    <sce:require cond="false"/>
+    <sce:return expr="0"/>
+  </sce:body>
+</scxml>

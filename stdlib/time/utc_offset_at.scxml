@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/time/utc_offset_at.scxml — the UTC offset, in seconds, in force at
+  instant `t` (seconds since 1970-01-01T00:00:00Z) under a time zone's
+  transition table.
+
+  The table is the host's: SCE carries no time-zone rules, which change
+  several times a year, and reads the operating system's instead. The host
+  hands the transitions covering the span it asks about — `starts[k]` the
+  instant (UTC seconds) transition k takes effect, ascending, and
+  `offsets[k]` the offset in force from it until the next — and every
+  backend then answers the same. The local wall-clock reading of `t` is
+  `t + utc_offset_at(...)`; a list-taking algorithm is the host's to call
+  (SCE_FORGE.md §4.12), so that sum is the host's too.
+
+  A table the question cannot be answered from fails `precondition`: the
+  two lists of different lengths, an empty table, starts not strictly
+  ascending, or a `t` before the table's first transition.
+
+  starts [0, 100, 200], offsets [3600, 7200, 3600]:
+  t 0 → 3600 · 99 → 3600 · 100 → 7200 · 250 → 3600 · -1 → precondition.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="utc_offset_at" version="1.0">
+  <sce:signature>
+    <sce:param name="starts" type="list&lt;int64&gt;"/>
+    <sce:param name="offsets" type="list&lt;int32&gt;"/>
+    <sce:param name="t" type="int64"/>
+    <sce:return type="int32" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:require cond="len(starts) === len(offsets) &amp;&amp; len(starts) &gt; 0"/>
+    <sce:require cond="t &gt;= starts[0]"/>
+    <!-- The last transition at or before t is the one in force. -->
+    <sce:var name="k" type="uint32" init="0"/>
+    <sce:var name="i" type="uint32" init="1"/>
+    <sce:while cond="i &lt; len(starts)">
+      <sce:require cond="starts[i] &gt; starts[i - 1]"/>
+      <sce:if cond="starts[i] &lt;= t">
+        <sce:assign target="k" expr="i"/>
+      </sce:if>
+      <sce:assign target="i" expr="i + 1"/>
+    </sce:while>
+    <sce:return expr="offsets[k]"/>
+  </sce:body>
+</scxml>
