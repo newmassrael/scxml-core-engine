@@ -25,6 +25,15 @@ namespace SCE::W3C::AotTests {
  */
 struct Test237 : public ScheduledAotTest<Test237, 237> {
     using SM = SCE::Generated::test237::test237;
+
+    // W3C SCXML 6.2: the pass path waits for `timeout1` (1s) and then
+    // `timeout2` (1.5s), so the run needs 2.5s — past the 2s default. It
+    // once finished inside the default only because a spurious
+    // `cancel.invoke` reached s1's `*` transition at 1s; §scxml-6.4 defines
+    // no such event, and without it the document runs its full course.
+    std::chrono::seconds getTimeout() const override {
+        return std::chrono::seconds(5);
+    }
 };
 
 // Auto-register
