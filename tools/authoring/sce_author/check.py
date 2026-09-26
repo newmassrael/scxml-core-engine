@@ -34,7 +34,7 @@ import yaml
 
 from . import delivery, landing
 from .errors import READ_ERRORS, PackError, describe_path
-from .pack import SCHEMA_DIR, Pack, _validate
+from .pack import RULE_COMMENTARY, SCHEMA_DIR, Pack, _validate, rule_text
 
 
 def _keys_that_hold_no_symbol() -> frozenset:
@@ -678,7 +678,26 @@ class Finding:
         return f"{self.where}: {self.detail}"
 
 
-def unread_preconditions(pack: Pack, prose, names: set) -> list[Finding]:
+def _reading(rule: dict) -> object:
+    """A rule's reading, comparable across spellings YAML gives the same value."""
+    def norm(value):
+        if isinstance(value, dict):
+            return {str(k): norm(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [norm(v) for v in value]
+        return str(value)
+    return norm({k: v for k, v in rule.items() if k not in RULE_COMMENTARY})
+
+
+def _addresses_of(rule: dict) -> set:
+    """Every address a binding rule reads: its own and its protocol's parameters."""
+    found = {str(rule["address"])} if rule.get("address") else set()
+    found.update(str(v) for v in (rule.get("parameters") or {}).values())
+    return found
+
+
+def unread_preconditions(pack: Pack, prose, declared_inputs: dict,
+                         document_inputs) -> list[Finding]:
     """Every precondition the prose states that nothing in the pair reads.
 
     The pack's table reads each phrase as an expression over its precondition
@@ -694,24 +713,73 @@ def unread_preconditions(pack: Pack, prose, names: set) -> list[Finding]:
     gone; only `verify`, which the writer does not have, could see it.
     Necessary, not sufficient: that an input is read says nothing about
     WHERE, which is `verify`'s to judge.
+
+    Where the pack also gives the RULE that reads an input
+    (`precondition_rules`), the name stops being the test: a binding rule
+    reading it that way satisfies it under any name, and a rule under its
+    name that reads it any other way is refused. ⚠ Measured 2026-09-26: the
+    next writer bound the supply input under the right name as a plain
+    comparison of one of the latch's counters, and a name-only check passed
+    it; the platform numbers those counters from 0, so it never read ON.
     """
     conv = pack.conventions
     out = []
+    # ⚠ A rule naming an `event` does not hand a value: it is how a
+    # statechart OBSERVES the same thing, one event per change of one address
+    # the reading watches, and it is right to differ from a value rule.
+    # Compared as a reading, every statechart that took the supply condition
+    # as events was refused (measured on a reference document that passes its
+    # shipped tests). It is held to the addresses the pack's rule reads.
+    events = {name: rule for name, rule in declared_inputs.items()
+              if isinstance(rule, dict) and rule.get("event")}
+    readings = {name: _reading(rule) for name, rule in declared_inputs.items()
+                if isinstance(rule, dict) and name not in events}
+    reported: set = set()
     for key, (path, lineno, count) in sorted(conv.precondition_mentions(prose).items()):
         expression = conv.precondition_phrases.get(key)
         if expression is None:
             continue  # not in the table: `questions` asks about it
-        needed = conv.precondition_reads(expression)
-        if needed and not needed & names:
+        where = f"({pathlib.Path(path).name}:{lineno}, {count} time(s))"
+        for needed in sorted(conv.precondition_reads(expression)):
+            if needed in reported:
+                continue
+            rule = conv.precondition_rules.get(needed)
+            if needed in events and rule is not None:
+                watched = str(events[needed].get("address"))
+                if watched not in _addresses_of(rule):
+                    reported.add(needed)
+                    out.append(Finding(
+                        f"input {needed}",
+                        f"takes the precondition the specification needs for "
+                        f"{key!r} {where} as events of {watched!r}, which the "
+                        f"pack's reading of {needed!r} does not watch: it "
+                        f"reads {rule_text(rule)}. An event of another address "
+                        f"is another condition."))
+                continue
+            if needed in readings and rule is not None and readings[needed] != _reading(rule):
+                reported.add(needed)
+                out.append(Finding(
+                    f"input {needed}",
+                    f"reads the precondition input the specification needs "
+                    f"for {key!r} {where}, and reads it differently from the "
+                    f"pack, which reads {needed!r} as {rule_text(rule)}. A "
+                    f"different reading is a different condition, whatever "
+                    f"the name. Bind it as the pack does."))
+                continue
+            if needed in readings or needed in document_inputs:
+                continue
+            if rule is not None and _reading(rule) in readings.values():
+                continue  # read the pack's way under another name
+            reported.add(needed)
+            how = (f" The pack reads it as {rule_text(rule)}." if rule is not None
+                   else " Bind it under that name, as the brief's precondition "
+                        "table gives it.")
             out.append(Finding(
                 "binding",
-                f"the specification writes the precondition {key!r} "
-                f"({pathlib.Path(path).name}:{lineno}, {count} time(s)), "
+                f"the specification writes the precondition {key!r} {where}, "
                 f"which the pack reads as `{expression}`, and nothing here "
-                f"reads {', '.join(sorted(needed))}: no input rule and no "
-                f"document input has that name. The condition is missing "
-                f"from every output it gates. Bind it under that name, as "
-                f"the brief's precondition table gives it."))
+                f"reads {needed!r}: the condition is missing from every "
+                f"output it gates.{how}"))
     return out
 
 
@@ -1043,13 +1111,28 @@ def check(pack: Pack, binding_path: pathlib.Path, prose=None) -> list[Finding]:
                 f"which the document can produce, so a case producing it has "
                 f"nowhere to land.{stray}"))
 
+    # A transform input no expression reads decides nothing, and a case that
+    # does not drive it is still refused by `verify` for its missing value
+    # ("absence has no safe silent reading"): an input the document never
+    # uses cost a writer a case, measured 2026-09-26. Only a transform: a
+    # statechart's declared inputs are refused as such above.
+    if document.kind == "transform":
+        read = set().union(*document.reads.values()) if document.reads else set()
+        for ident in document.inputs:
+            if ident not in read:
+                out.append(Finding(
+                    f"document {document.path.name}",
+                    f"input {ident!r} is declared and no expression reads it, "
+                    f"so it decides nothing -- and every case must still give "
+                    f"it a value. Read it where the specification uses it, or "
+                    f"delete it and its rule."))
+
     # Whether a run can start at all (`driving_refusals`).
     for where, why in driving_refusals(document, declared_inputs):
         out.append(Finding(where, why))
 
     if prose is not None:
-        out.extend(unread_preconditions(pack, prose,
-                                        set(declared_inputs) | set(document.inputs)))
+        out.extend(unread_preconditions(pack, prose, declared_inputs, set(document.inputs)))
 
     # What a document that keeps values needs the binding to say.
     if document.keeps and not binding.get("activation"):

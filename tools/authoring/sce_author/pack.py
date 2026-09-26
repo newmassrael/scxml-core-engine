@@ -292,6 +292,10 @@ class Conventions:
     # Ways of reading an address that the pack names and the core does not
     # interpret. This is the seam: a platform's signalling idioms stay data.
     protocols: dict[str, dict]
+    # Precondition input name -> the binding rule that reads it on this
+    # platform, for the inputs whose pack says so. What `check` holds a
+    # binding to; an input with only a description is known by name alone.
+    precondition_rules: dict[str, dict] = field(default_factory=dict)
 
     def classify(self, name: str) -> str | None:
         for nc in self.name_classes:
@@ -343,6 +347,17 @@ class Conventions:
         return set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expression)) & set(self.precondition_inputs)
 
 
+# What a binding rule says about how it READS is everything but these: what
+# its author wrote beside it.
+RULE_COMMENTARY = frozenset({"note", "assumed"})
+
+
+def rule_text(rule: dict) -> str:
+    """A binding rule as one line of YAML flow style, the way a binding writes it."""
+    return yaml.safe_dump({k: v for k, v in rule.items() if k not in RULE_COMMENTARY},
+                          default_flow_style=True, sort_keys=False, width=10_000).strip()
+
+
 # The two literals an expression may carry without reading anything.
 _LITERALS = frozenset({"true", "false"})
 
@@ -376,6 +391,7 @@ def load_conventions(paths: list[pathlib.Path]) -> Conventions:
     comparison = None
     gate_off_note = ""
     protocols: dict[str, dict] = {}
+    rules: dict[str, dict] = {}
 
     for path in paths:
         doc = _read(path)
@@ -383,7 +399,15 @@ def load_conventions(paths: list[pathlib.Path]) -> Conventions:
         for nc in doc["name_classes"]:
             classes.append(NameClass(re.compile(nc["pattern"]), nc["role"]))
         pre = doc.get("preconditions") or {}
-        inputs.update(pre.get("inputs") or {})
+        for name, described in (pre.get("inputs") or {}).items():
+            if isinstance(described, dict):
+                inputs[name] = described["note"]
+                rules[name] = described["rule"]
+            else:
+                inputs[name] = described
+                # A later file that only describes the input withdraws the
+                # rule an earlier one gave for it.
+                rules.pop(name, None)
         for raw, reading in (pre.get("phrases") or {}).items():
             key = raw.strip().lower()
             if isinstance(reading, dict):
@@ -455,6 +479,7 @@ def load_conventions(paths: list[pathlib.Path]) -> Conventions:
         gate_off_note=gate_off_note,
         comparison_pattern=comparison,
         protocols=protocols,
+        precondition_rules=rules,
     )
 
 

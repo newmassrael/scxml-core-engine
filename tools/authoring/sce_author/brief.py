@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pathlib
 
-from .pack import Pack, gate_off_value
+from .pack import Pack, gate_off_value, rule_text
 from .prose import Prose
 from .questions import ask
 
@@ -98,7 +98,11 @@ def assemble(prose: Prose, pack: Pack) -> str:
     if conv.precondition_inputs:
         parts.append("Inputs the document declares, and what each observes:")
         for name, note in sorted(conv.precondition_inputs.items()):
-            parts.append(f"- `{name}` — {note}")
+            rule = conv.precondition_rules.get(name)
+            # The rule is printed as the binding writes it: `check` holds a
+            # binding reading this input to exactly this.
+            parts.append(f"- `{name}` — {note}"
+                         + (f"; bind it as `{rule_text(rule)}`" if rule else ""))
     if conv.precondition_phrases:
         parts.append("")
         parts.append("Phrase the prose writes, and the expression it becomes:")

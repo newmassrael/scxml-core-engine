@@ -749,6 +749,15 @@ the same writer produced -- shell right, `check` silent, every case unjudged:
   name. The writer had computed the output from the status alone and dropped
   the supply condition in the same table row. Reading the name is necessary,
   not sufficient; where it is read is `verify`'s to judge.
+- A pack may give, beside a precondition input's note, the binding rule that
+  reads it (`preconditions.inputs.<name>: {note, rule}`); the brief prints it
+  and `check` holds the binding to it. A rule under the name that reads it any
+  other way is refused, and the pack's reading under another name satisfies
+  it -- so the name stops being the test. The next writer had bound a latch
+  under the right name as a plain comparison of one of its counters, which a
+  name-only check passed.
+- A transform input that no expression reads is refused: it decides nothing,
+  and `verify` still refuses a case that leaves it without a value.
 
 #### A statechart is driven, and answers by sending
 

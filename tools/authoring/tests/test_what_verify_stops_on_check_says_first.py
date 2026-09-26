@@ -269,11 +269,17 @@ class AnInputTheDocumentTakes(Both):
     def test_the_clock_and_the_variant_name_no_address(self):
         """Read off the case, as the schema says of both. `check` refused
         them as having "no address and no protocol" while `verify` ran them."""
+        # Both are read, without moving the lamp off `mode ? 1 : 0`: an input
+        # no expression reads is refused on its own account (since 2026-09-26),
+        # which is not what this test is about.
         document = DOCUMENT.replace(
             '<data id="mode" sce:type="bool" sce:direction="in"/>',
             '<data id="mode" sce:type="bool" sce:direction="in"/>'
             '<data id="since" sce:type="int32" sce:direction="in"/>'
-            '<data id="branch" sce:type="bool" sce:direction="in"/>')
+            '<data id="branch" sce:type="bool" sce:direction="in"/>').replace(
+            'expr="mode ? 1 : 0"',
+            'expr="(since &gt;= 0 &amp;&amp; (branch || !branch) &amp;&amp; mode) ? 1 : 0"')
+        self.assertIn("since &gt;= 0", document)
         self.use(document)
         binding = copy.deepcopy(BINDING)
         binding["inputs"]["since"] = {"clock": True, "when_absent": 0}

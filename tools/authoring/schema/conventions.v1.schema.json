@@ -38,8 +38,25 @@
       "properties": {
         "inputs": {
           "type": "object",
-          "additionalProperties": {"type": "string"},
-          "description": "Input name the document declares, to a one-line description of what it observes. The core only needs the names; how a runtime supplies them belongs to the pack."
+          "additionalProperties": {
+            "oneOf": [
+              {"type": "string"},
+              {
+                "type": "object",
+                "required": ["note", "rule"],
+                "additionalProperties": false,
+                "properties": {
+                  "note": {"type": "string", "minLength": 1},
+                  "rule": {
+                    "type": "object",
+                    "minProperties": 1,
+                    "description": "The binding input rule that reads this input on this platform, as a binding writes it (`address`/`equals`, `protocol`/`parameters`, ...). `check` holds a binding to it: a rule that reads the precondition differently is refused, and a rule that reads it this way satisfies the precondition under any name."
+                  }
+                }
+              }
+            ]
+          },
+          "description": "Input name the document declares, to a one-line description of what it observes, or to that description and the binding rule that reads it. With only a description the core knows the name alone, and a binding that reads the precondition WRONGLY under the right name passes: measured 2026-09-26, a writer bound a supply latch as a plain comparison of one of its counters, and `check` could not tell."
         },
         "phrases": {
           "type": "object",
