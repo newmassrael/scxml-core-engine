@@ -1576,6 +1576,59 @@ fn catalog_flag_help() -> String {
     )
 }
 
+/// CLI arguments for the `list-fixtures` subcommand, in an `Args` struct
+/// (as `GenerateW3cArgs` is) so `cmd_list_fixtures` takes one parameter,
+/// free of a `too_many_arguments` allow.
+#[derive(clap::Args)]
+struct ListFixturesArgs {
+    /// Path to fixture catalog JSON
+    #[arg(short, long, long_help = forge_catalog_flag_help())]
+    manifest: String,
+    /// Output format. `plain` (default) is one fixture name per line,
+    /// suitable for `for fixture in $(sce-codegen list-fixtures ...)`.
+    /// `cmake` emits a single semicolon-separated CMake list literal.
+    /// `space` emits a single space-separated line.
+    #[arg(short, long, default_value = "plain")]
+    format: String,
+    #[arg(
+        short,
+        long,
+        help = LanguageRoute::ListFixtures.flag_summary("Optional language gate"),
+        long_help = list_fixtures_language_flag_help(),
+    )]
+    language: Option<String>,
+    /// RFC §synth-5-B B2-test-vector: restrict the listing to fixtures
+    /// whose SCXML carries at least one `<sce:test-vector>` element
+    /// (algorithm kind only — codec test vectors defer to B5). The
+    /// cmake harness uses this to declare the per-fixture sidecar
+    /// header `<fixture>_test.h` as an additional OUTPUT of the
+    /// generate custom_command without speculating which fixtures
+    /// emit a sidecar. Requires `--resource-dir` to locate the
+    /// per-fixture SCXML files.
+    #[arg(long)]
+    has_test_vectors: bool,
+    /// Directory containing per-fixture `<name>.scxml` source files.
+    /// Required when `--has-test-vectors` is set.
+    #[arg(long)]
+    resource_dir: Option<String>,
+    /// Which catalog `--manifest` points at
+    #[arg(long, default_value = "forge", long_help = catalog_flag_help())]
+    catalog: String,
+    /// Restrict a `--catalog w3c` listing to fixtures naming this
+    /// harness (`simple`, `scheduled`, `http`). This is how a build
+    /// system reconstructs the per-harness registration groups
+    /// without parsing JSON. Unset lists every registered fixture.
+    #[arg(long)]
+    harness: Option<String>,
+    /// List each fixture's document instead of its name, in the same
+    /// order and format: a path under `--resource-dir`, or the
+    /// `sce:std/...` name of a standard document. A build hands this to
+    /// `generate` as it is, so no build spells where a fixture's
+    /// document lives. Forge catalog only.
+    #[arg(long)]
+    documents: bool,
+}
+
 /// CLI arguments for the `generate-w3c` subcommand. Extracted into an
 /// `Args` struct (mirroring `GenerateArgs`) so `cmd_generate_w3c` takes
 /// one parameter instead of eight, free of a `too_many_arguments` allow.
@@ -2280,54 +2333,7 @@ enum Commands {
     /// Print the conformance fixture name list from a manifest. Build
     /// systems consume this so they don't need a native JSON parser
     /// (CMake, Gradle, plain Bash) to enumerate fixtures.
-    ListFixtures {
-        /// Path to fixture catalog JSON
-        #[arg(short, long, long_help = forge_catalog_flag_help())]
-        manifest: String,
-        /// Output format. `plain` (default) is one fixture name per line,
-        /// suitable for `for fixture in $(sce-codegen list-fixtures ...)`.
-        /// `cmake` emits a single semicolon-separated CMake list literal.
-        /// `space` emits a single space-separated line.
-        #[arg(short, long, default_value = "plain")]
-        format: String,
-        #[arg(
-            short,
-            long,
-            help = LanguageRoute::ListFixtures.flag_summary("Optional language gate"),
-            long_help = list_fixtures_language_flag_help(),
-        )]
-        language: Option<String>,
-        /// RFC §synth-5-B B2-test-vector: restrict the listing to fixtures
-        /// whose SCXML carries at least one `<sce:test-vector>` element
-        /// (algorithm kind only — codec test vectors defer to B5). The
-        /// cmake harness uses this to declare the per-fixture sidecar
-        /// header `<fixture>_test.h` as an additional OUTPUT of the
-        /// generate custom_command without speculating which fixtures
-        /// emit a sidecar. Requires `--resource-dir` to locate the
-        /// per-fixture SCXML files.
-        #[arg(long)]
-        has_test_vectors: bool,
-        /// Directory containing per-fixture `<name>.scxml` source files.
-        /// Required when `--has-test-vectors` is set.
-        #[arg(long)]
-        resource_dir: Option<String>,
-        /// Which catalog `--manifest` points at
-        #[arg(long, default_value = "forge", long_help = catalog_flag_help())]
-        catalog: String,
-        /// Restrict a `--catalog w3c` listing to fixtures naming this
-        /// harness (`simple`, `scheduled`, `http`). This is how a build
-        /// system reconstructs the per-harness registration groups
-        /// without parsing JSON. Unset lists every registered fixture.
-        #[arg(long)]
-        harness: Option<String>,
-        /// List each fixture's document instead of its name, in the same
-        /// order and format: a path under `--resource-dir`, or the
-        /// `sce:std/...` name of a standard document. A build hands this to
-        /// `generate` as it is, so no build spells where a fixture's
-        /// document lives. Forge catalog only.
-        #[arg(long)]
-        documents: bool,
-    },
+    ListFixtures(ListFixturesArgs),
 
     /// Refuse a W3C AOT test header whose brief states the spec section
     /// its fixture targets.
@@ -2787,25 +2793,7 @@ fn main() {
             output_dir,
             write_deps,
         } => cmd_generate_conformance(&language, &manifest, &output_dir, write_deps.as_deref()),
-        Commands::ListFixtures {
-            manifest,
-            format,
-            language,
-            has_test_vectors,
-            resource_dir,
-            catalog,
-            harness,
-            documents,
-        } => cmd_list_fixtures(
-            &manifest,
-            &format,
-            language.as_deref(),
-            has_test_vectors,
-            resource_dir.as_deref(),
-            &catalog,
-            harness.as_deref(),
-            documents,
-        ),
+        Commands::ListFixtures(args) => cmd_list_fixtures(&args),
         Commands::CheckAotBriefs {
             manifest,
             header_dir,
@@ -2896,7 +2884,7 @@ fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
         | Commands::RequirementClosure { .. }
         | Commands::Unresolved { .. }
         | Commands::Coverage { .. }
-        | Commands::ListFixtures { .. }
+        | Commands::ListFixtures(_)
         | Commands::CheckAotBriefs { .. }
         | Commands::ProvenanceRoster
         | Commands::Expand { .. }
@@ -9035,16 +9023,15 @@ fn list_w3c_fixtures(
     emit_fixture_names(&names, format);
 }
 
-fn cmd_list_fixtures(
-    manifest_path: &str,
-    format: &str,
-    language: Option<&str>,
-    has_test_vectors_only: bool,
-    resource_dir: Option<&str>,
-    catalog: &str,
-    harness: Option<&str>,
-    documents: bool,
-) {
+fn cmd_list_fixtures(args: &ListFixturesArgs) {
+    let manifest_path = args.manifest.as_str();
+    let format = args.format.as_str();
+    let language = args.language.as_deref();
+    let has_test_vectors_only = args.has_test_vectors;
+    let resource_dir = args.resource_dir.as_deref();
+    let catalog = args.catalog.as_str();
+    let harness = args.harness.as_deref();
+    let documents = args.documents;
     match catalog {
         "forge" => {}
         "w3c" if documents => cli_exit(CliError::ScxmlGenerate {

@@ -1685,6 +1685,11 @@
         {
           "file": "backends/rust/forge-conformance/tests/forge_default_round_trip.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "ListFixturesArgs",
+          "kind": "implements"
         }
       ]
     },
