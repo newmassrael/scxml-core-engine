@@ -238,6 +238,11 @@ const ANALYZER_WRITTEN: &[&str] = &[
     "needs_foreach",
     "needs_guard_helper",
     "needs_http_send",
+    // Template dispatch: whether the Go, Python and Kotlin policies emit
+    // the per-policy `idlocation` store helper. Derived from the authored
+    // `idlocation` attributes, which is what a rendering shows; the flag
+    // itself never reaches the page.
+    "needs_idlocation_store",
     "needs_namelist_helper",
     // Template dispatch, both of them, and neither reaches the page.
     // ⚠ They appeared when this gate stopped sweeping three

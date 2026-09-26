@@ -995,6 +995,7 @@ add_executable(integration_tests
     integration/DoneInvokeOutlivesTheInvokingStateTest.cpp
     integration/UnseenEventIsReportedTest.cpp
     integration/UnseenEventIsReportedAotTest.cpp
+    integration/TypedReaderNamesTest.cpp
     integration/TypedReaderNamesAotTest.cpp
     integration/UnhandledErrorIsObservableTest.cpp
     integration/UnhandledErrorIsObservableAotTest.cpp

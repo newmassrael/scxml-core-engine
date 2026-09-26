@@ -72,6 +72,13 @@ const WIRE_FORMAT_EXEMPT: &[&str] = &[
     // template hazard. What codegen templates DO read from this module is
     // the per-`<send>` verdict on `Action`, which is a plain `bool`.
     "host_processor_analyzer.rs",
+    // `UnreadableVariable` — the stdout manifest's `unreadable_variables`
+    // wire shape (SCE_ERROR_CONTRACT.md §10.1), a sibling of the two above:
+    // serialised straight to JSON for the CLI manifest and never fed into a
+    // minijinja template, so omitting an absent `language` / `spelling` /
+    // `with` / `location` is the wire convention. What templates read from
+    // this module is `ReaderNames`, which carries no `Option` field.
+    "reader_names.rs",
 ];
 
 fn is_wire_format_exempt(rs_file: &Path, repo_root: &Path) -> bool {
