@@ -443,6 +443,10 @@ pub mod json;
 /// it does not resolve in the very profile this module exists for.
 pub mod payload_reading;
 pub mod policy;
+/// A `datamodel="sce-static"` machine's whole state, saved and restored as
+/// one JSON document (SCE Accepted Subset §2.15). `std` only.
+#[cfg(not(feature = "no_std"))]
+pub mod saved_state;
 /// Per-machine scheduled-send-id storage policy (SCE Protocol-Synthesis RFC §synth-5-J-2).
 pub mod sched_send_id;
 /// ECMAScript engine abstraction.
