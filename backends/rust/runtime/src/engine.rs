@@ -1740,7 +1740,7 @@ impl<P: StatePolicy> Engine<P> {
     }
 
     /// Whether the macrostep the last host call drove was stopped at
-    /// [`MAX_MACROSTEP_MICROSTEPS`] rather than reaching a stable
+    /// the microstep ceiling (`MAX_MACROSTEP_MICROSTEPS`) rather than reaching a stable
     /// configuration — the one macrostep's answer, where
     /// [`truncated_macrosteps`](Self::truncated_macrosteps) counts every one.
     ///

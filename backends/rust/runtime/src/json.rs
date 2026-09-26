@@ -9,7 +9,7 @@
 //! the other refuses cannot exist; one writer serves the saved state and the
 //! inject seam's `data`.
 //!
-//! A number keeps the spelling it was written in ([`Value::Number`]), so a
+//! A number keeps the spelling it was written in ([`crate::json::Value::Number`]), so a
 //! whole number stays exact until the one who reads it chooses its width — a
 //! 64-bit value never passes through an `f64`.
 //!

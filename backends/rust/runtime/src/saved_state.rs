@@ -10,7 +10,7 @@
 //! machine is (its configuration and current leaf) and every variable, the
 //! machine's own included — not only the ones a snapshot publishes.
 //!
-//! The format is one JSON document (`sce-saved-state`, version [`FORMAT`]),
+//! The format is one JSON document (`sce-saved-state`, version [`crate::saved_state::FORMAT`]),
 //! the same on every backend, so what one backend saved another can read. A
 //! variable is keyed by its document id and written as its `sce:type` says:
 //! a number, except a 64-bit integer, written as a text so no reader that
@@ -25,8 +25,10 @@
 //! refuses it, since the same id need not mean the same thing there. An app
 //! update that touched only a guard does not lose its users' state.
 //!
-//! The steps every machine takes alike live here ([`save`], [`check_shape`],
-//! [`enter`]); a generated machine adds only its own variables between them.
+//! The steps every machine takes alike live here
+//! ([`crate::saved_state::save`], [`crate::saved_state::check_shape`],
+//! [`crate::saved_state::enter`]); a generated machine adds only its own
+//! variables between them.
 //!
 //! ⚠ `std` only: a `no_std` machine has no JSON and nothing to save it to.
 
