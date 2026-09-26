@@ -100,9 +100,9 @@ documents-floor 700
 documents-judged-floor 450
 engine-documents 236
 native-prefix-documents 2
-datamodel-variable-init 278
+datamodel-variable-init 281
 transition-guard 220
-assign-action 226
+assign-action 229
 child-invoke-needs-script-engine 46
 log-expr 45
 send-param-expr 32
@@ -159,7 +159,11 @@ never spelled correctly.
   raise `cancel-expr` past 1) and the new
   `onexit_runs_before_the_state_leaves.scxml` (one engine document) raised
   `engine-documents`, `datamodel-variable-init`, `transition-guard`,
-  `assign-action` and `cancel-expr`. A consumer pairing `cond="cpp:…"` with
+  `assign-action` and `cancel-expr`. Then the fixture's `typed` state (a
+  typed host-run completion: three counters, three assigns) raised
+  `datamodel-variable-init` and `assign-action` — and NOT
+  `transition-guard`: its two guards read the `sce:result` record and lower
+  natively, which is the point of the state. A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.
 - **49% of judged documents need an engine** (233 of 475). The remaining

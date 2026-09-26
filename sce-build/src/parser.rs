@@ -1105,6 +1105,97 @@ fn inherit_req(block_req: &[crate::provenance::RequirementId], block: &mut [crat
     }
 }
 
+/// §scxml-6.4.1: whether `invoke_type` names the SCXML processor — the
+/// `scxml` shorthand, the processor URI with and without its trailing slash,
+/// or no type at all.
+fn is_scxml_invoke_type(invoke_type: &str) -> bool {
+    invoke_type.is_empty()
+        || invoke_type == "scxml"
+        || invoke_type == "http://www.w3.org/TR/scxml"
+        || invoke_type == "http://www.w3.org/TR/scxml/"
+}
+
+/// The typed interface an `<invoke>` declares: `sce:request` and
+/// `sce:result`, each an imported event schema's alias (SCE Accepted Subset
+/// §2.12).
+#[derive(Default)]
+struct TypedInvokeAttrs {
+    request: String,
+    result: String,
+    request_at: Option<crate::forge::error::SourceLocation>,
+    result_at: Option<crate::forge::error::SourceLocation>,
+}
+
+/// Read `sce:request` / `sce:result` from `node`, refusing them where they
+/// cannot mean anything.
+///
+/// Only an invoke the HOST runs has a typed interface to declare: a type SCE
+/// runs itself (`scxml`, `sce:mesh-rpc`) has its own contract, and one named
+/// by `typeexpr` is not known to be host-run until the invocation starts. A
+/// typed invoke must also carry its own `id`, because the generated host
+/// interface names its request and result after it — a generated id would
+/// make the host's method names an accident of document order. Each refusal
+/// is reported on the attribute's own position, where the alias is spelled.
+fn collect_typed_invoke_attrs(
+    node: &roxmltree::Node,
+    invoke_type: &str,
+    host_runnable: bool,
+    source_name: &str,
+) -> Result<TypedInvokeAttrs, crate::forge::error::Located<crate::forge::error::ForgeError>> {
+    use crate::forge::error::{Located, ValidationError};
+    use crate::forge::model::SCE_NAMESPACE;
+    let mut attrs = TypedInvokeAttrs::default();
+    for attribute in node.attributes() {
+        if attribute.namespace() != Some(SCE_NAMESPACE) {
+            continue;
+        }
+        let (slot, at) = match attribute.name() {
+            "request" => (&mut attrs.request, &mut attrs.request_at),
+            "result" => (&mut attrs.result, &mut attrs.result_at),
+            _ => continue,
+        };
+        let alias = attribute.value().to_string();
+        let refusal = if !host_runnable {
+            Some(format!(
+                "a typed interface is declared only on an <invoke> the host runs; type \"{invoke_type}\" \
+                 is one SCE runs itself or resolves at run time"
+            ))
+        } else if node.attribute("id").is_none() {
+            Some(
+                "a typed <invoke> needs its own id: the generated host interface names its request \
+                 and result after it"
+                    .to_string(),
+            )
+        } else if alias.is_empty() {
+            Some("the attribute names no event schema".to_string())
+        } else {
+            None
+        };
+        let pos = node.document().text_pos_at(attribute.range_value().start);
+        if let Some(detail) = refusal {
+            return Err(Located::new(
+                ValidationError::TypedInvokeSchema {
+                    invoke_id: node.attribute("id").unwrap_or("").to_string(),
+                    attr: attribute.name().to_string(),
+                    alias,
+                    detail,
+                }
+                .into(),
+                source_name,
+                Some(pos.row),
+                Some(pos.col),
+            ));
+        }
+        *slot = alias;
+        *at = Some(crate::forge::error::SourceLocation {
+            file: artifact_label(source_name),
+            line: Some(pos.row),
+            col: Some(pos.col),
+        });
+    }
+    Ok(attrs)
+}
+
 /// Read the optional `sce:candidates="a.scxml b.scxml"` attribute on a
 /// hybrid `<invoke>` and return one entry per document, in the order the
 /// author wrote them.
@@ -2267,6 +2358,12 @@ impl SCXMLParser {
                 &model,
                 &schemas_by_stem,
             );
+            // A host-run `<invoke>`'s typed interface names imported
+            // schemas by alias, so it is judged against the alias map just
+            // resolved — and its completion is bound to its result schema
+            // before any typed-path validator reads the event map below.
+            crate::forge::typed_invoke::validate(&model, &model.imported_records, diag_label)?;
+            crate::forge::typed_invoke::bind_results(&mut model);
             model.imported_algorithms =
                 crate::forge::static_imports::resolve(&model, dir, diag_label)?;
             let imported_enums =
@@ -3765,6 +3862,14 @@ impl SCXMLParser {
             model.has_autoforward_invoke = true;
         }
         let namelist = elem.attribute("namelist").unwrap_or("").to_string();
+        let typed = collect_typed_invoke_attrs(
+            elem,
+            &invoke_type,
+            invoke_type != "sce:mesh-rpc"
+                && !is_scxml_invoke_type(&invoke_type)
+                && elem.attribute("typeexpr").is_none(),
+            source_name,
+        )?;
 
         // SCE Mesh §9.5: <invoke type="sce:mesh-rpc"> — short-lived RPC
         // layered on W3C invoke lifecycle. Parsed through a dedicated
@@ -3881,10 +3986,7 @@ impl SCXMLParser {
 
         // §scxml-6.4: Classify invoke type
         let has_static_child = !src.is_empty() || has_inline_scxml;
-        let scxml_type = invoke_type.is_empty()
-            || invoke_type == "scxml"
-            || invoke_type == "http://www.w3.org/TR/scxml"
-            || invoke_type == "http://www.w3.org/TR/scxml/";
+        let scxml_type = is_scxml_invoke_type(&invoke_type);
 
         let is_static_invoke =
             scxml_type && srcexpr.is_empty() && contentexpr.is_empty() && has_static_child;
@@ -4153,6 +4255,10 @@ impl SCXMLParser {
                 // and whether this platform can run the type is not in the
                 // document.
                 host_served: false,
+                request_schema: typed.request,
+                result_schema: typed.result,
+                request_schema_at: typed.request_at,
+                result_schema_at: typed.result_at,
             })));
         }
 

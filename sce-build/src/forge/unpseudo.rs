@@ -2801,6 +2801,8 @@ fn parse_scxml_invoke(
     let mut unsupported_src = String::new();
     let mut unsupported_content = String::new();
     let mut host_served = false;
+    let mut request_schema = String::new();
+    let mut result_schema = String::new();
 
     for (k, sub) in group(kids) {
         let (keyword, value) = match k.text.split_once(' ') {
@@ -2829,6 +2831,8 @@ fn parse_scxml_invoke(
             // Only a host-run invoke prints an inline body as text; the
             // scxml arm renders its inline child as a `child:` block.
             "content" => unsupported_content = undo(value, k.number)?,
+            "request" => request_schema = undo(value, k.number)?,
+            "result" => result_schema = undo(value, k.number)?,
             "candidates" => {
                 let written = undo(value, k.number)?;
                 hybrid.candidates = Vec::new();
@@ -2922,6 +2926,12 @@ fn parse_scxml_invoke(
             content: unsupported_content,
             contentexpr: hybrid.contentexpr,
             host_served,
+            request_schema,
+            result_schema,
+            // A page carries no source positions, so a refusal of a model
+            // rebuilt from one names no row — as for every page-built node.
+            request_schema_at: None,
+            result_schema_at: None,
         }),
     })
 }

@@ -382,6 +382,16 @@
        entry that was wrong. -->
   <xs:attribute name="candidates" type="xs:string"/>
 
+  <!-- The typed interface of an `<invoke>` the host runs: `sce:request` and
+       `sce:result` each name an imported event schema's alias
+       (docs/SCE_ACCEPTED_SUBSET.md §2.12). Global for the reason
+       `candidates` is — written on the W3C `<invoke>`. `xs:string` and not
+       `use`-constrained: the parser owns the refusals (on an invoke SCE runs
+       itself, without an `id`, empty, or naming no imported schema), and
+       each names the attribute that was wrong. -->
+  <xs:attribute name="request" type="xs:string"/>
+  <xs:attribute name="result" type="xs:string"/>
+
   <!-- Section 4.6: Codec — document-level default endianness -->
   <xs:attribute name="default-endian" type="sce:endianType"/>
 

@@ -984,6 +984,30 @@ pub enum ValidationError {
     #[error("<sce:action name=\"{name}\">: {detail}")]
     NativeActionPlacement { name: String, detail: String },
 
+    /// A host-run `<invoke>`'s typed interface (`sce:request` /
+    /// `sce:result`) cannot be established: the attribute sits on an
+    /// invoke SCE runs itself, the invoke has no `id` to name its typed
+    /// methods after, or the alias names no imported event schema.
+    #[error("<invoke id=\"{invoke_id}\" sce:{attr}=\"{alias}\">: {detail}")]
+    TypedInvokeSchema {
+        invoke_id: String,
+        attr: String,
+        alias: String,
+        detail: String,
+    },
+
+    /// A typed host-run `<invoke>`'s request does not match the schema
+    /// `sce:request` names: a `<param>` the schema lacks, a field no
+    /// `<param>` supplies, a name given twice, or a `namelist` /
+    /// `<content>` beside the typed request.
+    #[error("<invoke id=\"{invoke_id}\" sce:request=\"{alias}\">: {detail}")]
+    TypedInvokeRequest {
+        invoke_id: String,
+        alias: String,
+        detail: String,
+        observed: String,
+    },
+
     /// §scxml-G-7 — a `<sce:action>` `<sce:arg>` cannot be lowered to
     /// a typed native value: it is not a bare `_event.data.<field>`
     /// reference, the triggering event imports no EventSchema, or the

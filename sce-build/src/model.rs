@@ -1195,6 +1195,26 @@ pub struct UnsupportedInvokeInfo {
     /// [`crate::host_processor_analyzer::declare_host_processors`].
     #[serde(default)]
     pub host_served: bool,
+    /// `sce:request` — the alias of the imported event schema that types
+    /// this invoke's request (SCE Accepted Subset §2.12): its `<param>`s
+    /// are that record's fields, one each, so the host receives exactly
+    /// one value per field and no other parameter. Empty when untyped.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub request_schema: String,
+    /// `sce:result` — the alias of the imported event schema that types
+    /// this invoke's completion: `done.invoke.<id>` carries that record as
+    /// its `_event.data`, bound by the invoke rather than by an event name.
+    /// Empty when untyped.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub result_schema: String,
+    /// Where `sce:request`'s value is spelled — the row a refusal of the
+    /// alias reports (SCE_ERROR_CONTRACT.md §3.1.1: `actual` must occur on
+    /// the reported line, and an attribute is not always on its element's).
+    #[serde(skip)]
+    pub request_schema_at: Option<SourceLocation>,
+    /// Where `sce:result`'s value is spelled, for the same reason.
+    #[serde(skip)]
+    pub result_schema_at: Option<SourceLocation>,
 }
 
 /// Fields every invoke carries regardless of kind: the W3C identity

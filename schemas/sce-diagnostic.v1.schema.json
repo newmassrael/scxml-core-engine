@@ -80,6 +80,8 @@
         "validation/wrong-pipeline",
         "validation/dynamic-features",
         "validation/native-action-placement",
+        "validation/typed-invoke-schema",
+        "validation/typed-invoke-request",
         "validation/native-action-argument",
         "validation/native-action-signature-conflict",
         "validation/mesh-rpc-reserved-param",

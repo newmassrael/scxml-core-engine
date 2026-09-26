@@ -461,6 +461,10 @@ fn each_invoke_shape_renders_once_and_whole() {
             content: "<ask>now</ask>".to_string(),
             contentexpr: "body()".to_string(),
             host_served: true,
+            request_schema: "AskRequest".to_string(),
+            result_schema: "AskResult".to_string(),
+            request_schema_at: None,
+            result_schema_at: None,
         }),
     ];
 
@@ -513,6 +517,8 @@ machine m (datamodel: ecmascript, initial: s0)
       content <ask>now</ask>
       contentexpr body()
       host-served
+      request AskRequest
+      result AskResult
 ";
 
     assert_eq!(

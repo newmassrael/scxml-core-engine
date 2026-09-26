@@ -477,6 +477,32 @@ TEST_F(HostInvokerAotTest, AnInvokerRegisteredForAnotherTypeDoesNotRunThisOne) {
     EXPECT_TRUE(log.empty()) << "the other type's invoker was called";
 }
 
+// `perm` completed with `doneData` in a machine driven into `typed`: the
+// counters `granted`, `denied` and `unreadable`.
+TEST_F(HostInvokerAotTest, ATypedCompletionIsReadAsItsRecord) {
+    // SCE Accepted Subset §2.12: `sce:result` makes `perm`'s completion a
+    // `PermResult` record, so its guards read `granted` as a typed field —
+    // true and false each select their own transition — and a completion
+    // whose data is not that record is refused as any typed payload the data
+    // does not fit is: error.execution, and neither guard fires.
+    const auto complete = [this](const std::string &doneData) {
+        Machine sm;
+        starts.clear();
+        registerRunningInvoker(sm);
+        boot(sm);
+        sm.processEvent(Event::Type);
+        EXPECT_TRUE(sm.completeHostInvoke(DECLARED_TYPE, "perm", tokenOf("perm"), doneData))
+            << "a running invocation's completion was refused";
+        sm.step();
+        return std::vector<std::optional<int64_t>>{sm.getPolicy().granted(), sm.getPolicy().denied(),
+                                                   sm.getPolicy().unreadable()};
+    };
+    using Counts = std::vector<std::optional<int64_t>>;
+    EXPECT_EQ(complete(R"({"granted":true})"), (Counts{1, 0, 0})) << "granted";
+    EXPECT_EQ(complete(R"({"granted":false})"), (Counts{0, 1, 0})) << "denied";
+    EXPECT_EQ(complete("yes"), (Counts{0, 0, 1})) << "not the record";
+}
+
 namespace {
 
 /// A machine on a ManualClock whose invoker answers nothing and records, per

@@ -1663,7 +1663,16 @@ class Engine(Generic[S, E]):
         # events originating from invoked children, so the finalize body can
         # write child-derived values back into the parent datamodel that
         # subsequent guards then read.
-        if evt.metadata.invoke_id:
+        #
+        # `_event` is bound here once, for both the finalize body and the
+        # transition selection after it: §scxml-5.10 binds it when the
+        # event is selected for processing, and `<finalize>` writes the
+        # datamodel, not `_event`. Binding it a second time in `_dispatch`
+        # re-ran the typed payload lift, so a completion whose data did not
+        # fit its record reported error.execution twice where every other
+        # backend reports it once.
+        already_bound = bool(evt.metadata.invoke_id)
+        if already_bound:
             self._policy.set_current_event(evt.event, evt.metadata)
             self._policy.execute_finalize_for_child_event(evt, self)
         # §scxml-6.4.1 — autoforward into every active child marked
@@ -1677,7 +1686,7 @@ class Engine(Generic[S, E]):
         # transition does) and the party that got the event wrong.
         # Counted for the external queue only: an internal `<raise>` that
         # matches nothing has both its ends inside the document.
-        if not self._dispatch(evt):
+        if not self._dispatch(evt, already_bound=already_bound):
             self._discarded_external_events += 1
             self._last_discarded_event = evt.event
 
@@ -1734,15 +1743,17 @@ class Engine(Generic[S, E]):
             microstep(self._host, transitions)
             self._macrostep_microsteps_taken += 1
 
-    def _dispatch(self, evt: EventWithMetadata[E]) -> bool:
+    def _dispatch(self, evt: EventWithMetadata[E], already_bound: bool = False) -> bool:
         # §scxml-5.10 — bind `_event` into the datamodel before the
         # microstep so transition guards and action expressions can
         # read `_event.name`, `_event.data`, etc. Eventless transitions
         # do not update `_event` (handled separately in
         # `_drain_eventless`), matching W3C 5.10.2 which only refreshes
         # `_event` when the processor "selects an event for
-        # processing".
-        self._policy.set_current_event(evt.event, evt.metadata)
+        # processing". `already_bound` is the external dequeue saying it
+        # bound this event itself, before `<finalize>` — once per event.
+        if not already_bound:
+            self._policy.set_current_event(evt.event, evt.metadata)
         # §scxml-6.5 / 6.4.1 — the `<finalize>` and autoforward
         # preliminary steps belong to the external dequeue and run in
         # `_process_next_external_event`, which is the only caller that

@@ -113,6 +113,12 @@ static int64_t counter(const statechart_host_invoker_t *sm, const char *name) {
         ok = statechart_host_invoker_finished(sm, &value);
     } else if (strcmp(name, "misdated") == 0) {
         ok = statechart_host_invoker_misdated(sm, &value);
+    } else if (strcmp(name, "granted") == 0) {
+        ok = statechart_host_invoker_granted(sm, &value);
+    } else if (strcmp(name, "denied") == 0) {
+        ok = statechart_host_invoker_denied(sm, &value);
+    } else if (strcmp(name, "unreadable") == 0) {
+        ok = statechart_host_invoker_unreadable(sm, &value);
     }
     if (!ok) {
         (void)fprintf(stderr, "host_invoker: FAIL - the fixture declares `%s` and the machine could not read it\n",
@@ -688,6 +694,42 @@ static int a_deadline_that_is_not_milliseconds_starts_nothing(void) {
     return bad;
 }
 
+// `perm` completed with `done_data` in a machine driven into `typed`, the
+// counters `granted`, `denied` and `unreadable` checked against `want`.
+static int typed_completion(const char *done_data, const int64_t want[3]) {
+    running_t run;
+    statechart_host_invoker_t sm;
+    boot_running(&sm, &run);
+    deliver(&sm, STATECHART_HOST_INVOKER_EVENT_TYPE);
+
+    int bad = 0;
+    bad |= expect(
+        "typed", "a running invocation's completion was accepted",
+        statechart_host_invoker_complete_host_invoke(&sm, DECLARED_TYPE, "perm", token_of(&run, "perm"), done_data));
+    statechart_host_invoker_step(&sm);
+    bad |= check("typed", "granted", counter(&sm, "granted"), want[0]);
+    bad |= check("typed", "denied", counter(&sm, "denied"), want[1]);
+    bad |= check("typed", "unreadable", counter(&sm, "unreadable"), want[2]);
+    statechart_host_invoker_destroy(&sm);
+    return bad;
+}
+
+// SCE Accepted Subset §2.12: `sce:result` makes `perm`'s completion a
+// `PermResult` record, so its guards read `granted` as a typed field — true and
+// false each select their own transition — and a completion whose data is not
+// that record is refused as any typed payload the data does not fit is:
+// error.execution, and neither guard fires.
+static int a_typed_completion_is_read_as_its_record(void) {
+    static const int64_t granted[3] = {1, 0, 0};
+    static const int64_t denied[3] = {0, 1, 0};
+    static const int64_t unreadable[3] = {0, 0, 1};
+    int bad = 0;
+    bad |= typed_completion("{\"granted\":true}", granted);
+    bad |= typed_completion("{\"granted\":false}", denied);
+    bad |= typed_completion("yes", unreadable);
+    return bad;
+}
+
 // The table's JSON is read by walking it, not by a library this test does not
 // link: whitespace and commas separate, `[` opens a list, `]` closes one, and a
 // string is a quoted run with no escape — the table has no use for one, and a
@@ -816,6 +858,7 @@ int main(void) {
     bad |= a_completion_before_the_deadline_disarms_it();
     bad |= a_deadline_that_is_not_milliseconds_starts_nothing();
     bad |= a_deadline_is_read_by_the_shared_table();
+    bad |= a_typed_completion_is_read_as_its_record();
 
     if (bad != 0) {
         (void)fprintf(stderr, "host_invoker: FAIL - see the scenario(s) named above\n");

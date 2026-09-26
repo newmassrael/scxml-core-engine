@@ -85,12 +85,23 @@
                6.4.1): error.execution, and the host is never asked to start
                it. So 1, whichever way `slow` ends.
 
+  `typed` holds a typed completion (`sce:result`, SCE Accepted Subset
+  §2.12): `perm` completes with a `PermResult` record, and the guards read
+  its `granted` field natively.
+
+    granted / denied — the host completed `perm` with `granted` true / false.
+    unreadable       — the host completed it with data that is not the
+                       record: error.execution, and neither guard fires.
+
   The generated machine is compiled with the host-invoker declaration
   `x-sce-host` (scripts/regen_host_processor.sh names the flag; an XML
   comment cannot spell a double hyphen).
 -->
-<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0"
        datamodel="ecmascript" name="statechart_host_invoker" initial="invoking">
+
+  <!-- The record `perm` completes with (`sce:result`). -->
+  <sce:import kind="event-schema" src="host_invoker_perm_result.scxml" as="PermResult"/>
 
   <datamodel>
     <data id="started" expr="0"/>
@@ -114,6 +125,9 @@
     <data id="expired" expr="0"/>
     <data id="finished" expr="0"/>
     <data id="misdated" expr="0"/>
+    <data id="granted" expr="0"/>
+    <data id="denied" expr="0"/>
+    <data id="unreadable" expr="0"/>
   </datamodel>
 
   <state id="invoking">
@@ -141,6 +155,7 @@
     <transition event="evaluate" target="evaluating"/>
     <transition event="locate" target="locating"/>
     <transition event="time" target="timed"/>
+    <transition event="type" target="typed"/>
   </state>
 
   <state id="evaluating">
@@ -218,6 +233,24 @@
     </transition>
     <transition event="done.invoke.slow" cond="_event.invokeid === 'slow'">
       <assign location="finished" expr="finished + 1"/>
+    </transition>
+  </state>
+
+  <!-- A typed completion (SCE Accepted Subset §2.12): `perm`'s
+       `done.invoke.perm` carries a `PermResult`, so these guards read a
+       typed field and lower natively. A completion whose data is not that
+       record is refused like any typed payload the data does not fit:
+       error.execution, and neither guard fires. -->
+  <state id="typed">
+    <invoke type="x-sce-host" id="perm" sce:result="PermResult"/>
+    <transition event="done.invoke.perm" cond="_event.data.granted === true">
+      <assign location="granted" expr="granted + 1"/>
+    </transition>
+    <transition event="done.invoke.perm" cond="_event.data.granted === false">
+      <assign location="denied" expr="denied + 1"/>
+    </transition>
+    <transition event="error.execution">
+      <assign location="unreadable" expr="unreadable + 1"/>
     </transition>
   </state>
 </scxml>

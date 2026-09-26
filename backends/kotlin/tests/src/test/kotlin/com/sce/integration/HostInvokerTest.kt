@@ -84,6 +84,9 @@ class HostInvokerTest {
             "expired" -> sm.expired()
             "finished" -> sm.finished()
             "misdated" -> sm.misdated()
+            "granted" -> sm.granted()
+            "denied" -> sm.denied()
+            "unreadable" -> sm.unreadable()
             else -> error("the fixture declares no counter named `$name`")
         }
         assertNotNull(value, "the fixture declares `$name` and the machine could not read it")
@@ -597,6 +600,37 @@ class HostInvokerTest {
         } finally {
             sm.stop()
         }
+    }
+
+    /** `perm` completed with [doneData] in a machine driven into `typed`: the
+     * counters `granted`, `denied` and `unreadable`. */
+    private fun typedCompletion(doneData: String): List<Long> {
+        val sm = machine()
+        val starts = mutableListOf<Pair<String, Long>>()
+        sm.registerInvoker(declaredType, runningInvoker(mutableListOf(), starts))
+        sm.initialize()
+        try {
+            deliver(sm, StatechartHostInvokerEvent.Type)
+            assertTrue(sm.completeHostInvoke(declaredType, "perm", tokenOf(starts, "perm"), doneData), "a running invocation's completion was refused")
+            sm.tick()
+            return listOf(counter(sm, "granted"), counter(sm, "denied"), counter(sm, "unreadable"))
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    /**
+     * SCE Accepted Subset §2.12: `sce:result` makes `perm`'s completion a
+     * `PermResult` record, so its guards read `granted` as a typed field —
+     * true and false each select their own transition — and a completion
+     * whose data is not that record is refused as any typed payload the data
+     * does not fit is: error.execution, and neither guard fires.
+     */
+    @Test
+    fun aTypedCompletionIsReadAsItsRecord() {
+        assertEquals(listOf(1L, 0L, 0L), typedCompletion("""{"granted":true}"""), "granted")
+        assertEquals(listOf(0L, 1L, 0L), typedCompletion("""{"granted":false}"""), "denied")
+        assertEquals(listOf(0L, 0L, 1L), typedCompletion("yes"), "not the record")
     }
 
     /**

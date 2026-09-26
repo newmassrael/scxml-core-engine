@@ -2199,6 +2199,83 @@ driven on all seven channels (C++ Interpreter + AOT, Rust, Kotlin, Go,
 Python, C11). It rests in its `probe` state and never completes on any
 channel that drops the `<invoke>`.
 
+#### Types the host runs (`--host-invoker TYPE`)
+
+§6.4.1 leaves the invokable set to the platform, so a host may run a type
+of its own. A build that declares `--host-invoker TYPE` makes every
+`<invoke type="TYPE">` a start the host serves instead of the raise above.
+The lifecycle is the W3C one, and the six AOT engines hold the bookkeeping,
+not the host:
+
+- **Start.** When the macrostep that entered the state settles, the host's
+  registered invoker receives the request: `src` (or `srcexpr`, evaluated
+  now), each `<param>` (a repeated name keeps every value, in order), the
+  `namelist` values, the `<content>` (or `contentexpr`), and a **token**
+  that identifies this start of this invoke. A declared type with no
+  invoker registered raises `error.execution`.
+- **Completion.** The host reports it with the start's token, and the
+  document receives `done.invoke.<id>` — or the generic `done.invoke` when
+  it names no specific one — with `_event.invokeid` set. A completion is
+  accepted at most once, and only while its start is still running: one
+  that arrives after the state exited, after a restart, or a second time is
+  refused, as is a `done.invoke` for a host-run invoke raised through the
+  ordinary event API.
+- **Cancel.** Leaving the state cancels a start still running, once, with
+  its token. A start that never ran or already completed is not cancelled.
+- **Deadline.** The reserved `<param name="_sce_deadline_ms">` is the
+  engine's and is not handed to the host. Its value is one or more ASCII
+  digits, optionally followed by `.` and one or more `0`, within a signed
+  64-bit count — one grammar for every runtime, held to
+  `sce-build/tests/fixtures/host_processor/host_invoke_deadline_values.json`.
+  If the deadline passes while the start is still running, the host is told
+  to stop and the document receives `error.invoke.<id>` (or the generic
+  `error.invoke`) with `_event.invokeid` set and `_event.data` the string
+  `"deadline"`; a completion before it disarms it. A value outside the
+  grammar raises `error.execution` and starts nothing. No `<cancel>` reaches
+  a deadline. `sce:mesh-rpc` accepts the same name beside its own
+  `_mesh_deadline_ms` (SCE_MESH.md §9.5).
+
+The witness is `sce-build/tests/fixtures/host_processor/statechart_host_invoker.scxml`,
+driven on the six AOT channels.
+
+#### Typed interface — `sce:request` / `sce:result`
+
+A host-run invoke may name the records its request and its completion
+carry, each an alias of an imported event schema:
+
+```xml
+<sce:import kind="event-schema" src="perm_request.scxml" as="PermRequest"/>
+<sce:import kind="event-schema" src="perm_result.scxml" as="PermResult"/>
+...
+<invoke type="x-app-host" id="perm" sce:request="PermRequest" sce:result="PermResult">
+  <param name="scope" expr="'calendar'"/>
+  <param name="reason" expr="why"/>
+</invoke>
+```
+
+`sce:request` makes the request a record: the `<param>`s are the schema's
+fields, one each, so the host receives exactly one value per field and no
+other parameter. `sce:result` types `_event.data` of that invoke's
+completion, `done.invoke.<id>` — bound by the invoke, not by an event name,
+so it does not conflict with the rule that refuses an event schema on
+`done.invoke.*`. A guard reading a result field lowers natively like any
+schema'd event's, and a completion whose data is not the record is refused
+as any typed payload the data does not fit is: `error.execution`, and the
+guard does not fire. Such a completion has no typed inject seam (`raise_…`):
+the engine accepts a host-run completion only through its completion call,
+which checks that the start is still running. The generic `done.invoke`
+stays untyped — several invokes share it.
+
+Refused at parse, on the row that shows the problem:
+
+- `validation/typed-invoke-schema` — the attribute sits on an invoke SCE
+  runs itself (`scxml`, `sce:mesh-rpc`) or one whose type is `typeexpr`;
+  the invoke has no `id` (the generated interface is named after it); the
+  attribute is empty; or the alias names no imported event schema.
+- `validation/typed-invoke-request` — a `<param>` the schema lacks, a field
+  no `<param>` supplies, a name given twice, or a `namelist` / `<content>`
+  beside the typed request.
+
 ### §2.13 Hybrid `<invoke>` — `srcexpr` / `contentexpr` (W3C SCXML 6.4)
 
 An `<invoke>` that names its child through an expression rather than a
@@ -3181,7 +3258,7 @@ does not hold a value it never declared.
 
 ---
 
-## Appendix — `DiagnosticCode` index (381 codes)
+## Appendix — `DiagnosticCode` index (383 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -3254,6 +3331,8 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/wrong-pipeline` | Validation |
 | `validation/dynamic-features` | Validation |
 | `validation/native-action-placement` | Validation |
+| `validation/typed-invoke-schema` | Validation |
+| `validation/typed-invoke-request` | Validation |
 | `validation/native-action-argument` | Validation |
 | `validation/native-action-signature-conflict` | Validation |
 | `validation/mesh-rpc-reserved-param` | Validation |

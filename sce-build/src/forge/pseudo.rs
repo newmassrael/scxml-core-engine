@@ -1962,6 +1962,14 @@ fn render_invoke(inv: &crate::model::Invoke, out: &mut Out<'_>) -> Result<(), Un
                 if i.host_served {
                     out.line("host-served");
                 }
+                // The typed interface is part of the contract with the
+                // host, so the page shows it as the document wrote it.
+                if !i.request_schema.is_empty() {
+                    out.line(&format!("request {}", text(&i.request_schema)));
+                }
+                if !i.result_schema.is_empty() {
+                    out.line(&format!("result {}", text(&i.result_schema)));
+                }
             }
         }
     });

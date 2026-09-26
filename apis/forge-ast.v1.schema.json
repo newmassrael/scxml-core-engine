@@ -4357,6 +4357,14 @@
               },
               "type": "array"
             },
+            "request_schema": {
+              "description": "`sce:request` — the alias of the imported event schema that types this invoke's request (SCE Accepted Subset §2.12): its `<param>`s are that record's fields, one each, so the host receives exactly one value per field and no other parameter. Empty when untyped.",
+              "type": "string"
+            },
+            "result_schema": {
+              "description": "`sce:result` — the alias of the imported event schema that types this invoke's completion: `done.invoke.<id>` carries that record as its `_event.data`, bound by the invoke rather than by an event name. Empty when untyped.",
+              "type": "string"
+            },
             "source_location": {
               "anyOf": [
                 {

@@ -796,3 +796,46 @@ fn the_registry_reports_which_invokers_it_holds() {
     // make the same type a send processor.
     assert!(!engine.has_event_processor(DECLARED_TYPE));
 }
+
+/// `perm` completed with `done_data`, in a machine driven into `typed`:
+/// the counters `granted`, `denied` and `unreadable`, in that order.
+fn typed_completion(done_data: &str) -> (i64, i64, i64) {
+    let log: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let starts: Starts = Arc::default();
+    let (mut engine, script_engine) = started();
+    engine.register_invoker(DECLARED_TYPE, running_invoker(&log, &starts));
+    engine.initialize();
+    engine.step();
+    engine.process_event(Event::Type);
+    let token = token_of(&starts, "perm");
+    assert!(
+        engine.complete_host_invoke(DECLARED_TYPE, "perm", token, done_data),
+        "a running invocation's completion was refused",
+    );
+    engine.step();
+    (
+        counter(&engine, &script_engine, "granted"),
+        counter(&engine, &script_engine, "denied"),
+        counter(&engine, &script_engine, "unreadable"),
+    )
+}
+
+/// SCE Accepted Subset §2.12: `sce:result` makes `perm`'s completion a
+/// `PermResult` record, so its guards read `granted` as a typed field — true
+/// and false each select their own transition — and a completion whose data
+/// is not that record is refused as any typed payload the data does not fit
+/// is: error.execution, and neither guard fires.
+#[test]
+fn a_typed_completion_is_read_as_its_record() {
+    assert_eq!(
+        typed_completion(r#"{"granted":true}"#),
+        (1, 0, 0),
+        "granted"
+    );
+    assert_eq!(
+        typed_completion(r#"{"granted":false}"#),
+        (0, 1, 0),
+        "denied"
+    );
+    assert_eq!(typed_completion("yes"), (0, 0, 1), "not the record");
+}

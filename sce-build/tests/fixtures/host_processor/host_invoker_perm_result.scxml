@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  The record `statechart_host_invoker.scxml`'s `perm` invocation completes
+  with (`sce:result`, SCE Accepted Subset §2.12): whether the host granted
+  what it was asked. Imported as `PermResult`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="host_invoker_perm_result"
+       sce:kind="event-schema"
+       sce:event-name="perm.result">
+  <datamodel>
+    <data id="granted" sce:type="bool" sce:direction="in"/>
+  </datamodel>
+</scxml>

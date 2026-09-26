@@ -509,6 +509,9 @@ pub(crate) fn native_typed_inject_events(
     select_native_typed_guards(model)
         .into_iter()
         .map(|g| g.event)
+        // A host-run completion has a typed payload and no inject seam:
+        // the engine takes one only through `complete_host_invoke`.
+        .filter(|event| !crate::forge::typed_invoke::is_completion_binding(event))
         .collect()
 }
 

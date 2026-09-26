@@ -673,3 +673,41 @@ func TestADeadlineThatIsNotMillisecondsStartsNothing(t *testing.T) {
 		}
 	}
 }
+
+// typedCompletion completes `perm` with doneData in a machine driven into
+// `typed`, and answers the counters granted, denied and unreadable.
+func typedCompletion(t *testing.T, doneData string) [3]int64 {
+	t.Helper()
+	var log []string
+	var starts []hostStart
+	s := newStarted()
+	s.engine.RegisterInvoker(declaredType, runningInvoker(&log, &starts))
+	s.engine.Initialize()
+	s.engine.Step()
+	s.engine.ProcessEvent(StatechartHostInvokerEventType)
+	if !s.engine.CompleteHostInvoke(declaredType, "perm", tokenOf(t, starts, "perm"), doneData) {
+		t.Fatal("a running invocation's completion was refused")
+	}
+	s.engine.Step()
+	return [3]int64{s.counter(t, "granted"), s.counter(t, "denied"), s.counter(t, "unreadable")}
+}
+
+// SCE Accepted Subset §2.12: `sce:result` makes `perm`'s completion a
+// `PermResult` record, so its guards read `granted` as a typed field — true and
+// false each select their own transition — and a completion whose data is not
+// that record is refused as any typed payload the data does not fit is:
+// error.execution, and neither guard fires.
+func TestATypedCompletionIsReadAsItsRecord(t *testing.T) {
+	for _, c := range []struct {
+		data string
+		want [3]int64
+	}{
+		{`{"granted":true}`, [3]int64{1, 0, 0}},
+		{`{"granted":false}`, [3]int64{0, 1, 0}},
+		{`yes`, [3]int64{0, 0, 1}},
+	} {
+		if got := typedCompletion(t, c.data); got != c.want {
+			t.Errorf("completed with %s: granted, denied, unreadable = %v, want %v", c.data, got, c.want)
+		}
+	}
+}

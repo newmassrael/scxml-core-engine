@@ -552,3 +552,30 @@ def test_an_invoker_registered_for_another_type_does_not_run_this_one() -> None:
     assert _counter(engine, "started") == 0, "an invoker for a different type ran this one"
     assert _counter(engine, "refused") == 2, "the unregistered type was not reported"
     assert log == [], f"the other type's invoker was called: {log}"
+
+
+def _typed_completion(done_data: str) -> tuple:
+    """`perm` completed with `done_data` in a machine driven into `typed`:
+    the counters `granted`, `denied` and `unreadable`."""
+    engine, _log, starts = _running()
+    _deliver(engine, Event.TYPE)
+    assert engine.complete_host_invoke(
+        DECLARED_TYPE, "perm", _token_of(starts, "perm"), done_data
+    ), "a running invocation's completion was refused"
+    engine.advance_time(0)
+    return (
+        _counter(engine, "granted"),
+        _counter(engine, "denied"),
+        _counter(engine, "unreadable"),
+    )
+
+
+def test_a_typed_completion_is_read_as_its_record() -> None:
+    """SCE Accepted Subset §2.12: ``sce:result`` makes ``perm``'s completion
+    a ``PermResult`` record, so its guards read ``granted`` as a typed field —
+    true and false each select their own transition — and a completion whose
+    data is not that record is refused as any typed payload the data does not
+    fit is: error.execution, and neither guard fires."""
+    assert _typed_completion('{"granted":true}') == (1, 0, 0), "granted"
+    assert _typed_completion('{"granted":false}') == (0, 1, 0), "denied"
+    assert _typed_completion("yes") == (0, 0, 1), "not the record"

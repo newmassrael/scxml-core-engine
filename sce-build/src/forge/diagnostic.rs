@@ -677,6 +677,10 @@ pub enum DiagnosticCode {
     ValidationDynamicFeatures,
     #[serde(rename = "validation/native-action-placement")]
     ValidationNativeActionPlacement,
+    #[serde(rename = "validation/typed-invoke-schema")]
+    ValidationTypedInvokeSchema,
+    #[serde(rename = "validation/typed-invoke-request")]
+    ValidationTypedInvokeRequest,
     #[serde(rename = "validation/native-action-argument")]
     ValidationNativeActionArgument,
     #[serde(rename = "validation/native-action-signature-conflict")]
@@ -3142,6 +3146,8 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationWrongPipeline,
         ValidationDynamicFeatures,
         ValidationNativeActionPlacement,
+        ValidationTypedInvokeSchema,
+        ValidationTypedInvokeRequest,
         ValidationNativeActionArgument,
         ValidationNativeActionSignatureConflict,
         ValidationMeshRpcReservedParam,
@@ -3832,6 +3838,11 @@ impl DiagnosticCode {
             // where the accepted subset registers the names SCE owns.
             ValidationMalformedCodeIdentifier => Some("SCE Accepted Subset §2.14"),
             ValidationReservedCodeIdentifier => Some("SCE Accepted Subset §2.14"),
+            // A host-run invoke's typed interface is registered where the
+            // accepted subset registers invoke types SCE does not run.
+            ValidationTypedInvokeSchema | ValidationTypedInvokeRequest => {
+                Some("SCE Accepted Subset §2.12")
+            }
 
             // ── Algorithm kind (SCE Protocol-Synthesis RFC §synth-5-A) ──────────
             AlgorithmLocalShadowsParam
@@ -4495,6 +4506,8 @@ impl DiagnosticCode {
             ValidationWrongPipeline => "validation/wrong-pipeline",
             ValidationDynamicFeatures => "validation/dynamic-features",
             ValidationNativeActionPlacement => "validation/native-action-placement",
+            ValidationTypedInvokeSchema => "validation/typed-invoke-schema",
+            ValidationTypedInvokeRequest => "validation/typed-invoke-request",
             ValidationNativeActionArgument => "validation/native-action-argument",
             ValidationNativeActionSignatureConflict => {
                 "validation/native-action-signature-conflict"
@@ -6195,6 +6208,39 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: Some(name.clone()),
             fix: None,
             key_fragments: vec![name.clone(), detail.clone()],
+        },
+        // Reported at the attribute's own position, so the alias it names
+        // is what that row spells. The repair — import the schema, give the
+        // invoke an id, or move the attribute to a host-run invoke — is the
+        // author's, so there is no closed candidate set.
+        ValidationError::TypedInvokeSchema {
+            invoke_id,
+            attr,
+            alias,
+            detail,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationTypedInvokeSchema,
+            stage: Stage::Validation,
+            expected: None,
+            actual: (!alias.is_empty()).then(|| alias.clone()),
+            fix: None,
+            key_fragments: vec![invoke_id.clone(), attr.clone(), alias.clone(), detail.clone()],
+        },
+        // `observed` is what the reported row spells: the offending
+        // `<param>`'s name on its own row, or the schema alias on the
+        // invoke's row when what is wrong is a field no `<param>` supplies.
+        ValidationError::TypedInvokeRequest {
+            invoke_id,
+            alias,
+            detail,
+            observed,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationTypedInvokeRequest,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(observed.clone()),
+            fix: None,
+            key_fragments: vec![invoke_id.clone(), alias.clone(), detail.clone()],
         },
         ValidationError::NativeActionArgument {
             name,
@@ -10222,6 +10268,31 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:400657f6658c5060","code":"validation/malformed-code-identifier","stage":"validation","spec":"SCE Accepted Subset §2.14","message":"<sce:field id=\"raw-value\">: 'raw-value' is not a valid code identifier — a name the generated code spells starts with an ASCII letter or '_' and continues with ASCII letters, digits or '_'","expected":["code identifier"],"actual":"raw-value"}"#,
+            ),
+            (
+                // A host-run invoke's typed interface names a schema the
+                // document never imported.
+                "forge/typed-invoke-schema",
+                ValidationError::TypedInvokeSchema {
+                    invoke_id: "perm".into(),
+                    attr: "result".into(),
+                    alias: "PermResultt".into(),
+                    detail: "names no event schema this document imports".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:c3d8e12d4430fb48","code":"validation/typed-invoke-schema","stage":"validation","spec":"SCE Accepted Subset §2.12","message":"<invoke id=\"perm\" sce:result=\"PermResultt\">: names no event schema this document imports","actual":"PermResultt"}"#,
+            ),
+            (
+                // A typed request's `<param>` names no field of its schema.
+                "forge/typed-invoke-request",
+                ValidationError::TypedInvokeRequest {
+                    invoke_id: "perm".into(),
+                    alias: "PermRequest".into(),
+                    detail: "<param name=\"colour\"> is not a field of PermRequest (fields: retries, scope)".into(),
+                    observed: "colour".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:62ef5741e1b27e20","code":"validation/typed-invoke-request","stage":"validation","spec":"SCE Accepted Subset §2.12","message":"<invoke id=\"perm\" sce:request=\"PermRequest\">: <param name=\"colour\"> is not a field of PermRequest (fields: retries, scope)","actual":"colour"}"#,
             ),
             (
                 // A code identifier in shape — but Rust reserves `override`,
@@ -15229,6 +15300,8 @@ mod tests {
             | ValidationWrongPipeline
             | ValidationDynamicFeatures
             | ValidationNativeActionPlacement
+            | ValidationTypedInvokeSchema
+            | ValidationTypedInvokeRequest
             | ValidationNativeActionArgument
             | ValidationNativeActionSignatureConflict
             | ValidationMeshRpcReservedParam
@@ -16070,6 +16143,7 @@ mod tests {
                 | ValidationEmptyValue | ValidationSingletonViolation
                 | ValidationRequireEither | ValidationWrongPipeline
                 | ValidationDynamicFeatures | ValidationNativeActionPlacement
+                | ValidationTypedInvokeSchema | ValidationTypedInvokeRequest
                 | ValidationNativeActionArgument
                 | ValidationNativeActionSignatureConflict | ValidationMeshRpcReservedParam
                 | ValidationMeshRpcMissingTarget
@@ -16398,9 +16472,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            393,
+            395,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 393 distinct variants to match the DiagnosticCode \
+             expected 395 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -17027,6 +17101,8 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationWrongPipeline
             | ValidationDynamicFeatures
             | ValidationNativeActionPlacement
+            | ValidationTypedInvokeSchema
+            | ValidationTypedInvokeRequest
             | ValidationNativeActionArgument
             | ValidationNativeActionSignatureConflict
             | ValidationMeshRpcReservedParam

@@ -5053,6 +5053,11 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "bindCurrentEvent",
           "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_process_next_external_event",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -8865,6 +8870,11 @@
           "file": "sce/include/core/InvokeHelper.h",
           "symbol": "DONE_INVOKE_PREFIX",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/typed_invoke.rs",
+          "symbol": "DONE_INVOKE_PREFIX",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

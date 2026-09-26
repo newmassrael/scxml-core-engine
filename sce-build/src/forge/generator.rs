@@ -2382,14 +2382,20 @@ pub fn build_rust_event_payload(
         // local trait `<Machine>Inject` is the idiomatic extension point —
         // the same shape as the generated `<Machine>LinkRx` trait impl.
         let method = format!("raise_{}", filters::to_snake_case(event.clone()));
+        // A host-run invocation's completion has a typed payload and no
+        // inject seam: the engine takes one only through
+        // `complete_host_invoke`, which checks the start is still running.
+        let injectable = !crate::forge::typed_invoke::is_completion_binding(event);
         let doc = format!(
             "    /// Typed `_event.data` inject for `{event}`.\n    \
 /// Binds the event name and payload variant in one call (name\u{2194}type\n    \
 /// pairing cannot be constructed inconsistently)."
         );
-        trait_methods.push_str(&format!(
-            "{doc}\n    fn {method}(&mut self, payload: {struct_name});\n"
-        ));
+        if injectable {
+            trait_methods.push_str(&format!(
+                "{doc}\n    fn {method}(&mut self, payload: {struct_name});\n"
+            ));
+        }
         let mut field_lines = String::new();
         let mut lift_fields = String::new();
         let mut data_items = String::new();
@@ -2470,18 +2476,23 @@ pub fn build_rust_event_payload(
         // `<assign expr="_event.data.x">` on this event reading nothing, on
         // every backend alike. Under no_std there is no wire to fill, and
         // nothing to lift one into.
-        let inject_body = if no_std {
-            format!(
-                "        self.raise_external_typed({machine_name}Event::{variant}, \
-{enum_name}::{variant}(payload));\n"
-            )
-        } else {
+        // Every producer but the inject seam fills only the wire, so the lift
+        // reads the typed view back out of it — a host-run completion
+        // included, whose data is the host's record.
+        if !no_std {
             lift_arms.push_str(&format!(
                 "            {machine_name}Event::{variant} => {{\n                \
 let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;\n                \
 self.pending_payload = {enum_name}::{variant}({struct_name} {{\n{lift_fields}                \
 }});\n            }}\n"
             ));
+        }
+        let inject_body = if no_std {
+            format!(
+                "        self.raise_external_typed({machine_name}Event::{variant}, \
+{enum_name}::{variant}(payload));\n"
+            )
+        } else {
             format!(
                 "        let data = ::sce_rust_runtime::payload_wire(format_args!(\n            \
 \"{{{{{data_items}}}}}\"{data_args}\n        ));\n        \
@@ -2489,9 +2500,11 @@ self.raise_external_typed_with_data(\n            {machine_name}Event::{variant}
 {enum_name}::{variant}(payload),\n            &data,\n        );\n"
             )
         };
-        entry_fns.push_str(&format!(
-            "    fn {method}(&mut self, payload: {struct_name}) {{\n{inject_body}    }}\n"
-        ));
+        if injectable {
+            entry_fns.push_str(&format!(
+                "    fn {method}(&mut self, payload: {struct_name}) {{\n{inject_body}    }}\n"
+            ));
+        }
         structs.push_str(&format!(
             "#[derive(Clone, Debug, Default, PartialEq)]\npub struct {struct_name} {{\n{field_lines}}}\n\n"
         ));
@@ -2512,13 +2525,20 @@ EventSchema-imported events whose transition guards lowered natively.\n\
     // extension trait is then implemented for `Engine<Policy<A>>` under the
     // same bound. Both strings are empty for a guard-only document, leaving
     // the original `Engine<Policy>` shape byte-identical.
-    let entries = format!(
-        "/// NL\u{2192}IR Item C1 Path A: per-event typed `_event.data` inject seam.\n\
+    // No trait at all when nothing is injectable — every payload event is a
+    // host-run completion — rather than an empty one a consumer could import
+    // and find nothing on.
+    let entries = if trait_methods.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "/// NL\u{2192}IR Item C1 Path A: per-event typed `_event.data` inject seam.\n\
 /// Bring into scope with `use …::{machine_name}Inject;` to call the\n\
 /// `raise_<event>` methods on the engine.\n\
 pub trait {machine_name}Inject {{\n{trait_methods}}}\n\n\
 impl{policy_generics_decl} {machine_name}Inject for ::sce_rust_runtime::Engine<{machine_name}Policy{policy_generics_use}> {{\n{entry_fns}}}\n"
-    );
+        )
+    };
     // ⚠ The lift's refusal is `error.execution` and a guard that does not fire,
     // which is what the SCRIPT ENGINE answers for the same guard on the same
     // data (§scxml-3.13, measured 2026-09-22). A native lowering that
@@ -2879,6 +2899,12 @@ sm->pending_payload.as.{member} = _payload;\n        return;\n    }}\n"
             format!("    evt.payload.tag = {tag_const};\n    evt.payload.as.{member} = *payload;\n")
         };
 
+        // A host-run invocation's completion has a typed payload and no
+        // inject seam: the machine takes one only through
+        // `_complete_host_invoke`, which checks the start is still running.
+        if crate::forge::typed_invoke::is_completion_binding(event) {
+            continue;
+        }
         // Per-event typed inject entry: binds the event enum, the tag, and
         // the union member in one site so a caller cannot mis-pair them
         // (the C twin of the Rust per-event `Engine<Policy>` wrappers).
@@ -3175,6 +3201,12 @@ type {struct_name} struct {{\n{field_lines}}}\n\n"
         populate.push_str(&format!(
             "\tcase {struct_name}:\n\t\tp.pendingPayloadTag = {tag_type}{variant}\n\t\tp.{field} = v\n"
         ));
+        // A host-run invocation's completion has a typed payload and no
+        // inject seam: the engine takes one only through
+        // `CompleteHostInvoke`, which checks the start is still running.
+        if crate::forge::typed_invoke::is_completion_binding(event) {
+            continue;
+        }
         // Per-event typed inject seam: binds the event name and the payload
         // field values in one call (the Go twin of the Rust `Raise{variant}`
         // extension-trait method and the C11 `raise_<event>_typed` entry).
@@ -3448,6 +3480,11 @@ struct {struct_name} {{\n{field_lines}}};\n\n"
 pendingPayloadTag_ = {tag_type}::{variant};\n            \
 {field} = *p;\n        }}\n"
         ));
+        // A host-run invocation's completion has a typed payload and no
+        // inject seam: the engine takes one only through `completeHostInvoke`.
+        if crate::forge::typed_invoke::is_completion_binding(event) {
+            continue;
+        }
         // Per-event typed inject seam on the generated engine class — binds the
         // event name + payload field values in one call (the C++ twin of the
         // Rust `raise_<event>` extension trait and the Go `Raise<Event>` func).
@@ -3706,6 +3743,11 @@ data class {class_name}({ctor_params})\n\n"
         ));
         policy_fields.push_str(&format!("    private var {field}: {class_name}? = null\n"));
         when_arms.push_str(&format!("            is {class_name} -> {field} = tp\n"));
+        // A host-run invocation's completion has a typed payload and no
+        // inject seam: the engine takes one only through `completeHostInvoke`.
+        if crate::forge::typed_invoke::is_completion_binding(event) {
+            continue;
+        }
         // Per-event typed inject seam on the generated machine class: binds the
         // event name and the payload field values in one call so the name↔type
         // pairing cannot be constructed inconsistently. The Kotlin twin of the
@@ -3932,6 +3974,11 @@ if _engine is not None:\n                    \
 self._raise_error_execution(\n                        \
 _engine, \"`{event}` payload: \" + str(_exc))\n"
         ));
+        // A host-run invocation's completion has a typed payload and no
+        // inject seam: the engine takes one only through `complete_host_invoke`.
+        if crate::forge::typed_invoke::is_completion_binding(event) {
+            continue;
+        }
         // Per-event typed inject seam: a module-level free function (the Python
         // twin of the Go `Raise<Event>` func — the runtime `Engine` is a
         // foreign type, so no method can be added) binding the event name and
