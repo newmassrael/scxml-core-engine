@@ -101,7 +101,9 @@ def slot_kind(field) -> str | None:
         return None
     if field.values:
         return "enum"
-    return field.type
+    # A whole number is a number for what a rule can hand a document; the
+    # distinction is for what a document may declare (`scaffold`).
+    return "number" if field.type == "integer" else field.type
 
 
 def hands(rule: dict) -> str:

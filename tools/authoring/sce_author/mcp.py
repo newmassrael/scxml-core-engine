@@ -242,7 +242,9 @@ TOOLS = [
             "model: every address must exist, every field must be real, and "
             "every symbol must be one the field admits. Refusals are listed; "
             "an empty list means the document can reach the platform, which "
-            "is a weaker claim than being correct."
+            "is a weaker claim than being correct. Give `prose` too, and a "
+            "precondition the specification states that the document never "
+            "reads is refused as well."
         ),
         "inputSchema": {
             "type": "object",
@@ -253,6 +255,7 @@ TOOLS = [
                     "type": "string",
                     "description": "The binding file, which names its own document.",
                 },
+                "prose": _PROSE_ARG,
             },
         },
     },
@@ -538,7 +541,8 @@ def call_tool(name: str, args: dict) -> dict:
             if not binding or not isinstance(binding, str):
                 raise ToolArgumentError("'binding' is required: the path to the "
                                         "binding file, which names its own document")
-            findings = check(pack, pathlib.Path(binding))
+            prose = load_prose(_prose_arg(args)) if args.get("prose") is not None else None
+            findings = check(pack, pathlib.Path(binding), prose)
             if not findings:
                 return _text("no refusals: every address, field and symbol exists.")
             return _failure("\n".join(str(f) for f in findings))

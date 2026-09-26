@@ -719,8 +719,9 @@ output rule with no `field` -- and never reached the half that reads the prose.
 `--kind transform` also writes the document the binding names, beside it and
 only if it does not exist: the root declaring `sce:kind="transform"` in SCE's
 namespace, and one `<data>` per rule, with the rule's identifier, its direction
-and a `sce:type` read off the model (`int64` for a value space, `float64` for a
-`number`, which the model does not say is whole). No output has an `expr`:
+and a `sce:type` read off the model (`int64` for a value space or an
+`integer`, `float64` for a `number`, which does not say it is whole). No
+output has an `expr`:
 the expression is the specification's reading, and `check` refuses each
 transform output that still computes nothing, as the product would. Whether
 a component is a transform is itself a reading, so there is no default, and
@@ -733,6 +734,21 @@ states. `check` now also refuses a `sce` prefix bound to any other namespace
 (every `sce:` attribute would be silently ignored), and, when a document never
 declared its kind and nothing drives it, says it is being read as a statechart
 and what a transform would be instead.
+
+Two more answers reached a writer only through `verify`, which a writer who
+is judged afterwards does not have. Measured 2026-09-26 on the next document
+the same writer produced -- shell right, `check` silent, every case unjudged:
+
+- An output whose `expr` yields only literals (`status == 1 ? 'E1' : ''`, at
+  any depth) can produce exactly those, so its `map` must have an entry for
+  each; `check` refuses one that does not and names any key that is none of
+  them -- that writer had keyed every map by the INPUT's symbol.
+- Given the specification (`check --prose <spec>`, or `prose` over MCP), every
+  precondition it writes that the pack's table reads (`powered` -> `poweredUp`)
+  must be read by the pair: a binding rule or a document input under that
+  name. The writer had computed the output from the status alone and dropped
+  the supply condition in the same table row. Reading the name is necessary,
+  not sufficient; where it is read is `verify`'s to judge.
 
 #### A statechart is driven, and answers by sending
 

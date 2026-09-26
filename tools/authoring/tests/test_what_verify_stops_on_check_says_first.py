@@ -215,11 +215,20 @@ class ABooleanOutputOwesBothCases(Both):
     def test_hold_last_leaves_the_other_case_unwritten_on_purpose(self):
         self.assertEqual([], self.found(self.lamp({True: "ON"}, hold_last=True)))
 
-    def test_a_number_output_is_not_judged_before_it_runs(self):
-        """The boundary. A number has no list of values to owe entries for,
-        so a map missing one is found by the case that produces it."""
+    def test_a_computed_number_output_is_not_judged_before_it_runs(self):
+        """The boundary. A COMPUTED number has no list of values to owe
+        entries for, so a map missing one is found by the case that produces
+        it. (This used `mode ? 1 : 0`, which since 2026-09-26 is read as the
+        two literals it can produce -- the next test.)"""
+        self.use(DOCUMENT.replace('expr="mode ? 1 : 0"', 'expr="mode ? 1 + 1 : 0"'))
+        self.assertEqual([], self.found(self.lamp({2: "ON"})))
+
+    def test_a_number_output_of_literals_owes_each_an_entry(self):
+        """`mode ? 1 : 0` can produce 1 and 0 and nothing else, so a map with
+        no entry for 0 is refused before any case runs."""
         self.use(DOCUMENT)
-        self.assertEqual([], self.found(self.lamp({1: "ON"})))
+        found = self.found(self.lamp({1: "ON"}))
+        self.assertTrue(any("no entry for 0" in f for f in found), found)
 
 
 class ASendIsOwedAnEntry(Both):

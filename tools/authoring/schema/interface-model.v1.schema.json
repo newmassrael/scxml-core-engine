@@ -38,8 +38,8 @@
           "description": "For a scalar address. Mutually exclusive with fields."
         },
         "type": {
-          "enum": ["number", "text", "boolean"],
-          "description": "For a scalar address with no enumerated values."
+          "enum": ["number", "integer", "text", "boolean"],
+          "description": "For a scalar address with no enumerated values. `integer` when the platform holds only whole numbers there, `number` when it holds fractions or does not say. The difference reaches the platform: a fraction landed where it keeps an integer is a value it cannot hold, and measured 2026-09-26 a skeleton that could only say `number` declared a count as float64 and the component it fed could not be connected."
         },
         "fields": {
           "type": "object",
@@ -61,7 +61,7 @@
       "additionalProperties": false,
       "properties": {
         "values": {"$ref": "#/$defs/valueSpace"},
-        "type": {"enum": ["number", "text", "boolean"]},
+        "type": {"enum": ["number", "integer", "text", "boolean"]},
         "note": {"type": "string"}
       }
     },

@@ -64,9 +64,10 @@ SCE_NAMESPACE = "http://sce.dev/ext"
 
 # The `sce:type` a document declares for a position of each model type. An
 # enumeration carries the platform's own number, which the binding's `map` is
-# keyed by. ⚠ The model says `number` without saying integer or fraction, so
-# the type that holds both is written, and narrowing it is the author's.
-_SCE_TYPE = {"enum": "int64", "number": "float64", "text": "string", "boolean": "bool"}
+# keyed by. `number` is a model that does not say whole or fraction, so the
+# type that holds both is written; a model that knows says `integer`.
+_SCE_TYPE = {"enum": "int64", "integer": "int64", "number": "float64",
+             "text": "string", "boolean": "bool"}
 
 
 def identifier(text: str) -> str:

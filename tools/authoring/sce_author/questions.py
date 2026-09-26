@@ -537,17 +537,8 @@ def preconditions_against_the_table(prose: Prose, model: Model, conv: Convention
                    if held else "")
             ),
         )]
-    seen: dict[str, list] = {}
-    for src in prose.sources:
-        for lineno, line in enumerate(src.text.splitlines(), 1):
-            for match in conv.precondition_pattern.finditer(line):
-                key = conv.normalise_phrase(match.group("phrase"))
-                if not key:
-                    continue
-                entry = seen.setdefault(key, [str(src.path), lineno, 0])
-                entry[2] += 1
     out = []
-    for key, (path, lineno, count) in sorted(seen.items()):
+    for key, (path, lineno, count) in sorted(conv.precondition_mentions(prose).items()):
         written = f"written {count} time(s)"
         if key not in conv.precondition_phrases:
             out.append(Question(

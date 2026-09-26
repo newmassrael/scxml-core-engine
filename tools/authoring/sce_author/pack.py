@@ -318,6 +318,30 @@ class Conventions:
     def phrase_expression(self, phrase: str) -> str | None:
         return self.precondition_phrases.get(self.normalise_phrase(phrase))
 
+    def precondition_mentions(self, prose) -> dict[str, tuple[str, int, int]]:
+        """Every precondition the prose writes where this kind of document
+        writes one, by its table spelling: (file, first line, times written).
+
+        Empty when the pack has no pattern for where preconditions are written;
+        a caller that must not read that as "none" asks `precondition_pattern`.
+        """
+        seen: dict[str, list] = {}
+        if self.precondition_pattern is None:
+            return {}
+        for src in prose.sources:
+            for lineno, line in enumerate(src.text.splitlines(), 1):
+                for match in self.precondition_pattern.finditer(line):
+                    key = self.normalise_phrase(match.group("phrase"))
+                    if not key:
+                        continue
+                    entry = seen.setdefault(key, [str(src.path), lineno, 0])
+                    entry[2] += 1
+        return {key: tuple(entry) for key, entry in seen.items()}
+
+    def precondition_reads(self, expression: str) -> set[str]:
+        """The precondition inputs an expression from the table names."""
+        return set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expression)) & set(self.precondition_inputs)
+
 
 # The two literals an expression may carry without reading anything.
 _LITERALS = frozenset({"true", "false"})

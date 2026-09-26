@@ -156,6 +156,10 @@ class Document:
     # document without one ("Transform output field ... must have an 'expr'
     # attribute") -- and this passed a skeleton that computed nothing.
     uncomputed: tuple = ()
+    # Output identifier -> its `expr` as written, for the outputs that have
+    # one. What a map must have an entry for is read from it
+    # (`landing.expression_values`).
+    expressions: dict = dataclasses.field(default_factory=dict)
     # The namespace URI the document binds the `sce` prefix to, as written, or
     # None if it binds none. ⚠ Any other URI than SCE's makes every `sce:`
     # attribute a different, unknown attribute that the reader passes over in
@@ -343,7 +347,7 @@ def read_document(path: pathlib.Path) -> Document:
             f"{path}: not well-formed XML ({exc}). A comment cannot contain "
             f"a double hyphen, which is the way this usually happens."
         ) from exc
-    inputs, outputs, uncomputed = [], [], []
+    inputs, outputs, uncomputed, expressions = [], [], [], {}
     assumed, reads, unresolved, types = {}, {}, {}, {}
     kept: set = set()
     for data in root.iter(f"{SCXML_NS}data"):
@@ -355,6 +359,8 @@ def read_document(path: pathlib.Path) -> Document:
             outputs.append(ident)
             if data.get("expr") is None and data.get(f"{SCE_NS}unresolved") is None:
                 uncomputed.append(ident)
+            elif data.get("expr") is not None:
+                expressions[ident] = data.get("expr")
             kept.update(_PREVIOUS_READ.findall(
                 _STRING_LITERAL.sub("''", data.get("expr") or "")))
         if direction in ("in", "out") and data.get(f"{SCE_NS}type"):
@@ -411,6 +417,7 @@ def read_document(path: pathlib.Path) -> Document:
         kind=kind,
         kind_declared=root.get(f"{SCE_NS}kind") is not None,
         uncomputed=tuple(uncomputed),
+        expressions=expressions,
         sce_prefix_uri=bound.group(2) if bound else None,
         keeps=frozenset(kept) if kind == "transform" else frozenset(),
         assumed=assumed,
@@ -671,7 +678,49 @@ class Finding:
         return f"{self.where}: {self.detail}"
 
 
-def check(pack: Pack, binding_path: pathlib.Path) -> list[Finding]:
+def unread_preconditions(pack: Pack, prose, names: set) -> list[Finding]:
+    """Every precondition the prose states that nothing in the pair reads.
+
+    The pack's table reads each phrase as an expression over its precondition
+    inputs, named as a document names them (`powered` -> `poweredUp`), and the
+    brief hands that table to the author. A phrase the specification writes
+    whose inputs are neither a binding rule nor a document input is a
+    condition missing from every output it gates.
+
+    ⚠ Measured 2026-09-26: two documents in a row by the same writer computed
+    the output from the status input alone and dropped the supply condition
+    the specification writes in the same table row. `check` passed the second
+    with no refusal, and nothing the writer can call said the condition was
+    gone; only `verify`, which the writer does not have, could see it.
+    Necessary, not sufficient: that an input is read says nothing about
+    WHERE, which is `verify`'s to judge.
+    """
+    conv = pack.conventions
+    out = []
+    for key, (path, lineno, count) in sorted(conv.precondition_mentions(prose).items()):
+        expression = conv.precondition_phrases.get(key)
+        if expression is None:
+            continue  # not in the table: `questions` asks about it
+        needed = conv.precondition_reads(expression)
+        if needed and not needed & names:
+            out.append(Finding(
+                "binding",
+                f"the specification writes the precondition {key!r} "
+                f"({pathlib.Path(path).name}:{lineno}, {count} time(s)), "
+                f"which the pack reads as `{expression}`, and nothing here "
+                f"reads {', '.join(sorted(needed))}: no input rule and no "
+                f"document input has that name. The condition is missing "
+                f"from every output it gates. Bind it under that name, as "
+                f"the brief's precondition table gives it."))
+    return out
+
+
+def check(pack: Pack, binding_path: pathlib.Path, prose=None) -> list[Finding]:
+    """Refusals for this document and binding against the pack.
+
+    With `prose` -- the specification -- every precondition it states is
+    also asked for (`unread_preconditions`).
+    """
     binding = read_binding(binding_path)
     document = read_document((binding_path.parent / binding["document"]).resolve())
     model, conv = pack.model, pack.conventions
@@ -975,18 +1024,32 @@ def check(pack: Pack, binding_path: pathlib.Path) -> list[Finding]:
         if why:
             out.append(Finding(f"output {name}", why))
             continue
-        values = landing.produces(rule, document.types.get(name), document.sends)
+        values = landing.produces(rule, document.types.get(name), document.sends,
+                                  document.expressions.get(name))
         missing = landing.unmapped(rule, values)
         if missing:
+            # A key that names none of the values the document can produce is
+            # usually the cause: the map was keyed by something else (an
+            # input's symbol, the platform's), and saying so points at it.
+            never = [key for key in rule["map"]
+                     if not any(landing.names_value(key, v) for v in values)]
+            stray = (f" Its key(s) {', '.join(map(repr, never))} name no value "
+                     f"the document produces: a map is keyed by what the "
+                     f"document computes, and writes what the platform takes."
+                     if never else "")
             out.append(Finding(
                 f"output {name}",
                 f"the map has no entry for {', '.join(map(repr, missing))}, "
                 f"which the document can produce, so a case producing it has "
-                f"nowhere to land"))
+                f"nowhere to land.{stray}"))
 
     # Whether a run can start at all (`driving_refusals`).
     for where, why in driving_refusals(document, declared_inputs):
         out.append(Finding(where, why))
+
+    if prose is not None:
+        out.extend(unread_preconditions(pack, prose,
+                                        set(declared_inputs) | set(document.inputs)))
 
     # What a document that keeps values needs the binding to say.
     if document.keeps and not binding.get("activation"):

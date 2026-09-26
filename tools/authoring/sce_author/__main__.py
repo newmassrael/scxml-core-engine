@@ -77,7 +77,8 @@ def cmd_pseudo(args) -> int:
 
 def cmd_check(args) -> int:
     pack = _pack(args)
-    findings = check(pack, pathlib.Path(args.binding))
+    prose = load_prose([pathlib.Path(p) for p in args.prose]) if args.prose else None
+    findings = check(pack, pathlib.Path(args.binding), prose)
     for f in findings:
         print(f"  {f}")
     print(f"  {len(findings)} refusal(s)")
@@ -323,6 +324,8 @@ def main(argv=None) -> int:
 
     c = with_pack(sub.add_parser("check", help="judge a written document against the model"))
     c.add_argument("--binding", required=True, help="the binding file, which names its own document")
+    c.add_argument("--prose", nargs="+",
+                   help="the specification: also refuse a precondition it states that nothing reads")
     c.set_defaults(fn=cmd_check)
 
     v = with_pack(sub.add_parser(
