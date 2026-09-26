@@ -522,6 +522,7 @@ type childEngineWrapperInvLate struct {
 }
 func (w *childEngineWrapperInvLate) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvLate) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvLate) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvLate) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvLate) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvLate) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
@@ -793,6 +794,10 @@ func (p *DonedataLateCompletionPolicy) ExecuteExitActions(state DonedataLateComp
 	case DonedataLateCompletionStatePhase:
 		sce.CancelInvokesForState(&p.pendingInvokes, DonedataLateCompletionStatePhase)
 		if p.childInvLate != nil {
+			// §scxml-D-exitInterpreter: a cancelled session is exited -- its
+			// states' <onexit> run -- before it is dropped; what that exit
+			// sends to #_parent is dropped with it (§scxml-6.4, test252).
+			p.childInvLate.Stop()
 			p.childInvLate = nil
 		}
 		delete(p.activeInvokes, "inv_late")

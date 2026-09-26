@@ -1121,6 +1121,7 @@ type childEngineWrapperInvShadow struct {
 }
 func (w *childEngineWrapperInvShadow) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvShadow) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvShadow) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvShadow) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvShadow) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvShadow) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
@@ -1133,6 +1134,7 @@ type childEngineWrapperInvSole struct {
 }
 func (w *childEngineWrapperInvSole) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvSole) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvSole) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvSole) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvSole) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvSole) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
@@ -1145,6 +1147,7 @@ type childEngineWrapperInvUnmatched struct {
 }
 func (w *childEngineWrapperInvUnmatched) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvUnmatched) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvUnmatched) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvUnmatched) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvUnmatched) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvUnmatched) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
@@ -1157,6 +1160,7 @@ type childEngineWrapperInvNamelist struct {
 }
 func (w *childEngineWrapperInvNamelist) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvNamelist) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvNamelist) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvNamelist) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvNamelist) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvNamelist) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
@@ -1169,6 +1173,7 @@ type childEngineWrapperInvInfinite struct {
 }
 func (w *childEngineWrapperInvInfinite) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvInfinite) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvInfinite) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvInfinite) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvInfinite) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvInfinite) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
@@ -1524,6 +1529,10 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteExitActions(state Invok
 	case InvokeParamSeedsDeclaredChildDataStateInfinite:
 		sce.CancelInvokesForState(&p.pendingInvokes, InvokeParamSeedsDeclaredChildDataStateInfinite)
 		if p.childInvInfinite != nil {
+			// §scxml-D-exitInterpreter: a cancelled session is exited -- its
+			// states' <onexit> run -- before it is dropped; what that exit
+			// sends to #_parent is dropped with it (§scxml-6.4, test252).
+			p.childInvInfinite.Stop()
 			p.childInvInfinite = nil
 		}
 		delete(p.activeInvokes, "inv_infinite")
@@ -1531,6 +1540,10 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteExitActions(state Invok
 	case InvokeParamSeedsDeclaredChildDataStateNamelistPhase:
 		sce.CancelInvokesForState(&p.pendingInvokes, InvokeParamSeedsDeclaredChildDataStateNamelistPhase)
 		if p.childInvNamelist != nil {
+			// §scxml-D-exitInterpreter: a cancelled session is exited -- its
+			// states' <onexit> run -- before it is dropped; what that exit
+			// sends to #_parent is dropped with it (§scxml-6.4, test252).
+			p.childInvNamelist.Stop()
 			p.childInvNamelist = nil
 		}
 		delete(p.activeInvokes, "inv_namelist")
@@ -1538,6 +1551,10 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteExitActions(state Invok
 	case InvokeParamSeedsDeclaredChildDataStateShadowed:
 		sce.CancelInvokesForState(&p.pendingInvokes, InvokeParamSeedsDeclaredChildDataStateShadowed)
 		if p.childInvShadow != nil {
+			// §scxml-D-exitInterpreter: a cancelled session is exited -- its
+			// states' <onexit> run -- before it is dropped; what that exit
+			// sends to #_parent is dropped with it (§scxml-6.4, test252).
+			p.childInvShadow.Stop()
 			p.childInvShadow = nil
 		}
 		delete(p.activeInvokes, "inv_shadow")
@@ -1545,6 +1562,10 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteExitActions(state Invok
 	case InvokeParamSeedsDeclaredChildDataStateSoleName:
 		sce.CancelInvokesForState(&p.pendingInvokes, InvokeParamSeedsDeclaredChildDataStateSoleName)
 		if p.childInvSole != nil {
+			// §scxml-D-exitInterpreter: a cancelled session is exited -- its
+			// states' <onexit> run -- before it is dropped; what that exit
+			// sends to #_parent is dropped with it (§scxml-6.4, test252).
+			p.childInvSole.Stop()
 			p.childInvSole = nil
 		}
 		delete(p.activeInvokes, "inv_sole")
@@ -1552,6 +1573,10 @@ func (p *InvokeParamSeedsDeclaredChildDataPolicy) ExecuteExitActions(state Invok
 	case InvokeParamSeedsDeclaredChildDataStateUnmatched:
 		sce.CancelInvokesForState(&p.pendingInvokes, InvokeParamSeedsDeclaredChildDataStateUnmatched)
 		if p.childInvUnmatched != nil {
+			// §scxml-D-exitInterpreter: a cancelled session is exited -- its
+			// states' <onexit> run -- before it is dropped; what that exit
+			// sends to #_parent is dropped with it (§scxml-6.4, test252).
+			p.childInvUnmatched.Stop()
 			p.childInvUnmatched = nil
 		}
 		delete(p.activeInvokes, "inv_unmatched")

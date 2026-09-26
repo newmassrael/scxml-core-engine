@@ -49,8 +49,8 @@ PY
 mutation_case "the cpp aot loop abandons the queue silently" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
      """                recordUnseenExternalEvents();
-                break;""",
-     """                break;""")
+                // §scxml-D-exitInterpreter: the loop is over""",
+     """                // §scxml-D-exitInterpreter: the loop is over""")
 PY
 
 # ── C++ AOT: counting the wrong fact ───────────────────────────────
@@ -108,11 +108,11 @@ PY
 
 mutation_case "the interpreter loop abandons the queue silently" <<'PY'
 edit("sce/src/runtime/StateMachine.cpp",
-     """        cancelInvokesOf(state);
+     """        exitState(state);
     }
     recordUnseenQueuedEvents();
 """,
-     """        cancelInvokesOf(state);
+     """        exitState(state);
     }
 """)
 PY
@@ -152,9 +152,9 @@ PY
 mutation_case "the c11 loop abandons the queue silently" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
      """            record_unseen_external_events(sm);
-            break;""",
+            /* §scxml-D-exitInterpreter: the loop is over""",
      """            (void)record_unseen_external_events;
-            break;""")
+            /* §scxml-D-exitInterpreter: the loop is over""")
 PY
 
 # ── C11: naming an event that was never refused ────────────────────

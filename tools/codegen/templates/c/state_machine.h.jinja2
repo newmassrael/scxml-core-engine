@@ -1222,15 +1222,6 @@ void {{ csym_prefix }}{{ model.name }}_raise_external_by_name({{ csym_prefix }}{
    unrelated to the parent's). Names absent from this SM's enum drop
    silently, same as the by-name form. */
 void {{ csym_prefix }}{{ model.name }}_raise_external_forwarded({{ csym_prefix }}{{ model.name }}_t *sm, const sce_forwarded_event_t *fwd);
-
-/* W3C SCXML 6.4 / 3.4 (test236): natural-termination exit walk.
-   Runs `<onexit>` on every active state so a `<final>` state with an
-   `<onexit><send target="#_parent">` body fires the send onto the
-   parent's external queue BEFORE the parent's invoke helper raises
-   `done.invoke`. Called only on the natural-final path; the cancel
-   path NULLs the parent dispatch instead so any in-flight sends drop
-   (W3C 6.4 cancellation drop semantics, test252). */
-void {{ csym_prefix }}{{ model.name }}_finalize_session({{ csym_prefix }}{{ model.name }}_t *sm);
 {% endif %}
 
 /* W3C SCXML 3.2: configuration query helpers. `_active_states` exposes
@@ -1243,6 +1234,12 @@ bool {{ csym_prefix }}{{ model.name }}_in_state(const {{ csym_prefix }}{{ model.
 /* §scxml-3.7: whether the run has ended at a top-level <final> — the same
    answer as `_terminal_state` returning true. */
 bool {{ csym_prefix }}{{ model.name }}_is_in_final_state(const {{ csym_prefix }}{{ model.name }}_t *sm);
+
+/* §scxml-D-exitInterpreter: stop a run. Every active state's `<onexit>` runs,
+   innermost first, and the configuration ends empty, as when a run ends at a
+   top-level <final> -- which exits the same way on its own, so a run that
+   has ended has nothing left to stop. */
+void {{ csym_prefix }}{{ model.name }}_stop({{ csym_prefix }}{{ model.name }}_t *sm);
 
 /* §scxml-D-enterStates: the top-level <final> the run ended in. Returns true
    and writes it to `*out` once the run has ended; false while it is still

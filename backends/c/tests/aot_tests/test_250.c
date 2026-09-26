@@ -18,15 +18,12 @@
 //     <invoke type=...>            child schedules 2 s timeout
 //   s0 transition event="foo" target="final"   cancels the invoke
 //
-// Reaches `final` immediately on the foo dequeue → cancel-path
-// `destroy_active_children` (test237/252 already pin this) NULLs the
-// child's `parent_dispatch` and frees the SM. Child's `<onexit>` log
-// emits run on the C11 cancel path because `_finalize_session` is
-// gated on `child_has_send_to_parent` — test250's child only logs
-// (no <send target="#_parent"> in onexit), so the gate skips the
-// finalize walk and the cancel path runs the per-state onexit chain
-// directly via `_destroy`. Either way the parent reaches `final`,
-// which is the conformance bit.
+// Reaches `final` immediately on the foo dequeue → the cancel path in
+// the parent's exit of s0 (test237/252 already pin this) NULLs the
+// child's `parent_dispatch` where the child sends to its parent, then
+// stops the child — exitInterpreter, so the child's `<onexit>` log
+// emits run — and frees it. The parent reaching `final` is the
+// conformance bit; the onexit logs are what the fixture asks to see.
 //
 // The parent has no `<send delay>` of its own — the cancellation is
 // driven by the immediate `<send event="foo"/>` macrostep, so the

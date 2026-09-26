@@ -40,11 +40,11 @@ mutation_case "the loop abandons the queue without recording it" <<'PY'
 # outright produced exactly that.
 edit("backends/rust/runtime/src/engine.rs",
      """                self.record_unseen_external_events();
-                break;""",
+                // §scxml-D-exitInterpreter: the loop is over""",
      """                if false {
                     self.record_unseen_external_events();
                 }
-                break;""")
+                // §scxml-D-exitInterpreter: the loop is over""")
 PY
 
 # ── The other refusal site ─────────────────────────────────────────

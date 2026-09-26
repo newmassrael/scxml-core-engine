@@ -6,6 +6,7 @@ package sce
 import (
 	"fmt"
 	"log"
+	"sort"
 	"time"
 )
 
@@ -59,6 +60,12 @@ type Engine[S comparable, E comparable] struct {
 	// when a run starts. See TerminalState.
 	terminalState    S
 	hasTerminalState bool
+
+	// interpreterExited says §scxml-D-exitInterpreter has run for this run:
+	// the configuration is empty. currentState still names the state the run
+	// was last in (S has no "none"), so GetActiveStates answers from this flag
+	// rather than from it.
+	interpreterExited bool
 
 	// completionCallback is the §scxml-6.4 callback invoked when reaching a final state.
 	completionCallback func()
@@ -233,6 +240,7 @@ func (e *Engine[S, E]) Initialize() {
 
 	e.isRunning = true
 	e.clearTerminalState()
+	e.interpreterExited = false
 
 	// §scxml-5.3: Initialize datamodel before any state entry
 	if e.policy.NeedsDataModelInit() {
@@ -256,12 +264,11 @@ func (e *Engine[S, E]) Initialize() {
 	e.runMainEventLoop()
 	log.Printf("[sce] Engine::Initialize: main event loop settled")
 
-	// §scxml-6.4: Fire completion callback if we reached a final state during init
+	// §scxml-6.4: Fire completion callback if we reached a final state during
+	// init. The main event loop has already run exitInterpreter, so the
+	// child's <onexit> sends are queued ahead of the done.invoke this raises.
 	if e.isInFinalState() && e.completionCallback != nil {
 		log.Printf("[sce] Engine::Initialize: reached final state during init, invoking completion callback")
-		active := e.GetActiveStates()
-		finalState := e.currentState
-		e.policy.ExecuteExitActions(finalState, e, active)
 		e.completionCallback()
 	}
 }
@@ -331,6 +338,7 @@ func (e *Engine[S, E]) EnterAt(configuration []S, current S) ConfigurationReject
 	}
 
 	e.currentState = current
+	e.interpreterExited = false
 	// A configuration restored AT a top-level <final> is a run that has
 	// already ended there; any other is still running.
 	e.clearTerminalState()
@@ -438,7 +446,39 @@ func (e *Engine[S, E]) Tick() {
 }
 
 // Stop stops the engine. Subsequent Tick/ProcessEvent calls become no-ops.
+//
+// §scxml-D-exitInterpreter: a run the host stops is exited as one that ended
+// — every active state's <onexit> runs, innermost first, and the
+// configuration ends empty. A run that already ended has been exited.
 func (e *Engine[S, E]) Stop() {
+	if e.isRunning {
+		e.exitInterpreter()
+	}
+	e.isRunning = false
+}
+
+// exitInterpreter is Appendix D's exitInterpreter (§scxml-D-exitInterpreter):
+// exit every state still in the configuration, innermost first, each as
+// exitStates exits one — its <onexit>, then its invocations cancelled, then
+// it leaves the configuration — and stop running.
+//
+// Reached two ways, the two the procedure names: the main event loop ends
+// because the run entered a top-level <final>, or the host stops a run that
+// has not ended. Runs once per run.
+func (e *Engine[S, E]) exitInterpreter() {
+	if e.interpreterExited {
+		return
+	}
+	configuration := e.GetActiveStates()
+	statesToExit := append([]S(nil), configuration...)
+	// configuration.toList().sort(exitOrder) — reverse document order.
+	sort.SliceStable(statesToExit, func(i, j int) bool {
+		return e.policy.GetDocumentOrder(statesToExit[i]) > e.policy.GetDocumentOrder(statesToExit[j])
+	})
+	for _, state := range statesToExit {
+		e.policy.ExecuteExitActions(state, e, configuration)
+	}
+	e.interpreterExited = true
 	e.isRunning = false
 }
 
@@ -460,6 +500,13 @@ func (e *Engine[S, E]) GetCurrentState() S {
 func (e *Engine[S, E]) GetActiveStates() []S {
 	if e.policy.HasActiveStates() {
 		return e.policy.GetActiveStates()
+	}
+	// §scxml-D-exitInterpreter: a run that has ended has no configuration. (A
+	// policy that keeps its own active set emptied it state by state above;
+	// this one derives the set from currentState, which still names the
+	// final, so the answer has to be given here.)
+	if e.interpreterExited {
+		return []S{}
 	}
 	// Walk from current state up to root
 	active := make([]S, 0, 8)
@@ -1305,6 +1352,12 @@ func (e *Engine[S, E]) runMainEventLoop() {
 			// Saying nothing about it is not the clause — see
 			// UnseenExternalEvents.
 			e.recordUnseenExternalEvents()
+			// §scxml-D-exitInterpreter: the loop is over because the run
+			// entered a top-level final, so every state still active is exited
+			// now — before the completion callback tells a parent.
+			if e.isInFinalState() {
+				e.exitInterpreter()
+			}
 			break
 		}
 

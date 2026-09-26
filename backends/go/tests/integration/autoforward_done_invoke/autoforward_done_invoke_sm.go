@@ -446,6 +446,7 @@ type childEngineWrapperInvWatch struct {
 }
 func (w *childEngineWrapperInvWatch) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvWatch) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvWatch) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvWatch) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvWatch) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvWatch) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
@@ -458,6 +459,7 @@ type childEngineWrapperInvShort struct {
 }
 func (w *childEngineWrapperInvShort) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvShort) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvShort) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvShort) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvShort) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvShort) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
@@ -719,11 +721,19 @@ func (p *AutoforwardDoneInvokePolicy) ExecuteExitActions(state AutoforwardDoneIn
 	case AutoforwardDoneInvokeStatePhase:
 		sce.CancelInvokesForState(&p.pendingInvokes, AutoforwardDoneInvokeStatePhase)
 		if p.childInvWatch != nil {
+			// §scxml-D-exitInterpreter: a cancelled session is exited -- its
+			// states' <onexit> run -- before it is dropped; what that exit
+			// sends to #_parent is dropped with it (§scxml-6.4, test252).
+			p.childInvWatch.Stop()
 			p.childInvWatch = nil
 		}
 		delete(p.activeInvokes, "inv_watch")
 		p.pendingDoneInvokeInvWatch = false
 		if p.childInvShort != nil {
+			// §scxml-D-exitInterpreter: a cancelled session is exited -- its
+			// states' <onexit> run -- before it is dropped; what that exit
+			// sends to #_parent is dropped with it (§scxml-6.4, test252).
+			p.childInvShort.Stop()
 			p.childInvShort = nil
 		}
 		delete(p.activeInvokes, "inv_short")

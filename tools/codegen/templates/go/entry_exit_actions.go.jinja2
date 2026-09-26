@@ -370,6 +370,10 @@ func (p *{{ machine_name }}Policy) ExecuteExitActions(state {{ machine_name }}St
 {% endfor %}
 {% for invoke_info in state.invokes | scxml %}
 		if p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {
+			// §scxml-D-exitInterpreter: a cancelled session is exited -- its
+			// states' <onexit> run -- before it is dropped; what that exit
+			// sends to #_parent is dropped with it (§scxml-6.4, test252).
+			p.child{{ invoke_info.invoke_id | to_pascal_case }}.Stop()
 			p.child{{ invoke_info.invoke_id | to_pascal_case }} = nil
 		}
 		delete(p.activeInvokes, "{{ invoke_info.invoke_id }}")

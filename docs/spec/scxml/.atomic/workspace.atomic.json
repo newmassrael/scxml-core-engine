@@ -14284,6 +14284,11 @@
           "file": "sce/include/runtime/StateMachine.h",
           "symbol": "isInFinalState",
           "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "beginRun",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -14427,6 +14432,111 @@
         {
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::restoreActiveStatesDirectly",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "exit_interpreter",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "stop",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "get_active_states",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "run_main_event_loop",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "exitInterpreter",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "Stop",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "GetActiveStates",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "runMainEventLoop",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/invoke.go",
+          "symbol": "ChildEngine",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "exitInterpreter",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "stop",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "flushPendingFinalState",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_exit_interpreter",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "stop",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "_run_main_event_loop",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/runtime/StateMachine.h",
+          "symbol": "stop",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::~StateMachine",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/StateMachineContext.cpp",
+          "symbol": "StateMachineContext::~StateMachineContext",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "Engine",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/runtime/engine.go",
+          "symbol": "Engine",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "initialize",
           "kind": "references"
         }
       ],
@@ -14937,6 +15047,11 @@
         {
           "file": "backends/python/runtime/sce_runtime/policy.py",
           "symbol": "get_document_initial_targets",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+          "symbol": "beginRun",
           "kind": "references"
         }
       ],
@@ -19273,6 +19388,18 @@
       "target_kind": "section",
       "target_id": "scxml-6.2.3",
       "reason": "The §scxml-6.2.3 citation lived on SendHelper::storeInIdLocation, removed when every idlocation write moved to AssignmentExecutionHelper::storeIdInLocation (f372828498); nothing in SendHelper cites the section any more."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-exitInterpreter",
+      "reason": "The cite on this field resolves to the enclosing struct Engine; the field-level binding was wrong and is replaced by one on Engine."
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-exitInterpreter",
+      "reason": "The cite on this field resolves to the enclosing struct Engine; the field-level binding was wrong and is replaced by one on Engine."
     }
   ],
   "frames": {},

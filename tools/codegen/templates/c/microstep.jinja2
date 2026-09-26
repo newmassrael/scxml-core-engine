@@ -669,6 +669,26 @@ SCE_SM_FN static void exit_states({{ _t }}_t *sm, const {{ _t }}_transition_info
     }
 }
 
+/* §scxml-D-exitInterpreter: exit every state still in the configuration, in
+   exitOrder, each as exitStates exits one -- onexit, cancel its invocations,
+   then out of the configuration -- and stop running.
+
+   Reached two ways, the two the procedure names: the main event loop ends
+   because the run entered a top-level <final>, or the host stops a run that
+   has not ended (`_stop`). The configuration it leaves is empty, so a second
+   call exits nothing. */
+SCE_SM_FN static void exit_interpreter({{ _t }}_t *sm) {
+    for (uint32_t k = (uint32_t){{ _u }}_STATE_COUNT; k > 0u; --k) {
+        const {{ _t }}_state_t s = k_document_order[k - 1u];
+        if ((sm->active & state_bit(s)) == 0u) {
+            continue;
+        }
+        execute_exit_actions(sm, s);
+        sm->active &= ~state_bit(s);
+    }
+    sm->is_running = false;
+}
+
 /* §scxml-D-executeTransitionContent: in the order the transitions were
    selected, which is not their sources' document order once an ancestor's
    transition is reached from a later region. */

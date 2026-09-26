@@ -499,6 +499,7 @@ type childEngineWrapperInvoke0 struct {
 }
 func (w *childEngineWrapperInvoke0) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvoke0) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvoke0) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvoke0) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvoke0) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvoke0) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }

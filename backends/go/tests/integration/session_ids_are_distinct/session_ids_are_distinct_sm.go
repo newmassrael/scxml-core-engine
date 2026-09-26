@@ -661,6 +661,7 @@ type childEngineWrapperInvA struct {
 }
 func (w *childEngineWrapperInvA) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvA) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvA) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvA) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvA) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvA) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
@@ -673,6 +674,7 @@ type childEngineWrapperInvB struct {
 }
 func (w *childEngineWrapperInvB) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvB) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvB) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvB) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvB) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvB) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
@@ -956,11 +958,19 @@ func (p *SessionIdsAreDistinctPolicy) ExecuteExitActions(state SessionIdsAreDist
 	case SessionIdsAreDistinctStatePhase:
 		sce.CancelInvokesForState(&p.pendingInvokes, SessionIdsAreDistinctStatePhase)
 		if p.childInvA != nil {
+			// §scxml-D-exitInterpreter: a cancelled session is exited -- its
+			// states' <onexit> run -- before it is dropped; what that exit
+			// sends to #_parent is dropped with it (§scxml-6.4, test252).
+			p.childInvA.Stop()
 			p.childInvA = nil
 		}
 		delete(p.activeInvokes, "inv_a")
 		p.pendingDoneInvokeInvA = false
 		if p.childInvB != nil {
+			// §scxml-D-exitInterpreter: a cancelled session is exited -- its
+			// states' <onexit> run -- before it is dropped; what that exit
+			// sends to #_parent is dropped with it (§scxml-6.4, test252).
+			p.childInvB.Stop()
 			p.childInvB = nil
 		}
 		delete(p.activeInvokes, "inv_b")

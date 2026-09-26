@@ -27,12 +27,12 @@
 //
 // Pins W3C 3.4 + 6.4 verdict-before-completion ordering. Child is a
 // pure top-level `<final>` so `is_in_final_state` returns true at
-// init time. Parent's invoke helper runs `_finalize_session` (which
-// fires subFinal's `<onexit>` → childToParent → parent's external
-// queue) BEFORE raising `done.invoke`. Parent transitions s0→s1 on
-// childToParent, then s1→s2 on done.invoke, then s2→pass on the 2 s
-// timeout. Without `_finalize_session` done.invoke arrives first →
-// s0→fail.
+// init time. The child's own main event loop runs exitInterpreter as
+// it ends there (which fires subFinal's `<onexit>` → childToParent →
+// parent's external queue), so the parent's invoke helper raises
+// `done.invoke` after it. Parent transitions s0→s1 on childToParent,
+// then s1→s2 on done.invoke, then s2→pass on the 2 s timeout. A child
+// that skipped its exit would let done.invoke arrive first → s0→fail.
 
 #define _POSIX_C_SOURCE 199309L
 

@@ -365,13 +365,15 @@ class Engine(Generic[S, E]):
             self._host,
             [EntryTransition(None, tuple(self._policy.get_document_initial_targets()))],
         )
-        if self._reached_final or not self._is_running:
-            return
         # §scxml-D-mainEventLoop — hand over to the outer loop. The macrostep
         # completes on eventless transitions and internal events, then any
         # `<invoke>` deferred during onentry runs, and only then is anything
         # taken off the external queue — so an autoforward child is live for
-        # every event `<onentry>` queued on the way in.
+        # every event `<onentry>` queued on the way in. Also when the entry
+        # walk already ended the run: the loop stops at once, and stopping is
+        # where it runs §scxml-D-exitInterpreter (test236: a child that
+        # starts in its final still runs that final's `<onexit>` before the
+        # parent is told it is done).
         self._run_main_event_loop()
 
     def enter_at(
@@ -459,6 +461,11 @@ class Engine(Generic[S, E]):
         return ConfigurationRejection.NONE
 
     def stop(self) -> None:
+        # §scxml-D-exitInterpreter: a run the host stops is exited as one that
+        # ended — every active state's `<onexit>` runs, innermost first, and
+        # the configuration ends empty. A run that already ended has been.
+        if self._is_running:
+            self._exit_interpreter()
         self._is_running = False
         # §scxml-6.4 — engine shutdown cancels every active invoke
         # so child schedulers stop driving and external resources are
@@ -467,11 +474,10 @@ class Engine(Generic[S, E]):
             invoke.cancel()
         self._active_invokes.clear()
         self._done_invoke_emitted.clear()
-        # Release the script-engine session so its Lua runtime memory
-        # is collectable. Matches Rust's `Drop` impl on Engine.
-        if self._session_id:
-            self._script_engine.destroy_session(self._session_id)
-            self._session_id = ""
+        # The script-engine session is NOT released here: a run ended by
+        # stop() leaves its datamodel readable, as one that ended in a
+        # top-level final does. `__del__` releases it, which is where Rust's
+        # `Drop` impl on Engine releases its own.
 
     def __del__(self) -> None:
         try:
@@ -490,10 +496,16 @@ class Engine(Generic[S, E]):
         For parallel machines this returns the document-order-earliest
         active leaf; callers that need every region should iterate
         `active_leaves` instead.
+
+        A run that has ended has no configuration (§scxml-D-exitInterpreter);
+        it answers with the final it ended in, as the typed engines do. Only a
+        machine never started answers with its initial state.
         """
         leaves = self.active_leaves
         if leaves:
             return leaves[0]
+        if self._terminal_state is not None:
+            return self._terminal_state
         return self._policy.initial_state()
 
     @property
@@ -1526,6 +1538,11 @@ class Engine(Generic[S, E]):
                 # unable to say it happened is not. See
                 # `unseen_external_events`.
                 self._record_unseen_external_events()
+                # §scxml-D-exitInterpreter: the loop is over because the run
+                # entered a top-level final, so every state still active is
+                # exited now — before any parent is told the child is done.
+                if self._reached_final:
+                    self._exit_interpreter()
                 return
             # §scxml-6.4: invokes for states entered during this macrostep.
             self._start_pending_invokes()
@@ -1774,18 +1791,33 @@ class Engine(Generic[S, E]):
         anywhere else raises `done.state` events from its entry instead, which
         the generated policy does.
 
-        `exitInterpreter` — the final state's own `<onexit>` actions still
-        execute as the engine winds down (test236: a child invoke's
-        `<final><onexit><send target="#_parent">` must reach the parent).
-        The final state stays in the configuration so `current_state`
-        post-termination still reports the reached final."""
-        # §scxml-D-exitInterpreter: the exit actions of the state that
-        # terminated the interpreter still run before the engine stops.
+        The states are not exited here: the microstep that entered the final
+        is still running. The main event loop ends on the flag set here and
+        runs `_exit_interpreter` then (test236: a child invoke's
+        `<final><onexit><send target="#_parent">` must reach the parent)."""
         parent = self._policy.get_parent(final_state)
         if parent is None:
-            self._policy.execute_exit_actions(final_state, self)
             self._terminal_state = final_state
             self._is_running = False
+
+    def _exit_interpreter(self) -> None:
+        """Appendix D's exitInterpreter (§scxml-D-exitInterpreter): exit every
+        state still in the configuration, innermost first, each as exitStates
+        exits one — its `<onexit>`, then its invocations cancelled, then it
+        leaves the configuration.
+
+        Reached two ways, the two the procedure names: the main event loop
+        ends because the run entered a top-level `<final>`, or the host stops
+        a run that has not ended. The configuration it leaves is empty, so a
+        second call exits nothing."""
+        # `configuration.toList().sort(exitOrder)` — reverse document order.
+        for state in sorted(
+            self._configuration, key=self._policy.get_document_order, reverse=True
+        ):
+            self._policy.execute_exit_actions(state, self)
+            self._policy.cancel_invokes_for_state(state, self)
+            self._configuration.remove(state)
+        self._is_running = False
 
     # ── Invoke drivers (W3C SCXML 6.4) ────────────────────────────
 

@@ -653,6 +653,7 @@ type childEngineWrapperInvEmitter struct {
 }
 func (w *childEngineWrapperInvEmitter) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvEmitter) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvEmitter) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvEmitter) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvEmitter) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvEmitter) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
@@ -1068,6 +1069,10 @@ func (p *SendParamPayloadPolicy) ExecuteExitActions(state SendParamPayloadState,
 	case SendParamPayloadStateAwaitChild:
 		sce.CancelInvokesForState(&p.pendingInvokes, SendParamPayloadStateAwaitChild)
 		if p.childInvEmitter != nil {
+			// §scxml-D-exitInterpreter: a cancelled session is exited -- its
+			// states' <onexit> run -- before it is dropped; what that exit
+			// sends to #_parent is dropped with it (§scxml-6.4, test252).
+			p.childInvEmitter.Stop()
 			p.childInvEmitter = nil
 		}
 		delete(p.activeInvokes, "inv_emitter")

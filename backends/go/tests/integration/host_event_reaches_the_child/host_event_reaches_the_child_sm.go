@@ -384,6 +384,7 @@ type childEngineWrapperInvProbe struct {
 }
 func (w *childEngineWrapperInvProbe) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvProbe) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvProbe) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvProbe) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvProbe) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvProbe) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
@@ -647,6 +648,10 @@ func (p *HostEventReachesTheChildPolicy) ExecuteExitActions(state HostEventReach
 	case HostEventReachesTheChildStatePhase:
 		sce.CancelInvokesForState(&p.pendingInvokes, HostEventReachesTheChildStatePhase)
 		if p.childInvProbe != nil {
+			// §scxml-D-exitInterpreter: a cancelled session is exited -- its
+			// states' <onexit> run -- before it is dropped; what that exit
+			// sends to #_parent is dropped with it (§scxml-6.4, test252).
+			p.childInvProbe.Stop()
 			p.childInvProbe = nil
 		}
 		delete(p.activeInvokes, "inv_probe")

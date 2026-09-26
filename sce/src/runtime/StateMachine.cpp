@@ -190,17 +190,18 @@ StateMachine::~StateMachine() {
         SCE_LOG_DEBUG("StateMachine: All processEvent calls completed, proceeding with destruction");
     }
 
-    // Always call stop() to ensure session cleanup
-    // Final state sets isRunning_=false but session must still be destroyed
-    // stop() is idempotent and handles cleanup even when isRunning_=false
+    // A run still going is exited as a stopped one (§scxml-D-exitInterpreter);
+    // one that already ended has nothing left to exit.
     stop();
 
     // FUNDAMENTAL FIX: Two-Phase Destruction Pattern
-    // LIFECYCLE: RAII Destruction Stage
-    // Destructor handles only internal resource cleanup (no external dependencies)
-    // JSEngine session already destroyed in stop() to prevent deadlock
-    // See stop() method for explicit cleanup of external dependencies
-    SCE_LOG_DEBUG("StateMachine: Destruction complete (JSEngine session cleaned up in stop())");
+    // LIFECYCLE: Explicit Cleanup Stage, then RAII Destruction Stage.
+    // The session a run leaves behind outlives the run (its datamodel stays
+    // readable), so it is released here, before RAII destruction, while the
+    // JSEngine singleton is still alive (releaseSession() is a no-op on an
+    // engine already shut down).
+    releaseSession();
+    SCE_LOG_DEBUG("StateMachine: Destruction complete");
 }
 
 bool StateMachine::loadSCXML(const std::string &filename) {
@@ -267,6 +268,14 @@ bool StateMachine::start(bool autoProcessQueuedEvents) {
         return false;
     }
 
+    // A run is a session (§scxml-D-interpret initialises the datamodel
+    // afresh). The one an earlier run of this machine left behind — kept so
+    // its datamodel stayed readable after it ended — is released here, so the
+    // new run does not inherit its values.
+    if (!isRunning_ && sessionUsedByARun_) {
+        releaseSession();
+    }
+
     // Ensure JS environment initialization
     if (!ensureJSEnvironment()) {
         SCE_LOG_ERROR("StateMachine: Cannot start - JavaScript environment initialization failed");
@@ -287,6 +296,7 @@ bool StateMachine::start(bool autoProcessQueuedEvents) {
     // §scxml-D-interpret: initialise the global data structures and the data model,
     // run the global <script>, then enter the initial configuration and set running.
     isRunning_ = true;
+    sessionUsedByARun_ = true;
     topLevelFinalReached_ = false;
     terminalState_.reset();
     macrostepTruncated_ = false;
@@ -328,25 +338,33 @@ void StateMachine::stop() {
         }
     }
 
-    // CRITICAL: Always unregister state query callback, even if isRunning_ is already false
+    // The session is NOT released here. Stopping ends the run the way reaching
+    // a top-level final does (§scxml-D-exitInterpreter), and a run that ended
+    // either way leaves its datamodel readable, as the generated engines do;
+    // the session goes at destruction or when the next run starts
+    // (releaseSession()).
+
+    updateStatistics();
+    SCE_LOG_INFO("StateMachine: Stopped");
+}
+
+void StateMachine::releaseSession() {
+    // CRITICAL: Always unregister state query callback
     // Race condition prevention: JSEngine worker threads may have queued tasks accessing StateMachine
-    // W3C Test 415: isRunning_=false may be set in top-level final state before destructor calls stop()
     scriptEngine_.setStateQueryCallback(nullptr, sessionId_);
     SCE_LOG_DEBUG("StateMachine: Unregistered state query callback from script engine");
 
     // FUNDAMENTAL FIX: Two-Phase Destruction Pattern
     // LIFECYCLE: Explicit Cleanup Stage
     // W3C SCXML: Destroy JSEngine session before RAII destruction
-    // Ensures JSEngine singleton is alive during cleanup (prevents deadlock)
-    // Required for StaticExecutionEngine wrapper lifecycle management
+    // Ensures JSEngine singleton is alive during cleanup (prevents deadlock);
+    // on an engine already shut down destroySession() returns at once.
     if (jsEnvironmentReady_) {
         scriptEngine_.destroySession(sessionId_);
         jsEnvironmentReady_ = false;
-        SCE_LOG_DEBUG("StateMachine: Destroyed JSEngine session in stop(): {}", sessionId_);
+        SCE_LOG_DEBUG("StateMachine: Destroyed JSEngine session: {}", sessionId_);
     }
-
-    updateStatistics();
-    SCE_LOG_INFO("StateMachine: Stopped");
+    sessionUsedByARun_ = false;
 }
 
 StateMachine::TransitionResult StateMachine::processEvent(const std::string &eventName, const std::string &eventData) {

@@ -1098,6 +1098,18 @@ static int a_run_journalled_as_names_resumes_where_it_stopped(void) {
     return bad;
 }
 
+// The states a run stands in at this moment: its configuration, and once it
+// has ended the top-level <final> it ended in — which W3C SCXML Appendix D
+// exitInterpreter has already taken out of that configuration.
+static uint32_t stood_in(const ai_loop_t *sm) {
+    uint32_t states = ai_loop_active_states(sm);
+    ai_loop_state_t ended;
+    if (ai_loop_terminal_state(sm, &ended)) {
+        states |= 1u << (unsigned)ended;
+    }
+    return states;
+}
+
 static int every_state_a_run_reaches_reads_back_from_its_own_name(void) {
     uint32_t seen = 0u;
     ai_loop_t sm;
@@ -1107,21 +1119,21 @@ static int every_state_a_run_reaches_reads_back_from_its_own_name(void) {
     // recorded here only because a run actually stood in it, and a written-out
     // list of states is what `_state_from_name` exists to replace.
     start(&sm, &wiring);
-    seen |= ai_loop_active_states(&sm);
+    seen |= stood_in(&sm);
     for (int n = 0; n < 60; n++) {
         if (ai_loop_in_state(&sm, AI_LOOP_STATE_REFLECTING)) {
-            seen |= ai_loop_active_states(&sm);
+            seen |= stood_in(&sm);
             step(&sm, AI_LOOP_EVENT_REFLECT_APPLIED);
-            seen |= ai_loop_active_states(&sm);
+            seen |= stood_in(&sm);
             step(&sm, AI_LOOP_EVENT_SESSION_READY);
         }
         if (ai_loop_ended_in(&sm, AI_LOOP_STATE_EXHAUSTED)) {
             break;
         }
         turn(&sm);
-        seen |= ai_loop_active_states(&sm);
+        seen |= stood_in(&sm);
     }
-    seen |= ai_loop_active_states(&sm);
+    seen |= stood_in(&sm);
     ai_loop_destroy(&sm);
 
     start(&sm, &wiring);
@@ -1131,44 +1143,44 @@ static int every_state_a_run_reaches_reads_back_from_its_own_name(void) {
     // nothing. Every other branch of this walk records after driving the machine
     // on, and that is exactly how `judging` stayed unvisited while the floor
     // below read as satisfied.
-    seen |= ai_loop_active_states(&sm);
+    seen |= stood_in(&sm);
     verdict(&sm, true);
-    seen |= ai_loop_active_states(&sm);
+    seen |= stood_in(&sm);
     step(&sm, AI_LOOP_EVENT_TURN_DONE);
-    seen |= ai_loop_active_states(&sm);
+    seen |= stood_in(&sm);
     ai_loop_destroy(&sm);
 
     start(&sm, &wiring);
     step(&sm, AI_LOOP_EVENT_TURN_BLOCKED);
-    seen |= ai_loop_active_states(&sm);
+    seen |= stood_in(&sm);
     step(&sm, AI_LOOP_EVENT_SCREEN_NONE);
-    seen |= ai_loop_active_states(&sm);
+    seen |= stood_in(&sm);
     step(&sm, AI_LOOP_EVENT_UNATTENDED);
-    seen |= ai_loop_active_states(&sm);
+    seen |= stood_in(&sm);
     ai_loop_destroy(&sm);
 
     start(&sm, &wiring);
     step(&sm, AI_LOOP_EVENT_HOLD);
-    seen |= ai_loop_active_states(&sm);
+    seen |= stood_in(&sm);
     step(&sm, AI_LOOP_EVENT_RESUME);
-    seen |= ai_loop_active_states(&sm);
+    seen |= stood_in(&sm);
     ai_loop_destroy(&sm);
 
     start(&sm, &wiring);
     step(&sm, AI_LOOP_EVENT_SESSION_LOST);
-    seen |= ai_loop_active_states(&sm);
+    seen |= stood_in(&sm);
     step(&sm, AI_LOOP_EVENT_SESSION_READY);
-    seen |= ai_loop_active_states(&sm);
+    seen |= stood_in(&sm);
     ai_loop_destroy(&sm);
 
     start(&sm, &wiring);
     step(&sm, AI_LOOP_EVENT_CANCEL);
-    seen |= ai_loop_active_states(&sm);
+    seen |= stood_in(&sm);
     ai_loop_destroy(&sm);
 
     start(&sm, &wiring);
     step(&sm, AI_LOOP_EVENT_FAIL);
-    seen |= ai_loop_active_states(&sm);
+    seen |= stood_in(&sm);
     ai_loop_destroy(&sm);
 
     int bad = 0;

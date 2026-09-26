@@ -597,6 +597,7 @@ type childEngineWrapperInvoke0Chosen struct {
 }
 func (w *childEngineWrapperInvoke0Chosen) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvoke0Chosen) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvoke0Chosen) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvoke0Chosen) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvoke0Chosen) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvoke0Chosen) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
@@ -609,6 +610,7 @@ type childEngineWrapperInvoke0Other struct {
 }
 func (w *childEngineWrapperInvoke0Other) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvoke0Other) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvoke0Other) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvoke0Other) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvoke0Other) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvoke0Other) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }

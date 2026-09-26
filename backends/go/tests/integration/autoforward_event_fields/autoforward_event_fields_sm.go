@@ -542,6 +542,7 @@ type childEngineWrapperInvEcho struct {
 }
 func (w *childEngineWrapperInvEcho) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvEcho) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvEcho) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvEcho) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvEcho) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvEcho) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
@@ -811,6 +812,10 @@ func (p *AutoforwardEventFieldsPolicy) ExecuteExitActions(state AutoforwardEvent
 	case AutoforwardEventFieldsStatePhase:
 		sce.CancelInvokesForState(&p.pendingInvokes, AutoforwardEventFieldsStatePhase)
 		if p.childInvEcho != nil {
+			// §scxml-D-exitInterpreter: a cancelled session is exited -- its
+			// states' <onexit> run -- before it is dropped; what that exit
+			// sends to #_parent is dropped with it (§scxml-6.4, test252).
+			p.childInvEcho.Stop()
 			p.childInvEcho = nil
 		}
 		delete(p.activeInvokes, "inv_echo")

@@ -1935,7 +1935,14 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
                             InvokeParamSeedsDeclaredChildDataEvent::CancelInvoke,
                         ));
                     }
-                    self.child_inv_infinite = None;
+                    // §scxml-D-exitInterpreter: a cancelled session is exited —
+                    // its states' `<onexit>` run — before it is dropped. What
+                    // that exit sends to `#_parent` lands in the child's own
+                    // queue, which is dropped with it undrained (§scxml-6.4
+                    // cancel-drop, test252).
+                    if let Some(mut child) = self.child_inv_infinite.take() {
+                        child.stop();
+                    }
                 }
                 self.active_invokes.remove("inv_infinite");
                 self.pending_done_invoke_inv_infinite = false;
@@ -1955,7 +1962,14 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
                             InvokeParamSeedsDeclaredChildDataEvent::CancelInvoke,
                         ));
                     }
-                    self.child_inv_namelist = None;
+                    // §scxml-D-exitInterpreter: a cancelled session is exited —
+                    // its states' `<onexit>` run — before it is dropped. What
+                    // that exit sends to `#_parent` lands in the child's own
+                    // queue, which is dropped with it undrained (§scxml-6.4
+                    // cancel-drop, test252).
+                    if let Some(mut child) = self.child_inv_namelist.take() {
+                        child.stop();
+                    }
                 }
                 self.active_invokes.remove("inv_namelist");
                 self.pending_done_invoke_inv_namelist = false;
@@ -1975,7 +1989,14 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
                             InvokeParamSeedsDeclaredChildDataEvent::CancelInvoke,
                         ));
                     }
-                    self.child_inv_shadow = None;
+                    // §scxml-D-exitInterpreter: a cancelled session is exited —
+                    // its states' `<onexit>` run — before it is dropped. What
+                    // that exit sends to `#_parent` lands in the child's own
+                    // queue, which is dropped with it undrained (§scxml-6.4
+                    // cancel-drop, test252).
+                    if let Some(mut child) = self.child_inv_shadow.take() {
+                        child.stop();
+                    }
                 }
                 self.active_invokes.remove("inv_shadow");
                 self.pending_done_invoke_inv_shadow = false;
@@ -1995,7 +2016,14 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
                             InvokeParamSeedsDeclaredChildDataEvent::CancelInvoke,
                         ));
                     }
-                    self.child_inv_sole = None;
+                    // §scxml-D-exitInterpreter: a cancelled session is exited —
+                    // its states' `<onexit>` run — before it is dropped. What
+                    // that exit sends to `#_parent` lands in the child's own
+                    // queue, which is dropped with it undrained (§scxml-6.4
+                    // cancel-drop, test252).
+                    if let Some(mut child) = self.child_inv_sole.take() {
+                        child.stop();
+                    }
                 }
                 self.active_invokes.remove("inv_sole");
                 self.pending_done_invoke_inv_sole = false;
@@ -2015,7 +2043,14 @@ impl StatePolicy for InvokeParamSeedsDeclaredChildDataPolicy {
                             InvokeParamSeedsDeclaredChildDataEvent::CancelInvoke,
                         ));
                     }
-                    self.child_inv_unmatched = None;
+                    // §scxml-D-exitInterpreter: a cancelled session is exited —
+                    // its states' `<onexit>` run — before it is dropped. What
+                    // that exit sends to `#_parent` lands in the child's own
+                    // queue, which is dropped with it undrained (§scxml-6.4
+                    // cancel-drop, test252).
+                    if let Some(mut child) = self.child_inv_unmatched.take() {
+                        child.stop();
+                    }
                 }
                 self.active_invokes.remove("inv_unmatched");
                 self.pending_done_invoke_inv_unmatched = false;

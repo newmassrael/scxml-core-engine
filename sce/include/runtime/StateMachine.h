@@ -211,6 +211,12 @@ public:
 
     /**
      * @brief Stop the state machine
+     *
+     * §scxml-D-exitInterpreter: a running run is exited — every active
+     * state's `<onexit>` runs, innermost first — and the configuration ends
+     * empty. The datamodel stays readable afterwards, as it does after a run
+     * ends in a top-level `<final>`; the script session is released at
+     * destruction or when the next `start()` begins a new run.
      */
     void stop();
 
@@ -812,6 +818,13 @@ private:
     std::string currentEventData_;
     std::string currentOriginSessionId_;  // W3C SCXML Test 252: Track origin for cancelled invoke filtering
     bool jsEnvironmentReady_ = false;
+    /// A run has used the script session and it has not been released yet:
+    /// it outlives the run's end so its datamodel stays readable, and goes
+    /// when the next run starts or the machine is destroyed.
+    bool sessionUsedByARun_ = false;
+
+    /// Release the script session (and the `In()` callback registered on it).
+    void releaseSession();
 
     // Action execution infrastructure
     std::shared_ptr<IActionExecutor> actionExecutor_;

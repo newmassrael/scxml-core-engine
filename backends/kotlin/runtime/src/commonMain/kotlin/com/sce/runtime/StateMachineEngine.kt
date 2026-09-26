@@ -1241,7 +1241,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
     /**
      * §scxml-D-enterStates: the top-level `<final>` the run ended in, or null
-     * while it is still running, after a host [stop], or before it started.
+     * while it is still running, when a host [stop] ended it elsewhere, or
+     * before it started. Cleared when a run starts, not when it stops.
      *
      * The one answer to "where did this run end". It is recorded when the run
      * ends, so it does not depend on what the configuration holds afterwards —
@@ -1673,6 +1674,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // R2 fix: Store scope for delayed send support
         engineScope = scope
 
+        beginRun()
         job = scope.launch(Dispatchers.Default) {
             // R4 fix: Execute initial entry on Dispatchers.Default, not caller thread
             enterInitialConfiguration()
@@ -1729,6 +1731,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // did to two of them.
         val opened = beginTurn()
         try {
+            beginRun()
             enterInitialConfiguration()
             settleCurrentState()
             flushPendingFinalState()
@@ -2254,6 +2257,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             scriptEngineInitialized = false
             scriptSessionId = null
         }
+        sessionUsedByARun = false
     }
 
     /**
@@ -2438,31 +2442,34 @@ abstract class StateMachineEngine<S : State, E : Event>(
     fun stop() {
         job?.cancel()
         job = null
+        // §scxml-D-exitInterpreter: a run the host stops is exited as one that
+        // ended — every active state's `onExit` runs, innermost first, while
+        // the script session its content needs still exists. A run that
+        // already ended has an empty configuration and exits nothing.
+        exitInterpreter()
         engineScope = null
         eventChannel.close()
         delayedSendJobs.values.forEach { it.cancel() }
         delayedSendJobs.clear()
         // §scxml-6.4: Cancel all active invokes
         for ((_, entry) in activeInvokes) {
+            // Cut off before the stop, as in [cancelInvoke].
+            entry.child.onSendToParent = null
             entry.child.stop()
             entry.monitorJob.cancel()
         }
         activeInvokes.clear()
         pendingInvokes.clear()
-        // §scxml-B-1: Destroy script engine session
-        if (scriptEngineInitialized) {
-            scriptSessionId?.let { scriptEngine?.destroySession(it) }
-            scriptEngineInitialized = false
-            scriptSessionId = null
-        }
+        // §scxml-B-1: the script session is NOT destroyed here. A run ended by
+        // stop() leaves its datamodel readable, as one that ended in a
+        // top-level final does; [cleanup] releases it, and so does the next
+        // run's start ([beginRun]).
         // Reset state for stop/start reuse. What each `<history>` recorded
         // belongs to the session that is ending (§scxml-3.10): a restarted
         // machine is a new session, and one that remembered would enter a
         // history's recorded configuration where the document says default.
         configuration.clear()
         historyValues.clear()
-        isInFinalState = false
-        terminalState = null
         pendingFinalState = false
         internalEventQueue.clear()
         externalEventQueue.clear()
@@ -2852,6 +2859,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     protected fun cancelInvoke(invokeId: String) {
         activeInvokes.remove(invokeId)?.let {
+            // §scxml-6.4 cancel-drop semantics (test252): the child is cut off
+            // from this machine BEFORE it is stopped, so a
+            // `<onexit><send target="#_parent">` its exitInterpreter runs is
+            // dropped rather than delivered by a session already cancelled.
+            it.child.onSendToParent = null
             it.child.stop()
             it.monitorJob.cancel()
         }
@@ -3207,6 +3219,48 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * Called after initial configuration and at stable points to ensure
      * final state is visible even when no transitions fired.
      */
+    /**
+     * A run starts: where an earlier run ended no longer answers for this one
+     * (§scxml-D-enterStates records it afresh), and neither does its
+     * datamodel — §scxml-D-interpret initialises it anew, so the session an
+     * ended run left readable is released and the next script use opens a
+     * fresh one.
+     */
+    private fun beginRun() {
+        isInFinalState = false
+        terminalState = null
+        // Only a session an earlier RUN used: one opened before the first run
+        // (a host seeding the datamodel) belongs to this run.
+        if (sessionUsedByARun && scriptEngineInitialized) {
+            scriptSessionId?.let { scriptEngine?.destroySession(it) }
+            scriptEngineInitialized = false
+            scriptSessionId = null
+        }
+        sessionUsedByARun = true
+    }
+
+    /** A run has started on this engine since its script session was last released. */
+    private var sessionUsedByARun = false
+
+    /**
+     * Appendix D's exitInterpreter (§scxml-D-exitInterpreter): exit every
+     * state still in the configuration, innermost first, each as exitStates
+     * exits one — its onexit, then its invocations cancelled, then it leaves
+     * the configuration.
+     *
+     * Reached two ways, the two the procedure names: the run entered a
+     * top-level `<final>` ([flushPendingFinalState]), or the host stops a run
+     * that has not ended ([stop]). The configuration it leaves is empty, so a
+     * second call exits nothing.
+     */
+    private fun exitInterpreter() {
+        val configurationBeforeExit = configuration.toList()
+        // `configuration.toList().sort(exitOrder)` — reverse document order.
+        for (state in configurationBeforeExit.sortedByDescending { documentOrderOf(it) }) {
+            run.exitState(state, configurationBeforeExit)
+        }
+    }
+
     private fun flushPendingFinalState() {
         if (pendingFinalState) {
             pendingFinalState = false
@@ -3222,15 +3276,12 @@ abstract class StateMachineEngine<S : State, E : Event>(
             terminalState = _currentState.value
             isInFinalState = true
 
-            // §scxml-3.8: Execute onexit actions for the final state before
-            // notifying parent. Matches C++ AOT StaticExecutionEngine::initialize()
-            // which calls executeOnExit(currentState_) for the final state only.
-            // A top-level <final> is entered by a transition whose domain is
-            // the <scxml> element, which exited everything else, so it is the
-            // configuration's one state and exiting it empties the
-            // configuration. This ensures child-to-parent events (e.g.,
-            // test236 SubFinal onexit) arrive before done.invoke.
-            run.exitState(_currentState.value, configuration.toList())
+            // §scxml-D-exitInterpreter: exit what is left before notifying the
+            // parent, so child-to-parent events (e.g., test236 SubFinal
+            // onexit) arrive before done.invoke. A top-level <final> is entered
+            // by a transition whose domain is the <scxml> element, which
+            // exited everything else, so this exits the final alone.
+            exitInterpreter()
 
             // §scxml-6.4: Notify invoke monitors that this SM completed
             if (!completion.isCompleted) completion.complete(Unit)

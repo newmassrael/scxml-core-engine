@@ -932,7 +932,14 @@ impl StatePolicy for Test253Policy {
                             Test253Event::CancelInvoke,
                         ));
                     }
-                    self.child_foo = None;
+                    // §scxml-D-exitInterpreter: a cancelled session is exited —
+                    // its states' `<onexit>` run — before it is dropped. What
+                    // that exit sends to `#_parent` lands in the child's own
+                    // queue, which is dropped with it undrained (§scxml-6.4
+                    // cancel-drop, test252).
+                    if let Some(mut child) = self.child_foo.take() {
+                        child.stop();
+                    }
                 }
                 self.active_invokes.remove("foo");
                 self.pending_done_invoke_foo = false;

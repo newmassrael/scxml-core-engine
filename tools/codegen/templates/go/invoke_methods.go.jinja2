@@ -573,6 +573,7 @@ type childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }} struct {
 }
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) Tick() { w.engine.Tick() }
+func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) Stop() { w.engine.Stop() }
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
@@ -595,6 +596,7 @@ type {{ wrapper }} struct {
 }
 func (w *{{ wrapper }}) Initialize() { w.engine.Initialize() }
 func (w *{{ wrapper }}) Tick() { w.engine.Tick() }
+func (w *{{ wrapper }}) Stop() { w.engine.Stop() }
 func (w *{{ wrapper }}) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *{{ wrapper }}) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *{{ wrapper }}) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }

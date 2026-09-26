@@ -902,7 +902,14 @@ impl StatePolicy for AutoforwardEventFieldsPolicy {
                             AutoforwardEventFieldsEvent::CancelInvoke,
                         ));
                     }
-                    self.child_inv_echo = None;
+                    // §scxml-D-exitInterpreter: a cancelled session is exited —
+                    // its states' `<onexit>` run — before it is dropped. What
+                    // that exit sends to `#_parent` lands in the child's own
+                    // queue, which is dropped with it undrained (§scxml-6.4
+                    // cancel-drop, test252).
+                    if let Some(mut child) = self.child_inv_echo.take() {
+                        child.stop();
+                    }
                 }
                 self.active_invokes.remove("inv_echo");
                 self.pending_done_invoke_inv_echo = false;

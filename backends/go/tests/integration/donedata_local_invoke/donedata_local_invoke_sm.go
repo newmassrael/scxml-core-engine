@@ -634,6 +634,7 @@ type childEngineWrapperInvParam struct {
 }
 func (w *childEngineWrapperInvParam) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvParam) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvParam) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvParam) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvParam) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvParam) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
@@ -646,6 +647,7 @@ type childEngineWrapperInvContent struct {
 }
 func (w *childEngineWrapperInvContent) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvContent) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvContent) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvContent) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvContent) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvContent) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
@@ -928,6 +930,10 @@ func (p *DonedataLocalInvokePolicy) ExecuteExitActions(state DonedataLocalInvoke
 	case DonedataLocalInvokeStatePhaseContent:
 		sce.CancelInvokesForState(&p.pendingInvokes, DonedataLocalInvokeStatePhaseContent)
 		if p.childInvContent != nil {
+			// §scxml-D-exitInterpreter: a cancelled session is exited -- its
+			// states' <onexit> run -- before it is dropped; what that exit
+			// sends to #_parent is dropped with it (§scxml-6.4, test252).
+			p.childInvContent.Stop()
 			p.childInvContent = nil
 		}
 		delete(p.activeInvokes, "inv_content")
@@ -935,6 +941,10 @@ func (p *DonedataLocalInvokePolicy) ExecuteExitActions(state DonedataLocalInvoke
 	case DonedataLocalInvokeStatePhaseParam:
 		sce.CancelInvokesForState(&p.pendingInvokes, DonedataLocalInvokeStatePhaseParam)
 		if p.childInvParam != nil {
+			// §scxml-D-exitInterpreter: a cancelled session is exited -- its
+			// states' <onexit> run -- before it is dropped; what that exit
+			// sends to #_parent is dropped with it (§scxml-6.4, test252).
+			p.childInvParam.Stop()
 			p.childInvParam = nil
 		}
 		delete(p.activeInvokes, "inv_param")

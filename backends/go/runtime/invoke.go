@@ -140,6 +140,13 @@ func IsInvokePending[S comparable](pending []PendingInvoke[S], invokeID string) 
 type ChildEngine interface {
 	Initialize()
 	Tick()
+
+	// Stop exits the child session when its parent cancels it
+	// (§scxml-D-exitInterpreter): its states' <onexit> run. What that exit
+	// sends to #_parent lands on the child's own queue, which the parent
+	// drops with the child undrained (§scxml-6.4 cancel-drop, test252).
+	Stop()
+
 	IsInFinalState() bool
 	RaiseExternalByName(eventName, eventData string)
 

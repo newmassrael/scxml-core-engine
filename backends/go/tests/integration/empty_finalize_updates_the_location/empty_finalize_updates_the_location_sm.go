@@ -922,6 +922,7 @@ type childEngineWrapperInvEmpty struct {
 }
 func (w *childEngineWrapperInvEmpty) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvEmpty) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvEmpty) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvEmpty) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvEmpty) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvEmpty) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
@@ -934,6 +935,7 @@ type childEngineWrapperInvAbsent struct {
 }
 func (w *childEngineWrapperInvAbsent) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvAbsent) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvAbsent) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvAbsent) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvAbsent) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvAbsent) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
@@ -946,6 +948,7 @@ type childEngineWrapperInvUnmatched struct {
 }
 func (w *childEngineWrapperInvUnmatched) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvUnmatched) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvUnmatched) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvUnmatched) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvUnmatched) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvUnmatched) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
@@ -1324,6 +1327,10 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteExitActions(state EmptyFi
 	case EmptyFinalizeUpdatesTheLocationStateAbsentPhase:
 		sce.CancelInvokesForState(&p.pendingInvokes, EmptyFinalizeUpdatesTheLocationStateAbsentPhase)
 		if p.childInvAbsent != nil {
+			// §scxml-D-exitInterpreter: a cancelled session is exited -- its
+			// states' <onexit> run -- before it is dropped; what that exit
+			// sends to #_parent is dropped with it (§scxml-6.4, test252).
+			p.childInvAbsent.Stop()
 			p.childInvAbsent = nil
 		}
 		delete(p.activeInvokes, "inv_absent")
@@ -1331,6 +1338,10 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteExitActions(state EmptyFi
 	case EmptyFinalizeUpdatesTheLocationStateEmptyPhase:
 		sce.CancelInvokesForState(&p.pendingInvokes, EmptyFinalizeUpdatesTheLocationStateEmptyPhase)
 		if p.childInvEmpty != nil {
+			// §scxml-D-exitInterpreter: a cancelled session is exited -- its
+			// states' <onexit> run -- before it is dropped; what that exit
+			// sends to #_parent is dropped with it (§scxml-6.4, test252).
+			p.childInvEmpty.Stop()
 			p.childInvEmpty = nil
 		}
 		delete(p.activeInvokes, "inv_empty")
@@ -1338,6 +1349,10 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteExitActions(state EmptyFi
 	case EmptyFinalizeUpdatesTheLocationStateUnmatchedPhase:
 		sce.CancelInvokesForState(&p.pendingInvokes, EmptyFinalizeUpdatesTheLocationStateUnmatchedPhase)
 		if p.childInvUnmatched != nil {
+			// §scxml-D-exitInterpreter: a cancelled session is exited -- its
+			// states' <onexit> run -- before it is dropped; what that exit
+			// sends to #_parent is dropped with it (§scxml-6.4, test252).
+			p.childInvUnmatched.Stop()
 			p.childInvUnmatched = nil
 		}
 		delete(p.activeInvokes, "inv_unmatched")

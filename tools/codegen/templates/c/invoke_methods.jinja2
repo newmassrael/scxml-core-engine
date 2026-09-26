@@ -376,17 +376,21 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
             {% endfor %}
             {% endif %}
             {% endif %}
-            {% if invoke_info.child_has_send_to_parent %}
-            /* W3C SCXML 6.4: drive the child's deferred macrostep loop
+            /* W3C SCXML 6.4: drive the child's deferred main event loop
                now that param/namelist have been applied and parent
-               routing is live. The bound (16) is a safety net — the
-               W3C corpus' invoked children reach `<final>` in one
-               macrostep (single eventless transition + send-to-parent
-               + enter subFinal). The first iteration that observes
-               `is_in_final_state` exits before calling `_step` again
-               so a child that finalised during init's entry walk
-               (test247-style sync-final) costs zero `_step` calls. */
-            for (int _step_n = 0; _step_n < 16; ++_step_n) {
+               routing is live. At least one pass, even for a child whose
+               entry walk already entered its top-level <final>
+               (test236/247-style sync-final): that loop is where the
+               child runs §scxml-D-exitInterpreter, so its `<onexit>` —
+               and any `<send target="#_parent">` in it — happens before
+               the done.invoke raised below. A child that sends to its
+               parent is driven further, up to a safety bound of 16 —
+               the W3C corpus' invoked children reach `<final>` in one
+               macrostep; any other child is driven on from
+               `_drive_active_children`. */
+            {{ csym_prefix }}{{ invoke_info.child_name }}_step(&sm->child_{{ invoke_info.field_suffix }});
+            {% if invoke_info.child_has_send_to_parent %}
+            for (int _step_n = 1; _step_n < 16; ++_step_n) {
                 if ({{ csym_prefix }}{{ invoke_info.child_name }}_is_in_final_state(&sm->child_{{ invoke_info.field_suffix }})) {
                     break;
                 }
@@ -399,17 +403,11 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                true at this point and we synthesise `done.invoke`
                immediately so the parent's next dequeue drains it. */
             if ({{ csym_prefix }}{{ invoke_info.child_name }}_is_in_final_state(&sm->child_{{ invoke_info.field_suffix }})) {
-                {% if invoke_info.child_has_send_to_parent %}
-                /* W3C SCXML 3.4 (test236): run `<onexit>` on every
-                   still-active child state BEFORE raising `done.invoke`
-                   so a `<final>` with `<onexit><send target="#_parent">`
-                   gets its verdict event onto the parent's external
-                   queue ahead of the completion event. Children whose
-                   own SCXML never sends to `#_parent` (test247-shape:
-                   pure `<final>` with no exit body) skip the helper —
-                   they have no `_finalize_session` symbol to call. */
-                {{ csym_prefix }}{{ invoke_info.child_name }}_finalize_session(&sm->child_{{ invoke_info.field_suffix }});
-                {% endif %}
+                /* W3C SCXML 6.4 (test236): the child's own main event loop
+                   ran exitInterpreter when it entered its final, so every
+                   `<onexit><send target="#_parent">` it holds is already on
+                   this machine's external queue, ahead of the done.invoke
+                   raised here. */
                 {{ csym_prefix }}{{ model.name }}_event_with_meta_t _done_evt;
                 memset(&_done_evt, 0, sizeof(_done_evt));
                 /* W3C SCXML 6.4 / 6.3.1 (test235): when the parent has a
@@ -648,12 +646,6 @@ static void {{ csym_prefix }}{{ model.name }}_drive_active_children({{ csym_pref
         {{ csym_prefix }}{{ invoke_info.child_name }}_step(&sm->child_{{ invoke_info.field_suffix }});
         {% endif %}
         if ({{ csym_prefix }}{{ invoke_info.child_name }}_is_in_final_state(&sm->child_{{ invoke_info.field_suffix }})) {
-            {% if invoke_info.child_has_send_to_parent %}
-            /* W3C SCXML 3.4 (test236-shape async-final): mirror the
-               sync-final exit walk so `<onexit>` of the just-entered
-               final state runs before `done.invoke`. */
-            {{ csym_prefix }}{{ invoke_info.child_name }}_finalize_session(&sm->child_{{ invoke_info.field_suffix }});
-            {% endif %}
             /* W3C SCXML 6.4 / 6.3.1: child completed asynchronously
                (post-init parent→child message drove it to <final>).
                Raise done.invoke with the spawn-time invoke_id stamped

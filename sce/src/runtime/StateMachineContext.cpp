@@ -17,9 +17,9 @@ StateMachineContext::~StateMachineContext() {
     // Only cleanup StateMachine
     // EventRaiser/EventDispatcher are owned externally (e.g., TestResources)
     if (stateMachine_) {
-        // CRITICAL: Always call stop(), even if isRunning_ is false
-        // W3C Test 415: isRunning_=false may be set when entering top-level final state
-        // stop() must always execute to unregister from JSEngine and prevent race conditions
+        // A run still going is exited as a stopped one (§scxml-D-exitInterpreter);
+        // stop() is a no-op on one that already ended. The script session and
+        // its In() callback are released by the StateMachine's destructor.
         SCE_LOG_DEBUG("StateMachineContext: Calling StateMachine::stop() (isRunning: {})", stateMachine_->isRunning());
         stateMachine_->stop();
 

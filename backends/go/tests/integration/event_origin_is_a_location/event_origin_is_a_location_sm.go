@@ -541,6 +541,7 @@ type childEngineWrapperInvPeer struct {
 }
 func (w *childEngineWrapperInvPeer) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvPeer) Tick() { w.engine.Tick() }
+func (w *childEngineWrapperInvPeer) Stop() { w.engine.Stop() }
 func (w *childEngineWrapperInvPeer) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvPeer) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
 func (w *childEngineWrapperInvPeer) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
@@ -822,6 +823,10 @@ func (p *EventOriginIsALocationPolicy) ExecuteExitActions(state EventOriginIsALo
 	case EventOriginIsALocationStatePhase:
 		sce.CancelInvokesForState(&p.pendingInvokes, EventOriginIsALocationStatePhase)
 		if p.childInvPeer != nil {
+			// §scxml-D-exitInterpreter: a cancelled session is exited -- its
+			// states' <onexit> run -- before it is dropped; what that exit
+			// sends to #_parent is dropped with it (§scxml-6.4, test252).
+			p.childInvPeer.Stop()
 			p.childInvPeer = nil
 		}
 		delete(p.activeInvokes, "inv_peer")

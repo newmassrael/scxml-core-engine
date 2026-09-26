@@ -75,8 +75,9 @@ static void stepping_reset(uint64_t step_ms) {
 // entry bitmap plus one reading after each of six 100 ms advances. The bitmap
 // rather than a single state, because this backend's configuration IS the
 // bitmap and a machine that took a different path through it would otherwise
-// compare equal.
-static void manual_trace(uint32_t *out) {
+// compare equal. `*ended_in_pass` is where the run ended, which the bitmap
+// cannot say once it has: W3C SCXML Appendix D exitInterpreter empties it.
+static void manual_trace(uint32_t *out, bool *ended_in_pass) {
     late_tick_honours_cancel_t sm;
     late_tick_honours_cancel_init_with_clock(&sm, sce_clock_manual(0u));
     out[0] = late_tick_honours_cancel_active_states(&sm);
@@ -84,6 +85,7 @@ static void manual_trace(uint32_t *out) {
         late_tick_honours_cancel_advance_time_ms(&sm, 100u);
         out[i + 1] = late_tick_honours_cancel_active_states(&sm);
     }
+    *ended_in_pass = late_tick_honours_cancel_ended_in(&sm, LATE_TICK_HONOURS_CANCEL_STATE_PASS);
     late_tick_honours_cancel_destroy(&sm);
 }
 
@@ -326,8 +328,10 @@ int main(void) {
     {
         uint32_t first[7];
         uint32_t second[7];
-        manual_trace(first);
-        manual_trace(second);
+        bool first_passed = false;
+        bool second_passed = false;
+        manual_trace(first, &first_passed);
+        manual_trace(second, &second_passed);
         for (int i = 0; i < 7; ++i) {
             if (first[i] != second[i]) {
                 fprintf(stderr,
@@ -338,10 +342,17 @@ int main(void) {
                 rc = 1;
             }
         }
-        if (first[6] != (1u << (unsigned)LATE_TICK_HONOURS_CANCEL_STATE_PASS)) {
+        if (!first_passed || !second_passed) {
             fprintf(stderr,
                     "late_tick_honours_cancel: FAIL - the host-owned trace did not end in "
-                    "`pass`; its last configuration is %u.\n",
+                    "`pass` (first: %s, second: %s).\n",
+                    first_passed ? "pass" : "elsewhere", second_passed ? "pass" : "elsewhere");
+            rc = 1;
+        }
+        if (first[6] != 0u) {
+            fprintf(stderr,
+                    "late_tick_honours_cancel: FAIL - a run that has ended has no configuration "
+                    "(W3C SCXML Appendix D exitInterpreter); its last reading is %u.\n",
                     (unsigned)first[6]);
             rc = 1;
         }

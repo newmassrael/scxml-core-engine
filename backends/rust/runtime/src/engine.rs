@@ -642,6 +642,11 @@ pub struct Engine<P: StatePolicy> {
     /// on entering it, cleared when a run starts. See
     /// [`terminal_state`](Self::terminal_state).
     pub(crate) terminal_state: Option<P::State>,
+    /// §scxml-D-exitInterpreter has run for this run: the configuration is
+    /// empty. `current_state` still names the state the run was last in (the
+    /// type has no "none"), so [`get_active_states`](Self::get_active_states)
+    /// answers from this flag rather than from it.
+    pub(crate) interpreter_exited: bool,
     /// §scxml-6.4: Completion callback invoked when reaching a final state.
     ///
     /// SCE Protocol-Synthesis RFC §synth-5-J-2: `Box<dyn FnMut>` is alloc-coupled and gated to
@@ -810,6 +815,7 @@ impl<P: StatePolicy> Engine<P> {
             external_queue: P::EventQueue::default(),
             is_running: false,
             terminal_state: None,
+            interpreter_exited: false,
             #[cfg(not(feature = "no_std"))]
             completion_callback: None,
             #[cfg(not(feature = "no_std"))]
@@ -1017,6 +1023,31 @@ impl<P: StatePolicy> Engine<P> {
         });
     }
 
+    /// Appendix D's exitInterpreter (§scxml-D-exitInterpreter): exit every
+    /// state still in the configuration, innermost first, each as exitStates
+    /// exits one — its `<onexit>`, then its invocations cancelled, then it
+    /// leaves the configuration — and stop running.
+    ///
+    /// Reached two ways, the two the procedure names: the main event loop
+    /// ends because the run entered a top-level `<final>`, or the host stops
+    /// a run that has not ended. Runs once per run.
+    pub(crate) fn exit_interpreter(&mut self) {
+        if self.interpreter_exited {
+            return;
+        }
+        let configuration = self.get_active_states();
+        let mut states_to_exit = configuration.clone();
+        // `configuration.toList().sort(exitOrder)` — reverse document order.
+        crate::stable_sort_by(&mut states_to_exit, |a, b| {
+            P::get_document_order(*b).cmp(&P::get_document_order(*a))
+        });
+        for state in states_to_exit.iter().copied() {
+            self.execute_on_exit(state, &configuration);
+        }
+        self.interpreter_exited = true;
+        self.is_running = false;
+    }
+
     /// Execute the policy's `initialize_data_model`.
     pub(crate) fn initialize_data_model_dispatch(&mut self) {
         self.with_policy(|policy, engine| policy.initialize_data_model(engine));
@@ -1043,6 +1074,7 @@ impl<P: StatePolicy> Engine<P> {
     fn initialize_in_turn(&mut self) {
         self.is_running = true;
         self.terminal_state = None;
+        self.interpreter_exited = false;
 
         // §scxml-5.3: Initialize datamodel before any state entry
         if concepts::has_data_model_init::<P>() {
@@ -1071,17 +1103,16 @@ impl<P: StatePolicy> Engine<P> {
         sce_log_debug!("Engine::initialize: main event loop settled");
 
         // §scxml-6.4: Fire completion callback if we reached a final state during init.
+        // The main event loop has already run exitInterpreter, so the child's
+        // `<onexit>` sends are queued ahead of the done.invoke this raises.
         // SCE Protocol-Synthesis RFC §synth-5-J-2: Box<dyn FnMut> callback is alloc-coupled and gated
         // to `!no_std` (see field declaration above).
         #[cfg(not(feature = "no_std"))]
-        if self.is_in_final_state() && self.completion_callback.is_some() {
-            sce_log_debug!(
-                "Engine::initialize: reached final state during init, invoking completion callback"
-            );
-            let active = self.get_active_states();
-            let final_state = self.current_state;
-            self.execute_on_exit(final_state, &active);
+        if self.is_in_final_state() {
             if let Some(cb) = self.completion_callback.as_mut() {
+                sce_log_debug!(
+                    "Engine::initialize: reached final state during init, invoking completion callback"
+                );
                 cb();
             }
         }
@@ -1156,6 +1187,7 @@ impl<P: StatePolicy> Engine<P> {
         }
 
         self.current_state = current;
+        self.interpreter_exited = false;
         // A configuration restored AT a top-level `<final>` is a run that has
         // already ended there; any other is still running.
         self.terminal_state = if P::is_final_state(current) && P::get_parent(current).is_none() {
@@ -1356,7 +1388,14 @@ impl<P: StatePolicy> Engine<P> {
     }
 
     /// Stop the engine. Subsequent `tick`/`process_event` calls become no-ops.
+    ///
+    /// §scxml-D-exitInterpreter: a run the host stops is exited as one that
+    /// ended — every active state's `<onexit>` runs, innermost first, and the
+    /// configuration ends empty. A run that already ended has been exited.
     pub fn stop(&mut self) {
+        if self.is_running {
+            self.exit_interpreter();
+        }
         self.is_running = false;
     }
 
@@ -1708,6 +1747,13 @@ impl<P: StatePolicy> Engine<P> {
     pub fn get_active_states(&self) -> hierarchy::StateChain<P::State> {
         if concepts::has_active_states::<P>() {
             return self.policy.get_active_states();
+        }
+        // §scxml-D-exitInterpreter: a run that has ended has no configuration.
+        // (A policy that keeps its own active set emptied it state by state
+        // above; this one derives the set from `current_state`, which still
+        // names the final, so the answer has to be given here.)
+        if self.interpreter_exited {
+            return hierarchy::new_chain();
         }
         // Walk from current state up to root via the cfg-branched chain helper.
         // Bounded by MAX_HIERARCHY_DEPTH=16 under no_std (panics on overflow per
@@ -2765,6 +2811,12 @@ impl<P: StatePolicy> Engine<P> {
                 // measured 2026-08-22 against a consumer that spent four
                 // attempts rewriting a guard that was never evaluated.
                 self.record_unseen_external_events();
+                // §scxml-D-exitInterpreter: the loop is over because the run
+                // entered a top-level final, so every state still active is
+                // exited now — before the completion callback tells a parent.
+                if self.is_in_final_state() {
+                    self.exit_interpreter();
+                }
                 break;
             }
 
