@@ -98,11 +98,11 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 236
+engine-documents 237
 native-prefix-documents 2
-datamodel-variable-init 281
+datamodel-variable-init 284
 transition-guard 220
-assign-action 229
+assign-action 233
 child-invoke-needs-script-engine 46
 log-expr 45
 send-param-expr 32
@@ -163,7 +163,10 @@ never spelled correctly.
   typed host-run completion: three counters, three assigns) raised
   `datamodel-variable-init` and `assign-action` — and NOT
   `transition-guard`: its two guards read the `sce:result` record and lower
-  natively, which is the point of the state. A consumer pairing `cond="cpp:…"` with
+  natively, which is the point of the state. Then
+  `the_run_ends_by_exiting_every_state.scxml` (one engine document: three
+  handler records, four assigns, an `In()` inside an `<if>`) raised
+  `engine-documents`, `datamodel-variable-init` and `assign-action`. A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.
 - **49% of judged documents need an engine** (233 of 475). The remaining

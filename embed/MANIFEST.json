@@ -1,6 +1,6 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "db4ffc362c",
+  "embed_version": "2edb0e2c04",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
   "symbol_count": 271,
@@ -1694,6 +1694,7 @@
         "field int stepNumber",
         "field int64_t schedulerLogicalTimeMs",
         "field std::map<std::string, std::string> dataModel",
+        "field std::optional<std::string> terminalState",
         "field std::string incomingTransitionEvent",
         "field std::string incomingTransitionSource",
         "field std::string incomingTransitionTarget",
