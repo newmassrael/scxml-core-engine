@@ -1050,7 +1050,7 @@ fn filter_to_field_suffix(s: String) -> String {
 // ── Go filters ──────────────────────────────────────────────────
 
 /// Go reserved keywords — must be escaped with `_` suffix
-const GO_KEYWORDS: &[&str] = &[
+pub(crate) const GO_KEYWORDS: &[&str] = &[
     "break",
     "case",
     "chan",

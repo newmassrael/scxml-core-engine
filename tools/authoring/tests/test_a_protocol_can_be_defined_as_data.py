@@ -420,9 +420,9 @@ class ABindingRefusesAYamlBoolean(unittest.TestCase):
 
     def test_a_boolean_where_a_symbol_belongs_says_which_position(self):
         def mutate(doc):
-            doc["inputs"]["override"]["equals"] = True
+            doc["inputs"]["manualOverride"]["equals"] = True
         said = self.refusal(mutate)
-        self.assertIn("inputs -> override -> equals", said)
+        self.assertIn("inputs -> manualOverride -> equals", said)
         self.assertIn("quote", said)
 
     def test_a_boolean_inside_a_map_says_which_entry(self):

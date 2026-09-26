@@ -68,7 +68,7 @@ class ADocumentCanPrecedeItsAddresses(unittest.TestCase):
         return path
 
     def open_input(self, doc):
-        doc["inputs"]["override"] = {"unresolved": REASON}
+        doc["inputs"]["manualOverride"] = {"unresolved": REASON}
 
     def open_output(self, doc):
         doc["outputs"]["bell"] = {"unresolved": REASON}
@@ -105,9 +105,9 @@ class ADocumentCanPrecedeItsAddresses(unittest.TestCase):
         """
         result = verify(self.pack, self.binding(self.open_input))
         self.assertTrue(result.ran, f"it would not run: {result.refusal}")
-        self.assertIn("override", result.unresolved)
+        self.assertIn("manualOverride", result.unresolved)
         self.assertIn("platform list is not available",
-                      result.unresolved["override"])
+                      result.unresolved["manualOverride"])
         # ⚠ Arity floor. Without it the assertions below hold vacuously for a
         # run that withheld nothing -- which is the old all-or-nothing run
         # reached by a different road.

@@ -64,6 +64,7 @@
         "validation/malformed-identifier",
         "validation/event-name-grammar",
         "validation/malformed-code-identifier",
+        "validation/reserved-code-identifier",
         "validation/duplicate-context-object",
         "validation/reserved-context-id",
         "validation/empty-collection",

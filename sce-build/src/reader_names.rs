@@ -275,6 +275,51 @@ const CPP_RESERVED: &[&str] = &[
     "stderr",
 ];
 
+/// C11 keywords C++ does not also reserve (ISO/IEC 9899:2011 §6.4.1).
+const C_ONLY_KEYWORDS: &[&str] = &[
+    "restrict",
+    "_Alignas",
+    "_Alignof",
+    "_Atomic",
+    "_Bool",
+    "_Complex",
+    "_Generic",
+    "_Imaginary",
+    "_Noreturn",
+    "_Static_assert",
+    "_Thread_local",
+];
+
+/// Whether `spelled` is a word `language` reserves — a keyword it gives no
+/// way to declare as a plain name. One list per language, shared by the
+/// reader spelling above and by the forge code-identifier rule.
+pub(crate) fn is_reserved_word(language: Language, spelled: &str) -> bool {
+    match language {
+        Language::Rust => filters::RUST_KEYWORDS.contains(&spelled),
+        Language::Kotlin => KOTLIN_HARD_KEYWORDS.contains(&spelled),
+        Language::Python => PYTHON_KEYWORDS.contains(&spelled),
+        Language::Go => filters::GO_KEYWORDS.contains(&spelled),
+        Language::Cpp => CPP_RESERVED.contains(&spelled),
+        Language::C11 => CPP_RESERVED.contains(&spelled) || C_ONLY_KEYWORDS.contains(&spelled),
+    }
+}
+
+/// The first backend, in [`Language::ALL`] order, that reserves the code
+/// identifier `name` as it would spell it — as written, or folded to
+/// snake_case, which is how Rust, Python and C11 spell a forge name.
+///
+/// A forge `<data id>` and an `sce:` element's name reach generated source
+/// verbatim, so a name one backend cannot declare is refused at parse for
+/// all of them (`validation/reserved-code-identifier`), the same narrowing
+/// that refuses `raw-value`.
+pub fn reserved_in(name: &str) -> Option<Language> {
+    let snake = filters::to_snake_case(name.to_string());
+    Language::ALL
+        .iter()
+        .copied()
+        .find(|&language| is_reserved_word(language, name) || is_reserved_word(language, &snake))
+}
+
 /// What a type already defines: exact names, and the prefixes of names it
 /// builds from document ids (`history_<state>`, `on_entry_<state>`), which a
 /// reader spelled with that prefix could meet.

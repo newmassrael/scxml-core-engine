@@ -205,8 +205,8 @@ class ADocumentIsRunNotJustRead(unittest.TestCase):
             'when both hold"\n'
             '          expr="approaching ? 1 : 0"/>\n'
             '    <data id="roadSignal"').replace(
-            'expr="override ? 0 : (approaching ? 1 : (occupied ? 2 : 0))"',
-            'expr="override ? 0 : (guessed !== 0 ? 9 : (occupied ? 2 : 0))"')
+            'expr="manualOverride ? 0 : (approaching ? 1 : (occupied ? 2 : 0))"',
+            'expr="manualOverride ? 0 : (guessed !== 0 ? 9 : (occupied ? 2 : 0))"')
 
         def use_it(binding):
             binding["document"] = "guessed.scxml"
@@ -370,7 +370,7 @@ class ADocumentIsRunNotJustRead(unittest.TestCase):
         """
         def use_previous(binding):
             binding["inputs"]["barrierDown"] = {
-                "previous_of": "override",
+                "previous_of": "manualOverride",
                 "caller_keeps": "this fixture is about the ORDER the cases "
                                 "declare, not about where the memory lives",
             }
@@ -385,7 +385,7 @@ class ADocumentIsRunNotJustRead(unittest.TestCase):
         """The other half: the refusal is about the EXAMPLES, not the rule."""
         def use_previous(binding):
             binding["inputs"]["barrierDown"] = {
-                "previous_of": "override",
+                "previous_of": "manualOverride",
                 "caller_keeps": "this fixture is about the ORDER the cases "
                                 "declare, not about where the memory lives",
             }

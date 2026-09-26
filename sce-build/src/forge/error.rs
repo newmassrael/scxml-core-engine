@@ -808,6 +808,29 @@ pub enum ValidationError {
         expected: &'static str,
     },
 
+    /// A code identifier that is a word some target language reserves, as
+    /// that language would spell it — `override` is a Rust keyword, `pass` a
+    /// Python one, `auto` a C++ one.
+    ///
+    /// The same narrowing as [`ValidationError::MalformedCodeIdentifier`], one
+    /// step further: the name reaches generated source verbatim in all six
+    /// languages, so a name one of them cannot declare is refused for every
+    /// backend at once, on the attribute's own line, rather than surfacing as
+    /// a compiler error in generated code for one of them. A statechart's
+    /// `<data id>` is not held to this — it names a W3C data-model location,
+    /// and its reader is escaped instead (`reader_names`).
+    #[error(
+        "<{element} {attr}=\"{value}\">: '{value}' is a reserved word in \
+         {language}, so the generated {language} code cannot declare it — \
+         rename it"
+    )]
+    ReservedCodeIdentifier {
+        element: String,
+        attr: String,
+        value: String,
+        language: &'static str,
+    },
+
     /// An `event` attribute whose descriptor is not a legal token sequence.
     ///
     /// Separate from [`ValidationError::MalformedIdentifier`] because W3C

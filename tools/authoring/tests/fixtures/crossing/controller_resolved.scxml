@@ -30,19 +30,19 @@
     <data id="clear" sce:type="bool" sce:direction="in"/>
     <data id="obstacleNone" sce:type="bool" sce:direction="in"/>
     <data id="barrierDown" sce:type="bool" sce:direction="in"/>
-    <data id="override" sce:type="bool" sce:direction="in"/>
+    <data id="manualOverride" sce:type="bool" sce:direction="in"/>
     <data id="mainsOk" sce:type="bool" sce:direction="in"/>
 
     <!-- 0 DARK · 1 FLASHING · 2 STEADY -->
     <data id="roadSignal" sce:type="int32" sce:direction="out"
-          expr="override ? 0 : (approaching ? 1 : (occupied ? 2 : 0))"/>
+          expr="manualOverride ? 0 : (approaching ? 1 : (occupied ? 2 : 0))"/>
 
     <data id="bell" sce:type="int32" sce:direction="out"
           expr="(roadSignal !== 0) ? 1 : 0"/>
 
     <!-- 0 STOP · 1 LOWER · 2 RAISE -->
     <data id="barrier" sce:type="int32" sce:direction="out"
-          expr="override ? 0
+          expr="manualOverride ? 0
         : (barrierDown ? 0
           : ((approaching &amp;&amp; obstacleNone) ? 1 : (clear ? 2 : 0)))"/>
 

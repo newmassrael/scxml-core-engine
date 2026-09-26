@@ -20,7 +20,7 @@ inputs:
   barrierDown:
     address: plant/in/barrier-position
     equals: DOWN
-  override:
+  manualOverride:
     address: plant/in/local-override
     equals: "ON"
   mainsOk:

@@ -643,6 +643,10 @@ pub enum DiagnosticCode {
     //    W3C's to state. ──────────────────────────────────────────
     #[serde(rename = "validation/malformed-code-identifier")]
     ValidationMalformedCodeIdentifier,
+    // ── The same name, legal in shape but a word one target language
+    //    reserves, so that backend could not declare it. ────────────
+    #[serde(rename = "validation/reserved-code-identifier")]
+    ValidationReservedCodeIdentifier,
     #[serde(rename = "validation/duplicate-context-object")]
     ValidationDuplicateContextObject,
     #[serde(rename = "validation/reserved-context-id")]
@@ -3122,6 +3126,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationMalformedIdentifier,
         ValidationEventNameGrammar,
         ValidationMalformedCodeIdentifier,
+        ValidationReservedCodeIdentifier,
         ValidationDuplicateContextObject,
         ValidationReservedContextId,
         ValidationEmptyCollection,
@@ -3826,6 +3831,7 @@ impl DiagnosticCode {
             // The code identifier grammar is SCE's narrowing, registered
             // where the accepted subset registers the names SCE owns.
             ValidationMalformedCodeIdentifier => Some("SCE Accepted Subset §2.14"),
+            ValidationReservedCodeIdentifier => Some("SCE Accepted Subset §2.14"),
 
             // ── Algorithm kind (SCE Protocol-Synthesis RFC §synth-5-A) ──────────
             AlgorithmLocalShadowsParam
@@ -4473,6 +4479,7 @@ impl DiagnosticCode {
             ValidationMalformedIdentifier => "validation/malformed-identifier",
             ValidationEventNameGrammar => "validation/event-name-grammar",
             ValidationMalformedCodeIdentifier => "validation/malformed-code-identifier",
+            ValidationReservedCodeIdentifier => "validation/reserved-code-identifier",
             ValidationDuplicateContextObject => "validation/duplicate-context-object",
             ValidationReservedContextId => "validation/reserved-context-id",
             ValidationEmptyCollection => "validation/empty-collection",
@@ -5813,6 +5820,27 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: (!value.is_empty()).then(|| value.clone()),
             fix: None,
             key_fragments: vec![element.clone(), attr.clone(), token.clone()],
+        },
+        // The language rides `expected`: what the name has to be is "a
+        // name <language> can declare", and there is no closed set of
+        // replacements to offer as a fix.
+        ValidationError::ReservedCodeIdentifier {
+            element,
+            attr,
+            value,
+            language,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationReservedCodeIdentifier,
+            stage: Stage::Validation,
+            expected: Some(vec![format!("a name {language} can declare")]),
+            actual: Some(value.clone()),
+            fix: None,
+            key_fragments: vec![
+                element.clone(),
+                attr.clone(),
+                value.clone(),
+                (*language).to_string(),
+            ],
         },
         ValidationError::DuplicateRequirementId { element, id } => DiagnosticPayload {
             code: DiagnosticCode::ValidationDuplicateRequirementId,
@@ -10190,6 +10218,19 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:400657f6658c5060","code":"validation/malformed-code-identifier","stage":"validation","spec":"SCE Accepted Subset §2.14","message":"<sce:field id=\"raw-value\">: 'raw-value' is not a valid code identifier — a name the generated code spells starts with an ASCII letter or '_' and continues with ASCII letters, digits or '_'","expected":["code identifier"],"actual":"raw-value"}"#,
+            ),
+            (
+                // A code identifier in shape — but Rust reserves `override`,
+                // so the generated Rust could not declare it.
+                "forge/reserved-code-identifier",
+                ValidationError::ReservedCodeIdentifier {
+                    element: "data".into(),
+                    attr: "id".into(),
+                    value: "override".into(),
+                    language: "rust",
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:cfa1042251265097","code":"validation/reserved-code-identifier","stage":"validation","spec":"SCE Accepted Subset §2.14","message":"<data id=\"override\">: 'override' is a reserved word in rust, so the generated rust code cannot declare it — rename it","expected":["a name rust can declare"],"actual":"override"}"#,
             ),
             (
                 "forge/invalid-reference",
@@ -15080,6 +15121,7 @@ mod tests {
             | ValidationMalformedIdentifier
             | ValidationEventNameGrammar
             | ValidationMalformedCodeIdentifier
+            | ValidationReservedCodeIdentifier
             // The rule a legal value satisfies — "positive integer" —
             // describes the position and names no replacement, which is
             // exactly why it left `invalid-attribute`'s candidate list.
@@ -16014,7 +16056,7 @@ mod tests {
                 | ValidationUnsupportedKind | ValidationKindNotInlineEligible
                 | ValidationDuplicateId
                 | ValidationMalformedIdentifier | ValidationEventNameGrammar
-                | ValidationMalformedCodeIdentifier
+                | ValidationMalformedCodeIdentifier | ValidationReservedCodeIdentifier
                 | ValidationDuplicateContextObject | ValidationReservedContextId
                 | ValidationEmptyCollection
                 | ValidationCountMismatch | ValidationIncompatibleAttributes
@@ -16351,9 +16393,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            392,
+            393,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 392 distinct variants to match the DiagnosticCode \
+             expected 393 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -16965,6 +17007,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationMalformedIdentifier
             | ValidationEventNameGrammar
             | ValidationMalformedCodeIdentifier
+            | ValidationReservedCodeIdentifier
             | ValidationDuplicateContextObject
             | ValidationReservedContextId
             | ValidationEmptyCollection

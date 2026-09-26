@@ -2303,6 +2303,18 @@ record (`header.S`, `telemetry.reset`) is code identifiers joined by
 `.`. A violation is refused at parse, on the attribute's own line, as
 `validation/malformed-code-identifier`.
 
+A code identifier of that shape is also refused when it is a word one of
+the six languages reserves, as that language would spell it — as written,
+or folded to snake_case the way Rust, Python and C11 spell a forge name:
+`override` (Rust), `pass` (Python), `object` (Kotlin), `auto` (C++). It
+is refused for every backend at once, as
+`validation/reserved-code-identifier` naming the language, rather than
+escaped per backend: these names are spelled at many sites per kind, and
+an escape at some of them is a mismatch at the rest. A statechart's
+`<data id>` is not held to this; where it becomes a typed reader, the
+reader is escaped or withheld instead (`unreadable_variables`,
+`SCE_ERROR_CONTRACT.md` §10.1).
+
 This is the narrowing §1 draws for W3C's identifiers, drawn for the
 names SCE owns, and it is narrower than an XML Name in the same
 direction for the same reason: `-` and `.` are operators in every target
@@ -3221,6 +3233,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/malformed-identifier` | Validation |
 | `validation/event-name-grammar` | Validation |
 | `validation/malformed-code-identifier` | Validation |
+| `validation/reserved-code-identifier` | Validation |
 | `validation/duplicate-context-object` | Validation |
 | `validation/reserved-context-id` | Validation |
 | `validation/empty-collection` | Validation |

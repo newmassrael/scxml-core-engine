@@ -117,6 +117,17 @@
 //! `validation/malformed-code-identifier` on the attribute's own line —
 //! the ASCII boundary W3C's table already draws, drawn for the names SCE
 //! owns.
+//!
+//! One step further, for the same reason: a code identifier of the right
+//! shape can still be a word one target language reserves — `override` in
+//! Rust, `pass` in Python, `auto` in C++ — and then that backend cannot
+//! declare it. Such a name is refused for every backend at once
+//! (`validation/reserved-code-identifier`, naming the language), from the
+//! one keyword list `crate::reader_names::reserved_in` keeps. Refusing
+//! rather than escaping, because the forge generator spells these names at
+//! many sites per kind, and an escape applied at some of them is a mismatch
+//! at the rest. A statechart's `<data id>` is W3C's name, not SCE's, and is
+//! escaped where it becomes a reader instead.
 
 use crate::forge::error::{ForgeError, Located, ValidationError};
 
@@ -431,10 +442,6 @@ pub fn reject_malformed(
             let Some(grammar) = grammar_of(dialect, &node, attribute.name()) else {
                 continue;
             };
-            let Some(token) = offending_token(grammar, attribute.value()) else {
-                continue;
-            };
-
             let document = node.document();
             let pos = document.text_pos_at(attribute.range_value().start);
             let element = spelled_tag(&node);
@@ -442,6 +449,30 @@ pub fn reject_malformed(
             // As the document spells it, which is what a consumer finds on
             // the row: `a&amp;b` there, where the reader decoded `a&b`.
             let value = document.input_text()[attribute.range_value()].to_string();
+
+            let Some(token) = offending_token(grammar, attribute.value()) else {
+                // A code identifier of the right shape can still be a word a
+                // target language reserves, and then that backend cannot
+                // declare it. A path only references names declared
+                // elsewhere, and those are refused where they are declared.
+                if grammar == Grammar::CodeIdentifier {
+                    if let Some(language) = crate::reader_names::reserved_in(attribute.value()) {
+                        return Err(Located::new(
+                            ValidationError::ReservedCodeIdentifier {
+                                element,
+                                attr,
+                                value,
+                                language: language.canonical_name(),
+                            }
+                            .into(),
+                            doc_name,
+                            Some(pos.row),
+                            Some(pos.col),
+                        ));
+                    }
+                }
+                continue;
+            };
             let token = token.to_string();
             let expected = production(grammar);
             let error: ValidationError = match grammar {

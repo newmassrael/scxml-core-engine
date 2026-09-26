@@ -228,6 +228,61 @@ fn every_row_of_the_sce_table_is_reachable_from_a_committed_document() {
     );
 }
 
+/// A code identifier of the right shape that a target language reserves is
+/// refused for every backend, on its own row, naming the language — `pass`
+/// is a Python keyword, so the generated Python could not declare the input.
+#[test]
+fn a_forge_data_id_a_language_reserves_is_refused_naming_the_language() {
+    let document = transform_with_input("pass");
+    let refusal = forge_refusal(&document);
+    assert_eq!(code_of(&refusal), "\"validation/reserved-code-identifier\"");
+    let at = position_of(&document, "\"pass\"");
+    assert_eq!(
+        (refusal.location.line, refusal.location.col),
+        (Some(at.0), Some(at.1 + 1)),
+        "{refusal:?}"
+    );
+    let diagnostic = &refusal.error.to_diagnostics()[0];
+    assert_eq!(diagnostic.actual.as_deref(), Some("pass"));
+    assert!(
+        refusal
+            .error
+            .to_string()
+            .contains("reserved word in python"),
+        "{}",
+        refusal.error
+    );
+}
+
+/// The spelling a backend actually uses is what is asked: `Override` is not
+/// a keyword as written, but Rust, Python and C11 fold a forge name to
+/// snake_case, and Rust reserves `override`.
+#[test]
+fn a_reserved_word_is_found_in_the_spelling_the_backend_uses() {
+    let refusal = forge_refusal(&transform_with_input("Override"));
+    assert_eq!(code_of(&refusal), "\"validation/reserved-code-identifier\"");
+    assert!(
+        refusal.error.to_string().contains("reserved word in rust"),
+        "{}",
+        refusal.error
+    );
+}
+
+/// The discriminator: the same document with a name no language reserves
+/// parses, so the two tests above are about the word and not the document.
+#[test]
+fn a_name_no_language_reserves_is_accepted() {
+    let label = sce_build::DocumentLabel {
+        identifier: "named_input",
+        diagnostic_label: "named_input.scxml",
+    };
+    sce_build::forge::parser::parse_forge_with_imports(
+        &transform_with_input("manualOverride"),
+        label,
+    )
+    .expect("a name no language reserves parses");
+}
+
 /// `text` with the value of the first `<sce:{element} {attr}="…">` replaced
 /// by `value`, or `None` when the document carries no such attribute.
 fn with_value_replaced(text: &str, element: &str, attr: &str, value: &str) -> Option<String> {
