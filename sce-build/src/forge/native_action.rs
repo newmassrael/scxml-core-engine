@@ -863,28 +863,48 @@ impl CallRendering<'_> {
 
         // `datamodel="sce-static"`: each argument is a typed expression,
         // lowered by the static lowering and typed by the value it is. Only
-        // Kotlin lowers the model; every other backend refused the document
-        // before rendering.
+        // the backends that lower the model reach here; every other one
+        // refused the document before rendering.
         if let Some(static_scope) = self.static_scope {
             let event = binding.and_then(|b| b.schema.map(|schema| (b.event, schema)));
             let mut call_args = Vec::new();
             let mut params: Signature = Vec::new();
             let mut reads_payload = false;
+            let mut can_fail = false;
             for (i, arg) in action.params.iter().enumerate() {
-                let lowered =
-                    crate::forge::static_lowering::lower_kotlin_argument(static_scope, event, arg)
-                        .expect("validated: a sce-static argument is typed against this scope");
+                let lowered = crate::forge::static_lowering::lower_static_argument(
+                    static_scope,
+                    event,
+                    arg,
+                    lang,
+                )
+                .expect("validated: a sce-static argument is typed against this scope");
                 let pname = if arg.name.is_empty() {
                     format!("arg{}", i + 1)
                 } else {
                     arg.name.clone()
                 };
                 reads_payload |= lowered.reads_payload;
+                can_fail |= lowered.can_fail;
                 call_args.push(lowered.text);
                 params.push((pname, lowered.ty));
             }
             self.sigs.entry(name.clone()).or_insert(params);
             let stmt = call(lang, &name, &call_args);
+            // E12 D5: an argument that can fail stops the call before it is
+            // made, and `error.execution` names it.
+            let stmt = if can_fail {
+                crate::forge::static_lowering::receive_static_statement(
+                    lang,
+                    &stmt,
+                    self.machine_name,
+                    self.raises_error,
+                    &format!("<sce:action name='{name}'>"),
+                )
+                .expect("the backend lowers sce-static: it lowered the arguments")
+            } else {
+                stmt
+            };
             action.native_action_rendered = match (reads_payload, binding) {
                 (true, Some(binding)) => {
                     self.payload_events.insert(binding.event.to_string());

@@ -1,8 +1,13 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
-{# W3C SCXML 5.3/5.4: <assign> - Variable assignment #}
-{% if not model.needs_script_engine %}
+{# W3C SCXML 5.3/5.4: <assign> - Variable assignment. A statement lowered to
+   Rust at generate time (`native_code`, a sce-static document's) is emitted
+   as it is. #}
+{% if action.native_code %}
+// W3C SCXML 5.3: <assign location="{{ action.location }}">
+{{ action.native_code }}
+{% elif not model.needs_script_engine %}
 {% if action.location and action.expr %}
 // W3C SCXML 5.3: <assign location="{{ action.location }}" expr="{{ action.expr }}">
 self.{{ action.location | to_snake_case }} = {{ action.expr | to_rust_string_expr }};

@@ -1,0 +1,9 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# SCE Accepted Subset §2.15: fill a sce-static list. The statement — the
+   bound check and the error arm included — is lowered ahead of the template
+   by `forge::static_lowering`, which holds the list's element and capacity,
+   and stored on `action.native_code`. #}
+// SCE Accepted Subset §2.15: <sce:append target="{{ action.location }}">
+{{ action.native_code }}

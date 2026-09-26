@@ -85,6 +85,9 @@
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
+{% for line in static_imports %}
+{{ line }}
+{% endfor %}
 {% if model.event_queue_capacity %}
 
 // SCE Protocol-Synthesis RFC §synth-5-J-2 + §synth-5-L (item C3): per-document
@@ -172,6 +175,69 @@ impl {{ machine_name }}Event {
 {{ event_payload_defs }}
 {{ event_payload_entries }}
 {% endif %}
+{% if static_record_defs %}
+// ── SCE Accepted Subset §2.15: the record types the sce-static variables hold ──
+{{ static_record_defs }}
+
+{% endif %}
+{% if static_datamodel %}
+// ── SCE Accepted Subset §2.15: what a host observes of a sce-static machine ──
+{% if static_published %}
+
+/// The published variables (`sce:direction="out"`) as one owned value, in
+/// declaration order.
+#[derive(Debug, Clone, PartialEq)]
+#[allow(non_snake_case)]
+pub struct {{ machine_name }}Data {
+{% for field in static_published %}
+    pub {{ field.name }}: {{ field.ty }},
+{% endfor %}
+}
+{% endif %}
+
+/// What a host observes: the full active configuration — every active state,
+/// each region of a `<parallel>` included —{% if static_published %} and the published variables,{% endif %}
+/// taken together between two host calls, which is a macrostep boundary (W3C
+/// SCXML Appendix D). `truncated` is `true` when that macrostep was stopped at
+/// the microstep ceiling, so the configuration is not a stable one. Owned: a
+/// host holding one keeps what it saw whatever the machine does next.
+#[derive(Debug, Clone, PartialEq)]
+pub struct {{ machine_name }}Snapshot {
+    pub configuration: ::sce_rust_runtime::helpers::hierarchy::StateChain<{{ machine_name }}State>,
+{% if static_published %}
+    pub data: {{ machine_name }}Data,
+{% endif %}
+    pub truncated: bool,
+}
+
+/// The snapshot of a running machine, as an extension of the runtime's
+/// `Engine` (a foreign type, so a local trait — the `Inject` shape).
+pub trait {{ machine_name }}Observe {
+    /// The machine as the host sees it now: one [`{{ machine_name }}Snapshot`],
+    /// never a state between two microsteps.
+    fn snapshot(&self) -> {{ machine_name }}Snapshot;
+}
+
+impl{{ policy_generics_decl }} {{ machine_name }}Observe for Engine<{{ machine_name }}Policy{{ policy_generics_use }}> {
+    fn snapshot(&self) -> {{ machine_name }}Snapshot {
+{% if static_published %}
+        let policy = self.policy();
+{% endif %}
+        {{ machine_name }}Snapshot {
+            configuration: self.get_active_states(),
+{% if static_published %}
+            data: {{ machine_name }}Data {
+{% for field in static_published %}
+                {{ field.name }}: policy.{{ field.name }}{% if field.view %}.clone(){% endif %},
+{% endfor %}
+            },
+{% endif %}
+            truncated: self.last_macrostep_truncated(),
+        }
+    }
+}
+
+{% endif %}
 {% if has_native_actions %}
 // ── W3C SCXML G.7: <sce:action> host-dispatch trait ──
 {{ native_actions_defs }}
@@ -257,7 +323,16 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
    agrees again — so the machine reads the datamodel back out through
    `helpers::datamodel_read` (see the accessors below) instead of shadowing
    it. Kotlin's template already drew this line; the other backends now do
-   too. #}
+   too.
+
+   Under `datamodel="sce-static"` there is no script engine, and this struct
+   IS the datamodel's home: every expression was lowered to Rust reading and
+   writing these fields (`crate::forge::static_lowering`), and only the
+   machine's own statements write them. #}
+{% for field in static_fields %}
+    /// W3C SCXML 5.2: the `{{ field.id }}` datamodel variable{% if field.published %}, published (`sce:direction="out"`){% endif %}.
+    {{ field.name }}: {{ field.ty }},
+{% endfor %}
 {% if not no_std %}
     // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
     //
@@ -375,6 +450,12 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
             script_engine,
 {% else %}
     pub fn new({% if has_native_actions %}actions: A{% endif %}) -> Self {
+{# SCE Accepted Subset §2.15: each sce-static variable's initial value, in
+   declaration order — an initial value reads the variables declared before
+   it by these names. #}
+{% for field in static_fields %}
+        let {{ field.name }}: {{ field.ty }} = {{ field.init }};
+{% endfor %}
         Self {
 {% if has_native_actions %}
             actions,
@@ -409,6 +490,9 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
 {% endif %}
 {% for history_id, _ in model.history_states | dictsort %}
             history_{{ history_id }}: None,
+{% endfor %}
+{% for field in static_fields %}
+            {{ field.name }},
 {% endfor %}
 {% if not no_std %}
             session_id: None,
@@ -446,6 +530,14 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
 {% endif %}
         }
     }
+{% for field in static_published %}
+
+    /// W3C SCXML 5.2: what the published `{{ field.id }}` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn {{ field.name }}(&self) -> {% if field.view %}&{{ field.view }}{% else %}{{ field.ty }}{% endif %} {
+        {% if field.view %}&{% endif %}self.{{ field.name }}
+    }
+{% endfor %}
 
 {% include 'utility_methods.rs.jinja2' %}
 {% include 'scriptengine_helpers.rs.jinja2' %}

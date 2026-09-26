@@ -10,6 +10,10 @@ dependencies {
     implementation(project(":sce-kotlin-rhino"))
     implementation(project(":sce-kotlin-lua"))
     implementation(project(":sce-kotlin-quickjs"))
+    // A `datamodel="sce-static"` machine checks its integer operations with
+    // the forge runtime's `SceChecked`, and receives a failure as its
+    // `AlgorithmFailure` (SCE Accepted Subset §2.15, SCE_FORGE.md §3.4.1).
+    implementation(project(":sce-forge-runtime-kotlin"))
     implementation(libs.kotlinx.coroutines.core)
 
     testImplementation(kotlin("test"))

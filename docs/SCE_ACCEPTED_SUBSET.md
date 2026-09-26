@@ -2480,6 +2480,21 @@ own range with the expression layer's codes (`expression/unknown-identifier`,
 `expression/type-mismatch`, …). The ECMAScript frontend is never asked to
 lower a `sce-static` document's expressions.
 
+**Integer operations.** A machine receives the failures of what it runs
+(SCE_FORGE.md §3.4.1): every integer operation is checked at its own width —
+the operands' type, not the comparison or the variable it feeds — and so is a
+call of an imported algorithm that declares `may-fail`, which is therefore
+admitted here. A failure never wraps and never panics; it is
+`error.execution` (W3C SCXML 5.10) on the internal queue, when the document
+declares that event, and in its place: an `<assign>`, `<log>`,
+`<sce:append>` or host action whose expression fails does nothing; a
+transition's or `<if>`/`<elseif>`'s `cond` that fails is false (W3C SCXML
+5.9). A variable's initial value is computed before the machine runs, with no
+session to raise in, so one that could fail is refused where it is written.
+`level + 3` on a `uint8` at 253 therefore leaves `level` at 253 on every
+backend — `sce-build/tests/fixtures/static_datamodel/static_overflow.scxml`
+holds each backend to it.
+
 Under `null` or `ecmascript` an `sce:type` on `<data>` is not refused and
 not a field type: with `sce:direction` and `sce:initial` it is the
 statechart's typed input and output declaration that the authoring tool
@@ -2599,6 +2614,23 @@ publishes without copying it. The generated machine carries no script
 engine. An enum-typed variable is refused for Kotlin until a statechart
 imports its enum into the generated unit.
 
+Rust lowers it through the same walk (`StaticTarget`, one per backend: what
+differs is a spelling, never a meaning). Each variable is a field of the
+generated `<Machine>Policy`, `snake_case`, initialised in `new()` in
+declaration order; a published one has an accessor of its name, by value, or
+as `&str` / `&[u8]` / `&[T]` for a string, bytes or list, so a host cannot
+grow a list past the bound the machine keeps. Each expression lands in the
+slots every backend's templates read before their own spellings — a
+transition's guard in `native_guard`, an `<if>`'s condition in
+`native_cond`, a whole statement in `native_code`. A condition that reads the
+payload is the typed guard's own shape, `matches!(&self.pending_payload,
+<Machine>Payload::<Event>(ev) if …)`, and content that reads it binds `ev`
+once or does not run, as Kotlin's does. A record is a plain `Copy` struct,
+`<Machine><Alias>Record`, updated in place; a list is a `Vec<T>` whose append
+lowers to `if picked.len() < N { picked.push(…); } else { <error.execution> }`.
+A failing integer operation is received in a closure that is a `Result`, so
+the statement returns out of it before it writes.
+
 **Snapshot.** A Kotlin `sce-static` machine publishes what a host observes
 as one immutable value, `snapshot: StateFlow<Snapshot>`: the full active
 configuration (every active state, each `<parallel>` region included), the
@@ -2616,6 +2648,15 @@ through the runtime hook `onMacrostepComplete`, and never between two
 microsteps. A macrostep stopped at the microstep ceiling still publishes,
 with `truncated` set, because the machine moves on and a host that stopped
 hearing would hold a stale view.
+
+A Rust machine offers the same value on demand, `engine.snapshot()` through
+the generated `<Machine>Observe` trait: an owned `<Machine>Snapshot` of the
+configuration (`get_active_states()`), the published variables as
+`<Machine>Data`, and `truncated` (`Engine::last_macrostep_truncated`). Rust
+needs no hook for it: a host drives the machine with `step()` / `tick()`, and
+it can borrow the engine only between two of them — a macrostep boundary —
+so no snapshot is ever taken between two microsteps. A host holding one keeps
+what it saw, since it owns its copy.
 
 **Host actions.** Under `sce-static` a `<sce:action>` argument (§2.11) is
 any typed expression over the same scope, not only a bare

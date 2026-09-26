@@ -1606,7 +1606,7 @@ fn reject_mesh_rpc_in_unsupported_lang(
 /// Forge-language expressions to Lua or QuickJS — a document evaluated in a
 /// language it never declared, which is what the `datamodel` attribute
 /// exists to prevent.
-const STATIC_DATAMODEL_BACKENDS: &[Language] = &[Language::Kotlin];
+const STATIC_DATAMODEL_BACKENDS: &[Language] = &[Language::Kotlin, Language::Rust];
 
 fn reject_static_datamodel_in_unsupported_lang(
     model: &SCXMLModel,
@@ -2557,15 +2557,39 @@ fn render_rust(
     } else {
         (String::new(), String::new())
     };
+    // SCE Accepted Subset §2.15: a `sce-static` document's every expression
+    // lowered to Rust — its variables as the policy's fields — before the
+    // payload channel is built, since the events whose payload a lowered
+    // expression reads are ones that channel must carry.
+    let static_lowering =
+        crate::forge::static_lowering::lower_rust(&mut model_lowered, &machine_name, &[])?;
+    let payload_events: std::collections::BTreeSet<String> = native
+        .payload_events
+        .iter()
+        .chain(static_lowering.payload_events.iter())
+        .cloned()
+        .collect();
     let payload = crate::forge::generator::build_rust_event_payload(
         model,
         &machine_name,
-        &native.payload_events,
+        &payload_events,
         &policy_generics_decl,
         &policy_generics_use,
         options.no_std,
     );
-    crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
+    // Under `sce-static` the static lowering wrote every guard; the typed
+    // guards lowered here would be a second writer of the same slot.
+    if model.datamodel != crate::model::Datamodel::SceStatic {
+        crate::forge::generator::apply_native_guard_writes(
+            &mut model_lowered,
+            &payload.guard_writes,
+        );
+    }
+    let static_published: Vec<&crate::forge::static_lowering::StaticField> = static_lowering
+        .fields
+        .iter()
+        .filter(|f| f.published)
+        .collect();
     // SCE Accepted Subset §2.12: a typed host-run invoke's records, its
     // host's interface and the adapter onto the generic invoker registry,
     // plus what the start site holds each request field to. Both empty for
@@ -2640,6 +2664,11 @@ fn render_rust(
         native_actions_interface => &native.interface_name,
         policy_generics_decl => &policy_generics_decl,
         policy_generics_use => &policy_generics_use,
+        static_datamodel => model.datamodel == crate::model::Datamodel::SceStatic,
+        static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
+        static_published => minijinja::Value::from_serialize(&static_published),
+        static_record_defs => static_lowering.record_defs.join("\n\n"),
+        static_imports => &static_lowering.imports,
     };
     tmpl.render(ctx).map_err(render_error)
 }

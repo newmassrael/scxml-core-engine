@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  An integer operation that overflows under datamodel="sce-static" (SCE
+  Accepted Subset §2.15): the statement it stands in is skipped and
+  error.execution says so, and a condition it stands in is false and says so
+  too (W3C SCXML 5.9; SCE_FORGE.md §3.4.1, the machine's failure channel).
+  Neither wraps: every backend keeps `level` where it was.
+
+  `up` steps `level` (a uint8 from 250) by 3: 253, then 256, which it cannot
+  hold. `probe` is guarded by `level + 10 > 0`, which overflows at 253.
+  `refusals` counts the error.execution events the document answers.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="waiting" datamodel="sce-static" name="static_overflow">
+  <datamodel>
+    <data id="level" sce:type="uint8" expr="250" sce:direction="out"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="waiting">
+    <transition event="up" type="internal">
+      <assign location="level" expr="level + 3"/>
+    </transition>
+    <transition event="probe" cond="level + 10 &gt; 0" target="probed"/>
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+  <final id="probed"/>
+</scxml>

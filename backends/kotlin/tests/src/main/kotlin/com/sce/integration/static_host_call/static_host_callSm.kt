@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9682ba42436be01ddeb48458c1e76a0d9251bd3f706e09da9977af19a7844382
+// source-hash: 8b60b0c1cc0dee4b65cbed006e000ec1e1c1bf550f9b966886409e936488dff6
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_host_call.scxml
@@ -210,7 +210,7 @@ class StaticHostCallStateMachine(
             0 -> {
                 // SCE-MAP: static_host_call.scxml:25 :: idle :: _transition_0
 
-            attempts = attempts + 1.toUInt()
+            try { attempts = com.sce.forge.runtime.SceChecked.add(attempts, 1.toUInt()) } catch (_: com.sce.forge.runtime.AlgorithmFailure) {  }
             }
             else -> {}
         }

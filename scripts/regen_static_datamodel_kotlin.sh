@@ -37,7 +37,10 @@ PACKAGE_PREFIX="com.sce.integration"
 #                   whose schema is imported from a sibling document.
 # static_list:      a list variable filled by <sce:append>, emptied by
 #                   <sce:clear>, and held to its capacity.
-MACHINES=(static_counter static_host_call static_record static_list)
+# static_overflow:  an integer operation that overflows — the statement is
+#                   skipped, the condition is false, and error.execution
+#                   says so (SCE_FORGE.md §3.4.1).
+MACHINES=(static_counter static_host_call static_record static_list static_overflow)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT

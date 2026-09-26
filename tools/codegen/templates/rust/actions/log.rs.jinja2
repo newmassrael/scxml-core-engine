@@ -1,8 +1,13 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
-{# W3C SCXML 4.7: <log> - Logging action #}
-{% if action.expr and not model.needs_script_engine %}
+{# W3C SCXML 4.7: <log> - Logging action. A statement lowered to Rust at
+   generate time (`native_code`, a sce-static document's) is emitted as it
+   is. #}
+{% if action.native_code %}
+// W3C SCXML 4.7: <log>
+{{ action.native_code }}
+{% elif action.expr and not model.needs_script_engine %}
 // W3C SCXML 4.7: <log>
 ::sce_rust_runtime::sce_log_info!("{% if action.label %}{}: {% endif %}{}"{% if action.label %}, "{{ action.label }}"{% endif %}, {{ action.expr | to_rust_string_expr }});
 {% elif action.expr and model.needs_script_engine %}

@@ -423,8 +423,9 @@ fn spellings_of(
         &[Verbatim, Snake, Pascal],
         &[Verbatim, Snake, Pascal],
     ];
-    // Only Kotlin lowers an `sce-static` statechart; the rest refuse it.
-    const STATIC_DATA: Spellings = [&[], &[], &[Camel], &[], &[], &[]];
+    // Rust and Kotlin lower an `sce-static` statechart (a Rust field and its
+    // accessor snake_case, a Kotlin property camelCase); the rest refuse it.
+    const STATIC_DATA: Spellings = [&[Snake], &[], &[Camel], &[], &[], &[]];
     const IMPORT_AS: Spellings = [&[Verbatim], &[], &[Verbatim], &[Pascal], &[Verbatim], &[]];
     const CONTEXT_ID: Spellings = [&[], &[Verbatim], &[Camel], &[], &[], &[]];
     const CODEC_FIELD: Spellings = [

@@ -73,6 +73,7 @@ pub mod parallel_self_transition_keeps_its_leaf;
 pub mod send_namelist_over_http;
 pub mod send_param_payload;
 pub mod session_ids_are_distinct;
+pub mod static_datamodel;
 pub mod targetless_transition_completes_macrostep;
 pub mod the_run_ends_by_exiting_every_state;
 pub mod typed_reader_names;

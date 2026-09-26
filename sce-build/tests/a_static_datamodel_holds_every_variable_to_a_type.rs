@@ -243,7 +243,7 @@ fn every_backend_that_does_not_lower_the_model_refuses_to_generate_it() {
         "sce-static",
         r#"<data id="count" sce:type="uint32" expr="0"/>"#,
     );
-    for lang in ["rust", "cpp", "c11", "go", "python"] {
+    for lang in ["cpp", "c11", "go", "python"] {
         let (ok, out) = run(&["check", "-l", lang], &document);
         assert!(
             !ok,
@@ -259,26 +259,29 @@ fn every_backend_that_does_not_lower_the_model_refuses_to_generate_it() {
 }
 
 #[test]
-fn kotlin_lowers_the_model_with_no_script_engine() {
-    // Kotlin holds the variables as fields and lowers every expression
+fn kotlin_and_rust_lower_the_model_with_no_script_engine() {
+    // Each holds the variables as fields and lowers every expression
     // natively, so the machine it generates carries no engine — the manifest
-    // says so, and the Kotlin integration suite (StaticDatamodelTest.kt)
-    // compiles and drives the committed machine.
-    let (ok, out) = run(
-        &["check", "-l", "kotlin"],
-        &machine(
-            r#"<state id="s">
+    // says so, and each integration suite (StaticDatamodelTest.kt,
+    // backends/rust/tests/tests/static_datamodel.rs) compiles and drives the
+    // committed machines.
+    for lang in ["kotlin", "rust"] {
+        let (ok, out) = run(
+            &["check", "-l", lang],
+            &machine(
+                r#"<state id="s">
     <transition event="tick" cond="count &lt; 10 &amp;&amp; In('s')" type="internal">
       <assign location="count" expr="count + 1"/>
     </transition>
   </state>"#,
-        ),
-    );
-    assert!(ok, "Kotlin lowers sce-static:\n{out}");
-    assert!(
-        out.contains("\"needs_script_engine\":false"),
-        "a sce-static machine needs no script engine:\n{out}"
-    );
+            ),
+        );
+        assert!(ok, "--lang {lang} lowers sce-static:\n{out}");
+        assert!(
+            out.contains("\"needs_script_engine\":false"),
+            "--lang {lang}: a sce-static machine needs no script engine:\n{out}"
+        );
+    }
 }
 
 // ── Every expression judged against the typed scope ─────────────────────
@@ -1024,33 +1027,40 @@ fn a_list_returning_algorithm_is_refused_where_it_is_called() {
     );
 }
 
-/// A statechart receives no failure (SCE_FORGE.md §3.4.1): a `may-fail`
-/// algorithm is refused where the machine calls it, not lowered as if it
-/// returned a value.
+/// A `sce-static` machine receives the failures of what it runs (SCE
+/// Accepted Subset §2.15, SCE_FORGE.md §3.4.1): a `may-fail` algorithm is
+/// called, and its failure becomes `error.execution` in place of the
+/// statement — on every backend that lowers the model.
+///
+/// ⚠ This test used to hold the opposite, that such a call is refused: the
+/// machine had no failure channel, so the call could only be lowered as if
+/// it returned a value. E12 D5 gave it one.
 #[test]
-fn a_may_fail_algorithm_is_refused_where_a_statechart_calls_it() {
+fn a_may_fail_algorithm_is_received_where_a_static_machine_calls_it() {
     let may_fail_clamp = ALGORITHM_CLAMP.replace(
         r#"<sce:return type="uint32"/>"#,
         r#"<sce:return type="uint32" may-fail="true"/>"#,
     );
-    let (ok, out) = run_beside(
-        &["check"],
-        &calling_doc(
-            "sce-static",
-            r#"<state id="s"><transition event="tick" type="internal"><assign location="count" expr="Clamp(count, 5)"/></transition></state>"#,
-        )
-        .replace(
-            r#"  <sce:import kind="algorithm" src="algorithm_upto.scxml" as="Upto"/>
+    let document = calling_doc(
+        "sce-static",
+        r#"<state id="s"><transition event="tick" type="internal"><assign location="count" expr="Clamp(count, 5)"/></transition></state>"#,
+    )
+    .replace(
+        r#"  <sce:import kind="algorithm" src="algorithm_upto.scxml" as="Upto"/>
 "#,
-            "",
-        ),
-        &[("algorithm_clamp.scxml", may_fail_clamp.as_str())],
+        "",
     );
-    assert!(!ok, "a statechart cannot receive Clamp's failure:\n{out}");
-    assert!(
-        out.contains("declares may-fail") && out.contains("cannot be received"),
-        "the refusal says why:\n{out}"
-    );
+    for lang in ["kotlin", "rust"] {
+        let (ok, out) = run_beside(
+            &["check", "-l", lang],
+            &document,
+            &[("algorithm_clamp.scxml", may_fail_clamp.as_str())],
+        );
+        assert!(
+            ok,
+            "--lang {lang}: the machine receives Clamp's failure:\n{out}"
+        );
+    }
 }
 
 #[test]

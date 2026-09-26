@@ -266,6 +266,66 @@ fn transpile_at(
     expected: Expected,
     position: Position,
 ) -> Result<String, Refusal> {
+    lower_at(expr, target, ctx, renames, expected, position).map(|lowered| lowered.text)
+}
+
+/// An expression lowered where its failures are received
+/// ([`TypeCtx::receives_failures`]), and whether the code can record one — a
+/// checked integer operation, or a call of a callee that declares
+/// `may-fail`.
+pub struct Receiving {
+    pub text: String,
+    pub can_fail: bool,
+}
+
+/// [`transpile_into`] for a place that receives the failures of what it
+/// runs (SCE_FORGE.md §3.4.1) and must know whether there are any: a
+/// `sce-static` statechart's statement or guard turns one into
+/// `error.execution`, and wraps only the expressions that can fail.
+pub fn transpile_into_receiving(
+    expr: &str,
+    target: ExprTarget,
+    ctx: &TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    expected: InferredType,
+) -> Result<Receiving, Refusal> {
+    lower_at(
+        expr,
+        target,
+        ctx,
+        renames,
+        Expected::Slot(expected),
+        Position::Operand,
+    )
+    .map(|lowered| Receiving {
+        text: lowered.text,
+        can_fail: lowered.can_fail,
+    })
+}
+
+/// What [`lower_at`] produced: the code, and whether it can fail.
+struct Lowered {
+    text: String,
+    can_fail: bool,
+}
+
+/// Whether `node` or anything under it can record a failure: a checked
+/// integer operation, or a call of a callee that declares `may-fail`.
+fn can_fail(node: &TypedExpr) -> bool {
+    matches!(
+        node.kind,
+        ExprKind::Checked { .. } | ExprKind::Call { fails: true, .. }
+    ) || node.children().into_iter().any(can_fail)
+}
+
+fn lower_at(
+    expr: &str,
+    target: ExprTarget,
+    ctx: &TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    expected: Expected,
+    position: Position,
+) -> Result<Lowered, Refusal> {
     let expr = expr.trim();
     if expr.is_empty() {
         return Err(ExprError::Empty { what: "expression" }.at(None));
@@ -305,7 +365,7 @@ fn transpile_at(
 
     // The Rust and Go emitters refuse at a node; the others refuse nothing of
     // their own, so a refusal they pass on carries no range.
-    Ok(match target {
+    let text = match target {
         ExprTarget::Cpp => emit_cpp(&ast, expected)?,
         ExprTarget::Kotlin => emit_kotlin(&ast, expected)?,
         ExprTarget::Rust if position == Position::Returned && expected == InferredType::Str => {
@@ -315,6 +375,10 @@ fn transpile_at(
         ExprTarget::Go => emit_go(&ast, expected)?,
         ExprTarget::Python => emit_python(&ast, expected)?,
         ExprTarget::C => emit_c(&ast, expected)?,
+    };
+    Ok(Lowered {
+        text,
+        can_fail: can_fail(&ast),
     })
 }
 

@@ -1739,6 +1739,20 @@ impl<P: StatePolicy> Engine<P> {
         self.last_truncated_macrostep_state
     }
 
+    /// Whether the macrostep the last host call drove was stopped at
+    /// [`MAX_MACROSTEP_MICROSTEPS`] rather than reaching a stable
+    /// configuration — the one macrostep's answer, where
+    /// [`truncated_macrosteps`](Self::truncated_macrosteps) counts every one.
+    ///
+    /// Present on every profile: it reads the flag that enforces the bound,
+    /// not the report `no_macrostep_diagnostics` compiles out. A generated
+    /// `sce-static` machine's snapshot carries it, so a host never mistakes
+    /// the configuration a stopped macrostep left for a stable one (the
+    /// Kotlin snapshot's `truncated`).
+    pub fn last_macrostep_truncated(&self) -> bool {
+        self.macrostep_truncated
+    }
+
     /// Current active (leaf) state.
     pub fn get_current_state(&self) -> P::State {
         self.current_state

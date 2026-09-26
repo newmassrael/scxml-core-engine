@@ -17,6 +17,10 @@ sce-rust-runtime = { path = "../runtime", default-features = false, features = [
 # pass it to `Policy::new(engine)`, so the Lua crate is a hard dependency
 # rather than an optional feature.
 sce-rust-lua = { path = "../lua" }
+# A `datamodel="sce-static"` machine checks its integer operations with the
+# forge runtime's helpers, and the algorithms it calls answer through the
+# same crate's error type (SCE Accepted Subset §2.15, SCE_FORGE.md §3.4.1).
+sce-forge-runtime = { path = "../forge-runtime" }
 linkme = { workspace = true }
 # No `log` entry, deliberately. Nothing hand-written here calls it — the
 # line existed only because generated machines emitted a bare `log::error!`

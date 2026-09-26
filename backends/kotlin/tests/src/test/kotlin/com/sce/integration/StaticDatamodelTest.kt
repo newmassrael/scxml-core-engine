@@ -23,6 +23,9 @@ import com.sce.integration.static_host_call.StaticHostCallState
 import com.sce.integration.static_host_call.StaticHostCallStateMachine
 import com.sce.integration.static_list.StaticListEvent
 import com.sce.integration.static_list.StaticListStateMachine
+import com.sce.integration.static_overflow.StaticOverflowEvent
+import com.sce.integration.static_overflow.StaticOverflowState
+import com.sce.integration.static_overflow.StaticOverflowStateMachine
 import com.sce.integration.static_record.StaticRecordDayRecord
 import com.sce.integration.static_record.StaticRecordEvent
 import com.sce.integration.static_record.StaticRecordStateMachine
@@ -363,6 +366,65 @@ class StaticDatamodelTest {
         try {
             listOf(5, 6, 7, 8).forEach { pick(sm, it) }
             assertEquals(listOf(5.toUByte(), 6.toUByte(), 7.toUByte()), sm.picked)
+            assertEquals(1u, sm.refusals)
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // ── static_overflow: an integer operation that overflows is received ──
+
+    private fun overflowSend(sm: StaticOverflowStateMachine, event: StaticOverflowEvent) {
+        sm.send(event)
+        sm.tick()
+    }
+
+    @Test
+    fun anAssignmentThatOverflowsIsSkippedAndIsAnExecutionError() {
+        // `level + 3` from 253 would be 256, which a uint8 cannot hold: the
+        // assignment does not happen — no wrap to 0 — and error.execution
+        // says so (SCE_FORGE.md §3.4.1, E12 D5).
+        val sm = StaticOverflowStateMachine()
+        sm.initialize()
+        try {
+            overflowSend(sm, StaticOverflowEvent.Up)
+            assertEquals(253.toUByte(), sm.level)
+            assertEquals(0u, sm.refusals)
+            overflowSend(sm, StaticOverflowEvent.Up)
+            assertEquals(253.toUByte(), sm.level, "the overflowing assignment wrote nothing")
+            assertEquals(1u, sm.refusals, "error.execution reached the document once")
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun aConditionThatOverflowsIsFalseAndIsAnExecutionError() {
+        // W3C SCXML 5.9: a condition that cannot be evaluated is false, and
+        // error.execution says why — `level + 10` overflows at 253.
+        val sm = StaticOverflowStateMachine()
+        sm.initialize()
+        try {
+            overflowSend(sm, StaticOverflowEvent.Up)
+            overflowSend(sm, StaticOverflowEvent.Probe)
+            assertEquals(setOf(StaticOverflowState.Waiting), sm.snapshot.value.configuration)
+            assertEquals(1u, sm.refusals)
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun aSumIsCheckedAtItsOperandsWidthNotAtTheComparisons() {
+        // `level + 10` is a uint8 operation, so from 250 the sum is 260 —
+        // past what it can hold — and the guard fails even though 260 > 0
+        // would hold in a wider type: one rule for every place an integer is
+        // computed (SCE_FORGE.md §3.4.1).
+        val sm = StaticOverflowStateMachine()
+        sm.initialize()
+        try {
+            overflowSend(sm, StaticOverflowEvent.Probe)
+            assertEquals(setOf(StaticOverflowState.Waiting), sm.snapshot.value.configuration)
             assertEquals(1u, sm.refusals)
         } finally {
             sm.cleanup()

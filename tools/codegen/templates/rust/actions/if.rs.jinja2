@@ -1,8 +1,13 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
-{# W3C SCXML 5.9.2: <if>/<elseif>/<else> - Conditional execution #}
-{% if action.is_pure_in_predicate %}
+{# W3C SCXML 5.9.2: <if>/<elseif>/<else> - Conditional execution.
+   A condition lowered to Rust at generate time (`native_cond`, a sce-static
+   document's) comes first, as a transition's `native_guard` does. #}
+{% if action.native_cond %}
+// W3C SCXML 5.9: cond="{{ action.cond }}"
+if {{ action.native_cond }} {
+{% elif action.is_pure_in_predicate %}
 // W3C SCXML 5.9.2: In() predicate condition
 if {{ action.cond_cpp | replace('this->', '') | replace('isStateActive', 'self.is_state_active') }} {
 {% elif model.needs_script_engine %}
@@ -18,7 +23,7 @@ if {{ 'true' if action.cond_constant else 'false' }} {
     {% endwith %}
 {% endfor %}
 {% for elseif in action.elseif_branches %}
-} else if {% if elseif.is_pure_in_predicate %}{{ elseif.cond_cpp | replace('this->', '') | replace('isStateActive', 'self.is_state_active') }}{% elif model.needs_script_engine %}self.safe_evaluate_guard("{{ elseif.cond | to_lua_guard | escape_rust }}", engine){% else %}{{ 'true' if elseif.cond_constant else 'false' }}{% endif %} {
+} else if {% if elseif.native_cond %}{{ elseif.native_cond }}{% elif elseif.is_pure_in_predicate %}{{ elseif.cond_cpp | replace('this->', '') | replace('isStateActive', 'self.is_state_active') }}{% elif model.needs_script_engine %}self.safe_evaluate_guard("{{ elseif.cond | to_lua_guard | escape_rust }}", engine){% else %}{{ 'true' if elseif.cond_constant else 'false' }}{% endif %} {
 {% for elseif_action in elseif.actions %}
     {% with action=elseif_action %}
     {% include 'actions/' ~ elseif_action.type ~ '.rs.jinja2' %}

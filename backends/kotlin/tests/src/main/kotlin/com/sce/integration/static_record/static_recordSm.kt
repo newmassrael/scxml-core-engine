@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9682ba42436be01ddeb48458c1e76a0d9251bd3f706e09da9977af19a7844382
+// source-hash: 8b60b0c1cc0dee4b65cbed006e000ec1e1c1bf550f9b966886409e936488dff6
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_record.scxml
@@ -279,7 +279,7 @@ class StaticRecordStateMachine(
             0 -> {
                 // SCE-MAP: static_record.scxml:26 :: showing :: _transition_0
 
-            shown = shown.copy(dayOfMonth = (shown.dayOfMonth.toUInt() + 1.toUInt()).toUByte())
+            try { shown = shown.copy(dayOfMonth = com.sce.forge.runtime.SceChecked.add(shown.dayOfMonth, 1.toUByte())) } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordEvent.Error.Execution, "<assign location='shown.dayOfMonth'>: an integer operation overflowed or failed") }
             }
             1 -> {
                 // SCE-MAP: static_record.scxml:29 :: showing :: _transition_1
@@ -296,7 +296,7 @@ class StaticRecordStateMachine(
             2 -> {
                 // SCE-MAP: static_record.scxml:36 :: showing :: _transition_2
 
-            refusals = refusals + 1.toUInt()
+            try { refusals = com.sce.forge.runtime.SceChecked.add(refusals, 1.toUInt()) } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticRecordEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed") }
             }
             else -> {}
         }

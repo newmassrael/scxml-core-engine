@@ -7,19 +7,27 @@
 // [`crate::forge::static_datamodel`] judges a `sce-static` document; this
 // rewrites the one a backend renders. Every expression goes through the forge
 // expression lowerer against the same scope the judge used
-// ([`crate::forge::type_ctx::StaticScope`]), and lands in a slot the
-// backend's templates already render as native code: a condition in the
-// native-condition fields a `kt:` guard fills, an `<assign>` or `<log>` value
-// in the text the engine-free arm pastes. So a `sce-static` machine needs no
-// template of its own beyond its variables' declarations — which this returns.
+// ([`crate::forge::type_ctx::StaticScope`]), and lands in a generate-time slot
+// every backend's templates read before their own spellings: a transition's
+// guard in `native_guard`, an `<if>`'s condition in `native_cond`, a whole
+// statement in `native_code`. So a `sce-static` machine needs no template of
+// its own beyond its variables' declarations — which this returns.
+//
+// ⚠ ONE walk for every backend. What differs between backends is a spelling —
+// how a variable is named and reached, how a record field is replaced, how a
+// list grows, how an execution error is raised — and each such question is a
+// method of [`StaticTarget`]. What a document means, and what it is refused
+// for, is decided once, here and in the judge, whatever the backend.
 
 use std::collections::{BTreeSet, HashMap};
 
 use crate::filters;
 use crate::forge::error::GenerateError;
-use crate::forge::expr::{transpile_into, transpile_typed, ExprTarget, Refusal};
+use crate::forge::expr::{transpile_into_receiving, ExprTarget, Receiving, Refusal};
+use crate::forge::model::{EventSchemaModel, SceType};
 use crate::forge::type_ctx::{StaticEnum, StaticScope};
 use crate::forge::types::InferredType;
+use crate::generator::Language;
 use crate::model::{Action, SCXMLModel};
 
 /// One variable of a `sce-static` machine as the backend declares it: its
@@ -35,21 +43,25 @@ pub struct StaticField {
     /// carries it. Every other variable is the machine's own, so that renaming
     /// one never changes what a host was written against.
     pub published: bool,
+    /// The type a host reads the field through when it is not handed the
+    /// value itself — a Rust list as a slice of its elements. `None` where
+    /// the field is read as it is.
+    pub view: Option<String>,
 }
 
-/// What lowering a `sce-static` machine for Kotlin produced beyond the
-/// rewritten model.
+/// What lowering a `sce-static` machine produced beyond the rewritten model.
 #[derive(Debug, Clone, Default)]
-pub struct KotlinStaticLowering {
+pub struct StaticLowering {
     /// The machine's fields, in declaration order.
     pub fields: Vec<StaticField>,
-    /// Events whose typed payload a lowered condition reads — the payload
+    /// Events whose typed payload a lowered expression reads — the payload
     /// channel must carry them (see
-    /// [`crate::forge::generator::build_kotlin_event_payload`]).
+    /// [`crate::forge::generator::build_kotlin_event_payload`] and its Rust
+    /// twin).
     pub payload_events: BTreeSet<String>,
-    /// One top-level data class per event-schema a `record:<alias>`
-    /// variable names, declared in the machine's own file the way its event
-    /// payload classes are.
+    /// One type declaration per event-schema a `record:<alias>` variable
+    /// names, declared in the machine's own file the way its event payload
+    /// types are.
     pub record_defs: Vec<String>,
     /// The import line of each algorithm the document calls — the line a
     /// forge kind importing the same algorithm writes, so the machine reaches
@@ -57,17 +69,348 @@ pub struct KotlinStaticLowering {
     pub imports: Vec<String>,
 }
 
-/// Every name a lowered `sce-static` expression spells differently in
-/// Kotlin: each variable to its field, each imported algorithm to the
-/// function its generation emits — the name a forge kind calling the same
-/// algorithm uses. One list for every lowering, so a guard, an assignment
-/// and a host action's argument cannot disagree about a name.
-fn kotlin_names(scope: &StaticScope) -> Vec<(String, String)> {
-    let lang = crate::generator::Language::Kotlin;
+/// How one backend spells what a `sce-static` document says. The walk
+/// ([`lower`]) asks; the answer is the only thing that differs by backend.
+pub trait StaticTarget {
+    /// The backend, for the spellings shared with other kinds (a callee's
+    /// import, a record field's identifier).
+    fn lang(&self) -> Language;
+    /// The expression lowerer's target.
+    fn expr_target(&self) -> ExprTarget;
+    /// The declared name of variable `id`'s field.
+    fn field_name(&self, id: &str) -> String;
+    /// How a statement or a guard reaches the field named `name`.
+    fn field_ref(&self, name: &str) -> String;
+    /// How the machine's active-state test is called (`In(...)`).
+    fn in_function(&self) -> &'static str;
+    /// The type of a scalar variable.
+    fn scalar_type(&self, ty: &SceType) -> String;
+    /// The type a host reads a published scalar of `ty` through, when it is
+    /// not the scalar's own type (see [`StaticField::view`]).
+    fn scalar_view(&self, ty: &SceType) -> Option<String>;
+    /// The type a record variable of `alias` is held in, declared in
+    /// `machine`'s own file.
+    fn record_type(&self, machine: &str, alias: &str) -> String;
+    /// The declaration of [`Self::record_type`], one field per schema field in
+    /// the schema's order.
+    fn record_def(&self, ty: &str, alias: &str, schema: &EventSchemaModel) -> String;
+    /// The identifier of schema field `id` on the record type.
+    fn record_field(&self, id: &str) -> String;
+    /// A record value built whole from `(field identifier, value)` pairs.
+    fn record_value(&self, ty: &str, fields: &[(String, String)]) -> String;
+    /// The type of a list of `elem`.
+    fn list_type(&self, elem: &SceType) -> String;
+    /// The type a host reads a published list of `elem` through, when it is
+    /// not the list's own type (see [`StaticField::view`]).
+    fn list_view(&self, elem: &SceType) -> Option<String>;
+    /// An empty list.
+    fn list_empty(&self) -> String;
+    /// `target = value`.
+    fn assign(&self, target: &str, value: &str) -> String;
+    /// Replace field `field` of the record at `target` with `value`.
+    fn assign_field(&self, target: &str, field: &str, value: &str) -> String;
+    /// Log `value`, prefixed with `label` when there is one (W3C SCXML 4.7).
+    fn log(&self, label: &str, value: &str) -> String;
+    /// Append `value` to the list at `target` while it holds fewer than
+    /// `capacity` elements; otherwise run `overflow`, if any.
+    fn append(&self, target: &str, capacity: u32, value: &str, overflow: Option<&str>) -> String;
+    /// Empty the list at `target`.
+    fn clear(&self, target: &str) -> String;
+    /// Raise `error.execution` with `message` (W3C SCXML 5.10).
+    fn raise_execution_error(&self, machine: &str, message: &str) -> String;
+    /// `statement`, whose expressions can fail (SCE_FORGE.md §3.4.1), run
+    /// where its failure is received: a failure stops it before it writes
+    /// anything, and `failed` runs instead (E12 D5).
+    fn receiving_statement(&self, statement: &str, failed: &str) -> String;
+    /// A condition that can fail: its value, or `false` once `failed` has run
+    /// (W3C SCXML 5.9: a condition that cannot be evaluated is false, and
+    /// `error.execution` says why).
+    fn receiving_condition(&self, value: &str, failed: &str) -> String;
+    /// What `_event.data` is read through inside a guard or statement of an
+    /// `event` carrying a typed payload.
+    fn payload_accessor(&self, event: &str) -> String;
+    /// `lowered`, a guard reading the payload, held to the delivery having
+    /// carried one.
+    fn payload_guard(&self, machine: &str, event: &str, lowered: &str) -> String;
+}
+
+/// Kotlin: a variable is a property of the machine class, a record an
+/// immutable data class replaced field by field, a list an immutable `List`.
+pub struct KotlinTarget;
+
+impl StaticTarget for KotlinTarget {
+    fn lang(&self) -> Language {
+        Language::Kotlin
+    }
+    fn expr_target(&self) -> ExprTarget {
+        ExprTarget::Kotlin
+    }
+    fn field_name(&self, id: &str) -> String {
+        filters::to_camel_case(id.to_string())
+    }
+    fn field_ref(&self, name: &str) -> String {
+        name.to_string()
+    }
+    fn in_function(&self) -> &'static str {
+        "isStateActive"
+    }
+    fn scalar_type(&self, ty: &SceType) -> String {
+        crate::forge::generator::kotlin_type(ty).to_string()
+    }
+    fn scalar_view(&self, _ty: &SceType) -> Option<String> {
+        None
+    }
+    fn record_type(&self, machine: &str, alias: &str) -> String {
+        format!(
+            "{machine}{}Record",
+            filters::to_pascal_case(alias.to_string())
+        )
+    }
+    fn record_def(&self, ty: &str, alias: &str, schema: &EventSchemaModel) -> String {
+        let params: Vec<String> = schema
+            .fields
+            .iter()
+            .map(|field| {
+                format!(
+                    "val {}: {}",
+                    self.record_field(&field.id),
+                    crate::forge::generator::kotlin_type(&field.sce_type)
+                )
+            })
+            .collect();
+        format!(
+            "/** SCE Accepted Subset §2.15: a `record:{alias}` datamodel value. */\ndata class {ty}({})",
+            params.join(", ")
+        )
+    }
+    fn record_field(&self, id: &str) -> String {
+        crate::forge::generator::event_schema_field_ident(id, Language::Kotlin)
+    }
+    fn record_value(&self, ty: &str, fields: &[(String, String)]) -> String {
+        let args: Vec<String> = fields.iter().map(|(f, v)| format!("{f} = {v}")).collect();
+        format!("{ty}({})", args.join(", "))
+    }
+    fn list_type(&self, elem: &SceType) -> String {
+        format!("List<{}>", crate::forge::generator::kotlin_type(elem))
+    }
+    // An immutable `List` is handed out as it is.
+    fn list_view(&self, _elem: &SceType) -> Option<String> {
+        None
+    }
+    fn list_empty(&self) -> String {
+        "emptyList()".to_string()
+    }
+    fn assign(&self, target: &str, value: &str) -> String {
+        format!("{target} = {value}")
+    }
+    // A record's field is a `val` of an immutable data class, so the
+    // assignment builds the next value with that field replaced — the
+    // lowering an algorithm's record local takes (E9).
+    fn assign_field(&self, target: &str, field: &str, value: &str) -> String {
+        format!("{target} = {target}.copy({field} = {value})")
+    }
+    fn log(&self, label: &str, value: &str) -> String {
+        let label = if label.is_empty() {
+            String::new()
+        } else {
+            format!("\"{}: \" + ", filters::escape_kotlin(label.to_string()))
+        };
+        format!("println({label}{value})")
+    }
+    // The list is immutable, so an append builds the next list — a snapshot
+    // holding the old one keeps what it saw.
+    fn append(&self, target: &str, capacity: u32, value: &str, overflow: Option<&str>) -> String {
+        let otherwise = overflow.map_or(String::new(), |o| format!(" else {{ {o} }}"));
+        format!("if ({target}.size < {capacity}) {{ {target} = {target} + ({value}) }}{otherwise}")
+    }
+    fn clear(&self, target: &str) -> String {
+        format!("{target} = emptyList()")
+    }
+    fn raise_execution_error(&self, machine: &str, message: &str) -> String {
+        format!(
+            "raisePlatformError({machine}Event.Error.Execution, \"{}\")",
+            filters::escape_kotlin(message.to_string())
+        )
+    }
+    // The runtime's checked helpers throw `AlgorithmFailure` before the
+    // statement writes anything; it is caught where the statement stands, as
+    // an algorithm's boundary catches it.
+    fn receiving_statement(&self, statement: &str, failed: &str) -> String {
+        format!(
+            "try {{ {statement} }} catch (_: com.sce.forge.runtime.AlgorithmFailure) {{ {failed} }}"
+        )
+    }
+    fn receiving_condition(&self, value: &str, failed: &str) -> String {
+        let failed = if failed.is_empty() {
+            String::new()
+        } else {
+            format!("{failed}; ")
+        };
+        format!(
+            "(try {{ {value} }} catch (_: com.sce.forge.runtime.AlgorithmFailure) {{ {failed}false }})"
+        )
+    }
+    fn payload_accessor(&self, event: &str) -> String {
+        format!("{}!!", kotlin_payload_field(event))
+    }
+    fn payload_guard(&self, _machine: &str, event: &str, lowered: &str) -> String {
+        format!("{} != null && ({lowered})", kotlin_payload_field(event))
+    }
+}
+
+/// Rust: a variable is a field of the machine's policy struct, a record a
+/// plain `Copy` struct updated in place, a list a `Vec` bounded by its
+/// declared capacity.
+pub struct RustTarget;
+
+impl StaticTarget for RustTarget {
+    fn lang(&self) -> Language {
+        Language::Rust
+    }
+    fn expr_target(&self) -> ExprTarget {
+        ExprTarget::Rust
+    }
+    fn field_name(&self, id: &str) -> String {
+        filters::to_snake_case(id.to_string())
+    }
+    fn field_ref(&self, name: &str) -> String {
+        format!("self.{name}")
+    }
+    fn in_function(&self) -> &'static str {
+        "self.is_state_active"
+    }
+    fn scalar_type(&self, ty: &SceType) -> String {
+        crate::forge::generator::rust_type(ty).to_string()
+    }
+    // An owned string or byte buffer is lent, not moved out of the machine.
+    fn scalar_view(&self, ty: &SceType) -> Option<String> {
+        match ty {
+            SceType::String => Some("str".to_string()),
+            SceType::Bytes => Some("[u8]".to_string()),
+            _ => None,
+        }
+    }
+    fn record_type(&self, machine: &str, alias: &str) -> String {
+        format!(
+            "{machine}{}Record",
+            filters::to_pascal_case(alias.to_string())
+        )
+    }
+    // Plain data by the record rule, so `Copy` — the derive set a plain
+    // event-schema payload takes from the one policy that decides it.
+    fn record_def(&self, ty: &str, alias: &str, schema: &EventSchemaModel) -> String {
+        let fields: String = schema
+            .fields
+            .iter()
+            .map(|field| {
+                format!(
+                    "    pub {}: {},\n",
+                    self.record_field(&field.id),
+                    crate::forge::generator::rust_type(&field.sce_type)
+                )
+            })
+            .collect();
+        format!(
+            "/// SCE Accepted Subset §2.15: a `record:{alias}` datamodel value.\n{}\n#[allow(non_snake_case)]\npub struct {ty} {{\n{fields}}}",
+            crate::rust_derive_policy::RustDeriveCategory::EventSchemaPlainPayload.derives_attr()
+        )
+    }
+    // The schema's id as written, as this file's payload structs spell their
+    // fields — one file, one spelling of a schema field.
+    fn record_field(&self, id: &str) -> String {
+        id.to_string()
+    }
+    fn record_value(&self, ty: &str, fields: &[(String, String)]) -> String {
+        let args: Vec<String> = fields.iter().map(|(f, v)| format!("{f}: {v}")).collect();
+        format!("{ty} {{ {} }}", args.join(", "))
+    }
+    fn list_type(&self, elem: &SceType) -> String {
+        format!("Vec<{}>", crate::forge::generator::rust_type(elem))
+    }
+    // A host reads the elements, never the machine's own `Vec`, so it cannot
+    // grow the list past the bound the machine keeps.
+    fn list_view(&self, elem: &SceType) -> Option<String> {
+        Some(format!("[{}]", crate::forge::generator::rust_type(elem)))
+    }
+    fn list_empty(&self) -> String {
+        "Vec::new()".to_string()
+    }
+    fn assign(&self, target: &str, value: &str) -> String {
+        format!("{target} = {value};")
+    }
+    fn assign_field(&self, target: &str, field: &str, value: &str) -> String {
+        format!("{target}.{field} = {value};")
+    }
+    // Debug formatting, as the script-engine arm of the same template logs a
+    // value: a record has no `Display`, and one spelling serves every type.
+    fn log(&self, label: &str, value: &str) -> String {
+        if label.is_empty() {
+            format!("::sce_rust_runtime::sce_log_info!(\"{{:?}}\", {value});")
+        } else {
+            format!(
+                "::sce_rust_runtime::sce_log_info!(\"{{}}: {{:?}}\", \"{}\", {value});",
+                filters::escape_rust(label.to_string())
+            )
+        }
+    }
+    fn append(&self, target: &str, capacity: u32, value: &str, overflow: Option<&str>) -> String {
+        let otherwise = overflow.map_or(String::new(), |o| format!(" else {{ {o} }}"));
+        format!("if {target}.len() < {capacity} {{ {target}.push({value}); }}{otherwise}")
+    }
+    fn clear(&self, target: &str) -> String {
+        format!("{target}.clear();")
+    }
+    fn raise_execution_error(&self, machine: &str, message: &str) -> String {
+        format!(
+            "engine.raise(sce_rust_runtime::EventWithMetadata::platform_error({machine}Event::{}, \"{}\"));",
+            filters::to_event_variant("error.execution".to_string()),
+            filters::escape_rust(message.to_string())
+        )
+    }
+    // The checked helpers answer through `?`, which needs a `Result` to
+    // return into: the statement runs in a closure that is one, so a failure
+    // returns out of it before the statement writes anything.
+    fn receiving_statement(&self, statement: &str, failed: &str) -> String {
+        let run = format!(
+            "(|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {{ {statement} Ok(()) }})()"
+        );
+        // With nothing to raise, the statement is skipped and that is all.
+        if failed.is_empty() {
+            format!("let _ = {run};")
+        } else {
+            format!("if {run}.is_err() {{ {failed} }}")
+        }
+    }
+    fn receiving_condition(&self, value: &str, failed: &str) -> String {
+        format!(
+            "match (|| -> Result<bool, sce_forge_runtime::algorithm::AlgorithmError> {{ Ok({value}) }})() {{ Ok(sce_value) => sce_value, Err(_) => {{ {failed} false }} }}"
+        )
+    }
+    fn payload_accessor(&self, _event: &str) -> String {
+        "ev".to_string()
+    }
+    // The shape the typed-payload guard already takes on this backend
+    // (`forge::generator::build_rust_event_payload`), binding the same `ev`.
+    fn payload_guard(&self, machine: &str, event: &str, lowered: &str) -> String {
+        format!(
+            "matches!(&self.pending_payload, {machine}Payload::{}(ev) if {lowered})",
+            filters::to_event_variant(event.to_string())
+        )
+    }
+}
+
+/// Every name a lowered `sce-static` expression spells differently on
+/// `target`: each variable to the way the backend reaches its field, each
+/// imported algorithm to the function its generation emits — the name a
+/// forge kind calling the same algorithm uses. One list for every lowering, so
+/// a guard, an assignment and a host action's argument cannot disagree about
+/// a name.
+fn names(scope: &StaticScope, target: &dyn StaticTarget) -> Vec<(String, String)> {
+    let lang = target.lang();
     scope
         .variables
         .iter()
-        .map(|v| (v.id.clone(), filters::to_camel_case(v.id.clone())))
+        .map(|v| (v.id.clone(), target.field_ref(&target.field_name(&v.id))))
         .chain(scope.callees.iter().map(|c| {
             let identity = crate::forge::generator::forge_import_identity(
                 &c.document_name,
@@ -84,73 +427,54 @@ fn kotlin_names(scope: &StaticScope) -> Vec<(String, String)> {
         .collect()
 }
 
-/// The Kotlin class a `record:<alias>` variable of `machine` is held in:
-/// declared in the machine's own file, one per alias.
-fn record_class(machine: &str, alias: &str) -> String {
-    format!(
-        "{machine}{}Record",
-        filters::to_pascal_case(alias.to_string())
-    )
-}
-
-/// The data class [`record_class`] names: one `val` per schema field, in the
-/// schema's order, typed as the payload classes type them. An enum field is
-/// refused, as an enum variable is.
-fn record_def(
-    class: &str,
-    alias: &str,
-    schema: &crate::forge::model::EventSchemaModel,
-) -> Result<String, GenerateError> {
-    let mut params = Vec::with_capacity(schema.fields.len());
-    for field in &schema.fields {
-        if matches!(field.sce_type, crate::forge::model::SceType::Enum(_)) {
-            return Err(GenerateError::unsupported(format!(
-                "record:{alias} has the enum-typed field `{}`, which has no Kotlin \
-                 lowering in a statechart yet",
-                field.id
-            )));
-        }
-        params.push(format!(
-            "val {}: {}",
-            crate::forge::generator::event_schema_field_ident(
-                &field.id,
-                crate::generator::Language::Kotlin
-            ),
-            crate::forge::generator::kotlin_type(&field.sce_type)
-        ));
-    }
-    Ok(format!(
-        "/** SCE Accepted Subset §2.15: a `record:{alias}` datamodel value. */\ndata class {class}({})",
-        params.join(", ")
-    ))
-}
-
 /// Rewrite `model` — a clone the Kotlin backend renders — so every
-/// expression of a `sce-static` document is native Kotlin. A document under
-/// any other data model is left as it is.
-///
-/// An enum-typed variable is refused: its Kotlin type is the enum
-/// document's, which a statechart does not yet import into its generated
-/// unit.
+/// expression of a `sce-static` document is native Kotlin.
 pub fn lower_kotlin(
     model: &mut SCXMLModel,
     machine: &str,
     enums: &[StaticEnum],
-) -> Result<KotlinStaticLowering, GenerateError> {
+) -> Result<StaticLowering, GenerateError> {
+    lower(model, machine, enums, &KotlinTarget)
+}
+
+/// Rewrite `model` — a clone the Rust backend renders — so every expression
+/// of a `sce-static` document is native Rust.
+pub fn lower_rust(
+    model: &mut SCXMLModel,
+    machine: &str,
+    enums: &[StaticEnum],
+) -> Result<StaticLowering, GenerateError> {
+    lower(model, machine, enums, &RustTarget)
+}
+
+/// Rewrite `model` — a clone one backend renders — so every expression of a
+/// `sce-static` document is that backend's own code. A document under any
+/// other data model is left as it is.
+///
+/// An enum-typed variable, or a record whose schema has an enum field, is
+/// refused: its type is the enum document's, which a statechart does not yet
+/// import into its generated unit.
+pub fn lower(
+    model: &mut SCXMLModel,
+    machine: &str,
+    enums: &[StaticEnum],
+    target: &dyn StaticTarget,
+) -> Result<StaticLowering, GenerateError> {
     let Some(scope) = StaticScope::of(model) else {
-        return Ok(KotlinStaticLowering::default());
+        return Ok(StaticLowering::default());
     };
+    let lang = target.lang();
     let variables = &scope.variables;
     let schemas = model.imported_event_schemas.clone();
     let records = model.imported_records.clone();
-    let names = kotlin_names(&scope);
+    let names = names(&scope, target);
     let imports: Vec<String> = scope
         .callees
         .iter()
         .map(|c| {
             crate::forge::generator::forge_import_identity(
                 &c.document_name,
-                &crate::generator::Language::Kotlin,
+                &lang,
                 false,
                 &crate::ForgeCompileOptions::default(),
             )
@@ -183,25 +507,34 @@ pub fn lower_kotlin(
         lists: list_vars,
         machine,
         raises_error: model.events.contains("error.execution"),
+        target,
     };
 
     let refused = |what: &str, text: &str, refusal: Refusal| {
         GenerateError::unsupported(format!(
-            "{what} `{text}` has no Kotlin lowering: {}",
+            "{what} `{text}` has no {lang:?} lowering: {}",
             refusal.error
         ))
     };
 
-    // Every record variable's fields, in every scope below.
+    // Every record variable's fields, in every scope below. An initial value
+    // reads the variables declared before it by their field names, which is
+    // how each backend holds them while the machine is being built.
     let no_payload = scope.paths(None);
     let mut fields = Vec::new();
     let mut record_defs = Vec::new();
-    let mut declared_classes = BTreeSet::new();
+    let mut declared_types = BTreeSet::new();
     {
         let ctx = scope.ctx(&no_payload, enums);
-        let renames = renames(&names, None);
+        let init_names: Vec<(String, String)> = variables
+            .iter()
+            .map(|v| (v.id.clone(), target.field_name(&v.id)))
+            .chain(names.iter().skip(variables.len()).cloned())
+            .collect();
+        let renames = renames(&init_names, None, target);
         for var in variables {
             let published = var.direction == Some(crate::forge::model::Direction::Out);
+            let name = target.field_name(&var.id);
             // A record variable is built whole from its `<sce:set>`s, in
             // the schema's order — the rule the judge already held it to.
             if let Some(alias) = var.value_type.as_ref().and_then(|t| t.record_alias()) {
@@ -212,11 +545,22 @@ pub fn lower_kotlin(
                         var.id
                     ))
                 })?;
-                let class = record_class(machine, alias);
-                if declared_classes.insert(class.clone()) {
-                    record_defs.push(record_def(&class, alias, schema)?);
+                if let Some(field) = schema
+                    .fields
+                    .iter()
+                    .find(|f| matches!(f.sce_type, SceType::Enum(_)))
+                {
+                    return Err(GenerateError::unsupported(format!(
+                        "record:{alias} has the enum-typed field `{}`, which has no {lang:?} \
+                         lowering in a statechart yet",
+                        field.id
+                    )));
                 }
-                let mut args = Vec::with_capacity(schema.fields.len());
+                let ty = target.record_type(machine, alias);
+                if declared_types.insert(ty.clone()) {
+                    record_defs.push(target.record_def(&ty, alias, schema));
+                }
+                let mut values = Vec::with_capacity(schema.fields.len());
                 for field in &schema.fields {
                     let init = var
                         .record_fields
@@ -228,33 +572,27 @@ pub fn lower_kotlin(
                                 var.id, field.id
                             ))
                         })?;
-                    let value = transpile_into(
+                    let value = initial_value(
                         &init.expr,
-                        ExprTarget::Kotlin,
+                        target,
                         &ctx,
                         &renames,
                         InferredType::from_sce_type(&field.sce_type),
                     )
                     .map_err(|r| refused("the field value", &init.expr, r))?;
-                    args.push(format!(
-                        "{} = {value}",
-                        crate::forge::generator::event_schema_field_ident(
-                            &field.id,
-                            crate::generator::Language::Kotlin
-                        )
-                    ));
+                    values.push((target.record_field(&field.id), value));
                 }
                 fields.push(StaticField {
                     id: var.id.clone(),
-                    name: filters::to_camel_case(var.id.clone()),
-                    init: format!("{class}({})", args.join(", ")),
-                    ty: class,
+                    name,
+                    init: target.record_value(&ty, &values),
+                    ty,
                     published,
+                    view: None,
                 });
                 continue;
             }
-            // A list starts empty. It is immutable, so a snapshot holding it
-            // keeps what it saw however the machine appends afterwards.
+            // A list starts empty.
             if let Some(elem) = var
                 .value_type
                 .as_ref()
@@ -263,10 +601,11 @@ pub fn lower_kotlin(
             {
                 fields.push(StaticField {
                     id: var.id.clone(),
-                    name: filters::to_camel_case(var.id.clone()),
-                    ty: format!("List<{}>", crate::forge::generator::kotlin_type(elem)),
-                    init: "emptyList()".to_string(),
+                    name,
+                    ty: target.list_type(elem),
+                    init: target.list_empty(),
                     published,
+                    view: target.list_view(elem),
                 });
                 continue;
             }
@@ -280,23 +619,24 @@ pub fn lower_kotlin(
                     var.id
                 )));
             };
-            if matches!(ty, crate::forge::model::SceType::Enum(_)) {
+            if matches!(ty, SceType::Enum(_)) {
                 return Err(GenerateError::unsupported(format!(
-                    "<data id=\"{}\" sce:type=\"{}\">: an enum-typed variable has no Kotlin \
+                    "<data id=\"{}\" sce:type=\"{}\">: an enum-typed variable has no {lang:?} \
                      lowering in a statechart yet",
                     var.id,
                     ty.as_attr()
                 )));
             }
             let slot = InferredType::from_sce_type(ty);
-            let init = transpile_into(&var.expr, ExprTarget::Kotlin, &ctx, &renames, slot)
+            let init = initial_value(&var.expr, target, &ctx, &renames, slot)
                 .map_err(|r| refused("the initial value", &var.expr, r))?;
             fields.push(StaticField {
                 id: var.id.clone(),
-                name: filters::to_camel_case(var.id.clone()),
-                ty: crate::forge::generator::kotlin_type(ty).to_string(),
+                name,
+                ty: target.scalar_type(ty),
                 init,
                 published,
+                view: target.scalar_view(ty),
             });
         }
     }
@@ -304,7 +644,7 @@ pub fn lower_kotlin(
     let mut payload_events = BTreeSet::new();
     for state in model.states.values_mut() {
         let plain_ctx = scope.ctx(&no_payload, enums);
-        let plain_renames = renames(&names, None);
+        let plain_renames = renames(&names, None, target);
         for block in state
             .on_entry_blocks
             .iter_mut()
@@ -328,9 +668,8 @@ pub fn lower_kotlin(
             let schema = schemas.get(&transition.event);
             let paths = scope.paths(schema);
             let ctx = scope.ctx(&paths, enums);
-            let field = payload_field(&transition.event);
-            let accessor = format!("{field}!!");
-            let renames = renames(&names, schema.map(|_| accessor.as_str()));
+            let accessor = target.payload_accessor(&transition.event);
+            let renames = renames(&names, schema.map(|_| accessor.as_str()), target);
             // A pure `In()` predicate is lowered like any other condition, so
             // a guard and an `<if>` of one document spell it alike; the guard
             // macros read `native_guard` before their own `In()` arm.
@@ -338,24 +677,37 @@ pub fn lower_kotlin(
                 && !transition.is_cpp_condition
                 && !transition.is_kt_condition
             {
-                let lowered = transpile_into(
+                let cond = transpile_into_receiving(
                     &transition.cond,
-                    ExprTarget::Kotlin,
+                    target.expr_target(),
                     &ctx,
                     &renames,
                     InferredType::Bool,
                 )
                 .map_err(|r| refused("the condition", &transition.cond, r))?;
+                // W3C SCXML 5.9: a condition that fails is false, and
+                // `error.execution` says why (E12 D5).
+                let lowered = if cond.can_fail {
+                    target.receiving_condition(
+                        &cond.text,
+                        &execution_failure(
+                            &rewrites,
+                            &format!("<transition cond='{}'>", transition.cond),
+                        ),
+                    )
+                } else {
+                    cond.text
+                };
                 // A condition that reads the payload holds only while the
                 // dequeued event carried one — the guard every typed
-                // payload read in this backend takes. It lands in the one
+                // payload read on the backend takes. It lands in the one
                 // slot every backend's guard macro reads for a guard lowered
                 // at generate time; `cond_kt` stays the author's `kt:` text.
                 transition.native_guard = if schema.is_some()
                     && crate::forge::expr::references_event_data_lexically(&transition.cond)
                 {
                     payload_events.insert(transition.event.clone());
-                    format!("{field} != null && ({lowered})")
+                    target.payload_guard(machine, &transition.event, &lowered)
                 } else {
                     lowered
                 };
@@ -374,9 +726,9 @@ pub fn lower_kotlin(
     }
     for script in &mut model.global_scripts {
         let ctx = scope.ctx(&no_payload, enums);
-        lower_action(script, &ctx, &renames(&names, None), &rewrites)?;
+        lower_action(script, &ctx, &renames(&names, None, target), &rewrites)?;
     }
-    Ok(KotlinStaticLowering {
+    Ok(StaticLowering {
         fields,
         payload_events,
         record_defs,
@@ -384,77 +736,141 @@ pub fn lower_kotlin(
     })
 }
 
+/// A variable's initial value. It is computed while the machine is being
+/// built, before there is a running session to raise `error.execution` in,
+/// so one that could fail (E12 D5) has nowhere to put the failure and is
+/// refused where it is written instead.
+fn initial_value(
+    expr: &str,
+    target: &dyn StaticTarget,
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    slot: InferredType,
+) -> Result<String, Refusal> {
+    let value = transpile_into_receiving(expr, target.expr_target(), ctx, renames, slot)?;
+    if value.can_fail {
+        return Err(crate::forge::error::ExprError::UnsupportedConstruct {
+            construct: "an initial value that can overflow or fail (a machine that is not yet \
+                        running has no error.execution to raise; give a value that fits)"
+                .to_string(),
+            observed: Some(expr.trim().to_string()),
+        }
+        .at(None));
+    }
+    Ok(value.text)
+}
+
 /// A `sce-static` document's record variables, each with the schema its
 /// alias names.
-type RecordVars = std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>;
+type RecordVars = std::collections::BTreeMap<String, EventSchemaModel>;
 
 /// A `sce-static` document's list variables, each with its element type and
 /// its declared capacity.
-type ListVars = std::collections::BTreeMap<String, (crate::forge::model::SceType, u32)>;
+type ListVars = std::collections::BTreeMap<String, (SceType, u32)>;
 
 /// What rewriting an action needs beyond its expressions: the record and
 /// list variables a write to one is rewritten against, the machine name the
-/// generated event type is spelled from, and whether the document declares
+/// generated event type is spelled from, whether the document declares
 /// `error.execution` — without it there is no variant to raise, and nothing
-/// could match one.
+/// could match one — and the backend spelling it all.
 struct Rewrites<'m> {
     records: RecordVars,
     lists: ListVars,
     machine: &'m str,
     raises_error: bool,
+    target: &'m dyn StaticTarget,
 }
 
-/// A `<sce:action>` argument of a `sce-static` document, lowered for Kotlin.
+/// The target that spells `lang`, when it lowers `sce-static` at all.
+pub(crate) fn target_for(lang: Language) -> Option<&'static dyn StaticTarget> {
+    match lang {
+        Language::Kotlin => Some(&KotlinTarget),
+        Language::Rust => Some(&RustTarget),
+        Language::Cpp | Language::C11 | Language::Go | Language::Python => None,
+    }
+}
+
+/// A `<sce:action>` argument of a `sce-static` document, lowered for one
+/// backend.
 #[derive(Debug, Clone)]
-pub(crate) struct KotlinArgument {
-    /// The argument as Kotlin, reading the machine's fields and, when
-    /// [`Self::reads_payload`], the bound payload.
+pub(crate) struct StaticArgument {
+    /// The argument as the backend's code, reading the machine's fields and,
+    /// when [`Self::reads_payload`], the bound payload.
     pub text: String,
     /// The type the host method declares for it
     /// ([`crate::forge::native_action::static_argument_type`]).
-    pub ty: crate::forge::model::SceType,
+    pub ty: SceType,
     /// Whether it reads the triggering event's typed payload, so the call
     /// must sit under the payload channel's guard.
     pub reads_payload: bool,
+    /// Whether computing it can fail (SCE_FORGE.md §3.4.1), so the call must
+    /// sit where the failure is received (E12 D5).
+    pub can_fail: bool,
 }
 
-/// Lower one `<sce:action>` argument of a `sce-static` document for Kotlin:
+/// Lower one `<sce:action>` argument of a `sce-static` document for `lang`:
 /// judged against the scope validation judged it against — the document's
 /// `scope`, and the event's payload when the action sits on a transition
 /// whose event carries one — and spelled with the renames every other
 /// lowered expression takes. `None` for an argument validation refused,
-/// which never reaches here.
-pub(crate) fn lower_kotlin_argument(
+/// which never reaches here, and for a backend that does not lower the model.
+pub(crate) fn lower_static_argument(
     scope: &StaticScope,
-    event: Option<(&str, &crate::forge::model::EventSchemaModel)>,
+    event: Option<(&str, &EventSchemaModel)>,
     arg: &crate::model::Param,
-) -> Option<KotlinArgument> {
+    lang: Language,
+) -> Option<StaticArgument> {
+    let target = target_for(lang)?;
     let paths = scope.paths(event.map(|(_, schema)| schema));
     let ctx = scope.ctx(&paths, &[]);
-    let names = kotlin_names(scope);
-    let accessor = event.map(|(event, _)| format!("{}!!", payload_field(event)));
-    let renames = renames(&names, accessor.as_deref());
+    let names = names(scope, target);
+    let accessor = event.map(|(event, _)| target.payload_accessor(event));
+    let renames = renames(&names, accessor.as_deref(), target);
     let ty = crate::forge::native_action::static_argument_type(&ctx, arg).ok()?;
-    let text = transpile_into(
+    let lowered = transpile_into_receiving(
         &arg.expr,
-        ExprTarget::Kotlin,
+        target.expr_target(),
         &ctx,
         &renames,
         InferredType::from_sce_type(&ty),
     )
     .ok()?;
-    Some(KotlinArgument {
-        text,
+    Some(StaticArgument {
+        text: lowered.text,
         ty,
         reads_payload: event.is_some()
             && crate::forge::expr::references_event_data_lexically(&arg.expr),
+        can_fail: lowered.can_fail,
     })
+}
+
+/// `statement` — a host call whose arguments can fail — run where the failure
+/// is received, with `error.execution` naming `construct` in its place when
+/// the document declares that event (E12 D5). `None` for a backend that does
+/// not lower the model.
+pub(crate) fn receive_static_statement(
+    lang: Language,
+    statement: &str,
+    machine: &str,
+    raises_error: bool,
+    construct: &str,
+) -> Option<String> {
+    let target = target_for(lang)?;
+    let failed = if raises_error {
+        target.raise_execution_error(
+            machine,
+            &format!("{construct}: an integer operation overflowed or failed"),
+        )
+    } else {
+        String::new()
+    };
+    Some(target.receiving_statement(statement, &failed))
 }
 
 /// The nullable field the Kotlin payload channel binds `event`'s typed
 /// payload to — the spelling [`crate::forge::generator::build_kotlin_event_payload`]
 /// declares.
-fn payload_field(event: &str) -> String {
+fn kotlin_payload_field(event: &str) -> String {
     format!(
         "pending{}Payload",
         filters::to_event_variant(event.to_string())
@@ -467,16 +883,33 @@ fn payload_field(event: &str) -> String {
 fn renames<'a>(
     names: &'a [(String, String)],
     payload: Option<&'a str>,
+    target: &dyn StaticTarget,
 ) -> HashMap<&'a str, &'a str> {
     let mut map: HashMap<&str, &str> = names
         .iter()
         .map(|(id, name)| (id.as_str(), name.as_str()))
         .collect();
-    map.insert("In", "isStateActive");
+    map.insert("In", target.in_function());
     if let Some(accessor) = payload {
         map.insert("_event.data", accessor);
     }
     map
+}
+
+/// What runs in place of a statement or condition whose expression failed
+/// (E12 D5): `error.execution` naming `construct` — when the document
+/// declares that event. Without it there is nothing to raise and nothing
+/// could match one, so the statement is skipped silently, as an append past
+/// a list's bound is.
+fn execution_failure(rewrites: &Rewrites<'_>, construct: &str) -> String {
+    if rewrites.raises_error {
+        rewrites.target.raise_execution_error(
+            rewrites.machine,
+            &format!("{construct}: an integer operation overflowed or failed"),
+        )
+    } else {
+        String::new()
+    }
 }
 
 /// Lower every action of `actions` in place. `true` when any expression
@@ -502,10 +935,22 @@ fn lower_action(
     renames: &HashMap<&str, &str>,
     rewrites: &Rewrites<'_>,
 ) -> Result<bool, GenerateError> {
+    let target = rewrites.target;
+    let lang = target.lang();
     let lower = |text: &str, slot: InferredType| {
-        transpile_into(text, ExprTarget::Kotlin, ctx, renames, slot).map_err(|r| {
-            GenerateError::unsupported(format!("`{text}` has no Kotlin lowering: {}", r.error))
+        transpile_into_receiving(text, target.expr_target(), ctx, renames, slot).map_err(|r| {
+            GenerateError::unsupported(format!("`{text}` has no {lang:?} lowering: {}", r.error))
         })
+    };
+    let failed = |construct: String| execution_failure(rewrites, &construct);
+    // `write(value)`, received where it stands when `value` can fail.
+    let statement = |value: &Receiving, write: &dyn Fn(&str) -> String, construct: String| {
+        let written = write(&value.text);
+        if value.can_fail {
+            target.receiving_statement(&written, &failed(construct))
+        } else {
+            written
+        }
     };
     let reads = crate::forge::expr::references_event_data_lexically;
     let mut reads_payload = false;
@@ -518,92 +963,78 @@ fn lower_action(
             let slot = crate::forge::expr::infer_expr_type(&action.location, ctx)
                 .unwrap_or(InferredType::Unknown);
             let value = lower(&action.expr, slot)?;
-            // A record's field is a `val` of an immutable data class, so the
-            // assignment builds the next value with that field replaced —
-            // the lowering an algorithm's record local takes (E9).
             let location = action.location.trim();
+            let construct = format!("<assign location='{location}'>");
             action.native_code = match location
                 .split_once('.')
                 .filter(|(var, _)| rewrites.records.contains_key(*var))
             {
                 Some((var, field)) => {
                     let name = renames.get(var).copied().unwrap_or(var);
-                    format!(
-                        "{name} = {name}.copy({} = {value})",
-                        crate::forge::generator::event_schema_field_ident(
-                            field,
-                            crate::generator::Language::Kotlin
-                        )
-                    )
+                    let field = target.record_field(field.trim());
+                    statement(&value, &|v| target.assign_field(name, &field, v), construct)
                 }
                 None => {
                     let name = renames.get(location).copied().unwrap_or(location);
-                    format!("{name} = {value}")
+                    statement(&value, &|v| target.assign(name, v), construct)
                 }
             };
         }
         "if" if !action.is_cpp_condition && !action.is_kt_condition => {
             reads_payload = reads(&action.cond);
-            action.native_cond = lower(&action.cond, InferredType::Bool)?;
+            let cond = lower(&action.cond, InferredType::Bool)?;
+            action.native_cond = if cond.can_fail {
+                target.receiving_condition(
+                    &cond.text,
+                    &failed(format!("<if cond='{}'>", action.cond)),
+                )
+            } else {
+                cond.text
+            };
             action.cond_constant = None;
         }
         "log" if !action.expr.trim().is_empty() => {
             reads_payload = reads(&action.expr);
-            let value = transpile_typed(
-                &action.expr,
-                ExprTarget::Kotlin,
-                ctx,
-                renames,
-                InferredType::Unknown,
-            )
-            .map_err(|r| {
-                GenerateError::unsupported(format!(
-                    "`{}` has no Kotlin lowering: {}",
-                    action.expr, r.error
-                ))
-            })?;
-            let label = if action.label.is_empty() {
-                String::new()
-            } else {
-                format!("\"{}: \" + ", filters::escape_kotlin(action.label.clone()))
-            };
-            action.native_code = format!("println({label}{value})");
+            // Nothing is declared where a logged value lands, so any value
+            // stands there.
+            let value = lower(&action.expr, InferredType::Unknown)?;
+            let label = action.label.clone();
+            action.native_code = statement(&value, &|v| target.log(&label, v), "<log>".to_string());
         }
-        // A list is an immutable `List<T>` field, so an append builds the
-        // next list, and does so only while the list is under its bound — on
+        // An append happens only while the list is under its bound — on
         // every backend, so a machine holds the same list wherever it runs.
         // Past the bound nothing is appended and `error.execution` says so —
         // the processor's own signal for an error in executing the document,
-        // raised the way every other execution error of this backend is.
+        // raised the way every other execution error of the backend is.
         "sce_append" => {
             reads_payload = reads(&action.expr);
-            let target = action.location.trim();
-            let (elem, capacity) = rewrites.lists.get(target).ok_or_else(|| {
+            let list = action.location.trim();
+            let (elem, capacity) = rewrites.lists.get(list).ok_or_else(|| {
                 GenerateError::unsupported(format!(
-                    "<sce:append target=\"{target}\"> names no list variable"
+                    "<sce:append target=\"{list}\"> names no list variable"
                 ))
             })?;
             let value = lower(&action.expr, InferredType::from_sce_type(elem))?;
-            let name = renames.get(target).copied().unwrap_or(target);
-            let otherwise = if rewrites.raises_error {
-                format!(
-                    " else {{ raisePlatformError({}Event.Error.Execution, \
-                     \"<sce:append target='{}'>: the list already holds its capacity of \
-                     {capacity}\") }}",
+            let name = renames.get(list).copied().unwrap_or(list);
+            let overflow = rewrites.raises_error.then(|| {
+                target.raise_execution_error(
                     rewrites.machine,
-                    filters::escape_kotlin(target.to_string()),
+                    &format!(
+                        "<sce:append target='{list}'>: the list already holds its capacity of \
+                         {capacity}"
+                    ),
                 )
-            } else {
-                String::new()
-            };
-            action.native_code = format!(
-                "if ({name}.size < {capacity}) {{ {name} = {name} + ({value}) }}{otherwise}"
+            });
+            action.native_code = statement(
+                &value,
+                &|v| target.append(name, *capacity, v, overflow.as_deref()),
+                format!("<sce:append target='{list}'>"),
             );
         }
         "sce_clear" => {
-            let target = action.location.trim();
-            let name = renames.get(target).copied().unwrap_or(target);
-            action.native_code = format!("{name} = emptyList()");
+            let list = action.location.trim();
+            let name = renames.get(list).copied().unwrap_or(list);
+            action.native_code = target.clear(name);
         }
         _ => {}
     }
@@ -619,25 +1050,36 @@ fn lower_nested(
     renames: &HashMap<&str, &str>,
     rewrites: &Rewrites<'_>,
 ) -> Result<bool, GenerateError> {
+    let target = rewrites.target;
     let mut reads_payload = false;
     for branch in action.branch_conditions_mut() {
         if branch.is_cpp_condition || branch.is_kt_condition || branch.cond.trim().is_empty() {
             continue;
         }
         reads_payload |= crate::forge::expr::references_event_data_lexically(&branch.cond);
-        branch.native_cond = transpile_into(
+        let cond = transpile_into_receiving(
             &branch.cond,
-            ExprTarget::Kotlin,
+            target.expr_target(),
             ctx,
             renames,
             InferredType::Bool,
         )
         .map_err(|r| {
             GenerateError::unsupported(format!(
-                "`{}` has no Kotlin lowering: {}",
-                branch.cond, r.error
+                "`{}` has no {:?} lowering: {}",
+                branch.cond,
+                target.lang(),
+                r.error
             ))
         })?;
+        branch.native_cond = if cond.can_fail {
+            target.receiving_condition(
+                &cond.text,
+                &execution_failure(rewrites, &format!("<elseif cond='{}'>", branch.cond)),
+            )
+        } else {
+            cond.text
+        };
         branch.cond_constant = None;
     }
     for block in action.nested_blocks_mut() {

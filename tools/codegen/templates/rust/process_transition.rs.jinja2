@@ -32,11 +32,12 @@
 {%- import '_macros/rust_entry_target.jinja2' as et %}
 
 {# The guard a transition is taken under, in the one form this machine can
-   evaluate it: a pure In() predicate, a natively lowered typed-payload
-   comparison, the script engine, or a value decided at build time. #}
+   evaluate it: a guard lowered to Rust at generate time (a typed-payload
+   comparison, a sce-static condition), a pure In() predicate, the script
+   engine, or a value decided at build time. #}
 {% macro guard_expr(trans) -%}
-{%- if trans.is_pure_in_predicate -%}{{ trans.cond_cpp | replace('this->', '') | replace('isStateActive', 'self.is_state_active') }}
-{%- elif trans.native_guard -%}{{ trans.native_guard }}
+{%- if trans.native_guard -%}{{ trans.native_guard }}
+{%- elif trans.is_pure_in_predicate -%}{{ trans.cond_cpp | replace('this->', '') | replace('isStateActive', 'self.is_state_active') }}
 {%- elif model.needs_script_engine -%}self.safe_evaluate_guard("{{ trans.cond | to_lua_guard | escape_rust }}", engine)
 {%- else -%}{{ 'true' if trans.cond_constant else 'false' }}
 {%- endif -%}
@@ -178,6 +179,18 @@
                         {{ sce_map.source_marker(trans.source_location, "rust", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
 {% endif %}
                         // W3C SCXML 3.13: Transition {{ trans.transition_index }} actions
+{#  SCE Accepted Subset §2.15: content that reads the event's typed payload
+    cannot run for a delivery that did not carry one, so it binds the payload
+    once, before any of it runs, or does not run — raising nothing: the engine
+    already said `error.execution` where it failed to read the delivery, and
+    one unreadable delivery is one error (the Kotlin arm's rule). The binding
+    is owned, so the statements after it may write the machine's fields. #}
+{% if trans.content_reads_payload %}
+                        let ev = match &self.pending_payload {
+                            {{ machine_name }}Payload::{{ trans.event | to_event_variant }}(ev) => ev.clone(),
+                            _ => return,
+                        };
+{% endif %}
 {% for action in trans.actions %}
 {%- if action.req or action.unresolved %}
 {{ annot.annotation_block(action, "rust", "                        ") -}}
