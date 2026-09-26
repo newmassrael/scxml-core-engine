@@ -55,6 +55,7 @@ pub mod sourcemap;
 pub mod static_datamodel;
 pub mod static_imports;
 pub mod static_lowering;
+pub mod stdlib;
 pub mod symbol_mangling;
 pub mod target_plugin;
 pub mod transform_dep_check;

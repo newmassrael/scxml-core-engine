@@ -35,8 +35,27 @@ pub struct ImportSource {
 impl ImportSource {
     /// Read the document `import` names, resolved against `base_dir` —
     /// the importing document's directory.
+    ///
+    /// An `sce:std/...` document — or a relative import made by one — is
+    /// read from the standard library this generator embeds, never from
+    /// disk ([`crate::forge::stdlib`]).
     pub fn read(base_dir: &Path, import: &ForgeImport) -> Result<Self, ImportError> {
-        let path = base_dir.join(&import.src);
+        let path = crate::forge::stdlib::resolve(base_dir, &import.src);
+        if crate::forge::stdlib::names_standard(&path) {
+            return match crate::forge::stdlib::lookup(&path) {
+                Some(content) => Ok(Self {
+                    path,
+                    content: content.to_string(),
+                }),
+                None => Err(ImportError::FileNotFound {
+                    src: import.src.clone(),
+                    searched: format!(
+                        "{} (the SCE standard library built into this sce-codegen)",
+                        path.display()
+                    ),
+                }),
+            };
+        }
         if !path.exists() {
             return Err(ImportError::FileNotFound {
                 src: import.src.clone(),

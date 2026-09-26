@@ -1579,6 +1579,14 @@ subject to **Kind Reference Resolution** above.
 
 **Circular composition**: Prohibited at the static reference level. Build-time analysis detects cycles and reports an error. Note: event-based communication is not a cycle — observer emits events that a statechart receives via its event queue. This is asynchronous decoupling, not a reference cycle.
 
+**The standard library**: an `<sce:import src>` that begins `sce:std/` names a document of SCE's standard algorithm library — general-purpose algorithms written once, under the repository's `stdlib/`, so every consumer imports the same implementation rather than writing its own per language:
+
+```xml
+<sce:import kind="algorithm" src="sce:std/calendar/days_from_civil.scxml" as="civil"/>
+```
+
+The library is embedded in `sce-codegen` and is never looked up on disk: a search path would let two machines resolve one name to two documents. Which version of a standard document a machine was generated against is therefore decided by the generator that generated it, and the `stdlib/` tree is part of that generator's source witness (`sce-codegen verify-generator`). A build that generates the importing document lists the standard document in its input set by the same name, the way it lists a sibling file. A relative `src` inside a standard document resolves inside the library. A name the library does not hold is refused as a missing import, naming the library as where it looked. A standard document's name keeps its meaning once published; a changed meaning is a new name.
+
 ### 5.5 Generated Code (Composition)
 
 The codegen produces inline helpers from inline kinds and references standalone kinds. The statechart orchestrates both.

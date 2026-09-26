@@ -23,7 +23,11 @@ pub const WITNESS_FILES: &[&str] = &["Cargo.lock", "sce-build/Cargo.toml", "sce-
 /// file contributes regardless of extension, so a data file added next to
 /// the Rust sources cannot enter the binary through `include_str!` without
 /// entering the witness too.
-pub const WITNESS_TREES: &[&str] = &["sce-build/src"];
+///
+/// `stdlib` is here because it IS in the binary: an `sce:std/...` import is
+/// resolved from the copy `build.rs` embeds, never from disk, so an edited
+/// standard document changes what this generator emits.
+pub const WITNESS_TREES: &[&str] = &["sce-build/src", "stdlib"];
 
 /// Value [`crate::GENERATOR_SOURCE_DIGEST`] carries when the build could
 /// not read the witness set — a vendored crate or a release tarball with

@@ -1,0 +1,153 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+//
+//! SCE's standard algorithm library: a document imports a standard one by
+//! its `sce:std/...` name, and that name resolves to the copy this
+//! generator embeds — on every backend, with nothing copied beside the
+//! importing document.
+
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+
+use sce_build::compile_scxml_with_imports;
+use sce_build::generator::Language;
+use sce_build::ForgeCompileOptions;
+
+const DAYS_FROM_CIVIL: &str = "sce:std/calendar/days_from_civil.scxml";
+
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("sce-build has a parent")
+        .to_path_buf()
+}
+
+fn walk(root: &Path, current: &Path, out: &mut BTreeMap<String, String>) {
+    for entry in std::fs::read_dir(current).expect("read stdlib dir") {
+        let path = entry.expect("dir entry").path();
+        if path.is_dir() {
+            walk(root, &path, out);
+        } else if path.extension().is_some_and(|e| e == "scxml") {
+            let rel = path.strip_prefix(root).expect("under root");
+            out.insert(
+                format!("sce:std/{}", rel.to_string_lossy().replace('\\', "/")),
+                std::fs::read_to_string(&path).expect("read standard document"),
+            );
+        }
+    }
+}
+
+/// The library a generator carries is the `stdlib/` tree it was built
+/// from — every document, and nothing else. A floor, because an empty
+/// library on both sides would agree.
+#[test]
+fn the_embedded_library_is_the_tree_on_disk() {
+    let root = repo_root().join("stdlib");
+    let mut on_disk = BTreeMap::new();
+    walk(&root, &root, &mut on_disk);
+    let embedded: BTreeMap<String, String> = sce_build::forge::stdlib::documents()
+        .map(|(name, content)| (name, content.to_string()))
+        .collect();
+    assert!(
+        on_disk.contains_key(DAYS_FROM_CIVIL),
+        "the library holds days_from_civil"
+    );
+    assert_eq!(embedded, on_disk);
+}
+
+fn options_for(language: Language) -> ForgeCompileOptions {
+    let mut options = ForgeCompileOptions::default();
+    if matches!(language, Language::Go) {
+        options.go_module_prefix = Some("example.com/calendar/generated".to_string());
+    }
+    options
+}
+
+/// A caller in `dir` that imports `src` and calls it.
+fn caller(dir: &Path, src: &str) -> PathBuf {
+    let path = dir.join("epoch_day_of.scxml");
+    std::fs::write(
+        &path,
+        format!(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="epoch_day_of" version="1.0">
+  <sce:import kind="algorithm" src="{src}" as="civil"/>
+  <sce:signature>
+    <sce:param name="year" type="int32"/>
+    <sce:param name="month" type="uint8"/>
+    <sce:param name="day" type="uint8"/>
+    <sce:return type="int64"/>
+  </sce:signature>
+  <sce:body>
+    <sce:return expr="civil(year, month, day)"/>
+  </sce:body>
+</scxml>"#
+        ),
+    )
+    .expect("write caller");
+    path
+}
+
+/// A document imports `days_from_civil` by name, and the build set that
+/// generates it lists the standard document by the same name: nothing is
+/// staged beside the caller, on any backend.
+#[test]
+fn a_document_imports_a_standard_one_by_name_on_every_backend() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let caller = caller(dir.path(), DAYS_FROM_CIVIL);
+    for &language in Language::ALL {
+        let outputs = compile_scxml_with_imports(
+            &[],
+            &[Path::new(DAYS_FROM_CIVIL), caller.as_path()],
+            &sce_build::find_template_dir_for(language),
+            language,
+            &options_for(language),
+            None,
+        )
+        .unwrap_or_else(|e| {
+            panic!(
+                "{}: the build set did not generate: {e}",
+                language.canonical_name()
+            )
+        });
+        let generated: String = outputs
+            .iter()
+            .flat_map(|(_, out)| out.files.iter().map(|(_, text)| text.as_str()))
+            .collect();
+        for name in ["days_from_civil", "epoch_day_of"] {
+            assert!(
+                generated
+                    .to_ascii_lowercase()
+                    .replace('_', "")
+                    .contains(&name.replace('_', "")),
+                "{}: nothing named {name} was generated",
+                language.canonical_name()
+            );
+        }
+    }
+}
+
+/// A standard name the library does not hold is refused as a missing
+/// import, and the refusal says where it looked — so an author reading it
+/// does not go looking for a file on disk.
+#[test]
+fn a_standard_name_the_library_lacks_is_refused_where_it_looked() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let caller = caller(dir.path(), "sce:std/calendar/days_from_civl.scxml");
+    let result = compile_scxml_with_imports(
+        &[],
+        &[caller.as_path()],
+        &sce_build::find_template_dir_for(Language::Rust),
+        Language::Rust,
+        &options_for(Language::Rust),
+        None,
+    );
+    let text = match result {
+        Ok(_) => panic!("an unknown standard document was accepted"),
+        Err(err) => err.to_string(),
+    };
+    assert!(
+        text.contains("days_from_civl") && text.contains("standard library"),
+        "the refusal names the document and the library: {text}"
+    );
+}

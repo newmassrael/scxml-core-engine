@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/calendar/days_from_civil.scxml — the day count since 1970-01-01
+  of a proleptic Gregorian date.
+
+  Howard Hinnant's days_from_civil. Every step is integer arithmetic: the
+  year is shifted so March begins it (February, with the leap day, ends
+  it), split into 400-year eras of 146097 days, and the day of the era is
+  counted from the shifted year and the day of that year.
+
+  Integer division here truncates toward zero (SCE_FORGE.md §3.4.1), so a
+  negative year is brought into its era by subtracting 399 before dividing
+  — the floor the formula needs, written for truncating division.
+
+  The year is an int32 — some four million times the span any calendar
+  asks about — and every input is widened into an int64 local before it is
+  used, so each operation below is provably inside int64 and the function
+  cannot fail (the integer contract, SCE_FORGE.md §3.4.1, would otherwise
+  make every caller handle a failure no date can cause). A month or day out
+  of its range is not refused: the formula extends past it the way it does
+  for Hinnant's original, which is the caller's to validate.
+
+  (1970, 1, 1) = 0 · (2026, 9, 23) = 20719 · (-1, 12, 31) = -719529.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="days_from_civil" version="1.0">
+  <sce:signature>
+    <sce:param name="year" type="int32"/>
+    <sce:param name="month" type="uint8"/>
+    <sce:param name="day" type="uint8"/>
+    <sce:return type="int64"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="yr" type="int64" init="year"/>
+    <sce:var name="mo" type="int64" init="month"/>
+    <sce:var name="dy" type="int64" init="day"/>
+    <sce:var name="y" type="int64" init="mo &lt;= 2 ? yr - 1 : yr"/>
+    <sce:var name="era" type="int64" init="(y &gt;= 0 ? y : y - 399) / 400"/>
+    <sce:var name="yoe" type="int64" init="y - era * 400"/>
+    <sce:var name="mp" type="int64" init="mo &gt; 2 ? mo - 3 : mo + 9"/>
+    <sce:var name="doy" type="int64" init="(153 * mp + 2) / 5 + dy - 1"/>
+    <sce:var name="doe" type="int64" init="yoe * 365 + yoe / 4 - yoe / 100 + doy"/>
+    <sce:return expr="era * 146097 + doe - 719468"/>
+  </sce:body>
+</scxml>

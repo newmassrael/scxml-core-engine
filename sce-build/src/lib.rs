@@ -1524,6 +1524,27 @@ pub fn load_forge_source(
     use forge::error::{ForgeError, Located, XmlError};
 
     let label = path.to_string_lossy().into_owned();
+    // A standard document is read from the library this generator embeds,
+    // so a build set may list `sce:std/...` beside its own files — the way
+    // a consumer generates the standard document its own documents import.
+    if forge::stdlib::names_standard(path) {
+        let content = forge::stdlib::lookup(path).ok_or_else(|| {
+            Located::new(
+                ForgeError::Xml(XmlError::FileNotFound {
+                    path: format!("{label} (the SCE standard library built into this sce-codegen)"),
+                }),
+                label.clone(),
+                None,
+                None,
+            )
+        })?;
+        let (text, map, deps) =
+            parser::expand_preprocessors(content, &label, path.parent(), include_dirs)?;
+        return Ok(LoadedForgeSource {
+            positions: model::AuthoredPositions::new(label, text, map),
+            deps,
+        });
+    }
     let content = std::fs::read_to_string(path).map_err(|e| {
         let error = if e.kind() == std::io::ErrorKind::NotFound {
             XmlError::FileNotFound {
@@ -4158,7 +4179,7 @@ fn with_resolved_import_codec<T>(
     walk: impl FnOnce(ResolvedImportCodec<'_>) -> Option<T>,
 ) -> Option<T> {
     let imp = imports.iter().find(|i| i.alias == alias)?;
-    let imp_path = base_dir.join(&imp.src);
+    let imp_path = forge::stdlib::resolve(base_dir, &imp.src);
     // The joined path, not the canonical one, keys the cycle guard: it is
     // how every import reader resolves a path, and it does not need the
     // file to exist.
@@ -4249,7 +4270,9 @@ fn validate_and_enrich_imports(
     use forge::error::{ImportError, Located};
 
     for (ctx, imp) in import_ctx.iter_mut().zip(imports.iter()) {
-        let src_label = base_dir.join(&imp.src).display().to_string();
+        let src_label = forge::stdlib::resolve(base_dir, &imp.src)
+            .display()
+            .to_string();
 
         // 1. Existence, and one read — the reading every import reader
         //    shares, reported here because this pass is the one that

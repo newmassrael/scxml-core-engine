@@ -69,7 +69,7 @@ pub(crate) fn check_imports_acyclic(
         sources: &mut Vec<PathBuf>,
     ) -> Result<(), Located<crate::forge::error::ForgeError>> {
         for imp in imports {
-            let child_path = base_dir.join(&imp.src);
+            let child_path = crate::forge::stdlib::resolve(base_dir, &imp.src);
             let canonical = child_path
                 .canonicalize()
                 .unwrap_or_else(|_| child_path.clone());
