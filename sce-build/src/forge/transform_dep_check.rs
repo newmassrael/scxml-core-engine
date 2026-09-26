@@ -109,6 +109,68 @@ fn first_cycle(m: &TransformModel) -> Option<Vec<String>> {
     None
 }
 
+/// The order to DEFINE the outputs' functions in: every output after each
+/// output it reads this activation, and otherwise in declaration order.
+/// Returned as indices into `m.outputs`.
+///
+/// ⚠ WHY THE ORDER IS NOT THE DOCUMENT'S. A sibling read is lowered to a
+/// call (see the module doc), and in C and C++ a call must follow a
+/// declaration of what it calls. Emitting the functions in declaration
+/// order made a read of a LATER sibling an undeclared identifier: measured
+/// 2026-09-27, a document whose display output read the maximum-speed
+/// output declared eight lines below it generated with exit 0 and did not
+/// compile. The languages that resolve names at run or link time (Python,
+/// Rust, Go, Kotlin) never showed it, and neither did `verify`, which runs
+/// the Python lowering — so the only witness was the product build.
+///
+/// Ordering the definitions rather than forward-declaring them keeps one
+/// mechanism for every backend, and leaves a document with no sibling reads
+/// byte-identical: its order IS its declaration order.
+///
+/// Sound only on an acyclic graph, which `check` has already required; a
+/// cycle here would be a caller that skipped it, so the walk stops at a node
+/// it is inside rather than recursing forever.
+pub fn definition_order(m: &TransformModel) -> Vec<usize> {
+    let ids: Vec<String> = m.outputs.iter().map(|o| o.id.clone()).collect();
+    let index: HashMap<&str, usize> = ids
+        .iter()
+        .enumerate()
+        .map(|(i, id)| (id.as_str(), i))
+        .collect();
+    let deps: Vec<Vec<usize>> = m
+        .outputs
+        .iter()
+        .map(|out| {
+            reads_now(out.expr.as_deref().unwrap_or(""), &ids)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|id| *id != out.id)
+                .filter_map(|id| index.get(id).copied())
+                .collect()
+        })
+        .collect();
+
+    fn place(i: usize, deps: &[Vec<usize>], state: &mut [u8], order: &mut Vec<usize>) {
+        // 0 unvisited, 1 on the current path, 2 placed.
+        if state[i] != 0 {
+            return;
+        }
+        state[i] = 1;
+        for &d in &deps[i] {
+            place(d, deps, state, order);
+        }
+        state[i] = 2;
+        order.push(i);
+    }
+
+    let mut state = vec![0u8; m.outputs.len()];
+    let mut order = Vec::with_capacity(m.outputs.len());
+    for i in 0..m.outputs.len() {
+        place(i, &deps, &mut state, &mut order);
+    }
+    order
+}
+
 /// Depth-first search carrying its own stack so the cycle it finds can
 /// be reported as the author's own path rather than as a bare "there is
 /// a cycle somewhere".

@@ -64,6 +64,18 @@ const CHAIN: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "#;
 
+/// `display` reads `ceiling`, which is declared AFTER it.
+const BACKWARD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="transform" name="backward">
+  <datamodel>
+    <data id="raw" sce:type="int32" sce:direction="in"/>
+    <data id="display" sce:type="bool" sce:direction="out" expr="raw &gt;= ceiling"/>
+    <data id="ceiling" sce:type="int32" sce:direction="out" expr="raw &gt; 100 ? 80 : 60"/>
+  </datamodel>
+</scxml>
+"#;
+
 /// `a` and `b` read each other.
 const MUTUAL: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
@@ -137,6 +149,56 @@ fn a_sibling_read_becomes_a_call_in_every_language() {
         assert!(
             body.contains(callee),
             "{lang}: the sibling read did not lower to a call ({callee}):\n{body}"
+        );
+    }
+}
+
+/// ⚠ A read of a LATER sibling compiles in the languages that need a
+/// declaration before a call. Measured 2026-09-27: the functions were
+/// emitted in declaration order, so a document whose display output read an
+/// output declared below it generated with exit 0 and failed to compile in
+/// C++ ("was not declared in this scope"). `verify` runs the Python lowering,
+/// where names resolve at call time, so the product build was the only thing
+/// that saw it. The text search above cannot see it either — the call is
+/// there, just above its callee — so the witness is a compiler.
+#[test]
+fn a_read_of_a_later_sibling_compiles_where_order_matters() {
+    for (lang, names, std) in [
+        ("cpp", &["g++", "clang++"][..], "-std=c++20"),
+        ("c", &["gcc", "clang"][..], "-std=c11"),
+    ] {
+        let Some(compiler) = sce_build::toolchain::locate_any(names) else {
+            sce_build::toolchain::skipped(&format!("{lang}: no compiler on PATH"));
+            continue;
+        };
+        let t = Tmp::new(&format!("backward_{lang}"));
+        let doc = t.write("backward.scxml", BACKWARD);
+        let (code, stderr) = generate(&doc, &t.0, lang);
+        assert_eq!(code, Some(0), "{lang}: generation failed:\n{stderr}");
+        let headers: Vec<std::path::PathBuf> = std::fs::read_dir(&t.0)
+            .expect("read output dir")
+            .filter_map(Result::ok)
+            .map(|e| e.path())
+            .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("h"))
+            .collect();
+        assert!(!headers.is_empty(), "{lang}: no header was written");
+        let stub = t.write(
+            if lang == "c" { "stub.c" } else { "stub.cpp" },
+            &headers
+                .iter()
+                .map(|h| format!("#include \"{}\"\n", h.display()))
+                .collect::<String>(),
+        );
+        let run = Command::new(&compiler)
+            .args([std, "-fsyntax-only", "-I"])
+            .arg(&t.0)
+            .arg(&stub)
+            .output()
+            .expect("run the compiler");
+        assert!(
+            run.status.success(),
+            "{lang}: a read of a later sibling does not compile:\n{}",
+            String::from_utf8_lossy(&run.stderr)
         );
     }
 }

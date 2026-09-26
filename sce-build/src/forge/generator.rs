@@ -1365,9 +1365,13 @@ fn render_transform(
         })
         .collect();
 
-    let functions: Vec<serde_json::Value> = m
-        .outputs
-        .iter()
+    // Defined callee-first: a sibling read is a call, and C and C++ need
+    // the callee declared above it (`transform_dep_check::definition_order`).
+    // Only the DEFINITIONS move; the outputs record, the holder and `by_id`
+    // keep the document's order, which is the surface a host sees.
+    let functions: Vec<serde_json::Value> = crate::forge::transform_dep_check::definition_order(m)
+        .into_iter()
+        .map(|i| &m.outputs[i])
         .map(|out| {
             let expected = crate::forge::type_ctx::forge_field_type(out);
             // Every sibling but this one. Excluding self is not an
