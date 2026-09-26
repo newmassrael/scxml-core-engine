@@ -9,6 +9,13 @@
     branch body dead code and ran any `<else>` beside it unconditionally —
     a wrong output, not a missing one, and with no diagnostic.
 #}
+{#
+    The whole chain sits in a block of its own, as `<assign>` does: the
+    script-engine arm declares `scriptEngine`, and two `<if>`s in one action
+    list — three transitions of one state each carrying one, say — otherwise
+    declared it twice in the same scope and the machine did not compile.
+#}
+{
 {% if action.is_cpp_condition %}
 // W3C SCXML 4.2: native guard (cpp: prefix) - direct C++ evaluation
 if ({{ action.cond_cpp_transformed }}) SCE_LIKELY {
@@ -46,4 +53,5 @@ if ({{ 'true' if action.cond_constant else 'false' }}) SCE_LIKELY {
     {% endwith %}
     {% endfor %}
 {% endif %}
+}
 }
