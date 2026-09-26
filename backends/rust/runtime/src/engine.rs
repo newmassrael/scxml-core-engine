@@ -270,6 +270,22 @@ struct ScheduledEntry<E, S> {
     ready_at: SchedTimePoint,
 }
 
+impl<E, S> ScheduledEntry<E, S> {
+    /// Whether this entry is a host-run invocation's deadline — the engine's,
+    /// which no `<cancel>` may reach.
+    #[cfg(not(feature = "no_std"))]
+    fn is_host_invoke_deadline(&self) -> bool {
+        matches!(self.act, ScheduledAct::HostInvokeDeadline { .. })
+    }
+
+    /// Never, under `--features=no_std`: that profile has no host-run
+    /// `<invoke>`, so nothing arms a deadline.
+    #[cfg(feature = "no_std")]
+    fn is_host_invoke_deadline(&self) -> bool {
+        false
+    }
+}
+
 impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
     /// Construct an empty scheduler.
     pub fn new() -> Self {
@@ -426,9 +442,8 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
         // A host-run invocation's deadline carries an empty send id and is the
         // engine's, so a `<cancel sendidexpr>` that evaluates to "" must not
         // reach it.
-        self.entries.retain(|e| {
-            matches!(e.act, ScheduledAct::HostInvokeDeadline { .. }) || !e.send_id.matches(send_id)
-        });
+        self.entries
+            .retain(|e| e.is_host_invoke_deadline() || !e.send_id.matches(send_id));
         self.entries.len() < before
     }
 
