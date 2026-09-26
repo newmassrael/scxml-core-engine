@@ -712,6 +712,9 @@ private:
     // §scxml-D-enterStates: the top-level <final> the run ended in; set by
     // MicrostepHost::enterState, cleared when a run starts.
     std::optional<State> terminalState_;
+    // §scxml-D-exitInterpreter has run for this run: the configuration is
+    // empty. Cleared when a run starts.
+    bool interpreterExited_ = false;
     SCE::Core::EventQueueManager<EventWithMetadata>
         internalQueue_;  // §scxml-3.13: Internal event queue (high priority)
     SCE::Core::EventQueueManager<EventWithMetadata> externalQueue_;  // §scxml-3.13: External event queue (low priority)
@@ -1644,19 +1647,40 @@ public:
 
 protected:
     /**
-     * @brief Execute exit actions for a state (§scxml-3.9)
+     * @brief Appendix D's exitInterpreter (§scxml-D-exitInterpreter)
      *
-     * Exit actions are executable content that runs when exiting a state.
-     * This includes <onexit> blocks.
+     * Every state still in the configuration is exited in exitOrder — onexit,
+     * then its invocations cancelled, then out of the configuration, the same
+     * per-state exit a microstep performs — so the configuration ends EMPTY
+     * and the machine stops running. Called once a run has entered a
+     * top-level `<final>` (the only state left by then is that final), and by
+     * `stop()` for a run the host ends early.
      *
-     * Supports both static (stateless) and non-static (stateful) policies.
-     * Static methods can also be called through an instance in C++.
+     * The run's terminal state is kept: it is recorded when the final is
+     * entered, and it is how a host learns where the run ended once the
+     * configuration is empty. The datamodel is kept too, so a host can still
+     * read what the run left behind.
      *
-     * @param state State being exited
+     * Idempotent: a second call finds nothing to exit.
      */
-    void executeOnExit(State state, const std::vector<State> &activeStatesBeforeTransition) {
-        // Call through policy instance with pre-transition active states
-        policy_.executeExitActions(state, *this, activeStatesBeforeTransition);
+    void exitInterpreter() {
+        if (interpreterExited_) {
+            return;
+        }
+        const std::vector<State> configuration = getActiveStates();
+        std::vector<State> statesToExit = configuration;
+        // §scxml-D-exitInterpreter: `configuration.toList().sort(exitOrder)`
+        // — descendants before ancestors, reverse document order otherwise,
+        // which together are exactly reverse document order.
+        std::sort(statesToExit.begin(), statesToExit.end(), [](const State &a, const State &b) {
+            return StatePolicy::getDocumentOrder(a) > StatePolicy::getDocumentOrder(b);
+        });
+        MicrostepHost host{*this};
+        for (const State &s : statesToExit) {
+            host.exitState(s, configuration);
+        }
+        interpreterExited_ = true;
+        isRunning_ = false;
     }
 
     /**
@@ -1718,6 +1742,13 @@ protected:
                 // interpreter. Saying nothing about it is not the clause —
                 // see `unseenExternalEvents()`.
                 recordUnseenExternalEvents();
+                // §scxml-D-exitInterpreter: the loop is over because the run
+                // entered a top-level final, so every state left is exited —
+                // before any completion callback tells a parent (§scxml-6.4:
+                // done.invoke comes after the child's onexit).
+                if (isInFinalState()) {
+                    exitInterpreter();
+                }
                 break;
             }
 
@@ -2112,6 +2143,7 @@ public:
 
         isRunning_ = true;
         terminalState_.reset();
+        interpreterExited_ = false;
 
         // §scxml-5.3: Initialize datamodel before any state entry
         // This ensures error.execution events are raised immediately if initialization fails
@@ -2147,9 +2179,9 @@ public:
         if (isInFinalState() && completionCallback_) {
             SCE_LOG_DEBUG(
                 "AOT initialize: Reached top-level final state during initialization, invoking completion callback");
-            // §scxml-3.9: Execute onexit actions for final state before notifying parent
-            std::vector<State> activeStates = getActiveStates();
-            executeOnExit(currentState_, activeStates);
+            // The final's onexit has already run: `runMainEventLoop` ran
+            // exitInterpreter when the run ended, on this path as on every
+            // other.
             completionCallback_();
         }
     }
@@ -2231,6 +2263,7 @@ public:
         } else {
             terminalState_.reset();
         }
+        interpreterExited_ = false;
 
         // §scxml-3.4: a machine that keeps its own active set is handed it
         // back. The condition is the one the generator emits `setActiveStates`
@@ -2402,6 +2435,14 @@ public:
             }
         }
 
+        // §scxml-D-exitInterpreter: a run that has ended has no configuration.
+        // (A machine that keeps its own active set emptied it state by state
+        // above; this one derives the set from `currentState_`, which still
+        // names the final, so the answer has to be given here.)
+        if (interpreterExited_) {
+            return {};
+        }
+
         // §scxml-3.11: For non-parallel, use shared HistoryHelper for full active hierarchy (Zero Duplication
         // Principle) Returns [currentState, parent, grandparent, ...] for proper history recording
         return ::SCE::Core::HistoryHelper::getActiveHierarchy(currentState_,
@@ -2494,9 +2535,18 @@ public:
     }
 
     /**
-     * @brief Stop state machine execution
+     * @brief Stop state machine execution (§scxml-D-exitInterpreter)
+     *
+     * A host ending a run early ends it the way the appendix ends one: every
+     * active state's onexit runs and its invocations are cancelled, innermost
+     * first, and the configuration ends empty. The run has no terminal state —
+     * it was stopped, not completed. A machine that already ended, or never
+     * started, has nothing to exit.
      */
     void stop() {
+        if (isRunning_) {
+            exitInterpreter();
+        }
         isRunning_ = false;
     }
 

@@ -14388,6 +14388,31 @@
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::recordUnseenQueuedEvents",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "exitInterpreter",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "interpreterExited_",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "runMainEventLoop",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "getActiveStates",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "stop",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
