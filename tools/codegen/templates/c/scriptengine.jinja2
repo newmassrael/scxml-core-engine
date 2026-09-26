@@ -955,6 +955,51 @@
     lua_pop(sm->L, 1);
 {% endmacro %}
 
+{# SCE Accepted Subset 2.12: one `<param>` of a typed host-run `<invoke>`,
+   evaluated and held to its request field (`field_type`, an
+   `sce_request_field_type_t` initializer) by `sce_request_field_wire`.
+
+   Unlike `lua_eval_to_wire_string`, the value's TYPE is read before it is
+   spelled: a record's field is promised a number, a truth value or a text,
+   and the spelling alone cannot tell `2` from `'2'`. The value is read into a
+   neutral scalar and judged by the runtime header, so the rule is written
+   once for every C11 machine. `out_refusal` is NULL when the value fits, else
+   the sentence the caller raises. #}
+{% macro lua_eval_to_request_field(expr, field_type, out_buf, out_cap, out_refusal) %}
+    {{ out_refusal }} = "could not be evaluated";
+    if (luaL_dostring(sm->L, "return ({{ expr | to_lua_expr | escape_c }})") == 0) {
+        sce_script_scalar_t _scalar;
+        memset(&_scalar, 0, sizeof(_scalar));
+        switch (lua_type(sm->L, -1)) {
+        case LUA_TNIL:
+            _scalar.kind = SCE_SCRIPT_SCALAR_NIL;
+            break;
+        case LUA_TBOOLEAN:
+            _scalar.kind = SCE_SCRIPT_SCALAR_BOOL;
+            _scalar.boolean = lua_toboolean(sm->L, -1) != 0;
+            break;
+        case LUA_TNUMBER:
+            if (lua_isinteger(sm->L, -1)) {
+                _scalar.kind = SCE_SCRIPT_SCALAR_INTEGER;
+                _scalar.integer = (int64_t)lua_tointeger(sm->L, -1);
+            } else {
+                _scalar.kind = SCE_SCRIPT_SCALAR_FLOAT;
+                _scalar.floating = (double)lua_tonumber(sm->L, -1);
+            }
+            break;
+        case LUA_TSTRING:
+            _scalar.kind = SCE_SCRIPT_SCALAR_STRING;
+            _scalar.text = lua_tolstring(sm->L, -1, &_scalar.text_len);
+            break;
+        default:
+            _scalar.kind = SCE_SCRIPT_SCALAR_OTHER;
+            break;
+        }
+        {{ out_refusal }} = sce_request_field_wire(&_scalar, {{ field_type }}, {{ out_buf }}, {{ out_cap }});
+    }
+    lua_pop(sm->L, 1);
+{% endmacro %}
+
 {# W3C SCXML C.2: one namelist item, rendered as the form parameter a
    BasicHTTP POST carries.
 

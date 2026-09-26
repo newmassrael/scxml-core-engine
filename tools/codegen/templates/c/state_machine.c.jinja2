@@ -216,6 +216,12 @@
 {% endif %}
 
 #include <string.h>
+{% if host_invoker_defs or host_invoke_request_checks %}
+/* SCE Accepted Subset 2.12: a typed host-run invoke's start site holds each
+   request value to its field, and its adapter reads the request back. */
+#include <stdlib.h>
+#include <sce/request_field.h>
+{% endif %}
 
 /* SCE Protocol-Synthesis RFC §5.2 — C11 section attribute prefix
    for every statechart function definition emitted below. When
@@ -5805,3 +5811,8 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_deliver_link_{{ link | to_snake
 }
 {% endfor %}
 {% endif %}
+{% if host_invoker_defs %}
+
+/* ── SCE Accepted Subset 2.12: typed host-run invoke interface ── */
+{{ host_invoker_defs }}
+{%- endif %}

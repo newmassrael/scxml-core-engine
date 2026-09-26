@@ -214,7 +214,39 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
             _host_inv_params[_host_inv_param_count].value = _host_inv_nl_value_{{ loop.index0 }};
             _host_inv_param_count++;
 {% endfor %}
+{% if invoke_info.invoke_id in host_invoke_request_checks %}
+{% set request_checks = host_invoke_request_checks[invoke_info.invoke_id] %}
+            /* SCE Accepted Subset 2.12: `sce:request` makes the params a
+               record, so each value is held to its field here, where the
+               invocation starts; one that cannot be evaluated or does not fit
+               starts nothing. A string literal was held to its field at build
+               time, so it passes as written. */
+{% for param in invoke_info.params %}
+{% if param.name in request_checks and not param.is_static_literal %}
+            char _host_inv_typed_{{ loop.index0 }}[SCE_MAX_DATA_LEN];
+            const char *_host_inv_refusal_{{ loop.index0 }} = NULL;
+{{ se.lua_eval_to_request_field(param.expr or param.location, request_checks[param.name], '_host_inv_typed_' ~ loop.index0, 'sizeof(_host_inv_typed_' ~ loop.index0 ~ ')', '_host_inv_refusal_' ~ loop.index0) }}
+            if (_host_inv_refusal_{{ loop.index0 }} != NULL) {
+{% if 'error.execution' in model.events %}
+                char _host_inv_message[SCE_MAX_DATA_LEN];
+                snprintf(_host_inv_message, sizeof(_host_inv_message),
+                         "<invoke> <param name='{{ param.name | escape_c }}'> cannot be its request field: '{{ param.name | escape_c }}' %s",
+                         _host_inv_refusal_{{ loop.index0 }});
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, _host_inv_message);
+{% endif %}
+                continue;
+            }
+            _host_inv_params[_host_inv_param_count].name = "{{ param.name | escape_c }}";
+            _host_inv_params[_host_inv_param_count].value = _host_inv_typed_{{ loop.index0 }};
+            _host_inv_param_count++;
+{% else %}
+{{ param_macros.collect_host_params_into([param], model, csym_prefix, '_host_inv_params', '_host_inv_param_count', '_host_inv_param_' ~ loop.index0, '<invoke>', '            ') -}}
+{% endif %}
+{% endfor %}
+{% else %}
 {{ param_macros.collect_host_params_into(invoke_info.params, model, csym_prefix, '_host_inv_params', '_host_inv_param_count', '_host_inv_param', '<invoke>', '            ') -}}
+{% endif %}
             {
                 sce_host_invoke_event_t _host_inv;
                 memset(&_host_inv, 0, sizeof(_host_inv));

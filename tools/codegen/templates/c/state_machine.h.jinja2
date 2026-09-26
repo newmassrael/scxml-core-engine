@@ -755,6 +755,11 @@ bool {{ csym_prefix }}{{ model.name }}_complete_host_invoke({{ csym_prefix }}{{ 
 /* W3C SCXML 6.4: how many host invokes' `done.invoke` events were refused
    because they did not arrive through `_complete_host_invoke`. */
 uint32_t {{ csym_prefix }}{{ model.name }}_refused_host_invoke_completions(const {{ csym_prefix }}{{ model.name }}_t *sm);
+{% if host_invoker_decls %}
+
+/* ── SCE Accepted Subset 2.12: typed host-run invoke interface ── */
+{{ host_invoker_decls }}
+{%- endif %}
 {% if not model.has_parent_communication %}
 
 /* W3C SCXML 6.4.1: start the machine with what RUNS its host invokes — the

@@ -2646,6 +2646,95 @@ fn c11_event_token(event: &str) -> String {
     event.replace(['.', '-'], "_")
 }
 
+/// The C11 spelling of a typed record as the JSON its event or completion
+/// carries: the bounded locals that quote its text fields, and the `snprintf`
+/// format and arguments that assemble the object. `receiver` is a pointer to
+/// the record (`payload`, `result`); the locals `return false` when a field
+/// cannot be spelled, so they belong in a function that answers `bool`.
+pub(crate) struct C11RecordWire {
+    pub locals: String,
+    pub format: String,
+    pub args: String,
+}
+
+pub(crate) fn c11_record_wire(fields: &[ForgeField], receiver: &str) -> C11RecordWire {
+    let mut locals = String::new();
+    let mut format = String::new();
+    let mut args = String::new();
+    for f in fields {
+        let id = &f.id;
+        // ⚠ A `bytes` field rides as its byte-exact Latin-1 text and a
+        // `string` is quoted and escaped, both into a bounded local — this
+        // backend has no allocator.
+        if !format.is_empty() {
+            format.push(',');
+        }
+        match &f.sce_type {
+            SceType::Bytes => {
+                locals.push_str(&format!(
+                    "    char _wire_{id}[SCE_MAX_DATA_LEN];\n    \
+if ({receiver}->{id}_len > sizeof({receiver}->{id}) ||\n        \
+!sce_payload_quote_bytes({receiver}->{id}, {receiver}->{id}_len, _wire_{id}, sizeof(_wire_{id}))) {{\n        \
+return false;\n    }}\n"
+                ));
+                format.push_str(&format!("\\\"{id}\\\":%s"));
+                args.push_str(&format!(", _wire_{id}"));
+            }
+            SceType::String => {
+                locals.push_str(&format!(
+                    "    char _wire_{id}[SCE_MAX_DATA_LEN];\n    \
+if (!sce_payload_quote({receiver}->{id}, _wire_{id}, sizeof(_wire_{id}))) {{\n        \
+return false;\n    }}\n"
+                ));
+                format.push_str(&format!("\\\"{id}\\\":%s"));
+                args.push_str(&format!(", _wire_{id}"));
+            }
+            SceType::Bool => {
+                format.push_str(&format!("\\\"{id}\\\":%s"));
+                args.push_str(&format!(", {receiver}->{id} ? \"true\" : \"false\""));
+            }
+            SceType::Float32 | SceType::Float64 => {
+                locals.push_str(&format!(
+                    "    if (!isfinite((double){receiver}->{id})) {{ return false; }}\n"
+                ));
+                format.push_str(&format!("\\\"{id}\\\":%.17g"));
+                args.push_str(&format!(", (double){receiver}->{id}"));
+            }
+            SceType::Uint64 => {
+                format.push_str(&format!("\\\"{id}\\\":%llu"));
+                args.push_str(&format!(", (unsigned long long){receiver}->{id}"));
+            }
+            SceType::Uint8 | SceType::Uint16 | SceType::Uint32 => {
+                format.push_str(&format!("\\\"{id}\\\":%lu"));
+                args.push_str(&format!(", (unsigned long){receiver}->{id}"));
+            }
+            SceType::Int64 => {
+                format.push_str(&format!("\\\"{id}\\\":%lld"));
+                args.push_str(&format!(", (long long){receiver}->{id}"));
+            }
+            SceType::Int8 | SceType::Int16 | SceType::Int32 => {
+                format.push_str(&format!("\\\"{id}\\\":%ld"));
+                args.push_str(&format!(", (long){receiver}->{id}"));
+            }
+            SceType::Enum(_) => unreachable!(
+                "a C11 record admits only primitive fields, so no enum-typed \
+                 field reaches its wire"
+            ),
+        }
+    }
+    C11RecordWire {
+        locals,
+        format,
+        args,
+    }
+}
+
+/// [`c11_payload_field_decl`] for a caller outside this module, which has no
+/// [`LangCtx`] of its own: the primitive C11 context.
+pub(crate) fn c11_record_field_decl(f: &ForgeField) -> String {
+    c11_payload_field_decl(&LangCtx::primitive(crate::generator::Language::C11), f)
+}
+
 /// One C11 payload-struct field declaration for EventSchema field `f`.
 ///
 /// A `bytes` field lowers to a no-alloc fixed-capacity buffer plus a
@@ -2767,9 +2856,6 @@ pub fn build_c11_event_payload(
         // What the lift reads back out of `data`, and what the inject seam
         // writes into it beside the typed payload: the same fields, once.
         let mut field_reads = String::new();
-        let mut wire_parts = String::new();
-        let mut wire_args = String::new();
-        let mut wire_locals = String::new();
         for f in &schema.fields {
             let id = &f.id;
             let read = match &f.sce_type {
@@ -2828,66 +2914,13 @@ snprintf(_message, _message_cap, \"`{event}` payload: '{id}' %s\", _refusal);\n 
 return false;\n    }}\n"
                 ));
             }
-            // The inject seam's wire. ⚠ A `bytes` field rides as its
-            // byte-exact Latin-1 text and a `string` is quoted and escaped,
-            // both into a bounded local — this backend has no allocator.
-            if !wire_parts.is_empty() {
-                wire_parts.push(',');
-            }
-            match &f.sce_type {
-                SceType::Bytes => {
-                    wire_locals.push_str(&format!(
-                        "    char _wire_{id}[SCE_MAX_DATA_LEN];\n    \
-if (payload->{id}_len > sizeof(payload->{id}) ||\n        \
-!sce_payload_quote_bytes(payload->{id}, payload->{id}_len, _wire_{id}, sizeof(_wire_{id}))) {{\n        \
-return false;\n    }}\n"
-                    ));
-                    wire_parts.push_str(&format!("\\\"{id}\\\":%s"));
-                    wire_args.push_str(&format!(", _wire_{id}"));
-                }
-                SceType::String => {
-                    wire_locals.push_str(&format!(
-                        "    char _wire_{id}[SCE_MAX_DATA_LEN];\n    \
-if (!sce_payload_quote(payload->{id}, _wire_{id}, sizeof(_wire_{id}))) {{\n        \
-return false;\n    }}\n"
-                    ));
-                    wire_parts.push_str(&format!("\\\"{id}\\\":%s"));
-                    wire_args.push_str(&format!(", _wire_{id}"));
-                }
-                SceType::Bool => {
-                    wire_parts.push_str(&format!("\\\"{id}\\\":%s"));
-                    wire_args.push_str(&format!(", payload->{id} ? \"true\" : \"false\""));
-                }
-                SceType::Float32 | SceType::Float64 => {
-                    wire_locals.push_str(&format!(
-                        "    if (!isfinite((double)payload->{id})) {{ return false; }}\n"
-                    ));
-                    wire_parts.push_str(&format!("\\\"{id}\\\":%.17g"));
-                    wire_args.push_str(&format!(", (double)payload->{id}"));
-                }
-                SceType::Uint64 => {
-                    wire_parts.push_str(&format!("\\\"{id}\\\":%llu"));
-                    wire_args.push_str(&format!(", (unsigned long long)payload->{id}"));
-                }
-                SceType::Uint8 | SceType::Uint16 | SceType::Uint32 => {
-                    wire_parts.push_str(&format!("\\\"{id}\\\":%lu"));
-                    wire_args.push_str(&format!(", (unsigned long)payload->{id}"));
-                }
-                SceType::Int64 => {
-                    wire_parts.push_str(&format!("\\\"{id}\\\":%lld"));
-                    wire_args.push_str(&format!(", (long long)payload->{id}"));
-                }
-                SceType::Int8 | SceType::Int16 | SceType::Int32 => {
-                    wire_parts.push_str(&format!("\\\"{id}\\\":%ld"));
-                    wire_args.push_str(&format!(", (long)payload->{id}"));
-                }
-                SceType::Enum(_) => unreachable!(
-                    "payload eligibility admits only primitive fields, so no \
-                     enum-typed field reaches the C11 wire"
-                ),
-            }
             field_lines.push_str(&c11_payload_field_decl(&l, f));
         }
+        let C11RecordWire {
+            locals: wire_locals,
+            format: wire_parts,
+            args: wire_args,
+        } = c11_record_wire(&schema.fields, "payload");
         lift_readers.push_str(&format!(
             "/* Read `{event}`'s schema fields out of the data it carries. Answers false\n   \
 with the sentence the caller raises as `error.execution`. */\n\

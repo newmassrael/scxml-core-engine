@@ -1077,6 +1077,235 @@ return std::nullopt;\n        }});\n    }}\n\n"
     CppHostInvokerInterface { defs, members }
 }
 
+/// [`request_checks`] spelled as the C11 runtime's `sce_request_field_type_t`.
+pub fn c11_request_checks(model: &SCXMLModel) -> BTreeMap<String, BTreeMap<String, String>> {
+    request_checks(model, |spelling| match spelling {
+        RequestFieldSpelling::Scalar(variant) => format!(
+            "(sce_request_field_type_t){{SCE_REQUEST_FIELD_{}, 0u}}",
+            variant.to_ascii_uppercase()
+        ),
+        RequestFieldSpelling::Bytes(cap) => {
+            format!("(sce_request_field_type_t){{SCE_REQUEST_FIELD_BYTES, {cap}u}}")
+        }
+    })
+}
+
+/// The C11 host interface: the header's declarations (`decls` — the records,
+/// one invoker table per declared `type`, registration and typed completion)
+/// and the source's definitions (`defs` — the adapter, and the two functions).
+/// Both empty when the document has no typed host-run invoke.
+pub struct C11HostInvokerInterface {
+    pub decls: String,
+    pub defs: String,
+}
+
+/// The C11 host interface for `model`'s typed host-run invokes. `sm` is the
+/// machine's symbol stem (`<prefix><name>`).
+///
+/// C has no closure, so the invoker is a table of function pointers with the
+/// `user_data` handed back to each, as the runtime's own registry is, and the
+/// adapter is registered with that table as its `user_data`. The table must
+/// outlive the registry it is registered in.
+pub fn render_c11(model: &SCXMLModel, sm: &str) -> C11HostInvokerInterface {
+    let mut decls = String::new();
+    let mut defs = String::new();
+    let typed = typed_host_invokes(model);
+    if typed.is_empty() {
+        return C11HostInvokerInterface { decls, defs };
+    }
+    for invoke in &typed {
+        let snake = filters::to_snake_case(invoke.invoke_id.to_string());
+        for (record, what, role) in records_of(invoke) {
+            let Some(schema) = record else { continue };
+            let what_snake = what.to_ascii_lowercase();
+            let name = format!("{sm}_{snake}_{what_snake}_t");
+            let fields: String = schema
+                .fields
+                .iter()
+                .map(crate::forge::generator::c11_record_field_decl)
+                .collect();
+            decls.push_str(&format!(
+                "/* {role} `<invoke id=\"{id}\">` with (SCE Accepted Subset \u{a7}2.12).\n   \
+A text field of a request is borrowed from it, valid for the start call. */\n\
+typedef struct {sm}_{snake}_{what_snake}_s {{\n{fields}}} {name};\n\n",
+                id = invoke.invoke_id,
+            ));
+            if what == "Result" {
+                let crate::forge::generator::C11RecordWire {
+                    locals,
+                    format,
+                    args,
+                } = crate::forge::generator::c11_record_wire(&schema.fields, "result");
+                defs.push_str(&format!(
+                    "/* The JSON `done.invoke.{id}` carries `result` as, into `out` of `cap` bytes;\n   \
+false when it does not fit. */\n\
+static bool {sm}_{snake}_result_wire(const {name} *result, char *out, size_t cap) {{\n\
+{locals}    const int _wire_len = snprintf(out, cap, \"{{{format}}}\"{args});\n    \
+return _wire_len >= 0 && (size_t)_wire_len < cap;\n}}\n\n",
+                    id = invoke.invoke_id,
+                ));
+            }
+        }
+    }
+    for (invoke_type, invokes) in &by_type(&typed) {
+        let type_snake = filters::to_snake_case(invoke_type.to_string());
+        let table = format!("{sm}_{type_snake}_invoker_t");
+        let fallback = has_untyped_invoke_of(model, invoke_type);
+        let mut members = String::new();
+        let mut start_arms = String::new();
+        let mut cancel_arms = String::new();
+        for invoke in invokes {
+            let id = invoke.invoke_id;
+            let snake = filters::to_snake_case(id.to_string());
+            let request_param = invoke
+                .request
+                .map(|_| format!("const {sm}_{snake}_request_t *request, "))
+                .unwrap_or_default();
+            let (returns, answer_param, answer_doc) = if invoke.result.is_some() {
+                (
+                    "bool",
+                    format!(", {sm}_{snake}_result_t *result"),
+                    "Return true with `*result` filled to complete the invocation now.",
+                )
+            } else {
+                (
+                    "void",
+                    ", sce_host_invoke_response_t *out".to_string(),
+                    "Fill `*out` to complete the invocation now.",
+                )
+            };
+            members.push_str(&format!(
+                "    /* \u{a7}scxml-6.4: begin `<invoke id=\"{id}\">`. `token` names this start; a host\n       \
+that finishes later hands it back to `{sm}_complete_{snake}`. {answer_doc} */\n    \
+{returns} (*start_{snake})(void *user_data, {request_param}uint64_t token{answer_param});\n    \
+/* \u{a7}scxml-6.4: `<invoke id=\"{id}\">`'s state exited while the start `token` names\n       \
+was still running. Stop it. */\n    \
+void (*cancel_{snake})(void *user_data, uint64_t token);\n"
+            ));
+            let read_request = match invoke.request {
+                Some(schema) => {
+                    let reads: Vec<String> = schema
+                        .fields
+                        .iter()
+                        .map(|f| c11_request_read(&f.sce_type, &f.id))
+                        .collect();
+                    format!(
+                        "            {sm}_{snake}_request_t request;\n            \
+memset(&request, 0, sizeof(request));\n            \
+/* The start site checked every field, so a reading that fails is a broken\n               \
+promise between two halves of generated code; stop rather than hand the\n               \
+host a record the document never sent. */\n            \
+if (!({})) {{\n                abort();\n            }}\n",
+                        reads.join(" &&\n                  ")
+                    )
+                }
+                None => String::new(),
+            };
+            let request_arg = if invoke.request.is_some() {
+                "&request, "
+            } else {
+                ""
+            };
+            let start = if invoke.result.is_some() {
+                format!(
+                    "            {sm}_{snake}_result_t result;\n            \
+memset(&result, 0, sizeof(result));\n            \
+if (invoker->start_{snake}(invoker->user_data, {request_arg}event->token, &result)) {{\n                \
+out->has_done_data = {sm}_{snake}_result_wire(&result, out->done_data, sizeof(out->done_data));\n            \
+}}\n"
+                )
+            } else {
+                format!(
+                    "            invoker->start_{snake}(invoker->user_data, {request_arg}event->token, out);\n"
+                )
+            };
+            start_arms.push_str(&format!(
+                "        if (strcmp(event->invoke_id, \"{id}\") == 0) {{\n{read_request}{start}            return;\n        }}\n"
+            ));
+            cancel_arms.push_str(&format!(
+                "        if (strcmp(event->invoke_id, \"{id}\") == 0) {{\n            \
+invoker->cancel_{snake}(invoker->user_data, event->token);\n            return;\n        }}\n"
+            ));
+            if invoke.result.is_some() {
+                decls.push_str(&format!(
+                    "/* Complete `<invoke id=\"{id}\">`'s start `token` with its record —\n   \
+`_complete_host_invoke` with the record's JSON, so a stale or unknown token is\n   \
+refused the same way (false), as is a record too long for SCE_MAX_DATA_LEN. */\n\
+bool {sm}_complete_{snake}({sm}_t *sm, uint64_t token, const {sm}_{snake}_result_t *result);\n\n"
+                ));
+                defs.push_str(&format!(
+                    "bool {sm}_complete_{snake}({sm}_t *sm, uint64_t token, const {sm}_{snake}_result_t *result) {{\n    \
+char data[SCE_MAX_DATA_LEN];\n    \
+if (!{sm}_{snake}_result_wire(result, data, sizeof(data))) {{\n        return false;\n    }}\n    \
+return {sm}_complete_host_invoke(sm, \"{invoke_type}\", \"{id}\", token, data);\n}}\n\n"
+                ));
+            }
+        }
+        // An invoke of this type the document does not type still needs a
+        // handler; without one the adapter could only drop it, and a start
+        // nobody performed must read as error.execution, not as running.
+        let (fallback_members, rest) = if fallback {
+            (
+                "    /* Serves the invokes of this type the document does not type. */\n    \
+sce_host_invoke_handler_fn fallback;\n    void *fallback_user_data;\n",
+                "    invoker->fallback(invoker->fallback_user_data, event, out);\n",
+            )
+        } else {
+            // Every invoke of this type is typed, so no other id reaches this
+            // handler.
+            ("", "")
+        };
+        decls.push_str(&format!(
+            "/* The host side of this document's typed `<invoke type=\"{invoke_type}\">`s (SCE\n   \
+Accepted Subset \u{a7}2.12). Register it with `{sm}_register_{type_snake}_invoker`. */\n\
+typedef struct {sm}_{type_snake}_invoker_s {{\n    \
+/* Handed back unchanged to every function below. */\n    void *user_data;\n{members}{fallback_members}}} {table};\n\n\
+/* Register `invoker` as the handler for `type=\"{invoke_type}\"` in `registry`. The\n   \
+table is borrowed, and must outlive the registry. False when the registry\n   \
+refuses it. */\n\
+bool {sm}_register_{type_snake}_invoker(sce_host_invoker_registry_t *registry, const {table} *invoker);\n\n"
+        ));
+        defs.push_str(&format!(
+            "static void {sm}_{type_snake}_invoker_adapter(void *user_data, const sce_host_invoke_event_t *event,\n        \
+sce_host_invoke_response_t *out) {{\n    \
+const {table} *invoker = (const {table} *)user_data;\n    \
+if (event->phase == SCE_HOST_INVOKE_START) {{\n{start_arms}    }} else {{\n{cancel_arms}    }}\n{rest}}}\n\n\
+bool {sm}_register_{type_snake}_invoker(sce_host_invoker_registry_t *registry, const {table} *invoker) {{\n    \
+if (invoker == NULL) {{\n        return false;\n    }}\n    \
+return sce_host_invoker_register(registry, \"{invoke_type}\", {sm}_{type_snake}_invoker_adapter, (void *)invoker);\n}}\n\n"
+        ));
+    }
+    C11HostInvokerInterface { decls, defs }
+}
+
+/// The `sce_request_read_*` call reading field `id` of type `ty` into the
+/// adapter's local `request`.
+fn c11_request_read(ty: &SceType, id: &str) -> String {
+    let suffix = match ty {
+        SceType::Uint8 => "u8",
+        SceType::Uint16 => "u16",
+        SceType::Uint32 => "u32",
+        SceType::Uint64 => "u64",
+        SceType::Int8 => "i8",
+        SceType::Int16 => "i16",
+        SceType::Int32 => "i32",
+        SceType::Int64 => "i64",
+        SceType::Float32 => "f32",
+        SceType::Float64 => "f64",
+        SceType::Bool => "bool",
+        SceType::String => "text",
+        SceType::Bytes => {
+            return format!(
+                "sce_request_read_bytes(event, \"{id}\", request.{id}, sizeof(request.{id}), &request.{id}_len)"
+            )
+        }
+        SceType::Enum(_) => {
+            unreachable!("typed_invoke::validate refuses an enum-typed field in a host-run record")
+        }
+    };
+    format!("sce_request_read_{suffix}(event, \"{id}\", &request.{id})")
+}
+
 /// The `TypedRequest` reader for a field of type `ty`.
 fn kotlin_request_reader(ty: &SceType) -> &'static str {
     match ty {

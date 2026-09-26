@@ -31,6 +31,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "sce/request_field.h"
 #include "statechart_host_invoker_sm.h"
 
 #ifndef SCE_HOST_INVOKE_DEADLINE_TABLE
@@ -838,6 +839,183 @@ static int a_deadline_is_read_by_the_shared_table(void) {
     return bad;
 }
 
+// A host implementing the generated invoker table; its work outlives the call.
+typedef struct {
+    int starts;
+    char scope[32];
+    uint8_t level;
+    uint64_t token;
+    int cancels;
+    uint64_t cancelled;
+} perm_host_t;
+
+static bool perm_start(void *user_data, const statechart_host_invoker_perm_request_t *request, uint64_t token,
+                       statechart_host_invoker_perm_result_t *result) {
+    (void)result;
+    perm_host_t *host = (perm_host_t *)user_data;
+    host->starts++;
+    (void)snprintf(host->scope, sizeof(host->scope), "%s", request->scope);
+    host->level = request->level;
+    host->token = token;
+    return false;
+}
+
+static void perm_cancel(void *user_data, uint64_t token) {
+    perm_host_t *host = (perm_host_t *)user_data;
+    host->cancels++;
+    host->cancelled = token;
+}
+
+// A machine driven into `typed` with `host` registered through the generated
+// adapter, and the untyped invokes of the same type served by `running_invoker`.
+static void boot_typed(statechart_host_invoker_t *sm, statechart_host_invoker_x_sce_host_invoker_t *table,
+                       perm_host_t *host, running_t *run) {
+    sce_host_invoker_registry_t wiring;
+    memset(host, 0, sizeof(*host));
+    memset(run, 0, sizeof(*run));
+    memset(table, 0, sizeof(*table));
+    table->user_data = host;
+    table->start_perm = perm_start;
+    table->cancel_perm = perm_cancel;
+    table->fallback = running_invoker;
+    table->fallback_user_data = run;
+    memset(&wiring, 0, sizeof(wiring));
+    (void)statechart_host_invoker_register_x_sce_host_invoker(&wiring, table);
+    statechart_host_invoker_init_with_host_invokers(sm, &wiring);
+    deliver(sm, STATECHART_HOST_INVOKER_EVENT_TYPE);
+}
+
+// SCE Accepted Subset §2.12: through the generated interface a host is handed
+// `perm`'s request as its `PermRequest` record — the datamodel's values at
+// their declared types — and completes it with a `PermResult`, which the
+// document reads as that record. An invoke of the same type the document does
+// not type still reaches the host, through the fallback.
+static int a_typed_request_reaches_its_invoker_as_its_record(void) {
+    statechart_host_invoker_x_sce_host_invoker_t table;
+    perm_host_t host;
+    running_t run;
+    statechart_host_invoker_t sm;
+    boot_typed(&sm, &table, &host, &run);
+
+    int bad = 0;
+    bad |= check("typed-request", "perm starts", host.starts, 1);
+    bad |= expect("typed-request", "scope is the datamodel's", strcmp(host.scope, "calendar") == 0);
+    bad |= check("typed-request", "level is the datamodel's", host.level, 2);
+    bad |=
+        expect("typed-request", "the untyped probe reached the fallback", count_lines(&run.rec, "START id=probe") == 1);
+    statechart_host_invoker_perm_result_t granted;
+    memset(&granted, 0, sizeof(granted));
+    granted.granted = true;
+    bad |= expect("typed-request", "the typed completion was accepted",
+                  statechart_host_invoker_complete_perm(&sm, host.token, &granted));
+    statechart_host_invoker_step(&sm);
+    bad |= check("typed-request", "granted", counter(&sm, "granted"), 1);
+    bad |= check("typed-request", "unreadable", counter(&sm, "unreadable"), 0);
+    // A completion is accepted once: the token now names nothing running.
+    bad |= expect("typed-request", "a second completion was refused",
+                  !statechart_host_invoker_complete_perm(&sm, host.token, &granted));
+    statechart_host_invoker_destroy(&sm);
+    return bad;
+}
+
+// SCE Accepted Subset §2.12, W3C SCXML 6.4.1: a request value its record's
+// field cannot hold is an argument that cannot be evaluated. `retype` sets
+// `level` to a text and re-enters `typed`: the running start is cancelled, and
+// the new one raises error.execution and is never handed to the host.
+static int a_request_that_does_not_fit_its_record_starts_nothing(void) {
+    statechart_host_invoker_x_sce_host_invoker_t table;
+    perm_host_t host;
+    running_t run;
+    statechart_host_invoker_t sm;
+    boot_typed(&sm, &table, &host, &run);
+    const uint64_t first = host.token;
+    deliver(&sm, STATECHART_HOST_INVOKER_EVENT_RETYPE);
+
+    int bad = 0;
+    bad |= check("misfit-request", "cancels", host.cancels, 1);
+    bad |= expect("misfit-request", "the running start was cancelled", host.cancelled == first);
+    bad |= check("misfit-request", "perm starts", host.starts, 1);
+    bad |= check("misfit-request", "unreadable", counter(&sm, "unreadable"), 1);
+    statechart_host_invoker_destroy(&sm);
+    return bad;
+}
+
+// The start site's check and the adapter's reading are one rule: every value
+// the check accepts is spelled as text its field's type parses back to the
+// same value, and a value the field cannot hold is refused rather than
+// narrowed.
+static int a_request_field_is_checked_and_read_back_by_one_rule(void) {
+    int bad = 0;
+    char text[64];
+    sce_host_send_param_t param = {.name = "f", .value = text};
+    sce_host_invoke_event_t event;
+    memset(&event, 0, sizeof(event));
+    event.invoke_id = "perm";
+    event.params = &param;
+    event.param_count = 1;
+
+    sce_script_scalar_t v;
+    memset(&v, 0, sizeof(v));
+    v.kind = SCE_SCRIPT_SCALAR_INTEGER;
+    v.integer = 255;
+    uint8_t u8 = 0;
+    bad |= expect("one-rule", "uint8 255 fits",
+                  sce_request_field_wire(&v, (sce_request_field_type_t){SCE_REQUEST_FIELD_UINT8, 0u}, text,
+                                         sizeof(text)) == NULL &&
+                      sce_request_read_u8(&event, "f", &u8) && u8 == 255);
+    v.kind = SCE_SCRIPT_SCALAR_FLOAT;
+    v.floating = -3.0;
+    int16_t i16 = 0;
+    bad |= expect("one-rule", "int16 -3.0 fits",
+                  sce_request_field_wire(&v, (sce_request_field_type_t){SCE_REQUEST_FIELD_INT16, 0u}, text,
+                                         sizeof(text)) == NULL &&
+                      sce_request_read_i16(&event, "f", &i16) && i16 == -3);
+    v.floating = 0.1;
+    float f32 = 0.0f;
+    bad |= expect("one-rule", "float32 0.1 fits",
+                  sce_request_field_wire(&v, (sce_request_field_type_t){SCE_REQUEST_FIELD_FLOAT32, 0u}, text,
+                                         sizeof(text)) == NULL &&
+                      sce_request_read_f32(&event, "f", &f32) && f32 == 0.1f);
+    v.floating = 18446744073709549568.0;
+    uint64_t u64 = 0;
+    bad |= expect("one-rule", "uint64 below 2^64 fits",
+                  sce_request_field_wire(&v, (sce_request_field_type_t){SCE_REQUEST_FIELD_UINT64, 0u}, text,
+                                         sizeof(text)) == NULL &&
+                      sce_request_read_u64(&event, "f", &u64) && u64 == 18446744073709549568ull);
+
+    struct {
+        sce_script_scalar_kind_t kind;
+        int64_t integer;
+        double floating;
+        const char *text;
+        sce_request_field_type_t type;
+        const char *why;
+    } refused[] = {
+        {SCE_SCRIPT_SCALAR_INTEGER, 256, 0.0, NULL, {SCE_REQUEST_FIELD_UINT8, 0u}, "past the width"},
+        {SCE_SCRIPT_SCALAR_INTEGER, -1, 0.0, NULL, {SCE_REQUEST_FIELD_UINT32, 0u}, "below zero"},
+        {SCE_SCRIPT_SCALAR_FLOAT, 0, 1.5, NULL, {SCE_REQUEST_FIELD_INT32, 0u}, "not whole"},
+        {SCE_SCRIPT_SCALAR_FLOAT, 0, 18446744073709551616.0, NULL, {SCE_REQUEST_FIELD_UINT64, 0u}, "past 2^64"},
+        {SCE_SCRIPT_SCALAR_FLOAT, 0, 1e39, NULL, {SCE_REQUEST_FIELD_FLOAT32, 0u}, "past float"},
+        {SCE_SCRIPT_SCALAR_STRING, 0, 0.0, "2", {SCE_REQUEST_FIELD_UINT8, 0u}, "a text"},
+        {SCE_SCRIPT_SCALAR_INTEGER, 1, 0.0, NULL, {SCE_REQUEST_FIELD_BOOL, 0u}, "a number as truth"},
+        {SCE_SCRIPT_SCALAR_INTEGER, 1, 0.0, NULL, {SCE_REQUEST_FIELD_STRING, 0u}, "a number as text"},
+        {SCE_SCRIPT_SCALAR_STRING, 0, 0.0, "abc", {SCE_REQUEST_FIELD_BYTES, 2u}, "past cap"},
+        {SCE_SCRIPT_SCALAR_STRING, 0, 0.0, "\xC4\x80", {SCE_REQUEST_FIELD_BYTES, 8u}, "no single byte"},
+    };
+
+    for (size_t i = 0; i < sizeof(refused) / sizeof(refused[0]); i++) {
+        memset(&v, 0, sizeof(v));
+        v.kind = refused[i].kind;
+        v.integer = refused[i].integer;
+        v.floating = refused[i].floating;
+        v.text = refused[i].text;
+        v.text_len = refused[i].text != NULL ? strlen(refused[i].text) : 0u;
+        bad |=
+            expect("one-rule", refused[i].why, sce_request_field_wire(&v, refused[i].type, text, sizeof(text)) != NULL);
+    }
+    return bad;
+}
+
 int main(void) {
     int bad = 0;
     bad |= a_registered_invoker_is_started_with_what_the_document_wrote();
@@ -859,6 +1037,9 @@ int main(void) {
     bad |= a_deadline_that_is_not_milliseconds_starts_nothing();
     bad |= a_deadline_is_read_by_the_shared_table();
     bad |= a_typed_completion_is_read_as_its_record();
+    bad |= a_typed_request_reaches_its_invoker_as_its_record();
+    bad |= a_request_that_does_not_fit_its_record_starts_nothing();
+    bad |= a_request_field_is_checked_and_read_back_by_one_rule();
 
     if (bad != 0) {
         (void)fprintf(stderr, "host_invoker: FAIL - see the scenario(s) named above\n");

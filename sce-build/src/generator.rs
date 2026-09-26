@@ -2765,6 +2765,14 @@ fn render_c11(
         &csym_prefix,
     );
     crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
+    // SCE Accepted Subset §2.12: the typed host-run invoke interface and what
+    // the start site holds each request field to; all empty without one.
+    let host_invoker = crate::forge::host_invoker_interface::render_c11(
+        model,
+        &format!("{csym_prefix}{}", model.name),
+    );
+    let host_invoke_request_checks =
+        crate::forge::host_invoker_interface::c11_request_checks(model);
 
     let header_tmpl = env
         .get_template("c/state_machine.h.jinja2")
@@ -2792,6 +2800,7 @@ fn render_c11(
         native_action_ops => &native.operation_names,
         csym_prefix => &csym_prefix,
         host_invocation_peak => crate::host_processor_analyzer::host_invocation_peak(model),
+        host_invoker_decls => &host_invoker.decls,
     };
     let source_ctx = minijinja::context! {
         model => &model_val,
@@ -2806,6 +2815,8 @@ fn render_c11(
         native_actions_interface => &native.interface_name,
         native_action_ops => &native.operation_names,
         csym_prefix => &csym_prefix,
+        host_invoker_defs => &host_invoker.defs,
+        host_invoke_request_checks => &host_invoke_request_checks,
     };
 
     let header_code = header_tmpl.render(header_ctx).map_err(render_error)?;

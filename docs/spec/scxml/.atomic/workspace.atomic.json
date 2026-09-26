@@ -10500,6 +10500,11 @@
           "file": "sce/include/core/TypedHostInvokeRequest.h",
           "symbol": "requestFieldWire",
           "kind": "implements"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/request_field.h",
+          "symbol": "sce_request_field_wire",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
