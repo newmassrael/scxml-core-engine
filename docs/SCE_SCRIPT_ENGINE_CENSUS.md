@@ -98,11 +98,11 @@ reword.
 ```census
 documents-floor 700
 documents-judged-floor 450
-engine-documents 235
+engine-documents 236
 native-prefix-documents 2
-datamodel-variable-init 270
-transition-guard 213
-assign-action 217
+datamodel-variable-init 278
+transition-guard 220
+assign-action 226
 child-invoke-needs-script-engine 46
 log-expr 45
 send-param-expr 32
@@ -117,7 +117,7 @@ if-condition 3
 global-script 3
 mesh-rpc-srcexpr 2
 hybrid-invoke 4
-cancel-expr 1
+cancel-expr 2
 ```
 
 Each line is a ceiling: the count may fall freely, and a rise fails the
@@ -152,7 +152,14 @@ never spelled correctly.
   `integration_resources/typed_reader_names/` (one engine document: eleven
   typed `<data>` and four assigns) raised `engine-documents`,
   `datamodel-variable-init`, `transition-guard`, `assign-action` and
-  `send-dynamic-attr`. A consumer pairing `cond="cpp:…"` with
+  `send-dynamic-attr`. ⚠ **2026-09-26 again, deliberately:** the host
+  invoker fixture's `timed` state (a host-run invocation's deadline: three
+  counters, the two outcome guards, three assigns, and the `<cancel
+  sendidexpr="''">` that must not reach a deadline — the first document to
+  raise `cancel-expr` past 1) and the new
+  `onexit_runs_before_the_state_leaves.scxml` (one engine document) raised
+  `engine-documents`, `datamodel-variable-init`, `transition-guard`,
+  `assign-action` and `cancel-expr`. A consumer pairing `cond="cpp:…"` with
   `datamodel="null"` is a separate population living in its own
   repository, and this number does not see it.
 - **49% of judged documents need an engine** (233 of 475). The remaining

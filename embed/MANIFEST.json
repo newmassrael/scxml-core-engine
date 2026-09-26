@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250804090312+cd708029e0b2-1~exp1~20250804210325.79)",
-  "embed_version": "a50ab5530c",
+  "embed_version": "db4ffc362c",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 268,
+  "symbol_count": 271,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -711,6 +711,12 @@
     },
     {
       "header": "core/HostProcessor.h",
+      "kind": "function",
+      "name": "SCE::parseHostInvokeDeadlineMs",
+      "signature": "std::optional<uint64_t> SCE::parseHostInvokeDeadlineMs(std::string_view)"
+    },
+    {
+      "header": "core/HostProcessor.h",
       "kind": "struct",
       "members": [
         "field std::map<std::string, std::vector<std::string>> params",
@@ -833,6 +839,36 @@
         "method void (const HostInvokeCancel &) noexcept(false) HostInvokeCancel"
       ],
       "name": "SCE::HostInvokeCancel"
+    },
+    {
+      "header": "core/HostProcessor.h",
+      "kind": "struct",
+      "members": [
+        "field std::string invokeId",
+        "field std::string processorType",
+        "field uint64_t token",
+        "method HostInvokeDeadline &(HostInvokeDeadline &&) operator=",
+        "method HostInvokeDeadline &(const HostInvokeDeadline &) operator=",
+        "method void () noexcept ~HostInvokeDeadline",
+        "method void (HostInvokeDeadline &&) HostInvokeDeadline",
+        "method void (const HostInvokeDeadline &) HostInvokeDeadline"
+      ],
+      "name": "SCE::HostInvokeDeadline"
+    },
+    {
+      "header": "core/HostProcessor.h",
+      "kind": "struct",
+      "members": [
+        "field std::string invokeId",
+        "field std::string processorType",
+        "field uint64_t token",
+        "method HostInvokeDeadline &(HostInvokeDeadline &&) operator=",
+        "method HostInvokeDeadline &(const HostInvokeDeadline &) operator=",
+        "method void () ~HostInvokeDeadline",
+        "method void (HostInvokeDeadline &&) HostInvokeDeadline",
+        "method void (const HostInvokeDeadline &) HostInvokeDeadline"
+      ],
+      "name": "SCE::HostInvokeDeadline"
     },
     {
       "header": "core/HostProcessor.h",
