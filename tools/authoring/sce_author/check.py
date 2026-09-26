@@ -145,6 +145,22 @@ class Document:
     # Transitions that restart every other region of a `<parallel>` as a side
     # effect (`_parallel_reentries`). Refused by `check` for a statechart.
     reentries: tuple = ()
+    # Whether `kind` was written (`sce:kind`) or is the default. A document
+    # that never chose is read as a statechart, and a refusal that only speaks
+    # a statechart's terms ("no event") steers its author further from a
+    # transform it may have meant -- measured 2026-09-26, a writer given that
+    # refusal three rounds running went on adding state around `<if>`.
+    kind_declared: bool = True
+    # Outputs declared with no `expr` and not left `sce:unresolved`. In a
+    # transform the expression IS the output -- the product refuses the
+    # document without one ("Transform output field ... must have an 'expr'
+    # attribute") -- and this passed a skeleton that computed nothing.
+    uncomputed: tuple = ()
+    # The namespace URI the document binds the `sce` prefix to, as written, or
+    # None if it binds none. ⚠ Any other URI than SCE's makes every `sce:`
+    # attribute a different, unknown attribute that the reader passes over in
+    # silence -- `sce:kind`, `sce:direction` and `sce:type` included.
+    sce_prefix_uri: str | None = None
 
     def variants_of(self, ident: str) -> dict | None:
         """The enumeration an `enum:` input or output names, if one is imported."""
@@ -327,7 +343,7 @@ def read_document(path: pathlib.Path) -> Document:
             f"{path}: not well-formed XML ({exc}). A comment cannot contain "
             f"a double hyphen, which is the way this usually happens."
         ) from exc
-    inputs, outputs = [], []
+    inputs, outputs, uncomputed = [], [], []
     assumed, reads, unresolved, types = {}, {}, {}, {}
     kept: set = set()
     for data in root.iter(f"{SCXML_NS}data"):
@@ -337,6 +353,8 @@ def read_document(path: pathlib.Path) -> Document:
             inputs.append(ident)
         elif direction == "out":
             outputs.append(ident)
+            if data.get("expr") is None and data.get(f"{SCE_NS}unresolved") is None:
+                uncomputed.append(ident)
             kept.update(_PREVIOUS_READ.findall(
                 _STRING_LITERAL.sub("''", data.get("expr") or "")))
         if direction in ("in", "out") and data.get(f"{SCE_NS}type"):
@@ -383,11 +401,17 @@ def read_document(path: pathlib.Path) -> Document:
     # SCXML from a brief had a document `check` accepted and `verify` then
     # refused as a kind it could not drive.
     kind = root.get(f"{SCE_NS}kind") or "statechart"
+    # The parser resolves prefixes and keeps no record of them, so the binding
+    # is read from the text; the first declaration is the root's.
+    bound = re.search(r'\bxmlns:sce\s*=\s*(["\'])(.*?)\1', path.read_text(encoding="utf-8"))
     return Document(
         path=path,
         inputs=tuple(inputs),
         outputs=tuple(outputs),
         kind=kind,
+        kind_declared=root.get(f"{SCE_NS}kind") is not None,
+        uncomputed=tuple(uncomputed),
+        sce_prefix_uri=bound.group(2) if bound else None,
         keeps=frozenset(kept) if kind == "transform" else frozenset(),
         assumed=assumed,
         unresolved=unresolved,
@@ -587,11 +611,20 @@ def driving_refusals(document: Document, inputs: dict) -> list[tuple[str, str]]:
             f"every activation and keeps what it needs with `previous()`."))
     drives = any(rule.get("event") for rule in inputs.values())
     if not drives:
+        undeclared = "" if document.kind_declared else (
+            " ⚠ The document does not say what kind it is (no `sce:kind` on "
+            "its root), so it is read as a statechart, which only an event "
+            "moves. If every output is a function of the inputs' current "
+            "values, it is a transform instead: `sce:kind=\"transform\"` on "
+            "the root, and each output a `<data sce:direction=\"out\" "
+            "expr=\"...\">` computed from the `sce:direction=\"in\"` inputs, "
+            "with no states and no events. `scaffold` writes that skeleton "
+            "from the interface model.")
         out.append(("binding",
                     "no input rule names an `event`, so no case can drive the "
                     "machine. Every case would be judged against a document "
                     "sitting in its initial configuration, which is a verdict "
-                    "about nothing."))
+                    "about nothing." + undeclared))
     for name, rule in sorted(inputs.items()):
         if not rule.get("event"):
             # A rule still waiting for its address is reported as such, and
@@ -664,6 +697,17 @@ def check(pack: Pack, binding_path: pathlib.Path) -> list[Finding]:
             "can compare a value, and nothing reaches the platform. Bind at "
             "least one output (marking it `internal` or `unresolved` where "
             "that is the truth)."))
+
+    sce_uri = SCE_NS.strip("{}")
+    if document.sce_prefix_uri is not None and document.sce_prefix_uri != sce_uri:
+        out.append(Finding(
+            f"document {document.path.name}",
+            f"binds the prefix `sce` to {document.sce_prefix_uri!r}, not to "
+            f"{sce_uri!r}. The prefix is only a spelling: what an attribute IS "
+            f"is its namespace, so every `sce:` attribute in this document is "
+            f"some other, unknown attribute and is passed over -- `sce:kind`, "
+            f"`sce:direction` and `sce:type` among them. Write "
+            f"`xmlns:sce=\"{sce_uri}\"` on the root."))
 
     # ⚠ Declared unknowns are reported FIRST and as their own thing. A binding
     # written before the platform's list exists is an ordinary state -- the
@@ -908,6 +952,15 @@ def check(pack: Pack, binding_path: pathlib.Path) -> list[Finding]:
             continue
         if name not in document.outputs:
             out.append(Finding(f"output {name}", "the document does not compute it"))
+        elif document.kind == "transform" and name in document.uncomputed:
+            out.append(Finding(
+                f"output {name}",
+                f"the document declares it and computes nothing: a transform "
+                f"output is its `expr`, the value computed from the inputs "
+                f"every activation, and the product refuses a document with "
+                f"an output that has none. Write the expression the "
+                f"specification gives, or mark it `sce:unresolved` with the "
+                f"question if the specification does not say."))
 
     # ⚠ Each of the next three was refused by `verify` alone, so a binding this
     # command had passed came back with every case unjudged, or not run at

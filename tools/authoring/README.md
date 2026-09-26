@@ -716,6 +716,24 @@ binding `check` can read, so each gap comes back as a refusal naming its rule.
 the ones that failed failed on the copied half -- a missing `version`, an
 output rule with no `field` -- and never reached the half that reads the prose.
 
+`--kind transform` also writes the document the binding names, beside it and
+only if it does not exist: the root declaring `sce:kind="transform"` in SCE's
+namespace, and one `<data>` per rule, with the rule's identifier, its direction
+and a `sce:type` read off the model (`int64` for a value space, `float64` for a
+`number`, which the model does not say is whole). No output has an `expr`:
+the expression is the specification's reading, and `check` refuses each
+transform output that still computes nothing, as the product would. Whether
+a component is a transform is itself a reading, so there is no default, and
+there is no statechart skeleton -- a statechart's shell is its states and
+events, which the model does not know. ⚠ Measured 2026-09-26: a model holding
+the binding skeleton wrote the document's shell wrong three rounds running --
+no `sce:kind`, the `sce` prefix bound to a made-up namespace, `<if>` straight
+inside a state -- and never reached the one condition its specification
+states. `check` now also refuses a `sce` prefix bound to any other namespace
+(every `sce:` attribute would be silently ignored), and, when a document never
+declared its kind and nothing drives it, says it is being read as a statechart
+and what a transform would be instead.
+
 #### A statechart is driven, and answers by sending
 
 Everything above describes a document that is READ: values go in, a value

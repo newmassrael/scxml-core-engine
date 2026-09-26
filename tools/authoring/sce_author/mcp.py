@@ -47,6 +47,7 @@ from .verify import verify as run_verify
 from .prose import load_prose
 from .questions import ask
 from .review import review as run_review
+from .scaffold import KINDS as SCAFFOLD_KINDS
 from .scaffold import write as write_scaffold
 
 PROTOCOL_VERSION = "2024-11-05"
@@ -219,6 +220,17 @@ TOOLS = [
                     "type": "string",
                     "enum": ["on-change", "periodic"],
                     "description": "When the host runs the document, if you know it.",
+                },
+                "kind": {
+                    "type": "string",
+                    "enum": list(SCAFFOLD_KINDS),
+                    "description": (
+                        "Also write the document itself, as this kind, where the "
+                        "binding names it: a `transform` -- every output a "
+                        "function of the inputs' current values -- gets its root "
+                        "and one `<data>` per rule, with the binding's names, and "
+                        "no output computed yet. Give it when the specification "
+                        "makes no output remember anything across rounds."),
                 },
             },
         },
@@ -537,10 +549,11 @@ def call_tool(name: str, args: dict) -> dict:
             for key, value in (("document", document), ("binding", binding)):
                 if not value or not isinstance(value, str):
                     raise ToolArgumentError(f"{key!r} is required, as a string")
-            activation = args.get("activation")
-            if activation is not None and not isinstance(activation, str):
-                raise ToolArgumentError("'activation' has to be a string")
-            text = write_scaffold(pack, document, pathlib.Path(binding), activation)
+            activation, kind = args.get("activation"), args.get("kind")
+            for key, value in (("activation", activation), ("kind", kind)):
+                if value is not None and not isinstance(value, str):
+                    raise ToolArgumentError(f"{key!r} has to be a string")
+            text = write_scaffold(pack, document, pathlib.Path(binding), activation, kind)
             return _text(f"wrote {binding}:\n\n{text}")
 
         if name == "coverage":

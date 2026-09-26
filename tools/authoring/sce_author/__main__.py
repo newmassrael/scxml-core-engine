@@ -22,6 +22,7 @@ from .prose import load_prose
 from .pseudo import render as render_pseudo
 from .questions import ask
 from .review import review as run_review
+from .scaffold import KINDS
 from .scaffold import write as write_scaffold
 from .verify import verify as run_verify
 
@@ -265,8 +266,9 @@ def cmd_scaffold(args) -> int:
     """Write the half of a binding the interface model already decides."""
     pack = _pack(args)
     out = pathlib.Path(args.out)
-    write_scaffold(pack, args.document, out, args.activation)
-    print(f"wrote {out}: {sum(len(e.fields) for e in pack.model.outputs())} output "
+    write_scaffold(pack, args.document, out, args.activation, args.kind)
+    also = f" and the {args.kind} {out.parent / args.document}" if args.kind else ""
+    print(f"wrote {out}{also}: {sum(len(e.fields) for e in pack.model.outputs())} output "
           f"position(s) and {sum(len(e.fields) for e in pack.model.entries if e.role != 'output')} "
           f"input position(s) from the model; run `check` next")
     return 0
@@ -352,6 +354,10 @@ def main(argv=None) -> int:
     # deployment, and a default here would be a guess made on its behalf.
     f.add_argument("--activation", choices=("on-change", "periodic"),
                    help="when the host runs the document, if it is known")
+    # ⚠ No default either: whether the component is a transform is a reading
+    # of the specification.
+    f.add_argument("--kind", choices=KINDS,
+                   help="also write the document's skeleton, as this kind, beside the binding")
     f.set_defaults(fn=cmd_scaffold)
 
     args = ap.parse_args(argv)
